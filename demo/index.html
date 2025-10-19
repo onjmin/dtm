@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>簡易DAW (MMLジェネレーター) デモ</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/gh/KazuProg/mml-player@main/dist/mml-player.js"></script>
+
+    <script type="module">
+        import * as mdi from 'https://cdn.jsdelivr.net/npm/@mdi/js@7.4.47/mdi.js';
+
+        // 仮のパッケージ名 @onjmin/dtm から Core と Renderer をインポートすると仮定
+        // const dtm = await import('https://cdn.jsdelivr.com/npm/@onjmin/dtm/dist/index.min.mjs');
+        const dtm = await import('http://localhost:3000/dist/index.mjs');
+        // デモ用: MMLCore と PianoRollRenderer を直接取得 (実際のパッケージ設計に依存)
+        const MMLCore = dtm.MMLCore;
+        const PianoRollRenderer = dtm.PianoRollRenderer;
+        // ----------------------------------------------------------------------
+
+        console.log('DTM デモ - インポート完了');
+
+        // --- 状態管理 ---
+        const tracks = [
+            { id: 'melody', name: 'メロディー', instrument: 0, core: null, renderer: null, volume: 80, mml: '' },
+            { id: 'bass', name: 'ベース', instrument: 1, core: null, renderer: null, volume: 70, mml: '' },
+            { id: 'chord', name: '伴奏', instrument: 2, core: null, renderer: null, volume: 60, mml: '' },
+        ];
+        let activeTrackId = 'melody';
+        let isPlaying = false;
+        let noteLengthSteps = 1; // 16分音符
+
+        const NOTE_LENGTH_MAP = [
+            { label: '4分', steps: 4 },
+            { label: '8分', steps: 2 },
+            { label: '16分', steps: 1 },
+        ];
+        const DRUM_PATTERNS = [
+            { name: 'なし' },
+            { name: '4つ打ち' },
+            { name: 'ロック' }
+        ];
+        // let selectedDrumPattern = DRUM_PATTERNS[0]; // 現状未使用
+
+        let mmlPlayer = null;
+
+        // ----------------------------------------------------------------------
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const wrapper = document.getElementById('wrapper');
+            const mmlOutput = document.getElementById('mml-output');
+            const noteLengthSelect = document.getElementById('note-length-select');
+
+            // --- 1. MMLPlayer 初期化 ---
+            if (typeof window.MMLPlayer === 'undefined') {
+                console.error("mml-player.jsが読み込まれていません。");
+                return;
+            }
+            mmlPlayer = new window.MMLPlayer();
+
+            // --- 2. トラック初期化と描画 ---
+            const coreConfig = {
+                bars: 8,
+                stepsPerBar: 16,
+                keyCount: 49, // C1〜C5
+                pitchRangeStart: 0,
+            };
+            const renderOptions = {
+                keyHeight: 15,
+                stepWidth: 10,
+            };
+
+            // 各トラックの Core/Renderer を初期化し、DOMに追加
+            tracks.forEach(track => {
+                const canvas = document.createElement('canvas');
+                canvas.id = `canvas-${track.id}`;
+                // Tailwindクラスとインラインスタイルで、Canvasを重ねて配置
+                canvas.className = 'absolute top-0 left-0 w-full h-full transition-opacity duration-300';
+                canvas.style.opacity = track.id === activeTrackId ? 1 : 0;
+
+                // TrackWrapperは、Wrapperの絶対位置基準で子Canvasを配置するために必要
+                const trackWrapper = document.createElement('div');
+                trackWrapper.id = `track-wrapper-${track.id}`;
+                trackWrapper.className = 'absolute inset-0';
+                trackWrapper.appendChild(canvas);
+                wrapper.appendChild(trackWrapper);
+
+
+                // MMLCore の初期化
+                track.core = new MMLCore({
+                    onMMLGenerated: (mml) => {
+                        track.mml = mml;
+                        updateMMLOutput();
+                    },
+                    onNotesChanged: (notes) => {
+                        // notesが変更されたら、アクティブなトラックのみ再描画
+                        if (track.id === activeTrackId) {
+                            track.renderer.draw();
+                        }
+                    },
+                }, coreConfig);
+
+                // MMLCoreに初期音量を設定
+                track.core.setVolume(track.volume);
+
+                // Renderer の初期化
+                track.renderer = new PianoRollRenderer(canvas, track.core, renderOptions);
+            });
+
+            // プレースホルダーを削除
+            const placeholder = wrapper.querySelector('.text-gray-400');
+            if (placeholder) placeholder.remove();
+
+            // --- 3. イベントリスナーとUIロジック ---
+
+            // トラック切替
+            window.switchTrack = (id) => {
+                activeTrackId = id;
+                tracks.forEach(t => {
+                    const canvas = document.getElementById(`canvas-${t.id}`);
+                    // インラインスタイルでopacityを制御
+                    canvas.style.opacity = t.id === activeTrackId ? 1 : 0;
+                });
+                updateControls();
+            };
+
+            // 音量変更
+            window.handleVolumeChange = (id, value) => {
+                const track = tracks.find(t => t.id === id);
+                if (track) {
+                    track.volume = parseInt(value);
+                    track.core.setVolume(track.volume);
+                    document.getElementById(`volume-label-${id}`).textContent = track.volume;
+                }
+            };
+
+            // ノート長変更
+            noteLengthSelect.addEventListener('change', (e) => {
+                noteLengthSteps = parseInt(e.target.value);
+                tracks.forEach(t => {
+                    t.renderer.activeNoteLengthSteps = noteLengthSteps;
+                });
+            });
+
+            // MML出力エリア更新
+            const updateMMLOutput = () => {
+                const fullMML = tracks.map(t => t.mml).join(';');
+                mmlOutput.textContent = fullMML;
+                document.getElementById('mml-output-status').textContent =
+                    `(${tracks.length}トラック) MML文字数: ${fullMML.length}`;
+            };
+
+            // 再生/停止
+            window.togglePlayback = () => {
+                if (isPlaying) {
+                    mmlPlayer.stop();
+                    isPlaying = false;
+                } else {
+                    const fullMML = tracks.map(t => t.mml).join(';');
+                    // トラックごとの音色、ボリュームはMML内に含まれているため、MMLを結合するだけでOK
+                    mmlPlayer.play(fullMML);
+                    isPlaying = true;
+                }
+                updateControls();
+            };
+
+            // --- 4. UIの動的な描画と初期状態の更新 ---
+
+            const updateControls = () => {
+                // 再生ボタン
+                const playButton = document.getElementById('play-button');
+                playButton.className = `px-4 py-2 rounded-lg font-semibold transition-colors flex items-center space-x-2 ${isPlaying ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-green-500 hover:bg-green-600 text-white'
+                    }`;
+                playButton.innerHTML = isPlaying
+                    ? `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiStop}"></path></svg><span>停止</span>`
+                    : `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiPlay}"></path></svg><span>試聴</span>`;
+
+                // トラックタブと音量
+                const trackTabs = document.getElementById('track-tabs');
+                const trackContent = document.getElementById('track-content');
+
+                trackTabs.innerHTML = '';
+                trackContent.innerHTML = '';
+
+                tracks.forEach(t => {
+                    // タブ
+                    const isActive = t.id === activeTrackId;
+                    const tabClass = `px-4 py-2 text-sm font-medium transition-colors cursor-pointer rounded-t-lg ${isActive
+                        ? 'bg-white border-x border-t border-gray-200 text-purple-600 -mb-px'
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-b border-gray-200'
+                        }`;
+                    trackTabs.innerHTML += `<button onclick="switchTrack('${t.id}')" class="${tabClass}">${t.name}</button>`;
+
+                    // コンテンツ
+                    if (isActive) {
+                        trackContent.innerHTML = `
+                            <div class="flex items-center space-x-4">
+                                <label class="flex items-center space-x-3 w-64 text-sm text-gray-700">
+                                    <span class="font-medium">音量:</span>
+                                    <span id="volume-label-${t.id}" class="w-8 text-right font-mono">${t.volume}</span>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        step="1"
+                                        value="${t.volume}"
+                                        oninput="handleVolumeChange('${t.id}', this.value)"
+                                        class="flex-1 h-2 bg-purple-100 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                    />
+                                </label>
+                                <span class="text-sm text-gray-500">音色: @${t.instrument}</span>
+                            </div>
+                        `;
+                    }
+                });
+            };
+
+            // 初期描画
+            updateControls();
+            updateMMLOutput();
+
+            // 再生ボタンのdisabledを解除
+            document.getElementById('play-button').disabled = false;
+        });
+    </script>
+</head>
+
+<body class="bg-gray-100 p-4 min-h-screen">
+    <h1 class="text-3xl font-extrabold mb-4 text-gray-800">簡易DAW（Canvas/MML）デモ</h1>
+
+    <div class="flex flex-wrap gap-4 p-4 bg-white border rounded-lg shadow-md mb-6">
+
+        <button id="play-button" onclick="togglePlayback()" disabled class="px-4 py-2 bg-gray-300 rounded"></button>
+
+        <div class="flex items-center space-x-2">
+            <span class="text-sm font-medium text-gray-700">ノート長:</span>
+            <select id="note-length-select"
+                class="border rounded-md px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500">
+                <option value="4">4分</option>
+                <option value="2">8分</option>
+                <option value="1" selected>16分</option>
+            </select>
+        </div>
+
+        <div class="flex items-center space-x-2 border-l border-gray-200 pl-4">
+            <span class="text-sm font-medium text-gray-700">ドラム (Track 4):</span>
+            <select id="drum-select"
+                class="border rounded-md px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500">
+                <option>なし</option>
+                <option>4つ打ち</option>
+                <option>ロック</option>
+            </select>
+            <span class="text-xs text-gray-500">(MML再生には含まず)</span>
+        </div>
+    </div>
+
+    <div class="p-4 bg-white border rounded-lg shadow-md mb-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">トラック設定</h2>
+
+        <div id="track-tabs" class="flex border-b border-gray-200">
+        </div>
+
+        <div id="track-content" class="p-4 border border-t-0 border-gray-200 rounded-b-lg bg-white">
+        </div>
+    </div>
+
+    <div id="piano-roll-container"
+        class="w-[800px] h-[450px] bg-white border border-gray-300 rounded-lg shadow-xl relative"
+        style="overflow: auto;">
+        <div id="wrapper" class="absolute inset-0">
+        </div>
+    </div>
+
+    <hr class="my-6 border-gray-300">
+
+    <div class="p-4 bg-gray-800 text-white rounded-lg shadow-lg">
+        <h2 class="text-xl font-semibold mb-2">生成された MML</h2>
+        <p id="mml-output-status" class="text-xs mb-2 text-gray-400"></p>
+        <pre class="bg-black p-3 rounded-md overflow-x-auto text-sm">
+            <code id="mml-output"></code>
+        </pre>
+    </div>
+</body>
+
+</html>

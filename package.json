@@ -1,0 +1,49 @@
+{
+	"author": "onjmin",
+	"license": "MIT",
+	"name": "@onjmin/dtm",
+	"version": "0.0.1",
+	"description": "MMLを中間言語に用いたピアノロール打ち込みモジュール",
+	"homepage": "https://onjmin.github.io/dtm",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/onjmin/dtm.git"
+	},
+	"bugs": {
+		"url": "https://github.com/onjmin/dtm/issues"
+	},
+	"main": "dist/index.js",
+	"module": "dist/index.mjs",
+	"types": "dist/index.d.ts",
+	"scripts": {
+		"dev": "rimraf dist && tsup && biome format src --write && tsx demo/server.ts",
+		"build": "rimraf dist && tsup && biome check src && biome format src --write",
+		"prepublishOnly": "pnpm run build",
+		"patch": "pnpm version patch",
+		"publish-dangerous-dont-use-this-command": "pnpm publish --access public"
+	},
+	"files": [
+		"dist"
+	],
+	"keywords": [
+		"piano-roll",
+		"mml",
+		"music",
+		"sequencer",
+		"editor"
+	],
+	"volta": {
+		"node": "22.15.1",
+		"pnpm": "10.11.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.2.3",
+		"@hono/node-server": "1.19.5",
+		"hono": "4.10.1",
+		"rimraf": "6.0.1",
+		"tsup": "8.5.0",
+		"tsx": "4.20.6",
+		"typedoc": "0.28.4",
+		"typescript": "5.8.3"
+	}
+}

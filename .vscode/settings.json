@@ -1,0 +1,12 @@
+{
+	"editor.formatOnSave": true,
+	"[typescript]": {
+		"editor.defaultFormatter": "biomejs.biome"
+	},
+	"[html]": {
+		"editor.defaultFormatter": "vscode.html-language-features"
+	},
+	"editor.codeActionsOnSave": {
+		"source.organizeImports.biome": "explicit"
+	}
+}

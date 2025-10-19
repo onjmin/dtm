@@ -1,0 +1,50 @@
+name: GitHub Pages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - v*
+
+jobs:
+  build-deploy:
+    permissions:
+      actions: write
+      checks: write
+      contents: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js with pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build docs
+        run: pnpm exec rimraf docs && pnpm exec typedoc src/index.ts --out docs
+        
+      - name: Copy demo/index.html to docs/demo/
+        run: |
+          mkdir -p docs/demo
+          cp demo/index.html docs/demo/index.html
+
+      - name: Add .nojekyll
+        run: touch ./docs/.nojekyll
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
