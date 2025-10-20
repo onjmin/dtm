@@ -28,7 +28,7 @@ export class MMLCore {
 	private nextNoteId: number = 0;
 	private config: PianoRollConfig;
 	private handlers: CoreEventHandlers;
-	private volume: number = 80; // 外部から設定可能に
+	private volume: number = 80;
 
 	constructor(handlers: CoreEventHandlers, initialConfig: PianoRollConfig) {
 		this.handlers = handlers;
@@ -109,13 +109,10 @@ export class MMLCore {
 	/**
 	 * 現在のノートデータからMML文字列を生成 (前回の実装から流用)
 	 */
-	private generateMML = (
-		tempo: number = 120,
-		instrument: number = 0,
-	): string => {
+	private generateMML = (): string => {
 		const baseLength = 16;
 		const vol = Math.floor((this.volume * 127) / 100);
-		let currentMML = `t${tempo} l${baseLength} @${instrument} v${vol} `;
+		let currentMML = `v${vol} `;
 		let currentStep = 0;
 		const totalSteps = this.config.bars * this.config.stepsPerBar;
 

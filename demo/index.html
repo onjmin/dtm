@@ -11,168 +11,79 @@
     <script type="module">
         import * as mdi from 'https://cdn.jsdelivr.net/npm/@mdi/js@7.4.47/mdi.js';
 
-        // 仮のパッケージ名 @onjmin/dtm から Core と Renderer をインポートすると仮定
-        // const dtm = await import('https://cdn.jsdelivr.com/npm/@onjmin/dtm/dist/index.min.mjs');
-        const dtm = await import('http://localhost:3000/dist/index.mjs');
-        // デモ用: MMLCore と PianoRollRenderer を直接取得 (実際のパッケージ設計に依存)
+        // 【重要】モジュールAPIのインポートを新しい設計に合わせる
+        const dtm = await import('http://localhost:40298/dist/index.mjs');
         const MMLCore = dtm.MMLCore;
-        const PianoRollRenderer = dtm.PianoRollRenderer;
+        const { init, onClick, drawGrid, drawNotes, getActiveContext } = dtm; // 新しいモジュールAPIを想定
         // ----------------------------------------------------------------------
 
         console.log('DTM デモ - インポート完了');
 
         // --- 状態管理 ---
-        const tracks = [
-            { id: 'melody', name: 'メロディー', instrument: 0, core: null, renderer: null, volume: 80, mml: '' },
-            { id: 'bass', name: 'ベース', instrument: 1, core: null, renderer: null, volume: 70, mml: '' },
-            { id: 'chord', name: '伴奏', instrument: 2, core: null, renderer: null, volume: 60, mml: '' },
-        ];
-        let activeTrackId = 'melody';
-        let isPlaying = false;
-        let noteLengthSteps = 1; // 16分音符
-
-        const NOTE_LENGTH_MAP = [
-            { label: '4分', steps: 4 },
-            { label: '8分', steps: 2 },
-            { label: '16分', steps: 1 },
-        ];
-        const DRUM_PATTERNS = [
-            { name: 'なし' },
-            { name: '4つ打ち' },
-            { name: 'ロック' }
-        ];
-        // let selectedDrumPattern = DRUM_PATTERNS[0]; // 現状未使用
-
-        let mmlPlayer = null;
-
-        // ----------------------------------------------------------------------
-
-        const wrapper = document.getElementById('wrapper');
-        const mmlOutput = document.getElementById('mml-output');
-        const noteLengthSelect = document.getElementById('note-length-select');
-
-        mmlPlayer = new window.MMLPlayer();
-
-        // --- 2. トラック初期化と描画 ---
-        const coreConfig = {
-            bars: 8,
-            stepsPerBar: 16,
-            keyCount: 49, // C1〜C5
-            pitchRangeStart: 0,
-        };
         const renderOptions = {
             keyHeight: 15,
             stepWidth: 10,
         };
 
-        // MML出力エリア更新
+        const tracks = [
+            // rendererは不要になり、isVisibleとactiveTrackIdで描画を制御
+            { id: 'melody', name: 'メロディー', instrument: 0, core: null, volume: 80, mml: '', isVisible: true },
+            { id: 'bass', name: 'ベース', instrument: 1, core: null, volume: 70, mml: '', isVisible: false },
+            { id: 'chord', name: '伴奏', instrument: 2, core: null, volume: 60, mml: '', isVisible: false },
+        ];
+        let activeTrackId = 'melody';
+        let isPlaying = false;
+        let noteLengthSteps = 1; // 16分音符
+        let mmlPlayer = null;
+
+        // ----------------------------------------------------------------------
+
+        // 全トラックを再描画するメインの関数
+        const redrawAll = () => {
+            // 🚨 修正: tracks[0].core が初期化されていない場合は処理を中断 🚨
+            if (!tracks[0] || !tracks[0].core) {
+                return;
+            }
+
+            // 1. グリッドの描画をモジュールに依頼（背景をクリア）
+            drawGrid(tracks[0].core.getConfig(), renderOptions);
+
+            // 2. isVisibleなトラックのノートを描画
+            tracks.forEach(track => {
+                // ノートが変更されたトラックの core は存在が保証されているが、
+                // 他のトラックの core もチェックする安全策
+                if (track.isVisible && track.core) {
+                    drawNotes(
+                        track.core.getNotes(),
+                        track.core.getConfig(),
+                        renderOptions,
+                        // トラックごとにノートの色をカスタマイズするなど
+                        { color: track.id === 'melody' ? '#3B82F6' : (track.id === 'bass' ? '#10B981' : '#F59E0B') }
+                    );
+                }
+            });
+        };
+
+        // MML出力エリア更新 (既存ロジックをトップレベルに移動)
         const updateMMLOutput = () => {
-            const fullMML = tracks.map(t => t.mml).join(';');
-            mmlOutput.textContent = fullMML;
+            const fullMML = `t120 l16 ${tracks.map((t, i) => `@${i} ${t.mml}`).join(';')}`;
+            document.getElementById('mml-output').textContent = fullMML;
             document.getElementById('mml-output-status').textContent =
                 `(${tracks.length}トラック) MML文字数: ${fullMML.length}`;
         };
 
-        // 各トラックの Core/Renderer を初期化し、DOMに追加
-        tracks.forEach(track => {
-            const canvas = document.createElement('canvas');
-            canvas.id = `canvas-${track.id}`;
-            // Tailwindクラスとインラインスタイルで、Canvasを重ねて配置
-            canvas.className = 'absolute top-0 left-0 w-full h-full transition-opacity duration-300';
-            canvas.style.opacity = track.id === activeTrackId ? 1 : 0;
-
-            // TrackWrapperは、Wrapperの絶対位置基準で子Canvasを配置するために必要
-            const trackWrapper = document.createElement('div');
-            trackWrapper.id = `track-wrapper-${track.id}`;
-            trackWrapper.className = 'absolute inset-0';
-            trackWrapper.appendChild(canvas);
-            wrapper.appendChild(trackWrapper);
-
-
-            // MMLCore の初期化
-            track.core = new MMLCore({
-                onMMLGenerated: (mml) => {
-                    track.mml = mml;
-                    updateMMLOutput();
-                },
-                onNotesChanged: (notes) => {
-                    // notesが変更されたら、アクティブなトラックのみ再描画
-                    if (track.id === activeTrackId) {
-                        if (track.renderer) {
-                            track.renderer.draw();
-                        }
-                    }
-                },
-            }, coreConfig);
-
-            // MMLCoreに初期音量を設定
-            track.core.setVolume(track.volume);
-
-            // Renderer の初期化 (この行で track.renderer が null でなくなる)
-            track.renderer = new PianoRollRenderer(canvas, track.core, renderOptions);
-        });
-
-        // プレースホルダーを削除
-        const placeholder = wrapper.querySelector('.text-gray-400');
-        if (placeholder) placeholder.remove();
-
-        // --- 3. イベントリスナーとUIロジック ---
-
-        // トラック切替
-        window.switchTrack = (id) => {
-            activeTrackId = id;
-            tracks.forEach(t => {
-                const canvas = document.getElementById(`canvas-${t.id}`);
-                // インラインスタイルでopacityを制御
-                canvas.style.opacity = t.id === activeTrackId ? 1 : 0;
-            });
-            updateControls();
-        };
-
-        // 音量変更
-        window.handleVolumeChange = (id, value) => {
-            const track = tracks.find(t => t.id === id);
-            if (track) {
-                track.volume = parseInt(value);
-                track.core.setVolume(track.volume);
-                document.getElementById(`volume-label-${id}`).textContent = track.volume;
-            }
-        };
-
-        // ノート長変更
-        noteLengthSelect.addEventListener('change', (e) => {
-            noteLengthSteps = parseInt(e.target.value);
-            tracks.forEach(t => {
-                t.renderer.activeNoteLengthSteps = noteLengthSteps;
-            });
-        });
-
-        // 再生/停止
-        window.togglePlayback = () => {
-            if (isPlaying) {
-                mmlPlayer.stop();
-                isPlaying = false;
-            } else {
-                const fullMML = tracks.map(t => t.mml).join(';');
-                // トラックごとの音色、ボリュームはMML内に含まれているため、MMLを結合するだけでOK
-                mmlPlayer.play(fullMML);
-                isPlaying = true;
-            }
-            updateControls();
-        };
-
-        // --- 4. UIの動的な描画と初期状態の更新 ---
-
+        // UIコントロール更新 (既存ロジックをトップレベルに移動)
         const updateControls = () => {
+            // ... (省略: 再生ボタンとトラックタブのHTMLを更新するロジック) ...
+
             // 再生ボタン
             const playButton = document.getElementById('play-button');
-            playButton.className = `px-4 py-2 rounded-lg font-semibold transition-colors flex items-center space-x-2 ${isPlaying ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-green-500 hover:bg-green-600 text-white'
-                }`;
+            playButton.className = `px-4 py-2 rounded-lg font-semibold transition-colors flex items-center space-x-2 ${isPlaying ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-green-500 hover:bg-green-600 text-white'}`;
             playButton.innerHTML = isPlaying
                 ? `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiStop}"></path></svg><span>停止</span>`
                 : `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiPlay}"></path></svg><span>試聴</span>`;
 
-            // トラックタブと音量
+            // トラックタブと音量 (isActiveの判定をisVisibleではなくactiveTrackIdで引き続き行う)
             const trackTabs = document.getElementById('track-tabs');
             const trackContent = document.getElementById('track-content');
 
@@ -180,44 +91,149 @@
             trackContent.innerHTML = '';
 
             tracks.forEach(t => {
+                // ... (省略: タブとコンテンツのHTML生成ロジックは変更なし) ...
+
                 // タブ
                 const isActive = t.id === activeTrackId;
-                const tabClass = `px-4 py-2 text-sm font-medium transition-colors cursor-pointer rounded-t-lg ${isActive
-                    ? 'bg-white border-x border-t border-gray-200 text-purple-600 -mb-px'
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-b border-gray-200'
-                    }`;
+                const tabClass = `px-4 py-2 text-sm font-medium transition-colors cursor-pointer rounded-t-lg ${isActive ? 'bg-white border-x border-t border-gray-200 text-purple-600 -mb-px' : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-b border-gray-200'}`;
                 trackTabs.innerHTML += `<button onclick="switchTrack('${t.id}')" class="${tabClass}">${t.name}</button>`;
 
                 // コンテンツ
                 if (isActive) {
                     trackContent.innerHTML = `
-                            <div class="flex items-center space-x-4">
-                                <label class="flex items-center space-x-3 w-64 text-sm text-gray-700">
-                                    <span class="font-medium">音量:</span>
-                                    <span id="volume-label-${t.id}" class="w-8 text-right font-mono">${t.volume}</span>
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="100"
-                                        step="1"
-                                        value="${t.volume}"
-                                        oninput="handleVolumeChange('${t.id}', this.value)"
-                                        class="flex-1 h-2 bg-purple-100 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                                    />
-                                </label>
-                                <span class="text-sm text-gray-500">音色: @${t.instrument}</span>
-                            </div>
-                        `;
+                    <div class="flex items-center space-x-4">
+                        <label class="flex items-center space-x-3 w-64 text-sm text-gray-700">
+                            <span class="font-medium">音量:</span>
+                            <span id="volume-label-${t.id}" class="w-8 text-right font-mono">${t.volume}</span>
+                            <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value="${t.volume}"
+                                oninput="handleVolumeChange('${t.id}', this.value)"
+                                class="flex-1 h-2 bg-purple-100 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                        </label>
+                        <span class="text-sm text-gray-500">音色: @${t.instrument}</span>
+                    </div>
+                `;
                 }
             });
         };
 
-        // 初期描画
-        updateControls();
-        updateMMLOutput();
+        // 初期化処理を実行
+        const initializeDemo = () => {
+            const pianoRollContainer = document.getElementById('piano-roll-container');
+            const mmlOutput = document.getElementById('mml-output');
+            const noteLengthSelect = document.getElementById('note-length-select');
 
-        // 再生ボタンのdisabledを解除
-        document.getElementById('play-button').disabled = false;
+            // 0. MMLPlayer 初期化
+            if (typeof window.MMLPlayer === 'undefined') {
+                console.error("mml-player.jsが読み込まれていません。");
+                return;
+            }
+            mmlPlayer = new window.MMLPlayer();
+
+            // 2. Core/Renderer の初期化
+            const coreConfig = {
+                bars: 8,
+                stepsPerBar: 16,
+                keyCount: 49, // C1〜C5
+                pitchRangeStart: 0,
+            };
+
+            // 1. モジュールに Canvas の初期化を依頼 (DOM操作とイベントリスナーの抽象化)
+            // #piano-roll-container の現在のCSSサイズを渡す: w-[800px] h-[450px]
+            init(
+                pianoRollContainer.querySelector('#wrapper'),
+                coreConfig, // MMLCore の設定をモジュールに渡す
+                renderOptions, // 描画オプションをモジュールに渡す
+                800,
+                450
+            );
+
+            tracks.forEach(track => {
+                // MMLCore の初期化
+                track.core = new MMLCore({
+                    onMMLGenerated: (mml) => {
+                        track.mml = mml;
+                        updateMMLOutput();
+                    },
+                    onNotesChanged: (notes) => {
+                        // ノートが変更されたら、全体を再描画
+                        redrawAll();
+                    },
+                }, coreConfig);
+
+                track.core.setVolume(track.volume);
+            });
+
+            // 3. イベントリスナーの設定
+
+            // クリックイベントをモジュールに登録
+            onClick((step, pitch) => {
+
+                // ログで動作確認 (一時的に追加)
+                console.log(`Clicked Grid: Step=${step}, Pitch=${pitch}`);
+
+                const activeTrack = tracks.find(t => t.id === activeTrackId);
+                if (!activeTrack) return;
+                activeTrack.core.toggleNote(step, pitch, {
+                    noteLengthSteps: noteLengthSteps,
+                });
+            });
+
+
+            // 4. 初期描画
+            updateControls();
+            updateMMLOutput();
+            redrawAll(); // 初回グリッド描画とノート描画 (ノートは空)
+
+            document.getElementById('play-button').disabled = false;
+        };
+
+        // モジュールロード完了後に初期化を実行
+        initializeDemo();
+
+        // --- グローバル関数 (UIからの呼び出し用) ---
+
+        window.switchTrack = (id) => {
+            activeTrackId = id;
+            // isVisibleフラグを操作し、redrawAllで切り替える方法もあるが、今回はアクティブトラックを編集対象とする
+            // 描画自体は、全ての visible なトラックを描画する
+            updateControls();
+            redrawAll(); // アクティブトラックが変更されたら全体を再描画
+        };
+
+        window.handleVolumeChange = (id, value) => {
+            const track = tracks.find(t => t.id === id);
+            if (track) {
+                track.volume = parseInt(value);
+                track.core.setVolume(track.volume);
+                document.getElementById(`volume-label-${id}`).textContent = track.volume;
+                // ボリュームはMMLに反映される
+                track.core.generateMML();
+            }
+        };
+
+        window.togglePlayback = () => {
+            if (isPlaying) {
+                mmlPlayer.stop();
+                isPlaying = false;
+            } else {
+                const fullMML = tracks.map(t => t.mml).join(';');
+                mmlPlayer.play(fullMML);
+                isPlaying = true;
+            }
+            updateControls();
+        };
+
+        const noteLengthSelect = document.getElementById('note-length-select');
+        noteLengthSelect.addEventListener('change', (e) => {
+            noteLengthSteps = parseInt(e.target.value);
+            // Note: すべてのトラックのRendererに設定する必要がなくなったため、状態変数のみ更新
+        });
     </script>
 </head>
 
