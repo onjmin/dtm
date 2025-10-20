@@ -107,33 +107,67 @@ export class MMLCore {
 	}
 
 	/**
-	 * 現在のノートデータからMML文字列を生成 (前回の実装から流用)
+	 * 現在のノートデータからMML文字列を生成（和音対応済み）
 	 */
 	private generateMML = (): string => {
+		// NOTE: テンポ t120 とインストゥルメント @0 はトラック設定として外で付与されることが多いですが、
+		// ここでは以前のトラック設定と統一性を保つため、vコマンド以降のみを返します。
 		const baseLength = 16;
 		const vol = Math.floor((this.volume * 127) / 100);
-		let currentMML = `v${vol} `;
+		let currentMML = `l${baseLength} v${vol} `; // NOTE: tと@はトラック生成時(MMLPlayer)に付与を想定
+
 		let currentStep = 0;
 		const totalSteps = this.config.bars * this.config.stepsPerBar;
 
-		this.notes.forEach((note) => {
-			const restSteps = note.startStep - currentStep;
+		// 1. ノートを startStep でグループ化
+		const notesByStep = this.notes.reduce(
+			(acc, note) => {
+				if (!acc[note.startStep]) {
+					acc[note.startStep] = [];
+				}
+				acc[note.startStep].push(note);
+				return acc;
+			},
+			{} as Record<number, Note[]>,
+		); // Note: Note は外部からインポートされた型を想定
+
+		// 2. グループ化されたステップを順番に処理
+		const sortedSteps = Object.keys(notesByStep)
+			.map(Number)
+			.sort((a, b) => a - b);
+
+		sortedSteps.forEach((startStep) => {
+			const notesAtStep = notesByStep[startStep];
+
+			// A. 休符の処理
+			const restSteps = startStep - currentStep;
 			if (restSteps > 0) {
 				currentMML += this.stepToMMLRest(restSteps, baseLength);
 			}
-			currentMML += this.stepToMMLNote(
-				note.pitch,
-				note.durationSteps,
-				baseLength,
+
+			// B. ノートのMML文字列を生成
+			const noteMMLs = notesAtStep.map((note) =>
+				// stepToMMLNoteContent は、'o3c4' のような音符の内容のみを返します。
+				this.stepToMMLNoteContent(note.pitch, note.durationSteps, baseLength),
 			);
-			currentStep = note.startStep + note.durationSteps;
+
+			// C. 和音として出力: [o3e1o3g1o3b1]
+			currentMML += `[${noteMMLs.join("")}] `;
+
+			// D. currentStep の更新 (このグループ内で最も長いノートの終了ステップに進める)
+			const longestNote = notesAtStep.reduce((a, b) =>
+				a.durationSteps > b.durationSteps ? a : b,
+			);
+			currentStep = startStep + longestNote.durationSteps;
 		});
 
+		// 3. 残りの休符処理
 		const remainingSteps = totalSteps - currentStep;
 		if (remainingSteps > 0) {
 			currentMML += this.stepToMMLRest(remainingSteps, baseLength);
 		}
 
+		// トリムしてMMLPlayerに渡せる形式で返す
 		return currentMML.trim();
 	};
 
@@ -142,14 +176,19 @@ export class MMLCore {
 		return `r${mmlLength} `;
 	};
 
-	private stepToMMLNote = (
+	private stepToMMLNoteContent = (
 		pitch: number,
 		steps: number,
 		baseLength: number,
 	): string => {
+		// Note: PITCH_MAP は外部で定義されていることを想定
 		const octave = Math.floor(pitch / 12) + 1;
 		const noteName = PITCH_MAP[pitch % 12];
+
+		// MMLの音長計算
+		// 例: steps=1 (16分音符), baseLength=16, stepsPerBar=16 なら、mmlLength=1
 		const mmlLength = (steps * baseLength) / this.config.stepsPerBar;
-		return `o${octave}${noteName}${mmlLength} `;
+
+		return `o${octave}${noteName}${mmlLength}`;
 	};
 }

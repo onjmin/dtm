@@ -122,9 +122,9 @@ export const drawGrid = (
  */
 export const drawNotes = (
 	notes: Note[],
+	config: PianoRollConfig,
+	options: RendererOptions,
 	drawOptions: { color: string },
-	config: PianoRollConfig = g_config!,
-	options: RendererOptions = g_options!,
 ): void => {
 	if (!g_ctx) return;
 
