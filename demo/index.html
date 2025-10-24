@@ -7,20 +7,23 @@
     <title>簡易DAW (MMLジェネレーター) デモ</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <script src="https://cdn.jsdelivr.net/gh/KazuProg/mml-player@main/dist/mml-player.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" />
+
 
     <script type="module">
         import * as mdi from 'https://cdn.jsdelivr.net/npm/@mdi/js@7.4.47/mdi.js';
 
         // 【重要】モジュールAPIのインポートを新しい設計に合わせる
-        const dtm = await import('http://localhost:40298/dist/index.mjs');
-        const MMLCore = dtm.MMLCore;
-        const { init, onClick, drawGrid, drawNotes, getActiveContext } = dtm; // 新しいモジュールAPIを想定
+        const DTM = await import('http://localhost:40298/dist/index.mjs');
         // ----------------------------------------------------------------------
 
         console.log('DTM デモ - インポート完了');
 
-        // --- 状態管理 ---
-        const renderOptions = {
+        const renderConfig = {
+            bars: 8,
+            stepsPerBar: 16,
+            keyCount: 49, // C1〜C5
+            pitchRangeStart: 0,
             keyHeight: 15,
             stepWidth: 10,
         };
@@ -36,7 +39,35 @@
         let noteLengthSteps = 1; // 16分音符
         let mmlPlayer = null;
 
+        let currentOffsetX = 0;
+        let currentOffsetY = 0;
+        const scrollAmount = 16 * renderConfig.stepWidth; // 例: 1小節分を移動量とする
+
         // ----------------------------------------------------------------------
+
+        window.movePianoRoll = (direction) => {
+            const { keyHeight, keyCount } = renderConfig;
+
+            switch (direction) {
+                case 'right':
+                    currentOffsetX += scrollAmount;
+                    break;
+                case 'left':
+                    currentOffsetX = Math.max(0, currentOffsetX - scrollAmount);
+                    break;
+                case 'up':
+                    currentOffsetY -= keyHeight;
+                    break;
+                case 'down':
+                    currentOffsetY += keyHeight;
+                    break;
+            }
+
+            DTM.setDrawOffset(currentOffsetX, currentOffsetY);
+
+            // 再描画
+            redrawAll();
+        };
 
         // 全トラックを再描画するメインの関数
         const redrawAll = () => {
@@ -46,19 +77,16 @@
             }
 
             // 1. グリッドの描画をモジュールに依頼（背景をクリア）
-            drawGrid(tracks[0].core.getConfig(), renderOptions);
+            DTM.drawGrid();
 
             // 2. isVisibleなトラックのノートを描画
-            tracks.forEach(track => {
+            tracks.forEach((track, i) => {
                 // ノートが変更されたトラックの core は存在が保証されているが、
                 // 他のトラックの core もチェックする安全策
                 if (track.isVisible && track.core) {
-                    drawNotes(
+                    DTM.drawNotes(
                         track.core.getNotes(),
-                        track.core.getConfig(),
-                        renderOptions,
-                        // トラックごとにノートの色をカスタマイズするなど
-                        { color: track.id === 'melody' ? '#3B82F6' : (track.id === 'bass' ? '#10B981' : '#F59E0B') }
+                        track.id === 'melody' ? '#3B82F6' : (track.id === 'bass' ? '#10B981' : '#F59E0B')
                     );
                 }
             });
@@ -134,26 +162,26 @@
             mmlPlayer = new window.MMLPlayer();
 
             // 2. Core/Renderer の初期化
-            const coreConfig = {
+            const pianoRollConfig = {
                 bars: 8,
                 stepsPerBar: 16,
                 keyCount: 49, // C1〜C5
                 pitchRangeStart: 0,
+                keyHeight: 15,
+                stepWidth: 10,
             };
 
             // 1. モジュールに Canvas の初期化を依頼 (DOM操作とイベントリスナーの抽象化)
             // #piano-roll-container の現在のCSSサイズを渡す: w-[800px] h-[450px]
-            init(
+            DTM.init(
                 pianoRollContainer.querySelector('#wrapper'),
-                coreConfig, // MMLCore の設定をモジュールに渡す
-                renderOptions, // 描画オプションをモジュールに渡す
                 800,
-                450
+                450,
+                renderConfig,
             );
 
             tracks.forEach(track => {
-                // MMLCore の初期化
-                track.core = new MMLCore({
+                track.core = new DTM.MMLCore({
                     onMMLGenerated: (mml) => {
                         track.mml = mml;
                         updateMMLOutput();
@@ -162,7 +190,7 @@
                         // ノートが変更されたら、全体を再描画
                         redrawAll();
                     },
-                }, coreConfig);
+                });
 
                 track.core.setVolume(track.volume);
             });
@@ -170,7 +198,7 @@
             // 3. イベントリスナーの設定
 
             // クリックイベントをモジュールに登録
-            onClick((step, pitch) => {
+            DTM.onClick((step, pitch) => {
 
                 // ログで動作確認 (一時的に追加)
                 console.log(`Clicked Grid: Step=${step}, Pitch=${pitch}`);
@@ -274,9 +302,37 @@
         </div>
     </div>
 
+
+    <div class="flex justify-center space-x-4 mb-2">
+        <div class="flex space-x-1">
+            <button onclick="movePianoRoll('left')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
+                <i class="mdi mdi-chevron-left text-xl"></i>
+            </button>
+            <button onclick="movePianoRoll('right')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
+                <i class="mdi mdi-chevron-right text-xl"></i>
+            </button>
+            <span class="text-sm self-center text-gray-600 ml-2">水平移動 (1小節)</span>
+        </div>
+
+        <div class="flex space-x-1 border-l border-gray-300 pl-4">
+            <button onclick="movePianoRoll('up')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
+                <i class="mdi mdi-chevron-up text-xl"></i>
+            </button>
+            <button onclick="movePianoRoll('down')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
+                <i class="mdi mdi-chevron-down text-xl"></i>
+            </button>
+            <span class="text-sm self-center text-gray-600 ml-2">垂直移動 (1キー)</span>
+        </div>
+    </div>
+
+
     <div id="piano-roll-container"
         class="w-[800px] h-[450px] bg-white border border-gray-300 rounded-lg shadow-xl relative"
-        style="overflow: auto;">
+        style="overflow: hidden;">
         <div id="wrapper" class="absolute inset-0">
         </div>
     </div>

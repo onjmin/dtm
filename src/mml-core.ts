@@ -1,9 +1,5 @@
-import type {
-	AddNoteOptions,
-	CoreEventHandlers,
-	Note,
-	PianoRollConfig,
-} from "./types";
+import { getRenderConfig } from "./renderer";
+import type { AddNoteOptions, CoreEventHandlers, Note } from "./types";
 
 export const PITCH_MAP = [
 	"c",
@@ -26,19 +22,13 @@ export const PITCH_MAP = [
 export class MMLCore {
 	private notes: Note[] = [];
 	private nextNoteId: number = 0;
-	private config: PianoRollConfig;
 	private handlers: CoreEventHandlers;
 	private volume: number = 80;
 
-	constructor(handlers: CoreEventHandlers, initialConfig: PianoRollConfig) {
+	constructor(handlers: CoreEventHandlers) {
 		this.handlers = handlers;
-		this.config = initialConfig;
 		// 初期MMLを生成し通知
 		this.generateAndNotify();
-	}
-
-	public getConfig(): PianoRollConfig {
-		return this.config;
 	}
 
 	// ============== ノート編集 (外部API) ==============
@@ -117,7 +107,7 @@ export class MMLCore {
 		let currentMML = `l${baseLength} v${vol} `; // NOTE: tと@はトラック生成時(MMLPlayer)に付与を想定
 
 		let currentStep = 0;
-		const totalSteps = this.config.bars * this.config.stepsPerBar;
+		const totalSteps = getRenderConfig().bars * getRenderConfig().stepsPerBar;
 
 		// 1. ノートを startStep でグループ化
 		const notesByStep = this.notes.reduce(
@@ -172,7 +162,7 @@ export class MMLCore {
 	};
 
 	private stepToMMLRest = (steps: number, baseLength: number): string => {
-		const mmlLength = (steps * baseLength) / this.config.stepsPerBar;
+		const mmlLength = (steps * baseLength) / getRenderConfig().stepsPerBar;
 		return `r${mmlLength} `;
 	};
 
@@ -187,7 +177,7 @@ export class MMLCore {
 
 		// MMLの音長計算
 		// 例: steps=1 (16分音符), baseLength=16, stepsPerBar=16 なら、mmlLength=1
-		const mmlLength = (steps * baseLength) / this.config.stepsPerBar;
+		const mmlLength = (steps * baseLength) / getRenderConfig().stepsPerBar;
 
 		return `o${octave}${noteName}${mmlLength}`;
 	};
