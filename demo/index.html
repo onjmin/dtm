@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>簡易DAW (MMLジェネレーター) デモ</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <script src="https://cdn.jsdelivr.net/gh/KazuProg/mml-player@main/dist/mml-player.js"></script>
+    <script src="https://unpkg.com/@kazuprog/mml-player@1.0.0/dist/mml-player.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" />
 
 
@@ -14,7 +14,7 @@
         import * as mdi from 'https://cdn.jsdelivr.net/npm/@mdi/js@7.4.47/mdi.js';
 
         // 【重要】モジュールAPIのインポートを新しい設計に合わせる
-        const DTM = await import('http://localhost:40298/dist/index.mjs');
+        const DTM = await import(location.hostname === 'localhost' ? 'http://localhost:40298/dist/index.mjs' : 'https://onjmin.github.io/dtm/demo/index.mjs');
         // ----------------------------------------------------------------------
 
         console.log('DTM デモ - インポート完了');
