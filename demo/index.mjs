@@ -250,7 +250,8 @@ var onClick = (callback) => {
       const [x, y] = getXY(e);
       const { keyCount, pitchRangeStart, keyHeight, stepWidth } = g_config;
       const step = Math.floor((x + g_draw_offset_x) / stepWidth);
-      const yIndex = Math.floor(y / keyHeight);
+      const absoluteY = y + g_draw_offset_y;
+      const yIndex = Math.floor(absoluteY / keyHeight);
       const pitch = keyCount - 1 - yIndex + pitchRangeStart;
       if (pitch >= pitchRangeStart && pitch < pitchRangeStart + keyCount) {
         requestAnimationFrame(() => callback(step, pitch));
