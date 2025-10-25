@@ -34,7 +34,7 @@ export const init = (
 	// ヘッダー Canvas (上)
 	const headerCanvas = document.createElement("canvas");
 	g_header_canvas = headerCanvas;
-	headerCanvas.width = width;
+	headerCanvas.width = width - KEYBOARD_WIDTH;
 	headerCanvas.height = HEADER_HEIGHT;
 	headerCanvas.style.position = "absolute";
 	headerCanvas.style.left = `${KEYBOARD_WIDTH}px`; // 鍵盤の右側に配置

@@ -67,6 +67,12 @@ pr.selectDrumPattern("rock");
 - 開発コマンド
   - `pnpm run dev`: http://localhost:40298 から動作確認可能
 
+## 謝辞
+
+- このモジュールは [KazuProg 様の MMLPlayer](https://kazuprog.work/prog/js/mml-player/) を利用して動作します。  
+  **直接バンドルはしていません**。ユーザーが `npm i @kazuprog/mml-player` などで MMLPlayer を別途インストールすることで、DTM の再生機能が利用可能になります。  
+- 開発やフィードバックに協力してくださったコミュニティの皆様に感謝します。
+
 ## ライセンス
 - **MIT**  
   詳細は [`LICENSE`](./LICENSE) を参照
