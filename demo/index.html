@@ -13,11 +13,10 @@
     <script type="module">
         import * as mdi from 'https://cdn.jsdelivr.net/npm/@mdi/js@7.4.47/mdi.js';
 
-        // 【重要】モジュールAPIのインポートを新しい設計に合わせる
-        const DTM = await import(location.hostname === 'localhost' ? 'http://localhost:40298/dist/index.mjs' : 'https://onjmin.github.io/dtm/demo/index.mjs');
-        // ----------------------------------------------------------------------
-
-        console.log('DTM デモ - インポート完了');
+        const DTM = await import(
+            location.hostname === 'localhost' ?
+                'http://localhost:40298/dist/index.mjs' :
+                'https://onjmin.github.io/dtm/demo/index.mjs');
 
         const renderConfig = {
             bars: 8,
