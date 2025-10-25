@@ -335,14 +335,17 @@ export const onClick = (
 	g_grid_canvas.addEventListener(
 		"click",
 		(e) => {
-			const [x, y] = getXY(e); // 既にグリッドCanvas相対座標
+			const [x, y] = getXY(e); // グリッドCanvas相対座標
 
 			const { keyCount, pitchRangeStart, keyHeight, stepWidth } = g_config;
 
 			// グリッド座標の特定
+			// 水平方向: クリック位置(x) + スクロールオフセット(g_draw_offset_x)
 			const step = Math.floor((x + g_draw_offset_x) / stepWidth);
-			// 💡 y座標の計算はグリッドCanvas相対なので、HEADER_HEIGHTのオフセット計算は不要
-			const yIndex = Math.floor(y / keyHeight);
+
+			// 垂直方向: クリック位置(y) + スクロールオフセット(g_draw_offset_y) で絶対Y座標を取得
+			const absoluteY = y + g_draw_offset_y;
+			const yIndex = Math.floor(absoluteY / keyHeight);
 			const pitch = keyCount - 1 - yIndex + pitchRangeStart;
 
 			// 範囲チェック
