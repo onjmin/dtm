@@ -40,6 +40,9 @@ jobs:
           mkdir -p docs/demo
           cp demo/index.html docs/demo/index.html
 
+      - name: Ensure docs exists
+        run: mkdir -p docs
+
       - name: Add .nojekyll
         run: touch ./docs/.nojekyll
 
