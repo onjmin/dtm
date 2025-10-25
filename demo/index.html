@@ -28,11 +28,12 @@
             stepWidth: 10,
         };
 
+        const hexToRgb = (hex) =>
+            [0, 1, 2].map(i => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16))
         const tracks = [
-            // rendererは不要になり、isVisibleとactiveTrackIdで描画を制御
-            { id: 'melody', name: 'メロディー', instrument: 0, core: null, volume: 80, mml: '', isVisible: true },
-            { id: 'bass', name: 'ベース', instrument: 1, core: null, volume: 70, mml: '', isVisible: false },
-            { id: 'chord', name: '伴奏', instrument: 2, core: null, volume: 60, mml: '', isVisible: false },
+            { id: 'melody', name: 'メロディー', color: hexToRgb('#3B82F6'), instrument: 0, core: null, volume: 80, mml: '' },
+            { id: 'bass', name: 'ベース', color: hexToRgb('#10B981'), instrument: 1, core: null, volume: 70, mml: '' },
+            { id: 'chord', name: '伴奏', color: hexToRgb('#F59E0B'), instrument: 2, core: null, volume: 60, mml: '' },
         ];
         let activeTrackId = 'melody';
         let isPlaying = false;
@@ -71,24 +72,18 @@
 
         // 全トラックを再描画するメインの関数
         const redrawAll = () => {
-            // 🚨 修正: tracks[0].core が初期化されていない場合は処理を中断 🚨
-            if (!tracks[0] || !tracks[0].core) {
-                return;
-            }
-
-            // 1. グリッドの描画をモジュールに依頼（背景をクリア）
             DTM.drawGrid();
 
-            // 2. isVisibleなトラックのノートを描画
             tracks.forEach((track, i) => {
-                // ノートが変更されたトラックの core は存在が保証されているが、
-                // 他のトラックの core もチェックする安全策
-                if (track.isVisible && track.core) {
-                    DTM.drawNotes(
-                        track.core.getNotes(),
-                        track.id === 'melody' ? '#3B82F6' : (track.id === 'bass' ? '#10B981' : '#F59E0B')
-                    );
-                }
+                if (!track.core) return;
+                const [r, g, b] = track.color;
+                const a = track.id === activeTrackId
+                    ? 1
+                    : 0.3;
+                DTM.drawNotes(
+                    track.core.getNotes(),
+                    `rgba(${r},${g},${b},${a})`
+                );
             });
         };
 
@@ -111,7 +106,6 @@
                 ? `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiStop}"></path></svg><span>停止</span>`
                 : `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiPlay}"></path></svg><span>試聴</span>`;
 
-            // トラックタブと音量 (isActiveの判定をisVisibleではなくactiveTrackIdで引き続き行う)
             const trackTabs = document.getElementById('track-tabs');
             const trackContent = document.getElementById('track-content');
 
@@ -187,7 +181,6 @@
                         updateMMLOutput();
                     },
                     onNotesChanged: (notes) => {
-                        // ノートが変更されたら、全体を再描画
                         redrawAll();
                     },
                 });
@@ -226,10 +219,8 @@
 
         window.switchTrack = (id) => {
             activeTrackId = id;
-            // isVisibleフラグを操作し、redrawAllで切り替える方法もあるが、今回はアクティブトラックを編集対象とする
-            // 描画自体は、全ての visible なトラックを描画する
             updateControls();
-            redrawAll(); // アクティブトラックが変更されたら全体を再描画
+            redrawAll();
         };
 
         window.handleVolumeChange = (id, value) => {
