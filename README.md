@@ -59,6 +59,14 @@ const pr = DTM.init({ wrapper, width: 640, height: 360 });
 pr.selectDrumPattern("rock");
 ```
 
+## コントリビュート方法
+- 開発環境
+  - 推奨エディタ: vscode
+  - 開発言語: TypeScript
+  - 実行環境: Volta / pnpm / Biome
+- 開発コマンド
+  - `pnpm run dev`: http://localhost:40298 から動作確認可能
+
 ## ライセンス
 - **MIT**  
   詳細は [`LICENSE`](./LICENSE) を参照

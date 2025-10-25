@@ -32,11 +32,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Build package
-        run: pnpm exec tsup src/index.ts --format esm --dts --out-dir dist
-
       - name: Build docs
         run: pnpm exec rimraf docs && pnpm exec typedoc src/index.ts --out docs
+
+      - name: Build package
+        run: pnpm exec tsup src/index.ts --format esm --dts --out-dir dist
 
       - name: Copy demo files
         run: |
