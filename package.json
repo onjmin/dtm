@@ -16,7 +16,7 @@
 	"module": "dist/index.mjs",
 	"types": "dist/index.d.ts",
 	"scripts": {
-		"dev": "rimraf dist && tsup && biome format src --write && tsx demo/server.ts",
+		"dev": "rimraf dist && tsup && tsx demo/server.ts",
 		"build": "rimraf dist && tsup && biome check src && biome format src --write",
 		"prepublishOnly": "pnpm run build",
 		"patch": "pnpm version patch",
