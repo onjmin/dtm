@@ -50,6 +50,11 @@ var HEADER_HEIGHT = 20;
 var getRenderConfig = () => g_config;
 var g_draw_offset_x = 0;
 var g_draw_offset_y = 0;
+var getDrawOffset = () => ({
+  x: g_draw_offset_x,
+  y: g_draw_offset_y
+});
+var getGridCanvas = () => g_grid_canvas;
 var init = (mountTarget, width = 800, height = 450, config) => {
   g_config = config;
   const headerCanvas = document.createElement("canvas");
@@ -243,6 +248,15 @@ var getXY = (e) => {
   const y = Math.floor(clientY - rect.top);
   return [x, y, e.buttons];
 };
+var getGridPosition = (e) => {
+  const [x, y] = getXY(e);
+  const { keyCount, pitchRangeStart, keyHeight, stepWidth } = g_config;
+  const step = Math.floor((x + g_draw_offset_x) / stepWidth);
+  const absoluteY = y + g_draw_offset_y;
+  const yIndex = Math.floor(absoluteY / keyHeight);
+  const pitch = keyCount - 1 - yIndex + pitchRangeStart;
+  return { step, pitch, x, y };
+};
 var onClick = (callback) => {
   g_grid_canvas.addEventListener(
     "click",
@@ -317,7 +331,32 @@ var MMLCore = class {
     this.notes.sort((a, b) => a.startStep - b.startStep);
     this.generateAndNotify();
   }
-  // 他の編集メソッド（ドラッグ移動、長さ変更など）も同様に実装する...
+  moveNote(noteId, startStep, pitch) {
+    const note = this.notes.find((target) => target.id === noteId);
+    if (!note) return;
+    const totalSteps = getRenderConfig().bars * getRenderConfig().stepsPerBar;
+    const pitchRangeStart = getRenderConfig().pitchRangeStart;
+    const pitchRangeEnd = pitchRangeStart + getRenderConfig().keyCount - 1;
+    const clampedPitch = Math.min(Math.max(pitch, pitchRangeStart), pitchRangeEnd);
+    const clampedStart = Math.min(
+      Math.max(startStep, 0),
+      totalSteps - note.durationSteps
+    );
+    note.startStep = clampedStart;
+    note.pitch = clampedPitch;
+    this.notes.sort((a, b) => a.startStep - b.startStep);
+    this.generateAndNotify();
+  }
+  resizeNote(noteId, durationSteps) {
+    const note = this.notes.find((target) => target.id === noteId);
+    if (!note) return;
+    const totalSteps = getRenderConfig().bars * getRenderConfig().stepsPerBar;
+    const maxDuration = Math.max(1, totalSteps - note.startStep);
+    const clampedDuration = Math.min(Math.max(durationSteps, 1), maxDuration);
+    note.durationSteps = clampedDuration;
+    this.notes.sort((a, b) => a.startStep - b.startStep);
+    this.generateAndNotify();
+  }
   // ============== 状態取得 (外部API) ==============
   getNotes() {
     return this.notes;
@@ -415,9 +454,111 @@ var createPianoRoll = (options, handlers) => {
   const getAddNoteOptions = () => ({
     noteLengthSteps: currentNoteLengthSteps
   });
+  let suppressClick = false;
   onClick((step, pitch) => {
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
     core.toggleNote(step, pitch, getAddNoteOptions());
   });
+  const gridCanvas = getGridCanvas();
+  const resizeHandleWidth = 6;
+  let dragState = null;
+  let hasDragged = false;
+  const findNoteAtPosition = (x, y) => {
+    const { stepWidth, keyHeight, keyCount, pitchRangeStart } = getRenderConfig();
+    const offset = getDrawOffset();
+    for (const note of core.getNotes()) {
+      const logicalX = note.startStep * stepWidth;
+      const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+      const logicalY = yIndex * keyHeight;
+      const w = note.durationSteps * stepWidth;
+      const h = keyHeight;
+      const renderX = logicalX - offset.x;
+      const renderY = logicalY - offset.y;
+      if (x >= renderX && x <= renderX + w && y >= renderY && y <= renderY + h) {
+        return note;
+      }
+    }
+    return null;
+  };
+  const handlePointerMove = (e) => {
+    if (!dragState) return;
+    hasDragged = true;
+    const { step, pitch } = getGridPosition(e);
+    if (dragState.mode === "move") {
+      const nextStart = step - dragState.dragOffsetStep;
+      const nextPitch = pitch - dragState.dragOffsetPitch;
+      core.moveNote(dragState.noteId, nextStart, nextPitch);
+      return;
+    }
+    const nextDuration = step - dragState.startStep + 1;
+    core.resizeNote(dragState.noteId, nextDuration);
+  };
+  const endDrag = () => {
+    if (dragState) {
+      dragState = null;
+      if (hasDragged) {
+        suppressClick = true;
+      }
+    }
+    hasDragged = false;
+  };
+  gridCanvas.addEventListener("mousedown", (e) => {
+    const { x, y, step, pitch } = getGridPosition(e);
+    const note = findNoteAtPosition(x, y);
+    if (!note) return;
+    const { stepWidth, keyHeight, keyCount, pitchRangeStart } = getRenderConfig();
+    const offset = getDrawOffset();
+    const logicalX = note.startStep * stepWidth;
+    const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+    const logicalY = yIndex * keyHeight;
+    const renderX = logicalX - offset.x;
+    const renderY = logicalY - offset.y;
+    const w = note.durationSteps * stepWidth;
+    if (x >= renderX + w - resizeHandleWidth && x <= renderX + w && y >= renderY && y <= renderY + keyHeight) {
+      dragState = {
+        noteId: note.id,
+        mode: "resize",
+        dragOffsetStep: 0,
+        dragOffsetPitch: 0,
+        startStep: note.startStep
+      };
+      return;
+    }
+    dragState = {
+      noteId: note.id,
+      mode: "move",
+      dragOffsetStep: step - note.startStep,
+      dragOffsetPitch: pitch - note.pitch,
+      startStep: note.startStep
+    };
+  });
+  gridCanvas.addEventListener("mouseleave", endDrag);
+  document.addEventListener("mouseup", endDrag);
+  document.addEventListener("mousemove", handlePointerMove);
+  gridCanvas.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
+      const configValues = getRenderConfig();
+      const gridHeight = gridCanvas.height;
+      const maxOffsetY = Math.max(
+        0,
+        configValues.keyCount * configValues.keyHeight - gridHeight
+      );
+      const currentOffset = getDrawOffset();
+      const nextOffsetY = Math.min(
+        Math.max(currentOffset.y + e.deltaY, 0),
+        maxOffsetY
+      );
+      setDrawOffset(currentOffset.x, nextOffsetY);
+      drawGrid();
+      drawNotes(core.getNotes());
+    },
+    { passive: false }
+  );
   const redraw = () => {
     drawGrid();
     drawNotes(core.getNotes());
@@ -443,6 +584,9 @@ export {
   drawHeader,
   drawKeyboard,
   drawNotes,
+  getDrawOffset,
+  getGridCanvas,
+  getGridPosition,
   getRenderConfig,
   getXY,
   init,

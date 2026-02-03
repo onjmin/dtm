@@ -42,11 +42,51 @@
         let currentOffsetX = 0;
         let currentOffsetY = 0;
         const scrollAmount = 16 * renderConfig.stepWidth; // 例: 1小節分を移動量とする
+        let noteLengthSelectEl = null;
 
         // ----------------------------------------------------------------------
+        // NOTE: このデモは「常に最新の動作確認」を行うための最重要入口。
+        // 以降の変更でもここを更新して、実装とデモが乖離しないようにすること。
+        // ----------------------------------------------------------------------
+
+        const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+        const getMaxOffsetY = () => {
+            const gridCanvas = DTM.getGridCanvas();
+            return Math.max(0, renderConfig.keyCount * renderConfig.keyHeight - gridCanvas.height);
+        };
+
+        const ensureNoteLengthOption = (value) => {
+            if (!noteLengthSelectEl) return;
+            const normalized = String(value);
+            if (!noteLengthSelectEl.querySelector(`option[value="${normalized}"]`)) {
+                const option = document.createElement('option');
+                option.value = normalized;
+                option.textContent = `${value}ステップ`;
+                noteLengthSelectEl.appendChild(option);
+            }
+            noteLengthSelectEl.value = normalized;
+        };
+
+        const playPreviewNote = (pitch, durationSteps) => {
+            const activeTrack = tracks.find(t => t.id === activeTrackId);
+            if (!activeTrack || !mmlPlayer) return;
+
+            const baseLength = 16;
+            const noteLength = Math.max(
+                1,
+                Math.round(renderConfig.stepsPerBar / durationSteps),
+            );
+            const octave = Math.floor(pitch / 12) + 1;
+            const noteName = DTM.PITCH_MAP[pitch % 12];
+            const volume = Math.floor((activeTrack.volume * 127) / 100);
+            const previewMml = `t120 l${baseLength} v${volume} @${activeTrack.instrument} o${octave}${noteName}${noteLength}`;
+            mmlPlayer.play(previewMml);
+        };
 
         window.movePianoRoll = (direction) => {
-            const { keyHeight, keyCount } = renderConfig;
+            const { keyHeight } = renderConfig;
+            const maxOffsetY = getMaxOffsetY();
 
             switch (direction) {
                 case 'right':
@@ -56,10 +96,10 @@
                     currentOffsetX = Math.max(0, currentOffsetX - scrollAmount);
                     break;
                 case 'up':
-                    currentOffsetY -= keyHeight;
+                    currentOffsetY = clamp(currentOffsetY - keyHeight, 0, maxOffsetY);
                     break;
                 case 'down':
-                    currentOffsetY += keyHeight;
+                    currentOffsetY = clamp(currentOffsetY + keyHeight, 0, maxOffsetY);
                     break;
             }
 
@@ -143,7 +183,7 @@
         const initializeDemo = () => {
             const pianoRollContainer = document.getElementById('piano-roll-container');
             const mmlOutput = document.getElementById('mml-output');
-            const noteLengthSelect = document.getElementById('note-length-select');
+            noteLengthSelectEl = document.getElementById('note-length-select');
 
             // 0. MMLPlayer 初期化
             if (typeof window.MMLPlayer === 'undefined') {
@@ -185,19 +225,146 @@
                 track.core.setVolume(track.volume);
             });
 
-            // 3. イベントリスナーの設定
+            // 3. イベントリスナーの設定 (ドラッグ/リサイズ/スクロールもここで)
+            // NOTE: デモで必ず動作確認するため、UI操作はここに集約すること。
+            const gridCanvas = DTM.getGridCanvas();
+            const resizeHandleWidth = 6;
+            let suppressClick = false;
+            let hasDragged = false;
+            let dragState = null;
+
+            const findActiveNoteAtPosition = (x, y) => {
+                const activeTrack = tracks.find(t => t.id === activeTrackId);
+                if (!activeTrack) return null;
+
+                const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
+                const offset = DTM.getDrawOffset();
+
+                for (const note of activeTrack.core.getNotes()) {
+                    const logicalX = note.startStep * stepWidth;
+                    const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+                    const logicalY = yIndex * keyHeight;
+                    const w = note.durationSteps * stepWidth;
+                    const h = keyHeight;
+                    const renderX = logicalX - offset.x;
+                    const renderY = logicalY - offset.y;
+
+                    if (x >= renderX && x <= renderX + w && y >= renderY && y <= renderY + h) {
+                        return note;
+                    }
+                }
+
+                return null;
+            };
+
+            const handlePointerMove = (event) => {
+                if (!dragState) return;
+                hasDragged = true;
+
+                const { step, pitch } = DTM.getGridPosition(event);
+                const activeTrack = tracks.find(t => t.id === activeTrackId);
+                if (!activeTrack) return;
+
+                if (dragState.mode === 'move') {
+                    const nextStart = step - dragState.dragOffsetStep;
+                    const nextPitch = pitch - dragState.dragOffsetPitch;
+                    activeTrack.core.moveNote(dragState.noteId, nextStart, nextPitch);
+                    if (nextPitch !== dragState.lastPreviewPitch) {
+                        dragState.lastPreviewPitch = nextPitch;
+                        playPreviewNote(nextPitch, dragState.durationSteps);
+                    }
+                    return;
+                }
+
+                const nextDuration = step - dragState.startStep + 1;
+                activeTrack.core.resizeNote(dragState.noteId, nextDuration);
+                noteLengthSteps = Math.max(1, nextDuration);
+                ensureNoteLengthOption(noteLengthSteps);
+            };
+
+            const endDrag = () => {
+                if (dragState) {
+                    dragState = null;
+                    if (hasDragged) {
+                        suppressClick = true;
+                    }
+                }
+                hasDragged = false;
+            };
+
+            gridCanvas.addEventListener('mousedown', (event) => {
+                const { x, y, step, pitch } = DTM.getGridPosition(event);
+                const note = findActiveNoteAtPosition(x, y);
+                if (!note) return;
+
+                const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
+                const offset = DTM.getDrawOffset();
+                const logicalX = note.startStep * stepWidth;
+                const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+                const logicalY = yIndex * keyHeight;
+                const renderX = logicalX - offset.x;
+                const renderY = logicalY - offset.y;
+                const w = note.durationSteps * stepWidth;
+
+                if (
+                    x >= renderX + w - resizeHandleWidth &&
+                    x <= renderX + w &&
+                    y >= renderY &&
+                    y <= renderY + keyHeight
+                ) {
+                    dragState = {
+                        noteId: note.id,
+                        mode: 'resize',
+                        dragOffsetStep: 0,
+                        dragOffsetPitch: 0,
+                        startStep: note.startStep,
+                        durationSteps: note.durationSteps,
+                        lastPreviewPitch: note.pitch,
+                    };
+                    return;
+                }
+
+                dragState = {
+                    noteId: note.id,
+                    mode: 'move',
+                    dragOffsetStep: step - note.startStep,
+                    dragOffsetPitch: pitch - note.pitch,
+                    startStep: note.startStep,
+                    durationSteps: note.durationSteps,
+                    lastPreviewPitch: note.pitch,
+                };
+            });
+
+            gridCanvas.addEventListener('mouseleave', endDrag);
+            document.addEventListener('mouseup', endDrag);
+            document.addEventListener('mousemove', handlePointerMove);
+
+            gridCanvas.addEventListener('wheel', (event) => {
+                event.preventDefault();
+                const maxOffsetY = getMaxOffsetY();
+                currentOffsetY = clamp(currentOffsetY + event.deltaY, 0, maxOffsetY);
+                DTM.setDrawOffset(currentOffsetX, currentOffsetY);
+                redrawAll();
+            }, { passive: false });
 
             // クリックイベントをモジュールに登録
             DTM.onClick((step, pitch) => {
-
-                // ログで動作確認 (一時的に追加)
-                console.log(`Clicked Grid: Step=${step}, Pitch=${pitch}`);
+                if (suppressClick) {
+                    suppressClick = false;
+                    return;
+                }
 
                 const activeTrack = tracks.find(t => t.id === activeTrackId);
                 if (!activeTrack) return;
+                const existingNote = activeTrack.core
+                    .getNotes()
+                    .some(note => note.startStep === step && note.pitch === pitch);
                 activeTrack.core.toggleNote(step, pitch, {
                     noteLengthSteps: noteLengthSteps,
                 });
+                if (!existingNote) {
+                    playPreviewNote(pitch, noteLengthSteps);
+                }
             });
 
 
