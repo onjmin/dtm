@@ -133,7 +133,7 @@ var drawKeyboard = () => {
     const pitchIndex = keyCount - 1 - y / keyHeight;
     const totalPitch = pitchIndex + g_config.pitchRangeStart;
     const pitchMod12 = totalPitch % 12;
-    const octave = Math.floor(totalPitch / 12);
+    const octave = Math.floor(totalPitch / 12) + 1;
     const isBlackKey = blackKeyPitches.has(pitchMod12);
     const isC = pitchMod12 === 0;
     const screenY = y - g_draw_offset_y;
@@ -392,10 +392,53 @@ var MMLCore = class {
     return `o${octave}${noteName}${mmlLength}`;
   };
 };
+
+// src/piano-roll.ts
+var createPianoRoll = (options, handlers) => {
+  const {
+    mountTarget,
+    width = 800,
+    height = 450,
+    config,
+    noteLengthSteps = 1
+  } = options;
+  init(mountTarget, width, height, config);
+  let currentNoteLengthSteps = noteLengthSteps;
+  const core = new MMLCore({
+    onMMLGenerated: handlers.onMMLGenerated,
+    onNotesChanged: (notes) => {
+      handlers.onNotesChanged(notes);
+      drawGrid();
+      drawNotes(notes);
+    }
+  });
+  const getAddNoteOptions = () => ({
+    noteLengthSteps: currentNoteLengthSteps
+  });
+  onClick((step, pitch) => {
+    core.toggleNote(step, pitch, getAddNoteOptions());
+  });
+  const redraw = () => {
+    drawGrid();
+    drawNotes(core.getNotes());
+  };
+  redraw();
+  return {
+    core,
+    getNotes: () => core.getNotes(),
+    getMML: () => core.getMML(),
+    setVolume: (volume) => core.setVolume(volume),
+    setNoteLengthSteps: (steps) => {
+      currentNoteLengthSteps = steps;
+    },
+    redraw
+  };
+};
 export {
   LinkedList,
   MMLCore,
   PITCH_MAP,
+  createPianoRoll,
   drawGrid,
   drawHeader,
   drawKeyboard,
