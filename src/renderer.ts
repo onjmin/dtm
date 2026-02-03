@@ -19,6 +19,13 @@ export const getRenderConfig = (): RenderConfig => g_config;
 let g_draw_offset_x = 0;
 let g_draw_offset_y = 0;
 
+export const getDrawOffset = (): { x: number; y: number } => ({
+	x: g_draw_offset_x,
+	y: g_draw_offset_y,
+});
+
+export const getGridCanvas = (): HTMLCanvasElement => g_grid_canvas;
+
 /**
  * Canvasを初期化し、指定されたターゲット要素にマウントします。
  * ヘッダー用、鍵盤用、ノート用の3つのCanvasを作成します。
@@ -323,6 +330,18 @@ export const getXY = (e: MouseEvent): [number, number, number] => {
 	const x = Math.floor(clientX - rect.left);
 	const y = Math.floor(clientY - rect.top);
 	return [x, y, e.buttons];
+};
+
+export const getGridPosition = (
+	e: MouseEvent,
+): { step: number; pitch: number; x: number; y: number } => {
+	const [x, y] = getXY(e);
+	const { keyCount, pitchRangeStart, keyHeight, stepWidth } = g_config;
+	const step = Math.floor((x + g_draw_offset_x) / stepWidth);
+	const absoluteY = y + g_draw_offset_y;
+	const yIndex = Math.floor(absoluteY / keyHeight);
+	const pitch = keyCount - 1 - yIndex + pitchRangeStart;
+	return { step, pitch, x, y };
 };
 
 /**
