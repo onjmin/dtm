@@ -42,6 +42,7 @@
         let currentOffsetX = 0;
         let currentOffsetY = 0;
         const scrollAmount = 16 * renderConfig.stepWidth; // 例: 1小節分を移動量とする
+        let noteLengthSelectEl = null;
 
         // ----------------------------------------------------------------------
         // NOTE: このデモは「常に最新の動作確認」を行うための最重要入口。
@@ -53,6 +54,31 @@
         const getMaxOffsetY = () => {
             const gridCanvas = DTM.getGridCanvas();
             return Math.max(0, renderConfig.keyCount * renderConfig.keyHeight - gridCanvas.height);
+        };
+
+        const ensureNoteLengthOption = (value) => {
+            if (!noteLengthSelectEl) return;
+            const normalized = String(value);
+            if (!noteLengthSelectEl.querySelector(`option[value="${normalized}"]`)) {
+                const option = document.createElement('option');
+                option.value = normalized;
+                option.textContent = `${value}ステップ`;
+                noteLengthSelectEl.appendChild(option);
+            }
+            noteLengthSelectEl.value = normalized;
+        };
+
+        const playPreviewNote = (pitch, durationSteps) => {
+            const activeTrack = tracks.find(t => t.id === activeTrackId);
+            if (!activeTrack || !mmlPlayer) return;
+
+            const baseLength = 16;
+            const noteLength = (durationSteps * baseLength) / renderConfig.stepsPerBar;
+            const octave = Math.floor(pitch / 12) + 1;
+            const noteName = DTM.PITCH_MAP[pitch % 12];
+            const volume = Math.floor((activeTrack.volume * 127) / 100);
+            const previewMml = `t120 l${baseLength} v${volume} @${activeTrack.instrument} o${octave}${noteName}${noteLength}`;
+            mmlPlayer.play(previewMml);
         };
 
         window.movePianoRoll = (direction) => {
@@ -154,7 +180,7 @@
         const initializeDemo = () => {
             const pianoRollContainer = document.getElementById('piano-roll-container');
             const mmlOutput = document.getElementById('mml-output');
-            const noteLengthSelect = document.getElementById('note-length-select');
+            noteLengthSelectEl = document.getElementById('note-length-select');
 
             // 0. MMLPlayer 初期化
             if (typeof window.MMLPlayer === 'undefined') {
@@ -240,11 +266,17 @@
                     const nextStart = step - dragState.dragOffsetStep;
                     const nextPitch = pitch - dragState.dragOffsetPitch;
                     activeTrack.core.moveNote(dragState.noteId, nextStart, nextPitch);
+                    if (nextPitch !== dragState.lastPreviewPitch) {
+                        dragState.lastPreviewPitch = nextPitch;
+                        playPreviewNote(nextPitch, dragState.durationSteps);
+                    }
                     return;
                 }
 
                 const nextDuration = step - dragState.startStep + 1;
                 activeTrack.core.resizeNote(dragState.noteId, nextDuration);
+                noteLengthSteps = Math.max(1, nextDuration);
+                ensureNoteLengthOption(noteLengthSteps);
             };
 
             const endDrag = () => {
@@ -283,6 +315,8 @@
                         dragOffsetStep: 0,
                         dragOffsetPitch: 0,
                         startStep: note.startStep,
+                        durationSteps: note.durationSteps,
+                        lastPreviewPitch: note.pitch,
                     };
                     return;
                 }
@@ -293,6 +327,8 @@
                     dragOffsetStep: step - note.startStep,
                     dragOffsetPitch: pitch - note.pitch,
                     startStep: note.startStep,
+                    durationSteps: note.durationSteps,
+                    lastPreviewPitch: note.pitch,
                 };
             });
 
@@ -317,9 +353,15 @@
 
                 const activeTrack = tracks.find(t => t.id === activeTrackId);
                 if (!activeTrack) return;
+                const existingNote = activeTrack.core
+                    .getNotes()
+                    .some(note => note.startStep === step && note.pitch === pitch);
                 activeTrack.core.toggleNote(step, pitch, {
                     noteLengthSteps: noteLengthSteps,
                 });
+                if (!existingNote) {
+                    playPreviewNote(pitch, noteLengthSteps);
+                }
             });
 
 
