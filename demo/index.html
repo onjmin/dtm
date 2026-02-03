@@ -73,10 +73,7 @@
             if (!activeTrack || !mmlPlayer) return;
 
             const baseLength = 16;
-            const noteLength = Math.max(
-                1,
-                Math.round(renderConfig.stepsPerBar / durationSteps),
-            );
+            const noteLength = 1;
             const octave = Math.floor(pitch / 12) + 1;
             const noteName = DTM.PITCH_MAP[pitch % 12];
             const volume = Math.floor((activeTrack.volume * 127) / 100);
