@@ -79,12 +79,10 @@ pr.selectDrumPattern("rock");
 ## 謝辞
 
 - このモジュールは [KazuProg 様の MMLPlayer](https://kazuprog.work/prog/js/mml-player/) を利用して動作します。  
-  **直接バンドルはしていません**。ユーザーが `npm i @kazuprog/mml-player` などで MMLPlayer を別途インストールすることで、DTM の再生機能が利用可能になります。  
-- 開発やフィードバックに協力してくださったコミュニティの皆様に感謝します。
+  **直接バンドルはしていません**。 `npm i @kazuprog/mml-player` などで MMLPlayer を別途インストールすることで、DTM の再生機能が利用可能になります。
 
 ## ライセンス
-- **MIT**  
-  詳細は [`LICENSE`](./LICENSE) を参照
+- [MIT](./LICENSE)
 
 ## 開発者
 - [おんJ民](https://github.com/onjmin)
