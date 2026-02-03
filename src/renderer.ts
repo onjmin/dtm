@@ -145,7 +145,7 @@ export const drawKeyboard = (): void => {
 		const pitchIndex = keyCount - 1 - y / keyHeight;
 		const totalPitch = pitchIndex + g_config.pitchRangeStart;
 		const pitchMod12 = totalPitch % 12;
-		const octave = Math.floor(totalPitch / 12);
+		const octave = Math.floor(totalPitch / 12) + 1;
 		const isBlackKey = blackKeyPitches.has(pitchMod12);
 		const isC = pitchMod12 === 0;
 

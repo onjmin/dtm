@@ -41,31 +41,52 @@ npm i @onjmin/dtm
 ```ts
 import * as DTM from "@onjmin/dtm";
 
-// TBD: 初期化関数
-const pr = DTM.init({ width: 640, height: 360 });
+const mountTarget = document.getElementById("piano-roll");
+if (!mountTarget) throw new Error("mount target not found");
 
-// TBD: トラック作成・切替
-pr.addTrack("メロディー");
-pr.addTrack("ベース");
-pr.addTrack("伴奏");
-pr.setActiveTrack(0);
+const renderConfig = {
+  bars: 8,
+  stepsPerBar: 16,
+  keyCount: 49, // C1〜C5
+  pitchRangeStart: 0,
+  keyHeight: 15,
+  stepWidth: 10,
+};
 
-// TBD: ノート操作
-pr.addNote({ tick: 0, length: 4, pitch: "C4" });
-pr.setVolume(0, 80);
+const pianoRoll = DTM.createPianoRoll(
+  { mountTarget, width: 640, height: 360, config: renderConfig },
+  {
+    onMMLGenerated: (mml) => console.log(mml),
+    onNotesChanged: (notes) => console.log(notes),
+  },
+);
+
+pianoRoll.setVolume(80);
 ```
 
 ### ブラウザ (ダイナミックインポート)
 ```js
 const DTM = await import("https://cdn.jsdelivr.net/npm/@onjmin/dtm/dist/index.min.mjs");
 
-// TBD: canvas を用意して初期化
 const wrapper = document.createElement("div");
 document.body.append(wrapper);
-const pr = DTM.init({ wrapper, width: 640, height: 360 });
 
-// TBD: ドラムプリセット選択
-pr.selectDrumPattern("rock");
+const renderConfig = {
+  bars: 8,
+  stepsPerBar: 16,
+  keyCount: 49,
+  pitchRangeStart: 0,
+  keyHeight: 15,
+  stepWidth: 10,
+};
+
+const pianoRoll = DTM.createPianoRoll(
+  { mountTarget: wrapper, width: 640, height: 360, config: renderConfig },
+  {
+    onMMLGenerated: (mml) => console.log(mml),
+    onNotesChanged: (notes) => console.log(notes),
+  },
+);
 ```
 
 ## コントリビュート方法
