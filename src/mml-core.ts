@@ -166,14 +166,35 @@ export class MMLCore {
 				currentMML += this.stepToMMLRest(restSteps, baseLength);
 			}
 
-			// B. ノートのMML文字列を生成
-			const noteMMLs = notesAtStep.map((note) =>
-				// stepToMMLNoteContent は、'o3c4' のような音符の内容のみを返します。
-				this.stepToMMLNoteContent(note.pitch, note.durationSteps, baseLength),
-			);
+			// B. 同時発音ノートの長さ差分を分解してMMLに変換
+			const durations = Array.from(
+				new Set(notesAtStep.map((note) => note.durationSteps)),
+			).sort((a, b) => a - b);
+			let segmentStart = 0;
 
-			// C. 和音として出力: [o3e1o3g1o3b1]
-			currentMML += `[${noteMMLs.join("")}] `;
+			durations.forEach((durationStep) => {
+				const segmentLength = durationStep - segmentStart;
+				if (segmentLength <= 0) {
+					return;
+				}
+				const activeNotes = notesAtStep.filter(
+					(note) => note.durationSteps > segmentStart,
+				);
+				const mmlLength =
+					(segmentLength * baseLength) / getRenderConfig().stepsPerBar;
+				const noteMMLs = activeNotes.map((note) =>
+					this.pitchToMMLNote(note.pitch),
+				);
+
+				if (noteMMLs.length === 1) {
+					currentMML += `${noteMMLs[0]}${mmlLength} `;
+				} else if (noteMMLs.length > 1) {
+					// 和音として出力: [o3e o3g o3b]1
+					currentMML += `[${noteMMLs.join("")}]${mmlLength} `;
+				}
+
+				segmentStart = durationStep;
+			});
 
 			// D. currentStep の更新 (このグループ内で最も長いノートの終了ステップに進める)
 			const longestNote = notesAtStep.reduce((a, b) =>
@@ -197,19 +218,10 @@ export class MMLCore {
 		return `r${mmlLength} `;
 	};
 
-	private stepToMMLNoteContent = (
-		pitch: number,
-		steps: number,
-		baseLength: number,
-	): string => {
+	private pitchToMMLNote = (pitch: number): string => {
 		// Note: PITCH_MAP は外部で定義されていることを想定
 		const octave = Math.floor(pitch / 12) + 1;
 		const noteName = PITCH_MAP[pitch % 12];
-
-		// MMLの音長計算
-		// 例: steps=1 (16分音符), baseLength=16, stepsPerBar=16 なら、mmlLength=1
-		const mmlLength = (steps * baseLength) / getRenderConfig().stepsPerBar;
-
-		return `o${octave}${noteName}${mmlLength}`;
+		return `o${octave}${noteName}`;
 	};
 }
