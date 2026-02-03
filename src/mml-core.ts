@@ -190,7 +190,7 @@ export class MMLCore {
 					currentMML += `${noteMMLs[0]}${mmlLength} `;
 				} else if (noteMMLs.length > 1) {
 					// 和音として出力: [o3e o3g o3b]1
-					currentMML += `[${noteMMLs.join("")}]${mmlLength} `;
+					currentMML += `[${noteMMLs.join(" ")}]${mmlLength} `;
 				}
 
 				segmentStart = durationStep;
