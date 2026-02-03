@@ -54,7 +54,7 @@ var init = (mountTarget, width = 800, height = 450, config) => {
   g_config = config;
   const headerCanvas = document.createElement("canvas");
   g_header_canvas = headerCanvas;
-  headerCanvas.width = width;
+  headerCanvas.width = width - KEYBOARD_WIDTH;
   headerCanvas.height = HEADER_HEIGHT;
   headerCanvas.style.position = "absolute";
   headerCanvas.style.left = `${KEYBOARD_WIDTH}px`;
