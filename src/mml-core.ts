@@ -67,7 +67,38 @@ export class MMLCore {
 		this.generateAndNotify();
 	}
 
-	// 他の編集メソッド（ドラッグ移動、長さ変更など）も同様に実装する...
+	public moveNote(noteId: number, startStep: number, pitch: number): void {
+		const note = this.notes.find((target) => target.id === noteId);
+		if (!note) return;
+
+		const totalSteps = getRenderConfig().bars * getRenderConfig().stepsPerBar;
+		const pitchRangeStart = getRenderConfig().pitchRangeStart;
+		const pitchRangeEnd = pitchRangeStart + getRenderConfig().keyCount - 1;
+
+		const clampedPitch = Math.min(Math.max(pitch, pitchRangeStart), pitchRangeEnd);
+		const clampedStart = Math.min(
+			Math.max(startStep, 0),
+			totalSteps - note.durationSteps,
+		);
+
+		note.startStep = clampedStart;
+		note.pitch = clampedPitch;
+		this.notes.sort((a, b) => a.startStep - b.startStep);
+		this.generateAndNotify();
+	}
+
+	public resizeNote(noteId: number, durationSteps: number): void {
+		const note = this.notes.find((target) => target.id === noteId);
+		if (!note) return;
+
+		const totalSteps = getRenderConfig().bars * getRenderConfig().stepsPerBar;
+		const maxDuration = Math.max(1, totalSteps - note.startStep);
+		const clampedDuration = Math.min(Math.max(durationSteps, 1), maxDuration);
+
+		note.durationSteps = clampedDuration;
+		this.notes.sort((a, b) => a.startStep - b.startStep);
+		this.generateAndNotify();
+	}
 
 	// ============== 状態取得 (外部API) ==============
 
