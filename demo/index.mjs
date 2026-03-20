@@ -402,13 +402,29 @@ var MMLCore = class {
       if (restSteps > 0) {
         currentMML += this.stepToMMLRest(restSteps, baseLength);
       }
-      const noteMMLs = notesAtStep.map(
-        (note) => (
-          // stepToMMLNoteContent は、'o3c4' のような音符の内容のみを返します。
-          this.stepToMMLNoteContent(note.pitch, note.durationSteps, baseLength)
-        )
-      );
-      currentMML += `[${noteMMLs.join("")}] `;
+      const durations = Array.from(
+        new Set(notesAtStep.map((note) => note.durationSteps))
+      ).sort((a, b) => a - b);
+      let segmentStart = 0;
+      durations.forEach((durationStep) => {
+        const segmentLength = durationStep - segmentStart;
+        if (segmentLength <= 0) {
+          return;
+        }
+        const activeNotes = notesAtStep.filter(
+          (note) => note.durationSteps > segmentStart
+        );
+        const mmlLength = segmentLength * baseLength / getRenderConfig().stepsPerBar;
+        const noteMMLs = activeNotes.map(
+          (note) => this.pitchToMMLNote(note.pitch)
+        );
+        if (noteMMLs.length === 1) {
+          currentMML += `${noteMMLs[0]}${mmlLength} `;
+        } else if (noteMMLs.length > 1) {
+          currentMML += `[${noteMMLs.join(" ")}]${mmlLength} `;
+        }
+        segmentStart = durationStep;
+      });
       const longestNote = notesAtStep.reduce(
         (a, b) => a.durationSteps > b.durationSteps ? a : b
       );
@@ -424,11 +440,10 @@ var MMLCore = class {
     const mmlLength = steps * baseLength / getRenderConfig().stepsPerBar;
     return `r${mmlLength} `;
   };
-  stepToMMLNoteContent = (pitch, steps, baseLength) => {
+  pitchToMMLNote = (pitch) => {
     const octave = Math.floor(pitch / 12) + 1;
     const noteName = PITCH_MAP[pitch % 12];
-    const mmlLength = steps * baseLength / getRenderConfig().stepsPerBar;
-    return `o${octave}${noteName}${mmlLength}`;
+    return `o${octave}${noteName}`;
   };
 };
 
