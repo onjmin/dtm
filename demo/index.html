@@ -1890,10 +1890,16 @@
     <div class="p-4 bg-gray-800 text-white rounded-lg shadow-lg">
         <div class="flex items-center justify-between mb-2">
             <h2 class="text-xl font-semibold">生成された MML</h2>
-            <button onclick="copyMML()" id="copy-mml-button"
-                class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors">
-                コピー
-            </button>
+            <div class="flex items-center space-x-3">
+                <a href="https://kazuprog.work/prog/js/mml-player/" target="_blank"
+                    class="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white text-sm rounded transition-colors">
+                    MML再生テスト <span class="text-xs text-gray-300">(外部リンク)</span>
+                </a>
+                <button onclick="copyMML()" id="copy-mml-button"
+                    class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors">
+                    コピー
+                </button>
+            </div>
         </div>
         <p id="mml-output-status" class="text-xs text-gray-400"></p>
         <pre class="bg-black p-3 rounded-md overflow-x-auto text-sm"><code id="mml-output" class="block"></code></pre>
