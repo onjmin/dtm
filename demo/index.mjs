@@ -324,8 +324,9 @@ var MMLCore = class {
   handlers;
   volume = 80;
   tempo = 120;
-  constructor(handlers) {
+  constructor(handlers, volume = 80) {
     this.handlers = handlers;
+    this.volume = volume;
     this.generateAndNotify();
   }
   // ============== ノート編集 (外部API) ==============
@@ -474,7 +475,7 @@ var MMLCore = class {
    */
   generateMML = (volumeOverride) => {
     const config = getRenderConfig();
-    const vol = Math.floor((volumeOverride ?? this.volume) * 127 / 100);
+    const vol = volumeOverride ?? this.volume;
     const HALF_BAR = config.stepsPerBar / 2;
     const header = `t${this.tempo} q50 v${vol}`;
     const segments = [];
