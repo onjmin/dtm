@@ -126,8 +126,8 @@ export class MMLCore {
 		return this.notes;
 	}
 
-	public getMML(): string {
-		return this.generateMML();
+	public getMML(volumeOverride?: number): string {
+		return this.generateMML(volumeOverride);
 	}
 
 	// ============== 設定変更 (外部API) ==============
@@ -194,34 +194,42 @@ export class MMLCore {
 	/**
 	 * ピッチからオクターブ最適化のある音名を取得
 	 */
-	private getNoteWithOctave(pitch: number, lastOctave: number): string {
-		const octave = Math.floor(pitch / 12) + 1;
+	private getNoteWithOctave(
+		pitch: number,
+		lastOctave: number,
+	): { text: string; currentOctave: number } {
+		const octave = Math.floor(pitch / 12) - 1;
 		const name = PITCH_MAP[pitch % 12];
 
-		if (octave === lastOctave) {
-			return name;
-		} else if (octave === lastOctave + 1) {
-			return `>${name}`;
-		} else if (octave === lastOctave - 1) {
-			return `<${name}`;
-		} else {
-			return `o${octave}${name}`;
+		if (lastOctave === -1 || Math.abs(octave - lastOctave) >= 2) {
+			return { text: `o${octave}${name}`, currentOctave: octave };
 		}
+
+		if (octave === lastOctave) {
+			return { text: name, currentOctave: octave };
+		} else if (octave === lastOctave + 1) {
+			return { text: `>${name}`, currentOctave: octave };
+		} else if (octave === lastOctave - 1) {
+			return { text: `<${name}`, currentOctave: octave };
+		}
+
+		return { text: `o${octave}${name}`, currentOctave: octave };
 	}
 
 	/**
 	 * MML生成（1/2小節パターンスキャン方式）
 	 */
-	private generateMML = (): string => {
+	private generateMML = (volumeOverride?: number): string => {
 		const config = getRenderConfig();
-		const vol = Math.floor((this.volume * 127) / 100);
+		const vol = Math.floor(((volumeOverride ?? this.volume) * 127) / 100);
 		const HALF_BAR = config.stepsPerBar / 2;
 
-		let currentMML = `t${this.tempo} q50 v${vol} `;
+		const header = `t${this.tempo} q50 v${vol}`;
+		const segments: string[] = [];
 		let lastOctave = -1;
 		let currentCursor = 0;
 
-		if (this.notes.length === 0) return currentMML.trim();
+		if (this.notes.length === 0) return header;
 
 		const lastNote = this.notes[this.notes.length - 1];
 		const endStep = lastNote.startStep + lastNote.durationSteps;
@@ -246,7 +254,7 @@ export class MMLCore {
 						break;
 					}
 					const { dur, steps } = this.findBestFitDuration(gap);
-					currentMML += `r${dur} `;
+					segments.push(`r${dur}`);
 					currentCursor += steps;
 				}
 				continue;
@@ -271,7 +279,7 @@ export class MMLCore {
 						break;
 					}
 					const { dur, steps } = this.findBestFitDuration(gap);
-					currentMML += `r${dur} `;
+					segments.push(`r${dur}`);
 					currentCursor += steps;
 				}
 
@@ -280,16 +288,22 @@ export class MMLCore {
 				const durStr = this.stepsToMMLDuration(availableSteps);
 
 				if (notes.length > 1) {
-					const noteStrs = notes.map((n) =>
-						this.getNoteWithOctave(n.pitch, lastOctave),
-					);
-					currentMML += `[${noteStrs.join("")}]${durStr} `;
+					const noteStrs = notes.map((n) => {
+						const oct = Math.floor(n.pitch / 12) - 1;
+						const name = PITCH_MAP[n.pitch % 12];
+						return `o${oct}${name}`;
+					});
+					segments.push(`[${noteStrs.join("")}]${durStr}`);
+					lastOctave = -1;
 				} else {
-					const noteStr = this.getNoteWithOctave(notes[0].pitch, lastOctave);
-					currentMML += `${noteStr}${durStr} `;
+					const { text, currentOctave } = this.getNoteWithOctave(
+						notes[0].pitch,
+						lastOctave,
+					);
+					segments.push(`${text}${durStr}`);
+					lastOctave = currentOctave;
 				}
 
-				lastOctave = Math.floor(notes[0].pitch / 12) + 1;
 				const actualStep = config.stepsPerBar / parseInt(durStr);
 				currentCursor = startStep + actualStep;
 			}
@@ -301,17 +315,11 @@ export class MMLCore {
 					break;
 				}
 				const { dur, steps } = this.findBestFitDuration(gap);
-				currentMML += `r${dur} `;
+				segments.push(`r${dur}`);
 				currentCursor += steps;
 			}
 		}
 
-		return currentMML.replace(/\s+/g, " ").trim();
-	};
-
-	private pitchToMMLNote = (pitch: number): string => {
-		const octave = Math.floor(pitch / 12) + 1;
-		const noteName = PITCH_MAP[pitch % 12];
-		return `o${octave}${noteName}`;
+		return `${header} ${segments.join(" ")}`;
 	};
 }
