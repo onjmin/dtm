@@ -739,9 +739,7 @@
                     onNotesChanged: (notes) => {
                         redrawAll();
                     },
-                });
-
-                track.core.setVolume(track.volume);
+                }, track.volume);
             });
 
             const bpmInput = document.getElementById('bpm-input');
@@ -808,11 +806,12 @@
 
                 if (dragState.mode === 'move') {
                     const nextStart = step - dragState.dragOffsetStep;
+                    const snappedStart = Math.round(nextStart / noteLengthSteps) * noteLengthSteps;
                     const nextPitch = pitch - dragState.dragOffsetPitch;
-                    if (hasNoteAtPosition(nextStart, nextPitch, dragState.noteId)) {
+                    if (hasNoteAtPosition(snappedStart, nextPitch, dragState.noteId)) {
                         return;
                     }
-                    activeTrack.core.moveNote(dragState.noteId, nextStart, nextPitch);
+                    activeTrack.core.moveNote(dragState.noteId, snappedStart, nextPitch);
                     if (nextPitch !== dragState.lastPreviewPitch) {
                         dragState.lastPreviewPitch = nextPitch;
                         playPreviewNote(nextPitch, dragState.durationSteps);
@@ -914,13 +913,14 @@
                     return;
                 }
 
+                const snappedStep = Math.round(step / noteLengthSteps) * noteLengthSteps;
                 const activeTrack = tracks.find(t => t.id === activeTrackId);
                 if (!activeTrack) return;
-                if (hasNoteAtPosition(step, pitch)) {
+                if (hasNoteAtPosition(snappedStep, pitch)) {
                     console.log('その場所には既にノートがあります');
                     return;
                 }
-                activeTrack.core.toggleNote(step, pitch, {
+                activeTrack.core.toggleNote(snappedStep, pitch, {
                     noteLengthSteps: noteLengthSteps,
                 });
                 playPreviewNote(pitch, noteLengthSteps);
@@ -1491,6 +1491,32 @@
 
         const PITCH_MAP = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
 
+        window.shiftAllNotes = () => {
+            const shiftSteps = parseInt(document.getElementById('shift-select')?.value) || 0;
+            if (shiftSteps === 0) return;
+
+            const overlay = document.getElementById('midi-loading-overlay');
+            overlay.classList.remove('hidden');
+
+            setTimeout(() => {
+                tracks.forEach(track => {
+                    if (!track.core) return;
+                    const notes = [...track.core.getNotes()];
+                    notes.forEach(note => {
+                        const newStart = note.startStep + shiftSteps;
+                        if (newStart < 0) {
+                            track.core.deleteNoteById(note.id);
+                        } else {
+                            track.core.moveNote(note.id, newStart, note.pitch);
+                        }
+                    });
+                });
+                redrawAll();
+                updateMMLOutput();
+                overlay.classList.add('hidden');
+            }, 50);
+        };
+
         window.loadMML = () => {
             const mml = document.getElementById('mml-input').value.trim();
             if (!mml) return;
@@ -1674,11 +1700,27 @@
             <input type="file" id="midi-file-input" accept=".mid,.midi" class="border rounded-md px-2 py-1 text-sm">
         </div>
 
-        <div class="flex items-center space-x-2 border-l border-gray-200 pl-4">
+        <div class="flex items-center space-x-2">
             <textarea id="mml-input" rows="2" class="border rounded-md px-2 py-1 text-sm w-64"
                 placeholder="MMLを入力"></textarea>
             <button onclick="loadMML()"
                 class="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600">MML読込</button>
+        </div>
+
+        <div class="flex items-center space-x-2 border-l border-gray-200 pl-4">
+            <span class="text-sm font-medium text-gray-700">全体シフト:</span>
+            <select id="shift-select" class="border rounded-md px-2 py-1 text-sm">
+                <option value="-24">-8分</option>
+                <option value="-48">-4分</option>
+                <option value="-96">-2分</option>
+                <option value="96">+2分</option>
+                <option value="48">+4分</option>
+                <option value="24">+8分</option>
+            </select>
+            <button onclick="shiftAllNotes()"
+                class="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600">適用</button>
+        </div>
+    </div>
         </div>
     </div>
 
@@ -1716,9 +1758,11 @@
                 <option value="48" selected>4分</option>
                 <option value="24">8分</option>
                 <option value="12">16分</option>
+                <option value="6">32分</option>
                 <option value="32">3連4</option>
                 <option value="16">3連8</option>
                 <option value="8">3連16</option>
+                <option value="4">3連32</option>
             </select>
         </div>
 

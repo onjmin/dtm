@@ -26,8 +26,9 @@ export class MMLCore {
 	private volume: number = 80;
 	private tempo: number = 120;
 
-	constructor(handlers: CoreEventHandlers) {
+	constructor(handlers: CoreEventHandlers, volume: number = 80) {
 		this.handlers = handlers;
+		this.volume = volume;
 		// 初期MMLを生成し通知
 		this.generateAndNotify();
 	}
