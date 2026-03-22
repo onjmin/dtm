@@ -331,11 +331,12 @@
         // C4 (note 60) を中央に配置
         const gridHeight = 430;
         const initialOffsetY = (104 - 1 - 60) * 15 - gridHeight / 2;
-        let baseStepWidth = 2.5; // stepsPerBar=192対応
+        let baseStepWidth = 0.5; // stepsPerBar=192対応
         window.updateStepWidth = () => {
-            const zoom = parseInt(document.getElementById('zoom-input')?.value) || 25;
-            renderConfig.stepWidth = Math.round(baseStepWidth * zoom / 100);
-            document.getElementById('zoom-label').textContent = zoom + '%';
+            const rawZoom = parseInt(document.getElementById('zoom-input')?.value);
+            const zoom = rawZoom * 2; // 50%→100%, 100%→200%
+            renderConfig.stepWidth = baseStepWidth * zoom / 100;
+            document.getElementById('zoom-label').textContent = rawZoom + '%';
             redrawAll();
         };
 
@@ -1760,9 +1761,9 @@
 
         <div class="flex items-center space-x-2">
             <span class="text-sm font-medium text-gray-700">横zoom:</span>
-            <input type="range" id="zoom-input" value="50" min="25" max="400" step="25" oninput="updateStepWidth()"
+            <input type="range" id="zoom-input" value="100" min="25" max="200" step="25" oninput="updateStepWidth()"
                 class="w-32">
-            <span id="zoom-label" class="text-sm text-gray-700 w-12">50%</span>
+            <span id="zoom-label" class="text-sm text-gray-700 w-12">100%</span>
         </div>
 
         <div class="flex items-center space-x-2">
@@ -1890,10 +1891,16 @@
     <div class="p-4 bg-gray-800 text-white rounded-lg shadow-lg">
         <div class="flex items-center justify-between mb-2">
             <h2 class="text-xl font-semibold">生成された MML</h2>
-            <button onclick="copyMML()" id="copy-mml-button"
-                class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors">
-                コピー
-            </button>
+            <div class="flex items-center space-x-3">
+                <a href="https://kazuprog.work/prog/js/mml-player/" target="_blank"
+                    class="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white text-sm rounded transition-colors">
+                    MML再生テスト <span class="text-xs text-gray-300">(外部リンク)</span>
+                </a>
+                <button onclick="copyMML()" id="copy-mml-button"
+                    class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors">
+                    コピー
+                </button>
+            </div>
         </div>
         <p id="mml-output-status" class="text-xs text-gray-400"></p>
         <pre class="bg-black p-3 rounded-md overflow-x-auto text-sm"><code id="mml-output" class="block"></code></pre>
