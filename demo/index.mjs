@@ -55,6 +55,8 @@ var getDrawOffset = () => ({
   y: g_draw_offset_y
 });
 var getGridCanvas = () => g_grid_canvas;
+var getGridContext = () => g_grid_ctx;
+var getHeaderCanvas = () => g_header_canvas;
 var init = (mountTarget, width = 800, height = 450, config) => {
   g_config = config;
   const headerCanvas = document.createElement("canvas");
@@ -134,11 +136,11 @@ var drawKeyboard = () => {
   const { keyHeight, keyCount } = g_config;
   const startY = Math.floor(g_draw_offset_y / keyHeight) * keyHeight;
   const endY = g_draw_offset_y + g_key_canvas.height;
-  for (let y = startY; y <= endY; y += keyHeight) {
+  for (let y = startY; y < endY; y += keyHeight) {
     const pitchIndex = keyCount - 1 - y / keyHeight;
     const totalPitch = pitchIndex + g_config.pitchRangeStart;
     const pitchMod12 = totalPitch % 12;
-    const octave = Math.floor(totalPitch / 12) + 1;
+    const octave = Math.floor(totalPitch / 12) - 1;
     const isBlackKey = blackKeyPitches.has(pitchMod12);
     const isC = pitchMod12 === 0;
     const screenY = y - g_draw_offset_y;
@@ -165,39 +167,47 @@ var drawKeyboard = () => {
 };
 var drawHeader = () => {
   g_header_ctx.clearRect(0, 0, g_header_canvas.width, g_header_canvas.height);
-  const { stepWidth, stepsPerBar, bars } = g_config;
+  const { stepWidth, stepsPerBar } = g_config;
   g_header_ctx.save();
   g_header_ctx.translate(-g_draw_offset_x, 0);
-  const totalWidth = bars * stepsPerBar * stepWidth;
   g_header_ctx.fillStyle = "#F9FAFB";
-  g_header_ctx.fillRect(0, 0, totalWidth, HEADER_HEIGHT);
+  g_header_ctx.fillRect(
+    g_draw_offset_x,
+    0,
+    g_header_canvas.width,
+    HEADER_HEIGHT
+  );
   g_header_ctx.strokeStyle = "#D1D5DB";
   g_header_ctx.lineWidth = 1;
   g_header_ctx.font = "bold 12px sans-serif";
   g_header_ctx.fillStyle = "#4B5563";
-  for (let bar = 0; bar <= bars; bar++) {
+  const startBar = Math.floor(g_draw_offset_x / (stepsPerBar * stepWidth));
+  const endBar = Math.ceil(
+    (g_draw_offset_x + g_header_canvas.width) / (stepsPerBar * stepWidth)
+  );
+  for (let bar = startBar; bar <= endBar + 1; bar++) {
     const x = bar * stepsPerBar * stepWidth;
     const screenX = x;
     g_header_ctx.beginPath();
     g_header_ctx.moveTo(screenX, 0);
     g_header_ctx.lineTo(screenX, HEADER_HEIGHT);
     g_header_ctx.stroke();
-    if (bar < bars) {
+    if (bar > 0) {
       g_header_ctx.textAlign = "left";
       g_header_ctx.textBaseline = "middle";
-      g_header_ctx.fillText(`${bar + 1}`, screenX + 5, HEADER_HEIGHT / 2);
+      g_header_ctx.fillText(`${bar}`, screenX + 5, HEADER_HEIGHT / 2);
     }
   }
   g_header_ctx.restore();
 };
-var drawGrid = () => {
+var drawGrid = (noteLengthSteps = 1) => {
   drawKeyboard();
   drawHeader();
   g_grid_ctx.clearRect(0, 0, g_grid_canvas.width, g_grid_canvas.height);
   const { keyHeight, keyCount, stepWidth, stepsPerBar } = g_config;
   const startY = Math.floor(g_draw_offset_y / keyHeight) * keyHeight;
   const endY = g_draw_offset_y + g_grid_canvas.height;
-  for (let y = startY; y <= endY; y += keyHeight) {
+  for (let y = startY; y < endY; y += keyHeight) {
     const pitchIndex = keyCount - 1 - y / keyHeight;
     const pitchMod12 = pitchIndex % 12;
     const isBlackKey = blackKeyPitches.has(pitchMod12);
@@ -214,13 +224,16 @@ var drawGrid = () => {
     g_grid_ctx.lineTo(g_grid_canvas.width, screenY);
     g_grid_ctx.stroke();
   }
-  const startX = Math.floor(g_draw_offset_x / stepWidth) * stepWidth;
+  const startX = Math.floor(g_draw_offset_x / (stepWidth * noteLengthSteps)) * stepWidth * noteLengthSteps;
   const endX = g_draw_offset_x + g_grid_canvas.width;
-  for (let x = startX; x <= endX; x += stepWidth) {
-    const isBarLine = x / stepWidth % stepsPerBar === 0;
+  const lineStep = stepWidth * noteLengthSteps;
+  for (let x = startX; x <= endX; x += lineStep) {
+    const step = x / stepWidth;
+    const isBarLine = step % stepsPerBar === 0;
+    const isNoteLine = step % noteLengthSteps === 0;
     const screenX = x - g_draw_offset_x;
     g_grid_ctx.beginPath();
-    g_grid_ctx.strokeStyle = isBarLine ? "#A0A0A0" : "#E5E7EB";
+    g_grid_ctx.strokeStyle = isBarLine ? "#A0A0A0" : isNoteLine ? "#D1D5DB" : "#E5E7EB";
     g_grid_ctx.lineWidth = isBarLine ? 2 : 1;
     g_grid_ctx.moveTo(screenX, 0);
     g_grid_ctx.lineTo(screenX, g_grid_canvas.height);
@@ -237,7 +250,15 @@ var drawNotes = (notes, color = "#3B82F6") => {
     const h = keyHeight;
     const renderX = logicalX - g_draw_offset_x;
     const renderY = logicalY - g_draw_offset_y;
-    g_grid_ctx.fillStyle = color;
+    const velocityOpacity = note.velocity !== void 0 ? 0.3 + note.velocity / 127 * 0.7 : 1;
+    if (color.startsWith("#")) {
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+      g_grid_ctx.fillStyle = `rgba(${r},${g},${b},${velocityOpacity})`;
+    } else {
+      g_grid_ctx.fillStyle = color;
+    }
     g_grid_ctx.fillRect(renderX + 1, renderY + 1, w - 2, h - 2);
   }
 };
@@ -324,20 +345,35 @@ var MMLCore = class {
         id: this.nextNoteId++,
         startStep: step,
         durationSteps: options.noteLengthSteps,
-        pitch
+        pitch,
+        velocity: options.velocity ?? 127
       };
       this.notes.push(newNote);
     }
     this.notes.sort((a, b) => a.startStep - b.startStep);
     this.generateAndNotify();
   }
+  deleteNoteById(noteId) {
+    const index = this.notes.findIndex((n) => n.id === noteId);
+    if (index !== -1) {
+      this.notes.splice(index, 1);
+      this.generateAndNotify();
+    }
+  }
+  getMaxStep() {
+    if (this.notes.length === 0) return 0;
+    return Math.max(...this.notes.map((n) => n.startStep + n.durationSteps));
+  }
   moveNote(noteId, startStep, pitch) {
     const note = this.notes.find((target) => target.id === noteId);
     if (!note) return;
-    const totalSteps = getRenderConfig().bars * getRenderConfig().stepsPerBar;
+    const totalSteps = this.getMaxStep() + getRenderConfig().stepsPerBar;
     const pitchRangeStart = getRenderConfig().pitchRangeStart;
     const pitchRangeEnd = pitchRangeStart + getRenderConfig().keyCount - 1;
-    const clampedPitch = Math.min(Math.max(pitch, pitchRangeStart), pitchRangeEnd);
+    const clampedPitch = Math.min(
+      Math.max(pitch, pitchRangeStart),
+      pitchRangeEnd
+    );
     const clampedStart = Math.min(
       Math.max(startStep, 0),
       totalSteps - note.durationSteps
@@ -350,9 +386,7 @@ var MMLCore = class {
   resizeNote(noteId, durationSteps) {
     const note = this.notes.find((target) => target.id === noteId);
     if (!note) return;
-    const totalSteps = getRenderConfig().bars * getRenderConfig().stepsPerBar;
-    const maxDuration = Math.max(1, totalSteps - note.startStep);
-    const clampedDuration = Math.min(Math.max(durationSteps, 1), maxDuration);
+    const clampedDuration = Math.max(1, durationSteps);
     note.durationSteps = clampedDuration;
     this.notes.sort((a, b) => a.startStep - b.startStep);
     this.generateAndNotify();
@@ -380,11 +414,12 @@ var MMLCore = class {
    * 現在のノートデータからMML文字列を生成（和音対応済み）
    */
   generateMML = () => {
-    const baseLength = 16;
+    const config = getRenderConfig();
+    const baseLength = config.stepsPerBar;
     const vol = Math.floor(this.volume * 127 / 100);
     let currentMML = `l${baseLength} v${vol} `;
     let currentStep = 0;
-    const totalSteps = getRenderConfig().bars * getRenderConfig().stepsPerBar;
+    const totalSteps = this.getMaxStep() + getRenderConfig().stepsPerBar;
     const notesByStep = this.notes.reduce(
       (acc, note) => {
         if (!acc[note.startStep]) {
@@ -601,7 +636,9 @@ export {
   drawNotes,
   getDrawOffset,
   getGridCanvas,
+  getGridContext,
   getGridPosition,
+  getHeaderCanvas,
   getRenderConfig,
   getXY,
   init,

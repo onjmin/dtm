@@ -8,10 +8,167 @@
     <title>DTM Demo</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <script src="https://unpkg.com/@kazuprog/mml-player@1.0.0/dist/mml-player.js"></script>
+    <script src="https://colxi.info/midi-parser-js/src/main.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" />
 
     <script type="module">
         import * as mdi from 'https://cdn.jsdelivr.net/npm/@mdi/js@7.4.47/mdi.js';
+
+        const importAll = (urls) => Promise.all(urls.map(url => import(url)));
+        const sfModules = await importAll([
+            'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont.mjs',
+            'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs',
+            'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs'
+        ]);
+        const SoundFont = sfModules[0].SoundFont;
+        const SoundFont_list = sfModules[2].SoundFont_list;
+
+        const audioCtx = new AudioContext();
+        const gainNode = audioCtx.createGain();
+        gainNode.connect(audioCtx.destination);
+        let masterVolume = 50;
+        gainNode.gain.value = 0.5;
+        const soundFonts = {};
+
+        const loadSoundFont = async (fontName, instrumentKey, trackId) => {
+            try {
+                const fullName = `${instrumentKey}_${fontName}`;
+                const url = SoundFont.toURL(fullName);
+                console.log(`Loading: ${fullName}`);
+                console.log(`URL: ${url}`);
+                soundFonts[trackId] = await SoundFont.load({
+                    ctx: audioCtx,
+                    fontName: `_tone_${fullName}`,
+                    url
+                });
+            } catch (e) {
+                console.error(`Failed to load ${instrumentKey}_${fontName}:`, e);
+            }
+        };
+
+        const fetchList = async (ttl) => {
+            const res = await fetch(`https://rpgen3.github.io/soundfont/list/${ttl}.txt`);
+            const str = await res.text();
+            return str.trim().split('\n');
+        };
+
+        let currentFont = 'FluidR3_GM_sf2_file';
+        let nameToKey = {};
+
+        const instrumentPresets = {
+            piano: {
+                displayName: 'ピアノ（王道・安定）',
+                description: '最も破綻しにくい構成。MML/打ち込み入門にも最適。',
+                melody: 'Acoustic Grand Piano',
+                submelody: 'Vibraphone', // ピアノと相性が良く、残響が綺麗な短音
+                bass: 'Electric Bass (finger)',
+                chord: 'Pad 2 (warm)'
+            },
+
+            synth_pop: {
+                displayName: 'シンセポップ（現代RPG/東方系）',
+                description: '抜けるリード＋太いベース＋パッドで今風にまとまる。',
+                melody: 'Lead 2 (sawtooth)',
+                submelody: 'Lead 4 (chiff)', // アタック感があり、メインを邪魔しない短音
+                bass: 'Synth Bass 2',
+                chord: 'Pad 3 (polysynth)'
+            },
+
+            band: {
+                displayName: 'バンド（ロック/ポップ）',
+                description: 'ギター主体でリズムと厚みを両立した定番構成。',
+                melody: 'Overdriven Guitar',
+                submelody: 'Electric Guitar (muted)', // ミュート音にすることでリズムの輪郭が際立つ
+                bass: 'Electric Bass (pick)',
+                chord: 'Electric Piano 2'
+            },
+
+            orchestra: {
+                displayName: 'オーケストラ（シネマティック）',
+                description: '主旋律の存在感と管楽器・撥弦楽器の掛け合いを重視。',
+                melody: 'French Horn',
+                submelody: 'Pizzicato Strings', // ストリングスを「持続」ではなく「短音（ピチカート）」で採用
+                bass: 'Cello',
+                chord: 'Tremolo Strings'
+            },
+
+            ambient: {
+                displayName: 'アンビエント（浮遊・空間系）',
+                description: '旋律より雰囲気重視。BGM用途に強い。',
+                melody: 'Lead 6 (voice)',
+                submelody: 'Music Box', // 幻想的な高音の短音を追加
+                bass: 'Synth Bass 1',
+                chord: 'Pad 7 (halo)'
+            },
+
+            retro: {
+                displayName: 'レトロゲーム（8bit風）',
+                description: 'シンプルな波形でチップチューン的な表現。',
+                melody: 'Lead 1 (square)',
+                submelody: 'Lead 2 (sawtooth)', // 違う波形を組み合わせることで音が混ざりすぎないように
+                bass: 'Synth Bass 1',
+                chord: 'Clavinet' // 矩形波に近い質感の短音
+            }
+        };
+
+        // SoundFont_listを初期化後に楽器をロード
+        SoundFont_list.init();
+        SoundFont_list.onload(async () => {
+            console.log('SoundFont_list loaded');
+            const fonts = [...SoundFont_list.tone.keys()];
+            console.log('Available fonts:', fonts);
+            if (fonts.length > 0) {
+                // fetchListで楽器名→キーのマッピングを取得
+                const fontNames = await fetchList('fontName_surikov');
+                fontNames.forEach(line => {
+                    const [key, ...nameParts] = line.split(' ');
+                    const name = nameParts.join(' ');
+                    nameToKey[name] = key;
+                });
+                console.log('Name to Key mapping sample:', Object.entries(nameToKey).slice(0, 5));
+
+                // 楽器プリセット選択UIを生成
+                const selectEl = document.getElementById('instrument-preset');
+                if (selectEl) {
+                    selectEl.innerHTML = '';
+                    for (const [key, preset] of Object.entries(instrumentPresets)) {
+                        const option = document.createElement('option');
+                        option.value = key;
+                        option.textContent = preset.displayName;
+                        selectEl.appendChild(option);
+                    }
+                }
+
+                // デフォルトの楽器プリセットをロード
+                await loadInstrumentPreset('piano');
+            }
+        });
+
+        window.loadInstrumentPreset = async (preset) => {
+            const presetData = instrumentPresets[preset];
+            if (!presetData || !currentFont) return;
+            const trackIds = ['melody', 'submelody', 'bass', 'chord'];
+            for (const trackId of trackIds) {
+                const instrumentName = presetData[trackId];
+                if (!instrumentName) continue;
+                const key = nameToKey[instrumentName];
+                if (key) {
+                    await loadSoundFont(currentFont, key, trackId);
+                }
+            }
+        };
+        const playNote = (trackId, pitch, volume, when, duration) => {
+            const sf = soundFonts[trackId];
+            if (!sf) return;
+            sf.play({
+                ctx: audioCtx,
+                destination: gainNode,
+                pitch,
+                volume,
+                when,
+                duration
+            });
+        };
 
         const DTM = await import(
             location.hostname === 'localhost' ?
@@ -19,30 +176,50 @@
                 'https://onjmin.github.io/dtm/demo/index.mjs');
 
         const renderConfig = {
-            bars: 8,
-            stepsPerBar: 16,
-            keyCount: 49, // C1〜C5
-            pitchRangeStart: 0,
+            stepsPerBar: 192, // 48 steps/beat * 4 beats/bar
+            keyCount: 104, // C-1〜C7
+            pitchRangeStart: 0, // MIDI C-1 = 0
             keyHeight: 15,
             stepWidth: 10,
+        };
+        // C4 (note 60) を中央に配置
+        const gridHeight = 430;
+        const initialOffsetY = (104 - 1 - 60) * 15 - gridHeight / 2;
+        let baseStepWidth = 2.5; // stepsPerBar=192対応
+        window.updateStepWidth = () => {
+            const zoom = parseInt(document.getElementById('zoom-input')?.value) || 25;
+            renderConfig.stepWidth = Math.round(baseStepWidth * zoom / 100);
+            document.getElementById('zoom-label').textContent = zoom + '%';
+            redrawAll();
+        };
+
+        window.updateMasterVolume = (value) => {
+            masterVolume = parseInt(value) || 50;
+            gainNode.gain.value = masterVolume / 100;
+            document.getElementById('master-volume-label').textContent = masterVolume + '%';
         };
 
         const hexToRgb = (hex) =>
             [0, 1, 2].map(i => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16))
         const tracks = [
             { id: 'melody', name: 'メロディー', color: hexToRgb('#3B82F6'), instrument: 0, core: null, volume: 80, mml: '' },
-            { id: 'bass', name: 'ベース', color: hexToRgb('#10B981'), instrument: 1, core: null, volume: 70, mml: '' },
-            { id: 'chord', name: '伴奏', color: hexToRgb('#F59E0B'), instrument: 2, core: null, volume: 60, mml: '' },
+            { id: 'submelody', name: 'サブメロ', color: hexToRgb('#8B5CF6'), instrument: 1, core: null, volume: 75, mml: '' },
+            { id: 'bass', name: 'ベース', color: hexToRgb('#10B981'), instrument: 2, core: null, volume: 70, mml: '' },
+            { id: 'chord', name: '伴奏', color: hexToRgb('#F59E0B'), instrument: 3, core: null, volume: 60, mml: '' },
         ];
         let activeTrackId = 'melody';
         let isPlaying = false;
-        let noteLengthSteps = 1; // 16分音符
+        let isPaused = false;
+        let pausedPlayStep = 0;
+        let pausedGainValue = 1;
+        let noteLengthSteps = 48; // 4分音符
         let mmlPlayer = null;
 
         let currentOffsetX = 0;
-        let currentOffsetY = 0;
+        let currentOffsetY = initialOffsetY;
         const scrollAmount = 16 * renderConfig.stepWidth; // 例: 1小節分を移動量とする
         let noteLengthSelectEl = null;
+        let playStartStep = 0; // 再生開始位置（ステップ）
 
         // ----------------------------------------------------------------------
         // NOTE: このデモは「常に最新の動作確認」を行うための最重要入口。
@@ -53,7 +230,8 @@
 
         const getMaxOffsetY = () => {
             const gridCanvas = DTM.getGridCanvas();
-            return Math.max(0, renderConfig.keyCount * renderConfig.keyHeight - gridCanvas.height);
+            const totalHeight = renderConfig.keyCount * renderConfig.keyHeight;
+            return Math.max(0, totalHeight - gridCanvas.height);
         };
 
         const ensureNoteLengthOption = (value) => {
@@ -68,17 +246,25 @@
             noteLengthSelectEl.value = normalized;
         };
 
-        const playPreviewNote = (pitch, durationSteps) => {
-            const activeTrack = tracks.find(t => t.id === activeTrackId);
-            if (!activeTrack || !mmlPlayer) return;
+        const noteLengthOptions = [48, 32, 24, 16, 12, 8, 6, 4, 3, 2, 1];
+        const snapToNoteLength = (duration) => {
+            let nearest = noteLengthOptions[0];
+            let minDiff = Math.abs(duration - nearest);
+            for (const len of noteLengthOptions) {
+                const diff = Math.abs(duration - len);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    nearest = len;
+                }
+            }
+            return nearest;
+        };
 
-            const baseLength = 16;
-            const noteLength = 1;
-            const octave = Math.floor(pitch / 12) + 1;
-            const noteName = DTM.PITCH_MAP[pitch % 12];
-            const volume = Math.floor((activeTrack.volume * 127) / 100);
-            const previewMml = `t120 l${baseLength} v${volume} @${activeTrack.instrument} o${octave}${noteName}${noteLength}`;
-            mmlPlayer.play(previewMml);
+        const playPreviewNote = (pitch, durationSteps) => {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const activeTrack = tracks.find(t => t.id === activeTrackId);
+            if (!activeTrack) return;
+            playNote(activeTrackId, pitch, activeTrack.volume / 100, 0, 0.1);
         };
 
         window.movePianoRoll = (direction) => {
@@ -86,6 +272,9 @@
             const maxOffsetY = getMaxOffsetY();
 
             switch (direction) {
+                case 'home':
+                    currentOffsetX = 0;
+                    break;
                 case 'right':
                     currentOffsetX += scrollAmount;
                     break;
@@ -102,13 +291,12 @@
 
             DTM.setDrawOffset(currentOffsetX, currentOffsetY);
 
-            // 再描画
             redrawAll();
         };
 
         // 全トラックを再描画するメインの関数
         const redrawAll = () => {
-            DTM.drawGrid();
+            DTM.drawGrid(noteLengthSteps);
 
             tracks.forEach((track, i) => {
                 if (!track.core) return;
@@ -121,6 +309,121 @@
                     `rgba(${r},${g},${b},${a})`
                 );
             });
+
+            drawStartLine();
+            updateScrollbar();
+        };
+
+        const getMaxNoteStep = () => {
+            let maxStep = renderConfig.stepsPerBar * 4;
+            tracks.forEach(track => {
+                if (!track.core) return;
+                track.core.getNotes().forEach(note => {
+                    const endStep = note.startStep + note.durationSteps;
+                    if (endStep > maxStep) maxStep = endStep;
+                });
+            });
+            return maxStep;
+        };
+
+        const updateScrollbar = () => {
+            const scrollbar = document.getElementById('h-scrollbar');
+            const thumb = document.getElementById('h-scrollbar-thumb');
+            if (!scrollbar || !thumb) return;
+
+            const maxNoteStep = getMaxNoteStep();
+            const totalWidth = maxNoteStep * renderConfig.stepWidth;
+            const visibleWidth = DTM.getGridCanvas().width;
+            const scrollbarWidth = scrollbar.clientWidth;
+
+            if (totalWidth <= visibleWidth) {
+                thumb.style.width = '100%';
+                thumb.style.left = '0';
+                return;
+            }
+
+            const thumbWidth = Math.max(40, (visibleWidth / totalWidth) * scrollbarWidth);
+            const maxOffset = totalWidth - visibleWidth;
+            const ratio = currentOffsetX / maxOffset;
+            const thumbLeft = ratio * (scrollbarWidth - thumbWidth);
+
+            thumb.style.width = `${thumbWidth}px`;
+            thumb.style.left = `${thumbLeft}px`;
+        };
+
+        const initScrollbar = () => {
+            const scrollbar = document.getElementById('h-scrollbar');
+            const thumb = document.getElementById('h-scrollbar-thumb');
+            if (!scrollbar || !thumb) return;
+
+            let isDragging = false;
+            let dragStartX = 0;
+            let dragStartOffset = 0;
+
+            const handleScroll = (clientX) => {
+                const rect = scrollbar.getBoundingClientRect();
+                const x = clientX - rect.left;
+                const thumbWidth = parseFloat(thumb.style.width);
+                const thumbLeft = Math.max(0, Math.min(x - thumbWidth / 2, scrollbar.clientWidth - thumbWidth));
+                const ratio = thumbLeft / (scrollbar.clientWidth - thumbWidth);
+
+                const maxNoteStep = getMaxNoteStep();
+                const totalWidth = maxNoteStep * renderConfig.stepWidth;
+                const visibleWidth = DTM.getGridCanvas().width;
+                const maxOffset = totalWidth - visibleWidth;
+                currentOffsetX = Math.max(0, ratio * maxOffset);
+                DTM.setDrawOffset(currentOffsetX, currentOffsetY);
+                updateScrollbar();
+                redrawAll();
+            };
+
+            scrollbar.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                dragStartX = e.clientX;
+                dragStartOffset = currentOffsetX;
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const maxNoteStep = getMaxNoteStep();
+                const totalWidth = maxNoteStep * renderConfig.stepWidth;
+                const visibleWidth = DTM.getGridCanvas().width;
+                const maxOffset = totalWidth - visibleWidth;
+
+                const rect = scrollbar.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const thumbWidth = parseFloat(thumb.style.width);
+                const thumbLeft = Math.max(0, Math.min(x - thumbWidth / 2, scrollbar.clientWidth - thumbWidth));
+                const ratio = thumbLeft / (scrollbar.clientWidth - thumbWidth);
+                currentOffsetX = Math.max(0, ratio * maxOffset);
+                DTM.setDrawOffset(currentOffsetX, currentOffsetY);
+                updateScrollbar();
+                redrawAll();
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+        };
+
+        // 再生開始位置の縦線を描画
+        const drawStartLine = () => {
+            const gridCanvas = DTM.getGridCanvas();
+            const ctx = DTM.getGridContext();
+            if (!ctx) return;
+            const x = playStartStep * renderConfig.stepWidth - currentOffsetX;
+            if (x < -10 || x > gridCanvas.width + 10) return;
+            ctx.save();
+            ctx.strokeStyle = '#10B981';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 3]);
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, gridCanvas.height);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
         };
 
         // MML出力エリア更新 (既存ロジックをトップレベルに移動)
@@ -135,10 +438,28 @@
         const updateControls = () => {
             // 再生ボタン
             const playButton = document.getElementById('play-button');
-            playButton.className = `px-4 py-2 rounded-lg font-semibold transition-colors flex items-center space-x-2 ${isPlaying ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-green-500 hover:bg-green-600 text-white'}`;
-            playButton.innerHTML = isPlaying
-                ? `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiStop}"></path></svg><span>停止</span>`
-                : `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiPlay}"></path></svg><span>試聴</span>`;
+            if (isPlaying) {
+                playButton.className = 'px-4 py-2 rounded-lg font-semibold transition-colors flex items-center space-x-2 bg-red-500 hover:bg-red-600 text-white';
+                playButton.innerHTML = `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiStop}"></path></svg><span>停止</span>`;
+            } else if (isPaused) {
+                playButton.className = 'px-4 py-2 rounded-lg font-semibold transition-colors flex items-center space-x-2 bg-green-500 hover:bg-green-600 text-white';
+                playButton.innerHTML = `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiPlay}"></path></svg><span>再開</span>`;
+            } else {
+                playButton.className = 'px-4 py-2 rounded-lg font-semibold transition-colors flex items-center space-x-2 bg-green-500 hover:bg-green-600 text-white';
+                playButton.innerHTML = `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiPlay}"></path></svg><span>試聴</span>`;
+            }
+
+            // 一時停止ボタン（再生中にのみ有効）
+            const pauseButton = document.getElementById('pause-button');
+            if (isPlaying) {
+                pauseButton.disabled = false;
+                pauseButton.className = 'px-4 py-2 rounded-lg font-semibold transition-colors flex items-center space-x-2 bg-yellow-500 hover:bg-yellow-600 text-white';
+                pauseButton.innerHTML = `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiPause}"></path></svg><span>一時停止</span>`;
+            } else {
+                pauseButton.disabled = true;
+                pauseButton.className = 'px-4 py-2 rounded-lg font-semibold transition-colors flex items-center space-x-2 bg-gray-300 text-gray-500 cursor-not-allowed';
+                pauseButton.innerHTML = `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="${mdi.mdiPause}"></path></svg><span>一時停止</span>`;
+            }
 
             const trackTabs = document.getElementById('track-tabs');
             const trackContent = document.getElementById('track-content');
@@ -190,15 +511,6 @@
             mmlPlayer = new window.MMLPlayer();
 
             // 2. Core/Renderer の初期化
-            const pianoRollConfig = {
-                bars: 8,
-                stepsPerBar: 16,
-                keyCount: 49, // C1〜C5
-                pitchRangeStart: 0,
-                keyHeight: 15,
-                stepWidth: 10,
-            };
-
             // 1. モジュールに Canvas の初期化を依頼 (DOM操作とイベントリスナーの抽象化)
             // #piano-roll-container の現在のCSSサイズを渡す: w-[800px] h-[450px]
             DTM.init(
@@ -227,6 +539,7 @@
             const gridCanvas = DTM.getGridCanvas();
             const resizeHandleWidth = 6;
             let suppressClick = false;
+            let isDblClick = false;
             let hasDragged = false;
             let dragState = null;
 
@@ -254,6 +567,15 @@
                 return null;
             };
 
+            const hasNoteAtPosition = (step, pitch, excludeNoteId = null) => {
+                const activeTrack = tracks.find(t => t.id === activeTrackId);
+                if (!activeTrack) return false;
+                return activeTrack.core.getNotes().some(note =>
+                    note.id !== excludeNoteId && note.pitch === pitch &&
+                    step >= note.startStep && step < note.startStep + note.durationSteps
+                );
+            };
+
             const handlePointerMove = (event) => {
                 if (!dragState) return;
                 hasDragged = true;
@@ -265,6 +587,9 @@
                 if (dragState.mode === 'move') {
                     const nextStart = step - dragState.dragOffsetStep;
                     const nextPitch = pitch - dragState.dragOffsetPitch;
+                    if (hasNoteAtPosition(nextStart, nextPitch, dragState.noteId)) {
+                        return;
+                    }
                     activeTrack.core.moveNote(dragState.noteId, nextStart, nextPitch);
                     if (nextPitch !== dragState.lastPreviewPitch) {
                         dragState.lastPreviewPitch = nextPitch;
@@ -273,10 +598,8 @@
                     return;
                 }
 
-                const nextDuration = step - dragState.startStep + 1;
-                activeTrack.core.resizeNote(dragState.noteId, nextDuration);
-                noteLengthSteps = Math.max(1, nextDuration);
-                ensureNoteLengthOption(noteLengthSteps);
+                const snappedDuration = snapToNoteLength(step - dragState.startStep + 1);
+                activeTrack.core.resizeNote(dragState.noteId, snappedDuration);
             };
 
             const endDrag = () => {
@@ -287,6 +610,7 @@
                     }
                 }
                 hasDragged = false;
+                isDblClick = false;
             };
 
             gridCanvas.addEventListener('mousedown', (event) => {
@@ -340,9 +664,22 @@
                 event.preventDefault();
                 const maxOffsetY = getMaxOffsetY();
                 currentOffsetY = clamp(currentOffsetY + event.deltaY, 0, maxOffsetY);
+                currentOffsetX = Math.max(0, currentOffsetX + event.deltaX);
                 DTM.setDrawOffset(currentOffsetX, currentOffsetY);
                 redrawAll();
             }, { passive: false });
+
+            // ヘッダークリックで再生開始位置を設定
+            const headerCanvas = DTM.getHeaderCanvas();
+            headerCanvas.addEventListener('click', (event) => {
+                if (isPlaying) return;
+                const rect = headerCanvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const step = Math.floor((x + currentOffsetX) / renderConfig.stepWidth);
+                const snappedStep = Math.round(step / noteLengthSteps) * noteLengthSteps;
+                playStartStep = Math.max(0, snappedStep);
+                redrawAll();
+            });
 
             // クリックイベントをモジュールに登録
             DTM.onClick((step, pitch) => {
@@ -350,24 +687,43 @@
                     suppressClick = false;
                     return;
                 }
+                if (isDblClick) {
+                    isDblClick = false;
+                    return;
+                }
 
                 const activeTrack = tracks.find(t => t.id === activeTrackId);
                 if (!activeTrack) return;
-                const existingNote = activeTrack.core
-                    .getNotes()
-                    .some(note => note.startStep === step && note.pitch === pitch);
+                if (hasNoteAtPosition(step, pitch)) {
+                    console.log('その場所には既にノートがあります');
+                    return;
+                }
                 activeTrack.core.toggleNote(step, pitch, {
                     noteLengthSteps: noteLengthSteps,
                 });
-                if (!existingNote) {
-                    playPreviewNote(pitch, noteLengthSteps);
-                }
+                playPreviewNote(pitch, noteLengthSteps);
+            });
+
+            // ダブルクリックでノートを削除
+            gridCanvas.addEventListener('dblclick', (event) => {
+                event.preventDefault();
+                isDblClick = true;
+                const { x, y } = DTM.getGridPosition(event);
+                const note = findActiveNoteAtPosition(x, y);
+                if (!note) return;
+                const activeTrack = tracks.find(t => t.id === activeTrackId);
+                if (!activeTrack) return;
+                activeTrack.core.toggleNote(note.startStep, note.pitch, {
+                    noteLengthSteps: note.durationSteps,
+                });
             });
 
 
             // 4. 初期描画
+            initScrollbar();
             updateControls();
             updateMMLOutput();
+            DTM.setDrawOffset(currentOffsetX, currentOffsetY);
             redrawAll(); // 初回グリッド描画とノート描画 (ノートは空)
 
             document.getElementById('play-button').disabled = false;
@@ -375,6 +731,7 @@
 
         // モジュールロード完了後に初期化を実行
         initializeDemo();
+        updateStepWidth();
 
         // --- グローバル関数 (UIからの呼び出し用) ---
 
@@ -396,21 +753,640 @@
 
         window.togglePlayback = () => {
             if (isPlaying) {
-                mmlPlayer.stop();
+                stopPlayback();
                 isPlaying = false;
-            } else {
-                const fullMML = tracks.map(t => t.mml).join(';');
-                mmlPlayer.play(fullMML);
+                isPaused = false;
+                updateControls();
+            } else if (isPaused) {
+                resumePlayback();
                 isPlaying = true;
+                updateControls();
+            } else {
+                startPlayback();
+                isPlaying = true;
+                updateControls();
             }
+        };
+
+        window.pausePlayback = () => {
+            if (!isPlaying) return;
+            pausedPlayStep = currentPlayStep;
+            pausedGainValue = gainNode.gain.value;
+            gainNode.gain.value = 0;
+            isPaused = true;
+            stopPlayback();
+            isPlaying = false;
             updateControls();
+        };
+
+        const resumePlayback = () => {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            gainNode.gain.value = pausedGainValue;
+            const bpmInput = document.getElementById('bpm-input');
+            const bpm = parseInt(bpmInput?.value) || 120;
+            timeline.length = 0;
+            const secondsPerBeat = 60 / bpm;
+            const stepsPerBeat = 48;
+            const secondsPerStep = secondsPerBeat / stepsPerBeat;
+
+            tracks.forEach((track, ch) => {
+                const notes = track.core.getNotes();
+                notes.forEach(note => {
+                    const relativeStart = note.startStep - playStartStep;
+                    if (relativeStart < 0) return;
+                    timeline.push({
+                        ch,
+                        pitch: note.pitch,
+                        volume: track.volume / 100,
+                        when: relativeStart * secondsPerStep,
+                        duration: note.durationSteps * secondsPerStep,
+                        trackVolume: track.volume / 100,
+                        velocity: note.velocity ?? 127
+                    });
+                });
+            });
+
+            if (timeline.length === 0) return;
+
+            timeline.sort((a, b) => a.when - b.when);
+            const elapsedSeconds = (pausedPlayStep - playStartStep) * secondsPerStep;
+            startTime = audioCtx.currentTime - elapsedSeconds;
+            currentPlayStep = pausedPlayStep;
+            nowIndex = 0;
+            while (nowIndex < timeline.length && timeline[nowIndex].when < elapsedSeconds) {
+                nowIndex++;
+            }
+            intervalId = setInterval(() => updatePlayback(secondsPerStep), 20);
+            const animate = () => {
+                if (!isPlaying) return;
+                const time = audioCtx.currentTime - startTime;
+                currentPlayStep = playStartStep + time / secondsPerStep;
+
+                const gridCanvas = DTM.getGridCanvas();
+                const visibleSteps = gridCanvas.width / renderConfig.stepWidth;
+                const visibleBars = Math.round(visibleSteps / renderConfig.stepsPerBar);
+                const scrollAmountPx = visibleBars * renderConfig.stepsPerBar * renderConfig.stepWidth;
+                const threshold = currentOffsetX / renderConfig.stepWidth + visibleSteps - 4;
+                if (currentPlayStep > threshold) {
+                    currentOffsetX += scrollAmountPx;
+                    DTM.setDrawOffset(currentOffsetX, currentOffsetY);
+                }
+
+                redrawAll();
+                drawPlayhead();
+                animationId = requestAnimationFrame(animate);
+            };
+            animationId = requestAnimationFrame(animate);
+        };
+
+        const timeline = [];
+        const planTime = 0.1;
+        let startTime = 0;
+        let nowIndex = 0;
+        let intervalId = -1;
+        let currentPlayStep = 0;
+        let animationId = null;
+
+        const stopPlayback = () => {
+            clearInterval(intervalId);
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            currentPlayStep = 0;
+            redrawAll();
+        };
+
+        const startPlayback = () => {
+            stopPlayback();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            if (!SoundFont) {
+                console.error('SoundFont not loaded');
+                return;
+            }
+
+            // 再生開始位置までスクロール
+            const gridCanvas = DTM.getGridCanvas();
+            const playStartX = playStartStep * renderConfig.stepWidth;
+            const visibleWidth = gridCanvas.width * 0.5;
+            currentOffsetX = Math.max(0, playStartX - visibleWidth);
+            DTM.setDrawOffset(currentOffsetX, currentOffsetY);
+
+            const bpmInput = document.getElementById('bpm-input');
+            const bpm = parseInt(bpmInput?.value) || 120;
+            timeline.length = 0;
+            const secondsPerBeat = 60 / bpm;
+            const stepsPerBeat = 48; // 48 steps per beat
+            const secondsPerStep = secondsPerBeat / stepsPerBeat;
+
+            tracks.forEach((track, ch) => {
+                const notes = track.core.getNotes();
+                notes.forEach(note => {
+                    const relativeStart = note.startStep - playStartStep;
+                    if (relativeStart < 0) return;
+                    timeline.push({
+                        ch,
+                        pitch: note.pitch,
+                        volume: track.volume / 100,
+                        when: relativeStart * secondsPerStep,
+                        duration: note.durationSteps * secondsPerStep,
+                        trackVolume: track.volume / 100,
+                        velocity: note.velocity ?? 127
+                    });
+                });
+            });
+
+            if (timeline.length === 0) {
+                console.log('No notes to play');
+                return;
+            }
+
+            timeline.sort((a, b) => a.when - b.when);
+            startTime = audioCtx.currentTime;
+            nowIndex = 0;
+            currentPlayStep = playStartStep;
+            intervalId = setInterval(() => updatePlayback(secondsPerStep), 20);
+            const animate = () => {
+                if (!isPlaying) return;
+                const time = audioCtx.currentTime - startTime;
+                currentPlayStep = playStartStep + time / secondsPerStep;
+
+                const gridCanvas = DTM.getGridCanvas();
+                const visibleSteps = gridCanvas.width / renderConfig.stepWidth;
+                const visibleBars = Math.round(visibleSteps / renderConfig.stepsPerBar);
+                const scrollAmountPx = visibleBars * renderConfig.stepsPerBar * renderConfig.stepWidth;
+                const threshold = currentOffsetX / renderConfig.stepWidth + visibleSteps - 4;
+                if (currentPlayStep > threshold) {
+                    currentOffsetX += scrollAmountPx;
+                    DTM.setDrawOffset(currentOffsetX, currentOffsetY);
+                }
+
+                redrawAll();
+                drawPlayhead();
+                animationId = requestAnimationFrame(animate);
+            };
+            animationId = requestAnimationFrame(animate);
+        };
+
+        const drawPlayhead = () => {
+            const gridCanvas = DTM.getGridCanvas();
+            const ctx = DTM.getGridContext();
+            if (!ctx) return;
+            const x = currentPlayStep * renderConfig.stepWidth - currentOffsetX;
+            if (x < 0 || x > gridCanvas.width) return;
+            ctx.save();
+            ctx.strokeStyle = '#EF4444';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, gridCanvas.height);
+            ctx.stroke();
+            ctx.restore();
+        };
+
+        const updatePlayback = (secondsPerStep) => {
+            const time = audioCtx.currentTime - startTime;
+            while (nowIndex < timeline.length) {
+                const { ch, pitch, when, duration, velocity } = timeline[nowIndex];
+                const currentTrack = tracks[ch];
+                const trackVolume = currentTrack ? currentTrack.volume / 100 : 0.8;
+                const velocityVolume = (velocity ?? 127) / 127;
+                const volume = trackVolume * velocityVolume;
+                const trackId = currentTrack?.id || 'melody';
+                const _when = when - time;
+                if (_when > planTime) break;
+                nowIndex++;
+                if (_when < 0) {
+                    playNote(trackId, pitch, volume, 0, duration);
+                    continue;
+                }
+                playNote(trackId, pitch, volume, _when, duration);
+            }
+            const lastNoteTime = timeline[timeline.length - 1]?.when ?? 0;
+            const lastNoteDuration = timeline[timeline.length - 1]?.duration ?? 0;
+            if (nowIndex >= timeline.length && time > lastNoteTime + lastNoteDuration + 0.1) {
+                stopPlayback();
+                isPlaying = false;
+                updateControls();
+            }
         };
 
         const noteLengthSelect = document.getElementById('note-length-select');
         noteLengthSelect.addEventListener('change', (e) => {
             noteLengthSteps = parseInt(e.target.value);
-            // Note: すべてのトラックのRendererに設定する必要がなくなったため、状態変数のみ更新
+            redrawAll();
         });
+
+        const clearAllNotes = () => {
+            tracks.forEach(track => {
+                if (track.core) {
+                    const notes = [...track.core.getNotes()];
+                    notes.forEach(note => {
+                        track.core.deleteNoteById(note.id);
+                    });
+                }
+            });
+            redrawAll();
+        };
+
+        const midiFileInput = document.getElementById('midi-file-input');
+        midiFileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            document.getElementById('midi-loading-overlay').classList.remove('hidden');
+            clearAllNotes();
+
+            const arrayBuffer = await file.arrayBuffer();
+            const uint8Array = new Uint8Array(arrayBuffer);
+            const midiData = MidiParser.parse(uint8Array);
+            parseMidi(midiData);
+
+            document.getElementById('midi-loading-overlay').classList.add('hidden');
+        });
+
+        const getBPM = (midi) => {
+            const { track } = midi;
+            for (const { event } of track) {
+                for (const { type, metaType, data } of event) {
+                    if (type !== 0xFF || metaType !== 0x51) continue;
+                    if (typeof data === 'number') {
+                        return 60000000 / data;
+                    }
+                    const [b1, b2, b3] = data;
+                    return 60000000 / ((b1 << 16) | (b2 << 8) | b3);
+                }
+            }
+            return 120;
+        };
+
+        const parseMidi = (midi) => {
+            const { track, timeDivision } = midi;
+            const ticksPerBeat = timeDivision;
+            const stepsPerBeat = 48;
+
+            const bpm = getBPM(midi);
+            document.getElementById('bpm-input').value = Math.round(bpm);
+
+            const channelNotes = {};
+            for (const trackData of Object.values(track)) {
+                let currentTime = 0;
+                for (const event of trackData.event) {
+                    currentTime += event.deltaTime;
+                    if (event.channel === 9) continue;
+                    if (event.type !== 8 && event.type !== 9) continue;
+                    const [pitch, velocity] = event.data;
+                    const isNoteOFF = event.type === 8 || !velocity;
+                    const channel = event.channel;
+
+                    if (!channelNotes[channel]) channelNotes[channel] = [];
+
+                    if (isNoteOFF) {
+                        for (let i = channelNotes[channel].length - 1; i >= 0; i--) {
+                            const note = channelNotes[channel][i];
+                            if (note.pitch === pitch && note.end === null) {
+                                note.end = currentTime;
+                                break;
+                            }
+                        }
+                    } else {
+                        channelNotes[channel].push({ pitch, velocity, start: currentTime, end: null });
+                    }
+                }
+            }
+
+            // 各チャンネルの特性を分析
+            const channelAnalysis = {};
+            const ticksPerBar = ticksPerBeat * 4; // 4 beats per bar
+            const ticksPer8Bars = ticksPerBar * 8;
+
+            for (const [channelStr, notes] of Object.entries(channelNotes)) {
+                const channel = parseInt(channelStr);
+                const validNotes = notes.filter(n => n.end !== null);
+
+                // 平均ピッチを計算
+                const avgPitch = validNotes.reduce((sum, n) => sum + n.pitch, 0) / validNotes.length;
+
+                // 同時発音数をチェック（メロディアン: 1つ以下）
+                let maxSimultaneous = 0;
+                const sortedNotes = [...validNotes].sort((a, b) => a.start - b.start);
+                for (let i = 0; i < sortedNotes.length; i++) {
+                    let simultaneous = 1;
+                    for (let j = i + 1; j < sortedNotes.length; j++) {
+                        if (sortedNotes[j].start < sortedNotes[i].end) {
+                            simultaneous++;
+                        }
+                    }
+                    maxSimultaneous = Math.max(maxSimultaneous, simultaneous);
+                }
+
+                // 休憩（1小節以上の隙間）でブロック分割。各ブロックが8小節未満かチェック
+                const isSubmelodyPattern = (sortedNotes) => {
+                    if (sortedNotes.length === 0) return false;
+                    const blocks = [];
+                    let currentBlockStart = sortedNotes[0].start;
+                    let currentBlockEnd = sortedNotes[0].end;
+
+                    for (let i = 1; i < sortedNotes.length; i++) {
+                        const gapTicks = sortedNotes[i].start - sortedNotes[i - 1].end;
+                        if (gapTicks >= ticksPerBar) {
+                            // 休憩でブロック分割
+                            blocks.push({ start: currentBlockStart, end: currentBlockEnd });
+                            currentBlockStart = sortedNotes[i].start;
+                            currentBlockEnd = sortedNotes[i].end;
+                        } else {
+                            currentBlockEnd = sortedNotes[i].end;
+                        }
+                    }
+                    blocks.push({ start: currentBlockStart, end: currentBlockEnd });
+
+                    // 全ブロックが8小節未満
+                    return blocks.every(block => (block.end - block.start) < ticksPer8Bars);
+                };
+
+                const hasSubmelodyPattern = isSubmelodyPattern(sortedNotes);
+
+                channelAnalysis[channel] = {
+                    avgPitch,
+                    maxSimultaneous,
+                    noteCount: validNotes.length,
+                    hasSubmelodyPattern
+                };
+            }
+
+            // ピッチ順にソート
+            const channels = Object.keys(channelNotes).map(Number).sort((a, b) => a - b);
+            const sortedByPitch = [...channels].sort((a, b) =>
+                channelAnalysis[a].avgPitch - channelAnalysis[b].avgPitch
+            );
+
+            // 平均ピッチが低く、同時発音が少ない → ベース候補
+            const bassThreshold = sortedByPitch[Math.floor(sortedByPitch.length / 4)]?.avgPitch || 60;
+            const bassChannels = channels.filter(ch =>
+                channelAnalysis[ch].avgPitch <= bassThreshold &&
+                channelAnalysis[ch].maxSimultaneous <= 2
+            );
+
+            // メロディ系（同時発音1つ以下、ベース以外）
+            const melodyTypeChannels = channels.filter(ch =>
+                channelAnalysis[ch].maxSimultaneous <= 1 &&
+                !bassChannels.includes(ch)
+            );
+
+            // 休憩で分割した各ブロックが8小節未満 → サブメロ候補、残りはメロディ
+            const submelodyChannels = melodyTypeChannels.filter(ch =>
+                channelAnalysis[ch].hasSubmelodyPattern
+            );
+            const melodyChannels = melodyTypeChannels.filter(ch =>
+                !channelAnalysis[ch].hasSubmelodyPattern
+            );
+
+            // 残りはコード（伴奏）
+            const chordChannels = channels.filter(ch =>
+                !bassChannels.includes(ch) &&
+                !melodyChannels.includes(ch) &&
+                !submelodyChannels.includes(ch)
+            );
+
+            const channelToTrackMap = {
+                melody: melodyChannels,
+                submelody: submelodyChannels,
+                bass: bassChannels,
+                chord: chordChannels
+            };
+
+            console.log('チャンネル分析:');
+            for (const [ch, analysis] of Object.entries(channelAnalysis)) {
+                console.log(`  ch${ch}: 平均pitch=${analysis.avgPitch.toFixed(1)}, 最大同時発音=${analysis.maxSimultaneous}, ノート数=${analysis.noteCount}, サブメロ=${analysis.hasSubmelodyPattern}`);
+            }
+            console.log('トラック割り当て:');
+            console.log('  melody:', melodyChannels);
+            console.log('  submelody:', submelodyChannels);
+            console.log('  bass:', bassChannels);
+            console.log('  chord:', chordChannels);
+
+            let placedCount = 0;
+            let totalNotes = 0;
+            const trackNotes = { melody: 0, submelody: 0, bass: 0, chord: 0 };
+
+            for (const [channelStr, notes] of Object.entries(channelNotes)) {
+                const channel = parseInt(channelStr);
+                totalNotes += notes.filter(n => n.end !== null).length;
+
+                let trackId = null;
+                for (const [tid, chs] of Object.entries(channelToTrackMap)) {
+                    if (chs.includes(channel)) {
+                        trackId = tid;
+                        break;
+                    }
+                }
+                if (!trackId) continue;
+
+                const targetTrack = tracks.find(t => t.id === trackId);
+                if (!targetTrack || !targetTrack.core) continue;
+
+                for (const note of notes) {
+                    if (note.end === null) continue;
+                    const ticksPerStep = ticksPerBeat / stepsPerBeat;
+                    const startStep = Math.round(note.start / ticksPerStep);
+                    const durationTicks = note.end - note.start;
+                    const durationSteps = Math.max(1, Math.round(durationTicks / ticksPerStep));
+
+                    targetTrack.core.toggleNote(startStep, note.pitch, { noteLengthSteps: durationSteps, velocity: note.velocity });
+                    placedCount++;
+                    trackNotes[trackId]++;
+                }
+            }
+
+            console.log('MIDI読み込み結果:');
+            console.log('  トラック数:', Object.keys(track).length);
+            console.log('  チャンネル数:', Object.keys(channelNotes).length);
+            for (const [ch, notes] of Object.entries(channelNotes)) {
+                const validNotes = notes.filter(n => n.end !== null).length;
+                console.log(`  ch${ch}: ${validNotes}/${notes.length}ノート`);
+            }
+            console.log('  総ノート数:', totalNotes);
+            console.log('  配置したノート数:', placedCount);
+            console.log('  トラック別:', trackNotes);
+
+            playStartStep = 0;
+            currentOffsetX = 0;
+            DTM.setDrawOffset(currentOffsetX, currentOffsetY);
+            redrawAll();
+        };
+
+        const PITCH_MAP = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
+
+        window.loadMML = () => {
+            const mml = document.getElementById('mml-input').value.trim();
+            if (!mml) return;
+
+            clearAllNotes();
+
+            const melodyTrack = tracks.find(t => t.id === 'melody');
+            if (!melodyTrack || !melodyTrack.core) return;
+
+            const bpmMatch = mml.match(/t(\d+)/);
+            if (bpmMatch) {
+                const bpm = parseInt(bpmMatch[1]);
+                document.getElementById('bpm-input').value = bpm;
+            }
+
+            const lMatch = mml.match(/l(\d+)/);
+            const baseLength = lMatch ? parseInt(lMatch[1]) : 16;
+            const stepsPerBeat = 48;
+            const stepsPerNoteLength = stepsPerBeat / baseLength;
+
+            let currentStep = 0;
+            let octave = 4;
+            let i = 0;
+
+            while (i < mml.length) {
+                const ch = mml[i];
+
+                if (ch === 't') {
+                    i++;
+                    let num = '';
+                    while (i < mml.length && /\d/.test(mml[i])) {
+                        num += mml[i];
+                        i++;
+                    }
+                    continue;
+                }
+
+                if (ch === 'l') {
+                    i++;
+                    let num = '';
+                    while (i < mml.length && /\d/.test(mml[i])) {
+                        num += mml[i];
+                        i++;
+                    }
+                    continue;
+                }
+
+                if (ch === 'o') {
+                    i++;
+                    octave = parseInt(mml[i]) || 4;
+                    i++;
+                    continue;
+                }
+
+                if (ch === 'r') {
+                    i++;
+                    let len = 0;
+                    while (i < mml.length && /\d/.test(mml[i])) {
+                        len = len * 10 + parseInt(mml[i]);
+                        i++;
+                    }
+                    len = len || baseLength;
+                    let dots = 0;
+                    while (i < mml.length && mml[i] === '.') {
+                        dots++;
+                        i++;
+                    }
+                    let steps = Math.round((baseLength / len) * stepsPerNoteLength);
+                    for (let d = 0; d < dots; d++) {
+                        steps = Math.round(steps * 1.5);
+                    }
+                    currentStep += steps;
+                    continue;
+                }
+
+                if (ch === '@' || ch === 'v') {
+                    i++;
+                    while (i < mml.length && mml[i] !== ';' && !/[a-z]/.test(mml[i].toLowerCase())) {
+                        i++;
+                    }
+                    continue;
+                }
+
+                if (ch === ';') {
+                    i++;
+                    const currentBar = Math.floor(currentStep / renderConfig.stepsPerBar);
+                    currentStep = (currentBar + 1) * renderConfig.stepsPerBar;
+                    continue;
+                }
+
+                if (ch === '[') {
+                    i++;
+                    let chordNotes = [];
+                    let chordDuration = 0;
+                    while (i < mml.length && mml[i] !== ']') {
+                        const noteCh = mml[i].toLowerCase();
+                        if (PITCH_MAP.hasOwnProperty(noteCh)) {
+                            let pitch = PITCH_MAP[noteCh];
+                            i++;
+                            if (mml[i] === '#' || mml[i] === '+') { pitch++; i++; }
+                            else if (mml[i] === '-') { pitch--; i++; }
+                            const noteOctave = octave;
+                            const midiPitch = (noteOctave + 1) * 12 + pitch;
+                            chordNotes.push(midiPitch);
+                            let num = '';
+                            while (i < mml.length && /\d/.test(mml[i])) {
+                                num += mml[i];
+                                i++;
+                            }
+                            if (num) {
+                                chordDuration = Math.round((baseLength / parseInt(num)) * stepsPerNoteLength);
+                            }
+                        }
+                        while (i < mml.length && mml[i] !== ']' && !PITCH_MAP.hasOwnProperty(mml[i].toLowerCase())) {
+                            i++;
+                        }
+                    }
+                    if (mml[i] === ']') i++;
+                    let num = '';
+                    while (i < mml.length && /\d/.test(mml[i])) {
+                        num += mml[i];
+                        i++;
+                    }
+                    let steps = num ? Math.round((baseLength / parseInt(num)) * stepsPerNoteLength) : chordDuration;
+                    if (!steps) steps = Math.round(stepsPerNoteLength);
+
+                    for (const p of chordNotes) {
+                        melodyTrack.core.toggleNote(currentStep, p, { noteLengthSteps: Math.max(1, steps) });
+                    }
+                    currentStep += steps;
+                    continue;
+                }
+
+                const noteCh = ch.toLowerCase();
+                if (PITCH_MAP.hasOwnProperty(noteCh)) {
+                    let pitch = PITCH_MAP[noteCh];
+                    i++;
+                    if (mml[i] === '#' || mml[i] === '+') { pitch++; i++; }
+                    else if (mml[i] === '-') { pitch--; i++; }
+                    const noteOctave = octave;
+                    const midiPitch = (noteOctave + 1) * 12 + pitch;
+                    let len = 0;
+                    while (i < mml.length && /\d/.test(mml[i])) {
+                        len = len * 10 + parseInt(mml[i]);
+                        i++;
+                    }
+                    let dots = 0;
+                    while (i < mml.length && mml[i] === '.') {
+                        dots++;
+                        i++;
+                    }
+                    len = len || baseLength;
+                    let steps = Math.round((baseLength / len) * stepsPerNoteLength);
+                    for (let d = 0; d < dots; d++) {
+                        steps = Math.round(steps * 1.5);
+                    }
+                    melodyTrack.core.toggleNote(currentStep, midiPitch, { noteLengthSteps: Math.max(1, steps) });
+                    currentStep += steps;
+                    continue;
+                }
+
+                i++;
+            }
+
+            console.log('MML読み込み完了: step', currentStep);
+            playStartStep = 0;
+            currentOffsetX = 0;
+            DTM.setDrawOffset(currentOffsetX, currentOffsetY);
+            redrawAll();
+        };
     </script>
 </head>
 
@@ -421,13 +1397,50 @@
 
         <button id="play-button" onclick="togglePlayback()" disabled class="px-4 py-2 bg-gray-300 rounded"></button>
 
+        <button id="pause-button" onclick="pausePlayback()" disabled class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"></button>
+
+        <div class="flex items-center space-x-2">
+            <span class="text-sm font-medium text-gray-700">マスタ:</span>
+            <input type="range" id="master-volume-input" value="50" min="0" max="100" step="1"
+                oninput="updateMasterVolume(this.value)" class="w-24">
+            <span id="master-volume-label" class="text-sm text-gray-700 w-10">50%</span>
+        </div>
+
+        <div class="flex items-center space-x-2">
+            <span class="text-sm font-medium text-gray-700">MIDI:</span>
+            <input type="file" id="midi-file-input" accept=".mid,.midi" class="border rounded-md px-2 py-1 text-sm">
+        </div>
+
+        <div id="midi-loading-overlay" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-xl p-8 shadow-2xl flex flex-col items-center space-y-4">
+                <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <span class="text-lg font-semibold text-gray-700">MIDI読み込み中...</span>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-2">
+            <span class="text-sm font-medium text-gray-700">BPM:</span>
+            <input type="number" id="bpm-input" value="120" min="20" max="300"
+                class="w-16 border rounded-md px-2 py-1 text-sm text-center">
+        </div>
+
+        <div class="flex items-center space-x-2">
+            <span class="text-sm font-medium text-gray-700">横zoom:</span>
+            <input type="range" id="zoom-input" value="50" min="25" max="400" step="25" oninput="updateStepWidth()"
+                class="w-32">
+            <span id="zoom-label" class="text-sm text-gray-700 w-12">50%</span>
+        </div>
+
         <div class="flex items-center space-x-2">
             <span class="text-sm font-medium text-gray-700">ノート長:</span>
             <select id="note-length-select"
                 class="border rounded-md px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500">
-                <option value="4">4分</option>
-                <option value="2">8分</option>
-                <option value="1" selected>16分</option>
+                <option value="48" selected>4分</option>
+                <option value="24">8分</option>
+                <option value="12">16分</option>
+                <option value="32">3連4</option>
+                <option value="16">3連8</option>
+                <option value="8">3連16</option>
             </select>
         </div>
 
@@ -440,6 +1453,22 @@
                 <option>ロック</option>
             </select>
             <span class="text-xs text-gray-500">(MML再生には含まず)</span>
+        </div>
+
+        <div class="flex items-center space-x-2 border-l border-gray-200 pl-4">
+            <textarea id="mml-input" rows="2" class="border rounded-md px-2 py-1 text-sm w-64"
+                placeholder="MMLを入力"></textarea>
+            <button onclick="loadMML()"
+                class="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600">MML読込</button>
+        </div>
+    </div>
+
+    <div class="p-4 bg-white border rounded-lg shadow-md mb-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">楽器プリセット</h2>
+        <div class="flex items-center space-x-4">
+            <select id="instrument-preset" onchange="loadInstrumentPreset(this.value)"
+                class="border rounded-md px-3 py-2">
+            </select>
         </div>
     </div>
 
@@ -456,6 +1485,10 @@
 
     <div class="flex justify-center space-x-4 mb-2">
         <div class="flex space-x-1">
+            <button onclick="movePianoRoll('home')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors" title="最初へ">
+                <i class="mdi mdi-page-first text-xl"></i>
+            </button>
             <button onclick="movePianoRoll('left')"
                 class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
                 <i class="mdi mdi-chevron-left text-xl"></i>
@@ -464,7 +1497,7 @@
                 class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
                 <i class="mdi mdi-chevron-right text-xl"></i>
             </button>
-            <span class="text-sm self-center text-gray-600 ml-2">水平移動 (1小節)</span>
+            <span class="text-sm self-center text-gray-600 ml-2">水平移動</span>
         </div>
 
         <div class="flex space-x-1 border-l border-gray-300 pl-4">
@@ -485,6 +1518,13 @@
         class="w-[800px] h-[450px] bg-white border border-gray-300 rounded-lg shadow-xl relative"
         style="overflow: hidden;">
         <div id="wrapper" class="absolute inset-0">
+        </div>
+    </div>
+
+    <div class="w-[800px] mt-2">
+        <div id="h-scrollbar" class="relative w-full h-6 bg-gray-200 rounded cursor-pointer">
+            <div id="h-scrollbar-thumb"
+                class="absolute top-0 h-full bg-blue-400 rounded hover:bg-blue-500 transition-colors"></div>
         </div>
     </div>
 
