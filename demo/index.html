@@ -636,16 +636,25 @@
             ctx.restore();
         };
 
-        // MML出力エリア更新
-        const updateMMLOutput = () => {
+        // MML生成
+        window.generateMML = () => {
             const fullMML = tracks.map((track, i) => {
                 if (!track.core) return `@${i} `;
                 const mml = track.core.getMML(track.volume);
                 return `@${i} ${mml.trim()}`;
             }).join(";\n");
+            const minifyMML = tracks.map((track, i) => {
+                if (!track.core) return `@${i}`;
+                const mml = track.core.getMML(track.volume);
+                return `@${i}${mml.trim().replace(/\s+/g, '')}`;
+            }).join(";");
+
             document.getElementById("mml-output").textContent = fullMML.trim();
+            document.getElementById("mml-output-minify").textContent = minifyMML.trim();
             document.getElementById("mml-output-status").textContent =
-                `(${tracks.length}トラック) MML文字数: ${fullMML.length}`;
+                `(${tracks.length}トラック) 通常: ${fullMML.length}文字 / minify: ${minifyMML.length}文字`;
+
+            document.getElementById('mml-output-container').classList.remove('hidden');
         };
 
         // UIコントロール更新 (既存ロジックをトップレベルに移動)
@@ -739,7 +748,6 @@
                 track.core = new DTM.MMLCore({
                     onMMLGenerated: (mml) => {
                         track.mml = mml;
-                        updateMMLOutput();
                     },
                     onNotesChanged: (notes) => {
                         redrawAll();
@@ -950,7 +958,6 @@
             initScrollbar();
             initVScrollbar();
             updateControls();
-            updateMMLOutput();
             DTM.setDrawOffset(currentOffsetX, currentOffsetY);
             redrawAll(); // 初回グリッド描画とノート描画 (ノートは空)
 
@@ -1525,7 +1532,6 @@
                     });
                 });
                 redrawAll();
-                updateMMLOutput();
                 overlay.classList.add('hidden');
             }, 50);
         };
@@ -1549,7 +1555,7 @@
                 const track = trackMap[trackIdx];
                 if (!track || !track.core) return;
 
-                const headerMatch = trackMML.match(/@(\d+)\s+(.+)/);
+                const headerMatch = trackMML.match(/@(\d+)\s*(.+)/);
                 if (!headerMatch) return;
 
                 const body = headerMatch[2];
@@ -1563,13 +1569,13 @@
 
                     if (ch === 'q') {
                         i++;
-                        while (i < body.length && !/\s/.test(body[i]) && body[i] !== ';') i++;
+                        while (i < body.length && /\d/.test(body[i])) i++;
                         continue;
                     }
 
                     if (ch === 'v') {
                         i++;
-                        while (i < body.length && !/\s/.test(body[i]) && body[i] !== ';') i++;
+                        while (i < body.length && /\d/.test(body[i])) i++;
                         continue;
                     }
 
@@ -1896,34 +1902,50 @@
     <hr class="my-6 border-gray-300">
 
     <div class="p-4 bg-gray-800 text-white rounded-lg shadow-lg">
-        <div class="flex items-center justify-between mb-2">
-            <h2 class="text-xl font-semibold">生成された MML</h2>
-            <div class="flex items-center space-x-3">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-semibold">MML出力</h2>
+            <div class="flex items-center space-x-2">
+                <button onclick="generateMML()" id="generate-mml-button"
+                    class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded transition-colors">
+                    MML生成
+                </button>
                 <a href="https://kazuprog.work/prog/js/mml-player/" target="_blank"
                     class="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white text-sm rounded transition-colors">
                     MML再生テスト <span class="text-xs text-gray-300">(外部リンク)</span>
                 </a>
-                <button onclick="copyMML()" id="copy-mml-button"
-                    class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors">
-                    コピー
+            </div>
+        </div>
+        <div id="mml-output-container" class="hidden">
+            <p id="mml-output-status" class="text-xs text-gray-400 mb-2"></p>
+            <div class="flex items-start space-x-2">
+                <pre class="flex-1 bg-black p-3 rounded-md overflow-x-auto text-sm"><code id="mml-output" class="block"></code></pre>
+                <button onclick="copyMML('normal')" id="copy-mml-normal-button"
+                    class="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors" title="コピー">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                </button>
+            </div>
+            <div class="flex items-start space-x-2 mt-2">
+                <pre class="flex-1 bg-gray-900 p-3 rounded-md overflow-x-auto text-sm text-gray-300"><code id="mml-output-minify" class="block"></code></pre>
+                <button onclick="copyMML('minify')" id="copy-mml-minify-button"
+                    class="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors" title="コピー">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                 </button>
             </div>
         </div>
-        <p id="mml-output-status" class="text-xs text-gray-400"></p>
-        <pre class="bg-black p-3 rounded-md overflow-x-auto text-sm"><code id="mml-output" class="block"></code></pre>
     </div>
 
     <script>
-        window.copyMML = () => {
-            const mml = document.getElementById('mml-output').textContent;
+        window.copyMML = (type) => {
+            const mml = type === 'minify'
+                ? document.getElementById('mml-output-minify').textContent
+                : document.getElementById('mml-output').textContent;
             navigator.clipboard.writeText(mml).then(() => {
-                const btn = document.getElementById('copy-mml-button');
-                const originalText = btn.textContent;
-                btn.textContent = 'コピー完了!';
+                const btn = type === 'minify'
+                    ? document.getElementById('copy-mml-minify-button')
+                    : document.getElementById('copy-mml-normal-button');
                 btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
                 btn.classList.add('bg-green-600');
                 setTimeout(() => {
-                    btn.textContent = originalText;
                     btn.classList.remove('bg-green-600');
                     btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
                 }, 1500);
