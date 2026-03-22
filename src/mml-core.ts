@@ -57,6 +57,7 @@ export class MMLCore {
 				startStep: step,
 				durationSteps: options.noteLengthSteps,
 				pitch: pitch,
+				velocity: options.velocity ?? 127,
 			};
 			this.notes.push(newNote);
 		}
@@ -67,15 +68,31 @@ export class MMLCore {
 		this.generateAndNotify();
 	}
 
+	public deleteNoteById(noteId: number): void {
+		const index = this.notes.findIndex((n) => n.id === noteId);
+		if (index !== -1) {
+			this.notes.splice(index, 1);
+			this.generateAndNotify();
+		}
+	}
+
+	private getMaxStep(): number {
+		if (this.notes.length === 0) return 0;
+		return Math.max(...this.notes.map((n) => n.startStep + n.durationSteps));
+	}
+
 	public moveNote(noteId: number, startStep: number, pitch: number): void {
 		const note = this.notes.find((target) => target.id === noteId);
 		if (!note) return;
 
-		const totalSteps = getRenderConfig().bars * getRenderConfig().stepsPerBar;
+		const totalSteps = this.getMaxStep() + getRenderConfig().stepsPerBar;
 		const pitchRangeStart = getRenderConfig().pitchRangeStart;
 		const pitchRangeEnd = pitchRangeStart + getRenderConfig().keyCount - 1;
 
-		const clampedPitch = Math.min(Math.max(pitch, pitchRangeStart), pitchRangeEnd);
+		const clampedPitch = Math.min(
+			Math.max(pitch, pitchRangeStart),
+			pitchRangeEnd,
+		);
 		const clampedStart = Math.min(
 			Math.max(startStep, 0),
 			totalSteps - note.durationSteps,
@@ -91,10 +108,7 @@ export class MMLCore {
 		const note = this.notes.find((target) => target.id === noteId);
 		if (!note) return;
 
-		const totalSteps = getRenderConfig().bars * getRenderConfig().stepsPerBar;
-		const maxDuration = Math.max(1, totalSteps - note.startStep);
-		const clampedDuration = Math.min(Math.max(durationSteps, 1), maxDuration);
-
+		const clampedDuration = Math.max(1, durationSteps);
 		note.durationSteps = clampedDuration;
 		this.notes.sort((a, b) => a.startStep - b.startStep);
 		this.generateAndNotify();
@@ -133,12 +147,13 @@ export class MMLCore {
 	private generateMML = (): string => {
 		// NOTE: テンポ t120 とインストゥルメント @0 はトラック設定として外で付与されることが多いですが、
 		// ここでは以前のトラック設定と統一性を保つため、vコマンド以降のみを返します。
-		const baseLength = 16;
+		const config = getRenderConfig();
+		const baseLength = config.stepsPerBar;
 		const vol = Math.floor((this.volume * 127) / 100);
 		let currentMML = `l${baseLength} v${vol} `; // NOTE: tと@はトラック生成時(MMLPlayer)に付与を想定
 
 		let currentStep = 0;
-		const totalSteps = getRenderConfig().bars * getRenderConfig().stepsPerBar;
+		const totalSteps = this.getMaxStep() + getRenderConfig().stepsPerBar;
 
 		// 1. ノートを startStep でグループ化
 		const notesByStep = this.notes.reduce(

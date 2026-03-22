@@ -26,6 +26,10 @@ export const getDrawOffset = (): { x: number; y: number } => ({
 
 export const getGridCanvas = (): HTMLCanvasElement => g_grid_canvas;
 
+export const getGridContext = (): CanvasRenderingContext2D => g_grid_ctx;
+
+export const getHeaderCanvas = (): HTMLCanvasElement => g_header_canvas;
+
 /**
  * Canvasを初期化し、指定されたターゲット要素にマウントします。
  * ヘッダー用、鍵盤用、ノート用の3つのCanvasを作成します。
@@ -147,12 +151,12 @@ export const drawKeyboard = (): void => {
 	const startY = Math.floor(g_draw_offset_y / keyHeight) * keyHeight;
 	const endY = g_draw_offset_y + g_key_canvas.height;
 
-	for (let y = startY; y <= endY; y += keyHeight) {
+	for (let y = startY; y < endY; y += keyHeight) {
 		// グリッド全体の絶対ピッチインデックス
 		const pitchIndex = keyCount - 1 - y / keyHeight;
 		const totalPitch = pitchIndex + g_config.pitchRangeStart;
 		const pitchMod12 = totalPitch % 12;
-		const octave = Math.floor(totalPitch / 12) + 1;
+		const octave = Math.floor(totalPitch / 12) - 1; // MIDI標準: C-1=0, C4=60
 		const isBlackKey = blackKeyPitches.has(pitchMod12);
 		const isC = pitchMod12 === 0;
 
@@ -190,44 +194,45 @@ export const drawKeyboard = (): void => {
 	}
 };
 
-/**
- * 💡 小節番号ヘッダーを描画します。（ヘッダーCanvasのみ）
- */
 export const drawHeader = (): void => {
 	g_header_ctx.clearRect(0, 0, g_header_canvas.width, g_header_canvas.height);
 
-	const { stepWidth, stepsPerBar, bars } = g_config;
+	const { stepWidth, stepsPerBar } = g_config;
 
-	// ヘッダー全体を水平オフセットでずらす
 	g_header_ctx.save();
 	g_header_ctx.translate(-g_draw_offset_x, 0);
 
-	const totalWidth = bars * stepsPerBar * stepWidth;
+	g_header_ctx.fillStyle = "#F9FAFB";
+	g_header_ctx.fillRect(
+		g_draw_offset_x,
+		0,
+		g_header_canvas.width,
+		HEADER_HEIGHT,
+	);
 
-	g_header_ctx.fillStyle = "#F9FAFB"; // gray-50
-	g_header_ctx.fillRect(0, 0, totalWidth, HEADER_HEIGHT);
-
-	g_header_ctx.strokeStyle = "#D1D5DB"; // gray-300
+	g_header_ctx.strokeStyle = "#D1D5DB";
 	g_header_ctx.lineWidth = 1;
 	g_header_ctx.font = "bold 12px sans-serif";
-	g_header_ctx.fillStyle = "#4B5563"; // gray-600
+	g_header_ctx.fillStyle = "#4B5563";
 
-	// 小節線の描画と小節番号の表示
-	for (let bar = 0; bar <= bars; bar++) {
+	const startBar = Math.floor(g_draw_offset_x / (stepsPerBar * stepWidth));
+	const endBar = Math.ceil(
+		(g_draw_offset_x + g_header_canvas.width) / (stepsPerBar * stepWidth),
+	);
+
+	for (let bar = startBar; bar <= endBar + 1; bar++) {
 		const x = bar * stepsPerBar * stepWidth;
-		const screenX = x; // translateが適用されているのでそのまま
+		const screenX = x;
 
-		// 小節線
 		g_header_ctx.beginPath();
 		g_header_ctx.moveTo(screenX, 0);
 		g_header_ctx.lineTo(screenX, HEADER_HEIGHT);
 		g_header_ctx.stroke();
 
-		// 小節番号 (1から)
-		if (bar < bars) {
+		if (bar > 0) {
 			g_header_ctx.textAlign = "left";
 			g_header_ctx.textBaseline = "middle";
-			g_header_ctx.fillText(`${bar + 1}`, screenX + 5, HEADER_HEIGHT / 2);
+			g_header_ctx.fillText(`${bar}`, screenX + 5, HEADER_HEIGHT / 2);
 		}
 	}
 
@@ -236,8 +241,9 @@ export const drawHeader = (): void => {
 
 /**
  * グリッドと背景を描画します。（グリッドCanvasと鍵盤/ヘッダー描画の呼び出し）
+ * @param noteLengthSteps ノート長ステップ数（この値ごとに縦線を表示）
  */
-export const drawGrid = (): void => {
+export const drawGrid = (noteLengthSteps: number = 1): void => {
 	// 鍵盤とヘッダーの描画を呼び出し
 	drawKeyboard();
 	drawHeader();
@@ -251,7 +257,7 @@ export const drawGrid = (): void => {
 	const startY = Math.floor(g_draw_offset_y / keyHeight) * keyHeight;
 	const endY = g_draw_offset_y + g_grid_canvas.height;
 
-	for (let y = startY; y <= endY; y += keyHeight) {
+	for (let y = startY; y < endY; y += keyHeight) {
 		const pitchIndex = keyCount - 1 - y / keyHeight;
 		const pitchMod12 = pitchIndex % 12;
 		const isBlackKey = blackKeyPitches.has(pitchMod12);
@@ -277,16 +283,26 @@ export const drawGrid = (): void => {
 
 	// --- 垂直線 (小節線/拍線) の描画 ---
 	// X座標の計算ロジックは前回と同じ (水平スクロール)
-	const startX = Math.floor(g_draw_offset_x / stepWidth) * stepWidth;
+	const startX =
+		Math.floor(g_draw_offset_x / (stepWidth * noteLengthSteps)) *
+		stepWidth *
+		noteLengthSteps;
 	const endX = g_draw_offset_x + g_grid_canvas.width;
+	const lineStep = stepWidth * noteLengthSteps;
 
-	for (let x = startX; x <= endX; x += stepWidth) {
-		const isBarLine = (x / stepWidth) % stepsPerBar === 0;
+	for (let x = startX; x <= endX; x += lineStep) {
+		const step = x / stepWidth;
+		const isBarLine = step % stepsPerBar === 0;
+		const isNoteLine = step % noteLengthSteps === 0;
 
 		const screenX = x - g_draw_offset_x;
 
 		g_grid_ctx.beginPath();
-		g_grid_ctx.strokeStyle = isBarLine ? "#A0A0A0" : "#E5E7EB";
+		g_grid_ctx.strokeStyle = isBarLine
+			? "#A0A0A0"
+			: isNoteLine
+				? "#D1D5DB"
+				: "#E5E7EB";
 		g_grid_ctx.lineWidth = isBarLine ? 2 : 1;
 
 		g_grid_ctx.moveTo(screenX, 0);
@@ -313,7 +329,19 @@ export const drawNotes = (notes: Note[], color = "#3B82F6"): void => {
 		const renderX = logicalX - g_draw_offset_x;
 		const renderY = logicalY - g_draw_offset_y;
 
-		g_grid_ctx.fillStyle = color;
+		// ベロシティに応じた不透明度 (0.3〜1.0)
+		const velocityOpacity =
+			note.velocity !== undefined ? 0.3 + (note.velocity / 127) * 0.7 : 1.0;
+
+		// 色をRGBAに変換
+		if (color.startsWith("#")) {
+			const r = parseInt(color.slice(1, 3), 16);
+			const g = parseInt(color.slice(3, 5), 16);
+			const b = parseInt(color.slice(5, 7), 16);
+			g_grid_ctx.fillStyle = `rgba(${r},${g},${b},${velocityOpacity})`;
+		} else {
+			g_grid_ctx.fillStyle = color;
+		}
 
 		// 描画には renderX と renderY を使用
 		g_grid_ctx.fillRect(renderX + 1, renderY + 1, w - 2, h - 2);

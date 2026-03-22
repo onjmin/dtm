@@ -4,16 +4,16 @@ export type Note = {
 	startStep: number;
 	durationSteps: number;
 	pitch: number;
+	velocity?: number; // 0-127, 未設定の場合は127
 };
 
 // ピアノロールの描画とステップ計算に必要な設定
 export type RenderConfig = {
-	bars: number; // 8固定
-	stepsPerBar: number; // 1小節あたりのステップ数 (16固定)
-	keyCount: number; // C1〜C5の49鍵
-	pitchRangeStart: number; // C1のピッチ番号 (0)
-	keyHeight: number; // 1鍵盤あたりのピクセル高さ
-	stepWidth: number; // 1ステップあたりのピクセル幅
+	stepsPerBar: number;
+	keyCount: number;
+	pitchRangeStart: number;
+	keyHeight: number;
+	stepWidth: number;
 };
 
 // 外部イベント
@@ -25,4 +25,5 @@ export type CoreEventHandlers = {
 // ノート追加時のオプション
 export type AddNoteOptions = {
 	noteLengthSteps: number;
+	velocity?: number;
 };

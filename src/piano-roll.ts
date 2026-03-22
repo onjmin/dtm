@@ -10,7 +10,12 @@ import {
 	setDrawOffset,
 } from "./renderer";
 import { MMLCore } from "./mml-core";
-import type { AddNoteOptions, CoreEventHandlers, Note, RenderConfig } from "./types";
+import type {
+	AddNoteOptions,
+	CoreEventHandlers,
+	Note,
+	RenderConfig,
+} from "./types";
 
 export type PianoRollOptions = {
 	mountTarget: HTMLElement;
@@ -68,15 +73,13 @@ export const createPianoRoll = (
 
 	const gridCanvas = getGridCanvas();
 	const resizeHandleWidth = 6;
-	let dragState:
-		| null
-		| {
-				noteId: number;
-				mode: "move" | "resize";
-				dragOffsetStep: number;
-				dragOffsetPitch: number;
-				startStep: number;
-		  } = null;
+	let dragState: null | {
+		noteId: number;
+		mode: "move" | "resize";
+		dragOffsetStep: number;
+		dragOffsetPitch: number;
+		startStep: number;
+	} = null;
 	let hasDragged = false;
 
 	const findNoteAtPosition = (x: number, y: number): Note | null => {
@@ -93,7 +96,12 @@ export const createPianoRoll = (
 			const renderX = logicalX - offset.x;
 			const renderY = logicalY - offset.y;
 
-			if (x >= renderX && x <= renderX + w && y >= renderY && y <= renderY + h) {
+			if (
+				x >= renderX &&
+				x <= renderX + w &&
+				y >= renderY &&
+				y <= renderY + h
+			) {
 				return note;
 			}
 		}
