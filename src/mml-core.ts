@@ -222,7 +222,7 @@ export class MMLCore {
 	 */
 	private generateMML = (volumeOverride?: number): string => {
 		const config = getRenderConfig();
-		const vol = Math.floor(((volumeOverride ?? this.volume) * 127) / 100);
+		const vol = volumeOverride ?? this.volume;
 		const HALF_BAR = config.stepsPerBar / 2;
 
 		const header = `t${this.tempo} q50 v${vol}`;
