@@ -323,6 +323,7 @@ var MMLCore = class {
   nextNoteId = 0;
   handlers;
   volume = 80;
+  tempo = 120;
   constructor(handlers) {
     this.handlers = handlers;
     this.generateAndNotify();
@@ -362,7 +363,11 @@ var MMLCore = class {
   }
   getMaxStep() {
     if (this.notes.length === 0) return 0;
-    return Math.max(...this.notes.map((n) => n.startStep + n.durationSteps));
+    const stepsPer16th = 12;
+    const maxRaw = Math.max(
+      ...this.notes.map((n) => n.startStep + n.durationSteps)
+    );
+    return Math.ceil(maxRaw / stepsPer16th) * stepsPer16th;
   }
   moveNote(noteId, startStep, pitch) {
     const note = this.notes.find((target) => target.id === noteId);
@@ -403,7 +408,10 @@ var MMLCore = class {
     this.volume = volume;
     this.generateAndNotify();
   }
-  // 他の設定メソッド（テンポ、音色など）も同様に実装する...
+  setTempo(tempo) {
+    this.tempo = tempo;
+    this.generateAndNotify();
+  }
   // ============== 内部処理 ==============
   generateAndNotify() {
     this.handlers.onNotesChanged([...this.notes]);
@@ -411,69 +419,134 @@ var MMLCore = class {
     this.handlers.onMMLGenerated(mml);
   }
   /**
-   * 現在のノートデータからMML文字列を生成（和音対応済み）
+   * ステップ数から最も近いMML音長数値に変換（スナップ処理）
+   */
+  stepsToMMLDuration(steps) {
+    const config = getRenderConfig();
+    const total = config.stepsPerBar;
+    const commonDurations = [1, 2, 4, 8, 16, 32, 64, 96, 3, 6, 12, 24, 48];
+    let bestDur = 4;
+    let minDiff = Infinity;
+    for (const d of commonDurations) {
+      const targetSteps = total / d;
+      const diff = Math.abs(steps - targetSteps);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestDur = d;
+      }
+    }
+    return bestDur.toString();
+  }
+  /**
+   * ギャップに収まる最大の音符を探す（減算アルゴリズム用）
+   */
+  findBestFitDuration(gap) {
+    const config = getRenderConfig();
+    const durations = [1, 2, 4, 8, 12, 16, 24, 32, 48, 64];
+    for (const d of durations) {
+      const stepLen = config.stepsPerBar / d;
+      if (gap >= stepLen) {
+        return { dur: d, steps: stepLen };
+      }
+    }
+    return { dur: 64, steps: config.stepsPerBar / 64 };
+  }
+  /**
+   * ピッチからオクターブ最適化のある音名を取得
+   */
+  getNoteWithOctave(pitch, lastOctave) {
+    const octave = Math.floor(pitch / 12) + 1;
+    const name = PITCH_MAP[pitch % 12];
+    if (octave === lastOctave) {
+      return name;
+    } else if (octave === lastOctave + 1) {
+      return `>${name}`;
+    } else if (octave === lastOctave - 1) {
+      return `<${name}`;
+    } else {
+      return `o${octave}${name}`;
+    }
+  }
+  /**
+   * MML生成（1/2小節パターンスキャン方式）
    */
   generateMML = () => {
     const config = getRenderConfig();
-    const baseLength = config.stepsPerBar;
     const vol = Math.floor(this.volume * 127 / 100);
-    let currentMML = `l${baseLength} v${vol} `;
-    let currentStep = 0;
-    const totalSteps = this.getMaxStep() + getRenderConfig().stepsPerBar;
-    const notesByStep = this.notes.reduce(
-      (acc, note) => {
-        if (!acc[note.startStep]) {
-          acc[note.startStep] = [];
-        }
-        acc[note.startStep].push(note);
-        return acc;
-      },
-      {}
-    );
-    const sortedSteps = Object.keys(notesByStep).map(Number).sort((a, b) => a - b);
-    sortedSteps.forEach((startStep) => {
-      const notesAtStep = notesByStep[startStep];
-      const restSteps = startStep - currentStep;
-      if (restSteps > 0) {
-        currentMML += this.stepToMMLRest(restSteps, baseLength);
-      }
-      const durations = Array.from(
-        new Set(notesAtStep.map((note) => note.durationSteps))
-      ).sort((a, b) => a - b);
-      let segmentStart = 0;
-      durations.forEach((durationStep) => {
-        const segmentLength = durationStep - segmentStart;
-        if (segmentLength <= 0) {
-          return;
-        }
-        const activeNotes = notesAtStep.filter(
-          (note) => note.durationSteps > segmentStart
-        );
-        const mmlLength = segmentLength * baseLength / getRenderConfig().stepsPerBar;
-        const noteMMLs = activeNotes.map(
-          (note) => this.pitchToMMLNote(note.pitch)
-        );
-        if (noteMMLs.length === 1) {
-          currentMML += `${noteMMLs[0]}${mmlLength} `;
-        } else if (noteMMLs.length > 1) {
-          currentMML += `[${noteMMLs.join(" ")}]${mmlLength} `;
-        }
-        segmentStart = durationStep;
-      });
-      const longestNote = notesAtStep.reduce(
-        (a, b) => a.durationSteps > b.durationSteps ? a : b
+    const HALF_BAR = config.stepsPerBar / 2;
+    let currentMML = `t${this.tempo} q50 v${vol} `;
+    let lastOctave = -1;
+    let currentCursor = 0;
+    if (this.notes.length === 0) return currentMML.trim();
+    const lastNote = this.notes[this.notes.length - 1];
+    const endStep = lastNote.startStep + lastNote.durationSteps;
+    const totalSteps = Math.ceil(endStep / HALF_BAR) * HALF_BAR;
+    for (let windowStart = 0; windowStart < totalSteps; windowStart += HALF_BAR) {
+      const windowEnd = windowStart + HALF_BAR;
+      const windowNotes = this.notes.filter(
+        (n) => n.startStep >= windowStart && n.startStep < windowEnd
       );
-      currentStep = startStep + longestNote.durationSteps;
-    });
-    const remainingSteps = totalSteps - currentStep;
-    if (remainingSteps > 0) {
-      currentMML += this.stepToMMLRest(remainingSteps, baseLength);
+      if (windowNotes.length === 0) {
+        while (currentCursor < windowEnd) {
+          const gap = windowEnd - currentCursor;
+          if (gap <= 2) {
+            currentCursor = windowEnd;
+            break;
+          }
+          const { dur, steps } = this.findBestFitDuration(gap);
+          currentMML += `r${dur} `;
+          currentCursor += steps;
+        }
+        continue;
+      }
+      const notesByStep = /* @__PURE__ */ new Map();
+      windowNotes.forEach((n) => {
+        const list = notesByStep.get(n.startStep) || [];
+        list.push(n);
+        notesByStep.set(n.startStep, list);
+      });
+      const sortedSteps = Array.from(notesByStep.keys()).sort((a, b) => a - b);
+      for (let i = 0; i < sortedSteps.length; i++) {
+        const startStep = sortedSteps[i];
+        const notes = notesByStep.get(startStep);
+        while (currentCursor < startStep) {
+          const gap = startStep - currentCursor;
+          if (gap <= 2) {
+            currentCursor = startStep;
+            break;
+          }
+          const { dur, steps } = this.findBestFitDuration(gap);
+          currentMML += `r${dur} `;
+          currentCursor += steps;
+        }
+        const nextStart = sortedSteps[i + 1] ?? windowEnd;
+        const availableSteps = nextStart - startStep;
+        const durStr = this.stepsToMMLDuration(availableSteps);
+        if (notes.length > 1) {
+          const noteStrs = notes.map(
+            (n) => this.getNoteWithOctave(n.pitch, lastOctave)
+          );
+          currentMML += `[${noteStrs.join("")}]${durStr} `;
+        } else {
+          const noteStr = this.getNoteWithOctave(notes[0].pitch, lastOctave);
+          currentMML += `${noteStr}${durStr} `;
+        }
+        lastOctave = Math.floor(notes[0].pitch / 12) + 1;
+        const actualStep = config.stepsPerBar / parseInt(durStr);
+        currentCursor = startStep + actualStep;
+      }
+      while (currentCursor < windowEnd) {
+        const gap = windowEnd - currentCursor;
+        if (gap <= 2) {
+          currentCursor = windowEnd;
+          break;
+        }
+        const { dur, steps } = this.findBestFitDuration(gap);
+        currentMML += `r${dur} `;
+        currentCursor += steps;
+      }
     }
-    return currentMML.trim();
-  };
-  stepToMMLRest = (steps, baseLength) => {
-    const mmlLength = steps * baseLength / getRenderConfig().stepsPerBar;
-    return `r${mmlLength} `;
+    return currentMML.replace(/\s+/g, " ").trim();
   };
   pitchToMMLNote = (pitch) => {
     const octave = Math.floor(pitch / 12) + 1;
