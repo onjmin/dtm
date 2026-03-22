@@ -1536,165 +1536,172 @@
 
             clearAllNotes();
 
-            const melodyTrack = tracks.find(t => t.id === 'melody');
-            if (!melodyTrack || !melodyTrack.core) return;
+            const PITCH_MAP = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
+            const stepsPerBar = 192;
 
-            const bpmMatch = mml.match(/t(\d+)/);
-            if (bpmMatch) {
-                const bpm = parseInt(bpmMatch[1]);
-                document.getElementById('bpm-input').value = bpm;
-            }
+            const trackIds = ['melody', 'submelody', 'bass', 'chord'];
+            const trackMap = {};
+            trackIds.forEach((id, idx) => trackMap[idx] = tracks.find(t => t.id === id));
 
-            const lMatch = mml.match(/l(\d+)/);
-            const baseLength = lMatch ? parseInt(lMatch[1]) : 16;
-            const stepsPerBeat = 48;
-            const stepsPerNoteLength = stepsPerBeat / baseLength;
+            const tracksMML = mml.split(';').map(s => s.trim());
 
-            let currentStep = 0;
-            let octave = 4;
-            let i = 0;
+            tracksMML.forEach((trackMML, trackIdx) => {
+                const track = trackMap[trackIdx];
+                if (!track || !track.core) return;
 
-            while (i < mml.length) {
-                const ch = mml[i];
+                const headerMatch = trackMML.match(/@(\d+)\s+(.+)/);
+                if (!headerMatch) return;
 
-                if (ch === 't') {
-                    i++;
-                    let num = '';
-                    while (i < mml.length && /\d/.test(mml[i])) {
-                        num += mml[i];
+                const body = headerMatch[2];
+                let octave = 4;
+                let currentStep = 0;
+                let i = 0;
+                let baseLength = 16;
+
+                while (i < body.length) {
+                    const ch = body[i];
+
+                    if (ch === 'q') {
                         i++;
+                        while (i < body.length && !/\s/.test(body[i]) && body[i] !== ';') i++;
+                        continue;
                     }
-                    continue;
-                }
 
-                if (ch === 'l') {
-                    i++;
-                    let num = '';
-                    while (i < mml.length && /\d/.test(mml[i])) {
-                        num += mml[i];
+                    if (ch === 'v') {
                         i++;
+                        while (i < body.length && !/\s/.test(body[i]) && body[i] !== ';') i++;
+                        continue;
                     }
-                    continue;
-                }
 
-                if (ch === 'o') {
-                    i++;
-                    octave = parseInt(mml[i]) || 4;
-                    i++;
-                    continue;
-                }
-
-                if (ch === 'r') {
-                    i++;
-                    let len = 0;
-                    while (i < mml.length && /\d/.test(mml[i])) {
-                        len = len * 10 + parseInt(mml[i]);
+                    if (ch === 't') {
                         i++;
-                    }
-                    len = len || baseLength;
-                    let dots = 0;
-                    while (i < mml.length && mml[i] === '.') {
-                        dots++;
-                        i++;
-                    }
-                    let steps = Math.round((baseLength / len) * stepsPerNoteLength);
-                    for (let d = 0; d < dots; d++) {
-                        steps = Math.round(steps * 1.5);
-                    }
-                    currentStep += steps;
-                    continue;
-                }
-
-                if (ch === '@' || ch === 'v') {
-                    i++;
-                    while (i < mml.length && mml[i] !== ';' && !/[a-z]/.test(mml[i].toLowerCase())) {
-                        i++;
-                    }
-                    continue;
-                }
-
-                if (ch === ';') {
-                    i++;
-                    const currentBar = Math.floor(currentStep / renderConfig.stepsPerBar);
-                    currentStep = (currentBar + 1) * renderConfig.stepsPerBar;
-                    continue;
-                }
-
-                if (ch === '[') {
-                    i++;
-                    let chordNotes = [];
-                    let chordDuration = 0;
-                    while (i < mml.length && mml[i] !== ']') {
-                        const noteCh = mml[i].toLowerCase();
-                        if (PITCH_MAP.hasOwnProperty(noteCh)) {
-                            let pitch = PITCH_MAP[noteCh];
+                        let num = '';
+                        while (i < body.length && /\d/.test(body[i])) {
+                            num += body[i];
                             i++;
-                            if (mml[i] === '#' || mml[i] === '+') { pitch++; i++; }
-                            else if (mml[i] === '-') { pitch--; i++; }
-                            const noteOctave = octave;
-                            const midiPitch = (noteOctave + 1) * 12 + pitch;
-                            chordNotes.push(midiPitch);
-                            let num = '';
-                            while (i < mml.length && /\d/.test(mml[i])) {
-                                num += mml[i];
+                        }
+                        if (trackIdx === 0) {
+                            document.getElementById('bpm-input').value = num;
+                        }
+                        continue;
+                    }
+
+                    if (ch === 'l') {
+                        i++;
+                        let num = '';
+                        while (i < body.length && /\d/.test(body[i])) {
+                            num += body[i];
+                            i++;
+                        }
+                        baseLength = parseInt(num) || 16;
+                        continue;
+                    }
+
+                    if (ch === 'o') {
+                        i++;
+                        octave = parseInt(body[i]) || 4;
+                        i++;
+                        continue;
+                    }
+
+                    if (ch === 'r') {
+                        i++;
+                        let len = 0;
+                        while (i < body.length && /\d/.test(body[i])) {
+                            len = len * 10 + parseInt(body[i]);
+                            i++;
+                        }
+                        len = len || baseLength;
+                        const steps = Math.round(stepsPerBar / len);
+                        currentStep += steps;
+                        continue;
+                    }
+
+                    if (ch === '>') {
+                        octave++;
+                        i++;
+                        continue;
+                    }
+                    if (ch === '<') {
+                        octave--;
+                        i++;
+                        continue;
+                    }
+
+                    if (ch === '[') {
+                        i++;
+                        const chordNotes = [];
+                        let chordOctave = octave;
+                        const octaveBeforeChord = octave;
+                        while (i < body.length && body[i] !== ']') {
+                            const noteCh = body[i].toLowerCase();
+
+                            if (body[i] === '+') {
+                                i++;
+                            } else if (noteCh === 'o') {
+                                i++;
+                                chordOctave = parseInt(body[i]) || 4;
+                                i++;
+                            } else if (noteCh === '>') {
+                                chordOctave++;
+                                i++;
+                            } else if (noteCh === '<') {
+                                chordOctave--;
+                                i++;
+                            } else if (PITCH_MAP.hasOwnProperty(noteCh)) {
+                                let pitch = PITCH_MAP[noteCh];
+                                i++;
+                                if (body[i] === '#' || body[i] === '+') { pitch++; i++; }
+                                else if (body[i] === '-') { pitch--; i++; }
+                                const midiPitch = (chordOctave + 1) * 12 + pitch;
+                                chordNotes.push(midiPitch);
+                            } else {
                                 i++;
                             }
-                            if (num) {
-                                chordDuration = Math.round((baseLength / parseInt(num)) * stepsPerNoteLength);
-                            }
                         }
-                        while (i < mml.length && mml[i] !== ']' && !PITCH_MAP.hasOwnProperty(mml[i].toLowerCase())) {
+                        if (body[i] === ']') i++;
+                        octave = octaveBeforeChord;
+
+                        let len = 0;
+                        while (i < body.length && /\d/.test(body[i])) {
+                            len = len * 10 + parseInt(body[i]);
                             i++;
                         }
+                        const chordSteps = len ? Math.round(stepsPerBar / len) : Math.round(stepsPerBar / baseLength);
+
+                        for (const p of chordNotes) {
+                            track.core.toggleNote(currentStep, p, { noteLengthSteps: Math.max(1, chordSteps) });
+                        }
+                        currentStep += chordSteps;
+                        continue;
                     }
-                    if (mml[i] === ']') i++;
-                    let num = '';
-                    while (i < mml.length && /\d/.test(mml[i])) {
-                        num += mml[i];
+
+                    const noteCh = ch.toLowerCase();
+                    if (PITCH_MAP.hasOwnProperty(noteCh)) {
+                        let pitch = PITCH_MAP[noteCh];
                         i++;
-                    }
-                    let steps = num ? Math.round((baseLength / parseInt(num)) * stepsPerNoteLength) : chordDuration;
-                    if (!steps) steps = Math.round(stepsPerNoteLength);
+                        if (body[i] === '#' || body[i] === '+') { pitch++; i++; }
+                        else if (body[i] === '-') { pitch--; i++; }
+                        const midiPitch = (octave + 1) * 12 + pitch;
 
-                    for (const p of chordNotes) {
-                        melodyTrack.core.toggleNote(currentStep, p, { noteLengthSteps: Math.max(1, steps) });
-                    }
-                    currentStep += steps;
-                    continue;
-                }
+                        let len = 0;
+                        while (i < body.length && /\d/.test(body[i])) {
+                            len = len * 10 + parseInt(body[i]);
+                            i++;
+                        }
+                        len = len || baseLength;
+                        const steps = Math.round(stepsPerBar / len);
 
-                const noteCh = ch.toLowerCase();
-                if (PITCH_MAP.hasOwnProperty(noteCh)) {
-                    let pitch = PITCH_MAP[noteCh];
+                        track.core.toggleNote(currentStep, midiPitch, { noteLengthSteps: Math.max(1, steps) });
+                        currentStep += steps;
+                        continue;
+                    }
+
                     i++;
-                    if (mml[i] === '#' || mml[i] === '+') { pitch++; i++; }
-                    else if (mml[i] === '-') { pitch--; i++; }
-                    const noteOctave = octave;
-                    const midiPitch = (noteOctave + 1) * 12 + pitch;
-                    let len = 0;
-                    while (i < mml.length && /\d/.test(mml[i])) {
-                        len = len * 10 + parseInt(mml[i]);
-                        i++;
-                    }
-                    let dots = 0;
-                    while (i < mml.length && mml[i] === '.') {
-                        dots++;
-                        i++;
-                    }
-                    len = len || baseLength;
-                    let steps = Math.round((baseLength / len) * stepsPerNoteLength);
-                    for (let d = 0; d < dots; d++) {
-                        steps = Math.round(steps * 1.5);
-                    }
-                    melodyTrack.core.toggleNote(currentStep, midiPitch, { noteLengthSteps: Math.max(1, steps) });
-                    currentStep += steps;
-                    continue;
                 }
+            });
 
-                i++;
-            }
-
-            console.log('MML読み込み完了: step', currentStep);
+            console.log('MML読み込み完了');
             playStartStep = 0;
             currentOffsetX = 0;
             DTM.setDrawOffset(currentOffsetX, currentOffsetY);
