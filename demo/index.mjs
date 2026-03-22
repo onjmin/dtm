@@ -400,8 +400,8 @@ var MMLCore = class {
   getNotes() {
     return this.notes;
   }
-  getMML() {
-    return this.generateMML();
+  getMML(volumeOverride) {
+    return this.generateMML(volumeOverride);
   }
   // ============== 設定変更 (外部API) ==============
   setVolume(volume) {
@@ -455,29 +455,32 @@ var MMLCore = class {
    * ピッチからオクターブ最適化のある音名を取得
    */
   getNoteWithOctave(pitch, lastOctave) {
-    const octave = Math.floor(pitch / 12) + 1;
+    const octave = Math.floor(pitch / 12) - 1;
     const name = PITCH_MAP[pitch % 12];
-    if (octave === lastOctave) {
-      return name;
-    } else if (octave === lastOctave + 1) {
-      return `>${name}`;
-    } else if (octave === lastOctave - 1) {
-      return `<${name}`;
-    } else {
-      return `o${octave}${name}`;
+    if (lastOctave === -1 || Math.abs(octave - lastOctave) >= 2) {
+      return { text: `o${octave}${name}`, currentOctave: octave };
     }
+    if (octave === lastOctave) {
+      return { text: name, currentOctave: octave };
+    } else if (octave === lastOctave + 1) {
+      return { text: `>${name}`, currentOctave: octave };
+    } else if (octave === lastOctave - 1) {
+      return { text: `<${name}`, currentOctave: octave };
+    }
+    return { text: `o${octave}${name}`, currentOctave: octave };
   }
   /**
    * MML生成（1/2小節パターンスキャン方式）
    */
-  generateMML = () => {
+  generateMML = (volumeOverride) => {
     const config = getRenderConfig();
-    const vol = Math.floor(this.volume * 127 / 100);
+    const vol = Math.floor((volumeOverride ?? this.volume) * 127 / 100);
     const HALF_BAR = config.stepsPerBar / 2;
-    let currentMML = `t${this.tempo} q50 v${vol} `;
+    const header = `t${this.tempo} q50 v${vol}`;
+    const segments = [];
     let lastOctave = -1;
     let currentCursor = 0;
-    if (this.notes.length === 0) return currentMML.trim();
+    if (this.notes.length === 0) return header;
     const lastNote = this.notes[this.notes.length - 1];
     const endStep = lastNote.startStep + lastNote.durationSteps;
     const totalSteps = Math.ceil(endStep / HALF_BAR) * HALF_BAR;
@@ -494,7 +497,7 @@ var MMLCore = class {
             break;
           }
           const { dur, steps } = this.findBestFitDuration(gap);
-          currentMML += `r${dur} `;
+          segments.push(`r${dur}`);
           currentCursor += steps;
         }
         continue;
@@ -516,22 +519,28 @@ var MMLCore = class {
             break;
           }
           const { dur, steps } = this.findBestFitDuration(gap);
-          currentMML += `r${dur} `;
+          segments.push(`r${dur}`);
           currentCursor += steps;
         }
         const nextStart = sortedSteps[i + 1] ?? windowEnd;
         const availableSteps = nextStart - startStep;
         const durStr = this.stepsToMMLDuration(availableSteps);
         if (notes.length > 1) {
-          const noteStrs = notes.map(
-            (n) => this.getNoteWithOctave(n.pitch, lastOctave)
-          );
-          currentMML += `[${noteStrs.join("")}]${durStr} `;
+          const noteStrs = notes.map((n) => {
+            const oct = Math.floor(n.pitch / 12) - 1;
+            const name = PITCH_MAP[n.pitch % 12];
+            return `o${oct}${name}`;
+          });
+          segments.push(`[${noteStrs.join("")}]${durStr}`);
+          lastOctave = -1;
         } else {
-          const noteStr = this.getNoteWithOctave(notes[0].pitch, lastOctave);
-          currentMML += `${noteStr}${durStr} `;
+          const { text, currentOctave } = this.getNoteWithOctave(
+            notes[0].pitch,
+            lastOctave
+          );
+          segments.push(`${text}${durStr}`);
+          lastOctave = currentOctave;
         }
-        lastOctave = Math.floor(notes[0].pitch / 12) + 1;
         const actualStep = config.stepsPerBar / parseInt(durStr);
         currentCursor = startStep + actualStep;
       }
@@ -542,16 +551,11 @@ var MMLCore = class {
           break;
         }
         const { dur, steps } = this.findBestFitDuration(gap);
-        currentMML += `r${dur} `;
+        segments.push(`r${dur}`);
         currentCursor += steps;
       }
     }
-    return currentMML.replace(/\s+/g, " ").trim();
-  };
-  pitchToMMLNote = (pitch) => {
-    const octave = Math.floor(pitch / 12) + 1;
-    const noteName = PITCH_MAP[pitch % 12];
-    return `o${octave}${noteName}`;
+    return `${header} ${segments.join(" ")}`;
   };
 };
 

@@ -21,14 +21,157 @@
             'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs'
         ]);
         const SoundFont = sfModules[0].SoundFont;
+        const SoundFont_drum = sfModules[1].SoundFont_drum;
         const SoundFont_list = sfModules[2].SoundFont_list;
 
         const audioCtx = new AudioContext();
         const gainNode = audioCtx.createGain();
         gainNode.connect(audioCtx.destination);
+        const drumGainNode = audioCtx.createGain();
+        drumGainNode.connect(audioCtx.destination);
         let masterVolume = 50;
+        let drumVolume = 80;
         gainNode.gain.value = 0.5;
+        drumGainNode.gain.value = 0.8;
         const soundFonts = {};
+
+        const DRUM_FONT = 'FluidR3_GM_sf2_file';
+        const DRUM_KEYS = {
+            kick: 36,
+            snare: 38,
+            clap: 39,
+            rimshot: 37,
+            hihatClosed: 42,
+            hihatPedal: 44,
+            hihatOpen: 46,
+            tomLow: 45,
+            tomMid: 47,
+            tomHigh: 50,
+            crash: 49,
+            ride: 51,
+            splash: 55,
+            tambourine: 54
+        };
+
+
+        const drumPatterns = {
+            // 4つ打ち：より重厚に。1拍目の頭にだけ軽くオープンハイハットを混ぜるのもアリ
+            '4beat': [
+                { step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 },
+                { step: 48, pitch: DRUM_KEYS.kick, velocity: 0.9 },
+                { step: 96, pitch: DRUM_KEYS.kick, velocity: 1.0 },
+                { step: 144, pitch: DRUM_KEYS.kick, velocity: 0.9 }
+            ],
+
+            // 8ビート：クローズドハイハットに強弱をつけ、スネアにクラップを薄く重ねる
+            '8beat': [
+                { step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+                { step: 24, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+                { step: 48, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 48, pitch: DRUM_KEYS.clap, velocity: 0.6 }, { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+                { step: 72, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+                { step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 }, { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+                { step: 120, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+                { step: 144, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+                { step: 168, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 }
+            ],
+
+            // 16ビート：キックのダブル（96, 108）を活かしつつ、ハイハットの強弱を細かく設定
+            '16beat': [
+                { step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+                { step: 12, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+                { step: 24, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+                { step: 36, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+                { step: 48, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+                { step: 60, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+                { step: 72, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+                { step: 84, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+                { step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 }, { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+                { step: 108, pitch: DRUM_KEYS.kick, velocity: 0.7 }, { step: 108, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+                { step: 120, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+                { step: 132, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+                { step: 144, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+                { step: 156, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+                { step: 168, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+                { step: 180, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 }
+            ],
+
+            // シャッフル：跳ねるタイミングのベロシティを落として、グルーヴ感を強調
+            'shuffle': [
+                { step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+                { step: 32, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+                { step: 48, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+                { step: 80, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+                { step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 }, { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+                { step: 128, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+                { step: 144, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+                { step: 176, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 }
+            ],
+
+            // ダンス/EDM：スネアをClapに変更。キックとハイハットの対比を最大化
+            'dance': [
+                { step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 },
+                { step: 24, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
+                { step: 48, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 48, pitch: DRUM_KEYS.clap, velocity: 1.0 },
+                { step: 72, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
+                { step: 96, pitch: DRUM_KEYS.kick, velocity: 1.0 },
+                { step: 120, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
+                { step: 144, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 144, pitch: DRUM_KEYS.clap, velocity: 1.0 },
+                { step: 168, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 }
+            ],
+
+            // ボサノバ/チル系：リムショット(37)とハイハットの組み合わせ
+            'bossa': [
+                { step: 0, pitch: DRUM_KEYS.kick, velocity: 0.9 }, { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+                { step: 24, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+                { step: 48, pitch: DRUM_KEYS.rimshot, velocity: 0.8 }, { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+                { step: 72, pitch: DRUM_KEYS.kick, velocity: 0.7 }, { step: 72, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+                { step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 }, { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+                { step: 120, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+                { step: 144, pitch: DRUM_KEYS.rimshot, velocity: 0.8 }, { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+                { step: 168, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 }
+            ],
+
+            // ファンク/ディスコ：タンバリン(54)でスピード感を出す
+            'disco': [
+                { step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
+                { step: 24, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
+                { step: 48, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
+                { step: 72, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
+                { step: 96, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
+                { step: 120, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
+                { step: 144, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
+                { step: 168, pitch: DRUM_KEYS.tambourine, velocity: 0.8 }
+            ]
+        };
+
+        let currentDrumPattern = 'dance';
+
+        const loadDrumSoundFont = async () => {
+            try {
+                await SoundFont_drum.load({
+                    ctx: audioCtx,
+                    font: DRUM_FONT,
+                    id: '0',
+                    keys: Object.values(DRUM_KEYS)
+                });
+                console.log('Drum SoundFont loaded');
+            } catch (e) {
+                console.error('Failed to load drum:', e);
+            }
+        };
+        loadDrumSoundFont();
+
+        const playDrumNote = (pitch, velocity, when, duration) => {
+            if (!SoundFont_drum.font) return;
+            SoundFont_drum.play({
+                ctx: audioCtx,
+                pitch,
+                volume: (drumVolume / 100) * velocity,
+                when,
+                duration,
+                destination: drumGainNode
+            });
+        };
 
         const loadSoundFont = async (fontName, instrumentKey, trackId) => {
             try {
@@ -268,7 +411,13 @@
         };
 
         window.movePianoRoll = (direction) => {
-            const { keyHeight } = renderConfig;
+            const { keyHeight, stepWidth, stepsPerBar } = renderConfig;
+            const gridCanvas = DTM.getGridCanvas();
+            const visibleSteps = gridCanvas.width / stepWidth;
+            const visibleBars = Math.round(visibleSteps / stepsPerBar);
+            const halfBars = Math.max(1, Math.round(visibleBars / 2));
+            const horizontalScroll = halfBars * stepsPerBar * stepWidth;
+            const verticalScroll = Math.round(visibleBars / 2) * keyHeight;
             const maxOffsetY = getMaxOffsetY();
 
             switch (direction) {
@@ -276,16 +425,16 @@
                     currentOffsetX = 0;
                     break;
                 case 'right':
-                    currentOffsetX += scrollAmount;
+                    currentOffsetX += horizontalScroll;
                     break;
                 case 'left':
-                    currentOffsetX = Math.max(0, currentOffsetX - scrollAmount);
+                    currentOffsetX = Math.max(0, currentOffsetX - horizontalScroll);
                     break;
                 case 'up':
-                    currentOffsetY = clamp(currentOffsetY - keyHeight, 0, maxOffsetY);
+                    currentOffsetY = clamp(currentOffsetY - verticalScroll, 0, maxOffsetY);
                     break;
                 case 'down':
-                    currentOffsetY = clamp(currentOffsetY + keyHeight, 0, maxOffsetY);
+                    currentOffsetY = clamp(currentOffsetY + verticalScroll, 0, maxOffsetY);
                     break;
             }
 
@@ -339,16 +488,16 @@
             if (totalWidth <= visibleWidth) {
                 thumb.style.width = '100%';
                 thumb.style.left = '0';
-                return;
+            } else {
+                const thumbWidth = Math.max(40, (visibleWidth / totalWidth) * scrollbarWidth);
+                const maxOffset = totalWidth - visibleWidth;
+                const ratio = currentOffsetX / maxOffset;
+                const thumbLeft = ratio * (scrollbarWidth - thumbWidth);
+                thumb.style.width = `${thumbWidth}px`;
+                thumb.style.left = `${thumbLeft}px`;
             }
 
-            const thumbWidth = Math.max(40, (visibleWidth / totalWidth) * scrollbarWidth);
-            const maxOffset = totalWidth - visibleWidth;
-            const ratio = currentOffsetX / maxOffset;
-            const thumbLeft = ratio * (scrollbarWidth - thumbWidth);
-
-            thumb.style.width = `${thumbWidth}px`;
-            thumb.style.left = `${thumbLeft}px`;
+            updateVScrollbar();
         };
 
         const initScrollbar = () => {
@@ -407,6 +556,63 @@
             });
         };
 
+        const updateVScrollbar = () => {
+            const scrollbar = document.getElementById('v-scrollbar');
+            const thumb = document.getElementById('v-scrollbar-thumb');
+            if (!scrollbar || !thumb) return;
+
+            const gridCanvas = DTM.getGridCanvas();
+            const totalHeight = renderConfig.keyCount * renderConfig.keyHeight;
+            const visibleHeight = gridCanvas.height;
+            const scrollbarHeight = scrollbar.clientHeight;
+
+            if (totalHeight <= visibleHeight) {
+                thumb.style.height = '100%';
+                thumb.style.top = '0';
+                return;
+            }
+
+            const thumbHeight = Math.max(40, (visibleHeight / totalHeight) * scrollbarHeight);
+            const maxOffset = getMaxOffsetY();
+            const ratio = currentOffsetY / maxOffset;
+            const thumbTop = ratio * (scrollbarHeight - thumbHeight);
+
+            thumb.style.height = `${thumbHeight}px`;
+            thumb.style.top = `${thumbTop}px`;
+        };
+
+        const initVScrollbar = () => {
+            const scrollbar = document.getElementById('v-scrollbar');
+            const thumb = document.getElementById('v-scrollbar-thumb');
+            if (!scrollbar || !thumb) return;
+
+            let isDragging = false;
+
+            scrollbar.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const maxOffset = getMaxOffsetY();
+
+                const rect = scrollbar.getBoundingClientRect();
+                const y = e.clientY - rect.top;
+                const thumbHeight = parseFloat(thumb.style.height);
+                const thumbTop = Math.max(0, Math.min(y - thumbHeight / 2, scrollbar.clientHeight - thumbHeight));
+                const ratio = thumbTop / (scrollbar.clientHeight - thumbHeight);
+                currentOffsetY = Math.max(0, ratio * maxOffset);
+                DTM.setDrawOffset(currentOffsetX, currentOffsetY);
+                updateScrollbar();
+                redrawAll();
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+        };
+
         // 再生開始位置の縦線を描画
         const drawStartLine = () => {
             const gridCanvas = DTM.getGridCanvas();
@@ -428,8 +634,12 @@
 
         // MML出力エリア更新
         const updateMMLOutput = () => {
-            const fullMML = tracks.map((m, i) => `@${i} ${m.mml}`).join(";");
-            document.getElementById("mml-output").textContent = fullMML;
+            const fullMML = tracks.map((track, i) => {
+                if (!track.core) return `@${i} `;
+                const mml = track.core.getMML(track.volume);
+                return `@${i} ${mml.trim()}`;
+            }).join(";\n");
+            document.getElementById("mml-output").textContent = fullMML.trim();
             document.getElementById("mml-output-status").textContent =
                 `(${tracks.length}トラック) MML文字数: ${fullMML.length}`;
         };
@@ -733,6 +943,7 @@
 
             // 4. 初期描画
             initScrollbar();
+            initVScrollbar();
             updateControls();
             updateMMLOutput();
             DTM.setDrawOffset(currentOffsetX, currentOffsetY);
@@ -974,6 +1185,38 @@
                 }
                 playNote(trackId, pitch, volume, _when, duration);
             }
+
+            if (currentDrumPattern !== 'none' && SoundFont_drum.font) {
+                const pattern = drumPatterns[currentDrumPattern];
+                if (pattern && pattern.length > 0) {
+                    const stepsPerBar = renderConfig.stepsPerBar;
+                    const currentStep = currentPlayStep % stepsPerBar;
+                    const nextStep = currentStep + 4;
+
+                    let previousStep = (currentPlayStep - 4) % stepsPerBar;
+                    if (previousStep < 0) previousStep += stepsPerBar;
+                    const crossedBar = previousStep > currentStep;
+
+                    pattern.forEach(drum => {
+                        const drumStep = drum.step;
+                        const shouldPlay = crossedBar && drumStep === 0 ||
+                            (drumStep >= currentStep && drumStep < nextStep);
+                        if (shouldPlay) {
+                            const whenSeconds = (drumStep - currentStep) * secondsPerStep;
+                            if (whenSeconds >= -0.1 && whenSeconds <= planTime) {
+                                const noteDuration = 0.1;
+                                const velocity = drum.velocity ?? 1.0;
+                                if (whenSeconds < 0) {
+                                    playDrumNote(drum.pitch, velocity, 0, noteDuration);
+                                } else {
+                                    playDrumNote(drum.pitch, velocity, whenSeconds, noteDuration);
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+
             const lastNoteTime = timeline[timeline.length - 1]?.when ?? 0;
             const lastNoteDuration = timeline[timeline.length - 1]?.duration ?? 0;
             if (nowIndex >= timeline.length && time > lastNoteTime + lastNoteDuration + 0.1) {
@@ -987,6 +1230,18 @@
         noteLengthSelect.addEventListener('change', (e) => {
             noteLengthSteps = parseInt(e.target.value);
             redrawAll();
+        });
+
+        const drumVolumeInput = document.getElementById('drum-volume-input');
+        drumVolumeInput.addEventListener('input', (e) => {
+            drumVolume = parseInt(e.target.value) || 80;
+            drumGainNode.gain.value = drumVolume / 100;
+            document.getElementById('drum-volume-label').textContent = drumVolume + '%';
+        });
+
+        const drumRhythmSelect = document.getElementById('drum-rhythm-select');
+        drumRhythmSelect.addEventListener('change', () => {
+            currentDrumPattern = drumRhythmSelect.value;
         });
 
         const clearAllNotes = () => {
@@ -1438,14 +1693,8 @@
     <div class="flex flex-wrap gap-4 p-4 bg-white border rounded-lg shadow-md mb-6">
         <button id="play-button" onclick="togglePlayback()" disabled class="px-4 py-2 bg-gray-300 rounded"></button>
 
-        <button id="pause-button" onclick="pausePlayback()" disabled class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"></button>
-
-        <div class="flex items-center space-x-2">
-            <span class="text-sm font-medium text-gray-700">マスタ:</span>
-            <input type="range" id="master-volume-input" value="50" min="0" max="100" step="1"
-                oninput="updateMasterVolume(this.value)" class="w-24">
-            <span id="master-volume-label" class="text-sm text-gray-700 w-10">50%</span>
-        </div>
+        <button id="pause-button" onclick="pausePlayback()" disabled
+            class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"></button>
 
         <div class="flex items-center space-x-2">
             <span class="text-sm font-medium text-gray-700">BPM:</span>
@@ -1471,17 +1720,6 @@
                 <option value="16">3連8</option>
                 <option value="8">3連16</option>
             </select>
-        </div>
-
-        <div class="flex items-center space-x-2 border-l border-gray-200 pl-4">
-            <span class="text-sm font-medium text-gray-700">ドラム (Track 4):</span>
-            <select id="drum-select"
-                class="border rounded-md px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500">
-                <option>なし</option>
-                <option>4つ打ち</option>
-                <option>ロック</option>
-            </select>
-            <span class="text-xs text-gray-500">(MML再生には含まず)</span>
         </div>
 
         <div class="flex justify-center space-x-4 ml-auto">
@@ -1516,10 +1754,16 @@
     </div>
 
     <!-- ピアノロール -->
-    <div id="piano-roll-container"
-        class="w-[800px] h-[450px] bg-white border border-gray-300 rounded-lg shadow-xl relative"
-        style="overflow: hidden;">
-        <div id="wrapper" class="absolute inset-0">
+    <div class="flex gap-2">
+        <div id="piano-roll-container"
+            class="w-[800px] h-[450px] bg-white border border-gray-300 rounded-lg shadow-xl relative"
+            style="overflow: hidden;">
+            <div id="wrapper" class="absolute inset-0">
+            </div>
+        </div>
+        <div id="v-scrollbar" class="relative w-6 h-[450px] bg-gray-200 rounded cursor-pointer flex-shrink-0">
+            <div id="v-scrollbar-thumb"
+                class="absolute left-0 w-full bg-blue-400 rounded hover:bg-blue-500 transition-colors"></div>
         </div>
     </div>
 
@@ -1539,6 +1783,15 @@
 
         <div id="track-content" class="p-4 border border-t-0 border-gray-200 rounded-b-lg bg-white">
         </div>
+
+        <div class="mt-4 pt-4 border-t border-gray-200">
+            <div class="flex items-center space-x-4">
+                <span class="text-sm font-medium text-gray-700">音量:</span>
+                <input type="range" id="master-volume-input" value="50" min="0" max="100" step="1"
+                    oninput="updateMasterVolume(this.value)" class="w-32">
+                <span id="master-volume-label" class="text-sm text-gray-700 w-12">50%</span>
+            </div>
+        </div>
     </div>
 
     <!-- 楽器プリセット -->
@@ -1551,19 +1804,41 @@
         </div>
     </div>
 
+    <!-- ドラム設定 -->
+    <div class="p-4 bg-white border rounded-lg shadow-md mb-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">ドラム設定</h2>
+        <div class="flex flex-wrap items-center gap-4">
+            <div class="flex items-center space-x-2">
+                <span class="text-sm font-medium text-gray-700">リズム:</span>
+                <select id="drum-rhythm-select"
+                    class="border rounded-md px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="none">なし</option>
+                    <option value="4beat">4beat</option>
+                    <option value="8beat">8beat</option>
+                    <option value="16beat">16beat</option>
+                    <option value="shuffle">シャッフル</option>
+                    <option value="dance" selected>ダンス</option>
+                </select>
+            </div>
+            <div class="flex items-center space-x-2 ml-auto">
+                <input type="range" id="drum-volume-input" value="80" min="0" max="100" step="1" class="w-24">
+                <span id="drum-volume-label" class="text-sm text-gray-700 w-10">80%</span>
+            </div>
+        </div>
+    </div>
+
     <hr class="my-6 border-gray-300">
 
     <div class="p-4 bg-gray-800 text-white rounded-lg shadow-lg">
         <div class="flex items-center justify-between mb-2">
             <h2 class="text-xl font-semibold">生成された MML</h2>
-            <button onclick="copyMML()" id="copy-mml-button" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors">
+            <button onclick="copyMML()" id="copy-mml-button"
+                class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors">
                 コピー
             </button>
         </div>
         <p id="mml-output-status" class="text-xs text-gray-400"></p>
-        <pre class="bg-black p-3 rounded-md overflow-x-auto text-sm">
-            <code id="mml-output"></code>
-        </pre>
+        <pre class="bg-black p-3 rounded-md overflow-x-auto text-sm"><code id="mml-output" class="block"></code></pre>
     </div>
 
     <script>
