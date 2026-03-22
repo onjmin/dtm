@@ -426,11 +426,11 @@
             ctx.restore();
         };
 
-        // MML出力エリア更新 (既存ロジックをトップレベルに移動)
+        // MML出力エリア更新
         const updateMMLOutput = () => {
-            const fullMML = `t120 l16 ${tracks.map((t, i) => `@${i} ${t.mml}`).join(';')}`;
-            document.getElementById('mml-output').textContent = fullMML;
-            document.getElementById('mml-output-status').textContent =
+            const fullMML = tracks.map((m, i) => `@${i} ${m.mml}`).join(";");
+            document.getElementById("mml-output").textContent = fullMML;
+            document.getElementById("mml-output-status").textContent =
                 `(${tracks.length}トラック) MML文字数: ${fullMML.length}`;
         };
 
@@ -533,6 +533,18 @@
 
                 track.core.setVolume(track.volume);
             });
+
+            const bpmInput = document.getElementById('bpm-input');
+            if (bpmInput) {
+                const updateTempo = () => {
+                    const bpm = parseInt(bpmInput.value) || 120;
+                    tracks.forEach(track => {
+                        if (track.core) track.core.setTempo(bpm);
+                    });
+                };
+                bpmInput.addEventListener('input', updateTempo);
+                updateTempo();
+            }
 
             // 3. イベントリスナーの設定 (ドラッグ/リサイズ/スクロールもここで)
             // NOTE: デモで必ず動作確認するため、UI操作はここに集約すること。
@@ -1027,6 +1039,13 @@
 
             const bpm = getBPM(midi);
             document.getElementById('bpm-input').value = Math.round(bpm);
+            const updateTempo = () => {
+                const bpmVal = parseInt(document.getElementById('bpm-input').value) || 120;
+                tracks.forEach(track => {
+                    if (track.core) track.core.setTempo(bpmVal);
+                });
+            };
+            updateTempo();
 
             const channelNotes = {};
             for (const trackData of Object.values(track)) {
@@ -1393,8 +1412,30 @@
 <body class="bg-gray-100 p-4 min-h-screen">
     <h1 class="text-3xl font-extrabold mb-4 text-gray-800">簡易DAW（Canvas/MML）デモ</h1>
 
+    <!-- MIDI & MML入力 -->
     <div class="flex flex-wrap gap-4 p-4 bg-white border rounded-lg shadow-md mb-6">
+        <div class="flex items-center space-x-2">
+            <span class="text-sm font-medium text-gray-700">MIDI:</span>
+            <input type="file" id="midi-file-input" accept=".mid,.midi" class="border rounded-md px-2 py-1 text-sm">
+        </div>
 
+        <div class="flex items-center space-x-2 border-l border-gray-200 pl-4">
+            <textarea id="mml-input" rows="2" class="border rounded-md px-2 py-1 text-sm w-64"
+                placeholder="MMLを入力"></textarea>
+            <button onclick="loadMML()"
+                class="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600">MML読込</button>
+        </div>
+    </div>
+
+    <div id="midi-loading-overlay" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl p-8 shadow-2xl flex flex-col items-center space-y-4">
+            <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <span class="text-lg font-semibold text-gray-700">MIDI読み込み中...</span>
+        </div>
+    </div>
+
+    <!-- コントロール系UI -->
+    <div class="flex flex-wrap gap-4 p-4 bg-white border rounded-lg shadow-md mb-6">
         <button id="play-button" onclick="togglePlayback()" disabled class="px-4 py-2 bg-gray-300 rounded"></button>
 
         <button id="pause-button" onclick="pausePlayback()" disabled class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"></button>
@@ -1404,18 +1445,6 @@
             <input type="range" id="master-volume-input" value="50" min="0" max="100" step="1"
                 oninput="updateMasterVolume(this.value)" class="w-24">
             <span id="master-volume-label" class="text-sm text-gray-700 w-10">50%</span>
-        </div>
-
-        <div class="flex items-center space-x-2">
-            <span class="text-sm font-medium text-gray-700">MIDI:</span>
-            <input type="file" id="midi-file-input" accept=".mid,.midi" class="border rounded-md px-2 py-1 text-sm">
-        </div>
-
-        <div id="midi-loading-overlay" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div class="bg-white rounded-xl p-8 shadow-2xl flex flex-col items-center space-y-4">
-                <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                <span class="text-lg font-semibold text-gray-700">MIDI読み込み中...</span>
-            </div>
         </div>
 
         <div class="flex items-center space-x-2">
@@ -1455,65 +1484,38 @@
             <span class="text-xs text-gray-500">(MML再生には含まず)</span>
         </div>
 
-        <div class="flex items-center space-x-2 border-l border-gray-200 pl-4">
-            <textarea id="mml-input" rows="2" class="border rounded-md px-2 py-1 text-sm w-64"
-                placeholder="MMLを入力"></textarea>
-            <button onclick="loadMML()"
-                class="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600">MML読込</button>
+        <div class="flex justify-center space-x-4 ml-auto">
+            <div class="flex space-x-1">
+                <button onclick="movePianoRoll('home')"
+                    class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors" title="最初へ">
+                    <i class="mdi mdi-page-first text-xl"></i>
+                </button>
+                <button onclick="movePianoRoll('left')"
+                    class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
+                    <i class="mdi mdi-chevron-left text-xl"></i>
+                </button>
+                <button onclick="movePianoRoll('right')"
+                    class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
+                    <i class="mdi mdi-chevron-right text-xl"></i>
+                </button>
+                <span class="text-sm self-center text-gray-600 ml-2">水平移動</span>
+            </div>
+
+            <div class="flex space-x-1 border-l border-gray-300 pl-4">
+                <button onclick="movePianoRoll('up')"
+                    class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
+                    <i class="mdi mdi-chevron-up text-xl"></i>
+                </button>
+                <button onclick="movePianoRoll('down')"
+                    class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
+                    <i class="mdi mdi-chevron-down text-xl"></i>
+                </button>
+                <span class="text-sm self-center text-gray-600 ml-2">垂直移動 (1キー)</span>
+            </div>
         </div>
     </div>
 
-    <div class="p-4 bg-white border rounded-lg shadow-md mb-6">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">楽器プリセット</h2>
-        <div class="flex items-center space-x-4">
-            <select id="instrument-preset" onchange="loadInstrumentPreset(this.value)"
-                class="border rounded-md px-3 py-2">
-            </select>
-        </div>
-    </div>
-
-    <div class="p-4 bg-white border rounded-lg shadow-md mb-6">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">トラック設定</h2>
-
-        <div id="track-tabs" class="flex border-b border-gray-200">
-        </div>
-
-        <div id="track-content" class="p-4 border border-t-0 border-gray-200 rounded-b-lg bg-white">
-        </div>
-    </div>
-
-
-    <div class="flex justify-center space-x-4 mb-2">
-        <div class="flex space-x-1">
-            <button onclick="movePianoRoll('home')"
-                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors" title="最初へ">
-                <i class="mdi mdi-page-first text-xl"></i>
-            </button>
-            <button onclick="movePianoRoll('left')"
-                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
-                <i class="mdi mdi-chevron-left text-xl"></i>
-            </button>
-            <button onclick="movePianoRoll('right')"
-                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
-                <i class="mdi mdi-chevron-right text-xl"></i>
-            </button>
-            <span class="text-sm self-center text-gray-600 ml-2">水平移動</span>
-        </div>
-
-        <div class="flex space-x-1 border-l border-gray-300 pl-4">
-            <button onclick="movePianoRoll('up')"
-                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
-                <i class="mdi mdi-chevron-up text-xl"></i>
-            </button>
-            <button onclick="movePianoRoll('down')"
-                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
-                <i class="mdi mdi-chevron-down text-xl"></i>
-            </button>
-            <span class="text-sm self-center text-gray-600 ml-2">垂直移動 (1キー)</span>
-        </div>
-    </div>
-
-
+    <!-- ピアノロール -->
     <div id="piano-roll-container"
         class="w-[800px] h-[450px] bg-white border border-gray-300 rounded-lg shadow-xl relative"
         style="overflow: hidden;">
@@ -1528,15 +1530,59 @@
         </div>
     </div>
 
+    <!-- トラック設定 -->
+    <div class="p-4 bg-white border rounded-lg shadow-md mb-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">トラック設定</h2>
+
+        <div id="track-tabs" class="flex border-b border-gray-200">
+        </div>
+
+        <div id="track-content" class="p-4 border border-t-0 border-gray-200 rounded-b-lg bg-white">
+        </div>
+    </div>
+
+    <!-- 楽器プリセット -->
+    <div class="p-4 bg-white border rounded-lg shadow-md mb-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">楽器プリセット</h2>
+        <div class="flex items-center space-x-4">
+            <select id="instrument-preset" onchange="loadInstrumentPreset(this.value)"
+                class="border rounded-md px-3 py-2">
+            </select>
+        </div>
+    </div>
+
     <hr class="my-6 border-gray-300">
 
     <div class="p-4 bg-gray-800 text-white rounded-lg shadow-lg">
-        <h2 class="text-xl font-semibold mb-2">生成された MML</h2>
-        <p id="mml-output-status" class="text-xs mb-2 text-gray-400"></p>
+        <div class="flex items-center justify-between mb-2">
+            <h2 class="text-xl font-semibold">生成された MML</h2>
+            <button onclick="copyMML()" id="copy-mml-button" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors">
+                コピー
+            </button>
+        </div>
+        <p id="mml-output-status" class="text-xs text-gray-400"></p>
         <pre class="bg-black p-3 rounded-md overflow-x-auto text-sm">
             <code id="mml-output"></code>
         </pre>
     </div>
+
+    <script>
+        window.copyMML = () => {
+            const mml = document.getElementById('mml-output').textContent;
+            navigator.clipboard.writeText(mml).then(() => {
+                const btn = document.getElementById('copy-mml-button');
+                const originalText = btn.textContent;
+                btn.textContent = 'コピー完了!';
+                btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                btn.classList.add('bg-green-600');
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.classList.remove('bg-green-600');
+                    btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                }, 1500);
+            });
+        };
+    </script>
 </body>
 
 </html>

@@ -24,6 +24,7 @@ export class MMLCore {
 	private nextNoteId: number = 0;
 	private handlers: CoreEventHandlers;
 	private volume: number = 80;
+	private tempo: number = 120;
 
 	constructor(handlers: CoreEventHandlers) {
 		this.handlers = handlers;
@@ -78,7 +79,12 @@ export class MMLCore {
 
 	private getMaxStep(): number {
 		if (this.notes.length === 0) return 0;
-		return Math.max(...this.notes.map((n) => n.startStep + n.durationSteps));
+		// 16分音符グリッドにスナップ
+		const stepsPer16th = 12;
+		const maxRaw = Math.max(
+			...this.notes.map((n) => n.startStep + n.durationSteps),
+		);
+		return Math.ceil(maxRaw / stepsPer16th) * stepsPer16th;
 	}
 
 	public moveNote(noteId: number, startStep: number, pitch: number): void {
@@ -131,7 +137,10 @@ export class MMLCore {
 		this.generateAndNotify();
 	}
 
-	// 他の設定メソッド（テンポ、音色など）も同様に実装する...
+	public setTempo(tempo: number): void {
+		this.tempo = tempo;
+		this.generateAndNotify();
+	}
 
 	// ============== 内部処理 ==============
 
@@ -142,99 +151,165 @@ export class MMLCore {
 	}
 
 	/**
-	 * 現在のノートデータからMML文字列を生成（和音対応済み）
+	 * ステップ数から最も近いMML音長数値に変換（スナップ処理）
 	 */
-	private generateMML = (): string => {
-		// NOTE: テンポ t120 とインストゥルメント @0 はトラック設定として外で付与されることが多いですが、
-		// ここでは以前のトラック設定と統一性を保つため、vコマンド以降のみを返します。
+	private stepsToMMLDuration(steps: number): string {
 		const config = getRenderConfig();
-		const baseLength = config.stepsPerBar;
-		const vol = Math.floor((this.volume * 127) / 100);
-		let currentMML = `l${baseLength} v${vol} `; // NOTE: tと@はトラック生成時(MMLPlayer)に付与を想定
+		const total = config.stepsPerBar;
 
-		let currentStep = 0;
-		const totalSteps = this.getMaxStep() + getRenderConfig().stepsPerBar;
+		const commonDurations = [1, 2, 4, 8, 16, 32, 64, 96, 3, 6, 12, 24, 48];
 
-		// 1. ノートを startStep でグループ化
-		const notesByStep = this.notes.reduce(
-			(acc, note) => {
-				if (!acc[note.startStep]) {
-					acc[note.startStep] = [];
-				}
-				acc[note.startStep].push(note);
-				return acc;
-			},
-			{} as Record<number, Note[]>,
-		); // Note: Note は外部からインポートされた型を想定
+		let bestDur = 4;
+		let minDiff = Infinity;
 
-		// 2. グループ化されたステップを順番に処理
-		const sortedSteps = Object.keys(notesByStep)
-			.map(Number)
-			.sort((a, b) => a - b);
-
-		sortedSteps.forEach((startStep) => {
-			const notesAtStep = notesByStep[startStep];
-
-			// A. 休符の処理
-			const restSteps = startStep - currentStep;
-			if (restSteps > 0) {
-				currentMML += this.stepToMMLRest(restSteps, baseLength);
+		for (const d of commonDurations) {
+			const targetSteps = total / d;
+			const diff = Math.abs(steps - targetSteps);
+			if (diff < minDiff) {
+				minDiff = diff;
+				bestDur = d;
 			}
-
-			// B. 同時発音ノートの長さ差分を分解してMMLに変換
-			const durations = Array.from(
-				new Set(notesAtStep.map((note) => note.durationSteps)),
-			).sort((a, b) => a - b);
-			let segmentStart = 0;
-
-			durations.forEach((durationStep) => {
-				const segmentLength = durationStep - segmentStart;
-				if (segmentLength <= 0) {
-					return;
-				}
-				const activeNotes = notesAtStep.filter(
-					(note) => note.durationSteps > segmentStart,
-				);
-				const mmlLength =
-					(segmentLength * baseLength) / getRenderConfig().stepsPerBar;
-				const noteMMLs = activeNotes.map((note) =>
-					this.pitchToMMLNote(note.pitch),
-				);
-
-				if (noteMMLs.length === 1) {
-					currentMML += `${noteMMLs[0]}${mmlLength} `;
-				} else if (noteMMLs.length > 1) {
-					// 和音として出力: [o3e o3g o3b]1
-					currentMML += `[${noteMMLs.join(" ")}]${mmlLength} `;
-				}
-
-				segmentStart = durationStep;
-			});
-
-			// D. currentStep の更新 (このグループ内で最も長いノートの終了ステップに進める)
-			const longestNote = notesAtStep.reduce((a, b) =>
-				a.durationSteps > b.durationSteps ? a : b,
-			);
-			currentStep = startStep + longestNote.durationSteps;
-		});
-
-		// 3. 残りの休符処理
-		const remainingSteps = totalSteps - currentStep;
-		if (remainingSteps > 0) {
-			currentMML += this.stepToMMLRest(remainingSteps, baseLength);
 		}
 
-		// トリムしてMMLPlayerに渡せる形式で返す
-		return currentMML.trim();
-	};
+		return bestDur.toString();
+	}
 
-	private stepToMMLRest = (steps: number, baseLength: number): string => {
-		const mmlLength = (steps * baseLength) / getRenderConfig().stepsPerBar;
-		return `r${mmlLength} `;
+	/**
+	 * ギャップに収まる最大の音符を探す（減算アルゴリズム用）
+	 */
+	private findBestFitDuration(gap: number): { dur: number; steps: number } {
+		const config = getRenderConfig();
+		const durations = [1, 2, 4, 8, 12, 16, 24, 32, 48, 64];
+
+		for (const d of durations) {
+			const stepLen = config.stepsPerBar / d;
+			if (gap >= stepLen) {
+				return { dur: d, steps: stepLen };
+			}
+		}
+
+		return { dur: 64, steps: config.stepsPerBar / 64 };
+	}
+
+	/**
+	 * ピッチからオクターブ最適化のある音名を取得
+	 */
+	private getNoteWithOctave(pitch: number, lastOctave: number): string {
+		const octave = Math.floor(pitch / 12) + 1;
+		const name = PITCH_MAP[pitch % 12];
+
+		if (octave === lastOctave) {
+			return name;
+		} else if (octave === lastOctave + 1) {
+			return `>${name}`;
+		} else if (octave === lastOctave - 1) {
+			return `<${name}`;
+		} else {
+			return `o${octave}${name}`;
+		}
+	}
+
+	/**
+	 * MML生成（1/2小節パターンスキャン方式）
+	 */
+	private generateMML = (): string => {
+		const config = getRenderConfig();
+		const vol = Math.floor((this.volume * 127) / 100);
+		const HALF_BAR = config.stepsPerBar / 2;
+
+		let currentMML = `t${this.tempo} q50 v${vol} `;
+		let lastOctave = -1;
+		let currentCursor = 0;
+
+		if (this.notes.length === 0) return currentMML.trim();
+
+		const lastNote = this.notes[this.notes.length - 1];
+		const endStep = lastNote.startStep + lastNote.durationSteps;
+		const totalSteps = Math.ceil(endStep / HALF_BAR) * HALF_BAR;
+
+		for (
+			let windowStart = 0;
+			windowStart < totalSteps;
+			windowStart += HALF_BAR
+		) {
+			const windowEnd = windowStart + HALF_BAR;
+
+			const windowNotes = this.notes.filter(
+				(n) => n.startStep >= windowStart && n.startStep < windowEnd,
+			);
+
+			if (windowNotes.length === 0) {
+				while (currentCursor < windowEnd) {
+					const gap = windowEnd - currentCursor;
+					if (gap <= 2) {
+						currentCursor = windowEnd;
+						break;
+					}
+					const { dur, steps } = this.findBestFitDuration(gap);
+					currentMML += `r${dur} `;
+					currentCursor += steps;
+				}
+				continue;
+			}
+
+			const notesByStep = new Map<number, Note[]>();
+			windowNotes.forEach((n) => {
+				const list = notesByStep.get(n.startStep) || [];
+				list.push(n);
+				notesByStep.set(n.startStep, list);
+			});
+			const sortedSteps = Array.from(notesByStep.keys()).sort((a, b) => a - b);
+
+			for (let i = 0; i < sortedSteps.length; i++) {
+				const startStep = sortedSteps[i];
+				const notes = notesByStep.get(startStep)!;
+
+				while (currentCursor < startStep) {
+					const gap = startStep - currentCursor;
+					if (gap <= 2) {
+						currentCursor = startStep;
+						break;
+					}
+					const { dur, steps } = this.findBestFitDuration(gap);
+					currentMML += `r${dur} `;
+					currentCursor += steps;
+				}
+
+				const nextStart = sortedSteps[i + 1] ?? windowEnd;
+				const availableSteps = nextStart - startStep;
+				const durStr = this.stepsToMMLDuration(availableSteps);
+
+				if (notes.length > 1) {
+					const noteStrs = notes.map((n) =>
+						this.getNoteWithOctave(n.pitch, lastOctave),
+					);
+					currentMML += `[${noteStrs.join("")}]${durStr} `;
+				} else {
+					const noteStr = this.getNoteWithOctave(notes[0].pitch, lastOctave);
+					currentMML += `${noteStr}${durStr} `;
+				}
+
+				lastOctave = Math.floor(notes[0].pitch / 12) + 1;
+				const actualStep = config.stepsPerBar / parseInt(durStr);
+				currentCursor = startStep + actualStep;
+			}
+
+			while (currentCursor < windowEnd) {
+				const gap = windowEnd - currentCursor;
+				if (gap <= 2) {
+					currentCursor = windowEnd;
+					break;
+				}
+				const { dur, steps } = this.findBestFitDuration(gap);
+				currentMML += `r${dur} `;
+				currentCursor += steps;
+			}
+		}
+
+		return currentMML.replace(/\s+/g, " ").trim();
 	};
 
 	private pitchToMMLNote = (pitch: number): string => {
-		// Note: PITCH_MAP は外部で定義されていることを想定
 		const octave = Math.floor(pitch / 12) + 1;
 		const noteName = PITCH_MAP[pitch % 12];
 		return `o${octave}${noteName}`;
