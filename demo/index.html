@@ -1101,13 +1101,13 @@
             const secondsPerStep = secondsPerBeat / stepsPerBeat;
 
             tracks.forEach((track, ch) => {
-                if (isSolo && track.id !== activeTrackId) return;
                 const notes = track.core.getNotes();
                 notes.forEach(note => {
                     const relativeStart = note.startStep - playStartStep;
                     if (relativeStart < 0) return;
                     timeline.push({
                         ch,
+                        trackId: track.id,
                         pitch: note.pitch,
                         volume: track.volume / 100,
                         when: relativeStart * secondsPerStep,
@@ -1192,13 +1192,13 @@
             const secondsPerStep = secondsPerBeat / stepsPerBeat;
 
             tracks.forEach((track, ch) => {
-                if (isSolo && track.id !== activeTrackId) return;
                 const notes = track.core.getNotes();
                 notes.forEach(note => {
                     const relativeStart = note.startStep - playStartStep;
                     if (relativeStart < 0) return;
                     timeline.push({
                         ch,
+                        trackId: track.id,
                         pitch: note.pitch,
                         volume: track.volume / 100,
                         when: relativeStart * secondsPerStep,
@@ -1260,20 +1260,25 @@
         const updatePlayback = (secondsPerStep) => {
             const time = audioCtx.currentTime - startTime;
             while (nowIndex < timeline.length) {
-                const { ch, pitch, when, duration, velocity } = timeline[nowIndex];
+                const note = timeline[nowIndex];
+                const { ch, pitch, when, duration, velocity, trackId } = note;
+                if (isSolo && trackId && trackId !== activeTrackId) {
+                    nowIndex++;
+                    continue;
+                }
                 const currentTrack = tracks[ch];
                 const trackVolume = currentTrack ? currentTrack.volume / 100 : 0.8;
                 const velocityVolume = (velocity ?? 127) / 127;
                 const volume = trackVolume * velocityVolume;
-                const trackId = currentTrack?.id || 'melody';
+                const _trackId = currentTrack?.id || 'melody';
                 const _when = when - time;
                 if (_when > planTime) break;
                 nowIndex++;
                 if (_when < 0) {
-                    playNote(trackId, pitch, volume, 0, duration);
+                    playNote(_trackId, pitch, volume, 0, duration);
                     continue;
                 }
-                playNote(trackId, pitch, volume, _when, duration);
+                playNote(_trackId, pitch, volume, _when, duration);
             }
 
             if ((!isSolo || currentDrumPattern !== 'none') && SoundFont_drum.font) {
