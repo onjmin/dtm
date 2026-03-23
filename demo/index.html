@@ -368,6 +368,7 @@
         let activeToolMode = 'pen';
         let isPlaying = false;
         let isPaused = false;
+        let isSolo = false;
         let pausedPlayStep = 0;
         let pausedGainValue = 1;
         let noteLengthSteps = 48; // 4分音符
@@ -1057,6 +1058,10 @@
             }
         };
 
+        window.toggleSolo = (checked) => {
+            isSolo = checked;
+        };
+
         window.togglePlayback = () => {
             if (isPlaying) {
                 stopPlayback();
@@ -1096,6 +1101,7 @@
             const secondsPerStep = secondsPerBeat / stepsPerBeat;
 
             tracks.forEach((track, ch) => {
+                if (isSolo && track.id !== activeTrackId) return;
                 const notes = track.core.getNotes();
                 notes.forEach(note => {
                     const relativeStart = note.startStep - playStartStep;
@@ -1186,6 +1192,7 @@
             const secondsPerStep = secondsPerBeat / stepsPerBeat;
 
             tracks.forEach((track, ch) => {
+                if (isSolo && track.id !== activeTrackId) return;
                 const notes = track.core.getNotes();
                 notes.forEach(note => {
                     const relativeStart = note.startStep - playStartStep;
@@ -1269,7 +1276,7 @@
                 playNote(trackId, pitch, volume, _when, duration);
             }
 
-            if (currentDrumPattern !== 'none' && SoundFont_drum.font) {
+            if ((!isSolo || currentDrumPattern !== 'none') && SoundFont_drum.font) {
                 const pattern = drumPatterns[currentDrumPattern];
                 if (pattern && pattern.length > 0) {
                     const stepsPerBar = renderConfig.stepsPerBar;
@@ -1992,6 +1999,11 @@
 
         <button id="pause-button" onclick="pausePlayback()" disabled
             class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"></button>
+
+        <label class="flex items-center space-x-2 text-sm text-gray-700">
+            <input type="checkbox" id="solo-checkbox" onchange="toggleSolo(this.checked)" class="w-4 h-4 text-purple-600 rounded">
+            <span>ソロ演奏</span>
+        </label>
 
         <button id="undo-button" onclick="undoNotes()" disabled class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"
             title="元に戻す (Ctrl+Z)">
