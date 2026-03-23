@@ -922,6 +922,7 @@ var createPianoRoll = (options, handlers) => {
     },
     getToolMode: () => core.getToolMode(),
     getSelectionRect: () => selectionRect,
+    getNotesInRect,
     clearSelection: () => {
       selectionRect = null;
       selectedNotes = [];
