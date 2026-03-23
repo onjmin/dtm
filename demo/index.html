@@ -1399,6 +1399,7 @@
 
             trackSelectionDiv.classList.remove('hidden');
             loadButton.classList.remove('hidden');
+            document.getElementById('midi-load-note').classList.remove('hidden');
         });
 
         const analyzeMidiTracks = (midi) => {
@@ -1961,6 +1962,7 @@
 
         <button id="midi-load-button" onclick="loadMidiFromSelection()"
             class="hidden px-3 py-1 bg-green-500 text-white rounded-md text-sm hover:bg-green-600">MIDI読込</button>
+        <span class="hidden text-xs text-gray-500" id="midi-load-note">※選択したチャンネルがピアノロールに反映されます</span>
 
         <!-- 区切り線 -->
         <div class="w-full h-px bg-gray-300 my-2"></div>
