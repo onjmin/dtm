@@ -370,6 +370,7 @@
         let dragMode = 'rect'; // 'rect' (範囲選択) または 'move' (移動)
         let selectionRect = null;
         let selectionStart = null;
+        let selectedNotesOriginalPositions = []; // 選択開始時のノート元位置
         let selectedNotes = [];
         let copiedNotes = []; // コピーしたノート
         let isPlaying = false;
@@ -885,6 +886,44 @@
             };
 
             const handlePointerMove = (event) => {
+                // ドラッグ中に画面端でスクロール
+                const isDragging = isSelecting || dragState;
+
+                if (isDragging) {
+                    const edgeThreshold = 30;
+                    const scrollAmount = 10;
+                    const gridRect = gridCanvas.getBoundingClientRect();
+                    const mouseX = event.clientX - gridRect.left;
+                    const mouseY = event.clientY - gridRect.top;
+                    let scrolled = false;
+
+                    // 垂直方向のスクロール
+                    if (mouseY < edgeThreshold) {
+                        currentOffsetY = Math.max(0, currentOffsetY - scrollAmount);
+                        scrolled = true;
+                    } else if (mouseY > gridRect.height - edgeThreshold) {
+                        const maxOffsetY = getMaxOffsetY();
+                        currentOffsetY = Math.min(maxOffsetY, currentOffsetY + scrollAmount);
+                        scrolled = true;
+                    }
+
+                    // 水平方向のスクロール
+                    if (mouseX < edgeThreshold) {
+                        const minOffsetX = -leftPaddingSteps * renderConfig.stepWidth;
+                        currentOffsetX = Math.max(minOffsetX, currentOffsetX - scrollAmount);
+                        scrolled = true;
+                    } else if (mouseX > gridRect.width - edgeThreshold) {
+                        const maxNoteStep = getMaxNoteStep();
+                        const maxOffsetX = maxNoteStep * renderConfig.stepWidth - gridRect.width + leftPaddingSteps * renderConfig.stepWidth;
+                        currentOffsetX = Math.min(maxOffsetX, currentOffsetX + scrollAmount);
+                        scrolled = true;
+                    }
+
+                    if (scrolled) {
+                        DTM.setDrawOffset(currentOffsetX, currentOffsetY);
+                    }
+                }
+
                 const { x, y, step, pitch } = DTM.getGridPosition(event);
 
                 if (activeToolMode === 'select' && isSelecting && selectionStart) {
@@ -921,22 +960,35 @@
                         }
                     } else if (dragMode === 'move') {
                         // --- 移動モード ---
+                        // 1. マウスの現在位置（論理ステップ・ピッチ）を取得
+                        const { step, pitch } = DTM.getGridPosition(event);
+
+                        // 2. 「ドラッグ開始時の論理位置」からの差分を計算
+                        // selectionStart.step / .pitch は PointerDown 時に保存したもの
                         const rawDeltaStep = step - selectionStart.step;
                         const snappedDeltaStep = Math.round(rawDeltaStep / noteLengthSteps) * noteLengthSteps;
                         const deltaPitch = pitch - selectionStart.pitch;
 
+                        // 3. 変化があった場合のみ処理
                         if (snappedDeltaStep !== 0 || deltaPitch !== 0) {
                             const activeTrack = tracks.find(t => t.id === activeTrackId);
                             if (activeTrack?.core) {
+                                activeTrack.core.beginBatch();
                                 selectedNotes.forEach(note => {
-                                    const newStart = note.startStep + snappedDeltaStep;
-                                    const newPitch = note.pitch + deltaPitch;
+                                    const original = selectedNotesOriginalPositions.find(o => o.id === note.id);
+                                    if (!original) return;
+
+                                    // 「元の論理位置」に対して「論理的な差分」を加算
+                                    const newStart = original.startStep + snappedDeltaStep;
+                                    const newPitch = original.pitch + deltaPitch;
+
                                     if (newPitch >= 0 && newPitch < 128) {
                                         activeTrack.core.moveNote(note.id, newStart, newPitch);
                                     }
                                 });
+                                activeTrack.core.endBatch();
                             }
-                            selectionStart = { x, y, step, pitch };
+                            // 注意：ここでは selectionStart を更新しない（ドラッグ開始点を維持する）
                         }
                     }
 
@@ -973,6 +1025,7 @@
                 if (activeToolMode === 'select') {
                     isSelecting = false;
                     selectionStart = null;
+                    selectedNotesOriginalPositions = [];
                     dragState = null;
                     return;
                 }
@@ -1032,6 +1085,7 @@
                         const clickedNote = findActiveNoteAtPosition(x, y);
                         if (clickedNote && notesInRect.some(n => n.id === clickedNote.id)) {
                             selectedNotes = notesInRect;
+                            selectedNotesOriginalPositions = notesInRect.map(n => ({ id: n.id, startStep: n.startStep, pitch: n.pitch }));
                             isSelecting = true;
                             dragMode = 'move';
                             selectionStart = { x, y, step, pitch };
@@ -1041,6 +1095,7 @@
                     const clickedNote = findActiveNoteAtPosition(x, y);
                     if (clickedNote) {
                         selectedNotes = [clickedNote];
+                        selectedNotesOriginalPositions = [{ id: clickedNote.id, startStep: clickedNote.startStep, pitch: clickedNote.pitch }];
                         isSelecting = true;
                         dragMode = 'move';
                     } else {
@@ -2121,6 +2176,7 @@
                         const notes = activeTrack.core.getNotes();
                         const minStart = Math.min(...copiedNotes.map(n => n.startStep));
                         let pastedCount = 0;
+                        activeTrack.core.beginBatch();
                         copiedNotes.forEach(note => {
                             const newStart = playStartStep + (note.startStep - minStart);
                             const newEnd = newStart + note.durationSteps;
@@ -2138,6 +2194,7 @@
                                 pastedCount++;
                             }
                         });
+                        activeTrack.core.endBatch();
                         redrawAll();
                         console.log(`Pasted ${pastedCount} notes (skipped ${copiedNotes.length - pastedCount})`);
                     }
@@ -2231,15 +2288,15 @@
 
         <!-- 編集操作 -->
         <div class="flex items-center space-x-2">
-            <button id="undo-button" onclick="undoNotes()" disabled class="px-3 py-2 bg-gray-300 rounded cursor-not-allowed"
-                title="元に戻す (Ctrl+Z)">
+            <button id="undo-button" onclick="undoNotes()" disabled
+                class="px-3 py-2 bg-gray-300 rounded cursor-not-allowed" title="元に戻す (Ctrl+Z)">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
                 </svg>
             </button>
-            <button id="redo-button" onclick="redoNotes()" disabled class="px-3 py-2 bg-gray-300 rounded cursor-not-allowed"
-                title="やり直し (Ctrl+Shift+Z)">
+            <button id="redo-button" onclick="redoNotes()" disabled
+                class="px-3 py-2 bg-gray-300 rounded cursor-not-allowed" title="やり直し (Ctrl+Shift+Z)">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"></path>
@@ -2311,8 +2368,8 @@
                 class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors" title="最初へ">
                 <i class="mdi mdi-page-first text-lg"></i>
             </button>
-            <button onclick="movePianoRoll('up')"
-                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors" title="上">
+            <button onclick="movePianoRoll('up')" class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors"
+                title="上">
                 <i class="mdi mdi-chevron-up text-lg"></i>
             </button>
             <button onclick="movePianoRoll('down')"

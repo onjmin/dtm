@@ -28,6 +28,7 @@ export class MMLCore {
 	private tempo: number = 120;
 	private history: LinkedList<Note[]> = new LinkedList();
 	private isUndoRedo: boolean = false;
+	private isBatchOperation: boolean = false;
 	private lastHistorySnapshot: string = "[]";
 	private lastUndoTime: number = 0;
 	private static readonly UNDO_DEBOUNCE_MS = 100;
@@ -41,9 +42,17 @@ export class MMLCore {
 		this.generateAndNotify();
 	}
 
+	public beginBatch(): void {
+		this.isBatchOperation = true;
+	}
+
+	public endBatch(): void {
+		this.isBatchOperation = false;
+		this.saveHistory();
+	}
+
 	private saveHistory(): void {
-		if (this.isUndoRedo) {
-			console.log("saveHistory: skipped (isUndoRedo=true)");
+		if (this.isUndoRedo || this.isBatchOperation) {
 			return;
 		}
 		const snapshot = JSON.stringify(this.notes);
