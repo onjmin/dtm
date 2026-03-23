@@ -2170,9 +2170,11 @@
             <span class="text-sm text-gray-600">トラック:</span>
         </div>
 
-        <button id="midi-load-button" onclick="loadMidiFromSelection()"
-            class="hidden px-3 py-1 bg-green-500 text-white rounded-md text-sm hover:bg-green-600">MIDI読込</button>
-        <span class="hidden text-xs text-gray-500" id="midi-load-note">※選択したチャンネルがピアノロールに反映されます</span>
+        <div class="flex items-center gap-2">
+            <button id="midi-load-button" onclick="loadMidiFromSelection()"
+                class="hidden px-3 py-1 bg-green-500 text-white rounded-md text-sm hover:bg-green-600">MIDI読込</button>
+            <span class="hidden text-xs text-gray-500" id="midi-load-note">※選択したチャンネルがピアノロールに反映されます</span>
+        </div>
 
         <!-- 区切り線 -->
         <div class="w-full h-px bg-gray-300 my-2"></div>
