@@ -3,6 +3,8 @@ import {
 	onClick,
 	drawGrid,
 	drawNotes,
+	drawSelectionRect,
+	drawSelectedNotes,
 	getGridCanvas,
 	getGridPosition,
 	getRenderConfig,
@@ -25,6 +27,8 @@ export type PianoRollOptions = {
 	noteLengthSteps?: number;
 };
 
+export type ToolMode = "pen" | "select" | "eraser";
+
 export type PianoRollInstance = {
 	core: MMLCore;
 	getNotes: () => Note[];
@@ -32,6 +36,17 @@ export type PianoRollInstance = {
 	setVolume: (volume: number) => void;
 	setNoteLengthSteps: (steps: number) => void;
 	redraw: () => void;
+	setToolMode: (mode: ToolMode) => void;
+	getToolMode: () => ToolMode;
+	getSelectionRect: () => {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+	} | null;
+	clearSelection: () => void;
+	copySelection: () => Note[];
+	pasteNotes: (notes: Note[], startStep: number) => void;
 };
 
 export const createPianoRoll = (
@@ -49,12 +64,27 @@ export const createPianoRoll = (
 	init(mountTarget, width, height, config);
 
 	let currentNoteLengthSteps = noteLengthSteps;
+	let toolMode: ToolMode = "pen";
+	let selectionRect: {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+	} | null = null;
+	let isSelecting = false;
+	let selectionStart: {
+		x: number;
+		y: number;
+		step: number;
+		pitch: number;
+	} | null = null;
+	let selectedNotes: Note[] = [];
+	let copiedNotes: Note[] = [];
+
 	const core = new MMLCore({
 		onMMLGenerated: handlers.onMMLGenerated,
 		onNotesChanged: (notes) => {
 			handlers.onNotesChanged(notes);
-			drawGrid();
-			drawNotes(notes);
 		},
 	});
 
@@ -68,7 +98,24 @@ export const createPianoRoll = (
 			suppressClick = false;
 			return;
 		}
-		core.toggleNote(step, pitch, getAddNoteOptions());
+
+		const mode = core.getToolMode();
+		if (mode === "pen") {
+			core.toggleNote(step, pitch, getAddNoteOptions());
+			handlers.onNoteClick?.(step, pitch, false);
+		} else if (mode === "eraser") {
+			const notes = core.getNotes();
+			const note = notes.find(
+				(n) =>
+					n.startStep <= step &&
+					step < n.startStep + n.durationSteps &&
+					n.pitch === pitch,
+			);
+			if (note) {
+				core.deleteNoteById(note.id);
+				handlers.onNoteClick?.(step, pitch, true);
+			}
+		}
 	});
 
 	const gridCanvas = getGridCanvas();
@@ -110,6 +157,18 @@ export const createPianoRoll = (
 	};
 
 	const handlePointerMove = (e: MouseEvent) => {
+		if (core.getToolMode() === "select" && isSelecting && selectionStart) {
+			const { x, y } = getGridPosition(e);
+			const minX = Math.min(x, selectionStart.x);
+			const minY = Math.min(y, selectionStart.y);
+			const width = Math.abs(x - selectionStart.x);
+			const height = Math.abs(y - selectionStart.y);
+			selectionRect = { x: minX, y: minY, width, height };
+			selectedNotes = getNotesInRect(selectionRect);
+			redraw();
+			return;
+		}
+
 		if (!dragState) return;
 		hasDragged = true;
 		const { step, pitch } = getGridPosition(e);
@@ -126,6 +185,12 @@ export const createPianoRoll = (
 	};
 
 	const endDrag = () => {
+		if (core.getToolMode() === "select") {
+			isSelecting = false;
+			selectionStart = null;
+			return;
+		}
+
 		if (dragState) {
 			dragState = null;
 			if (hasDragged) {
@@ -137,6 +202,26 @@ export const createPianoRoll = (
 
 	gridCanvas.addEventListener("mousedown", (e) => {
 		const { x, y, step, pitch } = getGridPosition(e);
+		const currentMode = core.getToolMode();
+
+		if (currentMode === "select") {
+			if (selectionRect) {
+				const notesInRect = getNotesInRect(selectionRect);
+				const clickedNote = findNoteAtPosition(x, y);
+				if (clickedNote && notesInRect.some((n) => n.id === clickedNote.id)) {
+					selectedNotes = notesInRect;
+					isSelecting = true;
+					selectionStart = { x, y, step, pitch };
+					return;
+				}
+			}
+			selectedNotes = [];
+			selectionRect = null;
+			isSelecting = true;
+			selectionStart = { x, y, step, pitch };
+			return;
+		}
+
 		const note = findNoteAtPosition(x, y);
 		if (!note) return;
 
@@ -204,6 +289,47 @@ export const createPianoRoll = (
 	const redraw = () => {
 		drawGrid();
 		drawNotes(core.getNotes());
+		if (core.getToolMode() === "select") {
+			drawSelectionRect(selectionRect);
+			if (selectedNotes.length > 0) {
+				const selectedIds = new Set(selectedNotes.map((n) => n.id));
+				drawSelectedNotes(core.getNotes(), selectedIds);
+			}
+		}
+	};
+
+	const getNotesInRect = (rect: {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+	}): Note[] => {
+		const { stepWidth, keyHeight, keyCount, pitchRangeStart } =
+			getRenderConfig();
+		const offset = getDrawOffset();
+		const notes: Note[] = [];
+
+		for (const note of core.getNotes()) {
+			const logicalX = note.startStep * stepWidth;
+			const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+			const logicalY = yIndex * keyHeight;
+			const noteRect = {
+				x: logicalX - offset.x,
+				y: logicalY - offset.y,
+				width: note.durationSteps * stepWidth,
+				height: keyHeight,
+			};
+
+			if (
+				rect.x < noteRect.x + noteRect.width &&
+				rect.x + rect.width > noteRect.x &&
+				rect.y < noteRect.y + noteRect.height &&
+				rect.y + rect.height > noteRect.y
+			) {
+				notes.push(note);
+			}
+		}
+		return notes;
 	};
 
 	redraw();
@@ -217,5 +343,33 @@ export const createPianoRoll = (
 			currentNoteLengthSteps = steps;
 		},
 		redraw,
+		setToolMode: (mode: ToolMode) => {
+			core.setToolMode(mode);
+			if (mode !== "select") {
+				selectionRect = null;
+				selectedNotes = [];
+			}
+		},
+		getToolMode: () => core.getToolMode(),
+		getSelectionRect: () => selectionRect,
+		clearSelection: () => {
+			selectionRect = null;
+			selectedNotes = [];
+		},
+		copySelection: () => {
+			copiedNotes = [...selectedNotes];
+			return copiedNotes;
+		},
+		pasteNotes: (notes: Note[], startStep: number) => {
+			if (copiedNotes.length === 0) return;
+			const minStart = Math.min(...copiedNotes.map((n) => n.startStep));
+			copiedNotes.forEach((note) => {
+				const newStep = startStep + (note.startStep - minStart);
+				core.toggleNote(newStep, note.pitch, {
+					noteLengthSteps: note.durationSteps,
+					velocity: note.velocity,
+				});
+			});
+		},
 	};
 };

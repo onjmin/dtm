@@ -355,12 +355,31 @@
             { id: 'chord', name: '伴奏', color: hexToRgb('#F59E0B'), instrument: 3, core: null, volume: 76, selectedInstrument: '', mml: '' },
         ];
         let activeTrackId = 'melody';
+        let activeToolMode = 'pen';
         let isPlaying = false;
         let isPaused = false;
         let pausedPlayStep = 0;
         let pausedGainValue = 1;
         let noteLengthSteps = 48; // 4分音符
         let mmlPlayer = null;
+        let lastUndoTime = 0;
+
+        function updateUndoRedoButtons() {
+            if (typeof tracks === 'undefined' || typeof activeTrackId === 'undefined') return;
+            const activeTrack = tracks.find(t => t.id === activeTrackId);
+            const undoBtn = document.getElementById('undo-button');
+            const redoBtn = document.getElementById('redo-button');
+            if (activeTrack?.core && undoBtn && redoBtn) {
+                undoBtn.disabled = !activeTrack.core.canUndo();
+                redoBtn.disabled = !activeTrack.core.canRedo();
+                undoBtn.className = undoBtn.disabled
+                    ? 'px-4 py-2 bg-gray-300 rounded cursor-not-allowed'
+                    : 'px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded';
+                redoBtn.className = redoBtn.disabled
+                    ? 'px-4 py-2 bg-gray-300 rounded cursor-not-allowed'
+                    : 'px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded';
+            }
+        }
 
         let currentOffsetX = 0;
         let currentOffsetY = initialOffsetY;
@@ -751,6 +770,7 @@
                     },
                     onNotesChanged: (notes) => {
                         redrawAll();
+                        updateUndoRedoButtons();
                     },
                 }, track.volume);
             });
@@ -849,45 +869,60 @@
 
             gridCanvas.addEventListener('mousedown', (event) => {
                 const { x, y, step, pitch } = DTM.getGridPosition(event);
-                const note = findActiveNoteAtPosition(x, y);
-                if (!note) return;
 
-                const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
-                const offset = DTM.getDrawOffset();
-                const logicalX = note.startStep * stepWidth;
-                const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
-                const logicalY = yIndex * keyHeight;
-                const renderX = logicalX - offset.x;
-                const renderY = logicalY - offset.y;
-                const w = note.durationSteps * stepWidth;
+                // ツールモードに応じた処理
+                if (activeToolMode === 'eraser') {
+                    const note = findActiveNoteAtPosition(x, y);
+                    if (note) {
+                        const activeTrack = tracks.find(t => t.id === activeTrackId);
+                        if (activeTrack) {
+                            activeTrack.core.deleteNoteById(note.id);
+                        }
+                    }
+                    return;
+                }
 
-                if (
-                    x >= renderX + w - resizeHandleWidth &&
-                    x <= renderX + w &&
-                    y >= renderY &&
-                    y <= renderY + keyHeight
-                ) {
+                if (activeToolMode === 'pen') {
+                    const note = findActiveNoteAtPosition(x, y);
+                    if (!note) return;
+
+                    const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
+                    const offset = DTM.getDrawOffset();
+                    const logicalX = note.startStep * stepWidth;
+                    const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+                    const logicalY = yIndex * keyHeight;
+                    const renderX = logicalX - offset.x;
+                    const renderY = logicalY - offset.y;
+                    const w = note.durationSteps * stepWidth;
+
+                    if (
+                        x >= renderX + w - resizeHandleWidth &&
+                        x <= renderX + w &&
+                        y >= renderY &&
+                        y <= renderY + keyHeight
+                    ) {
+                        dragState = {
+                            noteId: note.id,
+                            mode: 'resize',
+                            dragOffsetStep: 0,
+                            dragOffsetPitch: 0,
+                            startStep: note.startStep,
+                            durationSteps: note.durationSteps,
+                            lastPreviewPitch: note.pitch,
+                        };
+                        return;
+                    }
+
                     dragState = {
                         noteId: note.id,
-                        mode: 'resize',
-                        dragOffsetStep: 0,
-                        dragOffsetPitch: 0,
+                        mode: 'move',
+                        dragOffsetStep: step - note.startStep,
+                        dragOffsetPitch: pitch - note.pitch,
                         startStep: note.startStep,
                         durationSteps: note.durationSteps,
                         lastPreviewPitch: note.pitch,
                     };
-                    return;
                 }
-
-                dragState = {
-                    noteId: note.id,
-                    mode: 'move',
-                    dragOffsetStep: step - note.startStep,
-                    dragOffsetPitch: pitch - note.pitch,
-                    startStep: note.startStep,
-                    durationSteps: note.durationSteps,
-                    lastPreviewPitch: note.pitch,
-                };
             });
 
             gridCanvas.addEventListener('mouseleave', endDrag);
@@ -915,7 +950,7 @@
                 redrawAll();
             });
 
-            // クリックイベントをモジュールに登録
+            // クリックイベント
             DTM.onClick((step, pitch) => {
                 if (suppressClick) {
                     suppressClick = false;
@@ -929,14 +964,17 @@
                 const snappedStep = Math.round(step / noteLengthSteps) * noteLengthSteps;
                 const activeTrack = tracks.find(t => t.id === activeTrackId);
                 if (!activeTrack) return;
-                if (hasNoteAtPosition(snappedStep, pitch)) {
-                    console.log('その場所には既にノートがあります');
-                    return;
+
+                if (activeToolMode === 'pen') {
+                    if (hasNoteAtPosition(snappedStep, pitch)) {
+                        console.log('その場所には既にノートがあります');
+                        return;
+                    }
+                    activeTrack.core.toggleNote(snappedStep, pitch, {
+                        noteLengthSteps: noteLengthSteps,
+                    });
+                    playPreviewNote(pitch, noteLengthSteps);
                 }
-                activeTrack.core.toggleNote(snappedStep, pitch, {
-                    noteLengthSteps: noteLengthSteps,
-                });
-                playPreviewNote(pitch, noteLengthSteps);
             });
 
             // ダブルクリックでノートを削除
@@ -958,6 +996,7 @@
             initScrollbar();
             initVScrollbar();
             updateControls();
+            updateUndoRedoButtons();
             DTM.setDrawOffset(currentOffsetX, currentOffsetY);
             redrawAll(); // 初回グリッド描画とノート描画 (ノートは空)
 
@@ -982,6 +1021,20 @@
             activeTrackId = id;
             updateControls();
             redrawAll();
+            updateUndoRedoButtons();
+        };
+
+        window.setToolMode = (mode) => {
+            activeToolMode = mode;
+            document.getElementById('tool-pen').className = mode === 'pen'
+                ? 'p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600'
+                : 'p-2 bg-gray-300 hover:bg-gray-400 rounded-lg';
+            document.getElementById('tool-select').className = mode === 'select'
+                ? 'p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600'
+                : 'p-2 bg-gray-300 hover:bg-gray-400 rounded-lg';
+            document.getElementById('tool-eraser').className = mode === 'eraser'
+                ? 'p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600'
+                : 'p-2 bg-gray-300 hover:bg-gray-400 rounded-lg';
         };
 
         window.handleVolumeChange = (id, value) => {
@@ -1267,13 +1320,17 @@
         const clearAllNotes = () => {
             tracks.forEach(track => {
                 if (track.core) {
-                    const notes = [...track.core.getNotes()];
-                    notes.forEach(note => {
-                        track.core.deleteNoteById(note.id);
-                    });
+                    track.core.resetHistory();
+                    track.core.clearNotesWithoutHistory();
                 }
             });
             redrawAll();
+        };
+
+        const setLoadMode = (mode) => {
+            tracks.forEach(track => {
+                if (track.core) track.core.setLoadMode(mode);
+            });
         };
 
         const midiFileInput = document.getElementById('midi-file-input');
@@ -1283,13 +1340,19 @@
 
             document.getElementById('midi-loading-overlay').classList.remove('hidden');
             clearAllNotes();
+            setLoadMode(true);
 
             const arrayBuffer = await file.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
             const midiData = MidiParser.parse(uint8Array);
             parseMidi(midiData);
 
+            setLoadMode(false);
             document.getElementById('midi-loading-overlay').classList.add('hidden');
+            tracks.forEach(track => {
+                if (track.core) track.core.addHistoryOnce();
+            });
+            updateUndoRedoButtons();
         });
 
         const getBPM = (midi) => {
@@ -1541,6 +1604,7 @@
             if (!mml) return;
 
             clearAllNotes();
+            setLoadMode(true);
 
             const PITCH_MAP = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
             const stepsPerBar = 192;
@@ -1708,10 +1772,56 @@
             });
 
             console.log('MML読み込み完了');
+            setLoadMode(false);
             playStartStep = 0;
             currentOffsetX = 0;
             DTM.setDrawOffset(currentOffsetX, currentOffsetY);
             redrawAll();
+            tracks.forEach(track => {
+                if (track.core) track.core.addHistoryOnce();
+            });
+            updateUndoRedoButtons();
+        };
+
+        window.undoNotes = () => {
+            const now = Date.now();
+            if (now - lastUndoTime < 100) return;
+            lastUndoTime = now;
+            const activeTrack = tracks.find(t => t.id === activeTrackId);
+            if (activeTrack?.core) {
+                activeTrack.core.undo();
+                redrawAll();
+                updateUndoRedoButtons();
+            }
+        };
+
+        window.redoNotes = () => {
+            const activeTrack = tracks.find(t => t.id === activeTrackId);
+            if (activeTrack?.core) {
+                activeTrack.core.redo();
+                redrawAll();
+                updateUndoRedoButtons();
+            }
+        };
+
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                if (e.code === 'KeyZ' && !e.shiftKey) {
+                    e.preventDefault();
+                    undoNotes();
+                } else if ((e.code === 'KeyZ' && e.shiftKey) || e.code === 'KeyY') {
+                    e.preventDefault();
+                    redoNotes();
+                }
+            }
+        });
+
+        const originalGenerateMML = window.generateMML;
+        window.generateMML = () => {
+            if (typeof originalGenerateMML === 'function') {
+                originalGenerateMML();
+            }
+            updateUndoRedoButtons();
         };
     </script>
 </head>
@@ -1766,6 +1876,22 @@
         <button id="pause-button" onclick="pausePlayback()" disabled
             class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"></button>
 
+        <button id="undo-button" onclick="undoNotes()" disabled class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"
+            title="元に戻す (Ctrl+Z)">
+            <svg class="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
+            </svg>
+        </button>
+
+        <button id="redo-button" onclick="redoNotes()" disabled class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"
+            title="やり直し (Ctrl+Shift+Z)">
+            <svg class="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"></path>
+            </svg>
+        </button>
+
         <div class="flex items-center space-x-2">
             <span class="text-sm font-medium text-gray-700">BPM:</span>
             <input type="number" id="bpm-input" value="120" min="20" max="300"
@@ -1792,6 +1918,22 @@
                 <option value="8">3連16</option>
                 <option value="4">3連32</option>
             </select>
+        </div>
+
+        <div class="flex items-center space-x-2">
+            <span class="text-sm font-medium text-gray-700">ツール:</span>
+            <button id="tool-pen" onclick="setToolMode('pen')"
+                class="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600" title="ペン">
+                <i class="mdi mdi-pencil"></i>
+            </button>
+            <button id="tool-select" onclick="setToolMode('select')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg" title="範囲選択">
+                <i class="mdi mdi-vector-selection"></i>
+            </button>
+            <button id="tool-eraser" onclick="setToolMode('eraser')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg" title="消しゴム">
+                <i class="mdi mdi-eraser"></i>
+            </button>
         </div>
 
         <div class="flex justify-center space-x-4 ml-auto">
@@ -1918,17 +2060,27 @@
         <div id="mml-output-container" class="hidden">
             <p id="mml-output-status" class="text-xs text-gray-400 mb-2"></p>
             <div class="flex items-start space-x-2">
-                <pre class="flex-1 bg-black p-3 rounded-md overflow-x-auto text-sm"><code id="mml-output" class="block"></code></pre>
+                <pre
+                    class="flex-1 bg-black p-3 rounded-md overflow-x-auto text-sm"><code id="mml-output" class="block"></code></pre>
                 <button onclick="copyMML('normal')" id="copy-mml-normal-button"
                     class="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors" title="コピー">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z">
+                        </path>
+                    </svg>
                 </button>
             </div>
             <div class="flex items-start space-x-2 mt-2">
-                <pre class="flex-1 bg-gray-900 p-3 rounded-md overflow-x-auto text-sm text-gray-300"><code id="mml-output-minify" class="block"></code></pre>
+                <pre
+                    class="flex-1 bg-gray-900 p-3 rounded-md overflow-x-auto text-sm text-gray-300"><code id="mml-output-minify" class="block"></code></pre>
                 <button onclick="copyMML('minify')" id="copy-mml-minify-button"
                     class="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors" title="コピー">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z">
+                        </path>
+                    </svg>
                 </button>
             </div>
         </div>

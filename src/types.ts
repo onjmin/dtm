@@ -20,6 +20,7 @@ export type RenderConfig = {
 export type CoreEventHandlers = {
 	onMMLGenerated: (mml: string) => void;
 	onNotesChanged: (notes: Note[]) => void;
+	onNoteClick?: (step: number, pitch: number, isErasing: boolean) => void;
 };
 
 // ノート追加時のオプション

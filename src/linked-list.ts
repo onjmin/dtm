@@ -43,4 +43,17 @@ export class LinkedList<T> {
 		this.#cursor = next;
 		return this.#cursor.value;
 	}
+	/**
+	 * Undo可能かチェック（カーソル移動なし）
+	 */
+	canUndo(): boolean {
+		return this.#cursor.prev?.value !== null;
+	}
+	/**
+	 * Redo可能かチェック（カーソル移動なし）
+	 */
+	canRedo(): boolean {
+		const { next } = this.#cursor;
+		return next !== null && next.value !== null;
+	}
 }

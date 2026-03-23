@@ -349,6 +349,53 @@ export const drawNotes = (notes: Note[], color = "#3B82F6"): void => {
 };
 
 /**
+ * 選択範囲の四角形を描画します。
+ */
+export const drawSelectionRect = (
+	rect: { x: number; y: number; width: number; height: number } | null,
+): void => {
+	if (!rect) return;
+
+	g_grid_ctx.save();
+	g_grid_ctx.strokeStyle = "#10B981";
+	g_grid_ctx.lineWidth = 2;
+	g_grid_ctx.setLineDash([5, 3]);
+	g_grid_ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+	g_grid_ctx.fillStyle = "rgba(16, 185, 129, 0.1)";
+	g_grid_ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+	g_grid_ctx.restore();
+};
+
+/**
+ * 選択されたノートをハイライト描画します。
+ */
+export const drawSelectedNotes = (
+	notes: Note[],
+	selectedIds: Set<number>,
+): void => {
+	const { keyHeight, stepWidth, keyCount, pitchRangeStart } = g_config;
+
+	for (const note of notes) {
+		if (!selectedIds.has(note.id)) continue;
+
+		const logicalX = note.startStep * stepWidth;
+		const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+		const logicalY = yIndex * keyHeight;
+		const w = note.durationSteps * stepWidth;
+		const h = keyHeight;
+
+		const renderX = logicalX - g_draw_offset_x;
+		const renderY = logicalY - g_draw_offset_y;
+
+		g_grid_ctx.save();
+		g_grid_ctx.strokeStyle = "#10B981";
+		g_grid_ctx.lineWidth = 3;
+		g_grid_ctx.strokeRect(renderX, renderY, w, h);
+		g_grid_ctx.restore();
+	}
+};
+
+/**
  * カーソルの座標取得
  * (グリッドCanvasの相対座標を取得)
  */

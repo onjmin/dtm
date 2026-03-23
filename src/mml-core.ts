@@ -1,3 +1,4 @@
+import { LinkedList } from "./linked-list";
 import { getRenderConfig } from "./renderer";
 import type { AddNoteOptions, CoreEventHandlers, Note } from "./types";
 
@@ -25,12 +26,112 @@ export class MMLCore {
 	private handlers: CoreEventHandlers;
 	private volume: number = 80;
 	private tempo: number = 120;
+	private history: LinkedList<Note[]> = new LinkedList();
+	private isUndoRedo: boolean = false;
+	private lastHistorySnapshot: string = "[]";
+	private lastUndoTime: number = 0;
+	private static readonly UNDO_DEBOUNCE_MS = 100;
+	private toolMode: "pen" | "select" | "eraser" = "pen";
 
 	constructor(handlers: CoreEventHandlers, volume: number = 80) {
 		this.handlers = handlers;
 		this.volume = volume;
-		// 初期MMLを生成し通知
+		this.lastHistorySnapshot = JSON.stringify(this.notes);
+		this.history.add([]);
 		this.generateAndNotify();
+	}
+
+	private saveHistory(): void {
+		if (this.isUndoRedo) {
+			console.log("saveHistory: skipped (isUndoRedo=true)");
+			return;
+		}
+		const snapshot = JSON.stringify(this.notes);
+		if (snapshot === this.lastHistorySnapshot) {
+			console.log("saveHistory: skipped (no change)");
+			return;
+		}
+		this.lastHistorySnapshot = snapshot;
+		this.history.add(JSON.parse(snapshot));
+		console.log("saveHistory: saved");
+	}
+
+	private restoreHistory(notes: Note[] | null): boolean {
+		if (notes === null) return false;
+		console.log("restoreHistory: BEFORE - notes =", this.notes.length);
+		this.isUndoRedo = true;
+		this.notes = JSON.parse(JSON.stringify(notes));
+		this.nextNoteId =
+			this.notes.length > 0 ? Math.max(...this.notes.map((n) => n.id)) + 1 : 0;
+		this.lastHistorySnapshot = JSON.stringify(this.notes);
+		console.log(
+			"restoreHistory: AFTER set - notes =",
+			this.notes.length,
+			"lastSnapshot =",
+			this.lastHistorySnapshot,
+		);
+		this.generateAndNotify();
+		console.log(
+			"restoreHistory: AFTER generateAndNotify - notes =",
+			this.notes.length,
+		);
+		this.isUndoRedo = false;
+		return true;
+	}
+
+	public undo(): boolean {
+		const now = Date.now();
+		if (now - this.lastUndoTime < MMLCore.UNDO_DEBOUNCE_MS) {
+			return false;
+		}
+		this.lastUndoTime = now;
+		return this.restoreHistory(this.history.undo());
+	}
+
+	public redo(): boolean {
+		const now = Date.now();
+		if (now - this.lastUndoTime < MMLCore.UNDO_DEBOUNCE_MS) {
+			return false;
+		}
+		this.lastUndoTime = now;
+		return this.restoreHistory(this.history.redo());
+	}
+
+	public canUndo(): boolean {
+		return this.history.canUndo();
+	}
+
+	public canRedo(): boolean {
+		return this.history.canRedo();
+	}
+
+	public setToolMode(mode: "pen" | "select" | "eraser"): void {
+		this.toolMode = mode;
+	}
+
+	public getToolMode(): "pen" | "select" | "eraser" {
+		return this.toolMode;
+	}
+
+	public resetHistory(): void {
+		this.history = new LinkedList();
+		this.history.add([]);
+		this.lastHistorySnapshot = JSON.stringify(this.notes);
+	}
+
+	public addHistoryOnce(): void {
+		this.lastHistorySnapshot = "[]";
+		this.saveHistory();
+	}
+
+	public clearNotesWithoutHistory(): void {
+		this.notes = [];
+		this.nextNoteId = 0;
+		this.lastHistorySnapshot = "[]";
+	}
+
+	public setLoadMode(mode: boolean): void {
+		this.isUndoRedo = mode;
 	}
 
 	// ============== ノート編集 (外部API) ==============
@@ -51,9 +152,8 @@ export class MMLCore {
 		);
 
 		if (existingIndex !== -1) {
-			this.notes.splice(existingIndex, 1); // 削除
+			this.notes.splice(existingIndex, 1);
 		} else {
-			// 追加
 			const newNote: Note = {
 				id: this.nextNoteId++,
 				startStep: step,
@@ -64,9 +164,9 @@ export class MMLCore {
 			this.notes.push(newNote);
 		}
 
-		// ノートをステップ順にソートして、MML生成が正しくなるようにする
 		this.notes.sort((a, b) => a.startStep - b.startStep);
 
+		this.saveHistory();
 		this.generateAndNotify();
 	}
 
@@ -74,6 +174,7 @@ export class MMLCore {
 		const index = this.notes.findIndex((n) => n.id === noteId);
 		if (index !== -1) {
 			this.notes.splice(index, 1);
+			this.saveHistory();
 			this.generateAndNotify();
 		}
 	}
@@ -108,6 +209,8 @@ export class MMLCore {
 		note.startStep = clampedStart;
 		note.pitch = clampedPitch;
 		this.notes.sort((a, b) => a.startStep - b.startStep);
+
+		this.saveHistory();
 		this.generateAndNotify();
 	}
 
@@ -118,6 +221,8 @@ export class MMLCore {
 		const clampedDuration = Math.max(1, durationSteps);
 		note.durationSteps = clampedDuration;
 		this.notes.sort((a, b) => a.startStep - b.startStep);
+
+		this.saveHistory();
 		this.generateAndNotify();
 	}
 
