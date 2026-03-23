@@ -366,6 +366,12 @@
         ];
         let activeTrackId = 'melody';
         let activeToolMode = 'pen';
+        let isSelecting = false;
+        let dragMode = 'rect'; // 'rect' (範囲選択) または 'move' (移動)
+        let selectionRect = null;
+        let selectionStart = null;
+        let selectedNotes = [];
+        let copiedNotes = []; // コピーしたノート
         let isPlaying = false;
         let isPaused = false;
         let isSolo = false;
@@ -492,6 +498,30 @@
                     `rgba(${r},${g},${b},${a})`
                 );
             });
+
+            if (activeToolMode === 'select' && selectionRect) {
+                const gridCtx = DTM.getGridContext();
+                gridCtx.save();
+                gridCtx.strokeStyle = '#10B981';
+                gridCtx.lineWidth = 2;
+                gridCtx.setLineDash([5, 3]);
+                gridCtx.strokeRect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
+                gridCtx.fillStyle = 'rgba(16, 185, 129, 0.1)';
+                gridCtx.fillRect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
+                gridCtx.restore();
+
+                if (selectedNotes.length > 0) {
+                    const selectedIds = new Set(selectedNotes.map(n => n.id));
+                    const activeTrack = tracks.find(t => t.id === activeTrackId);
+                    const [r, g, b] = activeTrack?.color || [59, 130, 246];
+                    if (activeTrack?.core) {
+                        DTM.drawSelectedNotes(
+                            activeTrack.core.getNotes(),
+                            selectedIds
+                        );
+                    }
+                }
+            }
 
             drawStartLine();
             updateScrollbar();
@@ -841,10 +871,68 @@
             };
 
             const handlePointerMove = (event) => {
+                const { x, y, step, pitch } = DTM.getGridPosition(event);
+
+                if (activeToolMode === 'select' && isSelecting && selectionStart) {
+                    if (dragMode === 'rect') {
+                        // --- 範囲選択モード ---
+                        const minX = Math.min(x, selectionStart.x);
+                        const minY = Math.min(y, selectionStart.y);
+                        const width = Math.abs(x - selectionStart.x);
+                        const height = Math.abs(y - selectionStart.y);
+                        selectionRect = { x: minX, y: minY, width, height };
+
+                        const activeTrack = tracks.find(t => t.id === activeTrackId);
+                        if (activeTrack?.core) {
+                            const notes = activeTrack.core.getNotes();
+                            const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
+                            const offset = DTM.getDrawOffset();
+                            selectedNotes = notes.filter(note => {
+                                const logicalX = note.startStep * stepWidth;
+                                const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+                                const logicalY = yIndex * keyHeight;
+                                const noteRect = {
+                                    x: logicalX - offset.x,
+                                    y: logicalY - offset.y,
+                                    width: note.durationSteps * stepWidth,
+                                    height: keyHeight,
+                                };
+                                return (
+                                    selectionRect.x < noteRect.x + noteRect.width &&
+                                    selectionRect.x + selectionRect.width > noteRect.x &&
+                                    selectionRect.y < noteRect.y + noteRect.height &&
+                                    selectionRect.y + selectionRect.height > noteRect.y
+                                );
+                            });
+                        }
+                    } else if (dragMode === 'move') {
+                        // --- 移動モード ---
+                        const rawDeltaStep = step - selectionStart.step;
+                        const snappedDeltaStep = Math.round(rawDeltaStep / noteLengthSteps) * noteLengthSteps;
+                        const deltaPitch = pitch - selectionStart.pitch;
+
+                        if (snappedDeltaStep !== 0 || deltaPitch !== 0) {
+                            const activeTrack = tracks.find(t => t.id === activeTrackId);
+                            if (activeTrack?.core) {
+                                selectedNotes.forEach(note => {
+                                    const newStart = note.startStep + snappedDeltaStep;
+                                    const newPitch = note.pitch + deltaPitch;
+                                    if (newPitch >= 0 && newPitch < 128) {
+                                        activeTrack.core.moveNote(note.id, newStart, newPitch);
+                                    }
+                                });
+                            }
+                            selectionStart = { x, y, step, pitch };
+                        }
+                    }
+
+                    redrawAll();
+                    return;
+                }
+
                 if (!dragState) return;
                 hasDragged = true;
 
-                const { step, pitch } = DTM.getGridPosition(event);
                 const activeTrack = tracks.find(t => t.id === activeTrackId);
                 if (!activeTrack) return;
 
@@ -868,6 +956,13 @@
             };
 
             const endDrag = () => {
+                if (activeToolMode === 'select') {
+                    isSelecting = false;
+                    selectionStart = null;
+                    dragState = null;
+                    return;
+                }
+
                 if (dragState) {
                     dragState = null;
                     if (hasDragged) {
@@ -890,6 +985,57 @@
                             activeTrack.core.deleteNoteById(note.id);
                         }
                     }
+                    return;
+                }
+
+                if (activeToolMode === 'select') {
+                    if (selectionRect) {
+                        // getNotesInRectの実装をインラインで
+                        const activeTrack = tracks.find(t => t.id === activeTrackId);
+                        let notesInRect = [];
+                        if (activeTrack?.core) {
+                            const notes = activeTrack.core.getNotes();
+                            const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
+                            const offset = DTM.getDrawOffset();
+                            notesInRect = notes.filter(note => {
+                                const logicalX = note.startStep * stepWidth;
+                                const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+                                const logicalY = yIndex * keyHeight;
+                                const noteRect = {
+                                    x: logicalX - offset.x,
+                                    y: logicalY - offset.y,
+                                    width: note.durationSteps * stepWidth,
+                                    height: keyHeight,
+                                };
+                                return (
+                                    selectionRect.x < noteRect.x + noteRect.width &&
+                                    selectionRect.x + selectionRect.width > noteRect.x &&
+                                    selectionRect.y < noteRect.y + noteRect.height &&
+                                    selectionRect.y + selectionRect.height > noteRect.y
+                                );
+                            });
+                        }
+                        const clickedNote = findActiveNoteAtPosition(x, y);
+                        if (clickedNote && notesInRect.some(n => n.id === clickedNote.id)) {
+                            selectedNotes = notesInRect;
+                            isSelecting = true;
+                            dragMode = 'move';
+                            selectionStart = { x, y, step, pitch };
+                            return;
+                        }
+                    }
+                    const clickedNote = findActiveNoteAtPosition(x, y);
+                    if (clickedNote) {
+                        selectedNotes = [clickedNote];
+                        isSelecting = true;
+                        dragMode = 'move';
+                    } else {
+                        selectedNotes = [];
+                        selectionRect = null;
+                        isSelecting = true;
+                        dragMode = 'rect';
+                    }
+                    selectionStart = { x, y, step, pitch };
                     return;
                 }
 
@@ -956,6 +1102,25 @@
                 const rect = headerCanvas.getBoundingClientRect();
                 const x = event.clientX - rect.left;
                 const step = Math.floor((x + currentOffsetX) / renderConfig.stepWidth);
+                const snappedStep = Math.round(step / noteLengthSteps) * noteLengthSteps;
+                playStartStep = Math.max(0, snappedStep);
+                redrawAll();
+            });
+
+            // グリッドクリックで再生開始位置を設定（範囲選択モードのみ）
+            gridCanvas.addEventListener('click', (event) => {
+                if (isPlaying) return;
+                if (suppressClick) {
+                    suppressClick = false;
+                    return;
+                }
+                if (isDblClick) {
+                    isDblClick = false;
+                    return;
+                }
+                if (activeToolMode !== 'select') return;
+
+                const { step } = DTM.getGridPosition(event);
                 const snappedStep = Math.round(step / noteLengthSteps) * noteLengthSteps;
                 playStartStep = Math.max(0, snappedStep);
                 redrawAll();
@@ -1931,6 +2096,37 @@
                 } else if ((e.code === 'KeyZ' && e.shiftKey) || e.code === 'KeyY') {
                     e.preventDefault();
                     redoNotes();
+                } else if (e.code === 'KeyC' && selectedNotes.length > 0) {
+                    e.preventDefault();
+                    copiedNotes = [...selectedNotes];
+                    console.log(`Copied ${copiedNotes.length} notes`);
+                } else if (e.code === 'KeyV' && copiedNotes.length > 0) {
+                    e.preventDefault();
+                    const activeTrack = tracks.find(t => t.id === activeTrackId);
+                    if (activeTrack?.core) {
+                        const notes = activeTrack.core.getNotes();
+                        const minStart = Math.min(...copiedNotes.map(n => n.startStep));
+                        let pastedCount = 0;
+                        copiedNotes.forEach(note => {
+                            const newStart = playStartStep + (note.startStep - minStart);
+                            const newEnd = newStart + note.durationSteps;
+                            // 既存の音符と重なる位置がないかチェック
+                            const hasOverlap = notes.some(existing =>
+                                existing.pitch === note.pitch &&
+                                newStart < existing.startStep + existing.durationSteps &&
+                                newEnd > existing.startStep
+                            );
+                            if (!hasOverlap) {
+                                activeTrack.core.toggleNote(newStart, note.pitch, {
+                                    noteLengthSteps: note.durationSteps,
+                                    velocity: note.velocity,
+                                });
+                                pastedCount++;
+                            }
+                        });
+                        redrawAll();
+                        console.log(`Pasted ${pastedCount} notes (skipped ${copiedNotes.length - pastedCount})`);
+                    }
                 }
             }
         });

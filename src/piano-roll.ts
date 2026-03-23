@@ -44,6 +44,12 @@ export type PianoRollInstance = {
 		width: number;
 		height: number;
 	} | null;
+	getNotesInRect: (rect: {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+	}) => Note[];
 	clearSelection: () => void;
 	copySelection: () => Note[];
 	pasteNotes: (notes: Note[], startStep: number) => void;
@@ -352,6 +358,7 @@ export const createPianoRoll = (
 		},
 		getToolMode: () => core.getToolMode(),
 		getSelectionRect: () => selectionRect,
+		getNotesInRect,
 		clearSelection: () => {
 			selectionRect = null;
 			selectedNotes = [];
