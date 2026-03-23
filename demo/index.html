@@ -1333,27 +1333,115 @@
             });
         };
 
+        let pendingMidiData = null;
+        let detectedTracks = [];
+
         const midiFileInput = document.getElementById('midi-file-input');
         midiFileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
             document.getElementById('midi-loading-overlay').classList.remove('hidden');
-            clearAllNotes();
-            setLoadMode(true);
 
             const arrayBuffer = await file.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
-            const midiData = MidiParser.parse(uint8Array);
-            parseMidi(midiData);
+            pendingMidiData = MidiParser.parse(uint8Array);
+
+            document.getElementById('midi-loading-overlay').classList.add('hidden');
+
+            const trackSelectionDiv = document.getElementById('midi-track-selection');
+            const loadButton = document.getElementById('midi-load-button');
+            trackSelectionDiv.innerHTML = '<span class="text-sm text-gray-600">トラック:</span>';
+            detectedTracks = analyzeMidiTracks(pendingMidiData);
+
+            detectedTracks.forEach((t, i) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.id = `midi-track-btn-${i}`;
+                btn.className = t.selected
+                    ? 'px-2 py-1 bg-blue-500 text-white rounded text-xs flex items-center space-x-1'
+                    : 'px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs flex items-center space-x-1';
+                btn.innerHTML = `
+                    <input type="checkbox" ${t.selected ? 'checked' : ''} class="pointer-events-none">
+                    <span>${t.name} (${t.noteCount})</span>
+                `;
+                btn.onclick = () => {
+                    const checkbox = btn.querySelector('input');
+                    checkbox.checked = !checkbox.checked;
+                    btn.className = checkbox.checked
+                        ? 'px-2 py-1 bg-blue-500 text-white rounded text-xs flex items-center space-x-1'
+                        : 'px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs flex items-center space-x-1';
+                };
+                trackSelectionDiv.appendChild(btn);
+            });
+
+            trackSelectionDiv.classList.remove('hidden');
+            loadButton.classList.remove('hidden');
+        });
+
+        const analyzeMidiTracks = (midi) => {
+            const { track } = midi;
+            const trackAnalysis = [];
+
+            for (let i = 0; i < track.length; i++) {
+                const trackData = track[i];
+                const notes = [];
+                let currentTime = 0;
+                for (const event of trackData.event) {
+                    currentTime += event.deltaTime;
+                    if (event.type === 9 && event.data && event.data[1]) {
+                        notes.push({ pitch: event.data[0], velocity: event.data[1], start: currentTime });
+                    } else if (event.type === 8) {
+                        for (let j = notes.length - 1; j >= 0; j--) {
+                            if (notes[j].pitch === event.data[0] && !notes[j].end) {
+                                notes[j].end = currentTime;
+                                break;
+                            }
+                        }
+                    }
+                }
+                const validNotes = notes.filter(n => n.end);
+                trackAnalysis.push({
+                    index: i,
+                    name: `Ch${i}`,
+                    noteCount: validNotes.length,
+                    selected: validNotes.length > 0
+                });
+            }
+
+            return trackAnalysis;
+        };
+
+        window.loadMidiFromSelection = () => {
+            if (!pendingMidiData) return;
+
+            const selectedIndices = [];
+            detectedTracks.forEach((t, i) => {
+                const btn = document.getElementById(`midi-track-btn-${i}`);
+                if (btn) {
+                    const checkbox = btn.querySelector('input');
+                    if (checkbox && checkbox.checked) {
+                        selectedIndices.push(t.index);
+                    }
+                }
+            });
+
+            if (selectedIndices.length === 0) {
+                alert('少なくとも1つのトラックを選択してください');
+                return;
+            }
+
+            clearAllNotes();
+            setLoadMode(true);
+
+            parseMidiWithSelection(pendingMidiData, selectedIndices);
 
             setLoadMode(false);
-            document.getElementById('midi-loading-overlay').classList.add('hidden');
             tracks.forEach(track => {
                 if (track.core) track.core.addHistoryOnce();
             });
             updateUndoRedoButtons();
-        });
+        };
 
         const getBPM = (midi) => {
             const { track } = midi;
@@ -1370,7 +1458,7 @@
             return 120;
         };
 
-        const parseMidi = (midi) => {
+        const parseMidiWithSelection = (midi, selectedTrackIndices) => {
             const { track, timeDivision } = midi;
             const ticksPerBeat = timeDivision;
             const stepsPerBeat = 48;
@@ -1386,7 +1474,9 @@
             updateTempo();
 
             const channelNotes = {};
-            for (const trackData of Object.values(track)) {
+            selectedTrackIndices.forEach(trackIdx => {
+                const trackData = track[trackIdx];
+                if (!trackData) return;
                 let currentTime = 0;
                 for (const event of trackData.event) {
                     currentTime += event.deltaTime;
@@ -1410,7 +1500,7 @@
                         channelNotes[channel].push({ pitch, velocity, start: currentTime, end: null });
                     }
                 }
-            }
+            });
 
             // 各チャンネルの特性を分析
             const channelAnalysis = {};
@@ -1831,12 +1921,25 @@
 
     <!-- MIDI & MML入力 -->
     <div class="flex flex-wrap gap-4 p-4 bg-white border rounded-lg shadow-md mb-6">
-        <div class="flex items-center space-x-2">
+        <!-- MIDI Section -->
+        <div class="flex flex-wrap gap-2 items-center">
             <span class="text-sm font-medium text-gray-700">MIDI:</span>
             <input type="file" id="midi-file-input" accept=".mid,.midi" class="border rounded-md px-2 py-1 text-sm">
         </div>
 
-        <div class="flex items-center space-x-2">
+        <div id="midi-track-selection" class="hidden flex flex-wrap gap-2 items-center">
+            <span class="text-sm text-gray-600">トラック:</span>
+        </div>
+
+        <button id="midi-load-button" onclick="loadMidiFromSelection()"
+            class="hidden px-3 py-1 bg-green-500 text-white rounded-md text-sm hover:bg-green-600">MIDI読込</button>
+
+        <!-- 区切り線 -->
+        <div class="w-full h-px bg-gray-300 my-2"></div>
+
+        <!-- MML Section -->
+        <div class="flex flex-wrap gap-2 items-start">
+            <span class="text-sm font-medium text-gray-700">MML:</span>
             <textarea id="mml-input" rows="2" class="border rounded-md px-2 py-1 text-sm w-64"
                 placeholder="MMLを入力"></textarea>
             <button onclick="loadMML()"
@@ -1859,13 +1962,11 @@
                 class="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600">適用</button>
         </div>
     </div>
-    </div>
-    </div>
 
     <div id="midi-loading-overlay" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
         <div class="bg-white rounded-xl p-8 shadow-2xl flex flex-col items-center space-y-4">
             <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <span class="text-lg font-semibold text-gray-700">MIDI読み込み中...</span>
+            <span class="text-lg font-semibold text-gray-700">MIDI解析中...</span>
         </div>
     </div>
 
@@ -2034,10 +2135,11 @@
                     <option value="dance" selected>ダンス</option>
                 </select>
             </div>
-            <div class="flex items-center space-x-2 ml-auto">
-                <input type="range" id="drum-volume-input" value="80" min="0" max="100" step="1" class="w-24">
-                <span id="drum-volume-label" class="text-sm text-gray-700 w-10">80%</span>
-            </div>
+        </div>
+        <div class="flex items-center space-x-2 mt-2">
+            <span class="text-sm font-medium text-gray-700">音量:</span>
+            <input type="range" id="drum-volume-input" value="80" min="0" max="100" step="1" class="w-24">
+            <span id="drum-volume-label" class="text-sm text-gray-700 w-12">80%</span>
         </div>
     </div>
 
