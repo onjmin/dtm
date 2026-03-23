@@ -1591,11 +1591,17 @@
 
         let pendingMidiData = null;
         let detectedTracks = [];
+        let lastLoadedMidiFileName = null;
 
         const midiFileInput = document.getElementById('midi-file-input');
         midiFileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
+
+            const loadButton = document.getElementById('midi-load-button');
+            // 新しいファイルが選択されたらボタンをプライマリー（緑）に戻す
+            loadButton.classList.remove('bg-yellow-500', 'hover:bg-yellow-600');
+            loadButton.classList.add('bg-green-500', 'hover:bg-green-600');
 
             document.getElementById('midi-loading-overlay').classList.remove('hidden');
 
@@ -1606,7 +1612,6 @@
             document.getElementById('midi-loading-overlay').classList.add('hidden');
 
             const trackSelectionDiv = document.getElementById('midi-track-selection');
-            const loadButton = document.getElementById('midi-load-button');
             trackSelectionDiv.innerHTML = '<span class="text-sm text-gray-600">トラック:</span>';
             detectedTracks = analyzeMidiTracks(pendingMidiData);
 
@@ -1687,6 +1692,15 @@
                 alert('少なくとも1つのトラックを選択してください');
                 return;
             }
+
+            // 読み込むファイルの名前を記憶し、ボタンを無効化
+            const fileInput = document.getElementById('midi-file-input');
+            const fileName = fileInput.files[0]?.name || '';
+            lastLoadedMidiFileName = fileName;
+
+            const loadButton = document.getElementById('midi-load-button');
+            loadButton.classList.remove('bg-green-500', 'hover:bg-green-600');
+            loadButton.classList.add('bg-yellow-500', 'hover:bg-yellow-600');
 
             document.getElementById('midi-loading-overlay').classList.remove('hidden');
 
