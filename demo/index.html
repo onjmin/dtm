@@ -401,6 +401,7 @@
         let currentOffsetX = 0;
         let currentOffsetY = initialOffsetY;
         const scrollAmount = 16 * renderConfig.stepWidth; // 例: 1小節分を移動量とする
+        const leftPaddingSteps = 192 * 16; // 16小節分の余白
         let noteLengthSelectEl = null;
         let playStartStep = 0; // 再生開始位置（ステップ）
 
@@ -459,16 +460,20 @@
             const horizontalScroll = halfBars * stepsPerBar * stepWidth;
             const verticalScroll = Math.round(visibleBars / 2) * keyHeight;
             const maxOffsetY = getMaxOffsetY();
+            const leftPaddingWidth = leftPaddingSteps * stepWidth;
+            const maxNoteStep = getMaxNoteStep();
+            const maxOffsetX = maxNoteStep * stepWidth - gridCanvas.width + leftPaddingWidth;
+            const minOffsetX = -leftPaddingWidth;
 
             switch (direction) {
                 case 'home':
                     currentOffsetX = 0;
                     break;
                 case 'right':
-                    currentOffsetX += horizontalScroll;
+                    currentOffsetX = clamp(currentOffsetX + horizontalScroll, minOffsetX, maxOffsetX);
                     break;
                 case 'left':
-                    currentOffsetX = Math.max(0, currentOffsetX - horizontalScroll);
+                    currentOffsetX = clamp(currentOffsetX - horizontalScroll, minOffsetX, maxOffsetX);
                     break;
                 case 'up':
                     currentOffsetY = clamp(currentOffsetY - verticalScroll, 0, maxOffsetY);
@@ -545,20 +550,23 @@
             if (!scrollbar || !thumb) return;
 
             const maxNoteStep = getMaxNoteStep();
-            const totalWidth = maxNoteStep * renderConfig.stepWidth;
             const visibleWidth = DTM.getGridCanvas().width;
             const scrollbarWidth = scrollbar.clientWidth;
+            const leftPaddingWidth = leftPaddingSteps * renderConfig.stepWidth;
+            const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
+            const maxOffsetX = totalContentWidth - visibleWidth + leftPaddingWidth;
+            const minOffsetX = -leftPaddingWidth;
 
-            if (totalWidth <= visibleWidth) {
+            if (maxOffsetX <= 0) {
                 thumb.style.width = '100%';
                 thumb.style.left = '0';
             } else {
-                const thumbWidth = Math.max(40, (visibleWidth / totalWidth) * scrollbarWidth);
-                const maxOffset = totalWidth - visibleWidth;
-                const ratio = currentOffsetX / maxOffset;
+                const thumbWidth = Math.max(40, (visibleWidth / (totalContentWidth + leftPaddingWidth)) * scrollbarWidth);
+                const range = maxOffsetX - minOffsetX;
+                const ratio = (currentOffsetX - minOffsetX) / range;
                 const thumbLeft = ratio * (scrollbarWidth - thumbWidth);
                 thumb.style.width = `${thumbWidth}px`;
-                thumb.style.left = `${thumbLeft}px`;
+                thumb.style.left = `${Math.max(0, Math.min(thumbLeft, scrollbarWidth - thumbWidth))}px`;
             }
 
             updateVScrollbar();
@@ -581,10 +589,13 @@
                 const ratio = thumbLeft / (scrollbar.clientWidth - thumbWidth);
 
                 const maxNoteStep = getMaxNoteStep();
-                const totalWidth = maxNoteStep * renderConfig.stepWidth;
                 const visibleWidth = DTM.getGridCanvas().width;
-                const maxOffset = totalWidth - visibleWidth;
-                currentOffsetX = Math.max(0, ratio * maxOffset);
+                const leftPaddingWidth = leftPaddingSteps * renderConfig.stepWidth;
+                const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
+                const maxOffsetX = totalContentWidth - visibleWidth + leftPaddingWidth;
+                const minOffsetX = -leftPaddingWidth;
+                const range = maxOffsetX - minOffsetX;
+                currentOffsetX = clamp(minOffsetX + ratio * range, minOffsetX, maxOffsetX);
                 DTM.setDrawOffset(currentOffsetX, currentOffsetY);
                 updateScrollbar();
                 redrawAll();
@@ -600,16 +611,19 @@
             document.addEventListener('mousemove', (e) => {
                 if (!isDragging) return;
                 const maxNoteStep = getMaxNoteStep();
-                const totalWidth = maxNoteStep * renderConfig.stepWidth;
                 const visibleWidth = DTM.getGridCanvas().width;
-                const maxOffset = totalWidth - visibleWidth;
+                const leftPaddingWidth = leftPaddingSteps * renderConfig.stepWidth;
+                const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
+                const maxOffsetX = totalContentWidth - visibleWidth + leftPaddingWidth;
+                const minOffsetX = -leftPaddingWidth;
+                const range = maxOffsetX - minOffsetX;
 
                 const rect = scrollbar.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const thumbWidth = parseFloat(thumb.style.width);
                 const thumbLeft = Math.max(0, Math.min(x - thumbWidth / 2, scrollbar.clientWidth - thumbWidth));
                 const ratio = thumbLeft / (scrollbar.clientWidth - thumbWidth);
-                currentOffsetX = Math.max(0, ratio * maxOffset);
+                currentOffsetX = clamp(minOffsetX + ratio * range, minOffsetX, maxOffsetX);
                 DTM.setDrawOffset(currentOffsetX, currentOffsetY);
                 updateScrollbar();
                 redrawAll();
@@ -2198,105 +2212,119 @@
 
     <!-- コントロール系UI -->
     <div class="flex flex-wrap gap-4 p-4 bg-white border rounded-lg shadow-md mb-6">
-        <button id="play-button" onclick="togglePlayback()" disabled class="px-4 py-2 bg-gray-300 rounded"></button>
+        <!--  транспорт управление -->
+        <div class="flex items-center space-x-2">
+            <button id="play-button" onclick="togglePlayback()" disabled class="px-4 py-2 bg-gray-300 rounded"></button>
+            <button id="pause-button" onclick="pausePlayback()" disabled
+                class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"></button>
+            <label class="flex items-center space-x-2 text-sm text-gray-700">
+                <input type="checkbox" id="solo-checkbox" onchange="toggleSolo(this.checked)"
+                    class="w-4 h-4 text-purple-600 rounded">
+                <span>ソロ演奏</span>
+            </label>
+        </div>
 
-        <button id="pause-button" onclick="pausePlayback()" disabled
-            class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"></button>
+        <!-- 区切り -->
+        <div class="w-px h-8 bg-gray-300"></div>
 
-        <label class="flex items-center space-x-2 text-sm text-gray-700">
-            <input type="checkbox" id="solo-checkbox" onchange="toggleSolo(this.checked)"
-                class="w-4 h-4 text-purple-600 rounded">
-            <span>ソロ演奏</span>
-        </label>
+        <!-- 編集操作 -->
+        <div class="flex items-center space-x-2">
+            <button id="undo-button" onclick="undoNotes()" disabled class="px-3 py-2 bg-gray-300 rounded cursor-not-allowed"
+                title="元に戻す (Ctrl+Z)">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
+                </svg>
+            </button>
+            <button id="redo-button" onclick="redoNotes()" disabled class="px-3 py-2 bg-gray-300 rounded cursor-not-allowed"
+                title="やり直し (Ctrl+Shift+Z)">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"></path>
+                </svg>
+            </button>
+        </div>
 
-        <button id="undo-button" onclick="undoNotes()" disabled class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"
-            title="元に戻す (Ctrl+Z)">
-            <svg class="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
-            </svg>
-        </button>
+        <!-- 区切り -->
+        <div class="w-px h-8 bg-gray-300"></div>
 
-        <button id="redo-button" onclick="redoNotes()" disabled class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"
-            title="やり直し (Ctrl+Shift+Z)">
-            <svg class="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"></path>
-            </svg>
-        </button>
+        <!-- ツール -->
+        <div class="flex items-center space-x-2">
+            <span class="text-sm font-medium text-gray-700">ツール:</span>
+            <button id="tool-pen" onclick="setToolMode('pen')"
+                class="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600" title="ペン (P)">
+                <i class="mdi mdi-pencil"></i>
+            </button>
+            <button id="tool-select" onclick="setToolMode('select')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg" title="範囲選択 (S)">
+                <i class="mdi mdi-vector-selection"></i>
+            </button>
+            <button id="tool-eraser" onclick="setToolMode('eraser')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg" title="消しゴム (E)">
+                <i class="mdi mdi-eraser"></i>
+            </button>
+        </div>
 
+        <!-- 区切り -->
+        <div class="w-px h-8 bg-gray-300"></div>
+
+        <!-- 音符設定 -->
+        <div class="flex items-center space-x-2">
+            <span class="text-sm font-medium text-gray-700">音符:</span>
+            <select id="note-length-select"
+                class="border rounded-md px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500">
+                <option value="48" selected>4分</option>
+                <option value="32">3連4分</option>
+                <option value="24">8分</option>
+                <option value="16">3連8分</option>
+                <option value="12">16分</option>
+                <option value="8">3連16分</option>
+                <option value="6">32分</option>
+                <option value="4">3連32分</option>
+            </select>
+        </div>
+
+        <!-- 区切り -->
+        <div class="w-px h-8 bg-gray-300"></div>
+
+        <!-- BPM -->
         <div class="flex items-center space-x-2">
             <span class="text-sm font-medium text-gray-700">BPM:</span>
             <input type="number" id="bpm-input" value="120" min="20" max="300"
                 class="w-16 border rounded-md px-2 py-1 text-sm text-center">
         </div>
 
+        <!-- ズーム -->
         <div class="flex items-center space-x-2">
-            <span class="text-sm font-medium text-gray-700">横zoom:</span>
+            <span class="text-sm font-medium text-gray-700">zoom:</span>
             <input type="range" id="zoom-input" value="100" min="25" max="200" step="25" oninput="updateStepWidth()"
-                class="w-32">
+                class="w-24">
             <span id="zoom-label" class="text-sm text-gray-700 w-12">100%</span>
         </div>
 
-        <div class="flex items-center space-x-2">
-            <span class="text-sm font-medium text-gray-700">ノート長:</span>
-            <select id="note-length-select"
-                class="border rounded-md px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500">
-                <option value="48" selected>4分音符</option>
-                <option value="32">3連4分音符</option>
-                <option value="24">8分音符</option>
-                <option value="16">3連8分音符</option>
-                <option value="12">16分音符</option>
-                <option value="8">3連16分音符</option>
-                <option value="6">32分音符</option>
-                <option value="4">3連32分音符</option>
-            </select>
-        </div>
-
-        <div class="flex items-center space-x-2">
-            <span class="text-sm font-medium text-gray-700">ツール:</span>
-            <button id="tool-pen" onclick="setToolMode('pen')"
-                class="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600" title="ペン">
-                <i class="mdi mdi-pencil"></i>
+        <!-- ナビゲーションは右端に -->
+        <div class="flex items-center space-x-1 ml-auto">
+            <span class="text-sm text-gray-500 mr-2">移動:</span>
+            <button onclick="movePianoRoll('home')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors" title="最初へ">
+                <i class="mdi mdi-page-first text-lg"></i>
             </button>
-            <button id="tool-select" onclick="setToolMode('select')"
-                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg" title="範囲選択">
-                <i class="mdi mdi-vector-selection"></i>
+            <button onclick="movePianoRoll('up')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors" title="上">
+                <i class="mdi mdi-chevron-up text-lg"></i>
             </button>
-            <button id="tool-eraser" onclick="setToolMode('eraser')"
-                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg" title="消しゴム">
-                <i class="mdi mdi-eraser"></i>
+            <button onclick="movePianoRoll('down')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors" title="下">
+                <i class="mdi mdi-chevron-down text-lg"></i>
             </button>
-        </div>
-
-        <div class="flex justify-center space-x-4 ml-auto">
-            <div class="flex space-x-1">
-                <button onclick="movePianoRoll('home')"
-                    class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors" title="最初へ">
-                    <i class="mdi mdi-page-first text-xl"></i>
-                </button>
-                <button onclick="movePianoRoll('left')"
-                    class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
-                    <i class="mdi mdi-chevron-left text-xl"></i>
-                </button>
-                <button onclick="movePianoRoll('right')"
-                    class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
-                    <i class="mdi mdi-chevron-right text-xl"></i>
-                </button>
-                <span class="text-sm self-center text-gray-600 ml-2">水平移動</span>
-            </div>
-
-            <div class="flex space-x-1 border-l border-gray-300 pl-4">
-                <button onclick="movePianoRoll('up')"
-                    class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
-                    <i class="mdi mdi-chevron-up text-xl"></i>
-                </button>
-                <button onclick="movePianoRoll('down')"
-                    class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors">
-                    <i class="mdi mdi-chevron-down text-xl"></i>
-                </button>
-                <span class="text-sm self-center text-gray-600 ml-2">垂直移動 (1キー)</span>
-            </div>
+            <button onclick="movePianoRoll('left')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors" title="左">
+                <i class="mdi mdi-chevron-left text-lg"></i>
+            </button>
+            <button onclick="movePianoRoll('right')"
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors" title="右">
+                <i class="mdi mdi-chevron-right text-lg"></i>
+            </button>
         </div>
     </div>
 
