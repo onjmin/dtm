@@ -35,6 +35,19 @@ var LinkedList = class {
     this.#cursor = next;
     return this.#cursor.value;
   }
+  /**
+   * Undo可能かチェック（カーソル移動なし）
+   */
+  canUndo() {
+    return this.#cursor.prev?.value !== null;
+  }
+  /**
+   * Redo可能かチェック（カーソル移動なし）
+   */
+  canRedo() {
+    const { next } = this.#cursor;
+    return next !== null && next.value !== null;
+  }
 };
 
 // src/renderer.ts
@@ -262,6 +275,35 @@ var drawNotes = (notes, color = "#3B82F6") => {
     g_grid_ctx.fillRect(renderX + 1, renderY + 1, w - 2, h - 2);
   }
 };
+var drawSelectionRect = (rect) => {
+  if (!rect) return;
+  g_grid_ctx.save();
+  g_grid_ctx.strokeStyle = "#10B981";
+  g_grid_ctx.lineWidth = 2;
+  g_grid_ctx.setLineDash([5, 3]);
+  g_grid_ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+  g_grid_ctx.fillStyle = "rgba(16, 185, 129, 0.1)";
+  g_grid_ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+  g_grid_ctx.restore();
+};
+var drawSelectedNotes = (notes, selectedIds) => {
+  const { keyHeight, stepWidth, keyCount, pitchRangeStart } = g_config;
+  for (const note of notes) {
+    if (!selectedIds.has(note.id)) continue;
+    const logicalX = note.startStep * stepWidth;
+    const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+    const logicalY = yIndex * keyHeight;
+    const w = note.durationSteps * stepWidth;
+    const h = keyHeight;
+    const renderX = logicalX - g_draw_offset_x;
+    const renderY = logicalY - g_draw_offset_y;
+    g_grid_ctx.save();
+    g_grid_ctx.strokeStyle = "#10B981";
+    g_grid_ctx.lineWidth = 3;
+    g_grid_ctx.strokeRect(renderX, renderY, w, h);
+    g_grid_ctx.restore();
+  }
+};
 var getXY = (e) => {
   const { clientX, clientY } = e;
   const rect = g_grid_canvas.getBoundingClientRect();
@@ -318,16 +360,104 @@ var PITCH_MAP = [
   "a+",
   "b"
 ];
-var MMLCore = class {
+var MMLCore = class _MMLCore {
   notes = [];
   nextNoteId = 0;
   handlers;
   volume = 80;
   tempo = 120;
+  history = new LinkedList();
+  isUndoRedo = false;
+  lastHistorySnapshot = "[]";
+  lastUndoTime = 0;
+  static UNDO_DEBOUNCE_MS = 100;
+  toolMode = "pen";
   constructor(handlers, volume = 80) {
     this.handlers = handlers;
     this.volume = volume;
+    this.lastHistorySnapshot = JSON.stringify(this.notes);
+    this.history.add([]);
     this.generateAndNotify();
+  }
+  saveHistory() {
+    if (this.isUndoRedo) {
+      console.log("saveHistory: skipped (isUndoRedo=true)");
+      return;
+    }
+    const snapshot = JSON.stringify(this.notes);
+    if (snapshot === this.lastHistorySnapshot) {
+      console.log("saveHistory: skipped (no change)");
+      return;
+    }
+    this.lastHistorySnapshot = snapshot;
+    this.history.add(JSON.parse(snapshot));
+    console.log("saveHistory: saved");
+  }
+  restoreHistory(notes) {
+    if (notes === null) return false;
+    console.log("restoreHistory: BEFORE - notes =", this.notes.length);
+    this.isUndoRedo = true;
+    this.notes = JSON.parse(JSON.stringify(notes));
+    this.nextNoteId = this.notes.length > 0 ? Math.max(...this.notes.map((n) => n.id)) + 1 : 0;
+    this.lastHistorySnapshot = JSON.stringify(this.notes);
+    console.log(
+      "restoreHistory: AFTER set - notes =",
+      this.notes.length,
+      "lastSnapshot =",
+      this.lastHistorySnapshot
+    );
+    this.generateAndNotify();
+    console.log(
+      "restoreHistory: AFTER generateAndNotify - notes =",
+      this.notes.length
+    );
+    this.isUndoRedo = false;
+    return true;
+  }
+  undo() {
+    const now = Date.now();
+    if (now - this.lastUndoTime < _MMLCore.UNDO_DEBOUNCE_MS) {
+      return false;
+    }
+    this.lastUndoTime = now;
+    return this.restoreHistory(this.history.undo());
+  }
+  redo() {
+    const now = Date.now();
+    if (now - this.lastUndoTime < _MMLCore.UNDO_DEBOUNCE_MS) {
+      return false;
+    }
+    this.lastUndoTime = now;
+    return this.restoreHistory(this.history.redo());
+  }
+  canUndo() {
+    return this.history.canUndo();
+  }
+  canRedo() {
+    return this.history.canRedo();
+  }
+  setToolMode(mode) {
+    this.toolMode = mode;
+  }
+  getToolMode() {
+    return this.toolMode;
+  }
+  resetHistory() {
+    this.history = new LinkedList();
+    this.history.add([]);
+    this.lastHistorySnapshot = JSON.stringify(this.notes);
+  }
+  addHistoryOnce() {
+    this.lastHistorySnapshot = "[]";
+    this.saveHistory();
+  }
+  clearNotesWithoutHistory() {
+    this.notes = [];
+    this.nextNoteId = 0;
+    this.lastHistorySnapshot = "[]";
+  }
+  setLoadMode(mode) {
+    this.isUndoRedo = mode;
   }
   // ============== ノート編集 (外部API) ==============
   /**
@@ -353,12 +483,14 @@ var MMLCore = class {
       this.notes.push(newNote);
     }
     this.notes.sort((a, b) => a.startStep - b.startStep);
+    this.saveHistory();
     this.generateAndNotify();
   }
   deleteNoteById(noteId) {
     const index = this.notes.findIndex((n) => n.id === noteId);
     if (index !== -1) {
       this.notes.splice(index, 1);
+      this.saveHistory();
       this.generateAndNotify();
     }
   }
@@ -387,6 +519,7 @@ var MMLCore = class {
     note.startStep = clampedStart;
     note.pitch = clampedPitch;
     this.notes.sort((a, b) => a.startStep - b.startStep);
+    this.saveHistory();
     this.generateAndNotify();
   }
   resizeNote(noteId, durationSteps) {
@@ -395,6 +528,7 @@ var MMLCore = class {
     const clampedDuration = Math.max(1, durationSteps);
     note.durationSteps = clampedDuration;
     this.notes.sort((a, b) => a.startStep - b.startStep);
+    this.saveHistory();
     this.generateAndNotify();
   }
   // ============== 状態取得 (外部API) ==============
@@ -571,12 +705,16 @@ var createPianoRoll = (options, handlers) => {
   } = options;
   init(mountTarget, width, height, config);
   let currentNoteLengthSteps = noteLengthSteps;
+  let toolMode = "pen";
+  let selectionRect = null;
+  let isSelecting = false;
+  let selectionStart = null;
+  let selectedNotes = [];
+  let copiedNotes = [];
   const core = new MMLCore({
     onMMLGenerated: handlers.onMMLGenerated,
     onNotesChanged: (notes) => {
       handlers.onNotesChanged(notes);
-      drawGrid();
-      drawNotes(notes);
     }
   });
   const getAddNoteOptions = () => ({
@@ -588,7 +726,20 @@ var createPianoRoll = (options, handlers) => {
       suppressClick = false;
       return;
     }
-    core.toggleNote(step, pitch, getAddNoteOptions());
+    const mode = core.getToolMode();
+    if (mode === "pen") {
+      core.toggleNote(step, pitch, getAddNoteOptions());
+      handlers.onNoteClick?.(step, pitch, false);
+    } else if (mode === "eraser") {
+      const notes = core.getNotes();
+      const note = notes.find(
+        (n) => n.startStep <= step && step < n.startStep + n.durationSteps && n.pitch === pitch
+      );
+      if (note) {
+        core.deleteNoteById(note.id);
+        handlers.onNoteClick?.(step, pitch, true);
+      }
+    }
   });
   const gridCanvas = getGridCanvas();
   const resizeHandleWidth = 6;
@@ -612,6 +763,17 @@ var createPianoRoll = (options, handlers) => {
     return null;
   };
   const handlePointerMove = (e) => {
+    if (core.getToolMode() === "select" && isSelecting && selectionStart) {
+      const { x, y } = getGridPosition(e);
+      const minX = Math.min(x, selectionStart.x);
+      const minY = Math.min(y, selectionStart.y);
+      const width2 = Math.abs(x - selectionStart.x);
+      const height2 = Math.abs(y - selectionStart.y);
+      selectionRect = { x: minX, y: minY, width: width2, height: height2 };
+      selectedNotes = getNotesInRect(selectionRect);
+      redraw();
+      return;
+    }
     if (!dragState) return;
     hasDragged = true;
     const { step, pitch } = getGridPosition(e);
@@ -625,6 +787,11 @@ var createPianoRoll = (options, handlers) => {
     core.resizeNote(dragState.noteId, nextDuration);
   };
   const endDrag = () => {
+    if (core.getToolMode() === "select") {
+      isSelecting = false;
+      selectionStart = null;
+      return;
+    }
     if (dragState) {
       dragState = null;
       if (hasDragged) {
@@ -635,6 +802,24 @@ var createPianoRoll = (options, handlers) => {
   };
   gridCanvas.addEventListener("mousedown", (e) => {
     const { x, y, step, pitch } = getGridPosition(e);
+    const currentMode = core.getToolMode();
+    if (currentMode === "select") {
+      if (selectionRect) {
+        const notesInRect = getNotesInRect(selectionRect);
+        const clickedNote = findNoteAtPosition(x, y);
+        if (clickedNote && notesInRect.some((n) => n.id === clickedNote.id)) {
+          selectedNotes = notesInRect;
+          isSelecting = true;
+          selectionStart = { x, y, step, pitch };
+          return;
+        }
+      }
+      selectedNotes = [];
+      selectionRect = null;
+      isSelecting = true;
+      selectionStart = { x, y, step, pitch };
+      return;
+    }
     const note = findNoteAtPosition(x, y);
     if (!note) return;
     const { stepWidth, keyHeight, keyCount, pitchRangeStart } = getRenderConfig();
@@ -690,6 +875,33 @@ var createPianoRoll = (options, handlers) => {
   const redraw = () => {
     drawGrid();
     drawNotes(core.getNotes());
+    if (core.getToolMode() === "select") {
+      drawSelectionRect(selectionRect);
+      if (selectedNotes.length > 0) {
+        const selectedIds = new Set(selectedNotes.map((n) => n.id));
+        drawSelectedNotes(core.getNotes(), selectedIds);
+      }
+    }
+  };
+  const getNotesInRect = (rect) => {
+    const { stepWidth, keyHeight, keyCount, pitchRangeStart } = getRenderConfig();
+    const offset = getDrawOffset();
+    const notes = [];
+    for (const note of core.getNotes()) {
+      const logicalX = note.startStep * stepWidth;
+      const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+      const logicalY = yIndex * keyHeight;
+      const noteRect = {
+        x: logicalX - offset.x,
+        y: logicalY - offset.y,
+        width: note.durationSteps * stepWidth,
+        height: keyHeight
+      };
+      if (rect.x < noteRect.x + noteRect.width && rect.x + rect.width > noteRect.x && rect.y < noteRect.y + noteRect.height && rect.y + rect.height > noteRect.y) {
+        notes.push(note);
+      }
+    }
+    return notes;
   };
   redraw();
   return {
@@ -700,7 +912,35 @@ var createPianoRoll = (options, handlers) => {
     setNoteLengthSteps: (steps) => {
       currentNoteLengthSteps = steps;
     },
-    redraw
+    redraw,
+    setToolMode: (mode) => {
+      core.setToolMode(mode);
+      if (mode !== "select") {
+        selectionRect = null;
+        selectedNotes = [];
+      }
+    },
+    getToolMode: () => core.getToolMode(),
+    getSelectionRect: () => selectionRect,
+    clearSelection: () => {
+      selectionRect = null;
+      selectedNotes = [];
+    },
+    copySelection: () => {
+      copiedNotes = [...selectedNotes];
+      return copiedNotes;
+    },
+    pasteNotes: (notes, startStep) => {
+      if (copiedNotes.length === 0) return;
+      const minStart = Math.min(...copiedNotes.map((n) => n.startStep));
+      copiedNotes.forEach((note) => {
+        const newStep = startStep + (note.startStep - minStart);
+        core.toggleNote(newStep, note.pitch, {
+          noteLengthSteps: note.durationSteps,
+          velocity: note.velocity
+        });
+      });
+    }
   };
 };
 export {
@@ -712,6 +952,8 @@ export {
   drawHeader,
   drawKeyboard,
   drawNotes,
+  drawSelectedNotes,
+  drawSelectionRect,
   getDrawOffset,
   getGridCanvas,
   getGridContext,
