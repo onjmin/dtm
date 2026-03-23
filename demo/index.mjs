@@ -368,6 +368,7 @@ var MMLCore = class _MMLCore {
   tempo = 120;
   history = new LinkedList();
   isUndoRedo = false;
+  isBatchOperation = false;
   lastHistorySnapshot = "[]";
   lastUndoTime = 0;
   static UNDO_DEBOUNCE_MS = 100;
@@ -379,9 +380,15 @@ var MMLCore = class _MMLCore {
     this.history.add([]);
     this.generateAndNotify();
   }
+  beginBatch() {
+    this.isBatchOperation = true;
+  }
+  endBatch() {
+    this.isBatchOperation = false;
+    this.saveHistory();
+  }
   saveHistory() {
-    if (this.isUndoRedo) {
-      console.log("saveHistory: skipped (isUndoRedo=true)");
+    if (this.isUndoRedo || this.isBatchOperation) {
       return;
     }
     const snapshot = JSON.stringify(this.notes);
