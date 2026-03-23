@@ -1441,16 +1441,22 @@
                 return;
             }
 
-            clearAllNotes();
-            setLoadMode(true);
+            document.getElementById('midi-loading-overlay').classList.remove('hidden');
 
-            parseMidiWithSelection(pendingMidiData, selectedIndices);
+            setTimeout(() => {
+                clearAllNotes();
+                setLoadMode(true);
 
-            setLoadMode(false);
-            tracks.forEach(track => {
-                if (track.core) track.core.addHistoryOnce();
-            });
-            updateUndoRedoButtons();
+                parseMidiWithSelection(pendingMidiData, selectedIndices);
+
+                setLoadMode(false);
+                tracks.forEach(track => {
+                    if (track.core) track.core.addHistoryOnce();
+                });
+                updateUndoRedoButtons();
+
+                document.getElementById('midi-loading-overlay').classList.add('hidden');
+            }, 50);
         };
 
         const getBPM = (midi) => {
