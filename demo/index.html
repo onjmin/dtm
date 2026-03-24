@@ -2223,16 +2223,13 @@
         <div class="flex flex-wrap gap-2 items-center">
             <span class="text-sm font-medium text-gray-700">MIDI:</span>
             <input type="file" id="midi-file-input" accept=".mid,.midi" class="border rounded-md px-2 py-1 text-sm">
+            <button id="midi-load-button" onclick="loadMidiFromSelection()"
+                class="hidden px-3 py-1 bg-green-500 text-white rounded-md text-sm hover:bg-green-600">MIDI読込</button>
+            <span class="hidden text-xs text-gray-500" id="midi-load-note">※選択したチャンネルがピアノロールに反映されます</span>
         </div>
 
         <div id="midi-track-selection" class="hidden flex flex-wrap gap-2 items-center">
             <span class="text-sm text-gray-600">トラック:</span>
-        </div>
-
-        <div class="flex items-center gap-2">
-            <button id="midi-load-button" onclick="loadMidiFromSelection()"
-                class="hidden px-3 py-1 bg-green-500 text-white rounded-md text-sm hover:bg-green-600">MIDI読込</button>
-            <span class="hidden text-xs text-gray-500" id="midi-load-note">※選択したチャンネルがピアノロールに反映されます</span>
         </div>
 
         <!-- 区切り線 -->
