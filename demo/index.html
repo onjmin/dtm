@@ -329,10 +329,22 @@
             stepWidth: 10,
         };
         // C4 (note 60) を中央に配置
-        const gridHeight = 430;
-        const initialOffsetY = (104 - 1 - 60) * 15 - gridHeight / 2;
+        let gridHeight = 430;
         let baseStepWidth = 0.5; // stepsPerBar=192対応
+
+        // 初期Yオフセットを計算
+        const getInitialOffsetY = () => {
+            return (104 - 1 - 60) * renderConfig.keyHeight - gridHeight / 2;
+        };
+
         window.updateStepWidth = () => {
+            // コンテナの高さに応じてkeyHeightを調整
+            const container = document.getElementById('piano-roll-container');
+            if (container && container.clientHeight > 0) {
+                gridHeight = container.clientHeight;
+                const optimalKeyHeight = Math.floor(gridHeight / 30); // 約30鍵表示
+                renderConfig.keyHeight = Math.max(8, Math.min(15, optimalKeyHeight));
+            }
             const rawZoom = parseInt(document.getElementById('zoom-input')?.value);
             const zoom = rawZoom * 2; // 50%→100%, 100%→200%
 
@@ -400,7 +412,7 @@
         }
 
         let currentOffsetX = 0;
-        let currentOffsetY = initialOffsetY;
+        let currentOffsetY = getInitialOffsetY();
         const scrollAmount = 16 * renderConfig.stepWidth; // 例: 1小節分を移動量とする
         const leftPaddingSteps = 192 * 16; // 16小節分の余白
         let noteLengthSelectEl = null;
@@ -811,11 +823,13 @@
 
             // 2. Core/Renderer の初期化
             // 1. モジュールに Canvas の初期化を依頼 (DOM操作とイベントリスナーの抽象化)
-            // #piano-roll-container の現在のCSSサイズを渡す: w-[800px] h-[450px]
+            // ピアノロールコンテナの現在のサイズを使用
+            const initWidth = pianoRollContainer.clientWidth || 800;
+            const initHeight = pianoRollContainer.clientHeight || 450;
             DTM.init(
                 pianoRollContainer.querySelector('#wrapper'),
-                800,
-                450,
+                initWidth,
+                initHeight,
                 renderConfig,
             );
 
@@ -897,22 +911,25 @@
                     const mouseY = event.clientY - gridRect.top;
                     let scrolled = false;
 
+                    // マウスがキャンバスの外にある場合もスクロール
+                    const isOutsideCanvas = mouseX < 0 || mouseX > gridRect.width || mouseY < 0 || mouseY > gridRect.height;
+
                     // 垂直方向のスクロール
-                    if (mouseY < edgeThreshold) {
+                    if (mouseY < edgeThreshold || (isOutsideCanvas && mouseY < 0)) {
                         currentOffsetY = Math.max(0, currentOffsetY - scrollAmount);
                         scrolled = true;
-                    } else if (mouseY > gridRect.height - edgeThreshold) {
+                    } else if (mouseY > gridRect.height - edgeThreshold || (isOutsideCanvas && mouseY > gridRect.height)) {
                         const maxOffsetY = getMaxOffsetY();
                         currentOffsetY = Math.min(maxOffsetY, currentOffsetY + scrollAmount);
                         scrolled = true;
                     }
 
                     // 水平方向のスクロール
-                    if (mouseX < edgeThreshold) {
+                    if (mouseX < edgeThreshold || (isOutsideCanvas && mouseX < 0)) {
                         const minOffsetX = -leftPaddingSteps * renderConfig.stepWidth;
                         currentOffsetX = Math.max(minOffsetX, currentOffsetX - scrollAmount);
                         scrolled = true;
-                    } else if (mouseX > gridRect.width - edgeThreshold) {
+                    } else if (mouseX > gridRect.width - edgeThreshold || (isOutsideCanvas && mouseX > gridRect.width)) {
                         const maxNoteStep = getMaxNoteStep();
                         const maxOffsetX = maxNoteStep * renderConfig.stepWidth - gridRect.width + leftPaddingSteps * renderConfig.stepWidth;
                         currentOffsetX = Math.min(maxOffsetX, currentOffsetX + scrollAmount);
@@ -1250,6 +1267,12 @@
 
         // モジュールロード完了後に初期化を実行
         initializeDemo();
+
+        // スマホの場合はズームを50%に
+        if (window.innerWidth < 640) {
+            document.getElementById('zoom-input').value = 50;
+            document.getElementById('zoom-label').textContent = '50%';
+        }
         updateStepWidth();
 
         // 音色名表示を更新
@@ -2218,22 +2241,19 @@
     <h1 class="text-3xl font-extrabold mb-4 text-gray-800">簡易DAW（Canvas/MML）デモ</h1>
 
     <!-- MIDI & MML入力 -->
-    <div class="flex flex-wrap gap-4 p-4 bg-white border rounded-lg shadow-md mb-6">
+    <div
+        class="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-4 p-2 sm:p-4 bg-white border rounded-lg shadow-md mb-4 sm:mb-6">
         <!-- MIDI Section -->
         <div class="flex flex-wrap gap-2 items-center">
             <span class="text-sm font-medium text-gray-700">MIDI:</span>
-            <input type="file" id="midi-file-input" accept=".mid,.midi" class="border rounded-md px-2 py-1 text-sm">
-        </div>
-
-        <div id="midi-track-selection" class="hidden flex flex-wrap gap-2 items-center">
-            <span class="text-sm text-gray-600">トラック:</span>
-        </div>
-
-        <div class="flex items-center gap-2">
+            <input type="file" id="midi-file-input" accept=".mid,.midi"
+                class="border rounded-md px-2 py-1 text-sm w-full sm:w-auto">
             <button id="midi-load-button" onclick="loadMidiFromSelection()"
                 class="hidden px-3 py-1 bg-green-500 text-white rounded-md text-sm hover:bg-green-600">MIDI読込</button>
             <span class="hidden text-xs text-gray-500" id="midi-load-note">※選択したチャンネルがピアノロールに反映されます</span>
         </div>
+
+        <div id="midi-track-selection" class="hidden flex flex-wrap gap-2 items-center"></div>
 
         <!-- 区切り線 -->
         <div class="w-full h-px bg-gray-300 my-2"></div>
@@ -2241,7 +2261,7 @@
         <!-- MML Section -->
         <div class="flex flex-wrap gap-2 items-start">
             <span class="text-sm font-medium text-gray-700">MML:</span>
-            <textarea id="mml-input" rows="2" class="border rounded-md px-2 py-1 text-sm w-64"
+            <textarea id="mml-input" rows="2" class="border rounded-md px-2 py-1 text-sm w-full sm:w-64"
                 placeholder="MMLを入力"></textarea>
             <button onclick="loadMML()"
                 class="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600">MML読込</button>
@@ -2272,12 +2292,13 @@
     </div>
 
     <!-- コントロール系UI -->
-    <div class="flex flex-wrap gap-4 p-4 bg-white border rounded-lg shadow-md mb-6">
+    <div class="flex flex-wrap gap-2 sm:gap-4 p-2 sm:p-4 bg-white border rounded-lg shadow-md mb-4 sm:mb-6">
         <!--  транспорт управление -->
         <div class="flex items-center space-x-2">
-            <button id="play-button" onclick="togglePlayback()" disabled class="px-4 py-2 bg-gray-300 rounded"></button>
+            <button id="play-button" onclick="togglePlayback()" disabled
+                class="px-3 sm:px-4 py-2 bg-gray-300 rounded"></button>
             <button id="pause-button" onclick="pausePlayback()" disabled
-                class="px-4 py-2 bg-gray-300 rounded cursor-not-allowed"></button>
+                class="px-3 sm:px-4 py-2 bg-gray-300 rounded cursor-not-allowed"></button>
             <label class="flex items-center space-x-2 text-sm text-gray-700">
                 <input type="checkbox" id="solo-checkbox" onchange="toggleSolo(this.checked)"
                     class="w-4 h-4 text-purple-600 rounded">
@@ -2286,20 +2307,20 @@
         </div>
 
         <!-- 区切り -->
-        <div class="w-px h-8 bg-gray-300"></div>
+        <div class="hidden sm:block w-px h-8 bg-gray-300"></div>
 
         <!-- 編集操作 -->
         <div class="flex items-center space-x-2">
             <button id="undo-button" onclick="undoNotes()" disabled
-                class="px-3 py-2 bg-gray-300 rounded cursor-not-allowed" title="元に戻す (Ctrl+Z)">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                class="px-2 sm:px-3 py-2 bg-gray-300 rounded cursor-not-allowed" title="元に戻す">
+                <svg class="w-4 sm:w-5 h-4 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
                 </svg>
             </button>
             <button id="redo-button" onclick="redoNotes()" disabled
-                class="px-3 py-2 bg-gray-300 rounded cursor-not-allowed" title="やり直し (Ctrl+Shift+Z)">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                class="px-2 sm:px-3 py-2 bg-gray-300 rounded cursor-not-allowed" title="やり直し">
+                <svg class="w-4 sm:w-5 h-4 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"></path>
                 </svg>
@@ -2307,65 +2328,65 @@
         </div>
 
         <!-- 区切り -->
-        <div class="w-px h-8 bg-gray-300"></div>
+        <div class="hidden sm:block w-px h-8 bg-gray-300"></div>
 
         <!-- ツール -->
         <div class="flex items-center space-x-2">
             <span class="text-sm font-medium text-gray-700">ツール:</span>
             <button id="tool-pen" onclick="setToolMode('pen')"
-                class="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600" title="ペン (P)">
+                class="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600" title="ペン">
                 <i class="mdi mdi-pencil"></i>
             </button>
             <button id="tool-select" onclick="setToolMode('select')"
-                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg" title="範囲選択 (S)">
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg" title="選択">
                 <i class="mdi mdi-vector-selection"></i>
             </button>
             <button id="tool-eraser" onclick="setToolMode('eraser')"
-                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg" title="消しゴム (E)">
+                class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg" title="消しゴム">
                 <i class="mdi mdi-eraser"></i>
             </button>
         </div>
 
         <!-- 区切り -->
-        <div class="w-px h-8 bg-gray-300"></div>
+        <div class="hidden sm:block w-px h-8 bg-gray-300"></div>
 
         <!-- 音符設定 -->
         <div class="flex items-center space-x-2">
             <span class="text-sm font-medium text-gray-700">音符:</span>
             <select id="note-length-select"
-                class="border rounded-md px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500">
+                class="border rounded-md px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500 w-20 sm:w-auto">
                 <option value="48" selected>4分</option>
-                <option value="32">3連4分</option>
+                <option value="32">3連4</option>
                 <option value="24">8分</option>
-                <option value="16">3連8分</option>
+                <option value="16">3連8</option>
                 <option value="12">16分</option>
-                <option value="8">3連16分</option>
+                <option value="8">3連16</option>
                 <option value="6">32分</option>
-                <option value="4">3連32分</option>
+                <option value="4">3連32</option>
             </select>
         </div>
 
+
         <!-- 区切り -->
-        <div class="w-px h-8 bg-gray-300"></div>
+        <div class="hidden sm:block w-px h-8 bg-gray-300"></div>
 
         <!-- BPM -->
         <div class="flex items-center space-x-2">
             <span class="text-sm font-medium text-gray-700">BPM:</span>
             <input type="number" id="bpm-input" value="120" min="20" max="300"
-                class="w-16 border rounded-md px-2 py-1 text-sm text-center">
+                class="w-14 sm:w-16 border rounded-md px-1 sm:px-2 py-1 text-sm text-center">
         </div>
 
         <!-- ズーム -->
         <div class="flex items-center space-x-2">
             <span class="text-sm font-medium text-gray-700">zoom:</span>
             <input type="range" id="zoom-input" value="100" min="25" max="200" step="25" oninput="updateStepWidth()"
-                class="w-24">
-            <span id="zoom-label" class="text-sm text-gray-700 w-12">100%</span>
+                class="w-16 sm:w-24">
+            <span id="zoom-label" class="text-sm text-gray-700 w-10 sm:w-12">100%</span>
         </div>
 
         <!-- ナビゲーションは右端に -->
         <div class="flex items-center space-x-1 ml-auto">
-            <span class="text-sm text-gray-500 mr-2">移動:</span>
             <button onclick="movePianoRoll('home')"
                 class="p-2 bg-gray-300 hover:bg-gray-400 rounded-lg transition-colors" title="最初へ">
                 <i class="mdi mdi-page-first text-lg"></i>
@@ -2392,62 +2413,63 @@
     <!-- ピアノロール -->
     <div class="flex gap-2">
         <div id="piano-roll-container"
-            class="w-[800px] h-[450px] bg-white border border-gray-300 rounded-lg shadow-xl relative"
+            class="w-full sm:w-[800px] h-[300px] sm:h-[450px] bg-white border border-gray-300 rounded-lg shadow-xl relative"
             style="overflow: hidden;">
             <div id="wrapper" class="absolute inset-0">
             </div>
         </div>
-        <div id="v-scrollbar" class="relative w-6 h-[450px] bg-gray-200 rounded cursor-pointer flex-shrink-0">
+        <div id="v-scrollbar"
+            class="relative w-6 h-[300px] sm:h-[450px] bg-gray-200 rounded cursor-pointer flex-shrink-0 hidden sm:block">
             <div id="v-scrollbar-thumb"
                 class="absolute left-0 w-full bg-blue-400 rounded hover:bg-blue-500 transition-colors"></div>
         </div>
     </div>
 
-    <div class="w-[800px] mt-2">
+    <div class="w-full sm:w-[800px] mt-2 overflow-hidden">
         <div id="h-scrollbar" class="relative w-full h-6 bg-gray-200 rounded cursor-pointer">
             <div id="h-scrollbar-thumb"
                 class="absolute top-0 h-full bg-blue-400 rounded hover:bg-blue-500 transition-colors"></div>
         </div>
     </div>
 
-    <!-- トラック設定 -->
-    <div class="p-4 bg-white border rounded-lg shadow-md mb-6">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">トラック設定</h2>
+    <!-- トラック設定（楽器プリセット含む） -->
+    <div class="p-2 sm:p-4 bg-white border rounded-lg shadow-md mb-4 sm:mb-6">
+        <h2 class="text-lg sm:text-xl font-semibold text-gray-800 mb-2 sm:mb-4">トラック設定</h2>
 
-        <div id="track-tabs" class="flex border-b border-gray-200">
+        <div class="flex flex-row items-center gap-2 mb-2">
+            <label for="instrument-preset" class="text-sm font-medium text-gray-500 whitespace-nowrap">
+                楽器:
+            </label>
+
+            <select id="instrument-preset" onchange="loadInstrumentPreset(this.value)"
+                class="bg-gray-100/10 border border-gray-300 rounded-md px-2 py-1 text-sm w-full sm:w-48 focus:outline-none focus:bg-gray-100/20 transition-colors">
+            </select>
         </div>
 
-        <div id="track-content" class="p-4 border border-t-0 border-gray-200 rounded-b-lg bg-white">
-        </div>
-
-        <div class="mt-4 pt-4 border-t border-gray-200">
-            <div class="flex items-center space-x-4">
-                <span class="text-sm font-medium text-gray-700">音量:</span>
+        <div class="mt-2 sm:mt-4 pt-2 sm:pt-4 border-t border-gray-200">
+            <div class="flex items-center space-x-2 sm:space-x-4">
+                <span class="text-sm font-medium text-gray-700 whitespace-nowrap">音量:</span>
                 <input type="range" id="master-volume-input" value="50" min="0" max="100" step="1"
-                    oninput="updateMasterVolume(this.value)" class="w-32">
-                <span id="master-volume-label" class="text-sm text-gray-700 w-12">50%</span>
+                    oninput="updateMasterVolume(this.value)" class="w-20 sm:w-32">
+                <span id="master-volume-label" class="text-sm text-gray-700 w-10 sm:w-12">50%</span>
             </div>
         </div>
-    </div>
 
-    <!-- 楽器プリセット -->
-    <div class="p-4 bg-white border rounded-lg shadow-md mb-6">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">楽器プリセット</h2>
-        <div class="flex items-center space-x-4">
-            <select id="instrument-preset" onchange="loadInstrumentPreset(this.value)"
-                class="border rounded-md px-3 py-2">
-            </select>
+        <div id="track-tabs" class="flex border-b border-gray-200 overflow-x-auto">
+        </div>
+
+        <div id="track-content" class="p-2 sm:p-4 border border-t-0 border-gray-200 rounded-b-lg bg-white">
         </div>
     </div>
 
     <!-- ドラム設定 -->
-    <div class="p-4 bg-white border rounded-lg shadow-md mb-6">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">ドラム設定</h2>
-        <div class="flex flex-wrap items-center gap-4">
+    <div class="p-2 sm:p-4 bg-white border rounded-lg shadow-md mb-4 sm:mb-6">
+        <h2 class="text-lg sm:text-xl font-semibold text-gray-800 mb-2 sm:mb-4">ドラム設定</h2>
+        <div class="flex flex-wrap items-center gap-2 sm:gap-4">
             <div class="flex items-center space-x-2">
                 <span class="text-sm font-medium text-gray-700">リズム:</span>
                 <select id="drum-rhythm-select"
-                    class="border rounded-md px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                    class="border rounded-md px-2 sm:px-3 py-1 sm:py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
                     <option value="none">なし</option>
                     <option value="4beat">4beat</option>
                     <option value="8beat">8beat</option>
@@ -2459,16 +2481,16 @@
         </div>
         <div class="flex items-center space-x-2 mt-2">
             <span class="text-sm font-medium text-gray-700">音量:</span>
-            <input type="range" id="drum-volume-input" value="80" min="0" max="100" step="1" class="w-24">
-            <span id="drum-volume-label" class="text-sm text-gray-700 w-12">80%</span>
+            <input type="range" id="drum-volume-input" value="80" min="0" max="100" step="1" class="w-20 sm:w-24">
+            <span id="drum-volume-label" class="text-sm text-gray-700 w-10 sm:w-12">80%</span>
         </div>
     </div>
 
-    <hr class="my-6 border-gray-300">
+    <hr class="my-4 sm:my-6 border-gray-300">
 
-    <div class="p-4 bg-gray-800 text-white rounded-lg shadow-lg">
-        <div class="flex items-center justify-between mb-4">
-            <h2 class="text-xl font-semibold">MML出力</h2>
+    <div class="p-2 sm:p-4 bg-gray-800 text-white rounded-lg shadow-lg">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-2 sm:mb-4">
+            <h2 class="text-lg sm:text-xl font-semibold">MML出力</h2>
             <div class="flex items-center space-x-2">
                 <button onclick="generateMML()" id="generate-mml-button"
                     class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded transition-colors">
