@@ -266,27 +266,45 @@ export class MMLCore {
 	}
 
 	/**
-	 * ステップ数から最も近いMML音長数値に変換（スナップ処理）
+	 * 近似値を許容して単一音符を決定する。
+	 * ただし、残りステップ(limit)は絶対に超えない。
 	 */
-	private stepsToMMLDuration(steps: number): string {
+	private stepsToMMLDuration(steps: number, limit: number): string {
 		const config = getRenderConfig();
 		const total = config.stepsPerBar;
 
-		const commonDurations = [1, 2, 4, 8, 16, 32, 64, 96, 3, 6, 12, 24, 48];
+		const candidates = [
+			{ dur: "1", s: total / 1 },
+			{ dur: "2.", s: (total / 2) * 1.5 },
+			{ dur: "2", s: total / 2 },
+			{ dur: "4.", s: (total / 4) * 1.5 },
+			{ dur: "4", s: total / 4 },
+			{ dur: "8.", s: (total / 8) * 1.5 },
+			{ dur: "8", s: total / 8 },
+			{ dur: "12", s: total / 12 },
+			{ dur: "16.", s: (total / 16) * 1.5 },
+			{ dur: "16", s: total / 16 },
+			{ dur: "24", s: total / 24 }, // 3連8分 (24step)
+			{ dur: "32", s: total / 32 },
+			{ dur: "64", s: total / 64 },
+		];
 
-		let bestDur = 4;
+		let bestDur = "64";
 		let minDiff = Infinity;
 
-		for (const d of commonDurations) {
-			const targetSteps = total / d;
-			const diff = Math.abs(steps - targetSteps);
+		for (const cand of candidates) {
+			// 絶対条件: 小節の残り/次の音符までの距離(limit)を超えない
+			if (cand.s > limit) continue;
+
+			// 本来のステップ数(steps)との差分を計算
+			const diff = Math.abs(steps - cand.s);
 			if (diff < minDiff) {
 				minDiff = diff;
-				bestDur = d;
+				bestDur = cand.dur;
 			}
 		}
 
-		return bestDur.toString();
+		return bestDur;
 	}
 
 	/**
@@ -398,10 +416,30 @@ export class MMLCore {
 					currentCursor += steps;
 				}
 
-				const nextStart = sortedSteps[i + 1] ?? windowEnd;
-				const availableSteps = nextStart - startStep;
-				const durStr = this.stepsToMMLDuration(availableSteps);
+				// --- generateMML メソッド内のループ部分 ---
 
+				const nextStart = sortedSteps[i + 1] ?? windowEnd;
+				const physicsLimit = nextStart - currentCursor; // 物理的に空いている隙間
+
+				// 【追加】最小音符（64分音符）のステップ数
+				const MIN_STEP = config.stepsPerBar / 64;
+
+				// ガード句: もし空き容量が最小単位未満なら、このノートを無視（スキップ）する
+				if (physicsLimit < MIN_STEP) {
+					console.warn(`Note skipped: No space available at step ${startStep}`);
+					// カーソルは進めず、次のノートの処理へ（物理的な位置に合わせるため）
+					currentCursor = startStep;
+					continue;
+				}
+
+				// 理想の長さ(notes[0].durationSteps)と、物理的な限界(physicsLimit)を比較
+				const idealDuration = notes[0].durationSteps;
+				const durStr = this.stepsToMMLDuration(idealDuration, physicsLimit);
+
+				// 実際にMMLとして出力した音符のステップ数
+				const actualStepGenerated = this.getStepFromDottedMML(durStr);
+
+				// MML文字列の組み立て
 				if (notes.length > 1) {
 					const noteStrs = notes.map((n) => {
 						const oct = Math.floor(n.pitch / 12) - 1;
@@ -409,7 +447,6 @@ export class MMLCore {
 						return `o${oct}${name}`;
 					});
 					segments.push(`[${noteStrs.join("")}]${durStr}`);
-					lastOctave = -1;
 				} else {
 					const { text, currentOctave } = this.getNoteWithOctave(
 						notes[0].pitch,
@@ -419,8 +456,8 @@ export class MMLCore {
 					lastOctave = currentOctave;
 				}
 
-				const actualStep = config.stepsPerBar / parseInt(durStr);
-				currentCursor = startStep + actualStep;
+				// 次の処理のために、実際に出力した分だけカーソルを進める
+				currentCursor += actualStepGenerated;
 			}
 
 			while (currentCursor < windowEnd) {
@@ -437,4 +474,23 @@ export class MMLCore {
 
 		return `${header} ${segments.join(" ")}`;
 	};
+
+	/**
+	 * MMLの音長文字列（"4", "4.", "12"など）をステップ数に変換する
+	 */
+	private getStepFromDottedMML(durStr: string): number {
+		const config = getRenderConfig();
+		const total = config.stepsPerBar; // 1小節の全ステップ数（例: 192）
+
+		// 付点があるかチェック
+		const isDotted = durStr.endsWith(".");
+		// 数値部分だけ取り出す（"4." -> 4, "8" -> 8）
+		const baseDur = parseInt(isDotted ? durStr.slice(0, -1) : durStr);
+
+		// 基本のステップ数（例: 4分音符なら 192 / 4 = 48）
+		const baseStep = total / baseDur;
+
+		// 付点なら1.5倍、そうでなければそのまま返す
+		return isDotted ? baseStep * 1.5 : baseStep;
+	}
 }
