@@ -561,23 +561,39 @@ var MMLCore = class _MMLCore {
     this.handlers.onMMLGenerated(mml);
   }
   /**
-   * ステップ数から最も近いMML音長数値に変換（スナップ処理）
+   * 近似値を許容して単一音符を決定する。
+   * ただし、残りステップ(limit)は絶対に超えない。
    */
-  stepsToMMLDuration(steps) {
+  stepsToMMLDuration(steps, limit) {
     const config = getRenderConfig();
     const total = config.stepsPerBar;
-    const commonDurations = [1, 2, 4, 8, 16, 32, 64, 96, 3, 6, 12, 24, 48];
-    let bestDur = 4;
+    const candidates = [
+      { dur: "1", s: total / 1 },
+      { dur: "2.", s: total / 2 * 1.5 },
+      { dur: "2", s: total / 2 },
+      { dur: "4.", s: total / 4 * 1.5 },
+      { dur: "4", s: total / 4 },
+      { dur: "8.", s: total / 8 * 1.5 },
+      { dur: "8", s: total / 8 },
+      { dur: "12", s: total / 12 },
+      { dur: "16.", s: total / 16 * 1.5 },
+      { dur: "16", s: total / 16 },
+      { dur: "24", s: total / 24 },
+      // 3連8分 (24step)
+      { dur: "32", s: total / 32 },
+      { dur: "64", s: total / 64 }
+    ];
+    let bestDur = "64";
     let minDiff = Infinity;
-    for (const d of commonDurations) {
-      const targetSteps = total / d;
-      const diff = Math.abs(steps - targetSteps);
+    for (const cand of candidates) {
+      if (cand.s > limit) continue;
+      const diff = Math.abs(steps - cand.s);
       if (diff < minDiff) {
         minDiff = diff;
-        bestDur = d;
+        bestDur = cand.dur;
       }
     }
-    return bestDur.toString();
+    return bestDur;
   }
   /**
    * ギャップに収まる最大の音符を探す（減算アルゴリズム用）
@@ -665,8 +681,16 @@ var MMLCore = class _MMLCore {
           currentCursor += steps;
         }
         const nextStart = sortedSteps[i + 1] ?? windowEnd;
-        const availableSteps = nextStart - startStep;
-        const durStr = this.stepsToMMLDuration(availableSteps);
+        const physicsLimit = nextStart - currentCursor;
+        const MIN_STEP = config.stepsPerBar / 64;
+        if (physicsLimit < MIN_STEP) {
+          console.warn(`Note skipped: No space available at step ${startStep}`);
+          currentCursor = startStep;
+          continue;
+        }
+        const idealDuration = notes[0].durationSteps;
+        const durStr = this.stepsToMMLDuration(idealDuration, physicsLimit);
+        const actualStepGenerated = this.getStepFromDottedMML(durStr);
         if (notes.length > 1) {
           const noteStrs = notes.map((n) => {
             const oct = Math.floor(n.pitch / 12) - 1;
@@ -674,7 +698,6 @@ var MMLCore = class _MMLCore {
             return `o${oct}${name}`;
           });
           segments.push(`[${noteStrs.join("")}]${durStr}`);
-          lastOctave = -1;
         } else {
           const { text, currentOctave } = this.getNoteWithOctave(
             notes[0].pitch,
@@ -683,8 +706,7 @@ var MMLCore = class _MMLCore {
           segments.push(`${text}${durStr}`);
           lastOctave = currentOctave;
         }
-        const actualStep = config.stepsPerBar / parseInt(durStr);
-        currentCursor = startStep + actualStep;
+        currentCursor += actualStepGenerated;
       }
       while (currentCursor < windowEnd) {
         const gap = windowEnd - currentCursor;
@@ -699,6 +721,17 @@ var MMLCore = class _MMLCore {
     }
     return `${header} ${segments.join(" ")}`;
   };
+  /**
+   * MMLの音長文字列（"4", "4.", "12"など）をステップ数に変換する
+   */
+  getStepFromDottedMML(durStr) {
+    const config = getRenderConfig();
+    const total = config.stepsPerBar;
+    const isDotted = durStr.endsWith(".");
+    const baseDur = parseInt(isDotted ? durStr.slice(0, -1) : durStr);
+    const baseStep = total / baseDur;
+    return isDotted ? baseStep * 1.5 : baseStep;
+  }
 };
 
 // src/piano-roll.ts
