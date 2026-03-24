@@ -1974,7 +1974,7 @@
             setLoadMode(true);
 
             const PITCH_MAP = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
-            const stepsPerBar = 192;
+            const stepsPerBar = 192; // 4分音符 = 48 steps
 
             const trackIds = ['melody', 'submelody', 'bass', 'chord'];
             const trackMap = {};
@@ -1986,71 +1986,47 @@
                 const track = trackMap[trackIdx];
                 if (!track || !track.core) return;
 
+                // ヘッダーがない場合は全体をボディとして扱う
                 const headerMatch = trackMML.match(/@(\d+)\s*(.+)/);
-                if (!headerMatch) return;
+                const body = headerMatch ? headerMatch[2] : trackMML;
 
-                const body = headerMatch[2];
                 let octave = 4;
                 let currentStep = 0;
                 let i = 0;
                 let baseLength = 16;
 
+                // 数値と付点をパースするヘルパー
+                const parseLength = () => {
+                    let numStr = '';
+                    while (i < body.length && /\d/.test(body[i])) {
+                        numStr += body[i];
+                        i++;
+                    }
+                    let len = numStr ? parseInt(numStr) : baseLength;
+                    let steps = Math.round(stepsPerBar / len);
+
+                    // 付点（.）の処理: 1.5倍の長さに
+                    while (i < body.length && body[i] === '.') {
+                        steps = Math.round(steps * 1.5);
+                        i++;
+                    }
+                    return steps;
+                };
+
                 while (i < body.length) {
-                    const ch = body[i];
+                    let ch = body[i].toLowerCase();
 
-                    if (ch === 'q') {
-                        i++;
-                        while (i < body.length && /\d/.test(body[i])) i++;
-                        continue;
-                    }
-
-                    if (ch === 'v') {
-                        i++;
-                        while (i < body.length && /\d/.test(body[i])) i++;
-                        continue;
-                    }
-
-                    if (ch === 't') {
-                        i++;
-                        let num = '';
-                        while (i < body.length && /\d/.test(body[i])) {
-                            num += body[i];
-                            i++;
-                        }
-                        if (trackIdx === 0) {
-                            document.getElementById('bpm-input').value = num;
-                        }
-                        continue;
-                    }
-
-                    if (ch === 'l') {
-                        i++;
-                        let num = '';
-                        while (i < body.length && /\d/.test(body[i])) {
-                            num += body[i];
-                            i++;
-                        }
-                        baseLength = parseInt(num) || 16;
-                        continue;
-                    }
+                    // 空白スキップ
+                    if (/\s/.test(ch)) { i++; continue; }
 
                     if (ch === 'o') {
                         i++;
-                        octave = parseInt(body[i]) || 4;
-                        i++;
-                        continue;
-                    }
-
-                    if (ch === 'r') {
-                        i++;
-                        let len = 0;
+                        let numStr = '';
                         while (i < body.length && /\d/.test(body[i])) {
-                            len = len * 10 + parseInt(body[i]);
+                            numStr += body[i];
                             i++;
                         }
-                        len = len || baseLength;
-                        const steps = Math.round(stepsPerBar / len);
-                        currentStep += steps;
+                        octave = parseInt(numStr) || 4;
                         continue;
                     }
 
@@ -2059,95 +2035,107 @@
                         i++;
                         continue;
                     }
+
                     if (ch === '<') {
                         octave--;
                         i++;
                         continue;
                     }
 
+                    if (ch === 'l') {
+                        i++;
+                        let numStr = '';
+                        while (i < body.length && /\d/.test(body[i])) {
+                            numStr += body[i];
+                            i++;
+                        }
+                        baseLength = parseInt(numStr) || 16;
+                        continue;
+                    }
+
+                    if (ch === 'r') {
+                        i++;
+                        currentStep += parseLength();
+                        continue;
+                    }
+
+                    if (ch === 't' || ch === 'v' || ch === 'q') {
+                        i++;
+                        let numStr = '';
+                        while (i < body.length && /\d/.test(body[i])) {
+                            numStr += body[i];
+                            i++;
+                        }
+                        if (ch === 't' && trackIdx === 0) {
+                            const bpmInput = document.getElementById('bpm-input');
+                            if (bpmInput) bpmInput.value = numStr;
+                        }
+                        continue;
+                    }
+
+                    // 和音 [ceg]4
                     if (ch === '[') {
                         i++;
                         const chordNotes = [];
-                        let chordOctave = octave;
-                        const octaveBeforeChord = octave;
-                        while (i < body.length && body[i] !== ']') {
-                            const noteCh = body[i].toLowerCase();
+                        const savedOctave = octave;
 
-                            if (body[i] === '+') {
-                                i++;
-                            } else if (noteCh === 'o') {
-                                i++;
-                                chordOctave = parseInt(body[i]) || 4;
-                                i++;
-                            } else if (noteCh === '>') {
-                                chordOctave++;
-                                i++;
-                            } else if (noteCh === '<') {
-                                chordOctave--;
-                                i++;
-                            } else if (PITCH_MAP.hasOwnProperty(noteCh)) {
-                                let pitch = PITCH_MAP[noteCh];
+                        while (i < body.length && body[i] !== ']') {
+                            let c = body[i].toLowerCase();
+                            if (PITCH_MAP.hasOwnProperty(c)) {
+                                let pitch = PITCH_MAP[c];
                                 i++;
                                 if (body[i] === '#' || body[i] === '+') { pitch++; i++; }
                                 else if (body[i] === '-') { pitch--; i++; }
-                                const midiPitch = (chordOctave + 1) * 12 + pitch;
-                                chordNotes.push(midiPitch);
+                                chordNotes.push((octave + 1) * 12 + pitch);
+                            } else if (c === '>') {
+                                octave++; i++;
+                            } else if (c === '<') {
+                                octave--; i++;
                             } else {
                                 i++;
                             }
                         }
                         if (body[i] === ']') i++;
-                        octave = octaveBeforeChord;
 
-                        let len = 0;
-                        while (i < body.length && /\d/.test(body[i])) {
-                            len = len * 10 + parseInt(body[i]);
-                            i++;
-                        }
-                        const chordSteps = len ? Math.round(stepsPerBar / len) : Math.round(stepsPerBar / baseLength);
-
+                        const steps = parseLength();
                         for (const p of chordNotes) {
-                            track.core.toggleNote(currentStep, p, { noteLengthSteps: Math.max(1, chordSteps) });
+                            track.core.toggleNote(currentStep, p, { noteLengthSteps: Math.max(1, steps) });
                         }
-                        currentStep += chordSteps;
+                        currentStep += steps;
+                        octave = savedOctave; // オクターブを戻す
                         continue;
                     }
 
-                    const noteCh = ch.toLowerCase();
-                    if (PITCH_MAP.hasOwnProperty(noteCh)) {
-                        let pitch = PITCH_MAP[noteCh];
+                    // 単音
+                    if (PITCH_MAP.hasOwnProperty(ch)) {
+                        let pitch = PITCH_MAP[ch];
                         i++;
                         if (body[i] === '#' || body[i] === '+') { pitch++; i++; }
                         else if (body[i] === '-') { pitch--; i++; }
-                        const midiPitch = (octave + 1) * 12 + pitch;
 
-                        let len = 0;
-                        while (i < body.length && /\d/.test(body[i])) {
-                            len = len * 10 + parseInt(body[i]);
-                            i++;
-                        }
-                        len = len || baseLength;
-                        const steps = Math.round(stepsPerBar / len);
+                        const midiPitch = (octave + 1) * 12 + pitch;
+                        const steps = parseLength();
 
                         track.core.toggleNote(currentStep, midiPitch, { noteLengthSteps: Math.max(1, steps) });
                         currentStep += steps;
                         continue;
                     }
 
-                    i++;
+                    i++; // 未知の文字
                 }
             });
 
+            // --- 後処理 ---
             console.log('MML読み込み完了');
             setLoadMode(false);
             playStartStep = 0;
             currentOffsetX = 0;
-            DTM.setDrawOffset(currentOffsetX, currentOffsetY);
+            if (typeof DTM !== 'undefined') DTM.setDrawOffset(currentOffsetX, currentOffsetY);
             redrawAll();
             tracks.forEach(track => {
-                if (track.core) track.core.addHistoryOnce();
+                if (track.core && track.core.addHistoryOnce) track.core.addHistoryOnce();
             });
-            updateUndoRedoButtons();
+            if (typeof updateUndoRedoButtons === 'function') updateUndoRedoButtons();
         };
 
         window.undoNotes = () => {
