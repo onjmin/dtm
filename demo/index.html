@@ -1542,19 +1542,21 @@
                 const pattern = drumPatterns[currentDrumPattern];
                 if (pattern && pattern.length > 0) {
                     const stepsPerBar = renderConfig.stepsPerBar;
-                    const currentStep = currentPlayStep % stepsPerBar;
-                    const nextStep = currentStep + 4;
+                    // 实际時間ベースのステップ計算（タブ非アクティブ対応）
+                    const elapsedTime = audioCtx.currentTime - startTime;
+                    const currentStep = (playStartStep * secondsPerStep + elapsedTime) / secondsPerStep;
+                    const currentStepInBar = currentStep % stepsPerBar;
+                    const nextStep = currentStepInBar + 4;
 
-                    let previousStep = (currentPlayStep - 4) % stepsPerBar;
-                    if (previousStep < 0) previousStep += stepsPerBar;
-                    const crossedBar = previousStep > currentStep;
+                    // 小節跨ぎの檢出
+                    const crossedBar = currentStepInBar < 4;
 
                     pattern.forEach(drum => {
                         const drumStep = drum.step;
                         const shouldPlay = crossedBar && drumStep === 0 ||
-                            (drumStep >= currentStep && drumStep < nextStep);
+                            (drumStep >= currentStepInBar && drumStep < nextStep);
                         if (shouldPlay) {
-                            const whenSeconds = (drumStep - currentStep) * secondsPerStep;
+                            const whenSeconds = (drumStep - currentStepInBar) * secondsPerStep;
                             if (whenSeconds >= -0.1 && whenSeconds <= planTime) {
                                 const noteDuration = 0.1;
                                 const velocity = drum.velocity ?? 1.0;
@@ -2249,8 +2251,8 @@
             <input type="file" id="midi-file-input" accept=".mid,.midi"
                 class="border rounded-md px-2 py-1 text-sm w-full sm:w-auto">
             <button id="midi-load-button" onclick="loadMidiFromSelection()"
-                class="hidden px-3 py-1 bg-green-500 text-white rounded-md text-sm hover:bg-green-600">MIDI読込</button>
-            <span class="hidden text-xs text-gray-500" id="midi-load-note">※選択したチャンネルがピアノロールに反映されます</span>
+                class="px-3 py-1 bg-green-500 text-white rounded-md text-sm hover:bg-green-600">MIDI読込</button>
+            <span class="text-xs text-gray-500" id="midi-load-note">※選択したチャンネルがピアノロールに反映されます</span>
         </div>
 
         <div id="midi-track-selection" class="hidden flex flex-wrap gap-2 items-center"></div>
