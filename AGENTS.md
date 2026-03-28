@@ -41,3 +41,4 @@ MML中間言語を使用したピアノロール打ち込みモジュール（We
 
 ## 参考実装
 /mnt/c/_own/git/_users/onjmin/soundfont
+/mnt/c/_own/git/_users/onjmin/piano

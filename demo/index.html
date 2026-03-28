@@ -12,17 +12,16 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" />
 
     <script type="module">
-        import * as mdi from 'https://cdn.jsdelivr.net/npm/@mdi/js@7.4.47/mdi.js';
+        const DTM = await import(location.hostname === 'localhost'
+            ? 'http://localhost:40298/dist/index.mjs'
+            : 'https://onjmin.github.io/dtm/demo/index.mjs');
 
-        const importAll = (urls) => Promise.all(urls.map(url => import(url)));
-        const sfModules = await importAll([
-            'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont.mjs',
-            'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs',
-            'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs'
-        ]);
-        const SoundFont = sfModules[0].SoundFont;
-        const SoundFont_drum = sfModules[1].SoundFont_drum;
-        const SoundFont_list = sfModules[2].SoundFont_list;
+        import { parseChord } from 'https://rpgen3.github.io/piano/mjs/parseChord.mjs';
+        import { parseChords } from 'https://rpgen3.github.io/piano/mjs/parseChords.mjs';
+        import * as mdi from 'https://cdn.jsdelivr.net/npm/@mdi/js@7.4.47/mdi.js';
+        import { SoundFont } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont.mjs';
+        import { SoundFont_drum } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs';
+        import { SoundFont_list } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs';
 
         const audioCtx = new AudioContext();
         const gainNode = audioCtx.createGain();
@@ -316,11 +315,6 @@
             });
         };
 
-        const DTM = await import(
-            location.hostname === 'localhost' ?
-                'http://localhost:40298/dist/index.mjs' :
-                'https://onjmin.github.io/dtm/demo/index.mjs');
-
         const renderConfig = {
             stepsPerBar: 192, // 48 steps/beat * 4 beats/bar
             keyCount: 104, // C-1〜C7
@@ -374,7 +368,7 @@
             { id: 'melody', name: 'メロディー', color: hexToRgb('#3B82F6'), instrument: 0, core: null, volume: 100, selectedInstrument: '', mml: '' },
             { id: 'submelody', name: 'サブメロ', color: hexToRgb('#8B5CF6'), instrument: 1, core: null, volume: 95, selectedInstrument: '', mml: '' },
             { id: 'bass', name: 'ベース', color: hexToRgb('#10B981'), instrument: 2, core: null, volume: 88, selectedInstrument: '', mml: '' },
-            { id: 'chord', name: '伴奏', color: hexToRgb('#F59E0B'), instrument: 3, core: null, volume: 76, selectedInstrument: '', mml: '' },
+            { id: 'chord', name: '伴奏', color: hexToRgb('#F59E0B'), instrument: 3, core: null, volume: 76, selectedInstrument: '', mml: '', savedChordInput: '', savedChordPattern: 'block' },
         ];
         let activeTrackId = 'melody';
         let activeToolMode = 'pen';
@@ -746,6 +740,17 @@
 
         // UIコントロール更新 (既存ロジックをトップレベルに移動)
         const updateControls = () => {
+            // DOMを破壊する前に現在の値を保存
+            const chordInputEl = document.getElementById('chord-input');
+            const chordPatternEl = document.getElementById('chord-pattern-select');
+            if (chordInputEl || chordPatternEl) {
+                const chordTrack = tracks.find(t => t.id === 'chord');
+                if (chordTrack) {
+                    if (chordInputEl) chordTrack.savedChordInput = chordInputEl.value;
+                    if (chordPatternEl) chordTrack.savedChordPattern = chordPatternEl.value;
+                }
+            }
+
             // 再生ボタン
             const playButton = document.getElementById('play-button');
             if (isPlaying) {
@@ -786,7 +791,7 @@
                 // コンテンツ
                 if (isActive) {
                     const instrumentName = t.selectedInstrument || '';
-                    trackContent.innerHTML = `
+                    let content = `
                     <div class="flex items-center space-x-4">
                         <label class="flex items-center space-x-3 w-64 text-sm text-gray-700">
                             <span class="font-medium">velocity:</span>
@@ -803,7 +808,32 @@
                         </label>
                         <span class="text-sm text-gray-500">音色: @${t.instrument} ${instrumentName}</span>
                     </div>
-                `;
+                    `;
+                    // 伴奏トラックの場合は和音入力欄を追加
+                    if (t.id === 'chord') {
+                        const savedInput = t.savedChordInput || '';
+                        const savedPattern = t.savedChordPattern || 'block';
+                        content += `
+                        <div class="flex flex-col gap-2 mt-3 pt-3 border-t border-gray-200">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-medium text-gray-700">和音:</span>
+                                <select id="chord-pattern-select" class="border rounded-md px-2 py-1 text-sm">
+                                    <option value="block" ${savedPattern === 'block' ? 'selected' : ''}>ブロック</option>
+                                    <option value="arpeggio" ${savedPattern === 'arpeggio' ? 'selected' : ''}>アルペジオ</option>
+                                    <option value="arpeggio-fast" ${savedPattern === 'arpeggio-fast' ? 'selected' : ''}>アルペジオ（ジャラーン）</option>
+                                    <option value="offbeat" ${savedPattern === 'offbeat' ? 'selected' : ''}>裏打ち</option>
+                                    <option value="alternating" ${savedPattern === 'alternating' ? 'selected' : ''}>交互奏</option>
+                                </select>
+                                <button onclick="applyChordProgression(document.getElementById('chord-input').value)"
+                                    class="px-2 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600">適用</button>
+                            </div>
+                            <textarea id="chord-input" placeholder="例: C|G|Am|Em|F|C|F|G"
+                                class="border rounded-md px-2 py-1 text-sm w-full h-16 resize-none"
+                                onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();applyChordProgression(this.value)}">${savedInput}</textarea>
+                        </div>
+                        `;
+                    }
+                    trackContent.innerHTML = content;
                 }
             });
         };
@@ -1605,6 +1635,155 @@
                     track.core.clearNotesWithoutHistory();
                 }
             });
+            redrawAll();
+        };
+
+        // 和音自動入力機能
+        window.applyChordProgression = (chordStr) => {
+            if (!chordStr.trim()) return;
+
+            const chordTrack = tracks.find(t => t.id === 'chord');
+            if (!chordTrack?.core) return;
+
+            const patternType = document.getElementById('chord-pattern-select')?.value || 'block';
+
+            // 伴奏トラックをクリア
+            chordTrack.core.clearNotesWithoutHistory();
+            chordTrack.core.beginBatch();
+
+            const bpm = parseInt(document.getElementById('bpm-input')?.value) || 120;
+            const stepsPerBar = renderConfig.stepsPerBar;
+            const chordLength = stepsPerBar;
+
+            const c3 = 48;
+            const offset = 0;
+
+            // コード進行をパース
+            let chordData;
+            try {
+                chordData = parseChords(chordStr, bpm);
+            } catch (e) {
+                console.warn('Failed to parse chords:', e);
+                chordData = [];
+            }
+
+            if (chordData.length > 0) {
+                const secondsPerBar = 60 / bpm * 4;
+                const secondsPerStep = secondsPerBar / stepsPerBar;
+
+                // 同じタイミングのコードをグループ化
+                const chordGroups = {};
+                chordData.forEach((chord) => {
+                    const whenStep = Math.floor(chord.when / secondsPerStep);
+                    const durationSteps = Math.floor(chord.duration / secondsPerStep);
+                    if (!chordGroups[whenStep]) {
+                        chordGroups[whenStep] = [];
+                    }
+                    chordGroups[whenStep].push({ ...chord, whenStep, durationSteps });
+                });
+
+                Object.values(chordGroups).forEach((group) => {
+                    group.forEach((chord, idx) => {
+                        try {
+                            const parsed = parseChord(`${chord.key}${chord.chord}`);
+                            const notes = [...parsed.value];
+
+                            // コードの持続時間を使用
+                            let noteLength = chord.durationSteps;
+
+                            if (patternType === 'block') {
+                                // ブロック: 全ての音を同時に鳴らし、durationそのまま
+                                notes.forEach((noteOffset, i) => {
+                                    const pitch = c3 + noteOffset + offset;
+                                    chordTrack.core.toggleNote(chord.whenStep, pitch, {
+                                        noteLengthSteps: noteLength,
+                                        velocity: 100,
+                                    });
+                                });
+                            } else if (patternType === 'arpeggio') {
+                                // アルペジオ: リズムグリッドに沿って配置
+                                const arpInterval = Math.floor(noteLength / notes.length);
+                                notes.forEach((noteOffset, i) => {
+                                    const pitch = c3 + noteOffset + offset;
+                                    chordTrack.core.toggleNote(chord.whenStep + i * arpInterval, pitch, {
+                                        noteLengthSteps: noteLength - i * arpInterval,
+                                        velocity: 100,
+                                    });
+                                });
+                            } else if (patternType === 'arpeggio-fast') {
+                                // アルペジオ（ジャラーン）: 各音を数ステップずつ続けて配置
+                                const arpInterval = 6; // 短間隔でずらす
+                                notes.forEach((noteOffset, i) => {
+                                    const pitch = c3 + noteOffset + offset;
+                                    chordTrack.core.toggleNote(chord.whenStep + i * arpInterval, pitch, {
+                                        noteLengthSteps: Math.max(12, noteLength - i * arpInterval),
+                                        velocity: 100,
+                                    });
+                                });
+                            } else if (patternType === 'offbeat') {
+                                // 裏打ち: コードの構成音全てを揃えて、拍の裏（8分裏）に配置
+                                const stepsPerQuarter = Math.floor(stepsPerBar / 4);
+                                const halfBeat = Math.floor(stepsPerQuarter / 2); // 8分音符分（裏）
+
+                                for (let beat = 0; beat < 4; beat++) {
+                                    const syncopatedStep = chord.whenStep + (beat * stepsPerQuarter) + halfBeat;
+
+                                    // コードの長さ（noteLength）を超えない範囲でノートを置く
+                                    if (syncopatedStep < chord.whenStep + noteLength) {
+                                        notes.forEach((noteOffset) => {
+                                            const pitch = c3 + noteOffset + offset;
+                                            chordTrack.core.toggleNote(syncopatedStep, pitch, {
+                                                // 裏打ちは短く切る（スタッカート気味）のが一般的
+                                                noteLengthSteps: Math.min(halfBeat, 12),
+                                                velocity: 100,
+                                            });
+                                        });
+                                    }
+                                }
+                            } else if (patternType === 'alternating') {
+                                // 交互奏: 低音と高音交互
+                                notes.forEach((noteOffset, i) => {
+                                    const pitch = c3 + noteOffset + offset;
+                                    const stepOffset = i * Math.floor(stepsPerBar / 4);
+                                    chordTrack.core.toggleNote(chord.whenStep + stepOffset, pitch, {
+                                        noteLengthSteps: Math.max(12, Math.floor(stepsPerBar / 4)),
+                                        velocity: 100,
+                                    });
+                                });
+                            }
+                        } catch (e) {
+                            console.warn(`Invalid chord: ${chord.key}${chord.chord}`, e);
+                        }
+                    });
+                });
+            } else {
+                // フォールバック: カンマ or スペース区切り
+                const chordNames = chordStr.split(/[\s,]+/).filter(c => c);
+                chordNames.forEach((chordName, barIndex) => {
+                    try {
+                        const chordData = parseChord(chordName);
+                        const notes = [...chordData.value];
+
+                        if (notes.length > 0) {
+                            const startStep = barIndex * chordLength;
+
+                            notes.forEach((noteOffset, i) => {
+                                const pitch = c3 + noteOffset + offset;
+                                const stepOffset = i * 2;
+                                chordTrack.core.toggleNote(startStep + stepOffset, pitch, {
+                                    noteLengthSteps: chordLength - stepOffset,
+                                    velocity: 100,
+                                });
+                            });
+                        }
+                    } catch (e) {
+                        console.warn(`Invalid chord: ${chordName}`, e);
+                    }
+                });
+            }
+
+            chordTrack.core.endBatch();
+            chordTrack.core.addHistoryOnce();
             redrawAll();
         };
 
