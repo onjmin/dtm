@@ -743,11 +743,13 @@
             // DOMを破壊する前に現在の値を保存
             const chordInputEl = document.getElementById('chord-input');
             const chordPatternEl = document.getElementById('chord-pattern-select');
-            if (chordInputEl || chordPatternEl) {
+            const chordRootEl = document.getElementById('chord-root-select');
+            if (chordInputEl || chordPatternEl || chordRootEl) {
                 const chordTrack = tracks.find(t => t.id === 'chord');
                 if (chordTrack) {
                     if (chordInputEl) chordTrack.savedChordInput = chordInputEl.value;
                     if (chordPatternEl) chordTrack.savedChordPattern = chordPatternEl.value;
+                    if (chordRootEl) chordTrack.savedChordRoot = chordRootEl.value;
                 }
             }
 
@@ -813,9 +815,10 @@
                     if (t.id === 'chord') {
                         const savedInput = t.savedChordInput || '';
                         const savedPattern = t.savedChordPattern || 'block';
+                        const savedRoot = t.savedChordRoot || '0';
                         content += `
                         <div class="flex flex-col gap-2 mt-3 pt-3 border-t border-gray-200">
-                            <div class="flex items-center gap-2">
+                            <div class="flex flex-wrap items-center gap-2">
                                 <span class="text-sm font-medium text-gray-700">和音:</span>
                                 <select id="chord-pattern-select" class="border rounded-md px-2 py-1 text-sm">
                                     <option value="block" ${savedPattern === 'block' ? 'selected' : ''}>ブロック</option>
@@ -823,6 +826,20 @@
                                     <option value="arpeggio-fast" ${savedPattern === 'arpeggio-fast' ? 'selected' : ''}>アルペジオ（ジャラーン）</option>
                                     <option value="offbeat" ${savedPattern === 'offbeat' ? 'selected' : ''}>裏打ち</option>
                                     <option value="alternating" ${savedPattern === 'alternating' ? 'selected' : ''}>交互奏</option>
+                                </select>
+                               <select id="chord-root-select" class="border border-gray-300 rounded-md px-2 py-1 text-sm bg-gray-100/10 focus:outline-none">
+                                    <option value="11" ${savedRoot === '11' ? 'selected' : ''}>B</option>
+                                    <option value="10" ${savedRoot === '10' ? 'selected' : ''}>A#</option>
+                                    <option value="9" ${savedRoot === '9' ? 'selected' : ''}>A</option>
+                                    <option value="8" ${savedRoot === '8' ? 'selected' : ''}>G#</option>
+                                    <option value="7" ${savedRoot === '7' ? 'selected' : ''}>G</option>
+                                    <option value="6" ${savedRoot === '6' ? 'selected' : ''}>F#</option>
+                                    <option value="5" ${savedRoot === '5' ? 'selected' : ''}>F</option>
+                                    <option value="4" ${savedRoot === '4' ? 'selected' : ''}>E</option>
+                                    <option value="3" ${savedRoot === '3' ? 'selected' : ''}>D#</option>
+                                    <option value="2" ${savedRoot === '2' ? 'selected' : ''}>D</option>
+                                    <option value="1" ${savedRoot === '1' ? 'selected' : ''}>C#</option>
+                                    <option value="0" ${savedRoot === '0' ? 'selected' : ''}>C</option>
                                 </select>
                                 <button onclick="applyChordProgression(document.getElementById('chord-input').value)"
                                     class="px-2 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600">適用</button>
@@ -1646,6 +1663,7 @@
             if (!chordTrack?.core) return;
 
             const patternType = document.getElementById('chord-pattern-select')?.value || 'block';
+            const rootShift = parseInt(document.getElementById('chord-root-select')?.value) || 0;
 
             // 伴奏トラックをクリア
             chordTrack.core.clearNotesWithoutHistory();
