@@ -437,18 +437,17 @@
             noteLengthSelectEl.value = normalized;
         };
 
-        const noteLengthOptions = [48, 32, 24, 16, 12, 8, 6, 4, 3, 2, 1];
         const snapToNoteLength = (duration) => {
-            let nearest = noteLengthOptions[0];
-            let minDiff = Math.abs(duration - nearest);
-            for (const len of noteLengthOptions) {
-                const diff = Math.abs(duration - len);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    nearest = len;
-                }
+            // 選択した音符長の倍数にスナップ（それ未満は選択音符長に丸める）
+            if (duration <= noteLengthSteps) {
+                return noteLengthSteps;
             }
-            return nearest;
+
+            // 選択音符長の倍数に丸める
+            const snapped = Math.round(duration / noteLengthSteps) * noteLengthSteps;
+
+            // 最小値は選択音符長
+            return Math.max(snapped, noteLengthSteps);
         };
 
         const playPreviewNote = (pitch, durationSteps) => {
@@ -1173,45 +1172,88 @@
                 }
 
                 if (activeToolMode === 'pen') {
-                    const note = findActiveNoteAtPosition(x, y);
-                    if (!note) return;
+                    hasDragged = false;
+                    const activeTrack = tracks.find(t => t.id === activeTrackId);
+                    if (!activeTrack) return;
 
-                    const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
-                    const offset = DTM.getDrawOffset();
-                    const logicalX = note.startStep * stepWidth;
-                    const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
-                    const logicalY = yIndex * keyHeight;
-                    const renderX = logicalX - offset.x;
-                    const renderY = logicalY - offset.y;
-                    const w = note.durationSteps * stepWidth;
+                    // 浮動小数点誤差対策
+                    const epsilon = 0.1;
 
-                    if (
-                        x >= renderX + w - resizeHandleWidth &&
-                        x <= renderX + w &&
-                        y >= renderY &&
-                        y <= renderY + keyHeight
-                    ) {
-                        dragState = {
-                            noteId: note.id,
-                            mode: 'resize',
-                            dragOffsetStep: 0,
-                            dragOffsetPitch: 0,
-                            startStep: note.startStep,
-                            durationSteps: note.durationSteps,
-                            lastPreviewPitch: note.pitch,
-                        };
+                    // まず論理座標(step, pitch)でノートを検索
+                    const existingNote = activeTrack.core.getNotes().find(n =>
+                        n.pitch === pitch &&
+                        step >= (n.startStep - epsilon) &&
+                        step < (n.startStep + n.durationSteps - epsilon)
+                    );
+
+                    // A. ノートがあった場合：ドラッグ準備
+                    if (existingNote) {
+                        const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
+                        const offset = DTM.getDrawOffset();
+                        const renderX = existingNote.startStep * stepWidth - offset.x;
+                        const w = existingNote.durationSteps * stepWidth;
+
+                        // リサイズハンドル判定
+                        if (x >= renderX + w - resizeHandleWidth && x <= renderX + w) {
+                            dragState = {
+                                noteId: existingNote.id,
+                                mode: 'resize',
+                                dragOffsetStep: 0,
+                                dragOffsetPitch: 0,
+                                startStep: existingNote.startStep,
+                                durationSteps: existingNote.durationSteps,
+                                lastPreviewPitch: existingNote.pitch,
+                            };
+                        } else {
+                            // 移動準備
+                            dragState = {
+                                noteId: existingNote.id,
+                                mode: 'move',
+                                dragOffsetStep: step - existingNote.startStep,
+                                dragOffsetPitch: pitch - existingNote.pitch,
+                                startStep: existingNote.startStep,
+                                durationSteps: existingNote.durationSteps,
+                                lastPreviewPitch: existingNote.pitch,
+                            };
+                        }
+                        suppressClick = true;
                         return;
                     }
 
-                    dragState = {
-                        noteId: note.id,
-                        mode: 'move',
-                        dragOffsetStep: step - note.startStep,
-                        dragOffsetPitch: pitch - note.pitch,
-                        startStep: note.startStep,
-                        durationSteps: note.durationSteps,
-                        lastPreviewPitch: note.pitch,
-                    };
+                    // B. ノートがなかった場合：新規作成
+                    const snappedStep = Math.floor(step / noteLengthSteps) * noteLengthSteps;
+                    const newStart = snappedStep;
+                    const newEnd = newStart + noteLengthSteps;
+
+                    const isOverlapping = activeTrack.core.getNotes().some(n => {
+                        if (n.pitch !== pitch) return false;
+                        return newStart < (n.startStep + n.durationSteps - epsilon) &&
+                            newEnd > (n.startStep + epsilon);
+                    });
+
+                    if (!isOverlapping) {
+                        activeTrack.core.toggleNote(snappedStep, pitch, { noteLengthSteps });
+                        playPreviewNote(pitch, noteLengthSteps);
+                        redrawAll();
+
+                        // 新規作成直後のドラッグ準備
+                        const newNote = activeTrack.core.getNotes().find(n =>
+                            Math.abs(n.startStep - snappedStep) < epsilon && n.pitch === pitch
+                        );
+                        if (newNote) {
+                            dragState = {
+                                noteId: newNote.id,
+                                mode: 'move',
+                                dragOffsetStep: 0,
+                                dragOffsetPitch: 0,
+                                startStep: newNote.startStep,
+                                durationSteps: newNote.durationSteps,
+                                lastPreviewPitch: newNote.pitch,
+                            };
+                            hasDragged = true;
+                        }
+                        suppressClick = true;
+                    }
                 }
             });
 
@@ -1235,7 +1277,7 @@
                 const rect = headerCanvas.getBoundingClientRect();
                 const x = event.clientX - rect.left;
                 const step = Math.floor((x + currentOffsetX) / renderConfig.stepWidth);
-                const snappedStep = Math.round(step / noteLengthSteps) * noteLengthSteps;
+                const snappedStep = Math.floor(step / noteLengthSteps) * noteLengthSteps;
                 playStartStep = Math.max(0, snappedStep);
                 redrawAll();
             });
@@ -1254,7 +1296,7 @@
                 if (activeToolMode !== 'select') return;
 
                 const { step } = DTM.getGridPosition(event);
-                const snappedStep = Math.round(step / noteLengthSteps) * noteLengthSteps;
+                const snappedStep = Math.floor(step / noteLengthSteps) * noteLengthSteps;
                 playStartStep = Math.max(0, snappedStep);
                 redrawAll();
             });
@@ -1270,13 +1312,34 @@
                     return;
                 }
 
-                const snappedStep = Math.round(step / noteLengthSteps) * noteLengthSteps;
+                const snappedStep = Math.floor(step / noteLengthSteps) * noteLengthSteps;
                 const activeTrack = tracks.find(t => t.id === activeTrackId);
                 if (!activeTrack) return;
 
                 if (activeToolMode === 'pen') {
-                    if (hasNoteAtPosition(snappedStep, pitch)) {
-                        console.log('その場所には既にノートがあります');
+                    const clickedNote = activeTrack.core.getNotes().find(note =>
+                        note.pitch === pitch &&
+                        step >= note.startStep &&
+                        step < (note.startStep + note.durationSteps)
+                    );
+
+                    if (clickedNote) {
+                        activeTrack.core.toggleNote(clickedNote.startStep, pitch, {
+                            noteLengthSteps: noteLengthSteps,
+                        });
+                        return;
+                    }
+
+                    const newStart = snappedStep;
+                    const newEnd = newStart + noteLengthSteps;
+                    const isOverlapping = activeTrack.core.getNotes().some(note => {
+                        if (note.pitch !== pitch) return false;
+                        const existingStart = note.startStep;
+                        const existingEnd = existingStart + note.durationSteps;
+                        return newStart < existingEnd && newEnd > existingStart;
+                    });
+                    if (isOverlapping) {
+                        console.log('その範囲には既にノートが重なりっています');
                         return;
                     }
                     activeTrack.core.toggleNote(snappedStep, pitch, {
