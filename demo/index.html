@@ -469,7 +469,7 @@
             const leftPaddingWidth = leftPaddingSteps * stepWidth;
             const maxNoteStep = getMaxNoteStep();
             const maxOffsetX = maxNoteStep * stepWidth - gridCanvas.width + leftPaddingWidth;
-            const minOffsetX = -leftPaddingWidth;
+            const minOffsetX = 0;
 
             switch (direction) {
                 case 'home':
@@ -561,7 +561,7 @@
             const leftPaddingWidth = leftPaddingSteps * renderConfig.stepWidth;
             const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
             const maxOffsetX = totalContentWidth - visibleWidth + leftPaddingWidth;
-            const minOffsetX = -leftPaddingWidth;
+            const minOffsetX = 0;
 
             if (maxOffsetX <= 0) {
                 thumb.style.width = '100%';
@@ -599,7 +599,7 @@
                 const leftPaddingWidth = leftPaddingSteps * renderConfig.stepWidth;
                 const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
                 const maxOffsetX = totalContentWidth - visibleWidth + leftPaddingWidth;
-                const minOffsetX = -leftPaddingWidth;
+                const minOffsetX = 0;
                 const range = maxOffsetX - minOffsetX;
                 currentOffsetX = clamp(minOffsetX + ratio * range, minOffsetX, maxOffsetX);
                 DTM.setDrawOffset(currentOffsetX, currentOffsetY);
@@ -621,7 +621,7 @@
                 const leftPaddingWidth = leftPaddingSteps * renderConfig.stepWidth;
                 const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
                 const maxOffsetX = totalContentWidth - visibleWidth + leftPaddingWidth;
-                const minOffsetX = -leftPaddingWidth;
+                const minOffsetX = 0;
                 const range = maxOffsetX - minOffsetX;
 
                 const rect = scrollbar.getBoundingClientRect();
@@ -972,7 +972,7 @@
 
                     // 水平方向のスクロール
                     if (mouseX < edgeThreshold || (isOutsideCanvas && mouseX < 0)) {
-                        const minOffsetX = -leftPaddingSteps * renderConfig.stepWidth;
+                        const minOffsetX = 0;
                         currentOffsetX = Math.max(minOffsetX, currentOffsetX - scrollAmount);
                         scrolled = true;
                     } else if (mouseX > gridRect.width - edgeThreshold || (isOutsideCanvas && mouseX > gridRect.width)) {

@@ -229,10 +229,10 @@ export const drawHeader = (): void => {
 		g_header_ctx.lineTo(screenX, HEADER_HEIGHT);
 		g_header_ctx.stroke();
 
-		if (bar > 0) {
+		if (bar >= 0) {
 			g_header_ctx.textAlign = "left";
 			g_header_ctx.textBaseline = "middle";
-			g_header_ctx.fillText(`${bar}`, screenX + 5, HEADER_HEIGHT / 2);
+			g_header_ctx.fillText(`${bar + 1}`, screenX + 5, HEADER_HEIGHT / 2);
 		}
 	}
 
