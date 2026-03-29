@@ -1282,85 +1282,37 @@
                 redrawAll();
             });
 
-            // グリッドクリックで再生開始位置を設定（範囲選択モードのみ）
-            gridCanvas.addEventListener('click', (event) => {
-                if (isPlaying) return;
-                if (suppressClick) {
-                    suppressClick = false;
-                    return;
-                }
-                if (isDblClick) {
-                    isDblClick = false;
-                    return;
-                }
-                if (activeToolMode !== 'select') return;
-
-                const { step } = DTM.getGridPosition(event);
-                const snappedStep = Math.floor(step / noteLengthSteps) * noteLengthSteps;
-                playStartStep = Math.max(0, snappedStep);
-                redrawAll();
-            });
-
-            // クリックイベント
+            // クリックイベント（ノート作成はmousedownで一元化）
             DTM.onClick((step, pitch) => {
                 if (suppressClick) {
                     suppressClick = false;
                     return;
                 }
-                if (isDblClick) {
-                    isDblClick = false;
-                    return;
-                }
 
-                const snappedStep = Math.floor(step / noteLengthSteps) * noteLengthSteps;
-                const activeTrack = tracks.find(t => t.id === activeTrackId);
-                if (!activeTrack) return;
-
-                if (activeToolMode === 'pen') {
-                    const clickedNote = activeTrack.core.getNotes().find(note =>
-                        note.pitch === pitch &&
-                        step >= note.startStep &&
-                        step < (note.startStep + note.durationSteps)
-                    );
-
-                    if (clickedNote) {
-                        activeTrack.core.toggleNote(clickedNote.startStep, pitch, {
-                            noteLengthSteps: noteLengthSteps,
-                        });
-                        return;
-                    }
-
-                    const newStart = snappedStep;
-                    const newEnd = newStart + noteLengthSteps;
-                    const isOverlapping = activeTrack.core.getNotes().some(note => {
-                        if (note.pitch !== pitch) return false;
-                        const existingStart = note.startStep;
-                        const existingEnd = existingStart + note.durationSteps;
-                        return newStart < existingEnd && newEnd > existingStart;
-                    });
-                    if (isOverlapping) {
-                        console.log('その範囲には既にノートが重なりっています');
-                        return;
-                    }
-                    activeTrack.core.toggleNote(snappedStep, pitch, {
-                        noteLengthSteps: noteLengthSteps,
-                    });
-                    playPreviewNote(pitch, noteLengthSteps);
+                // 範囲選択モードで再生開始位置を設定
+                if (activeToolMode === 'select') {
+                    const snappedStep = Math.floor(step / noteLengthSteps) * noteLengthSteps;
+                    playStartStep = Math.max(0, snappedStep);
+                    redrawAll();
                 }
             });
 
             // ダブルクリックでノートを削除
             gridCanvas.addEventListener('dblclick', (event) => {
                 event.preventDefault();
-                isDblClick = true;
-                const { x, y } = DTM.getGridPosition(event);
-                const note = findActiveNoteAtPosition(x, y);
-                if (!note) return;
+                const { x, y, step, pitch } = DTM.getGridPosition(event);
                 const activeTrack = tracks.find(t => t.id === activeTrackId);
                 if (!activeTrack) return;
-                activeTrack.core.toggleNote(note.startStep, note.pitch, {
-                    noteLengthSteps: note.durationSteps,
-                });
+
+                // 論理座標(step, pitch)でノートを検索
+                const note = activeTrack.core.getNotes().find(n =>
+                    n.pitch === pitch &&
+                    step >= n.startStep &&
+                    step < (n.startStep + n.durationSteps)
+                );
+                if (!note) return;
+                activeTrack.core.deleteNoteById(note.id);
+                redrawAll();
             });
 
 
