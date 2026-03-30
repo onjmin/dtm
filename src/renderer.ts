@@ -282,18 +282,17 @@ export const drawGrid = (noteLengthSteps: number = 1): void => {
 	}
 
 	// --- 垂直線 (小節線/拍線) の描画 ---
-	// X座標の計算ロジックは前回と同じ (水平スクロール)
+	// 指定されたステップごとにグリッド線を描画
+	const gridStep = noteLengthSteps || 48;
 	const startX =
-		Math.floor(g_draw_offset_x / (stepWidth * noteLengthSteps)) *
-		stepWidth *
-		noteLengthSteps;
+		Math.floor(g_draw_offset_x / (stepWidth * gridStep)) * stepWidth * gridStep;
 	const endX = g_draw_offset_x + g_grid_canvas.width;
-	const lineStep = stepWidth * noteLengthSteps;
+	const lineStep = stepWidth * gridStep;
 
 	for (let x = startX; x <= endX; x += lineStep) {
 		const step = x / stepWidth;
 		const isBarLine = step % stepsPerBar === 0;
-		const isNoteLine = step % noteLengthSteps === 0;
+		const isNoteLine = step % gridStep === 0;
 
 		const screenX = x - g_draw_offset_x;
 
