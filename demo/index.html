@@ -384,7 +384,9 @@
         let isSolo = false;
         let pausedPlayStep = 0;
         let pausedGainValue = 1;
-        let noteLengthSteps = 48; // 4分音符
+        let currentInsertLength = 48; // 新しく音を置くときの長さ
+        let snapGridSteps = 12; // 音の端をつまんで伸ばす時のスナップ単位
+        let gridLineSteps = 48; // 4分音符（グリッド線の間隔）
         let mmlPlayer = null;
         let lastUndoTime = 0;
 
@@ -437,17 +439,11 @@
             noteLengthSelectEl.value = normalized;
         };
 
-        const snapToNoteLength = (duration) => {
-            // 選択した音符長の倍数にスナップ（それ未満は選択音符長に丸める）
-            if (duration <= noteLengthSteps) {
-                return noteLengthSteps;
-            }
-
-            // 選択音符長の倍数に丸める
-            const snapped = Math.round(duration / noteLengthSteps) * noteLengthSteps;
-
-            // 最小値は選択音符長
-            return Math.max(snapped, noteLengthSteps);
+        const snapToGrid = (duration) => {
+            // グリッド単位の倍数にスナップ
+            const snapped = Math.round(duration / snapGridSteps) * snapGridSteps;
+            // 最小値はグリッド1つ分
+            return Math.max(snapped, snapGridSteps);
         };
 
         const playPreviewNote = (pitch, durationSteps) => {
@@ -496,7 +492,7 @@
 
         // 全トラックを再描画するメインの関数
         const redrawAll = () => {
-            DTM.drawGrid(noteLengthSteps);
+            DTM.drawGrid(gridLineSteps);
 
             tracks.forEach((track, i) => {
                 if (!track.core) return;
@@ -1029,7 +1025,7 @@
                         // 2. 「ドラッグ開始時の論理位置」からの差分を計算
                         // selectionStart.step / .pitch は PointerDown 時に保存したもの
                         const rawDeltaStep = step - selectionStart.step;
-                        const snappedDeltaStep = Math.round(rawDeltaStep / noteLengthSteps) * noteLengthSteps;
+                        const snappedDeltaStep = Math.round(rawDeltaStep / snapGridSteps) * snapGridSteps;
                         const deltaPitch = pitch - selectionStart.pitch;
 
                         // 3. 変化があった場合のみ処理
@@ -1067,7 +1063,7 @@
 
                 if (dragState.mode === 'move') {
                     const nextStart = step - dragState.dragOffsetStep;
-                    const snappedStart = Math.round(nextStart / noteLengthSteps) * noteLengthSteps;
+                    const snappedStart = Math.round(nextStart / snapGridSteps) * snapGridSteps;
                     const nextPitch = pitch - dragState.dragOffsetPitch;
                     if (hasNoteAtPosition(snappedStart, nextPitch, dragState.noteId)) {
                         return;
@@ -1080,8 +1076,12 @@
                     return;
                 }
 
-                const snappedDuration = snapToNoteLength(step - dragState.startStep + 1);
+                const rawDuration = step - dragState.startStep + 1;
+                const snappedDuration = snapToGrid(rawDuration);
                 activeTrack.core.resizeNote(dragState.noteId, snappedDuration);
+                dragState.durationSteps = snappedDuration;
+                currentInsertLength = snappedDuration;
+                redrawAll();
             };
 
             const endDrag = () => {
@@ -1221,9 +1221,9 @@
                     }
 
                     // B. ノートがなかった場合：新規作成
-                    const snappedStep = Math.floor(step / noteLengthSteps) * noteLengthSteps;
+                    const snappedStep = Math.floor(step / currentInsertLength) * currentInsertLength;
                     const newStart = snappedStep;
-                    const newEnd = newStart + noteLengthSteps;
+                    const newEnd = newStart + currentInsertLength;
 
                     const isOverlapping = activeTrack.core.getNotes().some(n => {
                         if (n.pitch !== pitch) return false;
@@ -1232,8 +1232,8 @@
                     });
 
                     if (!isOverlapping) {
-                        activeTrack.core.toggleNote(snappedStep, pitch, { noteLengthSteps });
-                        playPreviewNote(pitch, noteLengthSteps);
+                        activeTrack.core.toggleNote(snappedStep, pitch, { noteLengthSteps: currentInsertLength });
+                        playPreviewNote(pitch, currentInsertLength);
                         redrawAll();
 
                         // 新規作成直後のドラッグ準備
@@ -1277,7 +1277,7 @@
                 const rect = headerCanvas.getBoundingClientRect();
                 const x = event.clientX - rect.left;
                 const step = Math.floor((x + currentOffsetX) / renderConfig.stepWidth);
-                const snappedStep = Math.floor(step / noteLengthSteps) * noteLengthSteps;
+                const snappedStep = Math.floor(step / snapGridSteps) * snapGridSteps;
                 playStartStep = Math.max(0, snappedStep);
                 redrawAll();
             });
@@ -1291,7 +1291,7 @@
 
                 // 範囲選択モードで再生開始位置を設定
                 if (activeToolMode === 'select') {
-                    const snappedStep = Math.floor(step / noteLengthSteps) * noteLengthSteps;
+                    const snappedStep = Math.floor(step / snapGridSteps) * snapGridSteps;
                     playStartStep = Math.max(0, snappedStep);
                     redrawAll();
                 }
@@ -1644,7 +1644,7 @@
 
         const noteLengthSelect = document.getElementById('note-length-select');
         noteLengthSelect.addEventListener('change', (e) => {
-            noteLengthSteps = parseInt(e.target.value);
+            snapGridSteps = parseInt(e.target.value);
             redrawAll();
         });
 
@@ -2569,11 +2569,11 @@
             <span class="text-sm font-medium text-gray-700">音符:</span>
             <select id="note-length-select"
                 class="border rounded-md px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500 w-20 sm:w-auto">
-                <option value="48" selected>4分</option>
+                <option value="48">4分</option>
                 <option value="32">3連4</option>
                 <option value="24">8分</option>
                 <option value="16">3連8</option>
-                <option value="12">16分</option>
+                <option value="12" selected>16分</option>
                 <option value="8">3連16</option>
                 <option value="6">32分</option>
                 <option value="4">3連32</option>

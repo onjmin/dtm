@@ -237,13 +237,14 @@ var drawGrid = (noteLengthSteps = 1) => {
     g_grid_ctx.lineTo(g_grid_canvas.width, screenY);
     g_grid_ctx.stroke();
   }
-  const startX = Math.floor(g_draw_offset_x / (stepWidth * noteLengthSteps)) * stepWidth * noteLengthSteps;
+  const gridStep = noteLengthSteps || 48;
+  const startX = Math.floor(g_draw_offset_x / (stepWidth * gridStep)) * stepWidth * gridStep;
   const endX = g_draw_offset_x + g_grid_canvas.width;
-  const lineStep = stepWidth * noteLengthSteps;
+  const lineStep = stepWidth * gridStep;
   for (let x = startX; x <= endX; x += lineStep) {
     const step = x / stepWidth;
     const isBarLine = step % stepsPerBar === 0;
-    const isNoteLine = step % noteLengthSteps === 0;
+    const isNoteLine = step % gridStep === 0;
     const screenX = x - g_draw_offset_x;
     g_grid_ctx.beginPath();
     g_grid_ctx.strokeStyle = isBarLine ? "#A0A0A0" : isNoteLine ? "#D1D5DB" : "#E5E7EB";
