@@ -101,6 +101,7 @@ var init = (mountTarget, width = 800, height = 450, config) => {
   gridCanvas.style.position = "absolute";
   gridCanvas.style.left = `${KEYBOARD_WIDTH}px`;
   gridCanvas.style.top = `${HEADER_HEIGHT}px`;
+  gridCanvas.style.touchAction = "none";
   const gridCtx = gridCanvas.getContext("2d", { willReadFrequently: true });
   if (!gridCtx) throw new Error("Failed to get 2D rendering context for grid.");
   g_grid_ctx = gridCtx;

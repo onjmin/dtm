@@ -1103,7 +1103,8 @@
                 isDblClick = false;
             };
 
-            gridCanvas.addEventListener('mousedown', (event) => {
+            gridCanvas.addEventListener('pointerdown', (event) => {
+                event.preventDefault();
                 const { x, y, step, pitch } = DTM.getGridPosition(event);
 
                 // ツールモードに応じた処理
@@ -1259,8 +1260,8 @@
             });
 
             gridCanvas.addEventListener('mouseleave', endDrag);
-            document.addEventListener('mouseup', endDrag);
-            document.addEventListener('mousemove', handlePointerMove);
+            document.addEventListener('pointerup', endDrag);
+            document.addEventListener('pointermove', handlePointerMove);
 
             gridCanvas.addEventListener('wheel', (event) => {
                 event.preventDefault();
