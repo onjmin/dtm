@@ -79,7 +79,8 @@ export const init = (
 	gridCanvas.height = height - HEADER_HEIGHT;
 	gridCanvas.style.position = "absolute";
 	gridCanvas.style.left = `${KEYBOARD_WIDTH}px`;
-	gridCanvas.style.top = `${HEADER_HEIGHT}px`; // 💡 ヘッダーの下に配置
+	gridCanvas.style.top = `${HEADER_HEIGHT}px`;
+	gridCanvas.style.touchAction = "none"; // スマホでのスクロール防止
 
 	const gridCtx = gridCanvas.getContext("2d", { willReadFrequently: true });
 	if (!gridCtx) throw new Error("Failed to get 2D rendering context for grid.");
@@ -398,7 +399,9 @@ export const drawSelectedNotes = (
  * カーソルの座標取得
  * (グリッドCanvasの相対座標を取得)
  */
-export const getXY = (e: MouseEvent): [number, number, number] => {
+export const getXY = (
+	e: MouseEvent | PointerEvent,
+): [number, number, number] => {
 	const { clientX, clientY } = e;
 	const rect = g_grid_canvas.getBoundingClientRect();
 	const x = Math.floor(clientX - rect.left);
@@ -407,7 +410,7 @@ export const getXY = (e: MouseEvent): [number, number, number] => {
 };
 
 export const getGridPosition = (
-	e: MouseEvent,
+	e: MouseEvent | PointerEvent,
 ): { step: number; pitch: number; x: number; y: number } => {
 	const [x, y] = getXY(e);
 	const { keyCount, pitchRangeStart, keyHeight, stepWidth } = g_config;

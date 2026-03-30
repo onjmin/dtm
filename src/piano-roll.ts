@@ -162,7 +162,7 @@ export const createPianoRoll = (
 		return null;
 	};
 
-	const handlePointerMove = (e: MouseEvent) => {
+	const handlePointerMove = (e: MouseEvent | PointerEvent) => {
 		if (core.getToolMode() === "select" && isSelecting && selectionStart) {
 			const { x, y } = getGridPosition(e);
 			const minX = Math.min(x, selectionStart.x);
