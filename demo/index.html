@@ -1188,6 +1188,7 @@
 
                     // A. ノートがあった場合：ドラッグ準備
                     if (existingNote) {
+                        playPreviewNote(existingNote.pitch, existingNote.durationSteps);
                         const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
                         const offset = DTM.getDrawOffset();
                         const renderX = existingNote.startStep * stepWidth - offset.x;
@@ -2408,6 +2409,19 @@
                     e.preventDefault();
                     copiedNotes = [...selectedNotes];
                     console.log(`Copied ${copiedNotes.length} notes`);
+                } else if (e.code === 'KeyX' && selectedNotes.length > 0) {
+                    e.preventDefault();
+                    copiedNotes = [...selectedNotes];
+                    const activeTrack = tracks.find(t => t.id === activeTrackId);
+                    if (activeTrack?.core) {
+                        activeTrack.core.beginBatch();
+                        selectedNotes.forEach(note => {
+                            activeTrack.core.deleteNoteById(note.id);
+                        });
+                        activeTrack.core.endBatch();
+                        selectedNotes = [];
+                        console.log(`Cut ${copiedNotes.length} notes`);
+                    }
                 } else if (e.code === 'KeyV' && copiedNotes.length > 0) {
                     e.preventDefault();
                     const activeTrack = tracks.find(t => t.id === activeTrackId);
