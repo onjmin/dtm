@@ -1,17 +1,17 @@
+import { MMLCore } from "./mml-core";
 import {
-	init,
-	onClick,
 	drawGrid,
 	drawNotes,
-	drawSelectionRect,
 	drawSelectedNotes,
+	drawSelectionRect,
+	getDrawOffset,
 	getGridCanvas,
 	getGridPosition,
 	getRenderConfig,
-	getDrawOffset,
+	init,
+	onClick,
 	setDrawOffset,
 } from "./renderer";
-import { MMLCore } from "./mml-core";
 import type {
 	AddNoteOptions,
 	CoreEventHandlers,
@@ -107,7 +107,7 @@ export const createPianoRoll = (
 
 		const mode = core.getToolMode();
 		if (mode === "pen") {
-			core.toggleNote(step, pitch, getAddNoteOptions());
+			core.addNote(step, pitch, getAddNoteOptions());
 			handlers.onNoteClick?.(step, pitch, false);
 		} else if (mode === "eraser") {
 			const notes = core.getNotes();
@@ -372,7 +372,7 @@ export const createPianoRoll = (
 			const minStart = Math.min(...copiedNotes.map((n) => n.startStep));
 			copiedNotes.forEach((note) => {
 				const newStep = startStep + (note.startStep - minStart);
-				core.toggleNote(newStep, note.pitch, {
+				core.addNote(newStep, note.pitch, {
 					noteLengthSteps: note.durationSteps,
 					velocity: note.velocity,
 				});

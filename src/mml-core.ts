@@ -146,23 +146,17 @@ export class MMLCore {
 	// ============== ノート編集 (外部API) ==============
 
 	/**
-	 * 指定されたグリッド位置にノートを追加または削除するトグル操作
+	 * 指定されたグリッド位置にノートを追加する操作
 	 * @param step ステップ位置
 	 * @param pitch ピッチ番号
 	 * @param options ノート長などの設定
 	 */
-	public toggleNote(
-		step: number,
-		pitch: number,
-		options: AddNoteOptions,
-	): void {
+	public addNote(step: number, pitch: number, options: AddNoteOptions): void {
 		const existingIndex = this.notes.findIndex(
 			(n) => n.startStep === step && n.pitch === pitch,
 		);
 
-		if (existingIndex !== -1) {
-			this.notes.splice(existingIndex, 1);
-		} else {
+		if (existingIndex === -1) {
 			const newNote: Note = {
 				id: this.nextNoteId++,
 				startStep: step,
