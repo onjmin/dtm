@@ -791,6 +791,87 @@
             document.getElementById('mml-output-container').classList.remove('hidden');
         };
 
+        // MIDI出力
+        window.exportMIDI = () => {
+            const bpm = parseInt(document.getElementById('bpm-input')?.value) || 120;
+            const div = 480;
+            const stepsPerBeat = 48;
+            const tickPerStep = div / stepsPerBeat;
+            const midiTracks = [];
+
+            tracks.forEach((track, ch) => {
+                if (!track.core) return;
+                const notes = track.core.getNotes();
+                if (notes.length === 0) return;
+
+                const events = [];
+                notes.forEach(n => {
+                    const startTick = Math.round(n.startStep * tickPerStep);
+                    const endTick = Math.round((n.startStep + (n.durationSteps || 1)) * tickPerStep);
+                    const vel = Math.round((n.velocity ?? 100) * (track.volume || 100) / 100);
+
+                    events.push({ t: startTick, m: [0x90 | (ch & 0x0F), n.pitch, vel] });
+                    events.push({ t: endTick, m: [0x90 | (ch & 0x0F), n.pitch, 0] });
+                });
+
+                events.sort((a, b) => a.t - b.t);
+                midiTracks.push(events);
+            });
+
+            const arr = [];
+            midiHeaderChunks(arr, midiTracks.length + 1, div);
+            midiTrackChunks(arr, a => {
+                a.push(0, 0xFF, 0x51, 0x03, ...midiTo3byte(Math.round(6e7 / bpm)));
+            });
+
+            for (const events of midiTracks) {
+                midiTrackChunks(arr, a => {
+                    let lastTick = 0;
+                    for (const ev of events) {
+                        const delta = ev.t - lastTick;
+                        a.push(...midiDeltaTime(delta), ...ev.m);
+                        lastTick = ev.t;
+                    }
+                });
+            }
+
+            const blob = new Blob([new Uint8Array(arr).buffer], { type: 'audio/midi' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'dtm.mid';
+            link.click();
+            URL.revokeObjectURL(url);
+        };
+
+        const midiTo2byte = n => [(n & 0xff00) >> 8, n & 0xff];
+        const midiTo3byte = n => [(n & 0xff0000) >> 16, ...midiTo2byte(n)];
+        const midiTo4byte = n => [(n & 0xff000000) >> 24, ...midiTo3byte(n)];
+        const midiHeaderChunks = (arr, trackCount, div) => {
+            arr.push(0x4D, 0x54, 0x68, 0x64);
+            arr.push(...midiTo4byte(6));
+            arr.push(...midiTo2byte(1));
+            arr.push(...midiTo2byte(trackCount));
+            arr.push(...midiTo2byte(div));
+        };
+        const midiTrackChunks = (arr, func) => {
+            arr.push(0x4D, 0x54, 0x72, 0x6B);
+            const a = [];
+            func(a);
+            a.push(...midiDeltaTime(0));
+            a.push(0xFF, 0x2F, 0x00);
+            arr.push(...midiTo4byte(a.length));
+            arr.push(...a);
+        };
+        const midiDeltaTime = n => {
+            const res = [];
+            res.push(n & 0x7F);
+            while (n >>= 7) {
+                res.push((n & 0x7F) | 0x80);
+            }
+            return res.reverse();
+        };
+
         // UIコントロール更新 (既存ロジックをトップレベルに移動)
         const updateControls = () => {
             // DOMを破壊する前に現在の値を保存
@@ -2779,8 +2860,12 @@
 
     <div class="p-2 sm:p-4 bg-gray-800 text-white rounded-lg shadow-lg">
         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-2 sm:mb-4">
-            <h2 class="text-lg sm:text-xl font-semibold">MML出力</h2>
+            <h2 class="text-lg sm:text-xl font-semibold">MIDI / MML出力</h2>
             <div class="flex items-center space-x-2">
+                <button onclick="exportMIDI()" id="export-midi-button"
+                    class="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded transition-colors">
+                    MIDI出力
+                </button>
                 <button onclick="generateMML()" id="generate-mml-button"
                     class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded transition-colors">
                     MML生成
