@@ -470,18 +470,16 @@ var MMLCore = class _MMLCore {
   }
   // ============== ノート編集 (外部API) ==============
   /**
-   * 指定されたグリッド位置にノートを追加または削除するトグル操作
+   * 指定されたグリッド位置にノートを追加する操作
    * @param step ステップ位置
    * @param pitch ピッチ番号
    * @param options ノート長などの設定
    */
-  toggleNote(step, pitch, options) {
+  addNote(step, pitch, options) {
     const existingIndex = this.notes.findIndex(
       (n) => n.startStep === step && n.pitch === pitch
     );
-    if (existingIndex !== -1) {
-      this.notes.splice(existingIndex, 1);
-    } else {
+    if (existingIndex === -1) {
       const newNote = {
         id: this.nextNoteId++,
         startStep: step,
@@ -770,7 +768,7 @@ var createPianoRoll = (options, handlers) => {
     }
     const mode = core.getToolMode();
     if (mode === "pen") {
-      core.toggleNote(step, pitch, getAddNoteOptions());
+      core.addNote(step, pitch, getAddNoteOptions());
       handlers.onNoteClick?.(step, pitch, false);
     } else if (mode === "eraser") {
       const notes = core.getNotes();
@@ -978,7 +976,7 @@ var createPianoRoll = (options, handlers) => {
       const minStart = Math.min(...copiedNotes.map((n) => n.startStep));
       copiedNotes.forEach((note) => {
         const newStep = startStep + (note.startStep - minStart);
-        core.toggleNote(newStep, note.pitch, {
+        core.addNote(newStep, note.pitch, {
           noteLengthSteps: note.durationSteps,
           velocity: note.velocity
         });
