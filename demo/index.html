@@ -2393,7 +2393,7 @@
             // split(/(@\d+)/) を使うと [@0, "t150...", @1, "o4..."] のような配列になる
             const parts = fullMML.split(/(@\d+)/).filter(p => p.trim().length > 0);
 
-            let currentTrack = null;
+            let currentTrack = tracks.find(t => t.id === 'melody');
             let octave = 4;
             let currentStep = 0;
             let baseLength = 16;
