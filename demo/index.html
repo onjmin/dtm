@@ -799,6 +799,7 @@
             const tickPerStep = div / stepsPerBeat;
             const midiTracks = [];
 
+            // Melody, Submelody, Bass, Chord tracks
             tracks.forEach((track, ch) => {
                 if (!track.core) return;
                 const notes = track.core.getNotes();
@@ -817,6 +818,34 @@
                 events.sort((a, b) => a.t - b.t);
                 midiTracks.push(events);
             });
+
+            // Drum track
+            if (currentDrumPattern !== 'none' && drumPatterns[currentDrumPattern]) {
+                const pattern = drumPatterns[currentDrumPattern];
+                const stepsPerBar = renderConfig.stepsPerBar;
+                const maxStep = Math.max(...tracks.filter(t => t.core).map(t => {
+                    const notes = t.core.getNotes();
+                    return notes.length > 0 ? Math.max(...notes.map(n => n.startStep + n.durationSteps)) : 0;
+                }), stepsPerBar);
+
+                const drumEvents = [];
+                const numBars = Math.ceil(maxStep / stepsPerBar);
+
+                for (let bar = 0; bar < numBars; bar++) {
+                    const barStart = bar * stepsPerBar;
+                    pattern.forEach(drum => {
+                        const step = barStart + drum.step;
+                        if (step >= maxStep) return;
+                        const vel = Math.round((drum.velocity ?? 1.0) * (drumVolume / 100) * 127);
+
+                        drumEvents.push({ t: Math.round(step * tickPerStep), m: [0x99, drum.pitch, vel] });
+                        drumEvents.push({ t: Math.round((step + 1) * tickPerStep), m: [0x99, drum.pitch, 0] });
+                    });
+                }
+
+                drumEvents.sort((a, b) => a.t - b.t);
+                if (drumEvents.length > 0) midiTracks.push(drumEvents);
+            }
 
             const arr = [];
             midiHeaderChunks(arr, midiTracks.length + 1, div);
@@ -1829,7 +1858,7 @@
             const chordLength = stepsPerBar;
 
             const c3 = 48;
-            const offset = 0;
+            const offset = rootShift;
 
             // コード進行をパース
             let chordData;
@@ -2344,163 +2373,142 @@
         };
 
         window.loadMML = () => {
-            const mml = document.getElementById('mml-input').value.trim();
-            if (!mml) return;
+            const mmlInput = document.getElementById('mml-input').value;
+            if (!mmlInput) return;
 
             clearAllNotes();
             setLoadMode(true);
 
             const PITCH_MAP = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
-            const stepsPerBar = 192; // 4分音符 = 48 steps
+            const stepsPerBar = 192;
 
-            const trackIds = ['melody', 'submelody', 'bass', 'chord'];
-            const trackMap = {};
-            trackIds.forEach((id, idx) => trackMap[idx] = tracks.find(t => t.id === id));
+            // 1. 全体からコメントを除去し、空白・改行・セミコロンを掃除して「1本の長い文字列」にする
+            // ただし、@n を識別するために最低限の整形だけ行う
+            const fullMML = mmlInput
+                .replace(/\/\/.*$/gm, '')   // コメント除去
+                .replace(/[\n\r;]+/g, ' ')  // 改行とセミコロンをスペースに置換
+                .trim();
 
-            const tracksMML = mml.split(';').map(s => s.trim());
+            // 2. @(\d+) で分割し、各トラックごとの塊を作る
+            // split(/(@\d+)/) を使うと [@0, "t150...", @1, "o4..."] のような配列になる
+            const parts = fullMML.split(/(@\d+)/).filter(p => p.trim().length > 0);
 
-            tracksMML.forEach((trackMML, trackIdx) => {
-                const track = trackMap[trackIdx];
-                if (!track || !track.core) return;
+            let currentTrack = null;
+            let octave = 4;
+            let currentStep = 0;
+            let baseLength = 16;
 
-                // ヘッダーがない場合は全体をボディとして扱う
-                const headerMatch = trackMML.match(/@(\d+)\s*(.+)/);
-                const body = headerMatch ? headerMatch[2] : trackMML;
+            // 分割された [@0, "本文", @1, "本文"] をループ
+            for (let i = 0; i < parts.length; i++) {
+                const part = parts[i].trim();
 
-                let octave = 4;
-                let currentStep = 0;
-                let i = 0;
-                let baseLength = 16;
+                // ヘッダー判定 (@0, @1 など)
+                if (part.startsWith('@')) {
+                    const trackIdx = parseInt(part.substring(1));
+                    currentTrack = tracks.find(t => t.id === ['melody', 'submelody', 'bass', 'chord'][trackIdx]);
 
-                // 数値と付点をパースするヘルパー
+                    // トラックが変わるタイミングで各種設定をリセット
+                    octave = 4;
+                    currentStep = 0;
+                    baseLength = 16;
+                    continue;
+                }
+
+                // 本文（body）のパース（currentTrack がない場合は無視）
+                if (!currentTrack || !currentTrack.core) continue;
+
+                const body = part.replace(/\s+/g, '').toLowerCase();
+                let j = 0;
+
                 const parseLength = () => {
                     let numStr = '';
-                    while (i < body.length && /\d/.test(body[i])) {
-                        numStr += body[i];
-                        i++;
+                    while (j < body.length && /\d/.test(body[j])) {
+                        numStr += body[j];
+                        j++;
                     }
                     let len = numStr ? parseInt(numStr) : baseLength;
                     let steps = Math.round(stepsPerBar / len);
-
-                    // 付点（.）の処理: 1.5倍の長さに
-                    while (i < body.length && body[i] === '.') {
+                    while (j < body.length && body[j] === '.') {
                         steps = Math.round(steps * 1.5);
-                        i++;
+                        j++;
                     }
                     return steps;
                 };
 
-                while (i < body.length) {
-                    let ch = body[i].toLowerCase();
-
-                    // 空白スキップ
-                    if (/\s/.test(ch)) { i++; continue; }
+                while (j < body.length) {
+                    let ch = body[j];
 
                     if (ch === 'o') {
-                        i++;
+                        j++;
                         let numStr = '';
-                        while (i < body.length && /\d/.test(body[i])) {
-                            numStr += body[i];
-                            i++;
+                        while (j < body.length && /\d/.test(body[j])) {
+                            numStr += body[j];
+                            j++;
                         }
                         octave = parseInt(numStr) || 4;
-                        continue;
-                    }
-
-                    if (ch === '>') {
-                        octave++;
-                        i++;
-                        continue;
-                    }
-
-                    if (ch === '<') {
-                        octave--;
-                        i++;
-                        continue;
-                    }
-
-                    if (ch === 'l') {
-                        i++;
+                    } else if (ch === '>') {
+                        octave++; j++;
+                    } else if (ch === '<') {
+                        octave--; j++;
+                    } else if (ch === 'l') {
+                        j++;
                         let numStr = '';
-                        while (i < body.length && /\d/.test(body[i])) {
-                            numStr += body[i];
-                            i++;
+                        while (j < body.length && /\d/.test(body[j])) {
+                            numStr += body[j];
+                            j++;
                         }
                         baseLength = parseInt(numStr) || 16;
-                        continue;
-                    }
-
-                    if (ch === 'r') {
-                        i++;
+                    } else if (ch === 'r') {
+                        j++;
                         currentStep += parseLength();
-                        continue;
-                    }
-
-                    if (ch === 't' || ch === 'v' || ch === 'q') {
-                        i++;
+                    } else if (ch === 't' || ch === 'v' || ch === 'q') {
+                        j++;
                         let numStr = '';
-                        while (i < body.length && /\d/.test(body[i])) {
-                            numStr += body[i];
-                            i++;
+                        while (j < body.length && /\d/.test(body[j])) {
+                            numStr += body[j];
+                            j++;
                         }
-                        if (ch === 't' && trackIdx === 0) {
+                        if (ch === 't' && currentTrack.id === 'melody') {
                             const bpmInput = document.getElementById('bpm-input');
                             if (bpmInput) bpmInput.value = numStr;
                         }
-                        continue;
-                    }
-
-                    // 和音 [ceg]4
-                    if (ch === '[') {
-                        i++;
+                    } else if (ch === '[') {
+                        j++;
                         const chordNotes = [];
                         const savedOctave = octave;
-
-                        while (i < body.length && body[i] !== ']') {
-                            let c = body[i].toLowerCase();
+                        while (j < body.length && body[j] !== ']') {
+                            let c = body[j];
                             if (PITCH_MAP.hasOwnProperty(c)) {
                                 let pitch = PITCH_MAP[c];
-                                i++;
-                                if (body[i] === '#' || body[i] === '+') { pitch++; i++; }
-                                else if (body[i] === '-') { pitch--; i++; }
+                                j++;
+                                if (body[j] === '#' || body[j] === '+') { pitch++; j++; }
+                                else if (body[j] === '-') { pitch--; j++; }
                                 chordNotes.push((octave + 1) * 12 + pitch);
-                            } else if (c === '>') {
-                                octave++; i++;
-                            } else if (c === '<') {
-                                octave--; i++;
-                            } else {
-                                i++;
-                            }
+                            } else if (c === '>') { octave++; j++; }
+                            else if (c === '<') { octave--; j++; }
+                            else { j++; }
                         }
-                        if (body[i] === ']') i++;
-
+                        if (body[j] === ']') j++;
                         const steps = parseLength();
                         for (const p of chordNotes) {
-                            track.core.addNote(currentStep, p, { noteLengthSteps: Math.max(1, steps) });
+                            currentTrack.core.addNote(currentStep, p, { noteLengthSteps: Math.max(1, steps) });
                         }
                         currentStep += steps;
-                        octave = savedOctave; // オクターブを戻す
-                        continue;
-                    }
-
-                    // 単音
-                    if (PITCH_MAP.hasOwnProperty(ch)) {
+                        octave = savedOctave;
+                    } else if (PITCH_MAP.hasOwnProperty(ch)) {
                         let pitch = PITCH_MAP[ch];
-                        i++;
-                        if (body[i] === '#' || body[i] === '+') { pitch++; i++; }
-                        else if (body[i] === '-') { pitch--; i++; }
-
+                        j++;
+                        if (body[j] === '#' || body[j] === '+') { pitch++; j++; }
+                        else if (body[j] === '-') { pitch--; j++; }
                         const midiPitch = (octave + 1) * 12 + pitch;
                         const steps = parseLength();
-
-                        track.core.addNote(currentStep, midiPitch, { noteLengthSteps: Math.max(1, steps) });
+                        currentTrack.core.addNote(currentStep, midiPitch, { noteLengthSteps: Math.max(1, steps) });
                         currentStep += steps;
-                        continue;
+                    } else {
+                        j++;
                     }
-
-                    i++; // 未知の文字
                 }
-            });
+            }
 
             // --- 後処理 ---
             console.log('MML読み込み完了');
