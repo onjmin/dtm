@@ -213,8 +213,11 @@ export class MMLCore {
 		note.pitch = clampedPitch;
 		this.notes.sort((a, b) => a.startStep - b.startStep);
 
-		this.saveHistory();
 		this.generateAndNotify();
+	}
+
+	public moveNoteEnd(noteId: number): void {
+		this.saveHistory();
 	}
 
 	public resizeNote(noteId: number, durationSteps: number): void {
@@ -225,8 +228,11 @@ export class MMLCore {
 		note.durationSteps = clampedDuration;
 		this.notes.sort((a, b) => a.startStep - b.startStep);
 
-		this.saveHistory();
 		this.generateAndNotify();
+	}
+
+	public resizeNoteEnd(noteId: number): void {
+		this.saveHistory();
 	}
 
 	// ============== 状態取得 (外部API) ==============

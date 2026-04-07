@@ -1261,10 +1261,18 @@
                 }
 
                 if (dragState) {
-                    dragState = null;
                     if (hasDragged) {
+                        const activeTrack = tracks.find(t => t.id === activeTrackId);
+                        if (activeTrack?.core) {
+                            if (dragState.mode === 'move') {
+                                activeTrack.core.moveNoteEnd(dragState.noteId);
+                            } else if (dragState.mode === 'resize') {
+                                activeTrack.core.resizeNoteEnd(dragState.noteId);
+                            }
+                        }
                         suppressClick = true;
                     }
+                    dragState = null;
                 }
                 hasDragged = false;
                 isDblClick = false;
