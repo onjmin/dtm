@@ -526,8 +526,10 @@ var MMLCore = class _MMLCore {
     note.startStep = clampedStart;
     note.pitch = clampedPitch;
     this.notes.sort((a, b) => a.startStep - b.startStep);
-    this.saveHistory();
     this.generateAndNotify();
+  }
+  moveNoteEnd(noteId) {
+    this.saveHistory();
   }
   resizeNote(noteId, durationSteps) {
     const note = this.notes.find((target) => target.id === noteId);
@@ -535,8 +537,10 @@ var MMLCore = class _MMLCore {
     const clampedDuration = Math.max(1, durationSteps);
     note.durationSteps = clampedDuration;
     this.notes.sort((a, b) => a.startStep - b.startStep);
-    this.saveHistory();
     this.generateAndNotify();
+  }
+  resizeNoteEnd(noteId) {
+    this.saveHistory();
   }
   // ============== 状態取得 (外部API) ==============
   getNotes() {

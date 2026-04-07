@@ -383,6 +383,8 @@
         // C4 (note 60) を中央に配置
         let gridHeight = 430;
         let baseStepWidth = 0.5; // stepsPerBar=192対応
+        let baseKeyHeight = 15;
+        renderConfig.keyCount = 128; // 鍵盤総数は固定（MIDI規格）
 
         // 初期Yオフセットを計算
         const getInitialOffsetY = () => {
@@ -411,6 +413,35 @@
             currentOffsetX = Math.max(0, currentOffsetX);
             DTM.setDrawOffset(currentOffsetX, currentOffsetY);
             updateScrollbar();
+            redrawAll();
+        };
+
+        window.updateKeyHeight = () => {
+            const zoomYInput = document.getElementById('zoom-y-input');
+            const scrollContainer = document.getElementById('piano-roll-container');
+            if (!zoomYInput || !scrollContainer) return;
+
+            // --- 1. 更新前の値で「現在の中央位置」を計算 ---
+            // 中央のY座標 = 現在のスクロール位置 + 表示領域の半分
+            const centerY = scrollContainer.scrollTop + (scrollContainer.clientHeight / 2);
+            // 中央が「何番目の鍵盤か」を保持 (更新前の keyHeight を使用)
+            const centerKeyIndex = centerY / renderConfig.keyHeight;
+
+            // --- 2. 設定値の更新 ---
+            const rawZoomY = parseInt(zoomYInput.value);
+            const zoomFactor = rawZoomY / 100;
+            renderConfig.keyHeight = baseKeyHeight * zoomFactor;
+
+            // --- 3. UIと内部状態の反映 ---
+            document.getElementById('zoom-y-label').textContent = rawZoomY + '%';
+
+            // 総高さが変わるため、再描画やスクロールバーの整合性を取る
+            updateVScrollbar();
+
+            // --- 4. スクロール位置の復元 ---
+            // 新しい keyHeight における中央位置を計算し、そこから表示領域の半分を引く
+            scrollContainer.scrollTop = (centerKeyIndex * renderConfig.keyHeight) - (scrollContainer.clientHeight / 2);
+
             redrawAll();
         };
 
@@ -1261,10 +1292,18 @@
                 }
 
                 if (dragState) {
-                    dragState = null;
                     if (hasDragged) {
+                        const activeTrack = tracks.find(t => t.id === activeTrackId);
+                        if (activeTrack?.core) {
+                            if (dragState.mode === 'move') {
+                                activeTrack.core.moveNoteEnd(dragState.noteId);
+                            } else if (dragState.mode === 'resize') {
+                                activeTrack.core.resizeNoteEnd(dragState.noteId);
+                            }
+                        }
                         suppressClick = true;
                     }
+                    dragState = null;
                 }
                 hasDragged = false;
                 isDblClick = false;
@@ -2754,10 +2793,14 @@
 
         <!-- ズーム -->
         <div class="flex items-center space-x-2">
-            <span class="text-sm font-medium text-gray-700">zoom:</span>
+            <span class="text-sm font-medium text-gray-700">横:</span>
             <input type="range" id="zoom-input" value="100" min="25" max="200" step="25" oninput="updateStepWidth()"
-                class="w-16 sm:w-24">
+                class="w-16 sm:w-20">
             <span id="zoom-label" class="text-sm text-gray-700 w-10 sm:w-12">100%</span>
+            <span class="text-sm font-medium text-gray-700 ml-2">縦:</span>
+            <input type="range" id="zoom-y-input" value="100" min="50" max="200" step="25" oninput="updateKeyHeight()"
+                class="w-16 sm:w-20">
+            <span id="zoom-y-label" class="text-sm text-gray-700 w-10 sm:w-12">100%</span>
         </div>
 
         <!-- ナビゲーションは右端に -->
