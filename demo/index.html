@@ -2411,6 +2411,75 @@
             }, 50);
         };
 
+        window.clearCurrentTrackNotes = () => {
+            const activeTrack = tracks.find(t => t.id === activeTrackId);
+            if (!activeTrack?.core) return;
+            activeTrack.core.beginBatch();
+            activeTrack.core.clearNotesWithoutHistory();
+            activeTrack.core.endBatch();
+            activeTrack.core.saveHistory();
+            redrawAll();
+        };
+
+
+        window.generateRandomPattern = () => {
+            const activeTrack = tracks.find(t => t.id === activeTrackId);
+            if (!activeTrack?.core) return;
+
+            const stepsPerBar = renderConfig.stepsPerBar;
+            const numBars = 8;
+            const startStep = playStartStep;
+
+            // --- 修正ポイント：8分音符の間隔 ---
+            // 16分音符が12ステップの場合、8分音符は24ステップ
+            const noteLength = 24;
+
+            const octaveOffset = 60;
+            const basePitch = renderConfig.pitchRangeStart + octaveOffset;
+
+            const scales = [
+                [0, 2, 4, 5, 7, 9, 11], // Major
+                [0, 2, 3, 5, 7, 8, 10], // Minor
+                [0, 2, 4, 7, 9],        // Pentatonic Major
+            ];
+
+            const selectedScale = scales[Math.floor(Math.random() * scales.length)];
+            const rootOffset = Math.floor(Math.random() * 12);
+
+            const availablePitches = [];
+            for (let i = 0; i < 12; i++) {
+                const noteInOctave = (i - rootOffset + 12) % 12;
+                if (selectedScale.includes(noteInOctave)) {
+                    availablePitches.push(basePitch + i);
+                }
+            }
+
+            activeTrack.core.beginBatch();
+
+            for (let bar = 0; bar < numBars; bar++) {
+                const barStart = startStep + bar * stepsPerBar;
+                // 8分音符にすると1小節内の密度が上がるため、音数を少し調整
+                const numNotes = Math.floor(Math.random() * 4) + 2;
+                const occupiedSteps = new Set();
+
+                for (let i = 0; i < numNotes; i++) {
+                    // 8分音符のグリッド（0, 24, 48...）にスナップ
+                    let stepInRange = Math.floor(Math.random() * (stepsPerBar / noteLength)) * noteLength;
+                    let step = barStart + stepInRange;
+
+                    if (occupiedSteps.has(step)) continue;
+                    occupiedSteps.add(step);
+
+                    const pitch = availablePitches[Math.floor(Math.random() * availablePitches.length)];
+                    activeTrack.core.addNote(step, pitch, { noteLengthSteps: noteLength });
+                }
+            }
+
+            activeTrack.core.endBatch();
+            activeTrack.core.saveHistory();
+            redrawAll();
+        };
+
         window.loadMML = () => {
             const mmlInput = document.getElementById('mml-input').value;
             if (!mmlInput) return;
@@ -2705,6 +2774,31 @@
         </div>
     </div>
 
+    <!-- マクロ -->
+    <div class="p-2 sm:p-4 bg-white border rounded-lg shadow-md mb-4 sm:mb-6">
+        <h2 class="text-lg sm:text-xl font-semibold text-gray-800 mb-2 sm:mb-4">マクロ</h2>
+        <div class="flex flex-wrap gap-2">
+            <button onclick="clearCurrentTrackNotes()"
+                class="px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md text-sm flex items-center space-x-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                    </path>
+                </svg>
+                <span>全消去</span>
+            </button>
+            <button onclick="generateRandomPattern()"
+                class="px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-md text-sm flex items-center space-x-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                    </path>
+                </svg>
+                <span>ランダム生成（8小節）</span>
+            </button>
+        </div>
+    </div>
+
     <!-- コントロール系UI -->
     <div class="flex flex-wrap gap-2 sm:gap-4 p-2 sm:p-4 bg-white border rounded-lg shadow-md mb-4 sm:mb-6">
         <!--  транспорт управление -->
@@ -2850,34 +2944,33 @@
         </div>
     </div>
 
-    <!-- トラック設定（楽器プリセット含む） -->
-    <div class="p-2 sm:p-4 bg-white border rounded-lg shadow-md mb-4 sm:mb-6">
-        <h2 class="text-lg sm:text-xl font-semibold text-gray-800 mb-2 sm:mb-4">トラック設定</h2>
+    <!-- ドラム設定 -->
+    <h2 class="text-lg sm:text-xl font-semibold text-gray-800 mb-2 sm:mb-4">トラック設定</h2>
 
-        <div class="flex flex-row items-center gap-2 mb-2">
-            <label for="instrument-preset" class="text-sm font-medium text-gray-500 whitespace-nowrap">
-                楽器:
-            </label>
+    <div class="flex flex-row items-center gap-2 mb-2">
+        <label for="instrument-preset" class="text-sm font-medium text-gray-500 whitespace-nowrap">
+            楽器:
+        </label>
 
-            <select id="instrument-preset" onchange="loadInstrumentPreset(this.value)"
-                class="bg-gray-100/10 border border-gray-300 rounded-md px-2 py-1 text-sm w-full sm:w-48 focus:outline-none focus:bg-gray-100/20 transition-colors">
-            </select>
+        <select id="instrument-preset" onchange="loadInstrumentPreset(this.value)"
+            class="bg-gray-100/10 border border-gray-300 rounded-md px-2 py-1 text-sm w-full sm:w-48 focus:outline-none focus:bg-gray-100/20 transition-colors">
+        </select>
+    </div>
+
+    <div class="mt-2 sm:mt-4 pt-2 sm:pt-4 border-t border-gray-200">
+        <div class="flex items-center space-x-2 sm:space-x-4">
+            <span class="text-sm font-medium text-gray-700 whitespace-nowrap">音量:</span>
+            <input type="range" id="master-volume-input" value="50" min="0" max="100" step="1"
+                oninput="updateMasterVolume(this.value)" class="w-20 sm:w-32">
+            <span id="master-volume-label" class="text-sm text-gray-700 w-10 sm:w-12">50%</span>
         </div>
+    </div>
 
-        <div class="mt-2 sm:mt-4 pt-2 sm:pt-4 border-t border-gray-200">
-            <div class="flex items-center space-x-2 sm:space-x-4">
-                <span class="text-sm font-medium text-gray-700 whitespace-nowrap">音量:</span>
-                <input type="range" id="master-volume-input" value="50" min="0" max="100" step="1"
-                    oninput="updateMasterVolume(this.value)" class="w-20 sm:w-32">
-                <span id="master-volume-label" class="text-sm text-gray-700 w-10 sm:w-12">50%</span>
-            </div>
-        </div>
+    <div id="track-tabs" class="flex border-b border-gray-200 overflow-x-auto">
+    </div>
 
-        <div id="track-tabs" class="flex border-b border-gray-200 overflow-x-auto">
-        </div>
-
-        <div id="track-content" class="p-2 sm:p-4 border border-t-0 border-gray-200 rounded-b-lg bg-white">
-        </div>
+    <div id="track-content" class="p-2 sm:p-4 border border-t-0 border-gray-200 rounded-b-lg bg-white">
+    </div>
     </div>
 
     <!-- ドラム設定 -->
