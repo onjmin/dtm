@@ -28,6 +28,23 @@
         gainNode.connect(audioCtx.destination);
         const drumGainNode = audioCtx.createGain();
         drumGainNode.connect(audioCtx.destination);
+
+        // Recorder setup
+        let isRecording = false;
+        let recordedData = [[], []];
+        let recordNode = null;
+        const recorderProcessor = audioCtx.createScriptProcessor(4096, 2, 2);
+        recorderProcessor.onaudioprocess = (e) => {
+            if (!isRecording) return;
+            const left = e.inputBuffer.getChannelData(0);
+            const right = e.inputBuffer.getChannelData(1);
+            recordedData[0].push(left.slice());
+            recordedData[1].push(right.slice());
+        };
+        gainNode.connect(recorderProcessor);
+        drumGainNode.connect(recorderProcessor);
+        recorderProcessor.connect(audioCtx.destination);
+
         let masterVolume = 50;
         let drumVolume = 80;
         gainNode.gain.value = 0.5;
@@ -1533,6 +1550,7 @@
             redrawAll(); // 初回グリッド描画とノート描画 (ノートは空)
 
             document.getElementById('play-button').disabled = false;
+            document.getElementById('record-button').disabled = false;
         };
 
         // モジュールロード完了後に初期化を実行
@@ -1587,6 +1605,96 @@
 
         window.toggleSolo = (checked) => {
             isSolo = checked;
+        };
+
+        window.toggleRecording = () => {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        };
+
+        const startRecording = () => {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            recordedData = [[], []];
+            isRecording = true;
+            const recordBtn = document.getElementById('record-button');
+            recordBtn.classList.remove('bg-red-500');
+            recordBtn.classList.add('bg-red-700', 'animate-pulse');
+            startPlayback();
+            isPlaying = true;
+            updateControls();
+        };
+
+        const stopRecording = () => {
+            isRecording = false;
+            const recordBtn = document.getElementById('record-button');
+            recordBtn.classList.add('bg-red-500');
+            recordBtn.classList.remove('bg-red-700', 'animate-pulse');
+
+            const mergeData = () => {
+                const ch = recordedData.length;
+                const len = recordedData[0].length;
+                if (len === 0) return new Float32Array(0);
+                const bufSize = recordedData[0][0].length;
+                const wave = new Float32Array(ch * len * bufSize);
+                let idx = 0;
+                for (let i = 0; i < len; i++) {
+                    for (let j = 0; j < bufSize; j++) {
+                        for (let k = 0; k < ch; k++) {
+                            wave[idx++] = recordedData[k][i][j];
+                        }
+                    }
+                }
+                return wave;
+            };
+
+            const makeWAV = (wave) => {
+                const sampleRate = audioCtx.sampleRate;
+                const ch = 2;
+                const bitRate = 16;
+                const step = bitRate / 8;
+                const blockSize = ch * step;
+                const len = wave.length * step;
+                const view = new DataView(new ArrayBuffer(44 + len));
+
+                const writeStr = (offset, str) => {
+                    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+                };
+
+                writeStr(0, 'RIFF');
+                view.setUint32(4, 32 + len, true);
+                writeStr(8, 'WAVE');
+                writeStr(12, 'fmt ');
+                view.setUint32(16, 16, true);
+                view.setUint16(20, 1, true);
+                view.setUint16(22, ch, true);
+                view.setUint32(24, sampleRate, true);
+                view.setUint32(28, sampleRate * blockSize, true);
+                view.setUint16(32, blockSize, true);
+                view.setUint16(34, bitRate, true);
+                writeStr(36, 'data');
+                view.setUint32(40, len, true);
+
+                const clamp = (num, min, max) => Math.max(min, Math.min(max, num));
+                const float2int = (value, range) => clamp(Math.round(value * range), -range, range - 1);
+                let offset = 44;
+                for (let i = 0; i < wave.length; i++, offset += step) {
+                    view.setInt16(offset, float2int(wave[i], 0x8000), true);
+                }
+                return view;
+            };
+
+            const wave = mergeData();
+            const wav = makeWAV(wave);
+            const blob = new Blob([wav], { type: 'audio/wav' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'record.wav';
+            a.click();
+            URL.revokeObjectURL(url);
         };
 
         window.togglePlayback = () => {
@@ -2807,6 +2915,12 @@
                 class="px-3 sm:px-4 py-2 bg-gray-300 rounded"></button>
             <button id="pause-button" onclick="pausePlayback()" disabled
                 class="px-3 sm:px-4 py-2 bg-gray-300 rounded cursor-not-allowed"></button>
+            <button id="record-button" onclick="toggleRecording()" disabled
+                class="px-3 sm:px-4 py-2 bg-red-500 hover:bg-red-600 rounded text-white" title="録音">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="8"></circle>
+                </svg>
+            </button>
             <label class="flex items-center space-x-2 text-sm text-gray-700">
                 <input type="checkbox" id="solo-checkbox" onchange="toggleSolo(this.checked)"
                     class="w-4 h-4 text-purple-600 rounded">
@@ -2944,33 +3058,33 @@
         </div>
     </div>
 
-    <!-- ドラム設定 -->
-    <h2 class="text-lg sm:text-xl font-semibold text-gray-800 mb-2 sm:mb-4">トラック設定</h2>
+    <div class="p-2 sm:p-4 bg-white border rounded-lg shadow-md mb-4 sm:mb-6">
+        <h2 class="text-lg sm:text-xl font-semibold text-gray-800 mb-2 sm:mb-4">トラック設定</h2>
 
-    <div class="flex flex-row items-center gap-2 mb-2">
-        <label for="instrument-preset" class="text-sm font-medium text-gray-500 whitespace-nowrap">
-            楽器:
-        </label>
+        <div class="flex flex-row items-center gap-2 mb-2">
+            <label for="instrument-preset" class="text-sm font-medium text-gray-500 whitespace-nowrap">
+                楽器:
+            </label>
 
-        <select id="instrument-preset" onchange="loadInstrumentPreset(this.value)"
-            class="bg-gray-100/10 border border-gray-300 rounded-md px-2 py-1 text-sm w-full sm:w-48 focus:outline-none focus:bg-gray-100/20 transition-colors">
-        </select>
-    </div>
-
-    <div class="mt-2 sm:mt-4 pt-2 sm:pt-4 border-t border-gray-200">
-        <div class="flex items-center space-x-2 sm:space-x-4">
-            <span class="text-sm font-medium text-gray-700 whitespace-nowrap">音量:</span>
-            <input type="range" id="master-volume-input" value="50" min="0" max="100" step="1"
-                oninput="updateMasterVolume(this.value)" class="w-20 sm:w-32">
-            <span id="master-volume-label" class="text-sm text-gray-700 w-10 sm:w-12">50%</span>
+            <select id="instrument-preset" onchange="loadInstrumentPreset(this.value)"
+                class="bg-gray-100/10 border border-gray-300 rounded-md px-2 py-1 text-sm w-full sm:w-48 focus:outline-none focus:bg-gray-100/20 transition-colors">
+            </select>
         </div>
-    </div>
 
-    <div id="track-tabs" class="flex border-b border-gray-200 overflow-x-auto">
-    </div>
+        <div class="mt-2 sm:mt-4 pt-2 sm:pt-4 border-t border-gray-200">
+            <div class="flex items-center space-x-2 sm:space-x-4">
+                <span class="text-sm font-medium text-gray-700 whitespace-nowrap">音量:</span>
+                <input type="range" id="master-volume-input" value="50" min="0" max="100" step="1"
+                    oninput="updateMasterVolume(this.value)" class="w-20 sm:w-32">
+                <span id="master-volume-label" class="text-sm text-gray-700 w-10 sm:w-12">50%</span>
+            </div>
+        </div>
 
-    <div id="track-content" class="p-2 sm:p-4 border border-t-0 border-gray-200 rounded-b-lg bg-white">
-    </div>
+        <div id="track-tabs" class="flex border-b border-gray-200 overflow-x-auto">
+        </div>
+
+        <div id="track-content" class="p-2 sm:p-4 border border-t-0 border-gray-200 rounded-b-lg bg-white">
+        </div>
     </div>
 
     <!-- ドラム設定 -->
