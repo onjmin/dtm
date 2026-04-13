@@ -35,10 +35,6 @@ MML中間言語を使用したピアノロール打ち込みモジュール（We
 - **マスタ音量**: 全トラックに一律適用される音量調整（gainNode経由）
 - **MIDI/MML読み込み**: 読み込み前に既存データを自動消去
 
-## 開発コマンド
-- `pnpm run dev`: localhost:40298で動作確認
-- ビルドは人間に任せること（自動では行わない）
-
 ## 参考実装
 /mnt/c/_own/git/_users/onjmin/soundfont
 /mnt/c/_own/git/_users/onjmin/piano

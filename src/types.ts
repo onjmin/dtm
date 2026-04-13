@@ -4,7 +4,7 @@ export type Note = {
 	startStep: number;
 	durationSteps: number;
 	pitch: number;
-	velocity?: number; // 0-127, 未設定の場合は127
+	velocity?: number; // 0-127, 未設定の場合は100
 };
 
 // ピアノロールの描画とステップ計算に必要な設定

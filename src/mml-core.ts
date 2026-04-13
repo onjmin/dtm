@@ -162,7 +162,7 @@ export class MMLCore {
 				startStep: step,
 				durationSteps: options.noteLengthSteps,
 				pitch: pitch,
-				velocity: options.velocity ?? 127,
+				velocity: options.velocity ?? 100,
 			};
 			this.notes.push(newNote);
 		}

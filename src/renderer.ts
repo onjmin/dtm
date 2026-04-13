@@ -314,7 +314,10 @@ export const drawGrid = (noteLengthSteps: number = 1): void => {
 /**
  * 指定されたノートの配列を描画します。
  */
-export const drawNotes = (notes: Note[], color = "#3B82F6"): void => {
+export const drawNotes = (
+	notes: Note[],
+	color: number[] = [59, 130, 246, 1.0],
+): void => {
 	const { keyHeight, stepWidth, keyCount, pitchRangeStart } = g_config;
 
 	for (const note of notes) {
@@ -329,19 +332,15 @@ export const drawNotes = (notes: Note[], color = "#3B82F6"): void => {
 		const renderX = logicalX - g_draw_offset_x;
 		const renderY = logicalY - g_draw_offset_y;
 
-		// ベロシティに応じた不透明度 (0.3〜1.0)
+		// ベロシティに応じた不透明度 (0.5〜1.0)
 		const velocityOpacity =
-			note.velocity !== undefined ? 0.3 + (note.velocity / 127) * 0.7 : 1.0;
+			note.velocity !== undefined ? 0.5 + (note.velocity / 127) * 0.5 : 1.0;
 
-		// 色をRGBAに変換
-		if (color.startsWith("#")) {
-			const r = parseInt(color.slice(1, 3), 16);
-			const g = parseInt(color.slice(3, 5), 16);
-			const b = parseInt(color.slice(5, 7), 16);
-			g_grid_ctx.fillStyle = `rgba(${r},${g},${b},${velocityOpacity})`;
-		} else {
-			g_grid_ctx.fillStyle = color;
-		}
+		// colorは[r, g, b, a]の配列
+		const [r, g, b, a] = color;
+		const finalOpacity = a * velocityOpacity;
+
+		g_grid_ctx.fillStyle = `rgba(${r},${g},${b},${finalOpacity})`;
 
 		// 描画には renderX と renderY を使用
 		g_grid_ctx.fillRect(renderX + 1, renderY + 1, w - 2, h - 2);
