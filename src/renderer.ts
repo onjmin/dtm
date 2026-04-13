@@ -312,7 +312,7 @@ export const drawGrid = (noteLengthSteps: number = 1): void => {
 };
 
 /**
- * 指定されたノートの配列を描画します。（グリッドCanvasのみ）
+ * 指定されたノートの配列を描画します。
  */
 export const drawNotes = (notes: Note[], color = "#3B82F6"): void => {
 	const { keyHeight, stepWidth, keyCount, pitchRangeStart } = g_config;
