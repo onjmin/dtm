@@ -28,7 +28,7 @@ export class MMLCore {
 	private tempo: number = 120;
 	private history: LinkedList<Note[]> = new LinkedList();
 	private isUndoRedo: boolean = false;
-	private isBatchOperation: boolean = false;
+	public isBatchOperation: boolean = false;
 	private lastHistorySnapshot: string = "[]";
 	private lastUndoTime: number = 0;
 	private static readonly UNDO_DEBOUNCE_MS = 100;
@@ -51,7 +51,7 @@ export class MMLCore {
 		this.saveHistory();
 	}
 
-	private saveHistory(): void {
+	public saveHistory(): void {
 		if (this.isUndoRedo || this.isBatchOperation) {
 			return;
 		}

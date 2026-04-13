@@ -1245,9 +1245,12 @@
 
                         // 3. 変化があった場合のみ処理
                         if (snappedDeltaStep !== 0 || deltaPitch !== 0) {
+                            hasDragged = true;
                             const activeTrack = tracks.find(t => t.id === activeTrackId);
                             if (activeTrack?.core) {
-                                activeTrack.core.beginBatch();
+                                if (!activeTrack.core.isBatchOperation) {
+                                    activeTrack.core.beginBatch();
+                                }
                                 selectedNotes.forEach(note => {
                                     const original = selectedNotesOriginalPositions.find(o => o.id === note.id);
                                     if (!original) return;
@@ -1260,7 +1263,6 @@
                                         activeTrack.core.moveNote(note.id, newStart, newPitch);
                                     }
                                 });
-                                activeTrack.core.endBatch();
                             }
                             // 注意：ここでは selectionStart を更新しない（ドラッグ開始点を維持する）
                         }
@@ -1301,10 +1303,17 @@
 
             const endDrag = () => {
                 if (activeToolMode === 'select') {
+                    if (hasDragged && selectedNotes.length > 0) {
+                        const activeTrack = tracks.find(t => t.id === activeTrackId);
+                        if (activeTrack?.core) {
+                            activeTrack.core.endBatch();
+                        }
+                    }
                     isSelecting = false;
                     selectionStart = null;
                     selectedNotesOriginalPositions = [];
                     dragState = null;
+                    hasDragged = false;
                     return;
                 }
 
