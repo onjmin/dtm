@@ -255,7 +255,7 @@ var drawGrid = (noteLengthSteps = 1) => {
     g_grid_ctx.stroke();
   }
 };
-var drawNotes = (notes, color = "#3B82F6") => {
+var drawNotes = (notes, color = [59, 130, 246, 1]) => {
   const { keyHeight, stepWidth, keyCount, pitchRangeStart } = g_config;
   for (const note of notes) {
     const logicalX = note.startStep * stepWidth;
@@ -265,15 +265,10 @@ var drawNotes = (notes, color = "#3B82F6") => {
     const h = keyHeight;
     const renderX = logicalX - g_draw_offset_x;
     const renderY = logicalY - g_draw_offset_y;
-    const velocityOpacity = note.velocity !== void 0 ? 0.3 + note.velocity / 127 * 0.7 : 1;
-    if (color.startsWith("#")) {
-      const r = parseInt(color.slice(1, 3), 16);
-      const g = parseInt(color.slice(3, 5), 16);
-      const b = parseInt(color.slice(5, 7), 16);
-      g_grid_ctx.fillStyle = `rgba(${r},${g},${b},${velocityOpacity})`;
-    } else {
-      g_grid_ctx.fillStyle = color;
-    }
+    const velocityOpacity = note.velocity !== void 0 ? 0.5 + note.velocity / 127 * 0.5 : 1;
+    const [r, g, b, a] = color;
+    const finalOpacity = a * velocityOpacity;
+    g_grid_ctx.fillStyle = `rgba(${r},${g},${b},${finalOpacity})`;
     g_grid_ctx.fillRect(renderX + 1, renderY + 1, w - 2, h - 2);
   }
 };
@@ -485,7 +480,7 @@ var MMLCore = class _MMLCore {
         startStep: step,
         durationSteps: options.noteLengthSteps,
         pitch,
-        velocity: options.velocity ?? 127
+        velocity: options.velocity ?? 100
       };
       this.notes.push(newNote);
     }
