@@ -216,7 +216,7 @@ export class MMLCore {
 		this.generateAndNotify();
 	}
 
-	public moveNoteEnd(noteId: number): void {
+	public moveNoteEnd(_: number): void {
 		this.saveHistory();
 	}
 
@@ -231,7 +231,7 @@ export class MMLCore {
 		this.generateAndNotify();
 	}
 
-	public resizeNoteEnd(noteId: number): void {
+	public resizeNoteEnd(_: number): void {
 		this.saveHistory();
 	}
 
@@ -403,7 +403,8 @@ export class MMLCore {
 
 			for (let i = 0; i < sortedSteps.length; i++) {
 				const startStep = sortedSteps[i];
-				const notes = notesByStep.get(startStep)!;
+				const notes = notesByStep.get(startStep);
+				if (!notes) continue;
 
 				while (currentCursor < startStep) {
 					const gap = startStep - currentCursor;
@@ -485,9 +486,7 @@ export class MMLCore {
 		// 付点があるかチェック
 		const isDotted = durStr.endsWith(".");
 		// 数値部分だけ取り出す（"4." -> 4, "8" -> 8）
-		const baseDur = parseInt(isDotted ? durStr.slice(0, -1) : durStr);
-
-		// 基本のステップ数（例: 4分音符なら 192 / 4 = 48）
+		const baseDur = parseInt(isDotted ? durStr.slice(0, -1) : durStr, 10);
 		const baseStep = total / baseDur;
 
 		// 付点なら1.5倍、そうでなければそのまま返す

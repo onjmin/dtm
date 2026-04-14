@@ -909,194 +909,6 @@
                 return null;
             };
 
-            const hasNoteAtPosition = (step, pitch, excludeNoteId = null) => {
-                const activeTrack = tracks.find(t => t.id === activeTrackId);
-                if (!activeTrack) return false;
-                return activeTrack.core.getNotes().some(note =>
-                    note.id !== excludeNoteId && note.pitch === pitch &&
-                    step >= note.startStep && step < note.startStep + note.durationSteps
-                );
-            };
-
-            const handlePointerMove = (event) => {
-                // ドラッグ中に画面端でスクロール
-                const isDragging = isSelecting || dragState;
-
-                if (isDragging) {
-                    const edgeThreshold = 30;
-                    const scrollAmount = 10;
-                    const gridRect = gridCanvas.getBoundingClientRect();
-                    const mouseX = event.clientX - gridRect.left;
-                    const mouseY = event.clientY - gridRect.top;
-                    let scrolled = false;
-
-                    // マウスがキャンバスの外にある場合もスクロール
-                    const isOutsideCanvas = mouseX < 0 || mouseX > gridRect.width || mouseY < 0 || mouseY > gridRect.height;
-
-                    // 垂直方向のスクロール
-                    if (mouseY < edgeThreshold || (isOutsideCanvas && mouseY < 0)) {
-                        currentOffsetY = Math.max(0, currentOffsetY - scrollAmount);
-                        scrolled = true;
-                    } else if (mouseY > gridRect.height - edgeThreshold || (isOutsideCanvas && mouseY > gridRect.height)) {
-                        const maxOffsetY = getMaxOffsetY();
-                        currentOffsetY = Math.min(maxOffsetY, currentOffsetY + scrollAmount);
-                        scrolled = true;
-                    }
-
-                    // 水平方向のスクロール
-                    if (mouseX < edgeThreshold || (isOutsideCanvas && mouseX < 0)) {
-                        const minOffsetX = 0;
-                        currentOffsetX = Math.max(minOffsetX, currentOffsetX - scrollAmount);
-                        scrolled = true;
-                    } else if (mouseX > gridRect.width - edgeThreshold || (isOutsideCanvas && mouseX > gridRect.width)) {
-                        const maxNoteStep = getMaxNoteStep();
-                        const maxOffsetX = maxNoteStep * renderConfig.stepWidth - gridRect.width + leftPaddingSteps * renderConfig.stepWidth;
-                        currentOffsetX = Math.min(maxOffsetX, currentOffsetX + scrollAmount);
-                        scrolled = true;
-                    }
-
-                    if (scrolled) {
-                        DTM.setDrawOffset(currentOffsetX, currentOffsetY);
-                    }
-                }
-
-                const { x, y, step, pitch } = DTM.getGridPosition(event);
-
-                if (activeToolMode === 'select' && isSelecting && selectionStart) {
-                    if (dragMode === 'rect') {
-                        // --- 範囲選択モード ---
-                        const minX = Math.min(x, selectionStart.x);
-                        const minY = Math.min(y, selectionStart.y);
-                        const width = Math.abs(x - selectionStart.x);
-                        const height = Math.abs(y - selectionStart.y);
-                        selectionRect = { x: minX, y: minY, width, height };
-
-                        const activeTrack = tracks.find(t => t.id === activeTrackId);
-                        if (activeTrack?.core) {
-                            const notes = activeTrack.core.getNotes();
-                            const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
-                            const offset = DTM.getDrawOffset();
-                            selectedNotes = notes.filter(note => {
-                                const logicalX = note.startStep * stepWidth;
-                                const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
-                                const logicalY = yIndex * keyHeight;
-                                const noteRect = {
-                                    x: logicalX - offset.x,
-                                    y: logicalY - offset.y,
-                                    width: note.durationSteps * stepWidth,
-                                    height: keyHeight,
-                                };
-                                return (
-                                    selectionRect.x < noteRect.x + noteRect.width &&
-                                    selectionRect.x + selectionRect.width > noteRect.x &&
-                                    selectionRect.y < noteRect.y + noteRect.height &&
-                                    selectionRect.y + selectionRect.height > noteRect.y
-                                );
-                            });
-                        }
-                    } else if (dragMode === 'move') {
-                        // --- 移動モード ---
-                        // 1. マウスの現在位置（論理ステップ・ピッチ）を取得
-                        const { step, pitch } = DTM.getGridPosition(event);
-
-                        // 2. 「ドラッグ開始時の論理位置」からの差分を計算
-                        // selectionStart.step / .pitch は PointerDown 時に保存したもの
-                        const rawDeltaStep = step - selectionStart.step;
-                        const snappedDeltaStep = Math.round(rawDeltaStep / snapGridSteps) * snapGridSteps;
-                        const deltaPitch = pitch - selectionStart.pitch;
-
-                        // 3. 変化があった場合のみ処理
-                        if (snappedDeltaStep !== 0 || deltaPitch !== 0) {
-                            hasDragged = true;
-                            const activeTrack = tracks.find(t => t.id === activeTrackId);
-                            if (activeTrack?.core) {
-                                if (!activeTrack.core.isBatchOperation) {
-                                    activeTrack.core.beginBatch();
-                                }
-                                selectedNotes.forEach(note => {
-                                    const original = selectedNotesOriginalPositions.find(o => o.id === note.id);
-                                    if (!original) return;
-
-                                    // 「元の論理位置」に対して「論理的な差分」を加算
-                                    const newStart = original.startStep + snappedDeltaStep;
-                                    const newPitch = original.pitch + deltaPitch;
-
-                                    if (newPitch >= 0 && newPitch < 128) {
-                                        activeTrack.core.moveNote(note.id, newStart, newPitch);
-                                    }
-                                });
-                            }
-                            // 注意：ここでは selectionStart を更新しない（ドラッグ開始点を維持する）
-                        }
-                    }
-
-                    redrawAll();
-                    return;
-                }
-
-                if (!dragState) return;
-                hasDragged = true;
-
-                const activeTrack = tracks.find(t => t.id === activeTrackId);
-                if (!activeTrack) return;
-
-                if (dragState.mode === 'move') {
-                    const nextStart = step - dragState.dragOffsetStep;
-                    const snappedStart = Math.round(nextStart / snapGridSteps) * snapGridSteps;
-                    const nextPitch = pitch - dragState.dragOffsetPitch;
-                    if (hasNoteAtPosition(snappedStart, nextPitch, dragState.noteId)) {
-                        return;
-                    }
-                    activeTrack.core.moveNote(dragState.noteId, snappedStart, nextPitch);
-                    if (nextPitch !== dragState.lastPreviewPitch) {
-                        dragState.lastPreviewPitch = nextPitch;
-                        playPreviewNote(nextPitch, dragState.durationSteps);
-                    }
-                    return;
-                }
-
-                const rawDuration = step - dragState.startStep + 1;
-                const snappedDuration = snapToGrid(rawDuration);
-                activeTrack.core.resizeNote(dragState.noteId, snappedDuration);
-                dragState.durationSteps = snappedDuration;
-                currentInsertLength = snappedDuration;
-                redrawAll();
-            };
-
-            const endDrag = () => {
-                if (activeToolMode === 'select') {
-                    if (hasDragged && selectedNotes.length > 0) {
-                        const activeTrack = tracks.find(t => t.id === activeTrackId);
-                        if (activeTrack?.core) {
-                            activeTrack.core.endBatch();
-                        }
-                    }
-                    isSelecting = false;
-                    selectionStart = null;
-                    selectedNotesOriginalPositions = [];
-                    dragState = null;
-                    hasDragged = false;
-                    return;
-                }
-
-                if (dragState) {
-                    if (hasDragged) {
-                        const activeTrack = tracks.find(t => t.id === activeTrackId);
-                        if (activeTrack?.core) {
-                            if (dragState.mode === 'move') {
-                                activeTrack.core.moveNoteEnd(dragState.noteId);
-                            } else if (dragState.mode === 'resize') {
-                                activeTrack.core.resizeNoteEnd(dragState.noteId);
-                            }
-                        }
-                        suppressClick = true;
-                    }
-                    dragState = null;
-                }
-                hasDragged = false;
-                isDblClick = false;
-            };
-
             gridCanvas.addEventListener('pointerdown', (event) => {
                 event.preventDefault();
                 const { x, y, step, pitch } = DTM.getGridPosition(event);
@@ -1114,55 +926,41 @@
                 }
 
                 if (activeToolMode === 'select') {
-                    if (selectionRect) {
-                        // getNotesInRectの実装をインラインで
-                        const activeTrack = tracks.find(t => t.id === activeTrackId);
-                        let notesInRect = [];
-                        if (activeTrack?.core) {
-                            const notes = activeTrack.core.getNotes();
-                            const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
-                            const offset = DTM.getDrawOffset();
-                            notesInRect = notes.filter(note => {
-                                const logicalX = note.startStep * stepWidth;
-                                const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
-                                const logicalY = yIndex * keyHeight;
-                                const noteRect = {
-                                    x: logicalX - offset.x,
-                                    y: logicalY - offset.y,
-                                    width: note.durationSteps * stepWidth,
-                                    height: keyHeight,
-                                };
-                                return (
-                                    selectionRect.x < noteRect.x + noteRect.width &&
-                                    selectionRect.x + selectionRect.width > noteRect.x &&
-                                    selectionRect.y < noteRect.y + noteRect.height &&
-                                    selectionRect.y + selectionRect.height > noteRect.y
-                                );
-                            });
-                        }
+                    // === 第1段階：既存の選択ノートをつかもうとしているかチェック ===
+                    if (selectedNotes.length > 0) {
                         const clickedNote = findActiveNoteAtPosition(x, y);
-                        if (clickedNote && notesInRect.some(n => n.id === clickedNote.id)) {
-                            selectedNotes = notesInRect;
-                            selectedNotesOriginalPositions = notesInRect.map(n => ({ id: n.id, startStep: n.startStep, pitch: n.pitch }));
+                        if (clickedNote && selectedNotes.some(n => n.id === clickedNote.id)) {
+                            // 選択ノートの上をクリック → 複数移動開始
+                            selectedNotesOriginalPositions = selectedNotes.map(n => ({ id: n.id, startStep: n.startStep, pitch: n.pitch }));
                             isSelecting = true;
                             dragMode = 'move';
                             selectionStart = { x, y, step, pitch };
+                            hasDragged = false;
                             return;
+                        } else {
+                            // 選択ノート以外の場所をクリック → 選択をクリア
+                            selectedNotes = [];
+                            selectionRect = null;
                         }
                     }
+
+                    // === 第2段階：新規選択（枠or単一ノート） ===
                     const clickedNote = findActiveNoteAtPosition(x, y);
                     if (clickedNote) {
+                        // 単一ノートをクリック → 移動開始
                         selectedNotes = [clickedNote];
                         selectedNotesOriginalPositions = [{ id: clickedNote.id, startStep: clickedNote.startStep, pitch: clickedNote.pitch }];
                         isSelecting = true;
                         dragMode = 'move';
                     } else {
+                        // 空き領域をクリック → 新規枠選択開始
                         selectedNotes = [];
                         selectionRect = null;
                         isSelecting = true;
                         dragMode = 'rect';
                     }
                     selectionStart = { x, y, step, pitch };
+                    hasDragged = false;
                     return;
                 }
 
@@ -1252,10 +1050,95 @@
                     }
                 }
             });
+            // ポインターmove: 選択枠更新 または 複数ノート平行移動
+            document.addEventListener('pointermove', (event) => {
+                if (activeToolMode === 'select' && isSelecting && selectionStart) {
+                    const { x, y, step, pitch } = DTM.getGridPosition(event);
 
-            gridCanvas.addEventListener('pointerleave', endDrag);
-            document.addEventListener('pointerup', endDrag);
-            document.addEventListener('pointermove', handlePointerMove);
+                    if (dragMode === 'rect') {
+                        // --- 範囲選択モード ---
+                        const minX = Math.min(x, selectionStart.x);
+                        const minY = Math.min(y, selectionStart.y);
+                        const width = Math.abs(x - selectionStart.x);
+                        const height = Math.abs(y - selectionStart.y);
+                        selectionRect = { x: minX, y: minY, width, height };
+
+                        const activeTrack = tracks.find(t => t.id === activeTrackId);
+                        if (activeTrack?.core) {
+                            const notes = activeTrack.core.getNotes();
+                            const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
+                            const offset = DTM.getDrawOffset();
+                            selectedNotes = notes.filter(note => {
+                                const logicalX = note.startStep * stepWidth;
+                                const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+                                const logicalY = yIndex * keyHeight;
+                                const noteRect = {
+                                    x: logicalX - offset.x,
+                                    y: logicalY - offset.y,
+                                    width: note.durationSteps * stepWidth,
+                                    height: keyHeight,
+                                };
+                                return (
+                                    selectionRect.x < noteRect.x + noteRect.width &&
+                                    selectionRect.x + selectionRect.width > noteRect.x &&
+                                    selectionRect.y < noteRect.y + noteRect.height &&
+                                    selectionRect.y + selectionRect.height > noteRect.y
+                                );
+                            });
+                        }
+                        redrawAll();
+                    } else if (dragMode === 'move') {
+                        // --- 複数ノート平行移動モード ---
+                        const rawDeltaStep = step - selectionStart.step;
+                        const snappedDeltaStep = Math.round(rawDeltaStep / snapGridSteps) * snapGridSteps;
+                        const deltaPitch = pitch - selectionStart.pitch;
+
+                        if (snappedDeltaStep !== 0 || deltaPitch !== 0) {
+                            hasDragged = true;
+                            const activeTrack = tracks.find(t => t.id === activeTrackId);
+                            if (activeTrack?.core) {
+                                if (!activeTrack.core.isBatchOperation) {
+                                    activeTrack.core.beginBatch();
+                                }
+                                selectedNotes.forEach(note => {
+                                    const original = selectedNotesOriginalPositions.find(o => o.id === note.id);
+                                    if (!original) return;
+
+                                    const newStart = original.startStep + snappedDeltaStep;
+                                    const newPitch = original.pitch + deltaPitch;
+
+                                    if (newPitch >= 0 && newPitch < 128) {
+                                        activeTrack.core.moveNote(note.id, newStart, newPitch);
+                                    }
+                                });
+                            }
+                        }
+                        redrawAll();
+                    }
+                }
+            });
+
+            // ポインターup: ドラッグ終了 または 選択終了
+            document.addEventListener('pointerup', () => {
+                if (activeToolMode === 'select' && isSelecting) {
+                    // 複数ノート移動のバッチ処理を確定
+                    if (hasDragged && dragMode === 'move' && selectedNotes.length > 0) {
+                        const activeTrack = tracks.find(t => t.id === activeTrackId);
+                        if (activeTrack?.core) {
+                            activeTrack.core.endBatch();
+                        }
+                    }
+
+                    isSelecting = false;
+                    selectionStart = null;
+                    hasDragged = false;
+
+                    // dragMode='rect'の場合：selectedNotes は保持（次のクリックまで）
+                    // dragMode='move'の場合：selectedNotes は保持
+                    selectionRect = null; // 枠は消す
+                    selectedNotesOriginalPositions = []; // 元位置は消す
+                }
+            });
 
             gridCanvas.addEventListener('wheel', (event) => {
                 event.preventDefault();

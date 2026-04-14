@@ -23,8 +23,21 @@ export type CoreEventHandlers = {
 	onNoteClick?: (step: number, pitch: number, isErasing: boolean) => void;
 };
 
+// 試聴音再生コールバック
+export type PreviewSoundCallback = (pitch: number, position: number) => void;
+
 // ノート追加時のオプション
 export type AddNoteOptions = {
 	noteLengthSteps: number;
 	velocity?: number;
+};
+
+// ピアノロール作成時のオプション
+export type PianoRollOptions = {
+	mountTarget: HTMLElement;
+	width?: number;
+	height?: number;
+	config: RenderConfig;
+	noteLengthSteps?: number;
+	onPreviewSound?: PreviewSoundCallback;
 };

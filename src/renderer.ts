@@ -366,11 +366,12 @@ export const drawSelectionRect = (
 };
 
 /**
- * 選択されたノートをハイライト描画します。
+ * 選択されたノートをハイライト描画します。（濃い色で描画、枠なし）
  */
 export const drawSelectedNotes = (
 	notes: Note[],
 	selectedIds: Set<number>,
+	baseColor: number[] = [59, 130, 246, 1.0],
 ): void => {
 	const { keyHeight, stepWidth, keyCount, pitchRangeStart } = g_config;
 
@@ -386,11 +387,20 @@ export const drawSelectedNotes = (
 		const renderX = logicalX - g_draw_offset_x;
 		const renderY = logicalY - g_draw_offset_y;
 
-		g_grid_ctx.save();
-		g_grid_ctx.strokeStyle = "#10B981";
-		g_grid_ctx.lineWidth = 3;
-		g_grid_ctx.strokeRect(renderX, renderY, w, h);
-		g_grid_ctx.restore();
+		// ベロシティに応じた不透明度
+		const velocityOpacity =
+			note.velocity !== undefined ? 0.5 + (note.velocity / 127) * 0.5 : 1.0;
+
+		// 選択中のノートはより濃い色で描画（色を少し濃くする）
+		const [r, g, b, a] = baseColor;
+		const darkenFactor = 1.3; // 色を濃くする係数
+		const darkerR = Math.min(255, r * darkenFactor);
+		const darkerG = Math.min(255, g * darkenFactor);
+		const darkerB = Math.min(255, b * darkenFactor);
+		const finalOpacity = a * velocityOpacity;
+
+		g_grid_ctx.fillStyle = `rgba(${darkerR},${darkerG},${darkerB},${finalOpacity})`;
+		g_grid_ctx.fillRect(renderX + 1, renderY + 1, w - 2, h - 2);
 	}
 };
 

@@ -16,16 +16,8 @@ import type {
 	AddNoteOptions,
 	CoreEventHandlers,
 	Note,
-	RenderConfig,
+	PianoRollOptions,
 } from "./types";
-
-export type PianoRollOptions = {
-	mountTarget: HTMLElement;
-	width?: number;
-	height?: number;
-	config: RenderConfig;
-	noteLengthSteps?: number;
-};
 
 export type ToolMode = "pen" | "select" | "eraser";
 
@@ -70,7 +62,6 @@ export const createPianoRoll = (
 	init(mountTarget, width, height, config);
 
 	let currentNoteLengthSteps = noteLengthSteps;
-	let toolMode: ToolMode = "pen";
 	let selectionRect: {
 		x: number;
 		y: number;
@@ -132,8 +123,10 @@ export const createPianoRoll = (
 		dragOffsetStep: number;
 		dragOffsetPitch: number;
 		startStep: number;
+		selectedNotes?: Note[]; // 複数ドラッグ時の選択ノート
 	} = null;
 	let hasDragged = false;
+	let lastPreviewPitch: number | null = null; // 前回再生した試聴音のピッチ
 
 	const findNoteAtPosition = (x: number, y: number): Note | null => {
 		const { stepWidth, keyHeight, keyCount, pitchRangeStart } =
@@ -180,6 +173,38 @@ export const createPianoRoll = (
 		const { step, pitch } = getGridPosition(e);
 
 		if (dragState.mode === "move") {
+			// 複数ノートのドラッグ移動
+			if (dragState.selectedNotes && dragState.selectedNotes.length > 0) {
+				// ドラッグ開始時の基準ノート（dragState.noteId）を取得
+				const noteId = dragState.noteId;
+				const baseNote = dragState.selectedNotes.find((n) => n.id === noteId);
+				if (!baseNote) return;
+
+				// 基準ノートの新しい位置を計算
+				const nextStart = step - dragState.dragOffsetStep;
+				const nextPitch = pitch - dragState.dragOffsetPitch;
+
+				// 基準ノートからの相対的な移動量
+				const stepDelta = nextStart - baseNote.startStep;
+				const pitchDelta = nextPitch - baseNote.pitch;
+
+				// 全選択ノートを同じ量だけ移動
+				for (const note of dragState.selectedNotes) {
+					const newStart = note.startStep + stepDelta;
+					const newPitch = note.pitch + pitchDelta;
+					core.moveNote(note.id, newStart, newPitch);
+				}
+
+				// 試聴音再生（ドラッグ中のピッチを再生）
+				if (options.onPreviewSound && pitch !== lastPreviewPitch) {
+					lastPreviewPitch = pitch;
+					options.onPreviewSound(pitch, step);
+				}
+
+				redraw();
+				return;
+			}
+
 			const nextStart = step - dragState.dragOffsetStep;
 			const nextPitch = pitch - dragState.dragOffsetPitch;
 			core.moveNote(dragState.noteId, nextStart, nextPitch);
@@ -191,10 +216,11 @@ export const createPianoRoll = (
 	};
 
 	const endDrag = () => {
-		if (core.getToolMode() === "select") {
+		const wasSelectMode = core.getToolMode() === "select";
+
+		if (wasSelectMode) {
 			isSelecting = false;
 			selectionStart = null;
-			return;
 		}
 
 		if (dragState) {
@@ -203,24 +229,43 @@ export const createPianoRoll = (
 				suppressClick = true;
 			}
 		}
+
 		hasDragged = false;
+
+		// selectモード時は必ず枠をクリアして再描画
+		if (wasSelectMode) {
+			selectionRect = null;
+			redraw();
+		}
 	};
 
-	gridCanvas.addEventListener("mousedown", (e) => {
+	gridCanvas.addEventListener("pointerdown", (e) => {
 		const { x, y, step, pitch } = getGridPosition(e);
 		const currentMode = core.getToolMode();
 
 		if (currentMode === "select") {
-			if (selectionRect) {
+			const clickedNote = findNoteAtPosition(x, y);
+
+			// 既に選択範囲がある場合、クリックしたノートが選択範囲内かチェック
+			if (selectionRect && clickedNote) {
 				const notesInRect = getNotesInRect(selectionRect);
-				const clickedNote = findNoteAtPosition(x, y);
-				if (clickedNote && notesInRect.some((n) => n.id === clickedNote.id)) {
-					selectedNotes = notesInRect;
-					isSelecting = true;
-					selectionStart = { x, y, step, pitch };
+				if (notesInRect.some((n) => n.id === clickedNote.id)) {
+					// 選択中のノートをドラッグ開始
+					dragState = {
+						noteId: clickedNote.id,
+						mode: "move",
+						dragOffsetStep: step - clickedNote.startStep,
+						dragOffsetPitch: pitch - clickedNote.pitch,
+						startStep: clickedNote.startStep,
+						selectedNotes: notesInRect, // 複数選択ノートを保存
+					};
+					isSelecting = false;
+					selectionStart = null;
 					return;
 				}
 			}
+
+			// 新しい範囲選択開始
 			selectedNotes = [];
 			selectionRect = null;
 			isSelecting = true;
@@ -266,9 +311,9 @@ export const createPianoRoll = (
 		};
 	});
 
-	gridCanvas.addEventListener("mouseleave", endDrag);
-	document.addEventListener("mouseup", endDrag);
-	document.addEventListener("mousemove", handlePointerMove);
+	gridCanvas.addEventListener("pointerleave", endDrag);
+	document.addEventListener("pointerup", endDrag);
+	document.addEventListener("pointermove", handlePointerMove);
 
 	gridCanvas.addEventListener(
 		"wheel",
@@ -367,7 +412,7 @@ export const createPianoRoll = (
 			copiedNotes = [...selectedNotes];
 			return copiedNotes;
 		},
-		pasteNotes: (notes: Note[], startStep: number) => {
+		pasteNotes: (_: Note[], startStep: number) => {
 			if (copiedNotes.length === 0) return;
 			const minStart = Math.min(...copiedNotes.map((n) => n.startStep));
 			copiedNotes.forEach((note) => {
