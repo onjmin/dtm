@@ -471,14 +471,14 @@
                 redrawAll();
             };
 
-            scrollbar.addEventListener('mousedown', (e) => {
+            scrollbar.addEventListener('pointerdown', (e) => {
                 isDragging = true;
                 dragStartX = e.clientX;
                 dragStartOffset = currentOffsetX;
                 e.preventDefault();
             });
 
-            document.addEventListener('mousemove', (e) => {
+            document.addEventListener('pointermove', (e) => {
                 if (!isDragging) return;
                 const maxNoteStep = getMaxNoteStep();
                 const visibleWidth = DTM.getGridCanvas().width;
@@ -499,7 +499,7 @@
                 redrawAll();
             });
 
-            document.addEventListener('mouseup', () => {
+            document.addEventListener('pointerup', () => {
                 isDragging = false;
             });
         };
@@ -536,12 +536,12 @@
 
             let isDragging = false;
 
-            scrollbar.addEventListener('mousedown', (e) => {
+            scrollbar.addEventListener('pointerdown', (e) => {
                 isDragging = true;
                 e.preventDefault();
             });
 
-            document.addEventListener('mousemove', (e) => {
+            document.addEventListener('pointermove', (e) => {
                 if (!isDragging) return;
                 const maxOffset = getMaxOffsetY();
 
@@ -556,7 +556,7 @@
                 redrawAll();
             });
 
-            document.addEventListener('mouseup', () => {
+            document.addEventListener('pointerup', () => {
                 isDragging = false;
             });
         };
@@ -1253,7 +1253,7 @@
                 }
             });
 
-            gridCanvas.addEventListener('mouseleave', endDrag);
+            gridCanvas.addEventListener('pointerleave', endDrag);
             document.addEventListener('pointerup', endDrag);
             document.addEventListener('pointermove', handlePointerMove);
 
@@ -1278,7 +1278,6 @@
                 redrawAll();
             });
 
-            // クリックイベント（ノート作成はmousedownで一元化）
             DTM.onClick((step, pitch) => {
                 if (suppressClick) {
                     suppressClick = false;
