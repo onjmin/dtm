@@ -1,3 +1,290 @@
+// src/audio-config.ts
+function createAudioContext() {
+  const audioCtx = new AudioContext();
+  const gainNode = audioCtx.createGain();
+  gainNode.connect(audioCtx.destination);
+  const drumGainNode = audioCtx.createGain();
+  drumGainNode.connect(audioCtx.destination);
+  return { audioCtx, gainNode, drumGainNode };
+}
+function setupRecorder(audioCtx, gainNode, drumGainNode) {
+  let isRecording = false;
+  let recordedData = [[], []];
+  const recorderProcessor = audioCtx.createScriptProcessor(4096, 2, 2);
+  recorderProcessor.onaudioprocess = (e) => {
+    if (!isRecording) return;
+    const left = e.inputBuffer.getChannelData(0);
+    const right = e.inputBuffer.getChannelData(1);
+    recordedData[0].push(left.slice());
+    recordedData[1].push(right.slice());
+  };
+  gainNode.connect(recorderProcessor);
+  drumGainNode.connect(recorderProcessor);
+  recorderProcessor.connect(audioCtx.destination);
+  return {
+    startRecording: () => {
+      isRecording = true;
+    },
+    stopRecording: () => {
+      isRecording = false;
+    },
+    getRecordedData: () => recordedData,
+    clearRecordedData: () => {
+      recordedData = [[], []];
+    }
+  };
+}
+async function fetchSoundFontList(ttl) {
+  const res = await fetch(`https://rpgen3.github.io/soundfont/list/${ttl}.txt`);
+  const str = await res.text();
+  return str.trim().split("\n");
+}
+async function buildNameToKeyMapping() {
+  const nameToKey = {};
+  try {
+    const fontNames = await fetchSoundFontList("fontName_surikov");
+    fontNames.forEach((line) => {
+      const [key, ...nameParts] = line.split(" ");
+      const name = nameParts.join(" ");
+      nameToKey[name] = key;
+    });
+  } catch (e) {
+    console.error("Failed to build name-to-key mapping:", e);
+  }
+  return nameToKey;
+}
+
+// src/drum-config.ts
+var DRUM_FONT = "FluidR3_GM_sf2_file";
+var DRUM_KEYS = {
+  kick: 36,
+  snare: 38,
+  clap: 39,
+  rimshot: 37,
+  hihatClosed: 42,
+  hihatPedal: 44,
+  hihatOpen: 46,
+  tomLow: 45,
+  tomMid: 47,
+  tomHigh: 50,
+  crash: 49,
+  ride: 51,
+  splash: 55,
+  tambourine: 54
+};
+var DRUM_PATTERNS = {
+  // 4つ打ち：より重厚に。1拍目の頭にだけ軽くオープンハイハットを混ぜるのもアリ
+  "4beat": [
+    { step: 0, pitch: DRUM_KEYS.kick, velocity: 1 },
+    { step: 48, pitch: DRUM_KEYS.kick, velocity: 0.9 },
+    { step: 96, pitch: DRUM_KEYS.kick, velocity: 1 },
+    { step: 144, pitch: DRUM_KEYS.kick, velocity: 0.9 }
+  ],
+  // 8ビート：クローズドハイハットに強弱をつけ、スネアにクラップを薄く重ねる
+  "8beat": [
+    { step: 0, pitch: DRUM_KEYS.kick, velocity: 1 },
+    { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+    { step: 24, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+    { step: 48, pitch: DRUM_KEYS.snare, velocity: 1 },
+    { step: 48, pitch: DRUM_KEYS.clap, velocity: 0.6 },
+    { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+    { step: 72, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+    { step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 },
+    { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+    { step: 120, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+    { step: 144, pitch: DRUM_KEYS.snare, velocity: 1 },
+    { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+    { step: 168, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 }
+  ],
+  // 16ビート：キックのダブル（96, 108）を活かしつつ、ハイハットの強弱を細かく設定
+  "16beat": [
+    { step: 0, pitch: DRUM_KEYS.kick, velocity: 1 },
+    { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+    { step: 12, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+    { step: 24, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+    { step: 36, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+    { step: 48, pitch: DRUM_KEYS.snare, velocity: 1 },
+    { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+    { step: 60, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+    { step: 72, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+    { step: 84, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+    { step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 },
+    { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+    { step: 108, pitch: DRUM_KEYS.kick, velocity: 0.7 },
+    { step: 108, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+    { step: 120, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+    { step: 132, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+    { step: 144, pitch: DRUM_KEYS.snare, velocity: 1 },
+    { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+    { step: 156, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+    { step: 168, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+    { step: 180, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 }
+  ],
+  // シャッフル：跳ねるタイミングのベロシティを落として、グルーヴ感を強調
+  shuffle: [
+    { step: 0, pitch: DRUM_KEYS.kick, velocity: 1 },
+    { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+    { step: 32, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+    { step: 48, pitch: DRUM_KEYS.snare, velocity: 1 },
+    { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+    { step: 80, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+    { step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 },
+    { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+    { step: 128, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+    { step: 144, pitch: DRUM_KEYS.snare, velocity: 1 },
+    { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
+    { step: 176, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 }
+  ],
+  // ダンス/EDM：スネアをClapに変更。キックとハイハットの対比を最大化
+  dance: [
+    { step: 0, pitch: DRUM_KEYS.kick, velocity: 1 },
+    { step: 24, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
+    { step: 48, pitch: DRUM_KEYS.kick, velocity: 1 },
+    { step: 48, pitch: DRUM_KEYS.clap, velocity: 1 },
+    { step: 72, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
+    { step: 96, pitch: DRUM_KEYS.kick, velocity: 1 },
+    { step: 120, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
+    { step: 144, pitch: DRUM_KEYS.kick, velocity: 1 },
+    { step: 144, pitch: DRUM_KEYS.clap, velocity: 1 },
+    { step: 168, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 }
+  ],
+  // ボサノバ/チル系：リムショット(37)とハイハットの組み合わせ
+  bossa: [
+    { step: 0, pitch: DRUM_KEYS.kick, velocity: 0.9 },
+    { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+    { step: 24, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+    { step: 48, pitch: DRUM_KEYS.rimshot, velocity: 0.8 },
+    { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+    { step: 72, pitch: DRUM_KEYS.kick, velocity: 0.7 },
+    { step: 72, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+    { step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 },
+    { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+    { step: 120, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+    { step: 144, pitch: DRUM_KEYS.rimshot, velocity: 0.8 },
+    { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
+    { step: 168, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 }
+  ],
+  // ファンク/ディスコ：タンバリン(54)でスピード感を出す
+  disco: [
+    { step: 0, pitch: DRUM_KEYS.kick, velocity: 1 },
+    { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
+    { step: 24, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
+    { step: 48, pitch: DRUM_KEYS.snare, velocity: 1 },
+    { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
+    { step: 72, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
+    { step: 96, pitch: DRUM_KEYS.kick, velocity: 1 },
+    { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
+    { step: 120, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
+    { step: 144, pitch: DRUM_KEYS.snare, velocity: 1 },
+    { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
+    { step: 168, pitch: DRUM_KEYS.tambourine, velocity: 0.8 }
+  ]
+};
+
+// src/instrument-presets.ts
+var INSTRUMENT_PRESETS = {
+  // --- STANDARD: 汎用性と完成度重視 ---
+  piano: {
+    displayName: "\u30B0\u30E9\u30F3\u30C9\u30D4\u30A2\u30CE",
+    description: "\u6700\u3082\u7834\u7DBB\u3057\u306B\u304F\u3044\u69CB\u6210\u3002\u697D\u66F2\u5236\u4F5C\u306E\u30B9\u30B1\u30C3\u30C1\u306B\u3082\u6700\u9069\u3002",
+    melody: "Acoustic Grand Piano",
+    submelody: "Vibraphone",
+    bass: "Electric Bass (finger)",
+    chord: "Pad 2 (warm)"
+  },
+  acoustic: {
+    displayName: "\u30A2\u30B3\u30FC\u30B9\u30C6\u30A3\u30C3\u30AF",
+    description: "\u751F\u697D\u5668\u306E\u6E29\u304B\u307F\u3092\u91CD\u8996\u3002\u30D5\u30A9\u30FC\u30AF\u3084\u30DD\u30C3\u30D7\u30B9\u306B\u3002",
+    melody: "Acoustic Guitar (steel)",
+    submelody: "Harmonica",
+    bass: "Acoustic Bass",
+    chord: "Acoustic Guitar (nylon)"
+  },
+  jazz_night: {
+    displayName: "\u30B8\u30E3\u30BA\u30FB\u30CA\u30A4\u30C8",
+    description: "Rhodes\u98A8\u306EEP\u3068\u30A6\u30C3\u30C9\u30D9\u30FC\u30B9\u306B\u3088\u308B\u3001\u5927\u4EBA\u3073\u305F\u30A2\u30F3\u30B5\u30F3\u30D6\u30EB\u3002",
+    melody: "Electric Piano 1",
+    submelody: "Flute",
+    bass: "Acoustic Bass",
+    chord: "Electric Guitar (jazz)"
+  },
+  // --- MODERN & VIBE: エッジの効いた現代的な響き ---
+  synth_pop: {
+    displayName: "\u30B7\u30F3\u30BB\u30DD\u30C3\u30D7",
+    description: "80s\u301C\u73FE\u4EE3\u307E\u3067\u3002\u629C\u3051\u308B\u30EA\u30FC\u30C9\u3068\u592A\u3044\u30D9\u30FC\u30B9\u306E\u738B\u9053\u3002",
+    melody: "Lead 2 (sawtooth)",
+    submelody: "Lead 4 (chiff)",
+    bass: "Synth Bass 2",
+    chord: "Pad 3 (polysynth)"
+  },
+  cyber_punk: {
+    displayName: "\u30B5\u30A4\u30D0\u30FC\u30D1\u30F3\u30AF",
+    description: "\u30C7\u30B8\u30BF\u30EB\u306A\u51B7\u305F\u3055\u3068\u6B6A\u307F\u304C\u6DF7\u3056\u308A\u5408\u3046\u3001\u672A\u6765\u7684\u306A\u97FF\u304D\u3002",
+    melody: "Lead 8 (bass + lead)",
+    submelody: "Lead 5 (charang)",
+    bass: "Synth Bass 2",
+    chord: "Pad 8 (sweep)"
+  },
+  rock: {
+    displayName: "\u30CF\u30FC\u30C9\u30ED\u30C3\u30AF",
+    description: "\u6B6A\u307F\u30AE\u30BF\u30FC\u3068\u91CD\u539A\u306A\u30D9\u30FC\u30B9\u3067\u3001\u30D1\u30EF\u30FC\u3092\u524D\u9762\u306B\u3002",
+    melody: "Distortion Guitar",
+    submelody: "Rock Organ",
+    bass: "Electric Bass (pick)",
+    chord: "Overdriven Guitar"
+  },
+  // --- WORLD & CLASSIC: 特定のジャンル・地域 ---
+  orchestra: {
+    displayName: "\u30AA\u30FC\u30B1\u30B9\u30C8\u30E9",
+    description: "\u58EE\u5927\u306A\u7269\u8A9E\u3092\u4E88\u611F\u3055\u305B\u308B\u3001\u7BA1\u5F26\u697D\u5668\u306E\u91CD\u539A\u306A\u97FF\u304D\u3002",
+    melody: "French Horn",
+    submelody: "Pizzicato Strings",
+    bass: "Cello",
+    chord: "Tremolo Strings"
+  },
+  japanese_wa: {
+    displayName: "\u548C\u98A8\u30FB\u96C5",
+    description: "\u7434\u3068\u4E09\u5473\u7DDA\u306E\u7E4A\u7D30\u306A\u8ABF\u3079\u306B\u3001\u5C3A\u516B\u306E\u60C5\u7DD2\u3092\u6DFB\u3048\u3066\u3002",
+    melody: "Koto",
+    submelody: "Shamisen",
+    bass: "Taiko Drum",
+    chord: "Shakuhachi"
+  },
+  arabic_exotic: {
+    displayName: "\u30A8\u30AD\u30BE\u30C1\u30C3\u30AF",
+    description: "\u30B7\u30BF\u30FC\u30EB\u3084\u30D0\u30B0\u30D1\u30A4\u30D7\u306B\u3088\u308B\u3001\u7570\u56FD\u60C5\u7DD2\u6EA2\u308C\u308B\u30B5\u30A6\u30F3\u30C9\u3002",
+    melody: "Sitar",
+    submelody: "Bagpipe",
+    bass: "Fretless Bass",
+    chord: "Kalimba"
+  },
+  // --- FANTASY & ATMOSPHERE: 雰囲気と余韻 ---
+  fantasy_rpg: {
+    displayName: "\u30D5\u30A1\u30F3\u30BF\u30B8\u30FCRPG",
+    description: "\u30AA\u30AB\u30EA\u30CA\u3068\u30CF\u30FC\u30D7\u304C\u7D21\u3050\u3001\u5192\u967A\u3068\u9B54\u6CD5\u306E\u4E16\u754C\u89B3\u3002",
+    melody: "Ocarina",
+    submelody: "Celesta",
+    bass: "Timpani",
+    chord: "Orchestral Harp"
+  },
+  ambient_cloud: {
+    displayName: "\u30A2\u30F3\u30D3\u30A8\u30F3\u30C8",
+    description: "\u8F2A\u90ED\u3092\u307C\u304B\u3057\u305F\u97F3\u8272\u3067\u3001\u6DF1\u3044\u6CA1\u5165\u611F\u3068\u4F59\u97FB\u3092\u6F14\u51FA\u3002",
+    melody: "Lead 6 (voice)",
+    submelody: "Music Box",
+    bass: "Synth Bass 1",
+    chord: "Pad 7 (halo)"
+  },
+  retro_game: {
+    displayName: "8-bit \u30EC\u30C8\u30ED",
+    description: "\u77E9\u5F62\u6CE2\u3092\u60F3\u8D77\u3055\u305B\u308B\u3001\u521D\u671F\u30B2\u30FC\u30E0\u6A5F\u306E\u3088\u3046\u306A\u61D0\u304B\u3057\u3044\u97FF\u304D\u3002",
+    melody: "Lead 1 (square)",
+    submelody: "Lead 2 (sawtooth)",
+    bass: "Synth Bass 1",
+    chord: "Clavinet"
+  }
+};
+
 // src/linked-list.ts
 var LinkedList = class {
   #cursor;
@@ -283,7 +570,7 @@ var drawSelectionRect = (rect) => {
   g_grid_ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
   g_grid_ctx.restore();
 };
-var drawSelectedNotes = (notes, selectedIds) => {
+var drawSelectedNotes = (notes, selectedIds, baseColor = [59, 130, 246, 1]) => {
   const { keyHeight, stepWidth, keyCount, pitchRangeStart } = g_config;
   for (const note of notes) {
     if (!selectedIds.has(note.id)) continue;
@@ -294,11 +581,15 @@ var drawSelectedNotes = (notes, selectedIds) => {
     const h = keyHeight;
     const renderX = logicalX - g_draw_offset_x;
     const renderY = logicalY - g_draw_offset_y;
-    g_grid_ctx.save();
-    g_grid_ctx.strokeStyle = "#10B981";
-    g_grid_ctx.lineWidth = 3;
-    g_grid_ctx.strokeRect(renderX, renderY, w, h);
-    g_grid_ctx.restore();
+    const velocityOpacity = note.velocity !== void 0 ? 0.5 + note.velocity / 127 * 0.5 : 1;
+    const [r, g, b, a] = baseColor;
+    const darkenFactor = 1.3;
+    const darkerR = Math.min(255, r * darkenFactor);
+    const darkerG = Math.min(255, g * darkenFactor);
+    const darkerB = Math.min(255, b * darkenFactor);
+    const finalOpacity = a * velocityOpacity;
+    g_grid_ctx.fillStyle = `rgba(${darkerR},${darkerG},${darkerB},${finalOpacity})`;
+    g_grid_ctx.fillRect(renderX + 1, renderY + 1, w - 2, h - 2);
   }
 };
 var getXY = (e) => {
@@ -523,7 +814,7 @@ var MMLCore = class _MMLCore {
     this.notes.sort((a, b) => a.startStep - b.startStep);
     this.generateAndNotify();
   }
-  moveNoteEnd(noteId) {
+  moveNoteEnd(_) {
     this.saveHistory();
   }
   resizeNote(noteId, durationSteps) {
@@ -534,7 +825,7 @@ var MMLCore = class _MMLCore {
     this.notes.sort((a, b) => a.startStep - b.startStep);
     this.generateAndNotify();
   }
-  resizeNoteEnd(noteId) {
+  resizeNoteEnd(_) {
     this.saveHistory();
   }
   // ============== 状態取得 (外部API) ==============
@@ -669,6 +960,7 @@ var MMLCore = class _MMLCore {
       for (let i = 0; i < sortedSteps.length; i++) {
         const startStep = sortedSteps[i];
         const notes = notesByStep.get(startStep);
+        if (!notes) continue;
         while (currentCursor < startStep) {
           const gap = startStep - currentCursor;
           if (gap <= 2) {
@@ -727,7 +1019,7 @@ var MMLCore = class _MMLCore {
     const config = getRenderConfig();
     const total = config.stepsPerBar;
     const isDotted = durStr.endsWith(".");
-    const baseDur = parseInt(isDotted ? durStr.slice(0, -1) : durStr);
+    const baseDur = parseInt(isDotted ? durStr.slice(0, -1) : durStr, 10);
     const baseStep = total / baseDur;
     return isDotted ? baseStep * 1.5 : baseStep;
   }
@@ -744,7 +1036,6 @@ var createPianoRoll = (options, handlers) => {
   } = options;
   init(mountTarget, width, height, config);
   let currentNoteLengthSteps = noteLengthSteps;
-  let toolMode = "pen";
   let selectionRect = null;
   let isSelecting = false;
   let selectionStart = null;
@@ -784,6 +1075,7 @@ var createPianoRoll = (options, handlers) => {
   const resizeHandleWidth = 6;
   let dragState = null;
   let hasDragged = false;
+  let lastPreviewPitch = null;
   const findNoteAtPosition = (x, y) => {
     const { stepWidth, keyHeight, keyCount, pitchRangeStart } = getRenderConfig();
     const offset = getDrawOffset();
@@ -817,6 +1109,26 @@ var createPianoRoll = (options, handlers) => {
     hasDragged = true;
     const { step, pitch } = getGridPosition(e);
     if (dragState.mode === "move") {
+      if (dragState.selectedNotes && dragState.selectedNotes.length > 0) {
+        const noteId = dragState.noteId;
+        const baseNote = dragState.selectedNotes.find((n) => n.id === noteId);
+        if (!baseNote) return;
+        const nextStart2 = step - dragState.dragOffsetStep;
+        const nextPitch2 = pitch - dragState.dragOffsetPitch;
+        const stepDelta = nextStart2 - baseNote.startStep;
+        const pitchDelta = nextPitch2 - baseNote.pitch;
+        for (const note of dragState.selectedNotes) {
+          const newStart = note.startStep + stepDelta;
+          const newPitch = note.pitch + pitchDelta;
+          core.moveNote(note.id, newStart, newPitch);
+        }
+        if (options.onPreviewSound && pitch !== lastPreviewPitch) {
+          lastPreviewPitch = pitch;
+          options.onPreviewSound(pitch, step);
+        }
+        redraw();
+        return;
+      }
       const nextStart = step - dragState.dragOffsetStep;
       const nextPitch = pitch - dragState.dragOffsetPitch;
       core.moveNote(dragState.noteId, nextStart, nextPitch);
@@ -826,10 +1138,10 @@ var createPianoRoll = (options, handlers) => {
     core.resizeNote(dragState.noteId, nextDuration);
   };
   const endDrag = () => {
-    if (core.getToolMode() === "select") {
+    const wasSelectMode = core.getToolMode() === "select";
+    if (wasSelectMode) {
       isSelecting = false;
       selectionStart = null;
-      return;
     }
     if (dragState) {
       dragState = null;
@@ -838,18 +1150,30 @@ var createPianoRoll = (options, handlers) => {
       }
     }
     hasDragged = false;
+    if (wasSelectMode) {
+      selectionRect = null;
+      redraw();
+    }
   };
-  gridCanvas.addEventListener("mousedown", (e) => {
+  gridCanvas.addEventListener("pointerdown", (e) => {
     const { x, y, step, pitch } = getGridPosition(e);
     const currentMode = core.getToolMode();
     if (currentMode === "select") {
-      if (selectionRect) {
+      const clickedNote = findNoteAtPosition(x, y);
+      if (selectionRect && clickedNote) {
         const notesInRect = getNotesInRect(selectionRect);
-        const clickedNote = findNoteAtPosition(x, y);
-        if (clickedNote && notesInRect.some((n) => n.id === clickedNote.id)) {
-          selectedNotes = notesInRect;
-          isSelecting = true;
-          selectionStart = { x, y, step, pitch };
+        if (notesInRect.some((n) => n.id === clickedNote.id)) {
+          dragState = {
+            noteId: clickedNote.id,
+            mode: "move",
+            dragOffsetStep: step - clickedNote.startStep,
+            dragOffsetPitch: pitch - clickedNote.pitch,
+            startStep: clickedNote.startStep,
+            selectedNotes: notesInRect
+            // 複数選択ノートを保存
+          };
+          isSelecting = false;
+          selectionStart = null;
           return;
         }
       }
@@ -887,9 +1211,9 @@ var createPianoRoll = (options, handlers) => {
       startStep: note.startStep
     };
   });
-  gridCanvas.addEventListener("mouseleave", endDrag);
-  document.addEventListener("mouseup", endDrag);
-  document.addEventListener("mousemove", handlePointerMove);
+  gridCanvas.addEventListener("pointerleave", endDrag);
+  document.addEventListener("pointerup", endDrag);
+  document.addEventListener("pointermove", handlePointerMove);
   gridCanvas.addEventListener(
     "wheel",
     (e) => {
@@ -970,7 +1294,7 @@ var createPianoRoll = (options, handlers) => {
       copiedNotes = [...selectedNotes];
       return copiedNotes;
     },
-    pasteNotes: (notes, startStep) => {
+    pasteNotes: (_, startStep) => {
       if (copiedNotes.length === 0) return;
       const minStart = Math.min(...copiedNotes.map((n) => n.startStep));
       copiedNotes.forEach((note) => {
@@ -984,9 +1308,15 @@ var createPianoRoll = (options, handlers) => {
   };
 };
 export {
+  DRUM_FONT,
+  DRUM_KEYS,
+  DRUM_PATTERNS,
+  INSTRUMENT_PRESETS,
   LinkedList,
   MMLCore,
   PITCH_MAP,
+  buildNameToKeyMapping,
+  createAudioContext,
   createPianoRoll,
   drawGrid,
   drawHeader,
@@ -994,6 +1324,7 @@ export {
   drawNotes,
   drawSelectedNotes,
   drawSelectionRect,
+  fetchSoundFontList,
   getDrawOffset,
   getGridCanvas,
   getGridContext,
@@ -1003,5 +1334,6 @@ export {
   getXY,
   init,
   onClick,
-  setDrawOffset
+  setDrawOffset,
+  setupRecorder
 };

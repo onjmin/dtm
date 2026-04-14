@@ -23,142 +23,29 @@
         import { SoundFont_drum } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs';
         import { SoundFont_list } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs';
 
-        const audioCtx = new AudioContext();
-        const gainNode = audioCtx.createGain();
-        gainNode.connect(audioCtx.destination);
-        const drumGainNode = audioCtx.createGain();
-        drumGainNode.connect(audioCtx.destination);
+        // DTMモジュールから設定及び関数をインポート
+        const {
+            createAudioContext,
+            setupRecorder,
+            buildNameToKeyMapping
+        } = DTM;
+        const {
+            DRUM_KEYS,
+            DRUM_FONT,
+            DRUM_PATTERNS
+        } = DTM;
+        const {
+            INSTRUMENT_PRESETS
+        } = DTM;
 
-        // Recorder setup
-        let isRecording = false;
-        let recordedData = [[], []];
-        let recordNode = null;
-        const recorderProcessor = audioCtx.createScriptProcessor(4096, 2, 2);
-        recorderProcessor.onaudioprocess = (e) => {
-            if (!isRecording) return;
-            const left = e.inputBuffer.getChannelData(0);
-            const right = e.inputBuffer.getChannelData(1);
-            recordedData[0].push(left.slice());
-            recordedData[1].push(right.slice());
-        };
-        gainNode.connect(recorderProcessor);
-        drumGainNode.connect(recorderProcessor);
-        recorderProcessor.connect(audioCtx.destination);
+        const { audioCtx, gainNode, drumGainNode } = createAudioContext();
+        const recorderAPI = setupRecorder(audioCtx, gainNode, drumGainNode);
 
         let masterVolume = 50;
         let drumVolume = 80;
         gainNode.gain.value = 0.5;
         drumGainNode.gain.value = 0.8;
         const soundFonts = {};
-
-        const DRUM_FONT = 'FluidR3_GM_sf2_file';
-        const DRUM_KEYS = {
-            kick: 36,
-            snare: 38,
-            clap: 39,
-            rimshot: 37,
-            hihatClosed: 42,
-            hihatPedal: 44,
-            hihatOpen: 46,
-            tomLow: 45,
-            tomMid: 47,
-            tomHigh: 50,
-            crash: 49,
-            ride: 51,
-            splash: 55,
-            tambourine: 54
-        };
-
-
-        const drumPatterns = {
-            // 4つ打ち：より重厚に。1拍目の頭にだけ軽くオープンハイハットを混ぜるのもアリ
-            '4beat': [
-                { step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-                { step: 48, pitch: DRUM_KEYS.kick, velocity: 0.9 },
-                { step: 96, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-                { step: 144, pitch: DRUM_KEYS.kick, velocity: 0.9 }
-            ],
-
-            // 8ビート：クローズドハイハットに強弱をつけ、スネアにクラップを薄く重ねる
-            '8beat': [
-                { step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-                { step: 24, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
-                { step: 48, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 48, pitch: DRUM_KEYS.clap, velocity: 0.6 }, { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-                { step: 72, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
-                { step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 }, { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-                { step: 120, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
-                { step: 144, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-                { step: 168, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 }
-            ],
-
-            // 16ビート：キックのダブル（96, 108）を活かしつつ、ハイハットの強弱を細かく設定
-            '16beat': [
-                { step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-                { step: 12, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-                { step: 24, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-                { step: 36, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-                { step: 48, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-                { step: 60, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-                { step: 72, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-                { step: 84, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-                { step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 }, { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-                { step: 108, pitch: DRUM_KEYS.kick, velocity: 0.7 }, { step: 108, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-                { step: 120, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-                { step: 132, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-                { step: 144, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-                { step: 156, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-                { step: 168, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-                { step: 180, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 }
-            ],
-
-            // シャッフル：跳ねるタイミングのベロシティを落として、グルーヴ感を強調
-            'shuffle': [
-                { step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-                { step: 32, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
-                { step: 48, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-                { step: 80, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
-                { step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 }, { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-                { step: 128, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
-                { step: 144, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-                { step: 176, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 }
-            ],
-
-            // ダンス/EDM：スネアをClapに変更。キックとハイハットの対比を最大化
-            'dance': [
-                { step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-                { step: 24, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
-                { step: 48, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 48, pitch: DRUM_KEYS.clap, velocity: 1.0 },
-                { step: 72, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
-                { step: 96, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-                { step: 120, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
-                { step: 144, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 144, pitch: DRUM_KEYS.clap, velocity: 1.0 },
-                { step: 168, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 }
-            ],
-
-            // ボサノバ/チル系：リムショット(37)とハイハットの組み合わせ
-            'bossa': [
-                { step: 0, pitch: DRUM_KEYS.kick, velocity: 0.9 }, { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-                { step: 24, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-                { step: 48, pitch: DRUM_KEYS.rimshot, velocity: 0.8 }, { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-                { step: 72, pitch: DRUM_KEYS.kick, velocity: 0.7 }, { step: 72, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-                { step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 }, { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-                { step: 120, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-                { step: 144, pitch: DRUM_KEYS.rimshot, velocity: 0.8 }, { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-                { step: 168, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 }
-            ],
-
-            // ファンク/ディスコ：タンバリン(54)でスピード感を出す
-            'disco': [
-                { step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
-                { step: 24, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
-                { step: 48, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
-                { step: 72, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
-                { step: 96, pitch: DRUM_KEYS.kick, velocity: 1.0 }, { step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
-                { step: 120, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
-                { step: 144, pitch: DRUM_KEYS.snare, velocity: 1.0 }, { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
-                { step: 168, pitch: DRUM_KEYS.tambourine, velocity: 0.8 }
-            ]
-        };
 
         let currentDrumPattern = 'dance';
 
@@ -205,128 +92,8 @@
             }
         };
 
-        const fetchList = async (ttl) => {
-            const res = await fetch(`https://rpgen3.github.io/soundfont/list/${ttl}.txt`);
-            const str = await res.text();
-            return str.trim().split('\n');
-        };
-
         let currentFont = 'FluidR3_GM_sf2_file';
         let nameToKey = {};
-
-        /**
-         * FluidR3_GM Instrument Presets
-         * * 独自の価値観に基づくソート基準:
-         * 1. 汎用性 (Standard): どんな曲にも合う基本セット
-         * 2. 時代感 (Vibe): シンセやレトロなど特定の空気感
-         * 3. 世界観 (World): 特定の地域やファンタジー
-         * 4. 感情 (Atmosphere): アンビエントやシネマティック
-         */
-        const instrumentPresets = {
-            // --- STANDARD: 汎用性と完成度重視 ---
-            piano: {
-                displayName: 'グランドピアノ',
-                description: '最も破綻しにくい構成。楽曲制作のスケッチにも最適。',
-                melody: 'Acoustic Grand Piano',
-                submelody: 'Vibraphone',
-                bass: 'Electric Bass (finger)',
-                chord: 'Pad 2 (warm)'
-            },
-            acoustic: {
-                displayName: 'アコースティック',
-                description: '生楽器の温かみを重視。フォークやポップスに。',
-                melody: 'Acoustic Guitar (steel)',
-                submelody: 'Harmonica',
-                bass: 'Acoustic Bass',
-                chord: 'Acoustic Guitar (nylon)'
-            },
-            jazz_night: {
-                displayName: 'ジャズ・ナイト',
-                description: 'Rhodes風のEPとウッドベースによる、大人びたアンサンブル。',
-                melody: 'Electric Piano 1',
-                submelody: 'Flute',
-                bass: 'Acoustic Bass',
-                chord: 'Electric Guitar (jazz)'
-            },
-
-            // --- MODERN & VIBE: エッジの効いた現代的な響き ---
-            synth_pop: {
-                displayName: 'シンセポップ',
-                description: '80s〜現代まで。抜けるリードと太いベースの王道。',
-                melody: 'Lead 2 (sawtooth)',
-                submelody: 'Lead 4 (chiff)',
-                bass: 'Synth Bass 2',
-                chord: 'Pad 3 (polysynth)'
-            },
-            cyber_punk: {
-                displayName: 'サイバーパンク',
-                description: 'デジタルな冷たさと歪みが混ざり合う、未来的な響き。',
-                melody: 'Lead 8 (bass + lead)',
-                submelody: 'Lead 5 (charang)',
-                bass: 'Synth Bass 2',
-                chord: 'Pad 8 (sweep)'
-            },
-            rock: {
-                displayName: 'ハードロック',
-                description: '歪みギターと重厚なベースで、パワーを前面に。',
-                melody: 'Distortion Guitar',
-                submelody: 'Rock Organ',
-                bass: 'Electric Bass (pick)',
-                chord: 'Overdriven Guitar'
-            },
-
-            // --- WORLD & CLASSIC: 特定のジャンル・地域 ---
-            orchestra: {
-                displayName: 'オーケストラ',
-                description: '壮大な物語を予感させる、管弦楽器の重厚な響き。',
-                melody: 'French Horn',
-                submelody: 'Pizzicato Strings',
-                bass: 'Cello',
-                chord: 'Tremolo Strings'
-            },
-            japanese_wa: {
-                displayName: '和風・雅',
-                description: '琴と三味線の繊細な調べに、尺八の情緒を添えて。',
-                melody: 'Koto',
-                submelody: 'Shamisen',
-                bass: 'Taiko Drum',
-                chord: 'Shakuhachi'
-            },
-            arabic_exotic: {
-                displayName: 'エキゾチック',
-                description: 'シタールやバグパイプによる、異国情緒溢れるサウンド。',
-                melody: 'Sitar',
-                submelody: 'Bagpipe',
-                bass: 'Fretless Bass',
-                chord: 'Kalimba'
-            },
-
-            // --- FANTASY & ATMOSPHERE: 雰囲気と余韻 ---
-            fantasy_rpg: {
-                displayName: 'ファンタジーRPG',
-                description: 'オカリナとハープが紡ぐ、冒険と魔法の世界観。',
-                melody: 'Ocarina',
-                submelody: 'Celesta',
-                bass: 'Timpani',
-                chord: 'Orchestral Harp'
-            },
-            ambient_cloud: {
-                displayName: 'アンビエント',
-                description: '輪郭をぼかした音色で、深い没入感と余韻を演出。',
-                melody: 'Lead 6 (voice)',
-                submelody: 'Music Box',
-                bass: 'Synth Bass 1',
-                chord: 'Pad 7 (halo)'
-            },
-            retro_game: {
-                displayName: '8-bit レトロ',
-                description: '矩形波を想起させる、初期ゲーム機のような懐かしい響き。',
-                melody: 'Lead 1 (square)',
-                submelody: 'Lead 2 (sawtooth)',
-                bass: 'Synth Bass 1',
-                chord: 'Clavinet'
-            }
-        };
 
         // SoundFont_listを初期化後に楽器をロード
         SoundFont_list.init();
@@ -335,20 +102,15 @@
             const fonts = [...SoundFont_list.tone.keys()];
             console.log('Available fonts:', fonts);
             if (fonts.length > 0) {
-                // fetchListで楽器名→キーのマッピングを取得
-                const fontNames = await fetchList('fontName_surikov');
-                fontNames.forEach(line => {
-                    const [key, ...nameParts] = line.split(' ');
-                    const name = nameParts.join(' ');
-                    nameToKey[name] = key;
-                });
+                // 楽器名→キーのマッピングを取得
+                nameToKey = await buildNameToKeyMapping();
                 console.log('Name to Key mapping sample:', Object.entries(nameToKey).slice(0, 5));
 
                 // 楽器プリセット選択UIを生成
                 const selectEl = document.getElementById('instrument-preset');
                 if (selectEl) {
                     selectEl.innerHTML = '';
-                    for (const [key, preset] of Object.entries(instrumentPresets)) {
+                    for (const [key, preset] of Object.entries(INSTRUMENT_PRESETS)) {
                         const option = document.createElement('option');
                         option.value = key;
                         option.textContent = preset.displayName;
@@ -362,7 +124,7 @@
         });
 
         window.loadInstrumentPreset = async (preset) => {
-            const presetData = instrumentPresets[preset];
+            const presetData = INSTRUMENT_PRESETS[preset];
             if (!presetData || !currentFont) return;
             const trackIds = ['melody', 'submelody', 'bass', 'chord'];
             for (const trackId of trackIds) {
@@ -709,14 +471,14 @@
                 redrawAll();
             };
 
-            scrollbar.addEventListener('mousedown', (e) => {
+            scrollbar.addEventListener('pointerdown', (e) => {
                 isDragging = true;
                 dragStartX = e.clientX;
                 dragStartOffset = currentOffsetX;
                 e.preventDefault();
             });
 
-            document.addEventListener('mousemove', (e) => {
+            document.addEventListener('pointermove', (e) => {
                 if (!isDragging) return;
                 const maxNoteStep = getMaxNoteStep();
                 const visibleWidth = DTM.getGridCanvas().width;
@@ -737,7 +499,7 @@
                 redrawAll();
             });
 
-            document.addEventListener('mouseup', () => {
+            document.addEventListener('pointerup', () => {
                 isDragging = false;
             });
         };
@@ -774,12 +536,12 @@
 
             let isDragging = false;
 
-            scrollbar.addEventListener('mousedown', (e) => {
+            scrollbar.addEventListener('pointerdown', (e) => {
                 isDragging = true;
                 e.preventDefault();
             });
 
-            document.addEventListener('mousemove', (e) => {
+            document.addEventListener('pointermove', (e) => {
                 if (!isDragging) return;
                 const maxOffset = getMaxOffsetY();
 
@@ -794,7 +556,7 @@
                 redrawAll();
             });
 
-            document.addEventListener('mouseup', () => {
+            document.addEventListener('pointerup', () => {
                 isDragging = false;
             });
         };
@@ -868,8 +630,8 @@
             });
 
             // Drum track
-            if (currentDrumPattern !== 'none' && drumPatterns[currentDrumPattern]) {
-                const pattern = drumPatterns[currentDrumPattern];
+            if (currentDrumPattern !== 'none' && DRUM_PATTERNS[currentDrumPattern]) {
+                const pattern = DRUM_PATTERNS[currentDrumPattern];
                 const stepsPerBar = renderConfig.stepsPerBar;
                 const maxStep = Math.max(...tracks.filter(t => t.core).map(t => {
                     const notes = t.core.getNotes();
@@ -1147,194 +909,6 @@
                 return null;
             };
 
-            const hasNoteAtPosition = (step, pitch, excludeNoteId = null) => {
-                const activeTrack = tracks.find(t => t.id === activeTrackId);
-                if (!activeTrack) return false;
-                return activeTrack.core.getNotes().some(note =>
-                    note.id !== excludeNoteId && note.pitch === pitch &&
-                    step >= note.startStep && step < note.startStep + note.durationSteps
-                );
-            };
-
-            const handlePointerMove = (event) => {
-                // ドラッグ中に画面端でスクロール
-                const isDragging = isSelecting || dragState;
-
-                if (isDragging) {
-                    const edgeThreshold = 30;
-                    const scrollAmount = 10;
-                    const gridRect = gridCanvas.getBoundingClientRect();
-                    const mouseX = event.clientX - gridRect.left;
-                    const mouseY = event.clientY - gridRect.top;
-                    let scrolled = false;
-
-                    // マウスがキャンバスの外にある場合もスクロール
-                    const isOutsideCanvas = mouseX < 0 || mouseX > gridRect.width || mouseY < 0 || mouseY > gridRect.height;
-
-                    // 垂直方向のスクロール
-                    if (mouseY < edgeThreshold || (isOutsideCanvas && mouseY < 0)) {
-                        currentOffsetY = Math.max(0, currentOffsetY - scrollAmount);
-                        scrolled = true;
-                    } else if (mouseY > gridRect.height - edgeThreshold || (isOutsideCanvas && mouseY > gridRect.height)) {
-                        const maxOffsetY = getMaxOffsetY();
-                        currentOffsetY = Math.min(maxOffsetY, currentOffsetY + scrollAmount);
-                        scrolled = true;
-                    }
-
-                    // 水平方向のスクロール
-                    if (mouseX < edgeThreshold || (isOutsideCanvas && mouseX < 0)) {
-                        const minOffsetX = 0;
-                        currentOffsetX = Math.max(minOffsetX, currentOffsetX - scrollAmount);
-                        scrolled = true;
-                    } else if (mouseX > gridRect.width - edgeThreshold || (isOutsideCanvas && mouseX > gridRect.width)) {
-                        const maxNoteStep = getMaxNoteStep();
-                        const maxOffsetX = maxNoteStep * renderConfig.stepWidth - gridRect.width + leftPaddingSteps * renderConfig.stepWidth;
-                        currentOffsetX = Math.min(maxOffsetX, currentOffsetX + scrollAmount);
-                        scrolled = true;
-                    }
-
-                    if (scrolled) {
-                        DTM.setDrawOffset(currentOffsetX, currentOffsetY);
-                    }
-                }
-
-                const { x, y, step, pitch } = DTM.getGridPosition(event);
-
-                if (activeToolMode === 'select' && isSelecting && selectionStart) {
-                    if (dragMode === 'rect') {
-                        // --- 範囲選択モード ---
-                        const minX = Math.min(x, selectionStart.x);
-                        const minY = Math.min(y, selectionStart.y);
-                        const width = Math.abs(x - selectionStart.x);
-                        const height = Math.abs(y - selectionStart.y);
-                        selectionRect = { x: minX, y: minY, width, height };
-
-                        const activeTrack = tracks.find(t => t.id === activeTrackId);
-                        if (activeTrack?.core) {
-                            const notes = activeTrack.core.getNotes();
-                            const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
-                            const offset = DTM.getDrawOffset();
-                            selectedNotes = notes.filter(note => {
-                                const logicalX = note.startStep * stepWidth;
-                                const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
-                                const logicalY = yIndex * keyHeight;
-                                const noteRect = {
-                                    x: logicalX - offset.x,
-                                    y: logicalY - offset.y,
-                                    width: note.durationSteps * stepWidth,
-                                    height: keyHeight,
-                                };
-                                return (
-                                    selectionRect.x < noteRect.x + noteRect.width &&
-                                    selectionRect.x + selectionRect.width > noteRect.x &&
-                                    selectionRect.y < noteRect.y + noteRect.height &&
-                                    selectionRect.y + selectionRect.height > noteRect.y
-                                );
-                            });
-                        }
-                    } else if (dragMode === 'move') {
-                        // --- 移動モード ---
-                        // 1. マウスの現在位置（論理ステップ・ピッチ）を取得
-                        const { step, pitch } = DTM.getGridPosition(event);
-
-                        // 2. 「ドラッグ開始時の論理位置」からの差分を計算
-                        // selectionStart.step / .pitch は PointerDown 時に保存したもの
-                        const rawDeltaStep = step - selectionStart.step;
-                        const snappedDeltaStep = Math.round(rawDeltaStep / snapGridSteps) * snapGridSteps;
-                        const deltaPitch = pitch - selectionStart.pitch;
-
-                        // 3. 変化があった場合のみ処理
-                        if (snappedDeltaStep !== 0 || deltaPitch !== 0) {
-                            hasDragged = true;
-                            const activeTrack = tracks.find(t => t.id === activeTrackId);
-                            if (activeTrack?.core) {
-                                if (!activeTrack.core.isBatchOperation) {
-                                    activeTrack.core.beginBatch();
-                                }
-                                selectedNotes.forEach(note => {
-                                    const original = selectedNotesOriginalPositions.find(o => o.id === note.id);
-                                    if (!original) return;
-
-                                    // 「元の論理位置」に対して「論理的な差分」を加算
-                                    const newStart = original.startStep + snappedDeltaStep;
-                                    const newPitch = original.pitch + deltaPitch;
-
-                                    if (newPitch >= 0 && newPitch < 128) {
-                                        activeTrack.core.moveNote(note.id, newStart, newPitch);
-                                    }
-                                });
-                            }
-                            // 注意：ここでは selectionStart を更新しない（ドラッグ開始点を維持する）
-                        }
-                    }
-
-                    redrawAll();
-                    return;
-                }
-
-                if (!dragState) return;
-                hasDragged = true;
-
-                const activeTrack = tracks.find(t => t.id === activeTrackId);
-                if (!activeTrack) return;
-
-                if (dragState.mode === 'move') {
-                    const nextStart = step - dragState.dragOffsetStep;
-                    const snappedStart = Math.round(nextStart / snapGridSteps) * snapGridSteps;
-                    const nextPitch = pitch - dragState.dragOffsetPitch;
-                    if (hasNoteAtPosition(snappedStart, nextPitch, dragState.noteId)) {
-                        return;
-                    }
-                    activeTrack.core.moveNote(dragState.noteId, snappedStart, nextPitch);
-                    if (nextPitch !== dragState.lastPreviewPitch) {
-                        dragState.lastPreviewPitch = nextPitch;
-                        playPreviewNote(nextPitch, dragState.durationSteps);
-                    }
-                    return;
-                }
-
-                const rawDuration = step - dragState.startStep + 1;
-                const snappedDuration = snapToGrid(rawDuration);
-                activeTrack.core.resizeNote(dragState.noteId, snappedDuration);
-                dragState.durationSteps = snappedDuration;
-                currentInsertLength = snappedDuration;
-                redrawAll();
-            };
-
-            const endDrag = () => {
-                if (activeToolMode === 'select') {
-                    if (hasDragged && selectedNotes.length > 0) {
-                        const activeTrack = tracks.find(t => t.id === activeTrackId);
-                        if (activeTrack?.core) {
-                            activeTrack.core.endBatch();
-                        }
-                    }
-                    isSelecting = false;
-                    selectionStart = null;
-                    selectedNotesOriginalPositions = [];
-                    dragState = null;
-                    hasDragged = false;
-                    return;
-                }
-
-                if (dragState) {
-                    if (hasDragged) {
-                        const activeTrack = tracks.find(t => t.id === activeTrackId);
-                        if (activeTrack?.core) {
-                            if (dragState.mode === 'move') {
-                                activeTrack.core.moveNoteEnd(dragState.noteId);
-                            } else if (dragState.mode === 'resize') {
-                                activeTrack.core.resizeNoteEnd(dragState.noteId);
-                            }
-                        }
-                        suppressClick = true;
-                    }
-                    dragState = null;
-                }
-                hasDragged = false;
-                isDblClick = false;
-            };
-
             gridCanvas.addEventListener('pointerdown', (event) => {
                 event.preventDefault();
                 const { x, y, step, pitch } = DTM.getGridPosition(event);
@@ -1352,55 +926,41 @@
                 }
 
                 if (activeToolMode === 'select') {
-                    if (selectionRect) {
-                        // getNotesInRectの実装をインラインで
-                        const activeTrack = tracks.find(t => t.id === activeTrackId);
-                        let notesInRect = [];
-                        if (activeTrack?.core) {
-                            const notes = activeTrack.core.getNotes();
-                            const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
-                            const offset = DTM.getDrawOffset();
-                            notesInRect = notes.filter(note => {
-                                const logicalX = note.startStep * stepWidth;
-                                const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
-                                const logicalY = yIndex * keyHeight;
-                                const noteRect = {
-                                    x: logicalX - offset.x,
-                                    y: logicalY - offset.y,
-                                    width: note.durationSteps * stepWidth,
-                                    height: keyHeight,
-                                };
-                                return (
-                                    selectionRect.x < noteRect.x + noteRect.width &&
-                                    selectionRect.x + selectionRect.width > noteRect.x &&
-                                    selectionRect.y < noteRect.y + noteRect.height &&
-                                    selectionRect.y + selectionRect.height > noteRect.y
-                                );
-                            });
-                        }
+                    // === 第1段階：既存の選択ノートをつかもうとしているかチェック ===
+                    if (selectedNotes.length > 0) {
                         const clickedNote = findActiveNoteAtPosition(x, y);
-                        if (clickedNote && notesInRect.some(n => n.id === clickedNote.id)) {
-                            selectedNotes = notesInRect;
-                            selectedNotesOriginalPositions = notesInRect.map(n => ({ id: n.id, startStep: n.startStep, pitch: n.pitch }));
+                        if (clickedNote && selectedNotes.some(n => n.id === clickedNote.id)) {
+                            // 選択ノートの上をクリック → 複数移動開始
+                            selectedNotesOriginalPositions = selectedNotes.map(n => ({ id: n.id, startStep: n.startStep, pitch: n.pitch }));
                             isSelecting = true;
                             dragMode = 'move';
                             selectionStart = { x, y, step, pitch };
+                            hasDragged = false;
                             return;
+                        } else {
+                            // 選択ノート以外の場所をクリック → 選択をクリア
+                            selectedNotes = [];
+                            selectionRect = null;
                         }
                     }
+
+                    // === 第2段階：新規選択（枠or単一ノート） ===
                     const clickedNote = findActiveNoteAtPosition(x, y);
                     if (clickedNote) {
+                        // 単一ノートをクリック → 移動開始
                         selectedNotes = [clickedNote];
                         selectedNotesOriginalPositions = [{ id: clickedNote.id, startStep: clickedNote.startStep, pitch: clickedNote.pitch }];
                         isSelecting = true;
                         dragMode = 'move';
                     } else {
+                        // 空き領域をクリック → 新規枠選択開始
                         selectedNotes = [];
                         selectionRect = null;
                         isSelecting = true;
                         dragMode = 'rect';
                     }
                     selectionStart = { x, y, step, pitch };
+                    hasDragged = false;
                     return;
                 }
 
@@ -1491,9 +1051,159 @@
                 }
             });
 
-            gridCanvas.addEventListener('mouseleave', endDrag);
-            document.addEventListener('pointerup', endDrag);
-            document.addEventListener('pointermove', handlePointerMove);
+
+            const hasNoteAtPosition = (step, pitch, excludeNoteId = null) => {
+                const activeTrack = tracks.find(t => t.id === activeTrackId);
+                if (!activeTrack) return false;
+                return activeTrack.core.getNotes().some(note =>
+                    note.id !== excludeNoteId && note.pitch === pitch &&
+                    step >= note.startStep && step < note.startStep + note.durationSteps
+                );
+            };
+
+            document.addEventListener('pointermove', (event) => {
+                if (activeToolMode === 'pen') {
+                    const { x, y, step, pitch } = DTM.getGridPosition(event);
+                    const activeTrack = tracks.find(t => t.id === activeTrackId);
+                    if (!activeTrack) return;
+
+                    if (!dragState) return;
+                    hasDragged = true;
+
+                    if (dragState.mode === 'move') {
+                        const nextStart = step - dragState.dragOffsetStep;
+                        const snappedStart = Math.round(nextStart / snapGridSteps) * snapGridSteps;
+                        const nextPitch = pitch - dragState.dragOffsetPitch;
+                        if (hasNoteAtPosition(snappedStart, nextPitch, dragState.noteId)) {
+                            return;
+                        }
+                        activeTrack.core.moveNote(dragState.noteId, snappedStart, nextPitch);
+                        if (nextPitch !== dragState.lastPreviewPitch) {
+                            dragState.lastPreviewPitch = nextPitch;
+                            playPreviewNote(nextPitch, dragState.durationSteps);
+                        }
+                        return;
+                    }
+
+                    const rawDuration = step - dragState.startStep + 1;
+                    const snappedDuration = snapToGrid(rawDuration);
+                    activeTrack.core.resizeNote(dragState.noteId, snappedDuration);
+                    dragState.durationSteps = snappedDuration;
+                    currentInsertLength = snappedDuration;
+                    redrawAll();
+                }
+            });
+
+            // ポインターmove: 選択枠更新 または 複数ノート平行移動
+            document.addEventListener('pointermove', (event) => {
+                if (activeToolMode === 'select' && isSelecting && selectionStart) {
+                    const { x, y, step, pitch } = DTM.getGridPosition(event);
+
+                    if (dragMode === 'rect') {
+                        // --- 範囲選択モード ---
+                        const minX = Math.min(x, selectionStart.x);
+                        const minY = Math.min(y, selectionStart.y);
+                        const width = Math.abs(x - selectionStart.x);
+                        const height = Math.abs(y - selectionStart.y);
+                        selectionRect = { x: minX, y: minY, width, height };
+
+                        const activeTrack = tracks.find(t => t.id === activeTrackId);
+                        if (activeTrack?.core) {
+                            const notes = activeTrack.core.getNotes();
+                            const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
+                            const offset = DTM.getDrawOffset();
+                            selectedNotes = notes.filter(note => {
+                                const logicalX = note.startStep * stepWidth;
+                                const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+                                const logicalY = yIndex * keyHeight;
+                                const noteRect = {
+                                    x: logicalX - offset.x,
+                                    y: logicalY - offset.y,
+                                    width: note.durationSteps * stepWidth,
+                                    height: keyHeight,
+                                };
+                                return (
+                                    selectionRect.x < noteRect.x + noteRect.width &&
+                                    selectionRect.x + selectionRect.width > noteRect.x &&
+                                    selectionRect.y < noteRect.y + noteRect.height &&
+                                    selectionRect.y + selectionRect.height > noteRect.y
+                                );
+                            });
+                        }
+                        redrawAll();
+                    } else if (dragMode === 'move') {
+                        // --- 複数ノート平行移動モード ---
+                        const rawDeltaStep = step - selectionStart.step;
+                        const snappedDeltaStep = Math.round(rawDeltaStep / snapGridSteps) * snapGridSteps;
+                        const deltaPitch = pitch - selectionStart.pitch;
+
+                        if (snappedDeltaStep !== 0 || deltaPitch !== 0) {
+                            hasDragged = true;
+                            const activeTrack = tracks.find(t => t.id === activeTrackId);
+                            if (activeTrack?.core) {
+                                if (!activeTrack.core.isBatchOperation) {
+                                    activeTrack.core.beginBatch();
+                                }
+                                selectedNotes.forEach(note => {
+                                    const original = selectedNotesOriginalPositions.find(o => o.id === note.id);
+                                    if (!original) return;
+
+                                    const newStart = original.startStep + snappedDeltaStep;
+                                    const newPitch = original.pitch + deltaPitch;
+
+                                    if (newPitch >= 0 && newPitch < 128) {
+                                        activeTrack.core.moveNote(note.id, newStart, newPitch);
+                                    }
+                                });
+                            }
+                        }
+                        redrawAll();
+                    }
+                }
+            });
+
+            // ポインターup: ドラッグ終了 または 選択終了
+            document.addEventListener('pointerup', () => {
+                // ペン時のpointerup
+                if (activeToolMode === 'pen') {
+                    if (dragState) {
+                        if (hasDragged) {
+                            const activeTrack = tracks.find(t => t.id === activeTrackId);
+                            if (activeTrack?.core) {
+                                if (dragState.mode === 'move') {
+                                    activeTrack.core.moveNoteEnd(dragState.noteId);
+                                } else if (dragState.mode === 'resize') {
+                                    activeTrack.core.resizeNoteEnd(dragState.noteId);
+                                }
+                            }
+                            suppressClick = true;
+                        }
+                        dragState = null;
+                    }
+                    hasDragged = false;
+                    isDblClick = false;
+                }
+
+                // 範囲選択時のpointerup
+                if (activeToolMode === 'select' && isSelecting) {
+                    // 複数ノート移動のバッチ処理を確定
+                    if (hasDragged && dragMode === 'move' && selectedNotes.length > 0) {
+                        const activeTrack = tracks.find(t => t.id === activeTrackId);
+                        if (activeTrack?.core) {
+                            activeTrack.core.endBatch();
+                        }
+                    }
+
+                    isSelecting = false;
+                    selectionStart = null;
+                    hasDragged = false;
+
+                    // dragMode='rect'の場合：selectedNotes は保持（次のクリックまで）
+                    // dragMode='move'の場合：selectedNotes は保持
+                    selectionRect = null; // 枠は消す
+                    selectedNotesOriginalPositions = []; // 元位置は消す
+                }
+            });
 
             gridCanvas.addEventListener('wheel', (event) => {
                 event.preventDefault();
@@ -1516,7 +1226,6 @@
                 redrawAll();
             });
 
-            // クリックイベント（ノート作成はmousedownで一元化）
             DTM.onClick((step, pitch) => {
                 if (suppressClick) {
                     suppressClick = false;
@@ -1926,7 +1635,7 @@
             }
 
             if ((!isSolo || currentDrumPattern !== 'none') && SoundFont_drum.font) {
-                const pattern = drumPatterns[currentDrumPattern];
+                const pattern = DRUM_PATTERNS[currentDrumPattern];
                 if (pattern && pattern.length > 0) {
                     const stepsPerBar = renderConfig.stepsPerBar;
                     // 实际時間ベースのステップ計算（タブ非アクティブ対応）
