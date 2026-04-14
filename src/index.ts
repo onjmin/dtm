@@ -1,3 +1,6 @@
+export * from "./audio-config";
+export * from "./drum-config";
+export * from "./instrument-presets";
 export * from "./linked-list";
 export * from "./mml-core";
 export * from "./mml-parser";
