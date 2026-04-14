@@ -1050,6 +1050,50 @@
                     }
                 }
             });
+
+
+            const hasNoteAtPosition = (step, pitch, excludeNoteId = null) => {
+                const activeTrack = tracks.find(t => t.id === activeTrackId);
+                if (!activeTrack) return false;
+                return activeTrack.core.getNotes().some(note =>
+                    note.id !== excludeNoteId && note.pitch === pitch &&
+                    step >= note.startStep && step < note.startStep + note.durationSteps
+                );
+            };
+
+            document.addEventListener('pointermove', (event) => {
+                if (activeToolMode === 'pen') {
+                    const { x, y, step, pitch } = DTM.getGridPosition(event);
+                    const activeTrack = tracks.find(t => t.id === activeTrackId);
+                    if (!activeTrack) return;
+
+                    if (!dragState) return;
+                    hasDragged = true;
+
+                    if (dragState.mode === 'move') {
+                        const nextStart = step - dragState.dragOffsetStep;
+                        const snappedStart = Math.round(nextStart / snapGridSteps) * snapGridSteps;
+                        const nextPitch = pitch - dragState.dragOffsetPitch;
+                        if (hasNoteAtPosition(snappedStart, nextPitch, dragState.noteId)) {
+                            return;
+                        }
+                        activeTrack.core.moveNote(dragState.noteId, snappedStart, nextPitch);
+                        if (nextPitch !== dragState.lastPreviewPitch) {
+                            dragState.lastPreviewPitch = nextPitch;
+                            playPreviewNote(nextPitch, dragState.durationSteps);
+                        }
+                        return;
+                    }
+
+                    const rawDuration = step - dragState.startStep + 1;
+                    const snappedDuration = snapToGrid(rawDuration);
+                    activeTrack.core.resizeNote(dragState.noteId, snappedDuration);
+                    dragState.durationSteps = snappedDuration;
+                    currentInsertLength = snappedDuration;
+                    redrawAll();
+                }
+            });
+
             // ポインターmove: 選択枠更新 または 複数ノート平行移動
             document.addEventListener('pointermove', (event) => {
                 if (activeToolMode === 'select' && isSelecting && selectionStart) {
@@ -1120,6 +1164,27 @@
 
             // ポインターup: ドラッグ終了 または 選択終了
             document.addEventListener('pointerup', () => {
+                // ペン時のpointerup
+                if (activeToolMode === 'pen') {
+                    if (dragState) {
+                        if (hasDragged) {
+                            const activeTrack = tracks.find(t => t.id === activeTrackId);
+                            if (activeTrack?.core) {
+                                if (dragState.mode === 'move') {
+                                    activeTrack.core.moveNoteEnd(dragState.noteId);
+                                } else if (dragState.mode === 'resize') {
+                                    activeTrack.core.resizeNoteEnd(dragState.noteId);
+                                }
+                            }
+                            suppressClick = true;
+                        }
+                        dragState = null;
+                    }
+                    hasDragged = false;
+                    isDblClick = false;
+                }
+
+                // 範囲選択時のpointerup
                 if (activeToolMode === 'select' && isSelecting) {
                     // 複数ノート移動のバッチ処理を確定
                     if (hasDragged && dragMode === 'move' && selectedNotes.length > 0) {
