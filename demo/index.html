@@ -2319,7 +2319,8 @@
             // 1. 全体からコメントを除去し、空白・改行・セミコロンを掃除して「1本の長い文字列」にする
             // ただし、@n を識別するために最低限の整形だけ行う
             const fullMML = mmlInput
-                .replace(/\/\/.*$/gm, '')   // コメント除去
+                .replace(/\/\*[\s\S]*?\*\//g, '')  // ブロックコメント除去 (/* ... */)
+                .replace(/\/\/.*$/gm, '')   // 行コメント除去 (//)
                 .replace(/[\n\r;]+/g, ' ')  // 改行とセミコロンをスペースに置換
                 .trim();
 
@@ -2338,7 +2339,11 @@
 
                 // ヘッダー判定 (@0, @1 など)
                 if (part.startsWith('@')) {
-                    const trackIdx = parseInt(part.substring(1));
+                    let trackIdx = parseInt(part.substring(1));
+                    // @5以上は@2（ベース）に統一
+                    if (trackIdx >= 5) {
+                        trackIdx = 2;
+                    }
                     currentTrack = tracks.find(t => t.id === ['melody', 'submelody', 'bass', 'chord'][trackIdx]);
 
                     // トラックが変わるタイミングで各種設定をリセット
@@ -2477,6 +2482,22 @@
                 updateUndoRedoButtons();
             }
         };
+
+        // 入力要素（textarea、text input等）のキー入力とペースト操作が親要素に伝搬しないようにする
+        const inputElements = document.querySelectorAll('textarea');
+        inputElements.forEach(element => {
+            element.addEventListener('keydown', (e) => {
+                // Ctrl/Cmd + Z, Y, V, C, X などピアノロール側で処理されるキーの伝搬を防ぐ
+                if (e.ctrlKey || e.metaKey) {
+                    if (['KeyZ', 'KeyY', 'KeyV', 'KeyC', 'KeyX'].includes(e.code)) {
+                        e.stopPropagation();
+                    }
+                }
+            });
+            element.addEventListener('paste', (e) => {
+                e.stopPropagation();
+            });
+        });
 
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey || e.metaKey) {
