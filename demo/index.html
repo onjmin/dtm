@@ -281,6 +281,7 @@
         const leftPaddingSteps = 192 * 16; // 16小節分の余白
         let noteLengthSelectEl = null;
         let playStartStep = 0; // 再生開始位置（ステップ）
+        let lastPreviewPitchForMultiMove = null; // 複数ノート移動時のプレビュー音声追跡用
 
         // ----------------------------------------------------------------------
         // NOTE: このデモは「常に最新の動作確認」を行うための最重要入口。
@@ -936,6 +937,7 @@
                             dragMode = 'move';
                             selectionStart = { x, y, step, pitch };
                             hasDragged = false;
+                            lastPreviewPitchForMultiMove = null; // プレビュー音声追跡用をリセット
                             return;
                         } else {
                             // 選択ノート以外の場所をクリック → 選択をクリア
@@ -1155,6 +1157,19 @@
                                         activeTrack.core.moveNote(note.id, newStart, newPitch);
                                     }
                                 });
+
+                                // つまんでいるノート（最初の選択ノート）のピッチが変わったときのみ音を再生
+                                if (selectedNotes.length > 0) {
+                                    const grabNote = selectedNotes[0];
+                                    const original = selectedNotesOriginalPositions.find(o => o.id === grabNote.id);
+                                    if (original) {
+                                        const newGrabPitch = original.pitch + deltaPitch;
+                                        if (newGrabPitch !== lastPreviewPitchForMultiMove && newGrabPitch >= 0 && newGrabPitch < 128) {
+                                            lastPreviewPitchForMultiMove = newGrabPitch;
+                                            playPreviewNote(newGrabPitch, grabNote.durationSteps);
+                                        }
+                                    }
+                                }
                             }
                         }
                         redrawAll();
@@ -1197,6 +1212,7 @@
                     isSelecting = false;
                     selectionStart = null;
                     hasDragged = false;
+                    lastPreviewPitchForMultiMove = null; // プレビュー音声追跡用をリセット
 
                     // dragMode='rect'の場合：selectedNotes は保持（次のクリックまで）
                     // dragMode='move'の場合：selectedNotes は保持
@@ -2319,7 +2335,8 @@
             // 1. 全体からコメントを除去し、空白・改行・セミコロンを掃除して「1本の長い文字列」にする
             // ただし、@n を識別するために最低限の整形だけ行う
             const fullMML = mmlInput
-                .replace(/\/\/.*$/gm, '')   // コメント除去
+                .replace(/\/\*[\s\S]*?\*\//g, '')  // ブロックコメント除去 (/* ... */)
+                .replace(/\/\/.*$/gm, '')   // 行コメント除去 (//)
                 .replace(/[\n\r;]+/g, ' ')  // 改行とセミコロンをスペースに置換
                 .trim();
 
@@ -2338,7 +2355,11 @@
 
                 // ヘッダー判定 (@0, @1 など)
                 if (part.startsWith('@')) {
-                    const trackIdx = parseInt(part.substring(1));
+                    let trackIdx = parseInt(part.substring(1));
+                    // @5以上は@2（ベース）に統一
+                    if (trackIdx >= 5) {
+                        trackIdx = 2;
+                    }
                     currentTrack = tracks.find(t => t.id === ['melody', 'submelody', 'bass', 'chord'][trackIdx]);
 
                     // トラックが変わるタイミングで各種設定をリセット
@@ -2477,6 +2498,22 @@
                 updateUndoRedoButtons();
             }
         };
+
+        // 入力要素（textarea、text input等）のキー入力とペースト操作が親要素に伝搬しないようにする
+        const inputElements = document.querySelectorAll('textarea');
+        inputElements.forEach(element => {
+            element.addEventListener('keydown', (e) => {
+                // Ctrl/Cmd + Z, Y, V, C, X などピアノロール側で処理されるキーの伝搬を防ぐ
+                if (e.ctrlKey || e.metaKey) {
+                    if (['KeyZ', 'KeyY', 'KeyV', 'KeyC', 'KeyX'].includes(e.code)) {
+                        e.stopPropagation();
+                    }
+                }
+            });
+            element.addEventListener('paste', (e) => {
+                e.stopPropagation();
+            });
+        });
 
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey || e.metaKey) {
