@@ -2357,7 +2357,7 @@
                 if (part.startsWith('@')) {
                     let trackIdx = parseInt(part.substring(1));
                     // @5以上は@2（ベース）に統一
-                    if (trackIdx >= 5) {
+                    if (trackIdx >= 4) {
                         trackIdx = 2;
                     }
                     currentTrack = tracks.find(t => t.id === ['melody', 'submelody', 'bass', 'chord'][trackIdx]);
