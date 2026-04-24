@@ -2322,6 +2322,77 @@
             redrawAll();
         };
 
+        window.applyHarmonicFilterMacro = () => {
+            const activeTrack = tracks.find(t => t.id === activeTrackId);
+            if (!activeTrack?.core) return;
+
+            if (activeTrackId === 'chord') {
+                alert('伴奏トラックには適用できません');
+                return;
+            }
+
+            const chordTrack = tracks.find(t => t.id === 'chord');
+            if (!chordTrack?.core) {
+                alert('伴奏トラックが見つかりません');
+                return;
+            }
+
+            const stepsPerBar = renderConfig.stepsPerBar;
+            const halfStepsPerBar = stepsPerBar / 2;
+
+            const allNotes = activeTrack.core.getNotes().concat(chordTrack.core.getNotes());
+            if (allNotes.length === 0) return;
+
+            const maxStep = Math.max(...allNotes.map(n => n.startStep + n.durationSteps));
+            const numHalfBars = Math.ceil(maxStep / halfStepsPerBar);
+
+            let currentChordPitchClasses = new Set();
+
+            activeTrack.core.beginBatch();
+
+            for (let halfBar = 0; halfBar < numHalfBars; halfBar++) {
+                const halfBarStart = halfBar * halfStepsPerBar;
+                const halfBarEnd = halfBarStart + halfStepsPerBar;
+
+                // ★ 小節の頭（前半の半小節）であるか判定
+                const isNewBar = (halfBar % 2 === 0);
+
+                const chordNotesInHalfBar = chordTrack.core.getNotes().filter(n =>
+                    n.startStep >= halfBarStart && n.startStep < halfBarEnd
+                );
+
+                if (chordNotesInHalfBar.length > 0) {
+                    // 新しいコードがあれば更新
+                    currentChordPitchClasses = new Set();
+                    chordNotesInHalfBar.forEach(n => {
+                        currentChordPitchClasses.add(n.pitch % 12);
+                    });
+                } else if (isNewBar) {
+                    // ★ 新しい小節に入り、かつその小節の頭にコードがなければリセット
+                    currentChordPitchClasses = new Set();
+                }
+
+                // フィルタリング対象の音がなければ次へ
+                if (currentChordPitchClasses.size === 0) {
+                    continue;
+                }
+
+                const activeNotesInHalfBar = activeTrack.core.getNotes().filter(n =>
+                    n.startStep >= halfBarStart && n.startStep < halfBarEnd
+                );
+
+                activeNotesInHalfBar.forEach(n => {
+                    if (!currentChordPitchClasses.has(n.pitch % 12)) {
+                        activeTrack.core.deleteNoteById(n.id);
+                    }
+                });
+            }
+
+            activeTrack.core.endBatch();
+            activeTrack.core.saveHistory();
+            redrawAll();
+        };
+
         window.loadMML = () => {
             const mmlInput = document.getElementById('mml-input').value;
             if (!mmlInput) return;
@@ -2690,6 +2761,15 @@
                     </path>
                 </svg>
                 <span>ランダム生成（8小節）</span>
+            </button>
+            <button onclick="applyHarmonicFilterMacro()"
+                class="px-3 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-md text-sm flex items-center space-x-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3">
+                    </path>
+                </svg>
+                <span>伴奏ハーモニーフィルター</span>
             </button>
         </div>
     </div>
