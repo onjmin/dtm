@@ -107,6 +107,7 @@
                 console.log('Name to Key mapping sample:', Object.entries(nameToKey).slice(0, 5));
 
                 // 楽器プリセット選択UIを生成
+                const defaultPresetKey = 'retro_game';
                 const selectEl = document.getElementById('instrument-preset');
                 if (selectEl) {
                     selectEl.innerHTML = '';
@@ -116,10 +117,11 @@
                         option.textContent = preset.displayName;
                         selectEl.appendChild(option);
                     }
+                    selectEl.value = defaultPresetKey;
                 }
 
                 // デフォルトの楽器プリセットをロード
-                await loadInstrumentPreset('piano');
+                await loadInstrumentPreset(defaultPresetKey);
             }
         });
 
