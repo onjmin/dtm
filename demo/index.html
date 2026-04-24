@@ -2332,12 +2332,13 @@
             const PITCH_MAP = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
             const stepsPerBar = 192;
 
-            // 1. 全体からコメントを除去し、空白・改行・セミコロンを掃除して「1本の長い文字列」にする
+            // 1. 全体からコメントを除去し、空白・改行を掃除して「1本の長い文字列」にする
             // ただし、@n を識別するために最低限の整形だけ行う
             const fullMML = mmlInput
+                .replace(/;.*$/gm, '')  // セミコロン行内コメント除去（;以降を削除）
                 .replace(/\/\*[\s\S]*?\*\//g, '')  // ブロックコメント除去 (/* ... */)
                 .replace(/\/\/.*$/gm, '')   // 行コメント除去 (//)
-                .replace(/[\n\r;]+/g, ' ')  // 改行とセミコロンをスペースに置換
+                .replace(/[\n\r]+/g, ' ')  // 改行をスペースに置換
                 .trim();
 
             // 2. @(\d+) で分割し、各トラックごとの塊を作る
@@ -2394,6 +2395,7 @@
                     let ch = body[j];
 
                     if (ch === 'o') {
+                        // オクターブ指定: o5, o6 など（途中での指定にも対応）
                         j++;
                         let numStr = '';
                         while (j < body.length && /\d/.test(body[j])) {
@@ -2402,10 +2404,13 @@
                         }
                         octave = parseInt(numStr) || 4;
                     } else if (ch === '>') {
+                        // オクターブ上げ
                         octave++; j++;
                     } else if (ch === '<') {
+                        // オクターブ下げ
                         octave--; j++;
                     } else if (ch === 'l') {
+                        // デフォルト音長の設定: l16, l8 など
                         j++;
                         let numStr = '';
                         while (j < body.length && /\d/.test(body[j])) {
@@ -2414,9 +2419,11 @@
                         }
                         baseLength = parseInt(numStr) || 16;
                     } else if (ch === 'r') {
+                        // 休符: r, r16, r8. など
                         j++;
                         currentStep += parseLength();
                     } else if (ch === 't' || ch === 'v' || ch === 'q') {
+                        // テンポ・音量・ゲート時間: t120, v100, q50 など
                         j++;
                         let numStr = '';
                         while (j < body.length && /\d/.test(body[j])) {
@@ -2428,6 +2435,7 @@
                             if (bpmInput) bpmInput.value = numStr;
                         }
                     } else if (ch === '[') {
+                        // 和音: [c e g], [c> e> g>] など
                         j++;
                         const chordNotes = [];
                         const savedOctave = octave;
@@ -2436,14 +2444,33 @@
                             if (PITCH_MAP.hasOwnProperty(c)) {
                                 let pitch = PITCH_MAP[c];
                                 j++;
-                                if (body[j] === '#' || body[j] === '+') { pitch++; j++; }
-                                else if (body[j] === '-') { pitch--; j++; }
+                                // 修正: j の範囲チェックを追加
+                                if (j < body.length && (body[j] === '#' || body[j] === '+')) {
+                                    pitch++; j++;
+                                } else if (j < body.length && body[j] === '-') {
+                                    pitch--; j++;
+                                }
                                 chordNotes.push((octave + 1) * 12 + pitch);
-                            } else if (c === '>') { octave++; j++; }
-                            else if (c === '<') { octave--; j++; }
-                            else { j++; }
+                            } else if (c === '>') {
+                                // 和音内でのオクターブ上げ対応
+                                octave++; j++;
+                            } else if (c === '<') {
+                                // 和音内でのオクターブ下げ対応
+                                octave--; j++;
+                            } else if (c === 'o') {
+                                // 和音内でのオクターブ指定に対応
+                                j++;
+                                let numStr = '';
+                                while (j < body.length && /\d/.test(body[j])) {
+                                    numStr += body[j];
+                                    j++;
+                                }
+                                octave = parseInt(numStr) || 4;
+                            } else {
+                                j++;
+                            }
                         }
-                        if (body[j] === ']') j++;
+                        if (j < body.length && body[j] === ']') j++;
                         const steps = parseLength();
                         for (const p of chordNotes) {
                             currentTrack.core.addNote(currentStep, p, { noteLengthSteps: Math.max(1, steps) });
@@ -2451,10 +2478,15 @@
                         currentStep += steps;
                         octave = savedOctave;
                     } else if (PITCH_MAP.hasOwnProperty(ch)) {
+                        // 単音: c, d+, e- など（途中のオクターブ指定に対応）
                         let pitch = PITCH_MAP[ch];
                         j++;
-                        if (body[j] === '#' || body[j] === '+') { pitch++; j++; }
-                        else if (body[j] === '-') { pitch--; j++; }
+                        // 修正: j の範囲チェックを追加
+                        if (j < body.length && (body[j] === '#' || body[j] === '+')) {
+                            pitch++; j++;
+                        } else if (j < body.length && body[j] === '-') {
+                            pitch--; j++;
+                        }
                         const midiPitch = (octave + 1) * 12 + pitch;
                         const steps = parseLength();
                         currentTrack.core.addNote(currentStep, midiPitch, { noteLengthSteps: Math.max(1, steps) });
