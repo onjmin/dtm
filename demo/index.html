@@ -107,6 +107,7 @@
                 console.log('Name to Key mapping sample:', Object.entries(nameToKey).slice(0, 5));
 
                 // 楽器プリセット選択UIを生成
+                const defaultPresetKey = 'retro_game';
                 const selectEl = document.getElementById('instrument-preset');
                 if (selectEl) {
                     selectEl.innerHTML = '';
@@ -116,10 +117,11 @@
                         option.textContent = preset.displayName;
                         selectEl.appendChild(option);
                     }
+                    selectEl.value = defaultPresetKey;
                 }
 
                 // デフォルトの楽器プリセットをロード
-                await loadInstrumentPreset('piano');
+                await loadInstrumentPreset(defaultPresetKey);
             }
         });
 
@@ -2322,6 +2324,77 @@
             redrawAll();
         };
 
+        window.applyHarmonicFilterMacro = () => {
+            const activeTrack = tracks.find(t => t.id === activeTrackId);
+            if (!activeTrack?.core) return;
+
+            if (activeTrackId === 'chord') {
+                alert('伴奏トラックには適用できません');
+                return;
+            }
+
+            const chordTrack = tracks.find(t => t.id === 'chord');
+            if (!chordTrack?.core) {
+                alert('伴奏トラックが見つかりません');
+                return;
+            }
+
+            const stepsPerBar = renderConfig.stepsPerBar;
+            const halfStepsPerBar = stepsPerBar / 2;
+
+            const allNotes = activeTrack.core.getNotes().concat(chordTrack.core.getNotes());
+            if (allNotes.length === 0) return;
+
+            const maxStep = Math.max(...allNotes.map(n => n.startStep + n.durationSteps));
+            const numHalfBars = Math.ceil(maxStep / halfStepsPerBar);
+
+            let currentChordPitchClasses = new Set();
+
+            activeTrack.core.beginBatch();
+
+            for (let halfBar = 0; halfBar < numHalfBars; halfBar++) {
+                const halfBarStart = halfBar * halfStepsPerBar;
+                const halfBarEnd = halfBarStart + halfStepsPerBar;
+
+                // ★ 小節の頭（前半の半小節）であるか判定
+                const isNewBar = (halfBar % 2 === 0);
+
+                const chordNotesInHalfBar = chordTrack.core.getNotes().filter(n =>
+                    n.startStep >= halfBarStart && n.startStep < halfBarEnd
+                );
+
+                if (chordNotesInHalfBar.length > 0) {
+                    // 新しいコードがあれば更新
+                    currentChordPitchClasses = new Set();
+                    chordNotesInHalfBar.forEach(n => {
+                        currentChordPitchClasses.add(n.pitch % 12);
+                    });
+                } else if (isNewBar) {
+                    // ★ 新しい小節に入り、かつその小節の頭にコードがなければリセット
+                    currentChordPitchClasses = new Set();
+                }
+
+                // フィルタリング対象の音がなければ次へ
+                if (currentChordPitchClasses.size === 0) {
+                    continue;
+                }
+
+                const activeNotesInHalfBar = activeTrack.core.getNotes().filter(n =>
+                    n.startStep >= halfBarStart && n.startStep < halfBarEnd
+                );
+
+                activeNotesInHalfBar.forEach(n => {
+                    if (!currentChordPitchClasses.has(n.pitch % 12)) {
+                        activeTrack.core.deleteNoteById(n.id);
+                    }
+                });
+            }
+
+            activeTrack.core.endBatch();
+            activeTrack.core.saveHistory();
+            redrawAll();
+        };
+
         window.loadMML = () => {
             const mmlInput = document.getElementById('mml-input').value;
             if (!mmlInput) return;
@@ -2332,12 +2405,13 @@
             const PITCH_MAP = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
             const stepsPerBar = 192;
 
-            // 1. 全体からコメントを除去し、空白・改行・セミコロンを掃除して「1本の長い文字列」にする
+            // 1. 全体からコメントを除去し、空白・改行を掃除して「1本の長い文字列」にする
             // ただし、@n を識別するために最低限の整形だけ行う
             const fullMML = mmlInput
+                .replace(/;.*$/gm, '')  // セミコロン行内コメント除去（;以降を削除）
                 .replace(/\/\*[\s\S]*?\*\//g, '')  // ブロックコメント除去 (/* ... */)
                 .replace(/\/\/.*$/gm, '')   // 行コメント除去 (//)
-                .replace(/[\n\r;]+/g, ' ')  // 改行とセミコロンをスペースに置換
+                .replace(/[\n\r]+/g, ' ')  // 改行をスペースに置換
                 .trim();
 
             // 2. @(\d+) で分割し、各トラックごとの塊を作る
@@ -2357,7 +2431,7 @@
                 if (part.startsWith('@')) {
                     let trackIdx = parseInt(part.substring(1));
                     // @5以上は@2（ベース）に統一
-                    if (trackIdx >= 5) {
+                    if (trackIdx >= 4) {
                         trackIdx = 2;
                     }
                     currentTrack = tracks.find(t => t.id === ['melody', 'submelody', 'bass', 'chord'][trackIdx]);
@@ -2394,6 +2468,7 @@
                     let ch = body[j];
 
                     if (ch === 'o') {
+                        // オクターブ指定: o5, o6 など（途中での指定にも対応）
                         j++;
                         let numStr = '';
                         while (j < body.length && /\d/.test(body[j])) {
@@ -2402,10 +2477,13 @@
                         }
                         octave = parseInt(numStr) || 4;
                     } else if (ch === '>') {
+                        // オクターブ上げ
                         octave++; j++;
                     } else if (ch === '<') {
+                        // オクターブ下げ
                         octave--; j++;
                     } else if (ch === 'l') {
+                        // デフォルト音長の設定: l16, l8 など
                         j++;
                         let numStr = '';
                         while (j < body.length && /\d/.test(body[j])) {
@@ -2414,9 +2492,11 @@
                         }
                         baseLength = parseInt(numStr) || 16;
                     } else if (ch === 'r') {
+                        // 休符: r, r16, r8. など
                         j++;
                         currentStep += parseLength();
                     } else if (ch === 't' || ch === 'v' || ch === 'q') {
+                        // テンポ・音量・ゲート時間: t120, v100, q50 など
                         j++;
                         let numStr = '';
                         while (j < body.length && /\d/.test(body[j])) {
@@ -2428,6 +2508,7 @@
                             if (bpmInput) bpmInput.value = numStr;
                         }
                     } else if (ch === '[') {
+                        // 和音: [c e g], [c> e> g>] など
                         j++;
                         const chordNotes = [];
                         const savedOctave = octave;
@@ -2436,14 +2517,33 @@
                             if (PITCH_MAP.hasOwnProperty(c)) {
                                 let pitch = PITCH_MAP[c];
                                 j++;
-                                if (body[j] === '#' || body[j] === '+') { pitch++; j++; }
-                                else if (body[j] === '-') { pitch--; j++; }
+                                // 修正: j の範囲チェックを追加
+                                if (j < body.length && (body[j] === '#' || body[j] === '+')) {
+                                    pitch++; j++;
+                                } else if (j < body.length && body[j] === '-') {
+                                    pitch--; j++;
+                                }
                                 chordNotes.push((octave + 1) * 12 + pitch);
-                            } else if (c === '>') { octave++; j++; }
-                            else if (c === '<') { octave--; j++; }
-                            else { j++; }
+                            } else if (c === '>') {
+                                // 和音内でのオクターブ上げ対応
+                                octave++; j++;
+                            } else if (c === '<') {
+                                // 和音内でのオクターブ下げ対応
+                                octave--; j++;
+                            } else if (c === 'o') {
+                                // 和音内でのオクターブ指定に対応
+                                j++;
+                                let numStr = '';
+                                while (j < body.length && /\d/.test(body[j])) {
+                                    numStr += body[j];
+                                    j++;
+                                }
+                                octave = parseInt(numStr) || 4;
+                            } else {
+                                j++;
+                            }
                         }
-                        if (body[j] === ']') j++;
+                        if (j < body.length && body[j] === ']') j++;
                         const steps = parseLength();
                         for (const p of chordNotes) {
                             currentTrack.core.addNote(currentStep, p, { noteLengthSteps: Math.max(1, steps) });
@@ -2451,10 +2551,15 @@
                         currentStep += steps;
                         octave = savedOctave;
                     } else if (PITCH_MAP.hasOwnProperty(ch)) {
+                        // 単音: c, d+, e- など（途中のオクターブ指定に対応）
                         let pitch = PITCH_MAP[ch];
                         j++;
-                        if (body[j] === '#' || body[j] === '+') { pitch++; j++; }
-                        else if (body[j] === '-') { pitch--; j++; }
+                        // 修正: j の範囲チェックを追加
+                        if (j < body.length && (body[j] === '#' || body[j] === '+')) {
+                            pitch++; j++;
+                        } else if (j < body.length && body[j] === '-') {
+                            pitch--; j++;
+                        }
                         const midiPitch = (octave + 1) * 12 + pitch;
                         const steps = parseLength();
                         currentTrack.core.addNote(currentStep, midiPitch, { noteLengthSteps: Math.max(1, steps) });
@@ -2658,6 +2763,15 @@
                     </path>
                 </svg>
                 <span>ランダム生成（8小節）</span>
+            </button>
+            <button onclick="applyHarmonicFilterMacro()"
+                class="px-3 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-md text-sm flex items-center space-x-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3">
+                    </path>
+                </svg>
+                <span>伴奏ハーモニーフィルター</span>
             </button>
         </div>
     </div>
