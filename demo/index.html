@@ -14,7 +14,7 @@
     <script type="module">
         const DTM = await import(location.hostname === 'localhost'
             ? 'http://localhost:40298/dist/index.mjs'
-            : 'index.mjs');
+            : './index.mjs');
 
         import { parseChord } from 'https://rpgen3.github.io/piano/mjs/parseChord.mjs';
         import { parseChords } from 'https://rpgen3.github.io/piano/mjs/parseChords.mjs';
