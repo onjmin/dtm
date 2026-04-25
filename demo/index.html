@@ -2395,6 +2395,96 @@
             redrawAll();
         };
 
+        window.applyMonophonicMacro = () => {
+            const activeTrack = tracks.find(t => t.id === activeTrackId);
+            if (!activeTrack?.core) return;
+
+            // 伴奏トラック自体を単音化する必要はないため除外
+            if (activeTrackId === 'chord') {
+                alert('伴奏トラックには適用できません');
+                return;
+            }
+
+            const chordTrack = tracks.find(t => t.id === 'chord');
+            if (!chordTrack?.core) {
+                alert('伴奏トラックが見つかりません');
+                return;
+            }
+
+            const stepsPerBar = renderConfig.stepsPerBar;
+            const halfStepsPerBar = stepsPerBar / 2;
+
+            const allNotes = activeTrack.core.getNotes().concat(chordTrack.core.getNotes());
+            if (allNotes.length === 0) return;
+
+            const maxStep = Math.max(...allNotes.map(n => n.startStep + n.durationSteps));
+            const numHalfBars = Math.ceil(maxStep / halfStepsPerBar);
+
+            let currentChordPitchClasses = new Set();
+
+            activeTrack.core.beginBatch();
+
+            for (let halfBar = 0; halfBar < numHalfBars; halfBar++) {
+                const halfBarStart = halfBar * halfStepsPerBar;
+                const halfBarEnd = halfBarStart + halfStepsPerBar;
+                const isNewBar = (halfBar % 2 === 0);
+
+                const chordNotesInHalfBar = chordTrack.core.getNotes().filter(n =>
+                    n.startStep >= halfBarStart && n.startStep < halfBarEnd
+                );
+
+                // 小節内なら維持、新しい小節でコードがなければリセット
+                if (chordNotesInHalfBar.length > 0) {
+                    currentChordPitchClasses = new Set();
+                    chordNotesInHalfBar.forEach(n => {
+                        currentChordPitchClasses.add(n.pitch % 12);
+                    });
+                } else if (isNewBar) {
+                    currentChordPitchClasses = new Set();
+                }
+
+                // コード指定がない区間はフィルタリング（削除）を行わない
+                if (currentChordPitchClasses.size === 0) continue;
+
+                const activeNotesInHalfBar = activeTrack.core.getNotes().filter(n =>
+                    n.startStep >= halfBarStart && n.startStep < halfBarEnd
+                );
+
+                // 1. コード構成音に合致する音だけを抽出
+                const filteredNotes = activeNotesInHalfBar.filter(n =>
+                    currentChordPitchClasses.has(n.pitch % 12)
+                );
+
+                // 2. それ以外の音を削除
+                const filteredIds = new Set(filteredNotes.map(n => n.id));
+                activeNotesInHalfBar.forEach(n => {
+                    if (!filteredIds.has(n.id)) {
+                        activeTrack.core.deleteNoteById(n.id);
+                    }
+                });
+
+                // 3. 同一タイミングの重なりを解消（最高音優先で単音化）
+                const timeMap = new Map();
+                filteredNotes.forEach(n => {
+                    if (!timeMap.has(n.startStep)) timeMap.set(n.startStep, []);
+                    timeMap.get(n.startStep).push(n);
+                });
+
+                timeMap.forEach(notesAtTime => {
+                    if (notesAtTime.length > 1) {
+                        // 最高音以外を削除
+                        notesAtTime.sort((a, b) => b.pitch - a.pitch);
+                        const [topNote, ...others] = notesAtTime;
+                        others.forEach(on => activeTrack.core.deleteNoteById(on.id));
+                    }
+                });
+            }
+
+            activeTrack.core.endBatch();
+            activeTrack.core.saveHistory();
+            redrawAll();
+        };
+
         window.loadMML = () => {
             const mmlInput = document.getElementById('mml-input').value;
             if (!mmlInput) return;
@@ -2748,30 +2838,26 @@
         <div class="flex flex-wrap gap-2">
             <button onclick="clearCurrentTrackNotes()"
                 class="px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md text-sm flex items-center space-x-1">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
-                    </path>
-                </svg>
+                <i class="mdi mdi-trash-can-outline text-lg"></i>
                 <span>全消去</span>
             </button>
+
             <button onclick="generateRandomPattern()"
                 class="px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-md text-sm flex items-center space-x-1">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
-                    </path>
-                </svg>
-                <span>ランダム生成（8小節）</span>
+                <i class="mdi mdi-dice-5-outline text-lg"></i>
+                <span>ランダム配置</span>
             </button>
+
             <button onclick="applyHarmonicFilterMacro()"
                 class="px-3 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-md text-sm flex items-center space-x-1">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3">
-                    </path>
-                </svg>
-                <span>伴奏ハーモニーフィルター</span>
+                <i class="mdi mdi-auto-fix text-lg"></i>
+                <span>伴奏フィルタ</span>
+            </button>
+
+            <button onclick="applyMonophonicMacro()"
+                class="px-3 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md text-sm flex items-center space-x-1">
+                <i class="mdi mdi-vector-combine text-lg"></i>
+                <span>単音化</span>
             </button>
         </div>
     </div>
