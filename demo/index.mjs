@@ -29,6 +29,7 @@ function setupRecorder(audioCtx, gainNode, drumGainNode) {
       isRecording = false;
     },
     getRecordedData: () => recordedData,
+    isRecording: () => isRecording,
     clearRecordedData: () => {
       recordedData = [[], []];
     }

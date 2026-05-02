@@ -1344,27 +1344,16 @@
         };
 
         window.toggleRecording = () => {
-            if (isRecording) {
-                stopRecording();
+            if (recorderAPI.isRecording()) {
+                recorderAPI.stopRecording();
+                downloadWav(recorderAPI.getRecordedData());
             } else {
-                startRecording();
+                recorderAPI.clearRecordedData();
+                recorderAPI.startRecording();
             }
         };
 
-        const startRecording = () => {
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            recordedData = [[], []];
-            isRecording = true;
-            const recordBtn = document.getElementById('record-button');
-            recordBtn.classList.remove('bg-red-500');
-            recordBtn.classList.add('bg-red-700', 'animate-pulse');
-            startPlayback();
-            isPlaying = true;
-            updateControls();
-        };
-
-        const stopRecording = () => {
-            isRecording = false;
+        const downloadWav = (recordedData) => {
             const recordBtn = document.getElementById('record-button');
             recordBtn.classList.add('bg-red-500');
             recordBtn.classList.remove('bg-red-700', 'animate-pulse');
@@ -2498,7 +2487,6 @@
             // 1. 全体からコメントを除去し、空白・改行を掃除して「1本の長い文字列」にする
             // ただし、@n を識別するために最低限の整形だけ行う
             const fullMML = mmlInput
-                .replace(/;.*$/gm, '')  // セミコロン行内コメント除去（;以降を削除）
                 .replace(/\/\*[\s\S]*?\*\//g, '')  // ブロックコメント除去 (/* ... */)
                 .replace(/\/\/.*$/gm, '')   // 行コメント除去 (//)
                 .replace(/[\n\r]+/g, ' ')  // 改行をスペースに置換
