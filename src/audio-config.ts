@@ -51,6 +51,7 @@ export function setupRecorder(
 			isRecording = false;
 		},
 		getRecordedData: () => recordedData,
+		isRecording: () => isRecording,
 		clearRecordedData: () => {
 			recordedData = [[], []];
 		},
