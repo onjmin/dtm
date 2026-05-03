@@ -174,10 +174,11 @@ export const drawKeyboard = (): void => {
 
 		// 鍵盤のボーダー（オクターブ線）を描画
 		g_key_ctx.beginPath();
-		g_key_ctx.strokeStyle = isC ? "#EF4444" : "#D1D5DB";
+		g_key_ctx.strokeStyle = isC ? "#aaa" : "#D1D5DB";
 		g_key_ctx.lineWidth = isC ? 2 : 1;
-		g_key_ctx.moveTo(0, screenY);
-		g_key_ctx.lineTo(KEYBOARD_WIDTH, screenY);
+		const lineY = screenY + keyHeight;
+		g_key_ctx.moveTo(0, lineY);
+		g_key_ctx.lineTo(KEYBOARD_WIDTH, lineY);
 		g_key_ctx.stroke();
 
 		// オクターブ表記
@@ -274,11 +275,12 @@ export const drawGrid = (noteLengthSteps: number = 1): void => {
 
 		// 水平グリッド線の描画
 		g_grid_ctx.beginPath();
-		g_grid_ctx.strokeStyle = isC ? "#D1D5DB" : "#E5E7EB";
+		g_grid_ctx.strokeStyle = isC ? "#aaa" : "#E5E7EB";
 		g_grid_ctx.lineWidth = 1;
 
-		g_grid_ctx.moveTo(0, screenY);
-		g_grid_ctx.lineTo(g_grid_canvas.width, screenY);
+		const lineY = screenY + keyHeight;
+		g_grid_ctx.moveTo(0, lineY);
+		g_grid_ctx.lineTo(g_grid_canvas.width, lineY);
 		g_grid_ctx.stroke();
 	}
 
