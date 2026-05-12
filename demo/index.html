@@ -801,6 +801,7 @@
                                     <option value="arpeggio" ${savedPattern === 'arpeggio' ? 'selected' : ''}>アルペジオ</option>
                                     <option value="arpeggio-fast" ${savedPattern === 'arpeggio-fast' ? 'selected' : ''}>アルペジオ（ジャラーン）</option>
                                     <option value="offbeat" ${savedPattern === 'offbeat' ? 'selected' : ''}>裏打ち</option>
+                                    <option value="yatsume" ${savedPattern === 'yatsume' ? 'selected' : ''}>ヤツメ穴</option>
                                     <option value="alternating" ${savedPattern === 'alternating' ? 'selected' : ''}>交互奏</option>
                                 </select>
                                <select id="chord-root-select" class="border border-gray-300 rounded-md px-2 py-1 text-sm bg-gray-100/10 focus:outline-none">
@@ -1814,6 +1815,27 @@
                                         });
                                     }
                                 }
+                            } else if (patternType === 'yatsume') {
+                                // ヤツメ穴ビート: MIDIティック [0, 360, 960, 1320] の位置で360ティック長の和音を置く
+                                const ticksPerQuarter = 480;
+                                const stepsPerQuarter = Math.floor(stepsPerBar / 4);
+                                const tickToStep = (tick) => Math.max(1, Math.round(tick * stepsPerQuarter / ticksPerQuarter));
+                                const yatsumeTickOffsets = [0, 360, 960, 1320];
+                                const yatsumeLengthSteps = tickToStep(360);
+
+                                yatsumeTickOffsets.forEach((tickOffset) => {
+                                    const offsetStep = tickToStep(tickOffset);
+                                    const noteStart = chord.whenStep + offsetStep;
+                                    if (noteStart < chord.whenStep + noteLength) {
+                                        notes.forEach((noteOffset) => {
+                                            const pitch = c3 + noteOffset + offset;
+                                            chordTrack.core.addNote(noteStart, pitch, {
+                                                noteLengthSteps: yatsumeLengthSteps,
+                                                velocity: 100,
+                                            });
+                                        });
+                                    }
+                                });
                             } else if (patternType === 'alternating') {
                                 // 交互奏: 低音と高音交互
                                 notes.forEach((noteOffset, i) => {
