@@ -1,59 +1,114 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" class="dark">
 
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <link rel="icon" href="https://avatars.githubusercontent.com/u/88383494" />
     <title>DTM Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        :root { color-scheme: light; }
+        @font-face {
+            font-family: 'MisakiGothic';
+            src: url('https://cdn.jsdelivr.net/npm/misaki-font/misaki_gothic.woff2') format('woff2'),
+                 url('https://cdn.jsdelivr.net/npm/misaki-font/misaki_gothic.woff') format('woff');
+        }
         * { box-sizing: border-box; }
         body {
+            font-family: 'MisakiGothic', 'MS Gothic', ui-monospace, monospace;
+            background: #0d0d1a;
+            color: #f4f4f4;
             margin: 0;
-            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-            background: #eef2f7;
-            color: #1f2937;
+            min-height: 100vh;
+            /* ドット格子背景 */
+            background-image: radial-gradient(circle, #2a2d4a 1px, transparent 1px);
+            background-size: 16px 16px;
         }
-        header {
-            padding: 12px 16px;
-            background: #111827;
-            color: #fff;
+        /* スキャンライン */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg, transparent, transparent 2px,
+                rgba(0,0,0,.15) 2px, rgba(0,0,0,.15) 3px
+            );
+            pointer-events: none;
+            z-index: 9999;
         }
-        header h1 { margin: 0; font-size: 18px; }
-        header p { margin: 4px 0 0; font-size: 12px; color: #9ca3af; }
-        .demo-bar {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 12px;
-        }
-        .demo-bar label { font-size: 13px; color: #4b5563; font-weight: 600; }
-        .demo-bar select {
-            min-height: 40px;
-            padding: 6px 10px;
-            border: 1px solid #d1d5db;
-            border-radius: 8px;
-            background: #fff;
-        }
-        #app { max-width: 960px; margin: 0 auto; }
+        /* スクロールバー */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1c2c; }
+        ::-webkit-scrollbar-thumb { background: #29adff; border-radius: 0; }
     </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        pixel: ['MisakiGothic', 'MS Gothic', 'ui-monospace', 'monospace'],
+                    },
+                    colors: {
+                        pico: {
+                            bg:      '#1a1c2c',
+                            surface: '#16213e',
+                            dark:    '#0f0f23',
+                            border:  '#3d405b',
+                            cyan:    '#29adff',
+                            green:   '#00e436',
+                            red:     '#ff004d',
+                            pink:    '#ff77a8',
+                            orange:  '#ffa300',
+                            yellow:  '#ffec27',
+                            gray:    '#7e7e8a',
+                            white:   '#f4f4f4',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
 </head>
 
-<body>
-    <header>
-        <h1>🎹 @onjmin/dtm — モバイルファーストDAW デモ</h1>
-        <p>mountDAW() 1関数でマウント。発音は SoundFont フックへ委譲。</p>
+<body class="font-pixel">
+
+    <!-- ヘッダー -->
+    <header class="border-b-4 border-pico-cyan bg-pico-dark px-4 py-3 shadow-[0_4px_0_#000]">
+        <div class="max-w-4xl mx-auto flex items-center gap-3">
+            <div class="w-8 h-8 bg-pico-green flex items-center justify-center text-black text-lg shadow-[2px_2px_0_#000] shrink-0">
+                ♪
+            </div>
+            <div>
+                <h1 class="text-pico-cyan text-base tracking-widest m-0 leading-tight">
+                    [ @onjmin/dtm ]
+                </h1>
+                <p class="text-pico-gray text-xs m-0 mt-0.5 tracking-wide">
+                    &gt; mountDAW() — mobile-first DAW component
+                </p>
+            </div>
+            <div class="ml-auto flex items-center gap-2">
+                <span class="text-pico-green text-xs animate-pulse tracking-widest">● ONLINE</span>
+            </div>
+        </div>
     </header>
 
-    <div class="demo-bar">
-        <label for="preset">楽器プリセット</label>
-        <select id="preset"></select>
-        <span id="loading" style="font-size:12px;color:#6b7280;">音源を読み込み中…</span>
+    <!-- 楽器プリセットバー -->
+    <div class="max-w-4xl mx-auto px-3 py-2">
+        <div class="flex flex-wrap items-center gap-3 border-2 border-pico-border bg-pico-dark px-3 py-2 shadow-[3px_3px_0_#000]">
+            <span class="text-pico-gray text-xs tracking-widest shrink-0">INSTRUMENT</span>
+            <select id="preset"
+                class="min-h-[36px] px-2 border-2 border-pico-border bg-pico-surface text-pico-white font-pixel text-xs
+                       shadow-[inset_1px_1px_0_#000] focus:outline-none focus:border-pico-cyan grow">
+            </select>
+            <span id="loading"
+                class="text-pico-orange text-xs tracking-widest animate-pulse shrink-0">
+                LOADING…
+            </span>
+        </div>
     </div>
 
-    <div id="app"></div>
+    <!-- DAW マウント領域 -->
+    <div id="app" class="max-w-4xl mx-auto px-3 pb-6"></div>
 
     <script type="module">
         import { parseChord } from 'https://rpgen3.github.io/piano/mjs/parseChord.mjs';
@@ -72,11 +127,11 @@
 
         // --- オーディオ基盤（利用側が用意する） ---
         const { audioCtx, gainNode, drumGainNode } = createAudioContext();
-        gainNode.gain.value = 1;       // 音量はライブラリ側がvolumeへ反映するため1固定
+        gainNode.gain.value = 1;
         drumGainNode.gain.value = 1;
         const recorder = setupRecorder(audioCtx, gainNode, drumGainNode);
 
-        const soundFonts = {};         // trackId -> SoundFont
+        const soundFonts = {};
         const currentFont = 'FluidR3_GM_sf2_file';
         let nameToKey = {};
 
