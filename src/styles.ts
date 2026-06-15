@@ -460,25 +460,34 @@ export const DAW_CSS = `
 /* ─── ローディングオーバーレイ ─── */
 .dtm-overlay {
   position: fixed; inset: 0; z-index: 1000;
-  background: rgba(0,0,0,.85);
+  background: rgba(0,0,0,.92);
   display: flex; align-items: center; justify-content: center;
-  flex-direction: column; gap: 16px;
+  flex-direction: column; gap: 14px;
 }
 .dtm-overlay[hidden] { display: none; }
-/* ゲームのロード画面風：■■■□□□ */
+.dtm-overlay::before {
+  content: 'NOW LOADING';
+  font-family: var(--dtm-font);
+  font-size: 13px;
+  color: var(--dtm-primary);
+  text-transform: uppercase;
+  letter-spacing: .25em;
+  animation: dtm-blink 1s steps(1) infinite;
+}
+/* 8ブロック刻みで埋まるピクセルバー */
 .dtm-spinner {
-  width: 48px; height: 8px;
+  width: 96px; height: 12px;
   position: relative;
-  background: var(--dtm-border2);
-  box-shadow: 0 0 0 2px var(--c-black), 0 0 0 4px var(--dtm-primary), 6px 6px 0 var(--c-black);
+  background: var(--c-navy);
+  border: 2px solid var(--dtm-primary);
+  box-shadow: 0 0 0 2px var(--c-black), 4px 4px 0 var(--c-black);
 }
 .dtm-spinner::after {
   content: '';
   position: absolute;
-  left: 0; top: 0;
-  height: 100%;
+  left: 0; top: 0; height: 100%;
   background: var(--dtm-primary);
-  animation: dtm-load 1.2s steps(4) infinite;
+  animation: dtm-load 1.6s steps(8) infinite;
 }
 @keyframes dtm-load { 0%{width:0} 100%{width:100%} }
 
