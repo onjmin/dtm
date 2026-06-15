@@ -1846,13 +1846,13 @@ var decomposeToMonophonic = (notes) => {
   return tracks;
 };
 var isChordHeavyTrack = (notes, threshold = 0.6) => {
-  if (notes.length < 2) return false;
+  if (notes.length < 3) return false;
   const stepCounts = /* @__PURE__ */ new Map();
   for (const n of notes) {
     stepCounts.set(n.startStep, (stepCounts.get(n.startStep) ?? 0) + 1);
   }
   const chordNotes = notes.filter(
-    (n) => (stepCounts.get(n.startStep) ?? 0) > 1
+    (n) => (stepCounts.get(n.startStep) ?? 0) >= 3
   ).length;
   return chordNotes / notes.length >= threshold;
 };
