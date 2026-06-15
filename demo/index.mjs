@@ -270,8 +270,7 @@ var buildUI = (target, options) => {
     </div>
     <button class="dtm-iconbtn" data-dtm="undo" title="\u5143\u306B\u623B\u3059" disabled>${icon("undo")}</button>
     <button class="dtm-iconbtn" data-dtm="redo" title="\u3084\u308A\u76F4\u3057" disabled>${icon("redo")}</button>
-    <span class="dtm-sep"></span>
-    <select class="dtm-select" data-dtm="note-length" title="\u97F3\u7B26\u306E\u9577\u3055">
+    <select class="dtm-select dtm-grow" data-dtm="note-length" title="\u97F3\u7B26\u306E\u9577\u3055">
       <option value="48">4\u5206</option>
       <option value="32">3\u90234</option>
       <option value="24">8\u5206</option>
@@ -281,25 +280,6 @@ var buildUI = (target, options) => {
       <option value="6">32\u5206</option>
       <option value="4">3\u902332</option>
     </select>
-    <span class="dtm-sep"></span>
-    <div class="dtm-zoom">
-      <span class="dtm-label">\u6A2A</span>
-      <button class="dtm-iconbtn" data-dtm="zoomx-out" title="\u7E2E\u5C0F">\u2212</button>
-      <span class="dtm-label" data-dtm="zoomx-label">100%</span>
-      <button class="dtm-iconbtn" data-dtm="zoomx-in" title="\u62E1\u5927">\uFF0B</button>
-    </div>
-    <div class="dtm-zoom">
-      <span class="dtm-label">\u7E26</span>
-      <button class="dtm-iconbtn" data-dtm="zoomy-out" title="\u7E2E\u5C0F">\u2212</button>
-      <span class="dtm-label" data-dtm="zoomy-label">100%</span>
-      <button class="dtm-iconbtn" data-dtm="zoomy-in" title="\u62E1\u5927">\uFF0B</button>
-    </div>
-    <span class="dtm-sep"></span>
-    <button class="dtm-iconbtn" data-dtm="nav-home" title="\u6700\u521D\u3078">${icon("first")}</button>
-    <button class="dtm-iconbtn" data-dtm="nav-up" title="\u4E0A">${icon("chevronUp")}</button>
-    <button class="dtm-iconbtn" data-dtm="nav-down" title="\u4E0B">${icon("chevronDown")}</button>
-    <button class="dtm-iconbtn" data-dtm="nav-left" title="\u5DE6">${icon("chevronLeft")}</button>
-    <button class="dtm-iconbtn" data-dtm="nav-right" title="\u53F3">${icon("chevronRight")}</button>
   </div>
 
   <div class="dtm-tracks" data-dtm="track-tabs"></div>
@@ -319,6 +299,24 @@ var buildUI = (target, options) => {
         <span class="dtm-label" data-dtm="master-volume-label">50%</span>
       </div>
       <div class="dtm-track-body" data-dtm="track-body"></div>
+    </div>
+  </details>
+
+  <details class="dtm-panel">
+    <summary>\u8868\u793A</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row">
+        <span class="dtm-label">\u6A2A\u30BA\u30FC\u30E0</span>
+        <button class="dtm-iconbtn" data-dtm="zoomx-out" title="\u7E2E\u5C0F">\u2212</button>
+        <span class="dtm-label" data-dtm="zoomx-label">100%</span>
+        <button class="dtm-iconbtn" data-dtm="zoomx-in" title="\u62E1\u5927">\uFF0B</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">\u7E26\u30BA\u30FC\u30E0</span>
+        <button class="dtm-iconbtn" data-dtm="zoomy-out" title="\u7E2E\u5C0F">\u2212</button>
+        <span class="dtm-label" data-dtm="zoomy-label">100%</span>
+        <button class="dtm-iconbtn" data-dtm="zoomy-in" title="\u62E1\u5927">\uFF0B</button>
+      </div>
     </div>
   </details>
 
@@ -423,11 +421,6 @@ var buildUI = (target, options) => {
     zoomXOut: sel("zoomx-out"),
     zoomYIn: sel("zoomy-in"),
     zoomYOut: sel("zoomy-out"),
-    navHome: sel("nav-home"),
-    navUp: sel("nav-up"),
-    navDown: sel("nav-down"),
-    navLeft: sel("nav-left"),
-    navRight: sel("nav-right"),
     rollContainer: sel("roll"),
     wrapper: sel("wrapper"),
     vScroll: sel("vscroll"),
@@ -2119,6 +2112,7 @@ var DAW_CSS = `
   top: 0;
   z-index: 20;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 8px;
@@ -2159,26 +2153,21 @@ var DAW_CSS = `
 }
 .dtm-toggle input { width: 18px; height: 18px; accent-color: var(--dtm-accent); }
 
-/* --- \u30C4\u30FC\u30EB\u30C9\u30C3\u30AF\uFF08\u6A2A\u30B9\u30AF\u30ED\u30FC\u30EB\uFF09 --- */
+/* --- \u30C4\u30FC\u30EB\u30C9\u30C3\u30AF\uFF08\u6298\u8FD4\u3057\u30FB\u6A2A\u30B9\u30AF\u30ED\u30FC\u30EB\u306A\u3057\uFF09 --- */
 .dtm-tooldock {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
   padding: 8px;
   background: var(--dtm-surface);
   border: 1px solid var(--dtm-border);
   border-radius: var(--dtm-radius);
   box-shadow: var(--dtm-shadow);
 }
-.dtm-tooldock::-webkit-scrollbar { height: 6px; }
-.dtm-tooldock > * { flex: 0 0 auto; }
 .dtm-sep { width: 1px; align-self: stretch; background: var(--dtm-border); margin: 2px; }
 .dtm-label { font-size: 13px; color: var(--dtm-muted); font-weight: 600; white-space: nowrap; }
-.dtm-zoom { display: inline-flex; align-items: center; gap: 4px; }
-.dtm-zoom .dtm-label[data-dtm] { min-width: 38px; text-align: center; }
+.dtm-row .dtm-label[data-dtm] { min-width: 44px; text-align: center; }
 
 /* --- \u30BB\u30B0\u30E1\u30F3\u30C8\u578B\u30C4\u30FC\u30EB\u9078\u629E --- */
 .dtm-seg {
@@ -2218,24 +2207,22 @@ var DAW_CSS = `
 .dtm-textarea { width: 100%; min-height: 56px; resize: vertical; font-family: ui-monospace, monospace; }
 .dtm-range { height: var(--dtm-tap); accent-color: var(--dtm-primary); }
 
-/* --- \u30C8\u30E9\u30C3\u30AF\u30D4\u30EB\uFF08\u8272\u5206\u3051\u30FB\u5E38\u6642\u8868\u793A\uFF09 --- */
+/* --- \u30C8\u30E9\u30C3\u30AF\u30D4\u30EB\uFF08\u8272\u5206\u3051\u30FB\u5E38\u6642\u8868\u793A\u30FB\u6298\u8FD4\u3057\uFF09 --- */
 .dtm-tracks {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
   padding: 2px;
 }
-.dtm-tracks::-webkit-scrollbar { display: none; }
 .dtm-pill {
   --dtm-pill-color: var(--dtm-primary);
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  justify-content: center;
   min-height: 40px;
-  padding: 0 16px;
+  padding: 0 14px;
   border: 1.5px solid var(--dtm-border);
   border-radius: 999px;
   background: var(--dtm-surface);
@@ -3349,33 +3336,6 @@ var mountDAW = (target, options = {}) => {
       zoomY = Math.max(50, zoomY - 25);
       applyZoomY();
     });
-    const move = (dir) => {
-      const canvas = getGridCanvas();
-      const visibleSteps = canvas.width / renderConfig.stepWidth;
-      const visibleBars = Math.max(
-        1,
-        Math.round(visibleSteps / renderConfig.stepsPerBar)
-      );
-      const hScroll = visibleBars * renderConfig.stepsPerBar * renderConfig.stepWidth;
-      const vScroll = visibleBars * renderConfig.keyHeight;
-      const maxOffsetX = getMaxNoteStep() * renderConfig.stepWidth - canvas.width + leftPaddingSteps * renderConfig.stepWidth;
-      if (dir === "home") currentOffsetX = 0;
-      if (dir === "right")
-        currentOffsetX = clamp(currentOffsetX + hScroll, 0, maxOffsetX);
-      if (dir === "left")
-        currentOffsetX = clamp(currentOffsetX - hScroll, 0, maxOffsetX);
-      if (dir === "up")
-        currentOffsetY = clamp(currentOffsetY - vScroll, 0, getMaxOffsetY());
-      if (dir === "down")
-        currentOffsetY = clamp(currentOffsetY + vScroll, 0, getMaxOffsetY());
-      setDrawOffset(currentOffsetX, currentOffsetY);
-      redrawAll();
-    };
-    refs.navHome.addEventListener("click", () => move("home"));
-    refs.navUp.addEventListener("click", () => move("up"));
-    refs.navDown.addEventListener("click", () => move("down"));
-    refs.navLeft.addEventListener("click", () => move("left"));
-    refs.navRight.addEventListener("click", () => move("right"));
     refs.masterVolume.addEventListener("input", () => {
       masterVolume = Number.parseInt(refs.masterVolume.value, 10) || 0;
       refs.masterVolumeLabel.textContent = `${masterVolume}%`;
