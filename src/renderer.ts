@@ -133,9 +133,9 @@ const drawHeaderCorner = (): void => {
 		cornerDiv.style.top = "0px";
 		cornerDiv.style.width = `${KEYBOARD_WIDTH}px`;
 		cornerDiv.style.height = `${HEADER_HEIGHT}px`;
-		cornerDiv.style.backgroundColor = "#F3F4F6"; // gray-100 程度の背景色
-		cornerDiv.style.borderRight = "1px solid #D1D5DB";
-		cornerDiv.style.borderBottom = "1px solid #D1D5DB";
+		cornerDiv.style.backgroundColor = "#0a0f1f";
+		cornerDiv.style.borderRight = "2px solid #29adff";
+		cornerDiv.style.borderBottom = "2px solid #29adff";
 		mountTarget.insertBefore(cornerDiv, g_header_canvas); // ヘッダーCanvasの手前に挿入
 	}
 };
@@ -154,7 +154,7 @@ export const drawKeyboard = (): void => {
 
 	// 鍵盤エリア右側の赤い境界線（一度だけ描画）
 	g_key_ctx.beginPath();
-	g_key_ctx.strokeStyle = "#EF4444";
+	g_key_ctx.strokeStyle = "#29adff";
 	g_key_ctx.lineWidth = 2;
 	g_key_ctx.moveTo(KEYBOARD_WIDTH, 0);
 	g_key_ctx.lineTo(KEYBOARD_WIDTH, g_key_canvas.height);
@@ -168,12 +168,12 @@ export const drawKeyboard = (): void => {
 		const screenY = y - g_draw_offset_y;
 
 		// 1. 白鍵の背景を描画 (全幅)
-		g_key_ctx.fillStyle = "#F9FAFB"; // 薄いグレー背景
+		g_key_ctx.fillStyle = "#1d2b53";
 		g_key_ctx.fillRect(0, screenY, KEYBOARD_WIDTH, keyHeight);
 
 		// 2. 白鍵の境界線 (横線)
 		g_key_ctx.beginPath();
-		g_key_ctx.strokeStyle = "#D1D5DB";
+		g_key_ctx.strokeStyle = "#2d3560";
 		g_key_ctx.lineWidth = 1;
 		g_key_ctx.moveTo(0, screenY + keyHeight);
 		g_key_ctx.lineTo(KEYBOARD_WIDTH, screenY + keyHeight);
@@ -192,22 +192,22 @@ export const drawKeyboard = (): void => {
 				0,
 				screenY + offset + blackKeyHeight,
 			);
-			gradient.addColorStop(0, "#4B5563");
-			gradient.addColorStop(1, "#1F2937");
+			gradient.addColorStop(0, "#3d405b");
+			gradient.addColorStop(1, "#000000");
 
 			g_key_ctx.fillStyle = gradient;
 			g_key_ctx.fillRect(0, screenY + offset, blackKeyWidth, blackKeyHeight);
 
 			// 黒鍵の枠線
-			g_key_ctx.strokeStyle = "#111827";
+			g_key_ctx.strokeStyle = "#000000";
 			g_key_ctx.strokeRect(0, screenY + offset, blackKeyWidth, blackKeyHeight);
 		}
 
 		// 4. オクターブ表記 (Cのみ)
 		if (pitchMod12 === 0) {
 			const octave = Math.floor(totalPitch / 12) - 1;
-			g_key_ctx.fillStyle = "#6B7280";
-			g_key_ctx.font = "bold 10px sans-serif";
+			g_key_ctx.fillStyle = "#83769c";
+			g_key_ctx.font = "10px 'MisakiGothic',monospace";
 			g_key_ctx.textAlign = "right";
 			g_key_ctx.textBaseline = "bottom";
 			g_key_ctx.fillText(
@@ -227,7 +227,7 @@ export const drawHeader = (): void => {
 	g_header_ctx.save();
 	g_header_ctx.translate(-g_draw_offset_x, 0);
 
-	g_header_ctx.fillStyle = "#F9FAFB";
+	g_header_ctx.fillStyle = "#0a0f1f";
 	g_header_ctx.fillRect(
 		g_draw_offset_x,
 		0,
@@ -235,10 +235,10 @@ export const drawHeader = (): void => {
 		HEADER_HEIGHT,
 	);
 
-	g_header_ctx.strokeStyle = "#D1D5DB";
+	g_header_ctx.strokeStyle = "#3d405b";
 	g_header_ctx.lineWidth = 1;
-	g_header_ctx.font = "bold 12px sans-serif";
-	g_header_ctx.fillStyle = "#4B5563";
+	g_header_ctx.font = "11px 'MisakiGothic',monospace";
+	g_header_ctx.fillStyle = "#83769c";
 
 	const startBar = Math.floor(g_draw_offset_x / (stepsPerBar * stepWidth));
 	const endBar = Math.ceil(
@@ -292,13 +292,13 @@ export const drawGrid = (noteLengthSteps: number = 1): void => {
 
 		// 黒鍵の背景の塗りつぶし
 		if (isBlackKey) {
-			g_grid_ctx.fillStyle = "#F3F4F6";
+			g_grid_ctx.fillStyle = "#0d1020";
 			g_grid_ctx.fillRect(0, screenY, g_grid_canvas.width, keyHeight);
 		}
 
 		// 水平グリッド線の描画
 		g_grid_ctx.beginPath();
-		g_grid_ctx.strokeStyle = isC ? "#aaa" : "#E5E7EB";
+		g_grid_ctx.strokeStyle = isC ? "#3d405b" : "#1a1d30";
 		g_grid_ctx.lineWidth = 1;
 
 		const lineY = screenY + keyHeight;
@@ -324,10 +324,10 @@ export const drawGrid = (noteLengthSteps: number = 1): void => {
 
 		g_grid_ctx.beginPath();
 		g_grid_ctx.strokeStyle = isBarLine
-			? "#A0A0A0"
+			? "#3d405b"
 			: isNoteLine
-				? "#D1D5DB"
-				: "#E5E7EB";
+				? "#242840"
+				: "#1a1d30";
 		g_grid_ctx.lineWidth = isBarLine ? 2 : 1;
 
 		g_grid_ctx.moveTo(screenX, 0);
@@ -381,11 +381,11 @@ export const drawSelectionRect = (
 	if (!rect) return;
 
 	g_grid_ctx.save();
-	g_grid_ctx.strokeStyle = "#10B981";
+	g_grid_ctx.strokeStyle = "#ffec27";
 	g_grid_ctx.lineWidth = 2;
-	g_grid_ctx.setLineDash([5, 3]);
+	g_grid_ctx.setLineDash([4, 4]);
 	g_grid_ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-	g_grid_ctx.fillStyle = "rgba(16, 185, 129, 0.1)";
+	g_grid_ctx.fillStyle = "rgba(255,236,39,0.08)";
 	g_grid_ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
 	g_grid_ctx.restore();
 };

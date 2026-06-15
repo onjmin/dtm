@@ -53,28 +53,28 @@ const DEFAULT_TRACKS: TrackConfig[] = [
 	{
 		id: "melody",
 		name: "メロディー",
-		color: [59, 130, 246],
+		color: [41, 173, 255], // PICO-8 cyan
 		instrument: 0,
 		volume: 100,
 	},
 	{
 		id: "submelody",
 		name: "サブメロ",
-		color: [139, 92, 246],
+		color: [255, 119, 168], // PICO-8 pink
 		instrument: 1,
 		volume: 95,
 	},
 	{
 		id: "bass",
 		name: "ベース",
-		color: [16, 185, 129],
+		color: [0, 228, 54], // PICO-8 green
 		instrument: 2,
 		volume: 88,
 	},
 	{
 		id: "chord",
 		name: "伴奏",
-		color: [245, 158, 11],
+		color: [255, 163, 0], // PICO-8 orange
 		instrument: 3,
 		volume: 76,
 	},
@@ -212,9 +212,9 @@ export const mountDAW = (
 		const x = playStartStep * renderConfig.stepWidth - currentOffsetX;
 		if (x < -10 || x > canvas.width + 10) return;
 		ctx.save();
-		ctx.strokeStyle = "#10B981";
+		ctx.strokeStyle = "#ffec27";
 		ctx.lineWidth = 2;
-		ctx.setLineDash([5, 3]);
+		ctx.setLineDash([4, 4]);
 		ctx.beginPath();
 		ctx.moveTo(x, 0);
 		ctx.lineTo(x, canvas.height);
@@ -229,7 +229,7 @@ export const mountDAW = (
 		const x = currentPlayStep * renderConfig.stepWidth - currentOffsetX;
 		if (x < 0 || x > canvas.width) return;
 		ctx.save();
-		ctx.strokeStyle = "#EF4444";
+		ctx.strokeStyle = "#ff004d";
 		ctx.lineWidth = 2;
 		ctx.beginPath();
 		ctx.moveTo(x, 0);
@@ -248,16 +248,16 @@ export const mountDAW = (
 		if (activeToolMode === "select" && selectionRect) {
 			const ctx = getGridContext();
 			ctx.save();
-			ctx.strokeStyle = "#10B981";
+			ctx.strokeStyle = "#ffec27";
 			ctx.lineWidth = 2;
-			ctx.setLineDash([5, 3]);
+			ctx.setLineDash([4, 4]);
 			ctx.strokeRect(
 				selectionRect.x,
 				selectionRect.y,
 				selectionRect.width,
 				selectionRect.height,
 			);
-			ctx.fillStyle = "rgba(16,185,129,0.1)";
+			ctx.fillStyle = "rgba(255,236,39,0.08)";
 			ctx.fillRect(
 				selectionRect.x,
 				selectionRect.y,
