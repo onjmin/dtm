@@ -61,6 +61,7 @@ export type DawUIRefs = {
 	generateMmlBtn: HTMLButtonElement;
 	decomposeChordToggle: HTMLInputElement;
 	ignoreChordHeavyToggle: HTMLInputElement;
+	barLimitSelect: HTMLSelectElement;
 	outputContainer: HTMLElement;
 	outputStatus: HTMLElement;
 	outputFull: HTMLElement;
@@ -244,6 +245,18 @@ export const buildUI = (
         <input type="checkbox" class="dtm-checkbox" data-dtm="ignore-chord-heavy">
         <span>和音伴奏トラックを無視（分解対象から除外）</span>
       </label>
+      <div class="dtm-row" style="margin-top:6px;align-items:center;gap:8px;">
+        <span class="dtm-label">生成上限</span>
+        <select class="dtm-select" data-dtm="bar-limit">
+          <option value="0">制限なし</option>
+          <option value="8">8小節</option>
+          <option value="16">16小節</option>
+          <option value="24">24小節</option>
+          <option value="32">32小節</option>
+          <option value="64">64小節</option>
+          <option value="128">128小節</option>
+        </select>
+      </div>
       <div class="dtm-output dtm-hidden" data-dtm="output-container">
         <p class="dtm-label" data-dtm="output-status"></p>
         <div class="dtm-output-row">
@@ -312,6 +325,7 @@ export const buildUI = (
 		generateMmlBtn: sel("generate-mml"),
 		decomposeChordToggle: sel<HTMLInputElement>("decompose-chord"),
 		ignoreChordHeavyToggle: sel<HTMLInputElement>("ignore-chord-heavy"),
+		barLimitSelect: sel<HTMLSelectElement>("bar-limit"),
 		outputContainer: sel("output-container"),
 		outputStatus: sel("output-status"),
 		outputFull: sel("output-full"),

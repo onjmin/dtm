@@ -1161,14 +1161,25 @@ export const mountDAW = (
 		minified: string;
 		ignoredCount: number;
 		trackCount: number;
+		barLimit: number;
 	} => {
+		const barLimitBars = Number(refs.barLimitSelect.value);
+		const limitSteps =
+			barLimitBars > 0 ? barLimitBars * renderConfig.stepsPerBar : Infinity;
+		const clipNotes = (notes: ReturnType<MMLCore["getNotes"]>) =>
+			limitSteps === Infinity
+				? notes
+				: notes.filter((n) => n.startStep < limitSteps);
+
 		if (refs.decomposeChordToggle.checked) {
 			const ignoreHeavy = refs.ignoreChordHeavyToggle.checked;
 			const targetStates = ignoreHeavy
 				? trackStates.filter((t) => !isChordHeavyTrack(t.core.getNotes()))
 				: trackStates;
 			const ignoredCount = trackStates.length - targetStates.length;
-			const allNotes = targetStates.flatMap((t) => t.core.getNotes());
+			const allNotes = clipNotes(
+				targetStates.flatMap((t) => t.core.getNotes()),
+			);
 			const monoTracks = decomposeToMonophonic(allNotes);
 			const refCore = trackStates[0].core;
 			const full = monoTracks
@@ -1183,28 +1194,46 @@ export const mountDAW = (
 						`@${i}${refCore.getMMLFromNotes(notes, bpm, 100).trim().replace(/\s+/g, "")}`,
 				)
 				.join(";");
-			return { full, minified, ignoredCount, trackCount: monoTracks.length };
+			return {
+				full,
+				minified,
+				ignoredCount,
+				trackCount: monoTracks.length,
+				barLimit: barLimitBars,
+			};
 		}
 		const full = trackStates
-			.map((t, i) => `@${i} ${t.core.getMML(t.volume).trim()}`)
+			.map(
+				(t, i) =>
+					`@${i} ${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim()}`,
+			)
 			.join(";\n");
 		const minified = trackStates
 			.map(
-				(t, i) => `@${i}${t.core.getMML(t.volume).trim().replace(/\s+/g, "")}`,
+				(t, i) =>
+					`@${i}${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim().replace(/\s+/g, "")}`,
 			)
 			.join(";");
-		return { full, minified, ignoredCount: 0, trackCount: trackStates.length };
+		return {
+			full,
+			minified,
+			ignoredCount: 0,
+			trackCount: trackStates.length,
+			barLimit: barLimitBars,
+		};
 	};
 
 	const showMML = (): void => {
-		const { full, minified, ignoredCount, trackCount } = generateMML();
+		const { full, minified, ignoredCount, trackCount, barLimit } =
+			generateMML();
 		refs.outputFull.textContent = full;
 		refs.outputMini.textContent = minified;
 		const isDecompose = refs.decomposeChordToggle.checked;
 		const modeLabel = isDecompose ? "和音分解" : "通常";
 		const ignoredLabel =
 			ignoredCount > 0 ? ` / 伴奏${ignoredCount}トラック除外` : "";
-		refs.outputStatus.textContent = `[${modeLabel}] (${trackCount}トラック${ignoredLabel}) 通常: ${full.length}文字 / minify: ${minified.length}文字`;
+		const barLabel = barLimit > 0 ? ` / 〜${barLimit}小節` : "";
+		refs.outputStatus.textContent = `[${modeLabel}] (${trackCount}トラック${ignoredLabel}${barLabel}) 通常: ${full.length}文字 / minify: ${minified.length}文字`;
 		refs.outputContainer.classList.remove("dtm-hidden");
 		updateUndoRedo();
 	};
