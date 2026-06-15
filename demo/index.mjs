@@ -389,6 +389,10 @@ var buildUI = (target, options) => {
         <input type="checkbox" class="dtm-checkbox" data-dtm="decompose-chord">
         <span>\u548C\u97F3\u5206\u89E3\u30E2\u30FC\u30C9\uFF08\u5358\u97F3\u30C8\u30E9\u30C3\u30AF\u306B\u6700\u9069\u5206\u5272\uFF09</span>
       </label>
+      <label class="dtm-checkbox-label dtm-checkbox-label--sub">
+        <input type="checkbox" class="dtm-checkbox" data-dtm="ignore-chord-heavy">
+        <span>\u548C\u97F3\u4F34\u594F\u30C8\u30E9\u30C3\u30AF\u3092\u7121\u8996\uFF08\u5206\u89E3\u5BFE\u8C61\u304B\u3089\u9664\u5916\uFF09</span>
+      </label>
       <div class="dtm-output dtm-hidden" data-dtm="output-container">
         <p class="dtm-label" data-dtm="output-status"></p>
         <div class="dtm-output-row">
@@ -453,6 +457,7 @@ var buildUI = (target, options) => {
     exportMidiBtn: sel("export-midi"),
     generateMmlBtn: sel("generate-mml"),
     decomposeChordToggle: sel("decompose-chord"),
+    ignoreChordHeavyToggle: sel("ignore-chord-heavy"),
     outputContainer: sel("output-container"),
     outputStatus: sel("output-status"),
     outputFull: sel("output-full"),
@@ -1840,6 +1845,17 @@ var decomposeToMonophonic = (notes) => {
   }
   return tracks;
 };
+var isChordHeavyTrack = (notes, threshold = 0.6) => {
+  if (notes.length < 2) return false;
+  const stepCounts = /* @__PURE__ */ new Map();
+  for (const n of notes) {
+    stepCounts.set(n.startStep, (stepCounts.get(n.startStep) ?? 0) + 1);
+  }
+  const chordNotes = notes.filter(
+    (n) => (stepCounts.get(n.startStep) ?? 0) > 1
+  ).length;
+  return chordNotes / notes.length >= threshold;
+};
 
 // src/mml-parser.ts
 var PITCH_MAP2 = {
@@ -2326,6 +2342,7 @@ var DAW_CSS = `
   margin-top: 4px;
 }
 .dtm-checkbox-label:hover { color: var(--dtm-text); }
+.dtm-checkbox-label--sub { margin-left: 20px; font-size: 10px; }
 .dtm-checkbox {
   width: 14px;
   height: 14px;
@@ -3539,7 +3556,10 @@ var mountDAW = (target, options = {}) => {
   };
   const generateMML = () => {
     if (refs.decomposeChordToggle.checked) {
-      const allNotes = trackStates.flatMap((t) => t.core.getNotes());
+      const ignoreHeavy = refs.ignoreChordHeavyToggle.checked;
+      const targetStates = ignoreHeavy ? trackStates.filter((t) => !isChordHeavyTrack(t.core.getNotes())) : trackStates;
+      const ignoredCount = trackStates.length - targetStates.length;
+      const allNotes = targetStates.flatMap((t) => t.core.getNotes());
       const monoTracks = decomposeToMonophonic(allNotes);
       const refCore = trackStates[0].core;
       const full2 = monoTracks.map(
@@ -3548,22 +3568,22 @@ var mountDAW = (target, options = {}) => {
       const minified2 = monoTracks.map(
         (notes, i) => `@${i}${refCore.getMMLFromNotes(notes, bpm, 100).trim().replace(/\s+/g, "")}`
       ).join(";");
-      return { full: full2, minified: minified2 };
+      return { full: full2, minified: minified2, ignoredCount, trackCount: monoTracks.length };
     }
     const full = trackStates.map((t, i) => `@${i} ${t.core.getMML(t.volume).trim()}`).join(";\n");
     const minified = trackStates.map(
       (t, i) => `@${i}${t.core.getMML(t.volume).trim().replace(/\s+/g, "")}`
     ).join(";");
-    return { full, minified };
+    return { full, minified, ignoredCount: 0, trackCount: trackStates.length };
   };
   const showMML = () => {
-    const { full, minified } = generateMML();
+    const { full, minified, ignoredCount, trackCount } = generateMML();
     refs.outputFull.textContent = full;
     refs.outputMini.textContent = minified;
     const isDecompose = refs.decomposeChordToggle.checked;
-    const trackCount = isDecompose ? decomposeToMonophonic(trackStates.flatMap((t) => t.core.getNotes())).length : trackStates.length;
     const modeLabel = isDecompose ? "\u548C\u97F3\u5206\u89E3" : "\u901A\u5E38";
-    refs.outputStatus.textContent = `[${modeLabel}] (${trackCount}\u30C8\u30E9\u30C3\u30AF) \u901A\u5E38: ${full.length}\u6587\u5B57 / minify: ${minified.length}\u6587\u5B57`;
+    const ignoredLabel = ignoredCount > 0 ? ` / \u4F34\u594F${ignoredCount}\u30C8\u30E9\u30C3\u30AF\u9664\u5916` : "";
+    refs.outputStatus.textContent = `[${modeLabel}] (${trackCount}\u30C8\u30E9\u30C3\u30AF${ignoredLabel}) \u901A\u5E38: ${full.length}\u6587\u5B57 / minify: ${minified.length}\u6587\u5B57`;
     refs.outputContainer.classList.remove("dtm-hidden");
     updateUndoRedo();
   };
@@ -4372,6 +4392,7 @@ export {
   icon,
   init,
   injectStyles,
+  isChordHeavyTrack,
   mountDAW,
   onClick,
   parseMML,
