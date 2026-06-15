@@ -385,6 +385,10 @@ var buildUI = (target, options) => {
         <button class="dtm-btn dtm-btn--accent" data-dtm="export-midi">MIDI\u51FA\u529B</button>
         <button class="dtm-btn dtm-btn--success" data-dtm="generate-mml">MML\u751F\u6210</button>
       </div>
+      <label class="dtm-checkbox-label">
+        <input type="checkbox" class="dtm-checkbox" data-dtm="decompose-chord">
+        <span>\u548C\u97F3\u5206\u89E3\u30E2\u30FC\u30C9\uFF08\u5358\u97F3\u30C8\u30E9\u30C3\u30AF\u306B\u6700\u9069\u5206\u5272\uFF09</span>
+      </label>
       <div class="dtm-output dtm-hidden" data-dtm="output-container">
         <p class="dtm-label" data-dtm="output-status"></p>
         <div class="dtm-output-row">
@@ -448,6 +452,7 @@ var buildUI = (target, options) => {
     macroMono: sel("macro-mono"),
     exportMidiBtn: sel("export-midi"),
     generateMmlBtn: sel("generate-mml"),
+    decomposeChordToggle: sel("decompose-chord"),
     outputContainer: sel("output-container"),
     outputStatus: sel("output-status"),
     outputFull: sel("output-full"),
@@ -1783,6 +1788,22 @@ var MMLCore = class _MMLCore {
     return `${header} ${segments.join(" ")}`;
   };
   /**
+   * ノート配列を直接渡してMMLを生成する（一時的に内部状態を差し替えて生成後に復元）
+   */
+  getMMLFromNotes(notes, tempo, volume) {
+    const savedNotes = this.notes;
+    const savedTempo = this.tempo;
+    const savedVolume = this.volume;
+    this.notes = [...notes].sort((a, b) => a.startStep - b.startStep);
+    if (tempo !== void 0) this.tempo = tempo;
+    if (volume !== void 0) this.volume = volume;
+    const result = this.generateMML();
+    this.notes = savedNotes;
+    this.tempo = savedTempo;
+    this.volume = savedVolume;
+    return result;
+  }
+  /**
    * MMLの音長文字列（"4", "4.", "12"など）をステップ数に変換する
    */
   getStepFromDottedMML(durStr) {
@@ -1793,6 +1814,31 @@ var MMLCore = class _MMLCore {
     const baseStep = total / baseDur;
     return isDotted ? baseStep * 1.5 : baseStep;
   }
+};
+var decomposeToMonophonic = (notes) => {
+  const sorted = [...notes].sort(
+    (a, b) => a.startStep - b.startStep || a.pitch - b.pitch
+  );
+  const tracks = [];
+  const trackEnds = [];
+  for (const note of sorted) {
+    let assigned = -1;
+    let minEnd = Infinity;
+    for (let i = 0; i < tracks.length; i++) {
+      if (trackEnds[i] <= note.startStep && trackEnds[i] < minEnd) {
+        minEnd = trackEnds[i];
+        assigned = i;
+      }
+    }
+    if (assigned === -1) {
+      tracks.push([note]);
+      trackEnds.push(note.startStep + note.durationSteps);
+    } else {
+      tracks[assigned].push(note);
+      trackEnds[assigned] = note.startStep + note.durationSteps;
+    }
+  }
+  return tracks;
 };
 
 // src/mml-parser.ts
@@ -2266,6 +2312,28 @@ var DAW_CSS = `
   color: var(--dtm-muted);
   white-space: nowrap;
 }
+.dtm-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--dtm-muted);
+  cursor: pointer;
+  user-select: none;
+  margin-top: 4px;
+}
+.dtm-checkbox-label:hover { color: var(--dtm-text); }
+.dtm-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--dtm-success);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .dtm-toggle {
   display: inline-flex;
   align-items: center;
@@ -3470,6 +3538,18 @@ var mountDAW = (target, options = {}) => {
     redrawAll();
   };
   const generateMML = () => {
+    if (refs.decomposeChordToggle.checked) {
+      const allNotes = trackStates.flatMap((t) => t.core.getNotes());
+      const monoTracks = decomposeToMonophonic(allNotes);
+      const refCore = trackStates[0].core;
+      const full2 = monoTracks.map(
+        (notes, i) => `@${i} ${refCore.getMMLFromNotes(notes, bpm, 100).trim()}`
+      ).join(";\n");
+      const minified2 = monoTracks.map(
+        (notes, i) => `@${i}${refCore.getMMLFromNotes(notes, bpm, 100).trim().replace(/\s+/g, "")}`
+      ).join(";");
+      return { full: full2, minified: minified2 };
+    }
     const full = trackStates.map((t, i) => `@${i} ${t.core.getMML(t.volume).trim()}`).join(";\n");
     const minified = trackStates.map(
       (t, i) => `@${i}${t.core.getMML(t.volume).trim().replace(/\s+/g, "")}`
@@ -3480,7 +3560,10 @@ var mountDAW = (target, options = {}) => {
     const { full, minified } = generateMML();
     refs.outputFull.textContent = full;
     refs.outputMini.textContent = minified;
-    refs.outputStatus.textContent = `(${trackStates.length}\u30C8\u30E9\u30C3\u30AF) \u901A\u5E38: ${full.length}\u6587\u5B57 / minify: ${minified.length}\u6587\u5B57`;
+    const isDecompose = refs.decomposeChordToggle.checked;
+    const trackCount = isDecompose ? decomposeToMonophonic(trackStates.flatMap((t) => t.core.getNotes())).length : trackStates.length;
+    const modeLabel = isDecompose ? "\u548C\u97F3\u5206\u89E3" : "\u901A\u5E38";
+    refs.outputStatus.textContent = `[${modeLabel}] (${trackCount}\u30C8\u30E9\u30C3\u30AF) \u901A\u5E38: ${full.length}\u6587\u5B57 / minify: ${minified.length}\u6587\u5B57`;
     refs.outputContainer.classList.remove("dtm-hidden");
     updateUndoRedo();
   };
@@ -4266,6 +4349,7 @@ export {
   createAudioContext,
   createPianoRoll,
   createSequencer,
+  decomposeToMonophonic,
   drawGrid,
   drawHeader,
   drawKeyboard,
