@@ -1137,9 +1137,9 @@ var drawHeaderCorner = () => {
     cornerDiv.style.top = "0px";
     cornerDiv.style.width = `${KEYBOARD_WIDTH}px`;
     cornerDiv.style.height = `${HEADER_HEIGHT}px`;
-    cornerDiv.style.backgroundColor = "#F3F4F6";
-    cornerDiv.style.borderRight = "1px solid #D1D5DB";
-    cornerDiv.style.borderBottom = "1px solid #D1D5DB";
+    cornerDiv.style.backgroundColor = "#0a0f1f";
+    cornerDiv.style.borderRight = "2px solid #29adff";
+    cornerDiv.style.borderBottom = "2px solid #29adff";
     mountTarget.insertBefore(cornerDiv, g_header_canvas);
   }
 };
@@ -1149,7 +1149,7 @@ var drawKeyboard = () => {
   const startY = Math.floor(g_draw_offset_y / keyHeight) * keyHeight;
   const endY = g_draw_offset_y + g_key_canvas.height;
   g_key_ctx.beginPath();
-  g_key_ctx.strokeStyle = "#EF4444";
+  g_key_ctx.strokeStyle = "#29adff";
   g_key_ctx.lineWidth = 2;
   g_key_ctx.moveTo(KEYBOARD_WIDTH, 0);
   g_key_ctx.lineTo(KEYBOARD_WIDTH, g_key_canvas.height);
@@ -1160,10 +1160,10 @@ var drawKeyboard = () => {
     const pitchMod12 = totalPitch % 12;
     const isBlackKey = blackKeyPitches.has(pitchMod12);
     const screenY = y - g_draw_offset_y;
-    g_key_ctx.fillStyle = "#F9FAFB";
+    g_key_ctx.fillStyle = "#1d2b53";
     g_key_ctx.fillRect(0, screenY, KEYBOARD_WIDTH, keyHeight);
     g_key_ctx.beginPath();
-    g_key_ctx.strokeStyle = "#D1D5DB";
+    g_key_ctx.strokeStyle = "#2d3560";
     g_key_ctx.lineWidth = 1;
     g_key_ctx.moveTo(0, screenY + keyHeight);
     g_key_ctx.lineTo(KEYBOARD_WIDTH, screenY + keyHeight);
@@ -1178,17 +1178,17 @@ var drawKeyboard = () => {
         0,
         screenY + offset + blackKeyHeight
       );
-      gradient.addColorStop(0, "#4B5563");
-      gradient.addColorStop(1, "#1F2937");
+      gradient.addColorStop(0, "#3d405b");
+      gradient.addColorStop(1, "#000000");
       g_key_ctx.fillStyle = gradient;
       g_key_ctx.fillRect(0, screenY + offset, blackKeyWidth, blackKeyHeight);
-      g_key_ctx.strokeStyle = "#111827";
+      g_key_ctx.strokeStyle = "#000000";
       g_key_ctx.strokeRect(0, screenY + offset, blackKeyWidth, blackKeyHeight);
     }
     if (pitchMod12 === 0) {
       const octave = Math.floor(totalPitch / 12) - 1;
-      g_key_ctx.fillStyle = "#6B7280";
-      g_key_ctx.font = "bold 10px sans-serif";
+      g_key_ctx.fillStyle = "#83769c";
+      g_key_ctx.font = "10px 'MisakiGothic',monospace";
       g_key_ctx.textAlign = "right";
       g_key_ctx.textBaseline = "bottom";
       g_key_ctx.fillText(
@@ -1204,17 +1204,17 @@ var drawHeader = () => {
   const { stepWidth, stepsPerBar } = g_config;
   g_header_ctx.save();
   g_header_ctx.translate(-g_draw_offset_x, 0);
-  g_header_ctx.fillStyle = "#F9FAFB";
+  g_header_ctx.fillStyle = "#0a0f1f";
   g_header_ctx.fillRect(
     g_draw_offset_x,
     0,
     g_header_canvas.width,
     HEADER_HEIGHT
   );
-  g_header_ctx.strokeStyle = "#D1D5DB";
+  g_header_ctx.strokeStyle = "#3d405b";
   g_header_ctx.lineWidth = 1;
-  g_header_ctx.font = "bold 12px sans-serif";
-  g_header_ctx.fillStyle = "#4B5563";
+  g_header_ctx.font = "11px 'MisakiGothic',monospace";
+  g_header_ctx.fillStyle = "#83769c";
   const startBar = Math.floor(g_draw_offset_x / (stepsPerBar * stepWidth));
   const endBar = Math.ceil(
     (g_draw_offset_x + g_header_canvas.width) / (stepsPerBar * stepWidth)
@@ -1248,11 +1248,11 @@ var drawGrid = (noteLengthSteps = 1) => {
     const isC = pitchMod12 === 0;
     const screenY = y - g_draw_offset_y;
     if (isBlackKey) {
-      g_grid_ctx.fillStyle = "#F3F4F6";
+      g_grid_ctx.fillStyle = "#0d1020";
       g_grid_ctx.fillRect(0, screenY, g_grid_canvas.width, keyHeight);
     }
     g_grid_ctx.beginPath();
-    g_grid_ctx.strokeStyle = isC ? "#aaa" : "#E5E7EB";
+    g_grid_ctx.strokeStyle = isC ? "#3d405b" : "#1a1d30";
     g_grid_ctx.lineWidth = 1;
     const lineY = screenY + keyHeight;
     g_grid_ctx.moveTo(0, lineY);
@@ -1269,7 +1269,7 @@ var drawGrid = (noteLengthSteps = 1) => {
     const isNoteLine = step % gridStep === 0;
     const screenX = x - g_draw_offset_x;
     g_grid_ctx.beginPath();
-    g_grid_ctx.strokeStyle = isBarLine ? "#A0A0A0" : isNoteLine ? "#D1D5DB" : "#E5E7EB";
+    g_grid_ctx.strokeStyle = isBarLine ? "#3d405b" : isNoteLine ? "#242840" : "#1a1d30";
     g_grid_ctx.lineWidth = isBarLine ? 2 : 1;
     g_grid_ctx.moveTo(screenX, 0);
     g_grid_ctx.lineTo(screenX, g_grid_canvas.height);
@@ -1296,11 +1296,11 @@ var drawNotes = (notes, color = [59, 130, 246, 1]) => {
 var drawSelectionRect = (rect) => {
   if (!rect) return;
   g_grid_ctx.save();
-  g_grid_ctx.strokeStyle = "#10B981";
+  g_grid_ctx.strokeStyle = "#ffec27";
   g_grid_ctx.lineWidth = 2;
-  g_grid_ctx.setLineDash([5, 3]);
+  g_grid_ctx.setLineDash([4, 4]);
   g_grid_ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-  g_grid_ctx.fillStyle = "rgba(16, 185, 129, 0.1)";
+  g_grid_ctx.fillStyle = "rgba(255,236,39,0.08)";
   g_grid_ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
   g_grid_ctx.restore();
 };
@@ -2505,28 +2505,32 @@ var DEFAULT_TRACKS = [
   {
     id: "melody",
     name: "\u30E1\u30ED\u30C7\u30A3\u30FC",
-    color: [59, 130, 246],
+    color: [41, 173, 255],
+    // PICO-8 cyan
     instrument: 0,
     volume: 100
   },
   {
     id: "submelody",
     name: "\u30B5\u30D6\u30E1\u30ED",
-    color: [139, 92, 246],
+    color: [255, 119, 168],
+    // PICO-8 pink
     instrument: 1,
     volume: 95
   },
   {
     id: "bass",
     name: "\u30D9\u30FC\u30B9",
-    color: [16, 185, 129],
+    color: [0, 228, 54],
+    // PICO-8 green
     instrument: 2,
     volume: 88
   },
   {
     id: "chord",
     name: "\u4F34\u594F",
-    color: [245, 158, 11],
+    color: [255, 163, 0],
+    // PICO-8 orange
     instrument: 3,
     volume: 76
   }
@@ -2622,9 +2626,9 @@ var mountDAW = (target, options = {}) => {
     const x = playStartStep * renderConfig.stepWidth - currentOffsetX;
     if (x < -10 || x > canvas.width + 10) return;
     ctx.save();
-    ctx.strokeStyle = "#10B981";
+    ctx.strokeStyle = "#ffec27";
     ctx.lineWidth = 2;
-    ctx.setLineDash([5, 3]);
+    ctx.setLineDash([4, 4]);
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, canvas.height);
@@ -2638,7 +2642,7 @@ var mountDAW = (target, options = {}) => {
     const x = currentPlayStep * renderConfig.stepWidth - currentOffsetX;
     if (x < 0 || x > canvas.width) return;
     ctx.save();
-    ctx.strokeStyle = "#EF4444";
+    ctx.strokeStyle = "#ff004d";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(x, 0);
@@ -2656,16 +2660,16 @@ var mountDAW = (target, options = {}) => {
     if (activeToolMode === "select" && selectionRect) {
       const ctx = getGridContext();
       ctx.save();
-      ctx.strokeStyle = "#10B981";
+      ctx.strokeStyle = "#ffec27";
       ctx.lineWidth = 2;
-      ctx.setLineDash([5, 3]);
+      ctx.setLineDash([4, 4]);
       ctx.strokeRect(
         selectionRect.x,
         selectionRect.y,
         selectionRect.width,
         selectionRect.height
       );
-      ctx.fillStyle = "rgba(16,185,129,0.1)";
+      ctx.fillStyle = "rgba(255,236,39,0.08)";
       ctx.fillRect(
         selectionRect.x,
         selectionRect.y,
