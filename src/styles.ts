@@ -91,6 +91,7 @@ export const DAW_CSS = `
   top: 0;
   z-index: 20;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 8px;
@@ -131,26 +132,21 @@ export const DAW_CSS = `
 }
 .dtm-toggle input { width: 18px; height: 18px; accent-color: var(--dtm-accent); }
 
-/* --- ツールドック（横スクロール） --- */
+/* --- ツールドック（折返し・横スクロールなし） --- */
 .dtm-tooldock {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
   padding: 8px;
   background: var(--dtm-surface);
   border: 1px solid var(--dtm-border);
   border-radius: var(--dtm-radius);
   box-shadow: var(--dtm-shadow);
 }
-.dtm-tooldock::-webkit-scrollbar { height: 6px; }
-.dtm-tooldock > * { flex: 0 0 auto; }
 .dtm-sep { width: 1px; align-self: stretch; background: var(--dtm-border); margin: 2px; }
 .dtm-label { font-size: 13px; color: var(--dtm-muted); font-weight: 600; white-space: nowrap; }
-.dtm-zoom { display: inline-flex; align-items: center; gap: 4px; }
-.dtm-zoom .dtm-label[data-dtm] { min-width: 38px; text-align: center; }
+.dtm-row .dtm-label[data-dtm] { min-width: 44px; text-align: center; }
 
 /* --- セグメント型ツール選択 --- */
 .dtm-seg {
@@ -190,24 +186,22 @@ export const DAW_CSS = `
 .dtm-textarea { width: 100%; min-height: 56px; resize: vertical; font-family: ui-monospace, monospace; }
 .dtm-range { height: var(--dtm-tap); accent-color: var(--dtm-primary); }
 
-/* --- トラックピル（色分け・常時表示） --- */
+/* --- トラックピル（色分け・常時表示・折返し） --- */
 .dtm-tracks {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
   padding: 2px;
 }
-.dtm-tracks::-webkit-scrollbar { display: none; }
 .dtm-pill {
   --dtm-pill-color: var(--dtm-primary);
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  justify-content: center;
   min-height: 40px;
-  padding: 0 16px;
+  padding: 0 14px;
   border: 1.5px solid var(--dtm-border);
   border-radius: 999px;
   background: var(--dtm-surface);

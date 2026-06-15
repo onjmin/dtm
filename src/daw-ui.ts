@@ -26,11 +26,6 @@ export type DawUIRefs = {
 	zoomXOut: HTMLButtonElement;
 	zoomYIn: HTMLButtonElement;
 	zoomYOut: HTMLButtonElement;
-	navHome: HTMLButtonElement;
-	navUp: HTMLButtonElement;
-	navDown: HTMLButtonElement;
-	navLeft: HTMLButtonElement;
-	navRight: HTMLButtonElement;
 	// roll
 	rollContainer: HTMLElement;
 	wrapper: HTMLElement;
@@ -124,8 +119,7 @@ export const buildUI = (
     </div>
     <button class="dtm-iconbtn" data-dtm="undo" title="元に戻す" disabled>${icon("undo")}</button>
     <button class="dtm-iconbtn" data-dtm="redo" title="やり直し" disabled>${icon("redo")}</button>
-    <span class="dtm-sep"></span>
-    <select class="dtm-select" data-dtm="note-length" title="音符の長さ">
+    <select class="dtm-select dtm-grow" data-dtm="note-length" title="音符の長さ">
       <option value="48">4分</option>
       <option value="32">3連4</option>
       <option value="24">8分</option>
@@ -135,25 +129,6 @@ export const buildUI = (
       <option value="6">32分</option>
       <option value="4">3連32</option>
     </select>
-    <span class="dtm-sep"></span>
-    <div class="dtm-zoom">
-      <span class="dtm-label">横</span>
-      <button class="dtm-iconbtn" data-dtm="zoomx-out" title="縮小">−</button>
-      <span class="dtm-label" data-dtm="zoomx-label">100%</span>
-      <button class="dtm-iconbtn" data-dtm="zoomx-in" title="拡大">＋</button>
-    </div>
-    <div class="dtm-zoom">
-      <span class="dtm-label">縦</span>
-      <button class="dtm-iconbtn" data-dtm="zoomy-out" title="縮小">−</button>
-      <span class="dtm-label" data-dtm="zoomy-label">100%</span>
-      <button class="dtm-iconbtn" data-dtm="zoomy-in" title="拡大">＋</button>
-    </div>
-    <span class="dtm-sep"></span>
-    <button class="dtm-iconbtn" data-dtm="nav-home" title="最初へ">${icon("first")}</button>
-    <button class="dtm-iconbtn" data-dtm="nav-up" title="上">${icon("chevronUp")}</button>
-    <button class="dtm-iconbtn" data-dtm="nav-down" title="下">${icon("chevronDown")}</button>
-    <button class="dtm-iconbtn" data-dtm="nav-left" title="左">${icon("chevronLeft")}</button>
-    <button class="dtm-iconbtn" data-dtm="nav-right" title="右">${icon("chevronRight")}</button>
   </div>
 
   <div class="dtm-tracks" data-dtm="track-tabs"></div>
@@ -173,6 +148,24 @@ export const buildUI = (
         <span class="dtm-label" data-dtm="master-volume-label">50%</span>
       </div>
       <div class="dtm-track-body" data-dtm="track-body"></div>
+    </div>
+  </details>
+
+  <details class="dtm-panel">
+    <summary>表示</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row">
+        <span class="dtm-label">横ズーム</span>
+        <button class="dtm-iconbtn" data-dtm="zoomx-out" title="縮小">−</button>
+        <span class="dtm-label" data-dtm="zoomx-label">100%</span>
+        <button class="dtm-iconbtn" data-dtm="zoomx-in" title="拡大">＋</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">縦ズーム</span>
+        <button class="dtm-iconbtn" data-dtm="zoomy-out" title="縮小">−</button>
+        <span class="dtm-label" data-dtm="zoomy-label">100%</span>
+        <button class="dtm-iconbtn" data-dtm="zoomy-in" title="拡大">＋</button>
+      </div>
     </div>
   </details>
 
@@ -280,11 +273,6 @@ export const buildUI = (
 		zoomXOut: sel("zoomx-out"),
 		zoomYIn: sel("zoomy-in"),
 		zoomYOut: sel("zoomy-out"),
-		navHome: sel("nav-home"),
-		navUp: sel("nav-up"),
-		navDown: sel("nav-down"),
-		navLeft: sel("nav-left"),
-		navRight: sel("nav-right"),
 		rollContainer: sel("roll"),
 		wrapper: sel("wrapper"),
 		vScroll: sel("vscroll"),

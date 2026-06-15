@@ -1244,38 +1244,6 @@ export const mountDAW = (
 			applyZoomY();
 		});
 
-		const move = (dir: "home" | "up" | "down" | "left" | "right"): void => {
-			const canvas = getGridCanvas();
-			const visibleSteps = canvas.width / renderConfig.stepWidth;
-			const visibleBars = Math.max(
-				1,
-				Math.round(visibleSteps / renderConfig.stepsPerBar),
-			);
-			const hScroll =
-				visibleBars * renderConfig.stepsPerBar * renderConfig.stepWidth;
-			const vScroll = visibleBars * renderConfig.keyHeight;
-			const maxOffsetX =
-				getMaxNoteStep() * renderConfig.stepWidth -
-				canvas.width +
-				leftPaddingSteps * renderConfig.stepWidth;
-			if (dir === "home") currentOffsetX = 0;
-			if (dir === "right")
-				currentOffsetX = clamp(currentOffsetX + hScroll, 0, maxOffsetX);
-			if (dir === "left")
-				currentOffsetX = clamp(currentOffsetX - hScroll, 0, maxOffsetX);
-			if (dir === "up")
-				currentOffsetY = clamp(currentOffsetY - vScroll, 0, getMaxOffsetY());
-			if (dir === "down")
-				currentOffsetY = clamp(currentOffsetY + vScroll, 0, getMaxOffsetY());
-			setDrawOffset(currentOffsetX, currentOffsetY);
-			redrawAll();
-		};
-		refs.navHome.addEventListener("click", () => move("home"));
-		refs.navUp.addEventListener("click", () => move("up"));
-		refs.navDown.addEventListener("click", () => move("down"));
-		refs.navLeft.addEventListener("click", () => move("left"));
-		refs.navRight.addEventListener("click", () => move("right"));
-
 		refs.masterVolume.addEventListener("input", () => {
 			masterVolume = Number.parseInt(refs.masterVolume.value, 10) || 0;
 			refs.masterVolumeLabel.textContent = `${masterVolume}%`;
