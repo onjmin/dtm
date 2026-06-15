@@ -16,76 +16,114 @@ export const DAW_CSS = `
   font-style: normal;
 }
 
+/* ====================================================
+   PIXEL MUSIC STUDIO — ドット絵UIシステム
+   PICO-8カラーパレット・美咲フォント・ゲームウィンドウ枠
+   ==================================================== */
+
 .dtm-daw {
-  --dtm-bg: #1a1c2c;
-  --dtm-surface: #16213e;
-  --dtm-surface2: #0f0f23;
-  --dtm-border: #3d405b;
-  --dtm-text: #f4f4f4;
-  --dtm-muted: #7e7e8a;
-  --dtm-primary: #29adff;
-  --dtm-primary-fg: #000a1a;
-  --dtm-danger: #ff004d;
-  --dtm-success: #00e436;
-  --dtm-accent: #ff77a8;
-  --dtm-warn: #ffa300;
-  --dtm-radius: 0px;
-  --dtm-tap: 40px;
-  --dtm-shadow: 3px 3px 0 #000;
-  --dtm-font: 'MisakiGothic', 'MS Gothic', 'ＭＳ ゴシック', ui-monospace, monospace;
+  /* PICO-8 16色パレットより */
+  --c-black:   #000000;
+  --c-navy:    #1d2b53;
+  --c-purple:  #7e2553;
+  --c-dkgreen: #008751;
+  --c-brown:   #ab5236;
+  --c-dkgray:  #5f574f;
+  --c-gray:    #c2c3c7;
+  --c-white:   #fff1e8;
+  --c-red:     #ff004d;
+  --c-orange:  #ffa300;
+  --c-yellow:  #ffec27;
+  --c-green:   #00e436;
+  --c-cyan:    #29adff;
+  --c-lavend:  #83769c;
+  --c-pink:    #ff77a8;
+  --c-peach:   #ffccaa;
+
+  /* セマンティックトークン */
+  --dtm-bg:       var(--c-black);
+  --dtm-surface:  var(--c-navy);
+  --dtm-deep:     #0a0f1f;
+  --dtm-border:   var(--c-cyan);
+  --dtm-border2:  var(--c-dkgray);
+  --dtm-text:     var(--c-white);
+  --dtm-muted:    var(--c-lavend);
+  --dtm-primary:  var(--c-cyan);
+  --dtm-pfg:      var(--c-black);
+  --dtm-danger:   var(--c-red);
+  --dtm-success:  var(--c-green);
+  --dtm-accent:   var(--c-pink);
+  --dtm-gold:     var(--c-yellow);
+  --dtm-warn:     var(--c-orange);
+  --dtm-tap:      40px;
+  --dtm-gap:      6px;
+  --dtm-font:     'MisakiGothic','MS Gothic','ＭＳ ゴシック',ui-monospace,monospace;
+
   box-sizing: border-box;
   font-family: var(--dtm-font);
+  font-size: 14px;
+  line-height: 1.6;
+  letter-spacing: .06em;
   color: var(--dtm-text);
   background: var(--dtm-bg);
-  background-image: repeating-linear-gradient(
-    0deg, transparent, transparent 3px,
-    rgba(0,0,0,.18) 3px, rgba(0,0,0,.18) 4px
-  );
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
+  gap: var(--dtm-gap);
+  padding: 6px;
   image-rendering: pixelated;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
+  font-smooth: never;
   -webkit-tap-highlight-color: transparent;
 }
 .dtm-daw *,
 .dtm-daw *::before,
 .dtm-daw *::after { box-sizing: border-box; }
 
-/* --- 共通ボタン（パネル内） --- */
+/* ─── ゲームウィンドウ共通枠 ─── */
+/* 外枠(黒2px) → 色付き2px border → 内枠(黒inset2px) の3重構造 */
+.dtm-win {
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-primary),
+    4px 4px 0 var(--c-black);
+  background: var(--dtm-surface);
+}
+
+/* ─── 共通ボタン ─── */
 .dtm-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   min-height: var(--dtm-tap);
   min-width: var(--dtm-tap);
-  padding: 0 12px;
-  border: 2px solid var(--dtm-border);
-  border-radius: 0;
+  padding: 0 10px;
+  border: 2px solid var(--dtm-border2);
   background: var(--dtm-surface);
   color: var(--dtm-text);
   font-family: var(--dtm-font);
   font-size: 13px;
-  font-weight: normal;
+  text-transform: uppercase;
+  letter-spacing: .12em;
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
-  box-shadow: var(--dtm-shadow);
+  box-shadow: 3px 3px 0 var(--c-black);
   transition: none;
-  letter-spacing: .05em;
 }
-.dtm-btn:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 #000; }
-.dtm-btn:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
-.dtm-btn--primary { background: var(--dtm-primary); color: var(--dtm-primary-fg); border-color: var(--dtm-primary); }
-.dtm-btn--success { background: var(--dtm-success); color: #000; border-color: var(--dtm-success); }
-.dtm-btn--danger  { background: var(--dtm-danger);  color: #fff; border-color: var(--dtm-danger); }
-.dtm-btn--accent  { background: var(--dtm-accent);  color: #000; border-color: var(--dtm-accent); }
-.dtm-btn--ghost   { background: transparent; border-color: var(--dtm-border); }
+.dtm-btn:active  { transform: translate(3px,3px); box-shadow: none; }
+.dtm-btn:disabled { opacity: .3; cursor: default; box-shadow: none; }
+.dtm-btn--primary { border-color: var(--dtm-primary); background: var(--dtm-primary); color: var(--dtm-pfg); }
+.dtm-btn--success { border-color: var(--dtm-success); background: var(--dtm-success); color: var(--c-black); }
+.dtm-btn--danger  { border-color: var(--dtm-danger);  background: var(--dtm-danger);  color: var(--c-white); }
+.dtm-btn--accent  { border-color: var(--dtm-accent);  background: var(--dtm-accent);  color: var(--c-black); }
+.dtm-btn--ghost   { background: transparent; border-color: var(--dtm-border2); }
 .dtm-btn--icon    { padding: 0; }
 
-/* --- アイコンボタン --- */
+/* ─── アイコンボタン ─── */
 .dtm-iconbtn {
   display: inline-flex;
   align-items: center;
@@ -93,19 +131,17 @@ export const DAW_CSS = `
   width: var(--dtm-tap);
   height: var(--dtm-tap);
   flex: 0 0 auto;
-  border: 2px solid var(--dtm-border);
-  border-radius: 0;
+  border: 2px solid var(--dtm-border2);
   background: var(--dtm-surface);
   color: var(--dtm-text);
   font-size: 16px;
-  line-height: 1;
   cursor: pointer;
-  box-shadow: var(--dtm-shadow);
+  box-shadow: 3px 3px 0 var(--c-black);
 }
-.dtm-iconbtn:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 #000; }
-.dtm-iconbtn:disabled { opacity: .3; cursor: not-allowed; box-shadow: none; }
+.dtm-iconbtn:active  { transform: translate(3px,3px); box-shadow: none; }
+.dtm-iconbtn:disabled { opacity: .3; cursor: default; box-shadow: none; }
 
-/* --- トランスポートバー（常時表示・上部固定） --- */
+/* ─── トランスポートバー（HUDスタイル） ─── */
 .dtm-topbar {
   position: sticky;
   top: 0;
@@ -113,82 +149,91 @@ export const DAW_CSS = `
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--dtm-gap);
   padding: 6px;
-  background: var(--dtm-surface2);
-  border: 2px solid var(--dtm-border);
-  box-shadow: var(--dtm-shadow);
+  background: var(--dtm-deep);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-success),
+    4px 4px 0 var(--c-black);
 }
+
+/* PLAYボタン — ゲームの「決定ボタン」的存在感 */
 .dtm-play {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: var(--dtm-tap);
-  padding: 0 18px;
-  border: 2px solid var(--dtm-success);
-  border-radius: 0;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 2px solid var(--c-black);
   background: var(--dtm-success);
-  color: #000;
+  color: var(--c-black);
   font-family: var(--dtm-font);
-  font-size: 13px;
-  font-weight: normal;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: .2em;
   cursor: pointer;
-  box-shadow: var(--dtm-shadow);
-  letter-spacing: .1em;
+  box-shadow: 0 0 0 2px var(--dtm-success), 4px 4px 0 var(--c-black);
 }
-.dtm-play:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 #000; }
-.dtm-play:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+.dtm-play:active  { transform: translate(4px,4px); box-shadow: none; }
+.dtm-play:disabled { opacity: .35; cursor: default; box-shadow: none; }
 .dtm-play--stop {
   background: var(--dtm-danger);
-  border-color: var(--dtm-danger);
-  color: #fff;
+  box-shadow: 0 0 0 2px var(--dtm-danger), 4px 4px 0 var(--c-black);
+  color: var(--c-white);
 }
 .dtm-rec { color: var(--dtm-danger); }
+
+/* BPM — デジタルカウンター風 */
+.dtm-label {
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--dtm-muted);
+  white-space: nowrap;
+}
 .dtm-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-family: var(--dtm-font);
   font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
   color: var(--dtm-muted);
   cursor: pointer;
-  letter-spacing: .05em;
 }
 .dtm-toggle input { width: 16px; height: 16px; accent-color: var(--dtm-accent); }
 
-/* --- ツールドック（折返し・横スクロールなし） --- */
+/* ─── ツールドック（装備スロット風） ─── */
 .dtm-tooldock {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--dtm-gap);
   padding: 6px;
-  background: var(--dtm-surface2);
-  border: 2px solid var(--dtm-border);
-  box-shadow: var(--dtm-shadow);
+  background: var(--dtm-deep);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-border2),
+    4px 4px 0 var(--c-black);
 }
 .dtm-sep {
   width: 2px; align-self: stretch;
-  background: var(--dtm-border); margin: 2px;
+  background: var(--dtm-border2); margin: 2px;
 }
-.dtm-label {
-  font-family: var(--dtm-font);
-  font-size: 12px;
-  color: var(--dtm-muted);
-  white-space: nowrap;
-  letter-spacing: .05em;
-}
-.dtm-row .dtm-label[data-dtm] { min-width: 44px; text-align: center; }
+.dtm-row .dtm-label[data-dtm] { min-width: 48px; text-align: center; }
 
-/* --- セグメント型ツール選択（ピクセルアート） --- */
+/* ─── セグメント（アイテムスロット） ─── */
 .dtm-seg {
   display: inline-flex;
-  border: 2px solid var(--dtm-border);
-  border-radius: 0;
-  overflow: hidden;
-  background: var(--dtm-surface2);
-  box-shadow: var(--dtm-shadow);
+  border: 2px solid var(--dtm-border2);
+  background: var(--dtm-deep);
+  box-shadow: 3px 3px 0 var(--c-black);
 }
 .dtm-segbtn {
   display: inline-flex;
@@ -197,200 +242,232 @@ export const DAW_CSS = `
   width: var(--dtm-tap);
   height: var(--dtm-tap);
   border: none;
-  border-right: 2px solid var(--dtm-border);
+  border-right: 2px solid var(--dtm-border2);
   background: transparent;
   color: var(--dtm-muted);
   cursor: pointer;
 }
 .dtm-segbtn:last-child { border-right: none; }
 .dtm-segbtn--active {
-  background: var(--dtm-primary);
-  color: var(--dtm-primary-fg);
+  background: var(--dtm-gold);
+  color: var(--c-black);
 }
-.dtm-segbtn:active:not(.dtm-segbtn--active) { background: var(--dtm-border); }
+.dtm-segbtn:not(.dtm-segbtn--active):active { background: var(--dtm-border2); }
 
-/* --- フォーム要素 --- */
+/* ─── フォーム要素 ─── */
 .dtm-select, .dtm-input, .dtm-textarea {
   min-height: var(--dtm-tap);
   padding: 4px 8px;
-  border: 2px solid var(--dtm-border);
-  border-radius: 0;
-  background: var(--dtm-surface2);
+  border: 2px solid var(--dtm-border2);
+  background: var(--dtm-deep);
   color: var(--dtm-text);
   font-family: var(--dtm-font);
   font-size: 13px;
-  box-shadow: inset 1px 1px 0 #000;
+  letter-spacing: .06em;
+  box-shadow: inset 2px 2px 0 var(--c-black);
 }
 .dtm-select:focus, .dtm-input:focus, .dtm-textarea:focus {
-  outline: 2px solid var(--dtm-primary);
-  outline-offset: 0;
+  outline: none;
+  border-color: var(--dtm-primary);
 }
-.dtm-input--num { width: 68px; text-align: center; }
-.dtm-textarea {
-  width: 100%; min-height: 56px; resize: vertical;
-  letter-spacing: .04em; line-height: 1.6;
-}
+.dtm-input--num { width: 64px; text-align: center; font-size: 16px; }
+.dtm-textarea { width: 100%; min-height: 56px; resize: vertical; line-height: 1.7; }
 .dtm-range { height: var(--dtm-tap); accent-color: var(--dtm-primary); }
 
-/* --- トラックピル（色分け・常時表示・折返し） --- */
+/* ─── トラックピル（キャラクター選択ボタン） ─── */
 .dtm-tracks {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 2px;
+  gap: var(--dtm-gap);
 }
 .dtm-pill {
   --dtm-pill-color: var(--dtm-primary);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex: 1 1 auto;
   justify-content: center;
-  min-height: 40px;
+  min-height: 42px;
   padding: 0 12px;
-  border: 2px solid var(--dtm-border);
-  border-radius: 0;
-  background: var(--dtm-surface2);
+  border: 2px solid var(--dtm-border2);
+  background: var(--dtm-deep);
   color: var(--dtm-muted);
   font-family: var(--dtm-font);
   font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
   cursor: pointer;
-  box-shadow: var(--dtm-shadow);
-  letter-spacing: .06em;
+  box-shadow: 3px 3px 0 var(--c-black);
 }
 .dtm-pill .dtm-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 0;
+  width: 8px; height: 8px;
   background: var(--dtm-pill-color);
   flex: 0 0 auto;
-  box-shadow: 1px 1px 0 #000;
+  box-shadow: 1px 1px 0 var(--c-black);
 }
+/* アクティブ選択 = 金色ハイライト + カーソル */
 .dtm-pill--active {
-  border-color: var(--dtm-pill-color);
-  color: var(--dtm-text);
+  border-color: var(--dtm-gold);
+  color: var(--dtm-gold);
   background: var(--dtm-surface);
-  box-shadow: 3px 3px 0 var(--dtm-pill-color);
+  box-shadow: 0 0 0 2px var(--dtm-gold), 3px 3px 0 var(--c-black);
 }
-.dtm-pill:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 #000; }
+.dtm-pill--active::before { content: "► "; font-size: 10px; }
+.dtm-pill:not(.dtm-pill--active):active { transform: translate(3px,3px); box-shadow: none; }
 
-/* --- ピアノロール --- */
-.dtm-roll-wrap { display: flex; gap: 6px; }
+/* ─── ピアノロール（トラッカー風） ─── */
+.dtm-roll-wrap { display: flex; gap: var(--dtm-gap); }
 .dtm-roll {
   position: relative;
   flex: 1 1 auto;
-  height: 58vh;
+  height: 56vh;
   min-height: 280px;
-  background: var(--dtm-surface2);
-  border: 2px solid var(--dtm-border);
-  box-shadow: var(--dtm-shadow);
+  background: var(--dtm-deep);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-border2),
+    4px 4px 0 var(--c-black);
   overflow: hidden;
 }
 .dtm-vscroll {
   position: relative;
   width: 12px;
-  border-radius: 0;
-  background: var(--dtm-surface2);
-  border: 2px solid var(--dtm-border);
+  background: var(--dtm-deep);
+  border: 2px solid var(--dtm-border2);
   cursor: pointer;
   flex: 0 0 auto;
 }
 .dtm-vscroll-thumb, .dtm-hscroll-thumb {
   position: absolute;
   background: var(--dtm-primary);
-  border-radius: 0;
-  opacity: .8;
 }
 .dtm-vscroll-thumb { left: 0; width: 100%; }
 .dtm-hscroll {
   position: relative;
-  width: 100%;
-  height: 12px;
-  border-radius: 0;
-  background: var(--dtm-surface2);
-  border: 2px solid var(--dtm-border);
+  width: 100%; height: 12px;
+  background: var(--dtm-deep);
+  border: 2px solid var(--dtm-border2);
   cursor: pointer;
 }
 .dtm-hscroll-thumb { top: 0; height: 100%; }
 
-/* --- パネル（折りたたみ） --- */
+/* ─── パネル（RPGダイアログウィンドウ） ─── */
 .dtm-panel {
   background: var(--dtm-surface);
-  border: 2px solid var(--dtm-border);
-  border-radius: 0;
-  box-shadow: var(--dtm-shadow);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-primary),
+    4px 4px 0 var(--c-black);
   overflow: hidden;
 }
 .dtm-panel > summary {
   list-style: none;
   cursor: pointer;
-  padding: 8px 12px;
+  padding: 0 12px;
   font-family: var(--dtm-font);
-  font-size: 13px;
-  letter-spacing: .1em;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   min-height: var(--dtm-tap);
-  background: var(--dtm-surface2);
-  border-bottom: 2px solid var(--dtm-border);
+  background: var(--dtm-deep);
+  border-bottom: 2px solid var(--dtm-border2);
   color: var(--dtm-primary);
+  gap: 8px;
 }
 .dtm-panel:not([open]) > summary { border-bottom: none; }
 .dtm-panel > summary::-webkit-details-marker { display: none; }
-.dtm-panel > summary::before { content: "▶ "; color: var(--dtm-accent); }
-.dtm-panel[open] > summary::before { content: "▼ "; }
-.dtm-panel > summary::after { content: none; }
+/* 左端ライン（ゲームUIのセクション色分け） */
+.dtm-panel > summary::before {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 20px;
+  background: var(--dtm-accent);
+  flex: 0 0 auto;
+}
+.dtm-panel[open] > summary::before { background: var(--dtm-primary); }
+/* 折りたたみ矢印 */
+.dtm-panel > summary::after {
+  content: "▶";
+  margin-left: auto;
+  color: var(--dtm-muted);
+  font-size: 10px;
+}
+.dtm-panel[open] > summary::after { content: "▼"; }
 .dtm-panel-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
 .dtm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-
-/* --- アクティブトラックのボディ --- */
 .dtm-track-body { display: flex; flex-direction: column; gap: 10px; }
 
-/* --- MML出力 --- */
+/* ─── MML出力（CRTターミナル） ─── */
 .dtm-output {
-  background: #000;
+  background: var(--c-black);
   color: var(--dtm-success);
   border: 2px solid var(--dtm-success);
   padding: 10px;
-  box-shadow: 3px 3px 0 rgba(0,228,54,.4);
+  box-shadow: 0 0 0 2px var(--c-black), 4px 4px 0 var(--c-black);
+}
+.dtm-output::before {
+  content: "C:\\> MML OUTPUT";
+  display: block;
+  font-size: 11px;
+  color: var(--dtm-muted);
+  letter-spacing: .14em;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--dtm-border2);
 }
 .dtm-output pre {
   margin: 0;
   background: transparent;
-  padding: 8px 0 0;
+  padding: 0;
   overflow-x: auto;
   font-family: var(--dtm-font);
   font-size: 12px;
-  line-height: 1.7;
+  line-height: 1.8;
   color: var(--dtm-success);
 }
 .dtm-output-row { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; }
 .dtm-output-row pre { flex: 1; }
 
-/* --- オーバーレイ --- */
+/* ─── ローディングオーバーレイ ─── */
 .dtm-overlay {
   position: fixed; inset: 0; z-index: 1000;
-  background: rgba(0,0,0,.75);
+  background: rgba(0,0,0,.85);
   display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 16px;
 }
 .dtm-overlay[hidden] { display: none; }
+/* ゲームのロード画面風：■■■□□□ */
 .dtm-spinner {
-  width: 32px; height: 32px;
-  border: 4px solid var(--dtm-primary);
-  border-top-color: transparent;
-  border-radius: 0;
-  animation: dtm-spin .6s steps(8) infinite;
+  width: 48px; height: 8px;
+  position: relative;
+  background: var(--dtm-border2);
+  box-shadow: 0 0 0 2px var(--c-black), 0 0 0 4px var(--dtm-primary), 6px 6px 0 var(--c-black);
 }
-@keyframes dtm-spin { to { transform: rotate(360deg); } }
+.dtm-spinner::after {
+  content: '';
+  position: absolute;
+  left: 0; top: 0;
+  height: 100%;
+  background: var(--dtm-primary);
+  animation: dtm-load 1.2s steps(4) infinite;
+}
+@keyframes dtm-load { 0%{width:0} 100%{width:100%} }
+
+@keyframes dtm-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+.dtm-blink { animation: dtm-blink 1s steps(1) infinite; }
 
 .dtm-hidden { display: none !important; }
 .dtm-grow { flex: 1 1 auto; }
 
-/* --- 広幅（タブレット/PC）拡張 --- */
+/* ─── 広幅拡張 ─── */
 @media (min-width: 768px) {
-  .dtm-daw { gap: 8px; padding: 12px; }
-  .dtm-roll { height: 440px; }
+  .dtm-daw { gap: 8px; padding: 10px; }
+  .dtm-roll { height: 420px; }
 }
 `;
 

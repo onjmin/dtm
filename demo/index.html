@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" class="dark">
+<html lang="ja">
 
 <head>
     <meta charset="UTF-8" />
@@ -13,55 +13,109 @@
             src: url('https://cdn.jsdelivr.net/npm/misaki-font/misaki_gothic.woff2') format('woff2'),
                  url('https://cdn.jsdelivr.net/npm/misaki-font/misaki_gothic.woff') format('woff');
         }
-        * { box-sizing: border-box; }
-        body {
-            font-family: 'MisakiGothic', 'MS Gothic', ui-monospace, monospace;
-            background: #0d0d1a;
-            color: #f4f4f4;
-            margin: 0;
-            min-height: 100vh;
-            /* ドット格子背景 */
-            background-image: radial-gradient(circle, #2a2d4a 1px, transparent 1px);
-            background-size: 16px 16px;
+        *, *::before, *::after { box-sizing: border-box; }
+
+        :root {
+            --c-black:  #000000;
+            --c-navy:   #1d2b53;
+            --c-green:  #00e436;
+            --c-cyan:   #29adff;
+            --c-yellow: #ffec27;
+            --c-pink:   #ff77a8;
+            --c-gray:   #5f574f;
+            --c-text:   #fff1e8;
+            --c-muted:  #83769c;
         }
-        /* スキャンライン */
-        body::before {
+
+        html, body {
+            margin: 0; padding: 0;
+            background: var(--c-black);
+            color: var(--c-text);
+            font-family: 'MisakiGothic','MS Gothic',ui-monospace,monospace;
+            font-size: 14px;
+            -webkit-font-smoothing: none;
+            -moz-osx-font-smoothing: unset;
+            font-smooth: never;
+            min-height: 100vh;
+        }
+
+        /* 背景：ドット格子 */
+        body {
+            background-color: #000;
+            background-image:
+                radial-gradient(circle, #1a1c2c 1px, transparent 1px);
+            background-size: 8px 8px;
+        }
+
+        /* 全体スキャンライン */
+        body::after {
             content: '';
-            position: fixed;
-            inset: 0;
+            position: fixed; inset: 0;
             background: repeating-linear-gradient(
-                0deg, transparent, transparent 2px,
-                rgba(0,0,0,.15) 2px, rgba(0,0,0,.15) 3px
+                0deg, transparent 0px, transparent 2px,
+                rgba(0,0,0,.22) 2px, rgba(0,0,0,.22) 3px
             );
             pointer-events: none;
             z-index: 9999;
         }
-        /* スクロールバー */
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #1a1c2c; }
-        ::-webkit-scrollbar-thumb { background: #29adff; border-radius: 0; }
+
+        /* ゲームウィンドウ枠ヘルパー */
+        .game-win {
+            border: 2px solid #000;
+            box-shadow:
+                inset 0 0 0 2px #000,
+                0 0 0 2px var(--c-cyan),
+                4px 4px 0 #000;
+        }
+
+        /* タイトルバナー */
+        .title-banner {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            background: var(--c-navy);
+        }
+        .title-banner::before {
+            content: '█▓▒░';
+            color: var(--c-cyan);
+            font-size: 12px;
+            letter-spacing: .04em;
+        }
+        .title-banner::after {
+            content: '░▒▓█';
+            color: var(--c-cyan);
+            font-size: 12px;
+            letter-spacing: .04em;
+        }
+
+        /* ブリンクカーソル */
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+        .blink { animation: blink 1s steps(1) infinite; }
+
+        /* セレクト */
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M0 0l6 8 6-8z' fill='%2329adff'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 28px !important;
+        }
     </style>
     <script>
         tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: {
-                        pixel: ['MisakiGothic', 'MS Gothic', 'ui-monospace', 'monospace'],
-                    },
+                    fontFamily: { pixel: ['MisakiGothic','MS Gothic','ui-monospace','monospace'] },
                     colors: {
                         pico: {
-                            bg:      '#1a1c2c',
-                            surface: '#16213e',
-                            dark:    '#0f0f23',
-                            border:  '#3d405b',
-                            cyan:    '#29adff',
-                            green:   '#00e436',
-                            red:     '#ff004d',
-                            pink:    '#ff77a8',
-                            orange:  '#ffa300',
-                            yellow:  '#ffec27',
-                            gray:    '#7e7e8a',
-                            white:   '#f4f4f4',
+                            black:  '#000000', navy:   '#1d2b53', purple: '#7e2553',
+                            dkgrn:  '#008751', brown:  '#ab5236', gray:   '#5f574f',
+                            silver: '#c2c3c7', white:  '#fff1e8', red:    '#ff004d',
+                            orange: '#ffa300', yellow: '#ffec27', green:  '#00e436',
+                            cyan:   '#29adff', lavend: '#83769c', pink:   '#ff77a8',
+                            peach:  '#ffccaa',
                         }
                     }
                 }
@@ -72,43 +126,77 @@
 
 <body class="font-pixel">
 
-    <!-- ヘッダー -->
-    <header class="border-b-4 border-pico-cyan bg-pico-dark px-4 py-3 shadow-[0_4px_0_#000]">
-        <div class="max-w-4xl mx-auto flex items-center gap-3">
-            <div class="w-8 h-8 bg-pico-green flex items-center justify-center text-black text-lg shadow-[2px_2px_0_#000] shrink-0">
-                ♪
-            </div>
+    <!-- ════ タイトル画面ヘッダー ════ -->
+    <header class="border-b-4 border-pico-black" style="box-shadow: 0 4px 0 var(--c-cyan);">
+        <!-- ロゴ行 -->
+        <div class="title-banner">
             <div>
-                <h1 class="text-pico-cyan text-base tracking-widest m-0 leading-tight">
-                    [ @onjmin/dtm ]
-                </h1>
-                <p class="text-pico-gray text-xs m-0 mt-0.5 tracking-wide">
-                    &gt; mountDAW() — mobile-first DAW component
-                </p>
+                <div class="text-pico-cyan text-base tracking-widest uppercase">
+                    @onjmin/dtm
+                </div>
+                <div class="text-pico-lavend text-xs tracking-widest mt-0.5">
+                    PIXEL MUSIC STUDIO  v0.1.0
+                </div>
             </div>
-            <div class="ml-auto flex items-center gap-2">
-                <span class="text-pico-green text-xs animate-pulse tracking-widest">● ONLINE</span>
+            <div class="ml-auto text-right">
+                <div class="text-pico-green text-xs tracking-widest">
+                    ♪ <span class="blink">█</span>
+                </div>
+                <div class="text-pico-lavend text-xs mt-0.5">READY</div>
             </div>
+        </div>
+
+        <!-- ステータスバー -->
+        <div class="flex items-center gap-4 px-3 py-1.5 bg-pico-black text-xs text-pico-lavend tracking-widest uppercase border-t-2 border-pico-gray">
+            <span class="text-pico-green">● SOUND ON</span>
+            <span>|</span>
+            <span>MOBILE FIRST DAW</span>
+            <span>|</span>
+            <span class="text-pico-cyan">
+                mountDAW<span class="text-pico-yellow">()</span>
+            </span>
         </div>
     </header>
 
-    <!-- 楽器プリセットバー -->
-    <div class="max-w-4xl mx-auto px-3 py-2">
-        <div class="flex flex-wrap items-center gap-3 border-2 border-pico-border bg-pico-dark px-3 py-2 shadow-[3px_3px_0_#000]">
-            <span class="text-pico-gray text-xs tracking-widest shrink-0">INSTRUMENT</span>
-            <select id="preset"
-                class="min-h-[36px] px-2 border-2 border-pico-border bg-pico-surface text-pico-white font-pixel text-xs
-                       shadow-[inset_1px_1px_0_#000] focus:outline-none focus:border-pico-cyan grow">
-            </select>
-            <span id="loading"
-                class="text-pico-orange text-xs tracking-widest animate-pulse shrink-0">
-                LOADING…
-            </span>
+    <!-- ════ 楽器選択（装備画面風） ════ -->
+    <div class="max-w-4xl mx-auto px-3 pt-4">
+        <div class="game-win bg-pico-navy px-4 py-3">
+            <div class="flex flex-wrap items-center gap-3">
+                <!-- ラベル -->
+                <div class="flex items-center gap-2 shrink-0">
+                    <span class="text-pico-pink text-xs uppercase tracking-widest">► INSTRUMENT</span>
+                </div>
+                <!-- セレクト -->
+                <select id="preset"
+                    class="game-win grow min-h-[40px] px-3 bg-pico-black text-pico-white font-pixel text-sm
+                           tracking-wide uppercase border-0 focus:outline-none focus:border-pico-cyan
+                           cursor-pointer">
+                </select>
+                <!-- ローディングゲージ -->
+                <div id="loading-wrap" class="flex items-center gap-2 shrink-0">
+                    <span class="text-pico-orange text-xs uppercase tracking-widest blink" id="loading">
+                        ░░░ LOADING ░░░
+                    </span>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- DAW マウント領域 -->
-    <div id="app" class="max-w-4xl mx-auto px-3 pb-6"></div>
+    <!-- ════ DAW マウント ════ -->
+    <div id="app" class="max-w-4xl mx-auto px-3 pb-8 pt-3"></div>
+
+    <!-- ════ フッター ════ -->
+    <footer class="max-w-4xl mx-auto px-3 pb-4 text-pico-gray text-xs uppercase tracking-widest">
+        <div class="flex gap-4 flex-wrap">
+            <span>© 2025 <span class="text-pico-cyan">@onjmin</span></span>
+            <span>|</span>
+            <a href="https://github.com/onjmin/dtm" class="text-pico-cyan hover:text-pico-yellow">GITHUB</a>
+            <span>|</span>
+            <a href="https://www.npmjs.com/package/@onjmin/dtm" class="text-pico-pink hover:text-pico-yellow">NPM</a>
+            <span>|</span>
+            <span class="text-pico-lavend">MIT LICENSE</span>
+        </div>
+    </footer>
 
     <script type="module">
         import { parseChord } from 'https://rpgen3.github.io/piano/mjs/parseChord.mjs';
@@ -122,10 +210,8 @@
             : './index.mjs');
 
         const { createAudioContext, setupRecorder, buildNameToKeyMapping } = DTM;
-        const { DRUM_KEYS, DRUM_FONT } = DTM;
-        const { INSTRUMENT_PRESETS } = DTM;
+        const { DRUM_KEYS, DRUM_FONT, INSTRUMENT_PRESETS } = DTM;
 
-        // --- オーディオ基盤（利用側が用意する） ---
         const { audioCtx, gainNode, drumGainNode } = createAudioContext();
         gainNode.gain.value = 1;
         drumGainNode.gain.value = 1;
@@ -164,7 +250,6 @@
             document.getElementById('loading').style.display = 'none';
         };
 
-        // --- 録音 WAV 書き出し ---
         const downloadWav = (recordedData) => {
             const mergeData = () => {
                 const ch = recordedData.length;
@@ -182,12 +267,12 @@
             const sampleRate = audioCtx.sampleRate, channels = 2, bitRate = 16;
             const step = bitRate / 8, blockSize = channels * step, len = wave.length * step;
             const view = new DataView(new ArrayBuffer(44 + len));
-            const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
-            writeStr(0, 'RIFF'); view.setUint32(4, 32 + len, true); writeStr(8, 'WAVE'); writeStr(12, 'fmt ');
+            const ws = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+            ws(0, 'RIFF'); view.setUint32(4, 32 + len, true); ws(8, 'WAVE'); ws(12, 'fmt ');
             view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, channels, true);
             view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * blockSize, true);
             view.setUint16(32, blockSize, true); view.setUint16(34, bitRate, true);
-            writeStr(36, 'data'); view.setUint32(40, len, true);
+            ws(36, 'data'); view.setUint32(40, len, true);
             const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
             let off = 44;
             for (let i = 0; i < wave.length; i++, off += step)
@@ -199,7 +284,6 @@
             URL.revokeObjectURL(url);
         };
 
-        // --- MIDIバイナリ解析（midi-parser-js を動的読込） ---
         const parseMidi = (() => {
             let MidiParser = null;
             import('https://cdn.jsdelivr.net/npm/midi-parser-js@4.0.4/+esm')
@@ -211,7 +295,6 @@
             };
         })();
 
-        // --- DAWマウント ---
         const daw = DTM.mountDAW(document.getElementById('app'), {
             getAudioTime: () => audioCtx.currentTime,
             onResumeAudio: () => { if (audioCtx.state === 'suspended') audioCtx.resume(); },
@@ -233,14 +316,11 @@
                     recorder.startRecording();
                 }
             },
-            parseChord,
-            parseChords,
-            parseMidi,
+            parseChord, parseChords, parseMidi,
             defaultBpm: 120,
         });
         window.daw = daw;
 
-        // --- 楽器プリセットUI（デモ側のクローム） ---
         const presetSelect = document.getElementById('preset');
         for (const [key, preset] of Object.entries(INSTRUMENT_PRESETS)) {
             const opt = document.createElement('option');
