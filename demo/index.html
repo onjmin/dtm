@@ -158,28 +158,45 @@
         </div>
     </header>
 
-    <!-- ════ 楽器選択（装備画面風） ════ -->
-    <div class="max-w-4xl mx-auto px-3 pt-4">
+    <!-- ════ コントロールバー ════ -->
+    <div class="max-w-4xl mx-auto px-3 pt-4 flex flex-col gap-2">
+
+        <!-- 楽器選択 -->
         <div class="game-win bg-pico-navy px-4 py-3">
             <div class="flex flex-wrap items-center gap-3">
-                <!-- ラベル -->
-                <div class="flex items-center gap-2 shrink-0">
-                    <span class="text-pico-pink text-xs uppercase tracking-widest">► INSTRUMENT</span>
-                </div>
-                <!-- セレクト -->
+                <span class="text-pico-pink text-xs uppercase tracking-widest shrink-0">► INSTRUMENT</span>
                 <select id="preset"
                     class="game-win grow min-h-[40px] px-3 bg-pico-black text-pico-white font-pixel text-sm
-                           tracking-wide uppercase border-0 focus:outline-none focus:border-pico-cyan
-                           cursor-pointer">
+                           tracking-wide uppercase border-0 focus:outline-none cursor-pointer">
                 </select>
-                <!-- ローディングゲージ -->
-                <div id="loading-wrap" class="flex items-center gap-2 shrink-0">
-                    <span class="text-pico-orange text-xs uppercase tracking-widest blink" id="loading">
-                        ░░░ LOADING ░░░
-                    </span>
-                </div>
+                <span class="text-pico-orange text-xs uppercase tracking-widest blink shrink-0" id="loading">
+                    ░░░ LOADING ░░░
+                </span>
             </div>
         </div>
+
+        <!-- モード切替 -->
+        <div class="game-win bg-pico-navy px-4 py-3">
+            <div class="flex flex-wrap items-center gap-3">
+                <span class="text-pico-yellow text-xs uppercase tracking-widest shrink-0">► MODE</span>
+                <button id="mode-simple"
+                    class="min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-cyan text-pico-black
+                           text-xs uppercase tracking-widest cursor-pointer font-pixel
+                           shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
+                    ■ SIMPLE (4 TRACKS)
+                </button>
+                <button id="mode-advanced"
+                    class="min-h-[40px] px-4 border-2 border-pico-gray bg-pico-black text-pico-gray
+                           text-xs uppercase tracking-widest cursor-pointer font-pixel
+                           shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
+                    □ ADVANCED (16 TRACKS)
+                </button>
+                <span id="mode-desc" class="text-pico-lavend text-xs uppercase tracking-widest">
+                    AUTO MIDI CLASSIFY
+                </span>
+            </div>
+        </div>
+
     </div>
 
     <!-- ════ DAW マウント ════ -->
@@ -295,7 +312,7 @@
             };
         })();
 
-        const daw = DTM.mountDAW(document.getElementById('app'), {
+        const dawBaseOptions = {
             getAudioTime: () => audioCtx.currentTime,
             onResumeAudio: () => { if (audioCtx.state === 'suspended') audioCtx.resume(); },
             onPlayNote: ({ trackId, pitch, volume, when, duration }) => {
@@ -318,8 +335,39 @@
             },
             parseChord, parseChords, parseMidi,
             defaultBpm: 120,
-        });
+        };
+
+        let currentMode = 'simple';
+        let daw = DTM.mountDAW(document.getElementById('app'), { ...dawBaseOptions, tracks: DTM.TRACKS_SIMPLE });
         window.daw = daw;
+
+        const updateModeButtons = (mode) => {
+            const btnSimple = document.getElementById('mode-simple');
+            const btnAdvanced = document.getElementById('mode-advanced');
+            const desc = document.getElementById('mode-desc');
+            if (mode === 'simple') {
+                btnSimple.className = btnSimple.className.replace('bg-pico-black text-pico-gray border-pico-gray', 'bg-pico-cyan text-pico-black border-pico-cyan');
+                btnAdvanced.className = btnAdvanced.className.replace('bg-pico-cyan text-pico-black border-pico-cyan', 'bg-pico-black text-pico-gray border-pico-gray');
+                desc.textContent = 'AUTO MIDI CLASSIFY';
+            } else {
+                btnAdvanced.className = btnAdvanced.className.replace('bg-pico-black text-pico-gray border-pico-gray', 'bg-pico-cyan text-pico-black border-pico-cyan');
+                btnSimple.className = btnSimple.className.replace('bg-pico-cyan text-pico-black border-pico-cyan', 'bg-pico-black text-pico-gray border-pico-gray');
+                desc.textContent = 'MIDI 1:1 TRACK MAPPING';
+            }
+        };
+
+        const remountDAW = (mode) => {
+            if (mode === currentMode) return;
+            daw.destroy();
+            currentMode = mode;
+            const tracks = mode === 'simple' ? DTM.TRACKS_SIMPLE : DTM.TRACKS_ADVANCED;
+            daw = DTM.mountDAW(document.getElementById('app'), { ...dawBaseOptions, tracks });
+            window.daw = daw;
+            updateModeButtons(mode);
+        };
+
+        document.getElementById('mode-simple').addEventListener('click', () => remountDAW('simple'));
+        document.getElementById('mode-advanced').addEventListener('click', () => remountDAW('advanced'));
 
         const presetSelect = document.getElementById('preset');
         for (const [key, preset] of Object.entries(INSTRUMENT_PRESETS)) {

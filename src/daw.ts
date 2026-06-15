@@ -19,6 +19,7 @@ import {
 	analyzeMidiTracks,
 	exportMIDI as exportMIDIBlob,
 	extractMidiPlacements,
+	extractMidiPlacementsByTrack,
 } from "./midi-io";
 import { MMLCore } from "./mml-core";
 import { parseMML } from "./mml-parser";
@@ -49,36 +50,155 @@ import type {
 const BASE_STEP_WIDTH = 0.5;
 const BASE_KEY_HEIGHT = 15;
 
-const DEFAULT_TRACKS: TrackConfig[] = [
+/** シンプルモード（4トラック）— 役割別に自動分類してMIDIを読み込む */
+export const TRACKS_SIMPLE: TrackConfig[] = [
 	{
 		id: "melody",
 		name: "メロディー",
-		color: [41, 173, 255], // PICO-8 cyan
+		color: [41, 173, 255],
 		instrument: 0,
 		volume: 100,
 	},
 	{
 		id: "submelody",
 		name: "サブメロ",
-		color: [255, 119, 168], // PICO-8 pink
+		color: [255, 119, 168],
 		instrument: 1,
 		volume: 95,
 	},
 	{
 		id: "bass",
 		name: "ベース",
-		color: [0, 228, 54], // PICO-8 green
+		color: [0, 228, 54],
 		instrument: 2,
 		volume: 88,
 	},
 	{
 		id: "chord",
 		name: "伴奏",
-		color: [255, 163, 0], // PICO-8 orange
+		color: [255, 163, 0],
 		instrument: 3,
 		volume: 76,
 	},
 ];
+
+/** 上級者モード（16トラック）— MIDIトラックを1:1で扱う */
+export const TRACKS_ADVANCED: TrackConfig[] = [
+	{
+		id: "t0",
+		name: "TRACK 01",
+		color: [41, 173, 255],
+		instrument: 0,
+		volume: 100,
+	},
+	{
+		id: "t1",
+		name: "TRACK 02",
+		color: [0, 228, 54],
+		instrument: 1,
+		volume: 100,
+	},
+	{
+		id: "t2",
+		name: "TRACK 03",
+		color: [255, 119, 168],
+		instrument: 2,
+		volume: 100,
+	},
+	{
+		id: "t3",
+		name: "TRACK 04",
+		color: [255, 163, 0],
+		instrument: 3,
+		volume: 100,
+	},
+	{
+		id: "t4",
+		name: "TRACK 05",
+		color: [255, 236, 39],
+		instrument: 4,
+		volume: 100,
+	},
+	{
+		id: "t5",
+		name: "TRACK 06",
+		color: [131, 118, 156],
+		instrument: 5,
+		volume: 100,
+	},
+	{
+		id: "t6",
+		name: "TRACK 07",
+		color: [255, 0, 77],
+		instrument: 6,
+		volume: 100,
+	},
+	{
+		id: "t7",
+		name: "TRACK 08",
+		color: [255, 204, 170],
+		instrument: 7,
+		volume: 100,
+	},
+	{
+		id: "t8",
+		name: "TRACK 09",
+		color: [194, 195, 199],
+		instrument: 8,
+		volume: 100,
+	},
+	{
+		id: "t9",
+		name: "TRACK 10",
+		color: [0, 135, 81],
+		instrument: 9,
+		volume: 100,
+	},
+	{
+		id: "t10",
+		name: "TRACK 11",
+		color: [171, 82, 54],
+		instrument: 10,
+		volume: 100,
+	},
+	{
+		id: "t11",
+		name: "TRACK 12",
+		color: [126, 37, 83],
+		instrument: 11,
+		volume: 100,
+	},
+	{
+		id: "t12",
+		name: "TRACK 13",
+		color: [255, 241, 232],
+		instrument: 12,
+		volume: 100,
+	},
+	{
+		id: "t13",
+		name: "TRACK 14",
+		color: [120, 200, 255],
+		instrument: 13,
+		volume: 100,
+	},
+	{
+		id: "t14",
+		name: "TRACK 15",
+		color: [100, 255, 160],
+		instrument: 14,
+		volume: 100,
+	},
+	{
+		id: "t15",
+		name: "TRACK 16",
+		color: [255, 150, 200],
+		instrument: 15,
+		volume: 100,
+	},
+];
+
+const DEFAULT_TRACKS = TRACKS_SIMPLE;
 
 const clamp = (v: number, min: number, max: number): number =>
 	Math.min(Math.max(v, min), max);
@@ -1132,10 +1252,15 @@ export const mountDAW = (
 	): void => {
 		clearAll();
 		for (const t of trackStates) t.core.setLoadMode(true);
-		const { placements, bpm: parsedBpm } = extractMidiPlacements(
-			midi,
-			selectedIndices,
-		);
+		// 上級者モード（5トラック以上）はMIDIトラックインデックスで1:1マッピング
+		const isAdvanced = trackStates.length > TRACKS_SIMPLE.length;
+		const { placements, bpm: parsedBpm } = isAdvanced
+			? extractMidiPlacementsByTrack(
+					midi,
+					selectedIndices,
+					trackStates.map((t) => t.config.id),
+				)
+			: extractMidiPlacements(midi, selectedIndices);
 		for (const p of placements) {
 			const t = trackStates.find((ts) => ts.config.id === p.trackId);
 			if (!t) continue;

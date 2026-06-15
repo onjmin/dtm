@@ -5,7 +5,7 @@
 // 設定・プリセット
 export * from "./audio-config";
 export * from "./chords";
-export { mountDAW } from "./daw";
+export { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 export * from "./drum-config";
 export { icon } from "./icons";
 export * from "./instrument-presets";

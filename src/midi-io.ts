@@ -286,6 +286,78 @@ export const extractMidiPlacements = (
 	return { placements, bpm };
 };
 
+/**
+ * 上級者モード用：MIDIトラックインデックス N → DAW トラック trackIds[N] へ直接マッピング。
+ * 自動分類なし。選択された MIDI トラック K のノートは DAW トラック K に入る。
+ */
+export const extractMidiPlacementsByTrack = (
+	midi: unknown,
+	selectedIndices: number[],
+	trackIds: string[],
+): MidiExtraction => {
+	const { track, timeDivision } = midi as MidiData;
+	const ticksPerBeat = timeDivision;
+	const bpm = getMidiBPM(midi);
+	const ticksPerStep = ticksPerBeat / STEPS_PER_BEAT;
+
+	const placements: MidiNotePlacement[] = [];
+	const selectedSet = new Set(selectedIndices);
+
+	for (let midiIdx = 0; midiIdx < track.length; midiIdx++) {
+		if (!selectedSet.has(midiIdx)) continue;
+		if (midiIdx >= trackIds.length) continue;
+		const trackId = trackIds[midiIdx];
+		const trackData = track[midiIdx];
+		if (!trackData) continue;
+
+		type RawNote = {
+			pitch: number;
+			velocity: number;
+			start: number;
+			end: number | null;
+		};
+		const active: RawNote[] = [];
+		let currentTime = 0;
+
+		for (const event of trackData.event) {
+			currentTime += event.deltaTime;
+			if (event.channel === 9) continue; // ドラムチャンネルはスキップ
+			if (event.type !== 8 && event.type !== 9) continue;
+			const [pitch, velocity] = event.data as number[];
+			const isOff = event.type === 8 || !velocity;
+
+			if (isOff) {
+				for (let i = active.length - 1; i >= 0; i--) {
+					if (active[i].pitch === pitch && active[i].end === null) {
+						active[i].end = currentTime;
+						break;
+					}
+				}
+			} else {
+				active.push({ pitch, velocity, start: currentTime, end: null });
+			}
+		}
+
+		for (const note of active) {
+			if (note.end === null) continue;
+			const startStep = Math.round(note.start / ticksPerStep);
+			const durationSteps = Math.max(
+				1,
+				Math.round((note.end - note.start) / ticksPerStep),
+			);
+			placements.push({
+				trackId,
+				startStep,
+				pitch: note.pitch,
+				durationSteps,
+				velocity: note.velocity,
+			});
+		}
+	}
+
+	return { placements, bpm };
+};
+
 // ============================================================
 // MIDI出力
 // ============================================================
