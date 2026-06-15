@@ -196,6 +196,28 @@ export const DAW_CSS = `
   color: var(--dtm-muted);
   white-space: nowrap;
 }
+.dtm-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--dtm-muted);
+  cursor: pointer;
+  user-select: none;
+  margin-top: 4px;
+}
+.dtm-checkbox-label:hover { color: var(--dtm-text); }
+.dtm-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--dtm-success);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .dtm-toggle {
   display: inline-flex;
   align-items: center;

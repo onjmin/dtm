@@ -463,6 +463,27 @@ export class MMLCore {
 	};
 
 	/**
+	 * ノート配列を直接渡してMMLを生成する（一時的に内部状態を差し替えて生成後に復元）
+	 */
+	public getMMLFromNotes(
+		notes: Note[],
+		tempo?: number,
+		volume?: number,
+	): string {
+		const savedNotes = this.notes;
+		const savedTempo = this.tempo;
+		const savedVolume = this.volume;
+		this.notes = [...notes].sort((a, b) => a.startStep - b.startStep);
+		if (tempo !== undefined) this.tempo = tempo;
+		if (volume !== undefined) this.volume = volume;
+		const result = this.generateMML();
+		this.notes = savedNotes;
+		this.tempo = savedTempo;
+		this.volume = savedVolume;
+		return result;
+	}
+
+	/**
 	 * MMLの音長文字列（"4", "4.", "12"など）をステップ数に変換する
 	 */
 	private getStepFromDottedMML(durStr: string): number {
@@ -479,3 +500,35 @@ export class MMLCore {
 		return isDotted ? baseStep * 1.5 : baseStep;
 	}
 }
+
+/**
+ * 和音を含むノート配列を、各トラックが単音（モノフォニック）になるよう
+ * 最小トラック数に分解する（区間スケジューリング・グリーディ法）。
+ * 最小トラック数 = 任意の瞬間の最大同時発音数。
+ */
+export const decomposeToMonophonic = (notes: Note[]): Note[][] => {
+	const sorted = [...notes].sort(
+		(a, b) => a.startStep - b.startStep || a.pitch - b.pitch,
+	);
+	const tracks: Note[][] = [];
+	const trackEnds: number[] = [];
+
+	for (const note of sorted) {
+		let assigned = -1;
+		let minEnd = Infinity;
+		for (let i = 0; i < tracks.length; i++) {
+			if (trackEnds[i] <= note.startStep && trackEnds[i] < minEnd) {
+				minEnd = trackEnds[i];
+				assigned = i;
+			}
+		}
+		if (assigned === -1) {
+			tracks.push([note]);
+			trackEnds.push(note.startStep + note.durationSteps);
+		} else {
+			tracks[assigned].push(note);
+			trackEnds[assigned] = note.startStep + note.durationSteps;
+		}
+	}
+	return tracks;
+};

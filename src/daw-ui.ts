@@ -59,6 +59,7 @@ export type DawUIRefs = {
 	// output
 	exportMidiBtn: HTMLButtonElement;
 	generateMmlBtn: HTMLButtonElement;
+	decomposeChordToggle: HTMLInputElement;
 	outputContainer: HTMLElement;
 	outputStatus: HTMLElement;
 	outputFull: HTMLElement;
@@ -234,6 +235,10 @@ export const buildUI = (
         <button class="dtm-btn dtm-btn--accent" data-dtm="export-midi">MIDI出力</button>
         <button class="dtm-btn dtm-btn--success" data-dtm="generate-mml">MML生成</button>
       </div>
+      <label class="dtm-checkbox-label">
+        <input type="checkbox" class="dtm-checkbox" data-dtm="decompose-chord">
+        <span>和音分解モード（単音トラックに最適分割）</span>
+      </label>
       <div class="dtm-output dtm-hidden" data-dtm="output-container">
         <p class="dtm-label" data-dtm="output-status"></p>
         <div class="dtm-output-row">
@@ -300,6 +305,7 @@ export const buildUI = (
 		macroMono: sel("macro-mono"),
 		exportMidiBtn: sel("export-midi"),
 		generateMmlBtn: sel("generate-mml"),
+		decomposeChordToggle: sel<HTMLInputElement>("decompose-chord"),
 		outputContainer: sel("output-container"),
 		outputStatus: sel("output-status"),
 		outputFull: sel("output-full"),

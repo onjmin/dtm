@@ -21,7 +21,7 @@ import {
 	extractMidiPlacements,
 	extractMidiPlacementsByTrack,
 } from "./midi-io";
-import { MMLCore } from "./mml-core";
+import { decomposeToMonophonic, MMLCore } from "./mml-core";
 import { parseMML } from "./mml-parser";
 import {
 	drawGrid,
@@ -1157,6 +1157,25 @@ export const mountDAW = (
 	// MML / MIDI / コード / マクロ
 	// ============================================================
 	const generateMML = (): { full: string; minified: string } => {
+		if (refs.decomposeChordToggle.checked) {
+			// 和音分解モード: 全トラックのノートを単音トラックに最適分割
+			const allNotes = trackStates.flatMap((t) => t.core.getNotes());
+			const monoTracks = decomposeToMonophonic(allNotes);
+			const refCore = trackStates[0].core;
+			const full = monoTracks
+				.map(
+					(notes, i) =>
+						`@${i} ${refCore.getMMLFromNotes(notes, bpm, 100).trim()}`,
+				)
+				.join(";\n");
+			const minified = monoTracks
+				.map(
+					(notes, i) =>
+						`@${i}${refCore.getMMLFromNotes(notes, bpm, 100).trim().replace(/\s+/g, "")}`,
+				)
+				.join(";");
+			return { full, minified };
+		}
 		const full = trackStates
 			.map((t, i) => `@${i} ${t.core.getMML(t.volume).trim()}`)
 			.join(";\n");
@@ -1172,7 +1191,13 @@ export const mountDAW = (
 		const { full, minified } = generateMML();
 		refs.outputFull.textContent = full;
 		refs.outputMini.textContent = minified;
-		refs.outputStatus.textContent = `(${trackStates.length}トラック) 通常: ${full.length}文字 / minify: ${minified.length}文字`;
+		const isDecompose = refs.decomposeChordToggle.checked;
+		const trackCount = isDecompose
+			? decomposeToMonophonic(trackStates.flatMap((t) => t.core.getNotes()))
+					.length
+			: trackStates.length;
+		const modeLabel = isDecompose ? "和音分解" : "通常";
+		refs.outputStatus.textContent = `[${modeLabel}] (${trackCount}トラック) 通常: ${full.length}文字 / minify: ${minified.length}文字`;
 		refs.outputContainer.classList.remove("dtm-hidden");
 		updateUndoRedo();
 	};
