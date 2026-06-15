@@ -341,19 +341,16 @@
         let daw = DTM.mountDAW(document.getElementById('app'), { ...dawBaseOptions, tracks: DTM.TRACKS_SIMPLE });
         window.daw = daw;
 
+        const BTN_ACTIVE = 'min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-cyan text-pico-black text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none';
+        const BTN_INACTIVE = 'min-h-[40px] px-4 border-2 border-pico-gray bg-pico-black text-pico-gray text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none';
+
         const updateModeButtons = (mode) => {
             const btnSimple = document.getElementById('mode-simple');
             const btnAdvanced = document.getElementById('mode-advanced');
             const desc = document.getElementById('mode-desc');
-            if (mode === 'simple') {
-                btnSimple.className = btnSimple.className.replace('bg-pico-black text-pico-gray border-pico-gray', 'bg-pico-cyan text-pico-black border-pico-cyan');
-                btnAdvanced.className = btnAdvanced.className.replace('bg-pico-cyan text-pico-black border-pico-cyan', 'bg-pico-black text-pico-gray border-pico-gray');
-                desc.textContent = 'AUTO MIDI CLASSIFY';
-            } else {
-                btnAdvanced.className = btnAdvanced.className.replace('bg-pico-black text-pico-gray border-pico-gray', 'bg-pico-cyan text-pico-black border-pico-cyan');
-                btnSimple.className = btnSimple.className.replace('bg-pico-cyan text-pico-black border-pico-cyan', 'bg-pico-black text-pico-gray border-pico-gray');
-                desc.textContent = 'MIDI 1:1 TRACK MAPPING';
-            }
+            btnSimple.className = mode === 'simple' ? BTN_ACTIVE : BTN_INACTIVE;
+            btnAdvanced.className = mode === 'advanced' ? BTN_ACTIVE : BTN_INACTIVE;
+            desc.textContent = mode === 'simple' ? 'AUTO MIDI CLASSIFY' : 'MIDI 1:1 TRACK MAPPING';
         };
 
         const remountDAW = (mode) => {
