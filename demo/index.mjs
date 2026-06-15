@@ -1221,46 +1221,44 @@ var drawKeyboard = () => {
   const { keyHeight, keyCount, pitchRangeStart } = g_config;
   const startY = Math.floor(g_draw_offset_y / keyHeight) * keyHeight;
   const endY = g_draw_offset_y + g_key_canvas.height;
-  g_key_ctx.beginPath();
-  g_key_ctx.strokeStyle = "#29adff";
-  g_key_ctx.lineWidth = 2;
-  g_key_ctx.moveTo(KEYBOARD_WIDTH, 0);
-  g_key_ctx.lineTo(KEYBOARD_WIDTH, g_key_canvas.height);
-  g_key_ctx.stroke();
+  const WHITE_KEY = "#ccc8b4";
+  const BLACK_KEY = "#111111";
+  const BK_EDGE = "#383838";
+  const WW_SEP = "#807a6a";
+  const BK_RATIO = 0.62;
   for (let y = startY; y < endY; y += keyHeight) {
     const pitchIndex = keyCount - 1 - y / keyHeight;
     const totalPitch = pitchIndex + pitchRangeStart;
     const pitchMod12 = totalPitch % 12;
     const isBlackKey = blackKeyPitches.has(pitchMod12);
     const screenY = y - g_draw_offset_y;
-    g_key_ctx.fillStyle = "#1d2b53";
-    g_key_ctx.fillRect(0, screenY, KEYBOARD_WIDTH, keyHeight);
-    g_key_ctx.beginPath();
-    g_key_ctx.strokeStyle = "#2d3560";
-    g_key_ctx.lineWidth = 1;
-    g_key_ctx.moveTo(0, screenY + keyHeight);
-    g_key_ctx.lineTo(KEYBOARD_WIDTH, screenY + keyHeight);
-    g_key_ctx.stroke();
+    const bkW = Math.floor(KEYBOARD_WIDTH * BK_RATIO);
     if (isBlackKey) {
-      const blackKeyWidth = KEYBOARD_WIDTH * 0.7;
-      const blackKeyHeight = keyHeight * 0.75;
-      const offset = (keyHeight - blackKeyHeight) / 2;
-      const gradient = g_key_ctx.createLinearGradient(
-        0,
-        screenY + offset,
-        0,
-        screenY + offset + blackKeyHeight
-      );
-      gradient.addColorStop(0, "#3d405b");
-      gradient.addColorStop(1, "#000000");
-      g_key_ctx.fillStyle = gradient;
-      g_key_ctx.fillRect(0, screenY + offset, blackKeyWidth, blackKeyHeight);
-      g_key_ctx.strokeStyle = "#000000";
-      g_key_ctx.strokeRect(0, screenY + offset, blackKeyWidth, blackKeyHeight);
+      g_key_ctx.fillStyle = WHITE_KEY;
+      g_key_ctx.fillRect(0, screenY, KEYBOARD_WIDTH, keyHeight);
+      g_key_ctx.fillStyle = BLACK_KEY;
+      g_key_ctx.fillRect(0, screenY, bkW, keyHeight);
+      g_key_ctx.strokeStyle = BK_EDGE;
+      g_key_ctx.lineWidth = 1;
+      g_key_ctx.beginPath();
+      g_key_ctx.moveTo(bkW, screenY);
+      g_key_ctx.lineTo(bkW, screenY + keyHeight);
+      g_key_ctx.stroke();
+    } else {
+      g_key_ctx.fillStyle = WHITE_KEY;
+      g_key_ctx.fillRect(0, screenY, KEYBOARD_WIDTH, keyHeight);
+      if (pitchMod12 === 5 || pitchMod12 === 0) {
+        g_key_ctx.strokeStyle = WW_SEP;
+        g_key_ctx.lineWidth = 1;
+        g_key_ctx.beginPath();
+        g_key_ctx.moveTo(0, screenY + keyHeight - 0.5);
+        g_key_ctx.lineTo(KEYBOARD_WIDTH, screenY + keyHeight - 0.5);
+        g_key_ctx.stroke();
+      }
     }
     if (pitchMod12 === 0) {
       const octave = Math.floor(totalPitch / 12) - 1;
-      g_key_ctx.fillStyle = "#83769c";
+      g_key_ctx.fillStyle = "#555040";
       g_key_ctx.font = "10px 'k8x12',monospace";
       g_key_ctx.textAlign = "right";
       g_key_ctx.textBaseline = "bottom";
@@ -1271,6 +1269,12 @@ var drawKeyboard = () => {
       );
     }
   }
+  g_key_ctx.beginPath();
+  g_key_ctx.strokeStyle = "#29adff";
+  g_key_ctx.lineWidth = 2;
+  g_key_ctx.moveTo(KEYBOARD_WIDTH, 0);
+  g_key_ctx.lineTo(KEYBOARD_WIDTH, g_key_canvas.height);
+  g_key_ctx.stroke();
 };
 var drawHeader = () => {
   g_header_ctx.clearRect(0, 0, g_header_canvas.width, g_header_canvas.height);
