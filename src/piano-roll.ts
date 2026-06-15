@@ -17,9 +17,10 @@ import type {
 	CoreEventHandlers,
 	Note,
 	PianoRollOptions,
+	ToolMode,
 } from "./types";
 
-export type ToolMode = "pen" | "select" | "eraser";
+export type { ToolMode };
 
 export type PianoRollInstance = {
 	core: MMLCore;

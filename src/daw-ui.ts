@@ -1,0 +1,321 @@
+/**
+ * DAWのDOM構築。innerHTMLでマークアップを生成し、要素参照を返す。
+ * すべて `dtm-` クラスでスタイル付けし、参照は data-dtm 属性経由で取得する。
+ */
+
+import { icon } from "./icons";
+import type { TrackConfig } from "./types";
+
+export type DawUIRefs = {
+	root: HTMLElement;
+	// transport
+	playBtn: HTMLButtonElement;
+	recBtn: HTMLButtonElement;
+	soloCheckbox: HTMLInputElement;
+	// tools
+	toolPen: HTMLButtonElement;
+	toolSelect: HTMLButtonElement;
+	toolEraser: HTMLButtonElement;
+	undoBtn: HTMLButtonElement;
+	redoBtn: HTMLButtonElement;
+	noteLengthSelect: HTMLSelectElement;
+	bpmInput: HTMLInputElement;
+	zoomXLabel: HTMLElement;
+	zoomYLabel: HTMLElement;
+	zoomXIn: HTMLButtonElement;
+	zoomXOut: HTMLButtonElement;
+	zoomYIn: HTMLButtonElement;
+	zoomYOut: HTMLButtonElement;
+	navHome: HTMLButtonElement;
+	navUp: HTMLButtonElement;
+	navDown: HTMLButtonElement;
+	navLeft: HTMLButtonElement;
+	navRight: HTMLButtonElement;
+	// roll
+	rollContainer: HTMLElement;
+	wrapper: HTMLElement;
+	vScroll: HTMLElement;
+	vScrollThumb: HTMLElement;
+	hScroll: HTMLElement;
+	hScrollThumb: HTMLElement;
+	// track panel
+	masterVolume: HTMLInputElement;
+	masterVolumeLabel: HTMLElement;
+	trackTabs: HTMLElement;
+	trackBody: HTMLElement;
+	// drum
+	drumSelect: HTMLSelectElement;
+	drumVolume: HTMLInputElement;
+	drumVolumeLabel: HTMLElement;
+	// io
+	midiInput: HTMLInputElement;
+	midiLoadBtn: HTMLButtonElement;
+	midiTrackSelection: HTMLElement;
+	midiPanel: HTMLElement;
+	mmlInput: HTMLTextAreaElement;
+	mmlLoadBtn: HTMLButtonElement;
+	shiftSelect: HTMLSelectElement;
+	shiftApplyBtn: HTMLButtonElement;
+	// macros
+	macroClear: HTMLButtonElement;
+	macroRandom: HTMLButtonElement;
+	macroHarmonic: HTMLButtonElement;
+	macroMono: HTMLButtonElement;
+	// output
+	exportMidiBtn: HTMLButtonElement;
+	generateMmlBtn: HTMLButtonElement;
+	outputContainer: HTMLElement;
+	outputStatus: HTMLElement;
+	outputFull: HTMLElement;
+	outputMini: HTMLElement;
+	copyFullBtn: HTMLButtonElement;
+	copyMiniBtn: HTMLButtonElement;
+	// overlay
+	overlay: HTMLElement;
+};
+
+const q = <T extends HTMLElement>(root: HTMLElement, sel: string): T =>
+	root.querySelector(sel) as T;
+
+export type BuildUIOptions = {
+	tracks: TrackConfig[];
+	drumPatternNames: string[];
+	defaultDrumPattern: string;
+	defaultBpm: number;
+	showMidi: boolean;
+	showChord: boolean;
+};
+
+/**
+ * DAWのUIを構築し、要素参照を返す。
+ */
+export const buildUI = (
+	target: HTMLElement,
+	options: BuildUIOptions,
+): DawUIRefs => {
+	const { drumPatternNames, defaultDrumPattern, defaultBpm, showMidi } =
+		options;
+
+	const drumOptions = [`<option value="none">なし</option>`]
+		.concat(
+			drumPatternNames.map(
+				(name) =>
+					`<option value="${name}" ${name === defaultDrumPattern ? "selected" : ""}>${name}</option>`,
+			),
+		)
+		.join("");
+
+	target.innerHTML = `
+<div class="dtm-daw" data-dtm="root">
+  <div class="dtm-strip" data-dtm="transport">
+    <button class="dtm-btn dtm-btn--success" data-dtm="play" disabled>${icon("play")}<span>試聴</span></button>
+    <button class="dtm-btn dtm-btn--danger dtm-btn--icon" data-dtm="rec" title="録音">${icon("record")}</button>
+    <label class="dtm-label" style="display:flex;align-items:center;gap:6px;">
+      <input type="checkbox" data-dtm="solo"> ソロ
+    </label>
+  </div>
+
+  <div class="dtm-strip" data-dtm="toolbar">
+    <span class="dtm-label">ツール</span>
+    <button class="dtm-btn dtm-btn--active dtm-btn--icon" data-dtm="tool-pen" title="ペン">✎</button>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="tool-select" title="選択">▦</button>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="tool-eraser" title="消しゴム">⌫</button>
+    <span class="dtm-sep"></span>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="undo" title="元に戻す" disabled>${icon("undo")}</button>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="redo" title="やり直し" disabled>${icon("redo")}</button>
+    <span class="dtm-sep"></span>
+    <span class="dtm-label">音符</span>
+    <select class="dtm-select" data-dtm="note-length">
+      <option value="48">4分</option>
+      <option value="32">3連4</option>
+      <option value="24">8分</option>
+      <option value="16">3連8</option>
+      <option value="12" selected>16分</option>
+      <option value="8">3連16</option>
+      <option value="6">32分</option>
+      <option value="4">3連32</option>
+    </select>
+    <span class="dtm-sep"></span>
+    <span class="dtm-label">BPM</span>
+    <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
+    <span class="dtm-sep"></span>
+    <span class="dtm-label">横</span>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="zoomx-out">−</button>
+    <span class="dtm-label" data-dtm="zoomx-label">100%</span>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="zoomx-in">＋</button>
+    <span class="dtm-label">縦</span>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="zoomy-out">−</button>
+    <span class="dtm-label" data-dtm="zoomy-label">100%</span>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="zoomy-in">＋</button>
+    <span class="dtm-sep"></span>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-home" title="最初へ">${icon("first")}</button>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-up">${icon("chevronUp")}</button>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-down">${icon("chevronDown")}</button>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-left">${icon("chevronLeft")}</button>
+    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-right">${icon("chevronRight")}</button>
+  </div>
+
+  <div class="dtm-roll-wrap">
+    <div class="dtm-roll" data-dtm="roll"><div data-dtm="wrapper" style="position:absolute;inset:0;"></div></div>
+    <div class="dtm-vscroll" data-dtm="vscroll"><div class="dtm-vscroll-thumb" data-dtm="vscroll-thumb"></div></div>
+  </div>
+  <div class="dtm-hscroll" data-dtm="hscroll"><div class="dtm-hscroll-thumb" data-dtm="hscroll-thumb"></div></div>
+
+  <details class="dtm-panel" open>
+    <summary>トラック設定</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row">
+        <span class="dtm-label">音量</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="master-volume" value="50" min="0" max="100">
+        <span class="dtm-label" data-dtm="master-volume-label">50%</span>
+      </div>
+      <div class="dtm-tabs" data-dtm="track-tabs"></div>
+      <div class="dtm-track-body" data-dtm="track-body"></div>
+    </div>
+  </details>
+
+  <details class="dtm-panel">
+    <summary>ドラム設定</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row">
+        <span class="dtm-label">リズム</span>
+        <select class="dtm-select" data-dtm="drum-select">${drumOptions}</select>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">音量</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="drum-volume" value="80" min="0" max="100">
+        <span class="dtm-label" data-dtm="drum-volume-label">80%</span>
+      </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel ${showMidi ? "" : "dtm-hidden"}" data-dtm="midi-panel">
+    <summary>MIDI / MML 入力</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row">
+        <span class="dtm-label">MIDI</span>
+        <input type="file" class="dtm-input dtm-grow" accept=".mid,.midi" data-dtm="midi-input">
+        <button class="dtm-btn dtm-btn--success" data-dtm="midi-load">読込</button>
+      </div>
+      <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
+      <div class="dtm-row">
+        <span class="dtm-label">MML</span>
+        <textarea class="dtm-textarea" data-dtm="mml-input" placeholder="MMLを入力"></textarea>
+      </div>
+      <div class="dtm-row">
+        <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">MML読込</button>
+        <span class="dtm-label">全体シフト</span>
+        <select class="dtm-select" data-dtm="shift-select">
+          <option value="-96">-2分</option>
+          <option value="-48">-4分</option>
+          <option value="-24">-8分</option>
+          <option value="-12">-16分</option>
+          <option value="12">+16分</option>
+          <option value="24">+8分</option>
+          <option value="48">+4分</option>
+          <option value="96">+2分</option>
+        </select>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="shift-apply">適用</button>
+      </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel">
+    <summary>マクロ</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row">
+        <button class="dtm-btn dtm-btn--danger" data-dtm="macro-clear">全消去</button>
+        <button class="dtm-btn dtm-btn--accent" data-dtm="macro-random">ランダム配置</button>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="macro-harmonic">伴奏フィルタ</button>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="macro-mono">単音化</button>
+      </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel">
+    <summary>MIDI / MML 出力</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row">
+        <button class="dtm-btn dtm-btn--accent" data-dtm="export-midi">MIDI出力</button>
+        <button class="dtm-btn dtm-btn--success" data-dtm="generate-mml">MML生成</button>
+      </div>
+      <div class="dtm-output dtm-hidden" data-dtm="output-container">
+        <p class="dtm-label" data-dtm="output-status"></p>
+        <div class="dtm-output-row">
+          <pre><code data-dtm="output-full"></code></pre>
+          <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="copy-full" title="コピー">${icon("copy")}</button>
+        </div>
+        <div class="dtm-output-row">
+          <pre><code data-dtm="output-mini"></code></pre>
+          <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="copy-mini" title="コピー">${icon("copy")}</button>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <div class="dtm-overlay" data-dtm="overlay" hidden><div class="dtm-spinner"></div></div>
+</div>`;
+
+	const root = q<HTMLElement>(target, '[data-dtm="root"]');
+	const sel = <T extends HTMLElement>(name: string): T =>
+		q<T>(root, `[data-dtm="${name}"]`);
+
+	return {
+		root,
+		playBtn: sel("play"),
+		recBtn: sel("rec"),
+		soloCheckbox: sel("solo"),
+		toolPen: sel("tool-pen"),
+		toolSelect: sel("tool-select"),
+		toolEraser: sel("tool-eraser"),
+		undoBtn: sel("undo"),
+		redoBtn: sel("redo"),
+		noteLengthSelect: sel("note-length"),
+		bpmInput: sel("bpm"),
+		zoomXLabel: sel("zoomx-label"),
+		zoomYLabel: sel("zoomy-label"),
+		zoomXIn: sel("zoomx-in"),
+		zoomXOut: sel("zoomx-out"),
+		zoomYIn: sel("zoomy-in"),
+		zoomYOut: sel("zoomy-out"),
+		navHome: sel("nav-home"),
+		navUp: sel("nav-up"),
+		navDown: sel("nav-down"),
+		navLeft: sel("nav-left"),
+		navRight: sel("nav-right"),
+		rollContainer: sel("roll"),
+		wrapper: sel("wrapper"),
+		vScroll: sel("vscroll"),
+		vScrollThumb: sel("vscroll-thumb"),
+		hScroll: sel("hscroll"),
+		hScrollThumb: sel("hscroll-thumb"),
+		masterVolume: sel("master-volume"),
+		masterVolumeLabel: sel("master-volume-label"),
+		trackTabs: sel("track-tabs"),
+		trackBody: sel("track-body"),
+		drumSelect: sel("drum-select"),
+		drumVolume: sel("drum-volume"),
+		drumVolumeLabel: sel("drum-volume-label"),
+		midiInput: sel("midi-input"),
+		midiLoadBtn: sel("midi-load"),
+		midiTrackSelection: sel("midi-track-selection"),
+		midiPanel: sel("midi-panel"),
+		mmlInput: sel("mml-input"),
+		mmlLoadBtn: sel("mml-load"),
+		shiftSelect: sel("shift-select"),
+		shiftApplyBtn: sel("shift-apply"),
+		macroClear: sel("macro-clear"),
+		macroRandom: sel("macro-random"),
+		macroHarmonic: sel("macro-harmonic"),
+		macroMono: sel("macro-mono"),
+		exportMidiBtn: sel("export-midi"),
+		generateMmlBtn: sel("generate-mml"),
+		outputContainer: sel("output-container"),
+		outputStatus: sel("output-status"),
+		outputFull: sel("output-full"),
+		outputMini: sel("output-mini"),
+		copyFullBtn: sel("copy-full"),
+		copyMiniBtn: sel("copy-mini"),
+		overlay: sel("overlay"),
+	};
+};

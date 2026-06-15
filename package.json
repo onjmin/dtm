@@ -2,8 +2,8 @@
 	"author": "onjmin",
 	"license": "MIT",
 	"name": "@onjmin/dtm",
-	"version": "0.0.1",
-	"description": "MMLを中間言語に用いたピアノロール打ち込みモジュール",
+	"version": "0.1.0",
+	"description": "MMLを中間言語に用いた、モバイルファーストなDAW / ピアノロール打ち込みコンポーネント",
 	"homepage": "https://onjmin.github.io/dtm",
 	"repository": {
 		"type": "git",
@@ -15,6 +15,14 @@
 	"main": "dist/index.js",
 	"module": "dist/index.mjs",
 	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.js"
+		}
+	},
+	"sideEffects": false,
 	"scripts": {
 		"dev": "rimraf dist && tsup && biome format src --write && tsx demo/server.ts",
 		"build": "rimraf dist && tsup && biome check src && biome format src --write",
@@ -30,7 +38,11 @@
 		"mml",
 		"music",
 		"sequencer",
-		"editor"
+		"editor",
+		"daw",
+		"mobile-first",
+		"canvas",
+		"web-audio"
 	],
 	"volta": {
 		"node": "22.15.1",

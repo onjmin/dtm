@@ -57,33 +57,20 @@ export class MMLCore {
 		}
 		const snapshot = JSON.stringify(this.notes);
 		if (snapshot === this.lastHistorySnapshot) {
-			console.log("saveHistory: skipped (no change)");
 			return;
 		}
 		this.lastHistorySnapshot = snapshot;
 		this.history.add(JSON.parse(snapshot));
-		console.log("saveHistory: saved");
 	}
 
 	private restoreHistory(notes: Note[] | null): boolean {
 		if (notes === null) return false;
-		console.log("restoreHistory: BEFORE - notes =", this.notes.length);
 		this.isUndoRedo = true;
 		this.notes = JSON.parse(JSON.stringify(notes));
 		this.nextNoteId =
 			this.notes.length > 0 ? Math.max(...this.notes.map((n) => n.id)) + 1 : 0;
 		this.lastHistorySnapshot = JSON.stringify(this.notes);
-		console.log(
-			"restoreHistory: AFTER set - notes =",
-			this.notes.length,
-			"lastSnapshot =",
-			this.lastHistorySnapshot,
-		);
 		this.generateAndNotify();
-		console.log(
-			"restoreHistory: AFTER generateAndNotify - notes =",
-			this.notes.length,
-		);
 		this.isUndoRedo = false;
 		return true;
 	}
@@ -427,7 +414,6 @@ export class MMLCore {
 
 				// ガード句: もし空き容量が最小単位未満なら、このノートを無視（スキップ）する
 				if (physicsLimit < MIN_STEP) {
-					console.warn(`Note skipped: No space available at step ${startStep}`);
 					// カーソルは進めず、次のノートの処理へ（物理的な位置に合わせるため）
 					currentCursor = startStep;
 					continue;
