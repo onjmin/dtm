@@ -1238,7 +1238,7 @@ var drawKeyboard = () => {
     if (pitchMod12 === 0) {
       const octave = Math.floor(totalPitch / 12) - 1;
       g_key_ctx.fillStyle = "#83769c";
-      g_key_ctx.font = "10px 'MisakiGothic',monospace";
+      g_key_ctx.font = "10px 'k8x12',monospace";
       g_key_ctx.textAlign = "right";
       g_key_ctx.textBaseline = "bottom";
       g_key_ctx.fillText(
@@ -1263,7 +1263,7 @@ var drawHeader = () => {
   );
   g_header_ctx.strokeStyle = "#3d405b";
   g_header_ctx.lineWidth = 1;
-  g_header_ctx.font = "11px 'MisakiGothic',monospace";
+  g_header_ctx.font = "11px 'k8x12',monospace";
   g_header_ctx.fillStyle = "#83769c";
   const startBar = Math.floor(g_draw_offset_x / (stepsPerBar * stepWidth));
   const endBar = Math.ceil(
@@ -2079,9 +2079,10 @@ var createSequencer = (options) => {
 var STYLE_ID = "dtm-daw-styles";
 var DAW_CSS = `
 @font-face {
-  font-family: 'MisakiGothic';
-  src: url('https://cdn.jsdelivr.net/npm/misaki-font/misaki_gothic.woff2') format('woff2'),
-       url('https://cdn.jsdelivr.net/npm/misaki-font/misaki_gothic.woff') format('woff');
+  font-family: 'k8x12';
+  src: url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff2') format('woff2'),
+       url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff') format('woff'),
+       url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
 }
@@ -2127,7 +2128,7 @@ var DAW_CSS = `
   --dtm-warn:     var(--c-orange);
   --dtm-tap:      40px;
   --dtm-gap:      6px;
-  --dtm-font:     'MisakiGothic','MS Gothic','\uFF2D\uFF33 \u30B4\u30B7\u30C3\u30AF',ui-monospace,monospace;
+  --dtm-font:     'k8x12',ui-monospace,monospace;
 
   box-sizing: border-box;
   font-family: var(--dtm-font);

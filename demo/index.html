@@ -9,9 +9,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @font-face {
-            font-family: 'MisakiGothic';
-            src: url('https://cdn.jsdelivr.net/npm/misaki-font/misaki_gothic.woff2') format('woff2'),
-                 url('https://cdn.jsdelivr.net/npm/misaki-font/misaki_gothic.woff') format('woff');
+            font-family: 'k8x12';
+            src: url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff2') format('woff2'),
+                 url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff') format('woff'),
+                 url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.ttf') format('truetype');
         }
         *, *::before, *::after { box-sizing: border-box; }
 
@@ -31,7 +32,7 @@
             margin: 0; padding: 0;
             background: var(--c-black);
             color: var(--c-text);
-            font-family: 'MisakiGothic','MS Gothic',ui-monospace,monospace;
+            font-family: 'k8x12',ui-monospace,monospace;
             font-size: 14px;
             -webkit-font-smoothing: none;
             -moz-osx-font-smoothing: unset;
@@ -107,7 +108,7 @@
         tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: { pixel: ['MisakiGothic','MS Gothic','ui-monospace','monospace'] },
+                    fontFamily: { pixel: ['k8x12','ui-monospace','monospace'] },
                     colors: {
                         pico: {
                             black:  '#000000', navy:   '#1d2b53', purple: '#7e2553',
