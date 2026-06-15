@@ -260,11 +260,20 @@
             const preset = INSTRUMENT_PRESETS[presetKey];
             if (!preset) return;
             document.getElementById('loading').style.display = '';
-            const trackIds = ['melody', 'submelody', 'bass', 'chord'];
-            await Promise.all(trackIds.map((trackId) => {
-                const key = nameToKey[preset[trackId]];
-                return key ? loadSoundFont(key, trackId) : Promise.resolve();
-            }));
+            if (currentMode === 'simple') {
+                const trackIds = ['melody', 'submelody', 'bass', 'chord'];
+                await Promise.all(trackIds.map((trackId) => {
+                    const key = nameToKey[preset[trackId]];
+                    return key ? loadSoundFont(key, trackId) : Promise.resolve();
+                }));
+            } else {
+                // 上級者モード: t0〜t15 に melody 音源をデフォルトとしてロード
+                const melodyKey = nameToKey[preset.melody];
+                if (melodyKey) {
+                    const trackIds = DTM.TRACKS_ADVANCED.map(t => t.id);
+                    await Promise.all(trackIds.map(trackId => loadSoundFont(melodyKey, trackId)));
+                }
+            }
             document.getElementById('loading').style.display = 'none';
         };
 
@@ -354,7 +363,7 @@
             desc.textContent = mode === 'simple' ? 'AUTO MIDI CLASSIFY' : 'MIDI 1:1 TRACK MAPPING';
         };
 
-        const remountDAW = (mode) => {
+        const remountDAW = async (mode) => {
             if (mode === currentMode) return;
             daw.destroy();
             currentMode = mode;
@@ -362,6 +371,7 @@
             daw = DTM.mountDAW(document.getElementById('app'), { ...dawBaseOptions, tracks });
             window.daw = daw;
             updateModeButtons(mode);
+            await loadPreset(document.getElementById('preset').value);
         };
 
         document.getElementById('mode-simple').addEventListener('click', () => remountDAW('simple'));
