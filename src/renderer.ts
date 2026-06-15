@@ -207,7 +207,7 @@ export const drawKeyboard = (): void => {
 		if (pitchMod12 === 0) {
 			const octave = Math.floor(totalPitch / 12) - 1;
 			g_key_ctx.fillStyle = "#83769c";
-			g_key_ctx.font = "10px 'MisakiGothic',monospace";
+			g_key_ctx.font = "10px 'k8x12',monospace";
 			g_key_ctx.textAlign = "right";
 			g_key_ctx.textBaseline = "bottom";
 			g_key_ctx.fillText(
@@ -237,7 +237,7 @@ export const drawHeader = (): void => {
 
 	g_header_ctx.strokeStyle = "#3d405b";
 	g_header_ctx.lineWidth = 1;
-	g_header_ctx.font = "11px 'MisakiGothic',monospace";
+	g_header_ctx.font = "11px 'k8x12',monospace";
 	g_header_ctx.fillStyle = "#83769c";
 
 	const startBar = Math.floor(g_draw_offset_x / (stepsPerBar * stepWidth));

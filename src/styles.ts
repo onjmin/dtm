@@ -9,9 +9,10 @@ const STYLE_ID = "dtm-daw-styles";
 
 export const DAW_CSS = `
 @font-face {
-  font-family: 'MisakiGothic';
-  src: url('https://cdn.jsdelivr.net/npm/misaki-font/misaki_gothic.woff2') format('woff2'),
-       url('https://cdn.jsdelivr.net/npm/misaki-font/misaki_gothic.woff') format('woff');
+  font-family: 'k8x12';
+  src: url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff2') format('woff2'),
+       url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff') format('woff'),
+       url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
 }
@@ -57,7 +58,7 @@ export const DAW_CSS = `
   --dtm-warn:     var(--c-orange);
   --dtm-tap:      40px;
   --dtm-gap:      6px;
-  --dtm-font:     'MisakiGothic','MS Gothic','ＭＳ ゴシック',ui-monospace,monospace;
+  --dtm-font:     'k8x12',ui-monospace,monospace;
 
   box-sizing: border-box;
   font-family: var(--dtm-font);
