@@ -141,8 +141,10 @@ const drawHeaderCorner = (): void => {
 };
 
 /**
- * 鍵盤を描画します。ピアノの鍵盤風デザイン
- * 白鍵は全幅で描画し、黒鍵は行の中央に少し小さく配置します。
+ * 鍵盤を描画します。
+ * - 白鍵: クリーム色、全幅
+ * - 黒鍵: 左 62% を黒塗り、右 38% は白鍵色（奥に伸びて見える）
+ * - E→F / C→B(下オクターブ) の白白境界に区切り線
  */
 export const drawKeyboard = (): void => {
 	g_key_ctx.clearRect(0, 0, g_key_canvas.width, g_key_canvas.height);
@@ -152,13 +154,11 @@ export const drawKeyboard = (): void => {
 	const startY = Math.floor(g_draw_offset_y / keyHeight) * keyHeight;
 	const endY = g_draw_offset_y + g_key_canvas.height;
 
-	// 鍵盤エリア右側の赤い境界線（一度だけ描画）
-	g_key_ctx.beginPath();
-	g_key_ctx.strokeStyle = "#29adff";
-	g_key_ctx.lineWidth = 2;
-	g_key_ctx.moveTo(KEYBOARD_WIDTH, 0);
-	g_key_ctx.lineTo(KEYBOARD_WIDTH, g_key_canvas.height);
-	g_key_ctx.stroke();
+	const WHITE_KEY = "#ccc8b4";
+	const BLACK_KEY = "#111111";
+	const BK_EDGE = "#383838"; // 黒鍵右端のエッジ（立体感）
+	const WW_SEP = "#807a6a"; // 白白境界の区切り線
+	const BK_RATIO = 0.62; // 黒鍵の幅比率
 
 	for (let y = startY; y < endY; y += keyHeight) {
 		const pitchIndex = keyCount - 1 - y / keyHeight;
@@ -166,47 +166,41 @@ export const drawKeyboard = (): void => {
 		const pitchMod12 = totalPitch % 12;
 		const isBlackKey = blackKeyPitches.has(pitchMod12);
 		const screenY = y - g_draw_offset_y;
+		const bkW = Math.floor(KEYBOARD_WIDTH * BK_RATIO);
 
-		// 1. 白鍵の背景を描画 (全幅)
-		g_key_ctx.fillStyle = "#1d2b53";
-		g_key_ctx.fillRect(0, screenY, KEYBOARD_WIDTH, keyHeight);
-
-		// 2. 白鍵の境界線 (横線)
-		g_key_ctx.beginPath();
-		g_key_ctx.strokeStyle = "#2d3560";
-		g_key_ctx.lineWidth = 1;
-		g_key_ctx.moveTo(0, screenY + keyHeight);
-		g_key_ctx.lineTo(KEYBOARD_WIDTH, screenY + keyHeight);
-		g_key_ctx.stroke();
-
-		// 3. 黒鍵の描画 (白鍵の上に重ねる)
 		if (isBlackKey) {
-			const blackKeyWidth = KEYBOARD_WIDTH * 0.7;
-			const blackKeyHeight = keyHeight * 0.75; // 白鍵の行より少し低くする
-			const offset = (keyHeight - blackKeyHeight) / 2; // 上下中央揃えのオフセット
-
-			// 黒鍵の立体感（グラデーション）
-			const gradient = g_key_ctx.createLinearGradient(
-				0,
-				screenY + offset,
-				0,
-				screenY + offset + blackKeyHeight,
-			);
-			gradient.addColorStop(0, "#3d405b");
-			gradient.addColorStop(1, "#000000");
-
-			g_key_ctx.fillStyle = gradient;
-			g_key_ctx.fillRect(0, screenY + offset, blackKeyWidth, blackKeyHeight);
-
-			// 黒鍵の枠線
-			g_key_ctx.strokeStyle = "#000000";
-			g_key_ctx.strokeRect(0, screenY + offset, blackKeyWidth, blackKeyHeight);
+			// 右側（白鍵が奥に見える部分）
+			g_key_ctx.fillStyle = WHITE_KEY;
+			g_key_ctx.fillRect(0, screenY, KEYBOARD_WIDTH, keyHeight);
+			// 黒鍵本体
+			g_key_ctx.fillStyle = BLACK_KEY;
+			g_key_ctx.fillRect(0, screenY, bkW, keyHeight);
+			// 黒鍵の右端エッジライン
+			g_key_ctx.strokeStyle = BK_EDGE;
+			g_key_ctx.lineWidth = 1;
+			g_key_ctx.beginPath();
+			g_key_ctx.moveTo(bkW, screenY);
+			g_key_ctx.lineTo(bkW, screenY + keyHeight);
+			g_key_ctx.stroke();
+		} else {
+			// 白鍵
+			g_key_ctx.fillStyle = WHITE_KEY;
+			g_key_ctx.fillRect(0, screenY, KEYBOARD_WIDTH, keyHeight);
+			// 白白境界（F の下端 = E との境、C の下端 = 下オクターブ B との境）
+			if (pitchMod12 === 5 || pitchMod12 === 0) {
+				g_key_ctx.strokeStyle = WW_SEP;
+				g_key_ctx.lineWidth = 1;
+				g_key_ctx.beginPath();
+				g_key_ctx.moveTo(0, screenY + keyHeight - 0.5);
+				g_key_ctx.lineTo(KEYBOARD_WIDTH, screenY + keyHeight - 0.5);
+				g_key_ctx.stroke();
+			}
 		}
 
-		// 4. オクターブ表記 (Cのみ)
+		// オクターブ表記 (C のみ、白鍵の右寄り)
 		if (pitchMod12 === 0) {
 			const octave = Math.floor(totalPitch / 12) - 1;
-			g_key_ctx.fillStyle = "#83769c";
+			g_key_ctx.fillStyle = "#555040";
 			g_key_ctx.font = "10px 'k8x12',monospace";
 			g_key_ctx.textAlign = "right";
 			g_key_ctx.textBaseline = "bottom";
@@ -217,6 +211,14 @@ export const drawKeyboard = (): void => {
 			);
 		}
 	}
+
+	// 鍵盤右端の境界線（グリッドとの区切り）
+	g_key_ctx.beginPath();
+	g_key_ctx.strokeStyle = "#29adff";
+	g_key_ctx.lineWidth = 2;
+	g_key_ctx.moveTo(KEYBOARD_WIDTH, 0);
+	g_key_ctx.lineTo(KEYBOARD_WIDTH, g_key_canvas.height);
+	g_key_ctx.stroke();
 };
 
 export const drawHeader = (): void => {
