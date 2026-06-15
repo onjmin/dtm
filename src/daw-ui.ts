@@ -107,25 +107,25 @@ export const buildUI = (
 
 	target.innerHTML = `
 <div class="dtm-daw" data-dtm="root">
-  <div class="dtm-strip" data-dtm="transport">
-    <button class="dtm-btn dtm-btn--success" data-dtm="play" disabled>${icon("play")}<span>試聴</span></button>
-    <button class="dtm-btn dtm-btn--danger dtm-btn--icon" data-dtm="rec" title="録音">${icon("record")}</button>
-    <label class="dtm-label" style="display:flex;align-items:center;gap:6px;">
-      <input type="checkbox" data-dtm="solo"> ソロ
-    </label>
+  <div class="dtm-topbar" data-dtm="transport">
+    <button class="dtm-play" data-dtm="play" disabled>${icon("play")}<span>試聴</span></button>
+    <button class="dtm-iconbtn dtm-rec" data-dtm="rec" title="録音">${icon("record")}</button>
+    <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>ソロ</span></label>
+    <span class="dtm-grow"></span>
+    <span class="dtm-label">BPM</span>
+    <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
   </div>
 
-  <div class="dtm-strip" data-dtm="toolbar">
-    <span class="dtm-label">ツール</span>
-    <button class="dtm-btn dtm-btn--active dtm-btn--icon" data-dtm="tool-pen" title="ペン">✎</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="tool-select" title="選択">▦</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="tool-eraser" title="消しゴム">⌫</button>
+  <div class="dtm-tooldock">
+    <div class="dtm-seg">
+      <button class="dtm-segbtn dtm-segbtn--active" data-dtm="tool-pen" title="ペン">${icon("pen")}</button>
+      <button class="dtm-segbtn" data-dtm="tool-select" title="選択">${icon("select")}</button>
+      <button class="dtm-segbtn" data-dtm="tool-eraser" title="消しゴム">${icon("eraser")}</button>
+    </div>
+    <button class="dtm-iconbtn" data-dtm="undo" title="元に戻す" disabled>${icon("undo")}</button>
+    <button class="dtm-iconbtn" data-dtm="redo" title="やり直し" disabled>${icon("redo")}</button>
     <span class="dtm-sep"></span>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="undo" title="元に戻す" disabled>${icon("undo")}</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="redo" title="やり直し" disabled>${icon("redo")}</button>
-    <span class="dtm-sep"></span>
-    <span class="dtm-label">音符</span>
-    <select class="dtm-select" data-dtm="note-length">
+    <select class="dtm-select" data-dtm="note-length" title="音符の長さ">
       <option value="48">4分</option>
       <option value="32">3連4</option>
       <option value="24">8分</option>
@@ -136,24 +136,27 @@ export const buildUI = (
       <option value="4">3連32</option>
     </select>
     <span class="dtm-sep"></span>
-    <span class="dtm-label">BPM</span>
-    <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
+    <div class="dtm-zoom">
+      <span class="dtm-label">横</span>
+      <button class="dtm-iconbtn" data-dtm="zoomx-out" title="縮小">−</button>
+      <span class="dtm-label" data-dtm="zoomx-label">100%</span>
+      <button class="dtm-iconbtn" data-dtm="zoomx-in" title="拡大">＋</button>
+    </div>
+    <div class="dtm-zoom">
+      <span class="dtm-label">縦</span>
+      <button class="dtm-iconbtn" data-dtm="zoomy-out" title="縮小">−</button>
+      <span class="dtm-label" data-dtm="zoomy-label">100%</span>
+      <button class="dtm-iconbtn" data-dtm="zoomy-in" title="拡大">＋</button>
+    </div>
     <span class="dtm-sep"></span>
-    <span class="dtm-label">横</span>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="zoomx-out">−</button>
-    <span class="dtm-label" data-dtm="zoomx-label">100%</span>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="zoomx-in">＋</button>
-    <span class="dtm-label">縦</span>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="zoomy-out">−</button>
-    <span class="dtm-label" data-dtm="zoomy-label">100%</span>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="zoomy-in">＋</button>
-    <span class="dtm-sep"></span>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-home" title="最初へ">${icon("first")}</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-up">${icon("chevronUp")}</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-down">${icon("chevronDown")}</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-left">${icon("chevronLeft")}</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-right">${icon("chevronRight")}</button>
+    <button class="dtm-iconbtn" data-dtm="nav-home" title="最初へ">${icon("first")}</button>
+    <button class="dtm-iconbtn" data-dtm="nav-up" title="上">${icon("chevronUp")}</button>
+    <button class="dtm-iconbtn" data-dtm="nav-down" title="下">${icon("chevronDown")}</button>
+    <button class="dtm-iconbtn" data-dtm="nav-left" title="左">${icon("chevronLeft")}</button>
+    <button class="dtm-iconbtn" data-dtm="nav-right" title="右">${icon("chevronRight")}</button>
   </div>
+
+  <div class="dtm-tracks" data-dtm="track-tabs"></div>
 
   <div class="dtm-roll-wrap">
     <div class="dtm-roll" data-dtm="roll"><div data-dtm="wrapper" style="position:absolute;inset:0;"></div></div>
@@ -165,11 +168,10 @@ export const buildUI = (
     <summary>トラック設定</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row">
-        <span class="dtm-label">音量</span>
+        <span class="dtm-label">全体音量</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="master-volume" value="50" min="0" max="100">
         <span class="dtm-label" data-dtm="master-volume-label">50%</span>
       </div>
-      <div class="dtm-tabs" data-dtm="track-tabs"></div>
       <div class="dtm-track-body" data-dtm="track-body"></div>
     </div>
   </details>

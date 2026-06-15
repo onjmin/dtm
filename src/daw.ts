@@ -8,6 +8,7 @@
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import { buildUI } from "./daw-ui";
 import { DRUM_PATTERNS } from "./drum-config";
+import { icon } from "./icons";
 import {
 	applyHarmonicFilter,
 	applyMonophonic,
@@ -897,11 +898,13 @@ export const mountDAW = (
 	// ============================================================
 	const updateTransport = (): void => {
 		const playing = playbackState === "playing";
-		refs.playBtn.innerHTML = playing
-			? `<span>停止</span>`
-			: `<span>${playbackState === "paused" ? "再開" : "試聴"}</span>`;
-		refs.playBtn.classList.toggle("dtm-btn--danger", playing);
-		refs.playBtn.classList.toggle("dtm-btn--success", !playing);
+		const label = playing
+			? "停止"
+			: playbackState === "paused"
+				? "再開"
+				: "試聴";
+		refs.playBtn.innerHTML = `${icon(playing ? "stop" : "play")}<span>${label}</span>`;
+		refs.playBtn.classList.toggle("dtm-play--stop", playing);
 	};
 
 	const updateUndoRedo = (): void => {
@@ -911,12 +914,14 @@ export const mountDAW = (
 	};
 
 	const updateTrackPanel = (): void => {
-		// タブ
+		// トラックピル（色分け・常時表示）
 		refs.trackTabs.innerHTML = "";
 		for (const t of trackStates) {
+			const [r, g, b] = t.config.color;
 			const btn = document.createElement("button");
-			btn.className = `dtm-tab ${t.config.id === activeTrackId ? "dtm-tab--active" : ""}`;
-			btn.textContent = t.config.name;
+			btn.className = `dtm-pill ${t.config.id === activeTrackId ? "dtm-pill--active" : ""}`;
+			btn.style.setProperty("--dtm-pill-color", `rgb(${r},${g},${b})`);
+			btn.innerHTML = `<span class="dtm-dot"></span><span>${t.config.name}</span>`;
 			btn.addEventListener("click", () => switchTrack(t.config.id));
 			refs.trackTabs.appendChild(btn);
 		}
@@ -1019,8 +1024,7 @@ export const mountDAW = (
 			[refs.toolSelect, "select"],
 			[refs.toolEraser, "eraser"],
 		] as [HTMLButtonElement, ToolMode][]) {
-			btn.classList.toggle("dtm-btn--active", m === mode);
-			btn.classList.toggle("dtm-btn--ghost", m !== mode);
+			btn.classList.toggle("dtm-segbtn--active", m === mode);
 		}
 		if (mode !== "select") {
 			selectionRect = null;
