@@ -21,7 +21,7 @@ import {
 	extractMidiPlacements,
 	extractMidiPlacementsByTrack,
 } from "./midi-io";
-import { decomposeToMonophonic, MMLCore } from "./mml-core";
+import { decomposeToMonophonic, isChordHeavyTrack, MMLCore } from "./mml-core";
 import { parseMML } from "./mml-parser";
 import {
 	drawGrid,
@@ -1156,10 +1156,19 @@ export const mountDAW = (
 	// ============================================================
 	// MML / MIDI / コード / マクロ
 	// ============================================================
-	const generateMML = (): { full: string; minified: string } => {
+	const generateMML = (): {
+		full: string;
+		minified: string;
+		ignoredCount: number;
+		trackCount: number;
+	} => {
 		if (refs.decomposeChordToggle.checked) {
-			// 和音分解モード: 全トラックのノートを単音トラックに最適分割
-			const allNotes = trackStates.flatMap((t) => t.core.getNotes());
+			const ignoreHeavy = refs.ignoreChordHeavyToggle.checked;
+			const targetStates = ignoreHeavy
+				? trackStates.filter((t) => !isChordHeavyTrack(t.core.getNotes()))
+				: trackStates;
+			const ignoredCount = trackStates.length - targetStates.length;
+			const allNotes = targetStates.flatMap((t) => t.core.getNotes());
 			const monoTracks = decomposeToMonophonic(allNotes);
 			const refCore = trackStates[0].core;
 			const full = monoTracks
@@ -1174,7 +1183,7 @@ export const mountDAW = (
 						`@${i}${refCore.getMMLFromNotes(notes, bpm, 100).trim().replace(/\s+/g, "")}`,
 				)
 				.join(";");
-			return { full, minified };
+			return { full, minified, ignoredCount, trackCount: monoTracks.length };
 		}
 		const full = trackStates
 			.map((t, i) => `@${i} ${t.core.getMML(t.volume).trim()}`)
@@ -1184,20 +1193,18 @@ export const mountDAW = (
 				(t, i) => `@${i}${t.core.getMML(t.volume).trim().replace(/\s+/g, "")}`,
 			)
 			.join(";");
-		return { full, minified };
+		return { full, minified, ignoredCount: 0, trackCount: trackStates.length };
 	};
 
 	const showMML = (): void => {
-		const { full, minified } = generateMML();
+		const { full, minified, ignoredCount, trackCount } = generateMML();
 		refs.outputFull.textContent = full;
 		refs.outputMini.textContent = minified;
 		const isDecompose = refs.decomposeChordToggle.checked;
-		const trackCount = isDecompose
-			? decomposeToMonophonic(trackStates.flatMap((t) => t.core.getNotes()))
-					.length
-			: trackStates.length;
 		const modeLabel = isDecompose ? "和音分解" : "通常";
-		refs.outputStatus.textContent = `[${modeLabel}] (${trackCount}トラック) 通常: ${full.length}文字 / minify: ${minified.length}文字`;
+		const ignoredLabel =
+			ignoredCount > 0 ? ` / 伴奏${ignoredCount}トラック除外` : "";
+		refs.outputStatus.textContent = `[${modeLabel}] (${trackCount}トラック${ignoredLabel}) 通常: ${full.length}文字 / minify: ${minified.length}文字`;
 		refs.outputContainer.classList.remove("dtm-hidden");
 		updateUndoRedo();
 	};

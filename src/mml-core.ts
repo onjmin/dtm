@@ -532,3 +532,21 @@ export const decomposeToMonophonic = (notes: Note[]): Note[][] => {
 	}
 	return tracks;
 };
+
+/**
+ * ノート配列が「和音伴奏トラック」かどうかを判定する。
+ * 同一 startStep に複数ノートが存在する（和音構成ノード）の割合が
+ * threshold 以上であれば true。
+ * @param threshold 0〜1。デフォルト 0.6（60%以上が和音ノートならば伴奏トラック）
+ */
+export const isChordHeavyTrack = (notes: Note[], threshold = 0.6): boolean => {
+	if (notes.length < 2) return false;
+	const stepCounts = new Map<number, number>();
+	for (const n of notes) {
+		stepCounts.set(n.startStep, (stepCounts.get(n.startStep) ?? 0) + 1);
+	}
+	const chordNotes = notes.filter(
+		(n) => (stepCounts.get(n.startStep) ?? 0) > 1,
+	).length;
+	return chordNotes / notes.length >= threshold;
+};

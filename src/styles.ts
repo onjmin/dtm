@@ -210,6 +210,7 @@ export const DAW_CSS = `
   margin-top: 4px;
 }
 .dtm-checkbox-label:hover { color: var(--dtm-text); }
+.dtm-checkbox-label--sub { margin-left: 20px; font-size: 10px; }
 .dtm-checkbox {
   width: 14px;
   height: 14px;

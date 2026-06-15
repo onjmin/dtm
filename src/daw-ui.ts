@@ -60,6 +60,7 @@ export type DawUIRefs = {
 	exportMidiBtn: HTMLButtonElement;
 	generateMmlBtn: HTMLButtonElement;
 	decomposeChordToggle: HTMLInputElement;
+	ignoreChordHeavyToggle: HTMLInputElement;
 	outputContainer: HTMLElement;
 	outputStatus: HTMLElement;
 	outputFull: HTMLElement;
@@ -239,6 +240,10 @@ export const buildUI = (
         <input type="checkbox" class="dtm-checkbox" data-dtm="decompose-chord">
         <span>和音分解モード（単音トラックに最適分割）</span>
       </label>
+      <label class="dtm-checkbox-label dtm-checkbox-label--sub">
+        <input type="checkbox" class="dtm-checkbox" data-dtm="ignore-chord-heavy">
+        <span>和音伴奏トラックを無視（分解対象から除外）</span>
+      </label>
       <div class="dtm-output dtm-hidden" data-dtm="output-container">
         <p class="dtm-label" data-dtm="output-status"></p>
         <div class="dtm-output-row">
@@ -306,6 +311,7 @@ export const buildUI = (
 		exportMidiBtn: sel("export-midi"),
 		generateMmlBtn: sel("generate-mml"),
 		decomposeChordToggle: sel<HTMLInputElement>("decompose-chord"),
+		ignoreChordHeavyToggle: sel<HTMLInputElement>("ignore-chord-heavy"),
 		outputContainer: sel("output-container"),
 		outputStatus: sel("output-status"),
 		outputFull: sel("output-full"),
