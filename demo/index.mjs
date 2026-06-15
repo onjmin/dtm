@@ -219,6 +219,20 @@ var ICONS = {
   copy: {
     d: "M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z",
     stroke: true
+  },
+  pen: {
+    d: "M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75 1.84-1.83zM3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z"
+  },
+  eraser: {
+    d: "M16.24 3.56l4.95 4.94c.78.79.78 2.05 0 2.84L12 20.53a4.008 4.008 0 01-5.66 0L2.81 17c-.78-.79-.78-2.05 0-2.84l10.6-10.6c.79-.78 2.05-.78 2.83 0zM4.22 15.58l3.54 3.53c.78.79 2.04.79 2.83 0l3.53-3.53-4.95-4.95-4.95 4.95z"
+  },
+  select: {
+    d: "M4 7V5a1 1 0 011-1h2M4 17v2a1 1 0 001 1h2M20 7V5a1 1 0 00-1-1h-2M20 17v2a1 1 0 01-1 1h-2M4 11v2M20 11v2M11 4h2M11 20h2",
+    stroke: true
+  },
+  settings: {
+    d: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z",
+    stroke: true
   }
 };
 var icon = (name, size = 20) => {
@@ -239,25 +253,25 @@ var buildUI = (target, options) => {
   ).join("");
   target.innerHTML = `
 <div class="dtm-daw" data-dtm="root">
-  <div class="dtm-strip" data-dtm="transport">
-    <button class="dtm-btn dtm-btn--success" data-dtm="play" disabled>${icon("play")}<span>\u8A66\u8074</span></button>
-    <button class="dtm-btn dtm-btn--danger dtm-btn--icon" data-dtm="rec" title="\u9332\u97F3">${icon("record")}</button>
-    <label class="dtm-label" style="display:flex;align-items:center;gap:6px;">
-      <input type="checkbox" data-dtm="solo"> \u30BD\u30ED
-    </label>
+  <div class="dtm-topbar" data-dtm="transport">
+    <button class="dtm-play" data-dtm="play" disabled>${icon("play")}<span>\u8A66\u8074</span></button>
+    <button class="dtm-iconbtn dtm-rec" data-dtm="rec" title="\u9332\u97F3">${icon("record")}</button>
+    <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>\u30BD\u30ED</span></label>
+    <span class="dtm-grow"></span>
+    <span class="dtm-label">BPM</span>
+    <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
   </div>
 
-  <div class="dtm-strip" data-dtm="toolbar">
-    <span class="dtm-label">\u30C4\u30FC\u30EB</span>
-    <button class="dtm-btn dtm-btn--active dtm-btn--icon" data-dtm="tool-pen" title="\u30DA\u30F3">\u270E</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="tool-select" title="\u9078\u629E">\u25A6</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="tool-eraser" title="\u6D88\u3057\u30B4\u30E0">\u232B</button>
+  <div class="dtm-tooldock">
+    <div class="dtm-seg">
+      <button class="dtm-segbtn dtm-segbtn--active" data-dtm="tool-pen" title="\u30DA\u30F3">${icon("pen")}</button>
+      <button class="dtm-segbtn" data-dtm="tool-select" title="\u9078\u629E">${icon("select")}</button>
+      <button class="dtm-segbtn" data-dtm="tool-eraser" title="\u6D88\u3057\u30B4\u30E0">${icon("eraser")}</button>
+    </div>
+    <button class="dtm-iconbtn" data-dtm="undo" title="\u5143\u306B\u623B\u3059" disabled>${icon("undo")}</button>
+    <button class="dtm-iconbtn" data-dtm="redo" title="\u3084\u308A\u76F4\u3057" disabled>${icon("redo")}</button>
     <span class="dtm-sep"></span>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="undo" title="\u5143\u306B\u623B\u3059" disabled>${icon("undo")}</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="redo" title="\u3084\u308A\u76F4\u3057" disabled>${icon("redo")}</button>
-    <span class="dtm-sep"></span>
-    <span class="dtm-label">\u97F3\u7B26</span>
-    <select class="dtm-select" data-dtm="note-length">
+    <select class="dtm-select" data-dtm="note-length" title="\u97F3\u7B26\u306E\u9577\u3055">
       <option value="48">4\u5206</option>
       <option value="32">3\u90234</option>
       <option value="24">8\u5206</option>
@@ -268,24 +282,27 @@ var buildUI = (target, options) => {
       <option value="4">3\u902332</option>
     </select>
     <span class="dtm-sep"></span>
-    <span class="dtm-label">BPM</span>
-    <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
+    <div class="dtm-zoom">
+      <span class="dtm-label">\u6A2A</span>
+      <button class="dtm-iconbtn" data-dtm="zoomx-out" title="\u7E2E\u5C0F">\u2212</button>
+      <span class="dtm-label" data-dtm="zoomx-label">100%</span>
+      <button class="dtm-iconbtn" data-dtm="zoomx-in" title="\u62E1\u5927">\uFF0B</button>
+    </div>
+    <div class="dtm-zoom">
+      <span class="dtm-label">\u7E26</span>
+      <button class="dtm-iconbtn" data-dtm="zoomy-out" title="\u7E2E\u5C0F">\u2212</button>
+      <span class="dtm-label" data-dtm="zoomy-label">100%</span>
+      <button class="dtm-iconbtn" data-dtm="zoomy-in" title="\u62E1\u5927">\uFF0B</button>
+    </div>
     <span class="dtm-sep"></span>
-    <span class="dtm-label">\u6A2A</span>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="zoomx-out">\u2212</button>
-    <span class="dtm-label" data-dtm="zoomx-label">100%</span>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="zoomx-in">\uFF0B</button>
-    <span class="dtm-label">\u7E26</span>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="zoomy-out">\u2212</button>
-    <span class="dtm-label" data-dtm="zoomy-label">100%</span>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="zoomy-in">\uFF0B</button>
-    <span class="dtm-sep"></span>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-home" title="\u6700\u521D\u3078">${icon("first")}</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-up">${icon("chevronUp")}</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-down">${icon("chevronDown")}</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-left">${icon("chevronLeft")}</button>
-    <button class="dtm-btn dtm-btn--ghost dtm-btn--icon" data-dtm="nav-right">${icon("chevronRight")}</button>
+    <button class="dtm-iconbtn" data-dtm="nav-home" title="\u6700\u521D\u3078">${icon("first")}</button>
+    <button class="dtm-iconbtn" data-dtm="nav-up" title="\u4E0A">${icon("chevronUp")}</button>
+    <button class="dtm-iconbtn" data-dtm="nav-down" title="\u4E0B">${icon("chevronDown")}</button>
+    <button class="dtm-iconbtn" data-dtm="nav-left" title="\u5DE6">${icon("chevronLeft")}</button>
+    <button class="dtm-iconbtn" data-dtm="nav-right" title="\u53F3">${icon("chevronRight")}</button>
   </div>
+
+  <div class="dtm-tracks" data-dtm="track-tabs"></div>
 
   <div class="dtm-roll-wrap">
     <div class="dtm-roll" data-dtm="roll"><div data-dtm="wrapper" style="position:absolute;inset:0;"></div></div>
@@ -297,11 +314,10 @@ var buildUI = (target, options) => {
     <summary>\u30C8\u30E9\u30C3\u30AF\u8A2D\u5B9A</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row">
-        <span class="dtm-label">\u97F3\u91CF</span>
+        <span class="dtm-label">\u5168\u4F53\u97F3\u91CF</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="master-volume" value="50" min="0" max="100">
         <span class="dtm-label" data-dtm="master-volume-label">50%</span>
       </div>
-      <div class="dtm-tabs" data-dtm="track-tabs"></div>
       <div class="dtm-track-body" data-dtm="track-body"></div>
     </div>
   </details>
@@ -2020,9 +2036,9 @@ var createSequencer = (options) => {
 var STYLE_ID = "dtm-daw-styles";
 var DAW_CSS = `
 .dtm-daw {
-  --dtm-bg: #f3f4f6;
+  --dtm-bg: #eef2f7;
   --dtm-surface: #ffffff;
-  --dtm-border: #d1d5db;
+  --dtm-border: #d8dee9;
   --dtm-text: #1f2937;
   --dtm-muted: #6b7280;
   --dtm-primary: #3b82f6;
@@ -2030,8 +2046,9 @@ var DAW_CSS = `
   --dtm-danger: #ef4444;
   --dtm-success: #10b981;
   --dtm-accent: #8b5cf6;
-  --dtm-radius: 10px;
+  --dtm-radius: 12px;
   --dtm-tap: 44px;
+  --dtm-shadow: 0 1px 3px rgba(16,24,40,.08), 0 1px 2px rgba(16,24,40,.04);
   box-sizing: border-box;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--dtm-text);
@@ -2047,7 +2064,7 @@ var DAW_CSS = `
 .dtm-daw *::before,
 .dtm-daw *::after { box-sizing: border-box; }
 
-/* --- \u30DC\u30BF\u30F3\u57FA\u672C --- */
+/* --- \u5171\u901A\u30DC\u30BF\u30F3\uFF08\u30D1\u30CD\u30EB\u5185\uFF09 --- */
 .dtm-btn {
   display: inline-flex;
   align-items: center;
@@ -2055,7 +2072,7 @@ var DAW_CSS = `
   gap: 6px;
   min-height: var(--dtm-tap);
   min-width: var(--dtm-tap);
-  padding: 0 12px;
+  padding: 0 14px;
   border: 1px solid transparent;
   border-radius: var(--dtm-radius);
   background: #e5e7eb;
@@ -2065,83 +2082,217 @@ var DAW_CSS = `
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
-  transition: background .15s, color .15s, opacity .15s;
+  transition: background .15s, color .15s, opacity .15s, box-shadow .15s;
 }
 .dtm-btn:active { transform: translateY(1px); }
-.dtm-btn:disabled { opacity: .45; cursor: not-allowed; }
+.dtm-btn:disabled { opacity: .4; cursor: not-allowed; }
 .dtm-btn--primary { background: var(--dtm-primary); color: var(--dtm-primary-fg); }
 .dtm-btn--success { background: var(--dtm-success); color: #fff; }
 .dtm-btn--danger { background: var(--dtm-danger); color: #fff; }
 .dtm-btn--accent { background: var(--dtm-accent); color: #fff; }
-.dtm-btn--ghost { background: transparent; border-color: var(--dtm-border); }
-.dtm-btn--active { background: var(--dtm-primary); color: var(--dtm-primary-fg); }
+.dtm-btn--ghost { background: var(--dtm-surface); border-color: var(--dtm-border); }
 .dtm-btn--icon { padding: 0; }
 
-/* --- \u6A2A\u30B9\u30AF\u30ED\u30FC\u30EB\u5F0F\u30C4\u30FC\u30EB\u30B9\u30C8\u30EA\u30C3\u30D7 --- */
-.dtm-strip {
+/* --- \u30A2\u30A4\u30B3\u30F3\u30DC\u30BF\u30F3 --- */
+.dtm-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--dtm-tap);
+  height: var(--dtm-tap);
+  flex: 0 0 auto;
+  border: 1px solid var(--dtm-border);
+  border-radius: 10px;
+  background: var(--dtm-surface);
+  color: var(--dtm-text);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .15s, color .15s, opacity .15s;
+}
+.dtm-iconbtn:active { transform: translateY(1px); }
+.dtm-iconbtn:disabled { opacity: .35; cursor: not-allowed; }
+
+/* --- \u30C8\u30E9\u30F3\u30B9\u30DD\u30FC\u30C8\u30D0\u30FC\uFF08\u5E38\u6642\u8868\u793A\u30FB\u4E0A\u90E8\u56FA\u5B9A\uFF09 --- */
+.dtm-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--dtm-surface);
+  border: 1px solid var(--dtm-border);
+  border-radius: var(--dtm-radius);
+  box-shadow: var(--dtm-shadow);
+}
+.dtm-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--dtm-tap);
+  padding: 0 22px;
+  border: none;
+  border-radius: 999px;
+  background: var(--dtm-success);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(16,185,129,.35);
+  transition: background .15s, box-shadow .15s, transform .1s;
+}
+.dtm-play:active { transform: translateY(1px); }
+.dtm-play:disabled { opacity: .5; cursor: not-allowed; }
+.dtm-play--stop { background: var(--dtm-danger); box-shadow: 0 2px 6px rgba(239,68,68,.35); }
+.dtm-rec { color: var(--dtm-danger); }
+.dtm-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dtm-muted);
+  cursor: pointer;
+}
+.dtm-toggle input { width: 18px; height: 18px; accent-color: var(--dtm-accent); }
+
+/* --- \u30C4\u30FC\u30EB\u30C9\u30C3\u30AF\uFF08\u6A2A\u30B9\u30AF\u30ED\u30FC\u30EB\uFF09 --- */
+.dtm-tooldock {
   display: flex;
   align-items: center;
   gap: 8px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  padding: 6px;
+  padding: 8px;
   background: var(--dtm-surface);
   border: 1px solid var(--dtm-border);
   border-radius: var(--dtm-radius);
+  box-shadow: var(--dtm-shadow);
 }
-.dtm-strip::-webkit-scrollbar { height: 6px; }
-.dtm-strip > * { flex: 0 0 auto; }
-.dtm-sep { width: 1px; align-self: stretch; background: var(--dtm-border); margin: 2px 2px; }
+.dtm-tooldock::-webkit-scrollbar { height: 6px; }
+.dtm-tooldock > * { flex: 0 0 auto; }
+.dtm-sep { width: 1px; align-self: stretch; background: var(--dtm-border); margin: 2px; }
 .dtm-label { font-size: 13px; color: var(--dtm-muted); font-weight: 600; white-space: nowrap; }
+.dtm-zoom { display: inline-flex; align-items: center; gap: 4px; }
+.dtm-zoom .dtm-label[data-dtm] { min-width: 38px; text-align: center; }
+
+/* --- \u30BB\u30B0\u30E1\u30F3\u30C8\u578B\u30C4\u30FC\u30EB\u9078\u629E --- */
+.dtm-seg {
+  display: inline-flex;
+  border: 1px solid var(--dtm-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--dtm-surface);
+}
+.dtm-segbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--dtm-tap);
+  height: var(--dtm-tap);
+  border: none;
+  border-right: 1px solid var(--dtm-border);
+  background: transparent;
+  color: var(--dtm-muted);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.dtm-segbtn:last-child { border-right: none; }
+.dtm-segbtn--active { background: var(--dtm-primary); color: #fff; }
 
 /* --- \u30D5\u30A9\u30FC\u30E0\u8981\u7D20 --- */
 .dtm-select, .dtm-input, .dtm-textarea {
   min-height: var(--dtm-tap);
   padding: 6px 10px;
   border: 1px solid var(--dtm-border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--dtm-surface);
   color: var(--dtm-text);
   font-size: 14px;
 }
-.dtm-input--num { width: 72px; text-align: center; }
+.dtm-input--num { width: 70px; text-align: center; }
 .dtm-textarea { width: 100%; min-height: 56px; resize: vertical; font-family: ui-monospace, monospace; }
 .dtm-range { height: var(--dtm-tap); accent-color: var(--dtm-primary); }
+
+/* --- \u30C8\u30E9\u30C3\u30AF\u30D4\u30EB\uFF08\u8272\u5206\u3051\u30FB\u5E38\u6642\u8868\u793A\uFF09 --- */
+.dtm-tracks {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding: 2px;
+}
+.dtm-tracks::-webkit-scrollbar { display: none; }
+.dtm-pill {
+  --dtm-pill-color: var(--dtm-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1.5px solid var(--dtm-border);
+  border-radius: 999px;
+  background: var(--dtm-surface);
+  color: var(--dtm-muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, box-shadow .15s;
+}
+.dtm-pill .dtm-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--dtm-pill-color);
+  flex: 0 0 auto;
+}
+.dtm-pill--active {
+  border-color: var(--dtm-pill-color);
+  color: var(--dtm-text);
+  font-weight: 800;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dtm-pill-color) 18%, transparent);
+}
 
 /* --- \u30D4\u30A2\u30CE\u30ED\u30FC\u30EB --- */
 .dtm-roll-wrap { display: flex; gap: 6px; }
 .dtm-roll {
   position: relative;
   flex: 1 1 auto;
-  height: 56vh;
-  min-height: 280px;
+  height: 60vh;
+  min-height: 300px;
   background: var(--dtm-surface);
   border: 1px solid var(--dtm-border);
   border-radius: var(--dtm-radius);
+  box-shadow: var(--dtm-shadow);
   overflow: hidden;
 }
 .dtm-vscroll {
   position: relative;
-  width: 18px;
-  border-radius: 6px;
-  background: #e5e7eb;
+  width: 16px;
+  border-radius: 8px;
+  background: #e2e8f0;
   cursor: pointer;
   flex: 0 0 auto;
 }
 .dtm-vscroll-thumb, .dtm-hscroll-thumb {
   position: absolute;
   background: var(--dtm-primary);
-  border-radius: 6px;
-  opacity: .7;
+  border-radius: 8px;
+  opacity: .65;
 }
 .dtm-vscroll-thumb { left: 0; width: 100%; }
 .dtm-hscroll {
   position: relative;
   width: 100%;
-  height: 18px;
-  border-radius: 6px;
-  background: #e5e7eb;
+  height: 16px;
+  border-radius: 8px;
+  background: #e2e8f0;
   cursor: pointer;
 }
 .dtm-hscroll-thumb { top: 0; height: 100%; }
@@ -2151,6 +2302,7 @@ var DAW_CSS = `
   background: var(--dtm-surface);
   border: 1px solid var(--dtm-border);
   border-radius: var(--dtm-radius);
+  box-shadow: var(--dtm-shadow);
   overflow: hidden;
 }
 .dtm-panel > summary {
@@ -2170,21 +2322,8 @@ var DAW_CSS = `
 .dtm-panel-body { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 10px; }
 .dtm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
-/* --- \u30C8\u30E9\u30C3\u30AF\u30BF\u30D6 --- */
-.dtm-tabs { display: flex; gap: 4px; overflow-x: auto; }
-.dtm-tab {
-  flex: 0 0 auto;
-  min-height: var(--dtm-tap);
-  padding: 0 14px;
-  border: 1px solid var(--dtm-border);
-  border-radius: 8px 8px 0 0;
-  background: #f1f5f9;
-  color: var(--dtm-muted);
-  font-weight: 600;
-  cursor: pointer;
-}
-.dtm-tab--active { background: var(--dtm-surface); color: var(--dtm-accent); border-bottom-color: transparent; }
-.dtm-track-body { border: 1px solid var(--dtm-border); border-top: none; border-radius: 0 0 8px 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+/* --- \u30A2\u30AF\u30C6\u30A3\u30D6\u30C8\u30E9\u30C3\u30AF\u306E\u30DC\u30C7\u30A3 --- */
+.dtm-track-body { display: flex; flex-direction: column; gap: 10px; }
 
 /* --- MML\u51FA\u529B --- */
 .dtm-output { background: #1f2937; color: #e5e7eb; border-radius: var(--dtm-radius); padding: 12px; }
@@ -2210,13 +2349,12 @@ var DAW_CSS = `
 
 .dtm-hidden { display: none !important; }
 .dtm-grow { flex: 1 1 auto; }
-.dtm-title { font-size: 18px; font-weight: 800; margin: 0 0 4px; }
 
 /* --- \u5E83\u5E45\uFF08\u30BF\u30D6\u30EC\u30C3\u30C8/PC\uFF09\u62E1\u5F35 --- */
 @media (min-width: 768px) {
-  .dtm-daw { --dtm-tap: 38px; gap: 12px; padding: 12px; }
-  .dtm-roll { height: 450px; }
-  .dtm-btn { font-size: 14px; }
+  .dtm-daw { --dtm-tap: 40px; gap: 12px; padding: 12px; }
+  .dtm-roll { height: 460px; }
+  .dtm-iconbtn { font-size: 18px; }
 }
 `;
 var injectStyles = (doc = document) => {
@@ -2911,9 +3049,9 @@ var mountDAW = (target, options = {}) => {
   };
   const updateTransport = () => {
     const playing = playbackState === "playing";
-    refs.playBtn.innerHTML = playing ? `<span>\u505C\u6B62</span>` : `<span>${playbackState === "paused" ? "\u518D\u958B" : "\u8A66\u8074"}</span>`;
-    refs.playBtn.classList.toggle("dtm-btn--danger", playing);
-    refs.playBtn.classList.toggle("dtm-btn--success", !playing);
+    const label = playing ? "\u505C\u6B62" : playbackState === "paused" ? "\u518D\u958B" : "\u8A66\u8074";
+    refs.playBtn.innerHTML = `${icon(playing ? "stop" : "play")}<span>${label}</span>`;
+    refs.playBtn.classList.toggle("dtm-play--stop", playing);
   };
   const updateUndoRedo = () => {
     const core = getActive().core;
@@ -2923,9 +3061,11 @@ var mountDAW = (target, options = {}) => {
   const updateTrackPanel = () => {
     refs.trackTabs.innerHTML = "";
     for (const t of trackStates) {
+      const [r, g, b] = t.config.color;
       const btn = document.createElement("button");
-      btn.className = `dtm-tab ${t.config.id === activeTrackId ? "dtm-tab--active" : ""}`;
-      btn.textContent = t.config.name;
+      btn.className = `dtm-pill ${t.config.id === activeTrackId ? "dtm-pill--active" : ""}`;
+      btn.style.setProperty("--dtm-pill-color", `rgb(${r},${g},${b})`);
+      btn.innerHTML = `<span class="dtm-dot"></span><span>${t.config.name}</span>`;
       btn.addEventListener("click", () => switchTrack(t.config.id));
       refs.trackTabs.appendChild(btn);
     }
@@ -3022,8 +3162,7 @@ var mountDAW = (target, options = {}) => {
       [refs.toolSelect, "select"],
       [refs.toolEraser, "eraser"]
     ]) {
-      btn.classList.toggle("dtm-btn--active", m === mode);
-      btn.classList.toggle("dtm-btn--ghost", m !== mode);
+      btn.classList.toggle("dtm-segbtn--active", m === mode);
     }
     if (mode !== "select") {
       selectionRect = null;
