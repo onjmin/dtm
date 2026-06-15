@@ -896,6 +896,56 @@ var extractMidiPlacements = (midi, selectedTrackIndices) => {
   }
   return { placements, bpm };
 };
+var extractMidiPlacementsByTrack = (midi, selectedIndices, trackIds) => {
+  const { track, timeDivision } = midi;
+  const ticksPerBeat = timeDivision;
+  const bpm = getMidiBPM(midi);
+  const ticksPerStep = ticksPerBeat / STEPS_PER_BEAT;
+  const placements = [];
+  const selectedSet = new Set(selectedIndices);
+  for (let midiIdx = 0; midiIdx < track.length; midiIdx++) {
+    if (!selectedSet.has(midiIdx)) continue;
+    if (midiIdx >= trackIds.length) continue;
+    const trackId = trackIds[midiIdx];
+    const trackData = track[midiIdx];
+    if (!trackData) continue;
+    const active = [];
+    let currentTime = 0;
+    for (const event of trackData.event) {
+      currentTime += event.deltaTime;
+      if (event.channel === 9) continue;
+      if (event.type !== 8 && event.type !== 9) continue;
+      const [pitch, velocity] = event.data;
+      const isOff = event.type === 8 || !velocity;
+      if (isOff) {
+        for (let i = active.length - 1; i >= 0; i--) {
+          if (active[i].pitch === pitch && active[i].end === null) {
+            active[i].end = currentTime;
+            break;
+          }
+        }
+      } else {
+        active.push({ pitch, velocity, start: currentTime, end: null });
+      }
+    }
+    for (const note of active) {
+      if (note.end === null) continue;
+      const startStep = Math.round(note.start / ticksPerStep);
+      const durationSteps = Math.max(
+        1,
+        Math.round((note.end - note.start) / ticksPerStep)
+      );
+      placements.push({
+        trackId,
+        startStep,
+        pitch: note.pitch,
+        durationSteps,
+        velocity: note.velocity
+      });
+    }
+  }
+  return { placements, bpm };
+};
 var to2byte = (n) => [(n & 65280) >> 8, n & 255];
 var to3byte = (n) => [(n & 16711680) >> 16, ...to2byte(n)];
 var to4byte = (n) => [
@@ -2501,12 +2551,11 @@ var injectStyles = (doc = document) => {
 // src/daw.ts
 var BASE_STEP_WIDTH = 0.5;
 var BASE_KEY_HEIGHT = 15;
-var DEFAULT_TRACKS = [
+var TRACKS_SIMPLE = [
   {
     id: "melody",
     name: "\u30E1\u30ED\u30C7\u30A3\u30FC",
     color: [41, 173, 255],
-    // PICO-8 cyan
     instrument: 0,
     volume: 100
   },
@@ -2514,7 +2563,6 @@ var DEFAULT_TRACKS = [
     id: "submelody",
     name: "\u30B5\u30D6\u30E1\u30ED",
     color: [255, 119, 168],
-    // PICO-8 pink
     instrument: 1,
     volume: 95
   },
@@ -2522,7 +2570,6 @@ var DEFAULT_TRACKS = [
     id: "bass",
     name: "\u30D9\u30FC\u30B9",
     color: [0, 228, 54],
-    // PICO-8 green
     instrument: 2,
     volume: 88
   },
@@ -2530,11 +2577,125 @@ var DEFAULT_TRACKS = [
     id: "chord",
     name: "\u4F34\u594F",
     color: [255, 163, 0],
-    // PICO-8 orange
     instrument: 3,
     volume: 76
   }
 ];
+var TRACKS_ADVANCED = [
+  {
+    id: "t0",
+    name: "TRACK 01",
+    color: [41, 173, 255],
+    instrument: 0,
+    volume: 100
+  },
+  {
+    id: "t1",
+    name: "TRACK 02",
+    color: [0, 228, 54],
+    instrument: 1,
+    volume: 100
+  },
+  {
+    id: "t2",
+    name: "TRACK 03",
+    color: [255, 119, 168],
+    instrument: 2,
+    volume: 100
+  },
+  {
+    id: "t3",
+    name: "TRACK 04",
+    color: [255, 163, 0],
+    instrument: 3,
+    volume: 100
+  },
+  {
+    id: "t4",
+    name: "TRACK 05",
+    color: [255, 236, 39],
+    instrument: 4,
+    volume: 100
+  },
+  {
+    id: "t5",
+    name: "TRACK 06",
+    color: [131, 118, 156],
+    instrument: 5,
+    volume: 100
+  },
+  {
+    id: "t6",
+    name: "TRACK 07",
+    color: [255, 0, 77],
+    instrument: 6,
+    volume: 100
+  },
+  {
+    id: "t7",
+    name: "TRACK 08",
+    color: [255, 204, 170],
+    instrument: 7,
+    volume: 100
+  },
+  {
+    id: "t8",
+    name: "TRACK 09",
+    color: [194, 195, 199],
+    instrument: 8,
+    volume: 100
+  },
+  {
+    id: "t9",
+    name: "TRACK 10",
+    color: [0, 135, 81],
+    instrument: 9,
+    volume: 100
+  },
+  {
+    id: "t10",
+    name: "TRACK 11",
+    color: [171, 82, 54],
+    instrument: 10,
+    volume: 100
+  },
+  {
+    id: "t11",
+    name: "TRACK 12",
+    color: [126, 37, 83],
+    instrument: 11,
+    volume: 100
+  },
+  {
+    id: "t12",
+    name: "TRACK 13",
+    color: [255, 241, 232],
+    instrument: 12,
+    volume: 100
+  },
+  {
+    id: "t13",
+    name: "TRACK 14",
+    color: [120, 200, 255],
+    instrument: 13,
+    volume: 100
+  },
+  {
+    id: "t14",
+    name: "TRACK 15",
+    color: [100, 255, 160],
+    instrument: 14,
+    volume: 100
+  },
+  {
+    id: "t15",
+    name: "TRACK 16",
+    color: [255, 150, 200],
+    instrument: 15,
+    volume: 100
+  }
+];
+var DEFAULT_TRACKS = TRACKS_SIMPLE;
 var clamp = (v, min, max) => Math.min(Math.max(v, min), max);
 var mountDAW = (target, options = {}) => {
   injectStyles();
@@ -3390,10 +3551,12 @@ var mountDAW = (target, options = {}) => {
   const applyMidiSelection = (midi, selectedIndices) => {
     clearAll();
     for (const t of trackStates) t.core.setLoadMode(true);
-    const { placements, bpm: parsedBpm } = extractMidiPlacements(
+    const isAdvanced = trackStates.length > TRACKS_SIMPLE.length;
+    const { placements, bpm: parsedBpm } = isAdvanced ? extractMidiPlacementsByTrack(
       midi,
-      selectedIndices
-    );
+      selectedIndices,
+      trackStates.map((t) => t.config.id)
+    ) : extractMidiPlacements(midi, selectedIndices);
     for (const p of placements) {
       const t = trackStates.find((ts) => ts.config.id === p.trackId);
       if (!t) continue;
@@ -4092,6 +4255,8 @@ export {
   LinkedList,
   MMLCore,
   PITCH_MAP,
+  TRACKS_ADVANCED,
+  TRACKS_SIMPLE,
   analyzeMidiTracks,
   applyHarmonicFilter,
   applyMonophonic,
@@ -4108,6 +4273,7 @@ export {
   drawSelectionRect,
   exportMIDI,
   extractMidiPlacements,
+  extractMidiPlacementsByTrack,
   fetchSoundFontList,
   generateRandomPattern,
   getDrawOffset,
