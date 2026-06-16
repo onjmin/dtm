@@ -442,12 +442,26 @@ export const mountDAW = (
 		refs.hScroll.addEventListener("pointerdown", (e) => {
 			draggingH = true;
 			e.preventDefault();
+			refs.hScroll.setPointerCapture(e.pointerId);
 			moveH(e.clientX);
 		});
 		refs.vScroll.addEventListener("pointerdown", (e) => {
 			draggingV = true;
 			e.preventDefault();
+			refs.vScroll.setPointerCapture(e.pointerId);
 			moveV(e.clientY);
+		});
+		refs.hScroll.addEventListener("pointermove", (e) => {
+			if (draggingH) moveH(e.clientX);
+		});
+		refs.vScroll.addEventListener("pointermove", (e) => {
+			if (draggingV) moveV(e.clientY);
+		});
+		refs.hScroll.addEventListener("pointerup", () => {
+			draggingH = false;
+		});
+		refs.vScroll.addEventListener("pointerup", () => {
+			draggingV = false;
 		});
 		document.addEventListener("pointermove", (e) => {
 			if (draggingH) moveH(e.clientX);
@@ -489,7 +503,8 @@ export const mountDAW = (
 	// ============================================================
 	// グリッド操作（ペン/選択/消しゴム）
 	// ============================================================
-	const resizeHandleWidth = 6;
+	const resizeHandleWidth = 10;
+	const TOUCH_HIT_MARGIN = 6;
 	let suppressClick = false;
 	let hasDragged = false;
 	let dragState: null | {
@@ -519,7 +534,7 @@ export const mountDAW = (
 		dispatchNote(active.config.id, pitch, active.volume, 100, 0, 0.1);
 	};
 
-	const findActiveNoteAt = (x: number, y: number): Note | null => {
+	const findActiveNoteAt = (x: number, y: number, margin = 0): Note | null => {
 		const active = getActive();
 		const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
 		const offset = getDrawOffset();
@@ -531,10 +546,10 @@ export const mountDAW = (
 			const renderX = logicalX - offset.x;
 			const renderY = logicalY - offset.y;
 			if (
-				x >= renderX &&
-				x <= renderX + w &&
-				y >= renderY &&
-				y <= renderY + keyHeight
+				x >= renderX - margin &&
+				x <= renderX + w + margin &&
+				y >= renderY - margin &&
+				y <= renderY + keyHeight + margin
 			)
 				return note;
 		}
@@ -620,15 +635,8 @@ export const mountDAW = (
 
 		// pen
 		hasDragged = false;
-		const epsilon = 0.1;
-		const existing = active.core
-			.getNotes()
-			.find(
-				(n) =>
-					n.pitch === pitch &&
-					step >= n.startStep - epsilon &&
-					step < n.startStep + n.durationSteps - epsilon,
-			);
+		// ピクセルレベルのヒット判定（タッチ操作用のマージン付き）
+		const existing = findActiveNoteAt(x, y, TOUCH_HIT_MARGIN);
 		if (existing) {
 			playPreview(existing.pitch);
 			const { stepWidth } = renderConfig;
@@ -669,8 +677,8 @@ export const mountDAW = (
 			.some(
 				(n) =>
 					n.pitch === pitch &&
-					newStart < n.startStep + n.durationSteps - epsilon &&
-					newEnd > n.startStep + epsilon,
+					newStart < n.startStep + n.durationSteps &&
+					newEnd > n.startStep,
 			);
 		if (!overlapping) {
 			active.core.addNote(snappedStep, pitch, {
@@ -679,10 +687,7 @@ export const mountDAW = (
 			playPreview(pitch);
 			const newNote = active.core
 				.getNotes()
-				.find(
-					(n) =>
-						Math.abs(n.startStep - snappedStep) < epsilon && n.pitch === pitch,
-				);
+				.find((n) => n.startStep === snappedStep && n.pitch === pitch);
 			if (newNote) {
 				dragState = {
 					noteId: newNote.id,

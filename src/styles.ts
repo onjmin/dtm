@@ -356,23 +356,27 @@ export const DAW_CSS = `
 }
 .dtm-vscroll {
   position: relative;
-  width: 12px;
+  width: 20px;
   background: var(--dtm-deep);
   border: 2px solid var(--dtm-border2);
   cursor: pointer;
   flex: 0 0 auto;
+  touch-action: none;
 }
 .dtm-vscroll-thumb, .dtm-hscroll-thumb {
   position: absolute;
   background: var(--dtm-primary);
+  min-width: 20px;
+  min-height: 20px;
 }
 .dtm-vscroll-thumb { left: 0; width: 100%; }
 .dtm-hscroll {
   position: relative;
-  width: 100%; height: 12px;
+  width: 100%; height: 20px;
   background: var(--dtm-deep);
   border: 2px solid var(--dtm-border2);
   cursor: pointer;
+  touch-action: none;
 }
 .dtm-hscroll-thumb { top: 0; height: 100%; }
 
