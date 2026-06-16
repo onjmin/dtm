@@ -2505,23 +2505,27 @@ var DAW_CSS = `
 }
 .dtm-vscroll {
   position: relative;
-  width: 12px;
+  width: 20px;
   background: var(--dtm-deep);
   border: 2px solid var(--dtm-border2);
   cursor: pointer;
   flex: 0 0 auto;
+  touch-action: none;
 }
 .dtm-vscroll-thumb, .dtm-hscroll-thumb {
   position: absolute;
   background: var(--dtm-primary);
+  min-width: 20px;
+  min-height: 20px;
 }
 .dtm-vscroll-thumb { left: 0; width: 100%; }
 .dtm-hscroll {
   position: relative;
-  width: 100%; height: 12px;
+  width: 100%; height: 20px;
   background: var(--dtm-deep);
   border: 2px solid var(--dtm-border2);
   cursor: pointer;
+  touch-action: none;
 }
 .dtm-hscroll-thumb { top: 0; height: 100%; }
 
@@ -3001,12 +3005,26 @@ var mountDAW = (target, options = {}) => {
     refs.hScroll.addEventListener("pointerdown", (e) => {
       draggingH = true;
       e.preventDefault();
+      refs.hScroll.setPointerCapture(e.pointerId);
       moveH(e.clientX);
     });
     refs.vScroll.addEventListener("pointerdown", (e) => {
       draggingV = true;
       e.preventDefault();
+      refs.vScroll.setPointerCapture(e.pointerId);
       moveV(e.clientY);
+    });
+    refs.hScroll.addEventListener("pointermove", (e) => {
+      if (draggingH) moveH(e.clientX);
+    });
+    refs.vScroll.addEventListener("pointermove", (e) => {
+      if (draggingV) moveV(e.clientY);
+    });
+    refs.hScroll.addEventListener("pointerup", () => {
+      draggingH = false;
+    });
+    refs.vScroll.addEventListener("pointerup", () => {
+      draggingV = false;
     });
     document.addEventListener("pointermove", (e) => {
       if (draggingH) moveH(e.clientX);
@@ -3043,7 +3061,8 @@ var mountDAW = (target, options = {}) => {
       redrawAll();
     };
   };
-  const resizeHandleWidth = 6;
+  const resizeHandleWidth = 10;
+  const TOUCH_HIT_MARGIN = 6;
   let suppressClick = false;
   let hasDragged = false;
   let dragState = null;
@@ -3057,7 +3076,7 @@ var mountDAW = (target, options = {}) => {
     const active = getActive();
     dispatchNote(active.config.id, pitch, active.volume, 100, 0, 0.1);
   };
-  const findActiveNoteAt = (x, y) => {
+  const findActiveNoteAt = (x, y, margin = 0) => {
     const active = getActive();
     const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
     const offset = getDrawOffset();
@@ -3068,7 +3087,7 @@ var mountDAW = (target, options = {}) => {
       const w = note.durationSteps * stepWidth;
       const renderX = logicalX - offset.x;
       const renderY = logicalY - offset.y;
-      if (x >= renderX && x <= renderX + w && y >= renderY && y <= renderY + keyHeight)
+      if (x >= renderX - margin && x <= renderX + w + margin && y >= renderY - margin && y <= renderY + keyHeight + margin)
         return note;
     }
     return null;
@@ -3135,10 +3154,7 @@ var mountDAW = (target, options = {}) => {
       return;
     }
     hasDragged = false;
-    const epsilon = 0.1;
-    const existing = active.core.getNotes().find(
-      (n) => n.pitch === pitch && step >= n.startStep - epsilon && step < n.startStep + n.durationSteps - epsilon
-    );
+    const existing = findActiveNoteAt(x, y, TOUCH_HIT_MARGIN);
     if (existing) {
       playPreview(existing.pitch);
       const { stepWidth } = renderConfig;
@@ -3173,16 +3189,14 @@ var mountDAW = (target, options = {}) => {
     const newStart = snappedStep;
     const newEnd = newStart + currentInsertLength;
     const overlapping = active.core.getNotes().some(
-      (n) => n.pitch === pitch && newStart < n.startStep + n.durationSteps - epsilon && newEnd > n.startStep + epsilon
+      (n) => n.pitch === pitch && newStart < n.startStep + n.durationSteps && newEnd > n.startStep
     );
     if (!overlapping) {
       active.core.addNote(snappedStep, pitch, {
         noteLengthSteps: currentInsertLength
       });
       playPreview(pitch);
-      const newNote = active.core.getNotes().find(
-        (n) => Math.abs(n.startStep - snappedStep) < epsilon && n.pitch === pitch
-      );
+      const newNote = active.core.getNotes().find((n) => n.startStep === snappedStep && n.pitch === pitch);
       if (newNote) {
         dragState = {
           noteId: newNote.id,
