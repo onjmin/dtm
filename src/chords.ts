@@ -188,7 +188,7 @@ export const buildChordPlacements = (
 			if (notes.length === 0) return;
 			const startStep = barIndex * chordLength;
 			notes.forEach((noteOffset, i) => {
-				const stepOffset = i * 2;
+				const stepOffset = i * 3;
 				placements.push({
 					startStep: startStep + stepOffset,
 					pitch: C3 + noteOffset + offset,
