@@ -1957,6 +1957,8 @@ var MMLCore = class _MMLCore {
     const config = getRenderConfig();
     const total = config.stepsPerBar;
     const candidates = [
+      { dur: "1.", s: total * 1.5 },
+      // 付点全音符（最長。これ以上はタイ未対応のため表現不可）
       { dur: "1", s: total / 1 },
       { dur: "2.", s: total / 2 * 1.5 },
       { dur: "2", s: total / 2 },
@@ -2017,97 +2019,77 @@ var MMLCore = class _MMLCore {
     return { text: `o${octave}${name}`, currentOctave: octave };
   }
   /**
-   * MML生成（1/2小節パターンスキャン方式）
+   * MML生成（単一パス・発音順スキャン）
+   *
+   * 以前は1/2小節ごとのウィンドウで走査していたが、それだと半小節境界をまたぐ音符が
+   * 境界で切り詰められて「ぶつ切り」になり、境界直前に始まる音符は隙間が潰れて欠落し、
+   * 歌詞（@@n）の音節割り当てがずれていた。
+   * 全ノートを発音順に一度で処理し、次の発音までの距離だけを上限として
+   * 各音符の長さを忠実に出力する（次の音符がなければ曲末まで伸ばせる）。
    */
   generateMML = (volumeOverride) => {
     const config = getRenderConfig();
     const vol = volumeOverride ?? this.volume;
-    const HALF_BAR = config.stepsPerBar / 2;
     const header = `t${this.tempo} v${vol}`;
     const segments = [];
     let lastOctave = -1;
     let currentCursor = 0;
     if (this.notes.length === 0) return header;
-    const lastNote = this.notes[this.notes.length - 1];
-    const endStep = lastNote.startStep + lastNote.durationSteps;
-    const totalSteps = Math.ceil(endStep / HALF_BAR) * HALF_BAR;
-    for (let windowStart = 0; windowStart < totalSteps; windowStart += HALF_BAR) {
-      const windowEnd = windowStart + HALF_BAR;
-      const windowNotes = this.notes.filter(
-        (n) => n.startStep >= windowStart && n.startStep < windowEnd
-      );
-      if (windowNotes.length === 0) {
-        while (currentCursor < windowEnd) {
-          const gap = windowEnd - currentCursor;
-          if (gap <= 2) {
-            currentCursor = windowEnd;
-            break;
-          }
-          const { dur, steps } = this.findBestFitDuration(gap);
-          segments.push(`r${dur}`);
-          currentCursor += steps;
-        }
-        continue;
-      }
-      const notesByStep = /* @__PURE__ */ new Map();
-      windowNotes.forEach((n) => {
-        const list = notesByStep.get(n.startStep) || [];
-        list.push(n);
-        notesByStep.set(n.startStep, list);
-      });
-      const sortedSteps = Array.from(notesByStep.keys()).sort((a, b) => a - b);
-      for (let i = 0; i < sortedSteps.length; i++) {
-        const startStep = sortedSteps[i];
-        const notes = notesByStep.get(startStep);
-        if (!notes) continue;
-        while (currentCursor < startStep) {
-          const gap = startStep - currentCursor;
-          if (gap <= 2) {
-            currentCursor = startStep;
-            break;
-          }
-          const { dur, steps } = this.findBestFitDuration(gap);
-          segments.push(`r${dur}`);
-          currentCursor += steps;
-        }
-        const nextStart = sortedSteps[i + 1] ?? windowEnd;
-        const physicsLimit = nextStart - currentCursor;
-        const MIN_STEP = config.stepsPerBar / 64;
-        if (physicsLimit < MIN_STEP) {
-          currentCursor = startStep;
-          continue;
-        }
-        const idealDuration = notes[0].durationSteps;
-        const durStr = this.stepsToMMLDuration(idealDuration, physicsLimit);
-        const actualStepGenerated = this.getStepFromDottedMML(durStr);
-        if (notes.length > 1) {
-          const noteStrs = notes.map((n) => {
-            const oct = Math.floor(n.pitch / 12) - 1;
-            const name = PITCH_MAP[n.pitch % 12];
-            return `o${oct}${name}`;
-          });
-          segments.push(`[${noteStrs.join("")}]${durStr}`);
-        } else {
-          const { text, currentOctave } = this.getNoteWithOctave(
-            notes[0].pitch,
-            lastOctave
-          );
-          segments.push(`${text}${durStr}`);
-          lastOctave = currentOctave;
-        }
-        currentCursor += actualStepGenerated;
-      }
-      while (currentCursor < windowEnd) {
-        const gap = windowEnd - currentCursor;
+    const endStep = Math.max(
+      ...this.notes.map((n) => n.startStep + n.durationSteps)
+    );
+    const notesByStep = /* @__PURE__ */ new Map();
+    for (const n of this.notes) {
+      const list = notesByStep.get(n.startStep) ?? [];
+      list.push(n);
+      notesByStep.set(n.startStep, list);
+    }
+    const sortedSteps = Array.from(notesByStep.keys()).sort((a, b) => a - b);
+    const fillRests = (until) => {
+      while (currentCursor < until) {
+        const gap = until - currentCursor;
         if (gap <= 2) {
-          currentCursor = windowEnd;
+          currentCursor = until;
           break;
         }
         const { dur, steps } = this.findBestFitDuration(gap);
         segments.push(`r${dur}`);
         currentCursor += steps;
       }
+    };
+    const MIN_STEP = config.stepsPerBar / 64;
+    for (let i = 0; i < sortedSteps.length; i++) {
+      const startStep = sortedSteps[i];
+      const notes = notesByStep.get(startStep);
+      if (!notes) continue;
+      fillRests(startStep);
+      const nextStart = sortedSteps[i + 1] ?? endStep;
+      const physicsLimit = nextStart - currentCursor;
+      if (physicsLimit < MIN_STEP) {
+        currentCursor = startStep;
+        continue;
+      }
+      const idealDuration = notes[0].durationSteps;
+      const durStr = this.stepsToMMLDuration(idealDuration, physicsLimit);
+      const actualStepGenerated = this.getStepFromDottedMML(durStr);
+      if (notes.length > 1) {
+        const noteStrs = notes.map((n) => {
+          const oct = Math.floor(n.pitch / 12) - 1;
+          const name = PITCH_MAP[n.pitch % 12];
+          return `o${oct}${name}`;
+        });
+        segments.push(`[${noteStrs.join("")}]${durStr}`);
+      } else {
+        const { text, currentOctave } = this.getNoteWithOctave(
+          notes[0].pitch,
+          lastOctave
+        );
+        segments.push(`${text}${durStr}`);
+        lastOctave = currentOctave;
+      }
+      currentCursor += actualStepGenerated;
     }
+    fillRests(endStep);
     return `${header} ${segments.join(" ")}`;
   };
   /**
@@ -2186,6 +2168,23 @@ var PITCH_MAP2 = {
   b: 11
 };
 var clamp2 = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
+var META_DIRECTIVE = /#(inst|drum)=([\w-]+)/gi;
+var parseMmlMeta = (mml) => {
+  const meta = {};
+  for (const m of mml.matchAll(META_DIRECTIVE)) {
+    const key = m[1].toLowerCase();
+    if (key === "inst") meta.instrument = m[2];
+    else if (key === "drum") meta.drum = m[2];
+  }
+  return meta;
+};
+var stripMmlMeta = (mml) => mml.replace(META_DIRECTIVE, "");
+var formatMmlMeta = (meta) => {
+  const parts = [];
+  if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
+  if (meta.drum) parts.push(`#drum=${meta.drum}`);
+  return parts.join(" ");
+};
 var parseMML = (mml, options = {}) => {
   const stepsPerBar = options.stepsPerBar ?? 192;
   const collectTokens = options.collectTokens ?? false;
@@ -2199,12 +2198,15 @@ var parseMML = (mml, options = {}) => {
       placements,
       bpm,
       tokenTracks: collectTokens ? tokenTracks : void 0,
-      lyrics: collectLyrics ? /* @__PURE__ */ new Map() : void 0
+      lyrics: collectLyrics ? /* @__PURE__ */ new Map() : void 0,
+      meta: {}
     };
   }
   const noComments = mml.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-  const lyrics = collectLyrics ? parseLyrics(noComments) : void 0;
-  const fullMML = stripLyrics(noComments).replace(/[\n\r]+/g, " ").trim();
+  const meta = parseMmlMeta(noComments);
+  const noMeta = stripMmlMeta(noComments);
+  const lyrics = collectLyrics ? parseLyrics(noMeta) : void 0;
+  const fullMML = stripLyrics(noMeta).replace(/[\n\r]+/g, " ").trim();
   const parts = fullMML.split(/(@\d+)/).filter((p) => p.trim().length > 0);
   let trackIndex = 0;
   let octave = 4;
@@ -2373,7 +2375,8 @@ var parseMML = (mml, options = {}) => {
     placements,
     bpm,
     tokenTracks: collectTokens ? tokenTracks : void 0,
-    lyrics
+    lyrics,
+    meta
   };
 };
 
@@ -3015,6 +3018,7 @@ var DAW_CSS = `
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .dtm-player-play {
   flex: 0 0 auto;
@@ -3047,6 +3051,14 @@ var DAW_CSS = `
   gap: 6px;
 }
 .dtm-player-dot { width: 8px; height: 8px; display: inline-block; }
+.dtm-player-chip {
+  font-family: 'k8x12', monospace;
+  font-size: 9px;
+  color: var(--dtm-text);
+  background: var(--dtm-border2);
+  padding: 2px 6px;
+  white-space: nowrap;
+}
 .dtm-player-lane-row {
   display: flex;
   align-items: stretch;
@@ -3281,6 +3293,7 @@ var mountDAW = (target, options = {}) => {
   let masterVolume = 50;
   let drumVolume = 80;
   let currentDrumPattern = refs.drumSelect.value;
+  let currentInstrument = "";
   let activeTrackId = trackConfigs[0].id;
   let activeToolMode = "pen";
   let currentInsertLength = 48;
@@ -4174,6 +4187,10 @@ var mountDAW = (target, options = {}) => {
     const barLimitBars = Number(refs.barLimitSelect.value);
     const limitSteps = barLimitBars > 0 ? barLimitBars * renderConfig.stepsPerBar : Infinity;
     const clipNotes = (notes) => limitSteps === Infinity ? notes : notes.filter((n) => n.startStep < limitSteps);
+    const metaLine = formatMmlMeta({
+      instrument: currentInstrument || void 0,
+      drum: currentDrumPattern !== "none" ? currentDrumPattern : void 0
+    });
     if (refs.decomposeChordToggle.checked) {
       const ignoreHeavy = refs.ignoreChordHeavyToggle.checked;
       const targetStates = ignoreHeavy ? trackStates.filter((t) => !isChordHeavyTrack(t.core.getNotes())) : trackStates;
@@ -4183,12 +4200,14 @@ var mountDAW = (target, options = {}) => {
       );
       const monoTracks = decomposeToMonophonic(allNotes);
       const refCore = trackStates[0].core;
-      const full2 = monoTracks.map(
+      const decomposedFull = monoTracks.map(
         (notes, i) => `@${i} ${refCore.getMMLFromNotes(notes, bpm, 100).trim()}`
-      ).join(";\n");
-      const minified2 = monoTracks.map(
+      );
+      const decomposedMini = monoTracks.map(
         (notes, i) => `@${i}${refCore.getMMLFromNotes(notes, bpm, 100).trim().replace(/\s+/g, "")}`
-      ).join(";");
+      );
+      const full2 = [metaLine, ...decomposedFull].filter((s) => s.length > 0).join(";\n");
+      const minified2 = [metaLine, ...decomposedMini].filter((s) => s.length > 0).join(";");
       return {
         full: full2,
         minified: minified2,
@@ -4219,8 +4238,8 @@ var mountDAW = (target, options = {}) => {
       const head = params ? `${x.model} ${params}` : x.model;
       return `@@${x.i} ${head} ${x.text}`;
     });
-    const full = [...trackLines, ...lyricLines].join(";\n");
-    const minified = [...trackLinesMini, ...lyricLines].join(";");
+    const full = [metaLine, ...trackLines, ...lyricLines].filter((s) => s.length > 0).join(";\n");
+    const minified = [metaLine, ...trackLinesMini, ...lyricLines].filter((s) => s.length > 0).join(";");
     return {
       full,
       minified,
@@ -4255,13 +4274,19 @@ var mountDAW = (target, options = {}) => {
     const {
       placements,
       bpm: parsedBpm,
-      lyrics
+      lyrics,
+      meta
     } = parseMML(mml, {
       stepsPerBar: renderConfig.stepsPerBar,
       collectLyrics: true,
       // このDAWのトラック数を超えるチャンネルはベースへ畳み込む（従来挙動）
       clampTrackCount: trackStates.length
     });
+    currentInstrument = meta.instrument ?? "";
+    if (meta.drum && drumPatterns[meta.drum]) {
+      currentDrumPattern = meta.drum;
+      refs.drumSelect.value = meta.drum;
+    }
     for (const t of trackStates) {
       t.lyrics = "";
       t.lyricModel = "";
@@ -4627,6 +4652,9 @@ var mountDAW = (target, options = {}) => {
     pause,
     stop,
     getMML: generateMML,
+    setInstrument: (name) => {
+      currentInstrument = name;
+    },
     loadMML,
     loadMIDI,
     exportMIDI: exportMIDI2,
@@ -4764,7 +4792,8 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     placements,
     bpm: parsedBpm,
     tokenTracks,
-    lyrics
+    lyrics,
+    meta
   } = parseMML(mml, {
     collectTokens: true,
     collectLyrics: true
@@ -4772,6 +4801,8 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const lyricTracks = lyrics ?? /* @__PURE__ */ new Map();
   const conductor = createLyricsConductor(lyricTracks);
   const bpm = parsedBpm ?? options.defaultBpm ?? 120;
+  const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
+  const drumPattern = meta.drum ? drumPatternDict[meta.drum] ?? null : null;
   const trackVolume = options.volume ?? 100;
   const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
   const useSynth = options.synth ?? !options.onPlayNote;
@@ -4818,6 +4849,47 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     osc.start(t0);
     osc.stop(t0 + e.duration + 0.02);
   };
+  const drumSynth = (e) => {
+    const ctx = ensureCtx();
+    const t0 = ctx.currentTime + e.when;
+    const vol = Math.max(1e-4, Math.min(1, e.velocity));
+    const isKick = e.pitch === 35 || e.pitch === 36;
+    const isSnareLike = e.pitch === 38 || e.pitch === 39 || e.pitch === 40;
+    if (isKick) {
+      const osc = ctx.createOscillator();
+      const g2 = ctx.createGain();
+      osc.frequency.setValueAtTime(150, t0);
+      osc.frequency.exponentialRampToValueAtTime(50, t0 + 0.12);
+      g2.gain.setValueAtTime(vol * 0.9, t0);
+      g2.gain.exponentialRampToValueAtTime(1e-3, t0 + 0.18);
+      osc.connect(g2).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.2);
+      osc.onended = () => osc.disconnect();
+      return;
+    }
+    const dur = isSnareLike ? 0.18 : 0.05;
+    const length = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = isSnareLike ? "bandpass" : "highpass";
+    filter.frequency.value = isSnareLike ? 2e3 : 8e3;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol * (isSnareLike ? 0.7 : 0.4), t0);
+    g.gain.exponentialRampToValueAtTime(1e-3, t0 + dur);
+    src.connect(filter).connect(g).connect(ctx.destination);
+    src.start(t0);
+    src.stop(t0 + dur);
+    src.onended = () => {
+      src.disconnect();
+      filter.disconnect();
+      g.disconnect();
+    };
+  };
   let klattVoice = null;
   const ensureKlatt = () => {
     if (!klattVoice) {
@@ -4854,7 +4926,16 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     dot.style.backgroundColor = colorOf(index);
     dots.appendChild(dot);
   }
-  head.append(playBtn, tempoEl, timeEl, dots);
+  head.append(playBtn, tempoEl, timeEl);
+  const addChip = (label) => {
+    const chip = doc.createElement("span");
+    chip.className = "dtm-player-chip";
+    chip.textContent = label;
+    head.appendChild(chip);
+  };
+  if (meta.instrument) addChip(`\u266A ${meta.instrument}`);
+  if (meta.drum) addChip(`\u{1F941} ${meta.drum}${drumPattern ? "" : " (?)"}`);
+  head.appendChild(dots);
   root.appendChild(head);
   const laneViews = [];
   for (const index of trackIndices) {
@@ -4945,7 +5026,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     getTracks: () => seqTracks,
     getBpm: () => bpm,
     getPlayStartStep: () => 0,
-    getDrumPattern: () => null,
+    getDrumPattern: () => drumPattern,
     getSoloTrackId: () => null,
     getAudioTime,
     onPlayNote: (e) => {
@@ -4967,7 +5048,9 @@ var mountMmlPlayer = (target, mml, options = {}) => {
         else synthPlay(ev);
       }
     },
-    onPlayDrum: () => {
+    onPlayDrum: (e) => {
+      options.onPlayDrum?.(e);
+      if (useSynth) drumSynth(e);
     },
     onTick: (step) => renderPlayhead(step),
     onEnd: () => finish(),
@@ -5339,6 +5422,7 @@ export {
   extractMidiPlacements,
   extractMidiPlacementsByTrack,
   fetchSoundFontList,
+  formatMmlMeta,
   generateRandomPattern,
   getDrawOffset,
   getGridCanvas,
@@ -5359,8 +5443,10 @@ export {
   panToStereo,
   parseLyrics,
   parseMML,
+  parseMmlMeta,
   setDrawOffset,
   setupRecorder,
   shiftNotes,
-  stripLyrics
+  stripLyrics,
+  stripMmlMeta
 };
