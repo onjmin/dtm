@@ -26,15 +26,33 @@ export type MMLNotePlacement = {
 	durationSteps: number;
 };
 
+/** 再生ビュー用の表示トークン（mountMmlPlayer のノート列ハイライトに使う） */
+export type MMLDisplayToken = {
+	/** 正規化済みのトークン文字列（小文字・空白除去） */
+	text: string;
+	/** 発音開始ステップ。制御トークン（o/l/</>）は直近の currentStep */
+	startStep: number;
+	/** 長さステップ。制御トークンは 0（ハイライト対象外） */
+	durationSteps: number;
+	type: "note" | "chord" | "rest" | "octave" | "shift" | "length";
+};
+
 export type ParsedMML = {
 	placements: MMLNotePlacement[];
 	/** メロディトラックの t 指定から検出したBPM（無ければ null） */
 	bpm: number | null;
+	/**
+	 * trackIndex → 表示トークン列。`collectTokens` 指定時のみ生成。
+	 * placements と同一パスで構築するため発音位置と完全に同期する。
+	 */
+	tokenTracks?: Map<number, MMLDisplayToken[]>;
 };
 
 export type ParseMMLOptions = {
 	/** 1小節あたりのステップ数。既定192 */
 	stepsPerBar?: number;
+	/** 再生ビュー用の表示トークン列も併せて返す。既定 false */
+	collectTokens?: boolean;
 };
 
 /**
@@ -45,10 +63,18 @@ export const parseMML = (
 	options: ParseMMLOptions = {},
 ): ParsedMML => {
 	const stepsPerBar = options.stepsPerBar ?? 192;
+	const collectTokens = options.collectTokens ?? false;
 	const placements: MMLNotePlacement[] = [];
+	const tokenTracks: Map<number, MMLDisplayToken[]> = new Map();
 	let bpm: number | null = null;
 
-	if (!mml) return { placements, bpm };
+	if (!mml) {
+		return {
+			placements,
+			bpm,
+			tokenTracks: collectTokens ? tokenTracks : undefined,
+		};
+	}
 
 	// 1. コメント除去・改行畳み込み
 	const fullMML = mml
@@ -82,6 +108,26 @@ export const parseMML = (
 		const body = part.replace(/\s+/g, "").toLowerCase();
 		let j = 0;
 
+		const pushTok = (
+			type: MMLDisplayToken["type"],
+			start: number,
+			dur: number,
+			from: number,
+		): void => {
+			if (!collectTokens) return;
+			let arr = tokenTracks.get(trackIndex);
+			if (!arr) {
+				arr = [];
+				tokenTracks.set(trackIndex, arr);
+			}
+			arr.push({
+				text: body.slice(from, j),
+				startStep: start,
+				durationSteps: dur,
+				type,
+			});
+		};
+
 		const parseLength = (): number => {
 			let numStr = "";
 			while (j < body.length && /\d/.test(body[j])) {
@@ -99,6 +145,7 @@ export const parseMML = (
 
 		while (j < body.length) {
 			const ch = body[j];
+			const tokStart = j;
 
 			if (ch === "o") {
 				j++;
@@ -108,12 +155,15 @@ export const parseMML = (
 					j++;
 				}
 				octave = Number.parseInt(numStr, 10) || 4;
+				pushTok("octave", currentStep, 0, tokStart);
 			} else if (ch === ">") {
 				octave++;
 				j++;
+				pushTok("shift", currentStep, 0, tokStart);
 			} else if (ch === "<") {
 				octave--;
 				j++;
+				pushTok("shift", currentStep, 0, tokStart);
 			} else if (ch === "l") {
 				j++;
 				let numStr = "";
@@ -122,9 +172,13 @@ export const parseMML = (
 					j++;
 				}
 				baseLength = Number.parseInt(numStr, 10) || 16;
+				pushTok("length", currentStep, 0, tokStart);
 			} else if (ch === "r") {
 				j++;
-				currentStep += parseLength();
+				const restStart = currentStep;
+				const restSteps = parseLength();
+				pushTok("rest", restStart, restSteps, tokStart);
+				currentStep += restSteps;
 			} else if (ch === "t" || ch === "v" || ch === "q") {
 				j++;
 				let numStr = "";
@@ -181,6 +235,7 @@ export const parseMML = (
 						durationSteps: Math.max(1, steps),
 					});
 				}
+				pushTok("chord", currentStep, Math.max(1, steps), tokStart);
 				currentStep += steps;
 				octave = savedOctave;
 			} else if (Object.hasOwn(PITCH_MAP, ch)) {
@@ -202,6 +257,7 @@ export const parseMML = (
 					pitch: midiPitch,
 					durationSteps: Math.max(1, steps),
 				});
+				pushTok("note", currentStep, Math.max(1, steps), tokStart);
 				currentStep += steps;
 			} else {
 				j++;
@@ -209,5 +265,9 @@ export const parseMML = (
 		}
 	}
 
-	return { placements, bpm };
+	return {
+		placements,
+		bpm,
+		tokenTracks: collectTokens ? tokenTracks : undefined,
+	};
 };

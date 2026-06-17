@@ -218,6 +218,26 @@
     <!-- ════ DAW マウント ════ -->
     <div id="app" class="max-w-4xl mx-auto px-3 pb-8 pt-3"></div>
 
+    <!-- ════ 再生専用ビュー (mountMmlPlayer) ════ -->
+    <div class="max-w-4xl mx-auto px-3 pb-8 flex flex-col gap-2">
+        <div class="game-win bg-pico-navy px-4 py-3">
+            <div class="flex flex-wrap items-center gap-3">
+                <span class="text-pico-green text-xs uppercase tracking-widest shrink-0">► PLAYER</span>
+                <span class="text-pico-cyan text-xs font-pixel shrink-0">
+                    mountMmlPlayer<span class="text-pico-yellow">()</span>
+                </span>
+                <button id="player-load-daw"
+                    class="min-h-[40px] px-4 border-2 border-pico-green bg-pico-black text-pico-green
+                           text-xs uppercase tracking-widest cursor-pointer font-pixel
+                           shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
+                    ▶ LOAD FROM DAW
+                </button>
+                <span class="text-pico-lavend text-xs uppercase tracking-widest">READ-ONLY · BUILT-IN SYNTH</span>
+            </div>
+        </div>
+        <div id="player-app"></div>
+    </div>
+
     <!-- ════ フッター ════ -->
     <footer class="max-w-4xl mx-auto px-3 pb-4 text-pico-gray text-xs uppercase tracking-widest">
         <div class="flex gap-4 flex-wrap">
@@ -401,6 +421,22 @@
         const defaultPreset = 'retro_game';
         presetSelect.value = defaultPreset;
         presetSelect.addEventListener('change', () => loadPreset(presetSelect.value));
+
+        // ════ 再生専用ビュー (mountMmlPlayer) ════
+        // 発音は内蔵の簡易square-wave synth（onPlayNote未指定なので既定ON）。SoundFont不要で即鳴る。
+        const { mountMmlPlayer } = DTM;
+        const SAMPLE_MML = '@0 t135 o5 l8 e d c d e e e4 d d d4 e g g4 r e d c d e e e e d d e d c4 ; @1 o3 l4 c g c g c g c g';
+        let player = null;
+        const mountPlayer = (mml) => {
+            if (player) player.destroy();
+            player = mountMmlPlayer(document.getElementById('player-app'), mml || SAMPLE_MML, { synth: true });
+            window.player = player;
+        };
+        mountPlayer(SAMPLE_MML);
+        document.getElementById('player-load-daw').addEventListener('click', () => {
+            const { full } = daw.getMML();
+            mountPlayer(full);
+        });
 
         loadDrum();
         SoundFont_list.init();

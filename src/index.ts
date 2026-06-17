@@ -18,6 +18,9 @@ export * from "./midi-io";
 export * from "./mml-core";
 // 補助ロジック（再利用可能）
 export * from "./mml-parser";
+export type { MmlPlayerInstance, MmlPlayerOptions } from "./mml-player";
+// 再生専用ビュー（mountDAW と対）
+export { mountMmlPlayer } from "./mml-player";
 export * from "./piano-roll";
 export * from "./renderer";
 export * from "./sequencer";

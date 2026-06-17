@@ -506,6 +506,99 @@ export const DAW_CSS = `
   .dtm-daw { gap: 8px; padding: 10px; }
   .dtm-roll { height: 420px; }
 }
+
+/* ====================================================
+   MML PLAYER — 再生専用ビュー（mountMmlPlayer）
+   ==================================================== */
+.dtm-player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dtm-gap);
+  padding: var(--dtm-gap);
+  background: var(--dtm-deep);
+  border: 2px solid var(--dtm-border2);
+  box-shadow: 4px 4px 0 var(--c-black);
+}
+.dtm-player-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dtm-player-play {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dtm-primary);
+  color: var(--dtm-pfg);
+  border: 2px solid var(--c-black);
+  box-shadow: 2px 2px 0 var(--c-black);
+  cursor: pointer;
+  padding: 0;
+}
+.dtm-player-play:active { transform: translate(2px, 2px); box-shadow: none; }
+.dtm-player-play--stop { background: var(--dtm-danger); }
+.dtm-player-play:disabled { opacity: 0.4; cursor: default; }
+.dtm-player-tempo,
+.dtm-player-time {
+  font-family: 'k8x12', monospace;
+  font-size: 12px;
+  color: var(--dtm-muted);
+}
+.dtm-player-time { color: var(--dtm-text); min-width: 3em; }
+.dtm-player-dots {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dtm-player-dot { width: 8px; height: 8px; display: inline-block; }
+.dtm-player-lane-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.dtm-player-lane-label {
+  flex: 0 0 auto;
+  width: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-top: 4px;
+}
+.dtm-player-lane-no {
+  font-family: 'k8x12', monospace;
+  font-size: 9px;
+  color: var(--dtm-muted);
+}
+.dtm-player-lane {
+  position: relative; /* トークンの offsetParent をレーンに固定し、中央寄せ計算を正す */
+  flex: 1 1 auto;
+  overflow-x: auto;
+  white-space: nowrap;
+  background: var(--c-black);
+  border: 2px solid var(--dtm-border2);
+  padding: 6px;
+  scrollbar-width: none;
+}
+.dtm-player-lane::-webkit-scrollbar { display: none; }
+.dtm-tk {
+  font-family: 'k8x12', monospace;
+  font-size: 12px;
+  color: var(--dtm-text);
+}
+.dtm-tk--rest { color: var(--dtm-muted); }
+.dtm-tk--octave,
+.dtm-tk--shift,
+.dtm-tk--length { color: var(--dtm-border2); }
+.dtm-tk.is-active {
+  background: var(--tk, var(--dtm-primary));
+  color: var(--c-black);
+  font-weight: bold;
+}
 `;
 
 /**
