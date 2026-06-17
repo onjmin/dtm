@@ -31,6 +31,44 @@ const PITCH_MAP: Record<string, number> = {
 const clamp = (value: number, lo: number, hi: number): number =>
 	Math.min(hi, Math.max(lo, value));
 
+/**
+ * 曲全体に効くトップレベル宣言（トラックとは1対1ではない）。
+ * MMLの先頭などに `#inst=<プリセット> #drum=<パターン>` の形で埋め込む。
+ * 他のMMLプレイヤーには無害（解析時に除去される）。
+ */
+export type MmlMeta = {
+	/** 楽器プリセット名（INSTRUMENT_PRESETS のキー等。利用側が音源解決に使う） */
+	instrument?: string;
+	/** ドラムパターン名（DRUM_PATTERNS のキー） */
+	drum?: string;
+};
+
+/** `#inst=...` `#drum=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
+const META_DIRECTIVE = /#(inst|drum)=([\w-]+)/gi;
+
+/** MMLからトップレベル宣言を抽出する */
+export const parseMmlMeta = (mml: string): MmlMeta => {
+	const meta: MmlMeta = {};
+	for (const m of mml.matchAll(META_DIRECTIVE)) {
+		const key = m[1].toLowerCase();
+		if (key === "inst") meta.instrument = m[2];
+		else if (key === "drum") meta.drum = m[2];
+	}
+	return meta;
+};
+
+/** MMLからトップレベル宣言を取り除く（ノート解析が誤解釈しないように） */
+export const stripMmlMeta = (mml: string): string =>
+	mml.replace(META_DIRECTIVE, "");
+
+/** メタ情報を `#inst=… #drum=…` のMML宣言文字列へ直列化する（空なら空文字） */
+export const formatMmlMeta = (meta: MmlMeta): string => {
+	const parts: string[] = [];
+	if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
+	if (meta.drum) parts.push(`#drum=${meta.drum}`);
+	return parts.join(" ");
+};
+
 export type MMLNotePlacement = {
 	/** 0:melody 1:submelody 2:bass 3:chord */
 	trackIndex: number;
@@ -64,6 +102,8 @@ export type ParsedMML = {
 	 * 演奏トラック（@n）の n と同じIDで対応づく。
 	 */
 	lyrics?: Map<number, LyricTrack>;
+	/** トップレベル宣言（楽器プリセット・ドラムパターン）。常に返す（無ければ空オブジェクト） */
+	meta: MmlMeta;
 };
 
 export type ParseMMLOptions = {
@@ -102,6 +142,7 @@ export const parseMML = (
 			bpm,
 			tokenTracks: collectTokens ? tokenTracks : undefined,
 			lyrics: collectLyrics ? new Map() : undefined,
+			meta: {},
 		};
 	}
 
@@ -110,14 +151,18 @@ export const parseMML = (
 		.replace(/\/\*[\s\S]*?\*\//g, "") // ブロックコメント
 		.replace(/\/\/.*$/gm, ""); // 行コメント
 
-	const lyrics = collectLyrics ? parseLyrics(noComments) : undefined;
+	// 2. トップレベル宣言（#inst= / #drum=）を抽出してから除去する
+	const meta = parseMmlMeta(noComments);
+	const noMeta = stripMmlMeta(noComments);
+
+	const lyrics = collectLyrics ? parseLyrics(noMeta) : undefined;
 
 	// 歌詞行を取り除いてから改行を畳み込む（@@n を演奏ノートと誤解釈しないため）
-	const fullMML = stripLyrics(noComments)
+	const fullMML = stripLyrics(noMeta)
 		.replace(/[\n\r]+/g, " ")
 		.trim();
 
-	// 2. @(\d+) で分割
+	// 3. @(\d+) で分割
 	const parts = fullMML.split(/(@\d+)/).filter((p) => p.trim().length > 0);
 
 	let trackIndex = 0; // 既定はmelody
@@ -309,5 +354,6 @@ export const parseMML = (
 		bpm,
 		tokenTracks: collectTokens ? tokenTracks : undefined,
 		lyrics,
+		meta,
 	};
 };

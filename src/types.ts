@@ -193,6 +193,11 @@ export type DawInstance = {
 	pause: () => void;
 	stop: () => void;
 	getMML: () => { full: string; minified: string };
+	/**
+	 * MML出力の先頭に埋め込む楽器プリセット名を設定する（トラックとは1対1でないトップレベル宣言）。
+	 * 空文字で宣言なし。ライブラリ自体は音源を持たないため、名前を運ぶだけ（再生側が解決する）。
+	 */
+	setInstrument: (name: string) => void;
 	loadMML: (mml: string) => void;
 	loadMIDI: (bytes: Uint8Array) => void;
 	exportMIDI: () => Blob;

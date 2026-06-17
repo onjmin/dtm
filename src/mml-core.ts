@@ -261,6 +261,7 @@ export class MMLCore {
 		const total = config.stepsPerBar;
 
 		const candidates = [
+			{ dur: "1.", s: total * 1.5 }, // 付点全音符（最長。これ以上はタイ未対応のため表現不可）
 			{ dur: "1", s: total / 1 },
 			{ dur: "2.", s: (total / 2) * 1.5 },
 			{ dur: "2", s: total / 2 },
@@ -337,12 +338,17 @@ export class MMLCore {
 	}
 
 	/**
-	 * MML生成（1/2小節パターンスキャン方式）
+	 * MML生成（単一パス・発音順スキャン）
+	 *
+	 * 以前は1/2小節ごとのウィンドウで走査していたが、それだと半小節境界をまたぐ音符が
+	 * 境界で切り詰められて「ぶつ切り」になり、境界直前に始まる音符は隙間が潰れて欠落し、
+	 * 歌詞（@@n）の音節割り当てがずれていた。
+	 * 全ノートを発音順に一度で処理し、次の発音までの距離だけを上限として
+	 * 各音符の長さを忠実に出力する（次の音符がなければ曲末まで伸ばせる）。
 	 */
 	private generateMML = (volumeOverride?: number): string => {
 		const config = getRenderConfig();
 		const vol = volumeOverride ?? this.volume;
-		const HALF_BAR = config.stepsPerBar / 2;
 
 		const header = `t${this.tempo} v${vol}`;
 		const segments: string[] = [];
@@ -351,113 +357,79 @@ export class MMLCore {
 
 		if (this.notes.length === 0) return header;
 
-		const lastNote = this.notes[this.notes.length - 1];
-		const endStep = lastNote.startStep + lastNote.durationSteps;
-		const totalSteps = Math.ceil(endStep / HALF_BAR) * HALF_BAR;
+		// 末尾の余白は最後に到達する発音終端まで（最長ノートの末尾を採用）
+		const endStep = Math.max(
+			...this.notes.map((n) => n.startStep + n.durationSteps),
+		);
 
-		for (
-			let windowStart = 0;
-			windowStart < totalSteps;
-			windowStart += HALF_BAR
-		) {
-			const windowEnd = windowStart + HALF_BAR;
+		// 同一 startStep のノートをまとめる（和音）。発音開始位置の昇順で処理する
+		const notesByStep = new Map<number, Note[]>();
+		for (const n of this.notes) {
+			const list = notesByStep.get(n.startStep) ?? [];
+			list.push(n);
+			notesByStep.set(n.startStep, list);
+		}
+		const sortedSteps = Array.from(notesByStep.keys()).sort((a, b) => a - b);
 
-			const windowNotes = this.notes.filter(
-				(n) => n.startStep >= windowStart && n.startStep < windowEnd,
-			);
-
-			if (windowNotes.length === 0) {
-				while (currentCursor < windowEnd) {
-					const gap = windowEnd - currentCursor;
-					if (gap <= 2) {
-						currentCursor = windowEnd;
-						break;
-					}
-					const { dur, steps } = this.findBestFitDuration(gap);
-					segments.push(`r${dur}`);
-					currentCursor += steps;
-				}
-				continue;
-			}
-
-			const notesByStep = new Map<number, Note[]>();
-			windowNotes.forEach((n) => {
-				const list = notesByStep.get(n.startStep) || [];
-				list.push(n);
-				notesByStep.set(n.startStep, list);
-			});
-			const sortedSteps = Array.from(notesByStep.keys()).sort((a, b) => a - b);
-
-			for (let i = 0; i < sortedSteps.length; i++) {
-				const startStep = sortedSteps[i];
-				const notes = notesByStep.get(startStep);
-				if (!notes) continue;
-
-				while (currentCursor < startStep) {
-					const gap = startStep - currentCursor;
-					if (gap <= 2) {
-						currentCursor = startStep;
-						break;
-					}
-					const { dur, steps } = this.findBestFitDuration(gap);
-					segments.push(`r${dur}`);
-					currentCursor += steps;
-				}
-
-				// --- generateMML メソッド内のループ部分 ---
-
-				const nextStart = sortedSteps[i + 1] ?? windowEnd;
-				const physicsLimit = nextStart - currentCursor; // 物理的に空いている隙間
-
-				// 【追加】最小音符（64分音符）のステップ数
-				const MIN_STEP = config.stepsPerBar / 64;
-
-				// ガード句: もし空き容量が最小単位未満なら、このノートを無視（スキップ）する
-				if (physicsLimit < MIN_STEP) {
-					// カーソルは進めず、次のノートの処理へ（物理的な位置に合わせるため）
-					currentCursor = startStep;
-					continue;
-				}
-
-				// 理想の長さ(notes[0].durationSteps)と、物理的な限界(physicsLimit)を比較
-				const idealDuration = notes[0].durationSteps;
-				const durStr = this.stepsToMMLDuration(idealDuration, physicsLimit);
-
-				// 実際にMMLとして出力した音符のステップ数
-				const actualStepGenerated = this.getStepFromDottedMML(durStr);
-
-				// MML文字列の組み立て
-				if (notes.length > 1) {
-					const noteStrs = notes.map((n) => {
-						const oct = Math.floor(n.pitch / 12) - 1;
-						const name = PITCH_MAP[n.pitch % 12];
-						return `o${oct}${name}`;
-					});
-					segments.push(`[${noteStrs.join("")}]${durStr}`);
-				} else {
-					const { text, currentOctave } = this.getNoteWithOctave(
-						notes[0].pitch,
-						lastOctave,
-					);
-					segments.push(`${text}${durStr}`);
-					lastOctave = currentOctave;
-				}
-
-				// 次の処理のために、実際に出力した分だけカーソルを進める
-				currentCursor += actualStepGenerated;
-			}
-
-			while (currentCursor < windowEnd) {
-				const gap = windowEnd - currentCursor;
+		const fillRests = (until: number): void => {
+			while (currentCursor < until) {
+				const gap = until - currentCursor;
 				if (gap <= 2) {
-					currentCursor = windowEnd;
+					currentCursor = until;
 					break;
 				}
 				const { dur, steps } = this.findBestFitDuration(gap);
 				segments.push(`r${dur}`);
 				currentCursor += steps;
 			}
+		};
+
+		const MIN_STEP = config.stepsPerBar / 64;
+
+		for (let i = 0; i < sortedSteps.length; i++) {
+			const startStep = sortedSteps[i];
+			const notes = notesByStep.get(startStep);
+			if (!notes) continue;
+
+			// この音符の発音開始位置まで休符で埋める
+			fillRests(startStep);
+
+			// 次の発音開始（無ければ曲末）までが、重ならずに伸ばせる物理的な上限
+			const nextStart = sortedSteps[i + 1] ?? endStep;
+			const physicsLimit = nextStart - currentCursor;
+
+			// 空き容量が最小単位未満なら、このノートは無視（位置だけ合わせる）
+			if (physicsLimit < MIN_STEP) {
+				currentCursor = startStep;
+				continue;
+			}
+
+			// 理想の長さと物理的な限界を比較して音価を決める
+			const idealDuration = notes[0].durationSteps;
+			const durStr = this.stepsToMMLDuration(idealDuration, physicsLimit);
+			const actualStepGenerated = this.getStepFromDottedMML(durStr);
+
+			if (notes.length > 1) {
+				const noteStrs = notes.map((n) => {
+					const oct = Math.floor(n.pitch / 12) - 1;
+					const name = PITCH_MAP[n.pitch % 12];
+					return `o${oct}${name}`;
+				});
+				segments.push(`[${noteStrs.join("")}]${durStr}`);
+			} else {
+				const { text, currentOctave } = this.getNoteWithOctave(
+					notes[0].pitch,
+					lastOctave,
+				);
+				segments.push(`${text}${durStr}`);
+				lastOctave = currentOctave;
+			}
+
+			currentCursor += actualStepGenerated;
 		}
+
+		// 末尾の余白
+		fillRests(endStep);
 
 		return `${header} ${segments.join(" ")}`;
 	};

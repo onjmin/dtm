@@ -523,6 +523,7 @@ export const DAW_CSS = `
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .dtm-player-play {
   flex: 0 0 auto;
@@ -555,6 +556,14 @@ export const DAW_CSS = `
   gap: 6px;
 }
 .dtm-player-dot { width: 8px; height: 8px; display: inline-block; }
+.dtm-player-chip {
+  font-family: 'k8x12', monospace;
+  font-size: 9px;
+  color: var(--dtm-text);
+  background: var(--dtm-border2);
+  padding: 2px 6px;
+  white-space: nowrap;
+}
 .dtm-player-lane-row {
   display: flex;
   align-items: stretch;

@@ -27,7 +27,7 @@ import {
 	extractMidiPlacementsByTrack,
 } from "./midi-io";
 import { decomposeToMonophonic, isChordHeavyTrack, MMLCore } from "./mml-core";
-import { parseMML } from "./mml-parser";
+import { formatMmlMeta, parseMML } from "./mml-parser";
 import {
 	drawGrid,
 	drawNotes,
@@ -274,6 +274,8 @@ export const mountDAW = (
 	let masterVolume = 50;
 	let drumVolume = 80;
 	let currentDrumPattern = refs.drumSelect.value;
+	// MML出力の先頭に埋め込む楽器プリセット名（トップレベル宣言。空なら宣言なし）
+	let currentInstrument = "";
 	let activeTrackId = trackConfigs[0].id;
 	let activeToolMode: ToolMode = "pen";
 	let currentInsertLength = 48;
@@ -1348,6 +1350,13 @@ export const mountDAW = (
 				? notes
 				: notes.filter((n) => n.startStep < limitSteps);
 
+		// トップレベル宣言（楽器プリセット・ドラムパターン）。トラックとは1対1でなく曲全体に効く。
+		// 既定/未設定（楽器=空, ドラム="none"）の項目は出力しない。
+		const metaLine = formatMmlMeta({
+			instrument: currentInstrument || undefined,
+			drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
+		});
+
 		if (refs.decomposeChordToggle.checked) {
 			const ignoreHeavy = refs.ignoreChordHeavyToggle.checked;
 			const targetStates = ignoreHeavy
@@ -1359,17 +1368,19 @@ export const mountDAW = (
 			);
 			const monoTracks = decomposeToMonophonic(allNotes);
 			const refCore = trackStates[0].core;
-			const full = monoTracks
-				.map(
-					(notes, i) =>
-						`@${i} ${refCore.getMMLFromNotes(notes, bpm, 100).trim()}`,
-				)
+			const decomposedFull = monoTracks.map(
+				(notes, i) =>
+					`@${i} ${refCore.getMMLFromNotes(notes, bpm, 100).trim()}`,
+			);
+			const decomposedMini = monoTracks.map(
+				(notes, i) =>
+					`@${i}${refCore.getMMLFromNotes(notes, bpm, 100).trim().replace(/\s+/g, "")}`,
+			);
+			const full = [metaLine, ...decomposedFull]
+				.filter((s) => s.length > 0)
 				.join(";\n");
-			const minified = monoTracks
-				.map(
-					(notes, i) =>
-						`@${i}${refCore.getMMLFromNotes(notes, bpm, 100).trim().replace(/\s+/g, "")}`,
-				)
+			const minified = [metaLine, ...decomposedMini]
+				.filter((s) => s.length > 0)
 				.join(";");
 			return {
 				full,
@@ -1410,8 +1421,12 @@ export const mountDAW = (
 				const head = params ? `${x.model} ${params}` : x.model;
 				return `@@${x.i} ${head} ${x.text}`;
 			});
-		const full = [...trackLines, ...lyricLines].join(";\n");
-		const minified = [...trackLinesMini, ...lyricLines].join(";");
+		const full = [metaLine, ...trackLines, ...lyricLines]
+			.filter((s) => s.length > 0)
+			.join(";\n");
+		const minified = [metaLine, ...trackLinesMini, ...lyricLines]
+			.filter((s) => s.length > 0)
+			.join(";");
 		return {
 			full,
 			minified,
@@ -1452,12 +1467,19 @@ export const mountDAW = (
 			placements,
 			bpm: parsedBpm,
 			lyrics,
+			meta,
 		} = parseMML(mml, {
 			stepsPerBar: renderConfig.stepsPerBar,
 			collectLyrics: true,
 			// このDAWのトラック数を超えるチャンネルはベースへ畳み込む（従来挙動）
 			clampTrackCount: trackStates.length,
 		});
+		// トップレベル宣言（楽器プリセット・ドラムパターン）を復元する
+		currentInstrument = meta.instrument ?? "";
+		if (meta.drum && drumPatterns[meta.drum]) {
+			currentDrumPattern = meta.drum;
+			refs.drumSelect.value = meta.drum;
+		}
 		// 歌詞トラック（@@n）を各トラックの歌詞入力へ復元する（編集UIに反映）。
 		// 表示用かなは正規化済み音節を結合したもの（長音は母音かなに展開済み）。
 		for (const t of trackStates) {
@@ -1877,6 +1899,9 @@ export const mountDAW = (
 		pause,
 		stop,
 		getMML: generateMML,
+		setInstrument: (name: string) => {
+			currentInstrument = name;
+		},
 		loadMML,
 		loadMIDI,
 		exportMIDI,

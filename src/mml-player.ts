@@ -9,6 +9,7 @@
  * オプトインの簡易square-wave synth（`synth`）も同梱する。onPlayNote 未指定なら既定で有効。
  */
 
+import { DRUM_PATTERNS, type DrumPattern } from "./drum-config";
 import { icon } from "./icons";
 import {
 	createKlattVoice,
@@ -18,7 +19,7 @@ import {
 import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
 import { injectStyles } from "./styles";
-import type { Note, PlayNoteEvent } from "./types";
+import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 
 const STEPS_PER_BEAT = 48;
 const STEPS_PER_BAR = 192;
@@ -29,6 +30,13 @@ const DEFAULT_TRACK_COLORS = ["#00e436", "#29adff", "#ff77a8", "#ffec27"];
 export type MmlPlayerOptions = {
 	/** メロディックノートの発音要求。未指定かつ synth 未指定なら内蔵synthが鳴る */
 	onPlayNote?: (e: PlayNoteEvent) => void;
+	/**
+	 * ドラムノートの発音要求（MMLのトップレベル宣言 `#drum=…` から解決）。
+	 * 未指定かつ内蔵synth有効なら、簡易ドラム音で鳴る。
+	 */
+	onPlayDrum?: (e: PlayDrumEvent) => void;
+	/** ドラムパターン辞書。`#drum=<キー>` の解決に使う。既定 DRUM_PATTERNS */
+	drumPatterns?: Record<string, DrumPattern>;
 	/** 再生クロック秒。既定は内蔵synthの AudioContext.currentTime もしくは performance.now()/1000 */
 	getAudioTime?: () => number;
 	/** 初回再生時に呼ばれる（AudioContext.resume 等に使う） */
@@ -87,6 +95,7 @@ export const mountMmlPlayer = (
 		bpm: parsedBpm,
 		tokenTracks,
 		lyrics,
+		meta,
 	} = parseMML(mml, {
 		collectTokens: true,
 		collectLyrics: true,
@@ -94,6 +103,11 @@ export const mountMmlPlayer = (
 	const lyricTracks = lyrics ?? new Map();
 	const conductor = createLyricsConductor(lyricTracks);
 	const bpm = parsedBpm ?? options.defaultBpm ?? 120;
+	// トップレベル宣言: ドラムパターンを解決（曲全体に効く。トラックとは1対1でない）
+	const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
+	const drumPattern: DrumPattern | null = meta.drum
+		? (drumPatternDict[meta.drum] ?? null)
+		: null;
 	const trackVolume = options.volume ?? 100;
 	const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
 	const useSynth = options.synth ?? !options.onPlayNote;
@@ -150,6 +164,52 @@ export const mountMmlPlayer = (
 		osc.stop(t0 + e.duration + 0.02);
 	};
 
+	// 簡易ドラム音（内蔵synth用）。SoundFontを持たないため、キック/スネア/ハイハットを
+	// オシレータ＋ノイズで近似する。pitch は General MIDI 準拠のドラムキー番号。
+	const drumSynth = (e: PlayDrumEvent): void => {
+		const ctx = ensureCtx();
+		const t0 = ctx.currentTime + e.when;
+		const vol = Math.max(0.0001, Math.min(1, e.velocity));
+		const isKick = e.pitch === 35 || e.pitch === 36;
+		const isSnareLike = e.pitch === 38 || e.pitch === 39 || e.pitch === 40;
+		if (isKick) {
+			// キック: 低音サインのピッチダウン
+			const osc = ctx.createOscillator();
+			const g = ctx.createGain();
+			osc.frequency.setValueAtTime(150, t0);
+			osc.frequency.exponentialRampToValueAtTime(50, t0 + 0.12);
+			g.gain.setValueAtTime(vol * 0.9, t0);
+			g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
+			osc.connect(g).connect(ctx.destination);
+			osc.start(t0);
+			osc.stop(t0 + 0.2);
+			osc.onended = () => osc.disconnect();
+			return;
+		}
+		// スネア/ハイハット/その他: ノイズバースト（スネアは帯域広め＋胴鳴り）
+		const dur = isSnareLike ? 0.18 : 0.05;
+		const length = Math.max(1, Math.floor(ctx.sampleRate * dur));
+		const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+		const data = buffer.getChannelData(0);
+		for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+		const src = ctx.createBufferSource();
+		src.buffer = buffer;
+		const filter = ctx.createBiquadFilter();
+		filter.type = isSnareLike ? "bandpass" : "highpass";
+		filter.frequency.value = isSnareLike ? 2000 : 8000;
+		const g = ctx.createGain();
+		g.gain.setValueAtTime(vol * (isSnareLike ? 0.7 : 0.4), t0);
+		g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+		src.connect(filter).connect(g).connect(ctx.destination);
+		src.start(t0);
+		src.stop(t0 + dur);
+		src.onended = () => {
+			src.disconnect();
+			filter.disconnect();
+			g.disconnect();
+		};
+	};
+
 	// 歌詞付きノートを内蔵synthで歌うためのフォルマント合成（遅延生成）
 	let klattVoice: VoiceModel | null = null;
 	const ensureKlatt = (): VoiceModel => {
@@ -196,7 +256,19 @@ export const mountMmlPlayer = (
 		dots.appendChild(dot);
 	}
 
-	head.append(playBtn, tempoEl, timeEl, dots);
+	head.append(playBtn, tempoEl, timeEl);
+
+	// トップレベル宣言（楽器プリセット・ドラムパターン）をチップ表示する
+	const addChip = (label: string): void => {
+		const chip = doc.createElement("span");
+		chip.className = "dtm-player-chip";
+		chip.textContent = label;
+		head.appendChild(chip);
+	};
+	if (meta.instrument) addChip(`♪ ${meta.instrument}`);
+	if (meta.drum) addChip(`🥁 ${meta.drum}${drumPattern ? "" : " (?)"}`);
+
+	head.appendChild(dots);
 	root.appendChild(head);
 
 	// ── トラック帯 ──
@@ -305,7 +377,7 @@ export const mountMmlPlayer = (
 		getTracks: () => seqTracks,
 		getBpm: () => bpm,
 		getPlayStartStep: () => 0,
-		getDrumPattern: () => null,
+		getDrumPattern: () => drumPattern,
 		getSoloTrackId: () => null,
 		getAudioTime,
 		onPlayNote: (e) => {
@@ -334,7 +406,10 @@ export const mountMmlPlayer = (
 				else synthPlay(ev);
 			}
 		},
-		onPlayDrum: () => {},
+		onPlayDrum: (e) => {
+			options.onPlayDrum?.(e);
+			if (useSynth) drumSynth(e);
+		},
 		onTick: (step) => renderPlayhead(step),
 		onEnd: () => finish(),
 		stepsPerBar: STEPS_PER_BAR,
