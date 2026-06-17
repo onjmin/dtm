@@ -608,6 +608,270 @@ var DRUM_PATTERNS = {
   ]
 };
 
+// src/lyrics.ts
+var kanaTable = {
+  \u3042: ["", "a"],
+  \u3044: ["", "i"],
+  \u3046: ["", "u"],
+  \u3048: ["", "e"],
+  \u304A: ["", "o"],
+  \u304B: ["k", "a"],
+  \u304D: ["k", "i"],
+  \u304F: ["k", "u"],
+  \u3051: ["k", "e"],
+  \u3053: ["k", "o"],
+  \u3055: ["s", "a"],
+  \u3057: ["sh", "i"],
+  \u3059: ["s", "u"],
+  \u305B: ["s", "e"],
+  \u305D: ["s", "o"],
+  \u305F: ["t", "a"],
+  \u3061: ["ch", "i"],
+  \u3064: ["ts", "u"],
+  \u3066: ["t", "e"],
+  \u3068: ["t", "o"],
+  \u306A: ["n", "a"],
+  \u306B: ["n", "i"],
+  \u306C: ["n", "u"],
+  \u306D: ["n", "e"],
+  \u306E: ["n", "o"],
+  \u306F: ["h", "a"],
+  \u3072: ["h", "i"],
+  \u3075: ["f", "u"],
+  \u3078: ["h", "e"],
+  \u307B: ["h", "o"],
+  \u307E: ["m", "a"],
+  \u307F: ["m", "i"],
+  \u3080: ["m", "u"],
+  \u3081: ["m", "e"],
+  \u3082: ["m", "o"],
+  \u3084: ["y", "a"],
+  \u3086: ["y", "u"],
+  \u3088: ["y", "o"],
+  \u3089: ["r", "a"],
+  \u308A: ["r", "i"],
+  \u308B: ["r", "u"],
+  \u308C: ["r", "e"],
+  \u308D: ["r", "o"],
+  \u308F: ["w", "a"],
+  \u3092: ["w", "o"],
+  \u304C: ["g", "a"],
+  \u304E: ["g", "i"],
+  \u3050: ["g", "u"],
+  \u3052: ["g", "e"],
+  \u3054: ["g", "o"],
+  \u3056: ["z", "a"],
+  \u3058: ["j", "i"],
+  \u305A: ["z", "u"],
+  \u305C: ["z", "e"],
+  \u305E: ["z", "o"],
+  \u3060: ["d", "a"],
+  \u3062: ["j", "i"],
+  \u3065: ["z", "u"],
+  \u3067: ["d", "e"],
+  \u3069: ["d", "o"],
+  \u3070: ["b", "a"],
+  \u3073: ["b", "i"],
+  \u3076: ["b", "u"],
+  \u3079: ["b", "e"],
+  \u307C: ["b", "o"],
+  \u3071: ["p", "a"],
+  \u3074: ["p", "i"],
+  \u3077: ["p", "u"],
+  \u307A: ["p", "e"],
+  \u307D: ["p", "o"],
+  \u3093: ["N", "N"]
+};
+var SMALL_KANA = "\u3041\u3043\u3045\u3047\u3049\u3083\u3085\u3087\u3063";
+var VOWEL_KANA = {
+  a: "\u3042",
+  i: "\u3044",
+  u: "\u3046",
+  e: "\u3048",
+  o: "\u304A"
+};
+var sanitizeText = (text) => text.normalize("NFKC").replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 96)).replace(/[^ぁ-ゖー]/g, "");
+var splitSyllables = (text) => {
+  const result = [];
+  for (const ch of text) {
+    if (result.length > 0 && SMALL_KANA.includes(ch)) {
+      result[result.length - 1] += ch;
+    } else {
+      result.push(ch);
+    }
+  }
+  return result;
+};
+var kanaToVowel = (kana) => {
+  if (/[ぁゃ]/.test(kana)) return "a";
+  if (/[ぃ]/.test(kana)) return "i";
+  if (/[ぅゅ]/.test(kana)) return "u";
+  if (/[ぇ]/.test(kana)) return "e";
+  if (/[ぉょ]/.test(kana)) return "o";
+  if (/[あかさたなはまやらわがざだばぱ]/.test(kana)) return "a";
+  if (/[いきしちにひみりぎじぢびぴ]/.test(kana)) return "i";
+  if (/[うくすつぬふむゆるぐずづぶぷ]/.test(kana)) return "u";
+  if (/[えけせてねへめれげぜでべぺ]/.test(kana)) return "e";
+  if (/[おこそとのほもよろごぞどぼぽ]/.test(kana)) return "o";
+  return "";
+};
+var analyzeSyllable = (syllable) => {
+  if (syllable === "\u30FC") return { kana: syllable, consonant: "-", vowel: "-" };
+  if (syllable === "\u3063") return { kana: syllable, consonant: "Q", vowel: "" };
+  const head = syllable[0];
+  const row = kanaTable[head];
+  const consonant = row ? row[0] : "";
+  let vowel = row ? row[1] : kanaToVowel(head);
+  if (syllable.length === 2 && syllable[1] !== "\u3063") {
+    const v = kanaToVowel(syllable[1]);
+    if (v) vowel = v;
+  }
+  return { kana: syllable, consonant, vowel };
+};
+var resolveLongVowels = (syllables) => {
+  const result = [];
+  let prevVowel = "";
+  for (const syl of syllables) {
+    if (syl.consonant === "-") {
+      if (!prevVowel) continue;
+      result.push({
+        kana: VOWEL_KANA[prevVowel] ?? syl.kana,
+        consonant: "",
+        vowel: prevVowel
+      });
+      continue;
+    }
+    if (syl.vowel && syl.vowel !== "N") prevVowel = syl.vowel;
+    result.push(syl);
+  }
+  return result;
+};
+var normalizeLyrics = (text) => resolveLongVowels(splitSyllables(sanitizeText(text)).map(analyzeSyllable));
+var LYRIC_LINE = /^@@(\d+)\s+(.*)$/;
+var splitSegments = (mml) => mml.split(/[;\n\r]+/).map((s) => s.trim()).filter((s) => s.length > 0);
+var parseLyrics = (mml) => {
+  const tracks = /* @__PURE__ */ new Map();
+  for (const seg of splitSegments(mml)) {
+    const m = seg.match(LYRIC_LINE);
+    if (!m) continue;
+    const trackId = Number.parseInt(m[1], 10);
+    const rest = m[2].trim();
+    const sp = rest.search(/\s/);
+    const modelToken = sp === -1 ? rest : rest.slice(0, sp);
+    const lyricText = sp === -1 ? "" : rest.slice(sp + 1);
+    const colon = modelToken.indexOf(":");
+    const model = colon === -1 ? modelToken : modelToken.slice(0, colon);
+    const parsedVol = colon === -1 ? Number.NaN : Number.parseInt(modelToken.slice(colon + 1), 10);
+    const volume = Number.isFinite(parsedVol) ? Math.min(100, Math.max(0, parsedVol)) : 100;
+    tracks.set(trackId, {
+      trackId,
+      model: model.toLowerCase(),
+      volume,
+      syllables: normalizeLyrics(lyricText)
+    });
+  }
+  return tracks;
+};
+var stripLyrics = (mml) => splitSegments(mml).filter((seg) => !LYRIC_LINE.test(seg)).join("\n");
+var createLyricsConductor = (lyrics) => {
+  const pointers = /* @__PURE__ */ new Map();
+  const consume = (trackId) => {
+    const track = lyrics.get(trackId);
+    if (!track || track.syllables.length === 0) return null;
+    const ptr = pointers.get(trackId) ?? 0;
+    const syllable = track.syllables[ptr];
+    if (!syllable) return null;
+    pointers.set(trackId, ptr + 1);
+    return {
+      model: track.model,
+      syllable,
+      volume: (track.volume ?? 100) / 100
+    };
+  };
+  const reset = () => pointers.clear();
+  return { consume, reset };
+};
+var FORMANTS = {
+  a: [800, 1200],
+  i: [300, 2300],
+  u: [350, 800],
+  e: [500, 1900],
+  o: [500, 900],
+  // 撥音(ん)は鼻音寄りの低フォルマント
+  N: [250, 1e3]
+};
+var midiToFreq = (m) => 440 * 2 ** ((m - 69) / 12);
+var createKlattVoice = (ctx, destination) => {
+  return (syllable, e) => {
+    const t0 = ctx.currentTime + e.when;
+    const peak = Math.max(1e-4, Math.min(1, e.volume));
+    if (syllable.vowel === "" || syllable.consonant === "Q") return;
+    const [f1, f2] = FORMANTS[syllable.vowel] ?? FORMANTS.a;
+    const attack = 0.02;
+    const release = 0.06;
+    const sustainEnd = t0 + Math.max(attack + 0.02, e.duration);
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.value = midiToFreq(e.pitch);
+    const makeFormant = (freq, q2, gainScale) => {
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.value = freq;
+      filter.Q.value = q2;
+      const g = ctx.createGain();
+      g.gain.value = gainScale;
+      osc.connect(filter).connect(g);
+      return g;
+    };
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(1e-4, t0);
+    env.gain.exponentialRampToValueAtTime(peak, t0 + attack);
+    env.gain.setValueAtTime(peak, sustainEnd);
+    env.gain.exponentialRampToValueAtTime(1e-4, sustainEnd + release);
+    const MAKEUP = 4;
+    makeFormant(f1, 6, MAKEUP).connect(env);
+    makeFormant(f2, 9, MAKEUP * 0.7).connect(env);
+    env.connect(destination);
+    const fricatives = /* @__PURE__ */ new Set(["s", "sh", "ch", "ts", "h", "f"]);
+    if (fricatives.has(syllable.consonant)) {
+      const dur = 0.05;
+      const length = Math.max(1, Math.floor(ctx.sampleRate * dur));
+      const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = syllable.consonant === "sh" ? 3e3 : 4500;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(peak * 0.5, t0);
+      ng.gain.exponentialRampToValueAtTime(1e-4, t0 + dur);
+      src.connect(hp).connect(ng).connect(destination);
+      src.start(t0);
+      src.stop(t0 + dur);
+      src.onended = () => {
+        src.disconnect();
+        hp.disconnect();
+        ng.disconnect();
+      };
+    }
+    osc.start(t0);
+    osc.stop(sustainEnd + release + 0.02);
+    osc.onended = () => osc.disconnect();
+  };
+};
+var createVoiceRegistry = (models = {}, fallback = "klatt") => {
+  const sing = (model, syllable, e) => {
+    const fn = models[model] ?? models[fallback];
+    fn?.(syllable, e);
+  };
+  const register = (name, m) => {
+    models[name.toLowerCase()] = m;
+  };
+  return { sing, register };
+};
+
 // src/macros.ts
 var SCALES = [
   [0, 2, 4, 5, 7, 9, 11],
@@ -1884,13 +2148,25 @@ var PITCH_MAP2 = {
   a: 9,
   b: 11
 };
-var TRACK_INDEX_COUNT = 4;
 var parseMML = (mml, options = {}) => {
   const stepsPerBar = options.stepsPerBar ?? 192;
+  const collectTokens = options.collectTokens ?? false;
+  const collectLyrics = options.collectLyrics ?? false;
+  const clampTrackCount = options.clampTrackCount;
   const placements = [];
+  const tokenTracks = /* @__PURE__ */ new Map();
   let bpm = null;
-  if (!mml) return { placements, bpm };
-  const fullMML = mml.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "").replace(/[\n\r]+/g, " ").trim();
+  if (!mml) {
+    return {
+      placements,
+      bpm,
+      tokenTracks: collectTokens ? tokenTracks : void 0,
+      lyrics: collectLyrics ? /* @__PURE__ */ new Map() : void 0
+    };
+  }
+  const noComments = mml.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const lyrics = collectLyrics ? parseLyrics(noComments) : void 0;
+  const fullMML = stripLyrics(noComments).replace(/[\n\r]+/g, " ").trim();
   const parts = fullMML.split(/(@\d+)/).filter((p) => p.trim().length > 0);
   let trackIndex = 0;
   let octave = 4;
@@ -1900,7 +2176,7 @@ var parseMML = (mml, options = {}) => {
     const part = rawPart.trim();
     if (part.startsWith("@")) {
       let idx = Number.parseInt(part.substring(1), 10);
-      if (idx >= TRACK_INDEX_COUNT) idx = 2;
+      if (clampTrackCount !== void 0 && idx >= clampTrackCount) idx = 2;
       trackIndex = idx;
       octave = 4;
       currentStep = 0;
@@ -1909,6 +2185,20 @@ var parseMML = (mml, options = {}) => {
     }
     const body = part.replace(/\s+/g, "").toLowerCase();
     let j = 0;
+    const pushTok = (type, start, dur, from) => {
+      if (!collectTokens) return;
+      let arr = tokenTracks.get(trackIndex);
+      if (!arr) {
+        arr = [];
+        tokenTracks.set(trackIndex, arr);
+      }
+      arr.push({
+        text: body.slice(from, j),
+        startStep: start,
+        durationSteps: dur,
+        type
+      });
+    };
     const parseLength = () => {
       let numStr = "";
       while (j < body.length && /\d/.test(body[j])) {
@@ -1925,6 +2215,7 @@ var parseMML = (mml, options = {}) => {
     };
     while (j < body.length) {
       const ch = body[j];
+      const tokStart = j;
       if (ch === "o") {
         j++;
         let numStr = "";
@@ -1933,12 +2224,15 @@ var parseMML = (mml, options = {}) => {
           j++;
         }
         octave = Number.parseInt(numStr, 10) || 4;
+        pushTok("octave", currentStep, 0, tokStart);
       } else if (ch === ">") {
         octave++;
         j++;
+        pushTok("shift", currentStep, 0, tokStart);
       } else if (ch === "<") {
         octave--;
         j++;
+        pushTok("shift", currentStep, 0, tokStart);
       } else if (ch === "l") {
         j++;
         let numStr = "";
@@ -1947,9 +2241,13 @@ var parseMML = (mml, options = {}) => {
           j++;
         }
         baseLength = Number.parseInt(numStr, 10) || 16;
+        pushTok("length", currentStep, 0, tokStart);
       } else if (ch === "r") {
         j++;
-        currentStep += parseLength();
+        const restStart = currentStep;
+        const restSteps = parseLength();
+        pushTok("rest", restStart, restSteps, tokStart);
+        currentStep += restSteps;
       } else if (ch === "t" || ch === "v" || ch === "q") {
         j++;
         let numStr = "";
@@ -2005,6 +2303,7 @@ var parseMML = (mml, options = {}) => {
             durationSteps: Math.max(1, steps)
           });
         }
+        pushTok("chord", currentStep, Math.max(1, steps), tokStart);
         currentStep += steps;
         octave = savedOctave;
       } else if (Object.hasOwn(PITCH_MAP2, ch)) {
@@ -2025,13 +2324,19 @@ var parseMML = (mml, options = {}) => {
           pitch: midiPitch,
           durationSteps: Math.max(1, steps)
         });
+        pushTok("note", currentStep, Math.max(1, steps), tokStart);
         currentStep += steps;
       } else {
         j++;
       }
     }
   }
-  return { placements, bpm };
+  return {
+    placements,
+    bpm,
+    tokenTracks: collectTokens ? tokenTracks : void 0,
+    lyrics
+  };
 };
 
 // src/sequencer.ts
@@ -2655,6 +2960,99 @@ var DAW_CSS = `
   .dtm-daw { gap: 8px; padding: 10px; }
   .dtm-roll { height: 420px; }
 }
+
+/* ====================================================
+   MML PLAYER \u2014 \u518D\u751F\u5C02\u7528\u30D3\u30E5\u30FC\uFF08mountMmlPlayer\uFF09
+   ==================================================== */
+.dtm-player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dtm-gap);
+  padding: var(--dtm-gap);
+  background: var(--dtm-deep);
+  border: 2px solid var(--dtm-border2);
+  box-shadow: 4px 4px 0 var(--c-black);
+}
+.dtm-player-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dtm-player-play {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dtm-primary);
+  color: var(--dtm-pfg);
+  border: 2px solid var(--c-black);
+  box-shadow: 2px 2px 0 var(--c-black);
+  cursor: pointer;
+  padding: 0;
+}
+.dtm-player-play:active { transform: translate(2px, 2px); box-shadow: none; }
+.dtm-player-play--stop { background: var(--dtm-danger); }
+.dtm-player-play:disabled { opacity: 0.4; cursor: default; }
+.dtm-player-tempo,
+.dtm-player-time {
+  font-family: 'k8x12', monospace;
+  font-size: 12px;
+  color: var(--dtm-muted);
+}
+.dtm-player-time { color: var(--dtm-text); min-width: 3em; }
+.dtm-player-dots {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dtm-player-dot { width: 8px; height: 8px; display: inline-block; }
+.dtm-player-lane-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.dtm-player-lane-label {
+  flex: 0 0 auto;
+  width: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-top: 4px;
+}
+.dtm-player-lane-no {
+  font-family: 'k8x12', monospace;
+  font-size: 9px;
+  color: var(--dtm-muted);
+}
+.dtm-player-lane {
+  position: relative; /* \u30C8\u30FC\u30AF\u30F3\u306E offsetParent \u3092\u30EC\u30FC\u30F3\u306B\u56FA\u5B9A\u3057\u3001\u4E2D\u592E\u5BC4\u305B\u8A08\u7B97\u3092\u6B63\u3059 */
+  flex: 1 1 auto;
+  overflow-x: auto;
+  white-space: nowrap;
+  background: var(--c-black);
+  border: 2px solid var(--dtm-border2);
+  padding: 6px;
+  scrollbar-width: none;
+}
+.dtm-player-lane::-webkit-scrollbar { display: none; }
+.dtm-tk {
+  font-family: 'k8x12', monospace;
+  font-size: 12px;
+  color: var(--dtm-text);
+}
+.dtm-tk--rest { color: var(--dtm-muted); }
+.dtm-tk--octave,
+.dtm-tk--shift,
+.dtm-tk--length { color: var(--dtm-border2); }
+.dtm-tk.is-active {
+  background: var(--tk, var(--dtm-primary));
+  color: var(--c-black);
+  font-weight: bold;
+}
 `;
 var injectStyles = (doc = document) => {
   if (doc.getElementById(STYLE_ID)) return;
@@ -2812,6 +3210,7 @@ var TRACKS_ADVANCED = [
   }
 ];
 var DEFAULT_TRACKS = TRACKS_SIMPLE;
+var LYRIC_MODELS = ["klatt"];
 var clamp = (v, min, max) => Math.min(Math.max(v, min), max);
 var mountDAW = (target, options = {}) => {
   injectStyles();
@@ -2852,6 +3251,7 @@ var mountDAW = (target, options = {}) => {
   let currentOffsetY = (104 - 1 - 60) * renderConfig.keyHeight - 215;
   let playStartStep = 0;
   let isSolo = false;
+  let lyricsConductor = createLyricsConductor(/* @__PURE__ */ new Map());
   let playbackState = "stopped";
   let pausedPlayStep = 0;
   let currentPlayStep = 0;
@@ -2878,8 +3278,29 @@ var mountDAW = (target, options = {}) => {
       volume: config.volume,
       savedChordInput: "",
       savedChordPattern: "block",
-      savedChordRoot: 0
+      savedChordRoot: 0,
+      lyrics: "",
+      lyricModel: "",
+      // 既定は「なし」（歌わない）
+      vocalVolume: 100
     }));
+  };
+  const buildLyricsMap = () => {
+    const map = /* @__PURE__ */ new Map();
+    trackStates.forEach((t, i) => {
+      const model = t.lyricModel.trim();
+      const text = t.lyrics.trim();
+      if (!model || !text) return;
+      const syllables = normalizeLyrics(text);
+      if (syllables.length === 0) return;
+      map.set(i, {
+        trackId: i,
+        model: model.toLowerCase(),
+        volume: t.vocalVolume,
+        syllables
+      });
+    });
+    return map;
   };
   const getActive = () => trackStates.find((t) => t.config.id === activeTrackId) ?? trackStates[0];
   const getMaxNoteStep = () => {
@@ -3410,8 +3831,17 @@ var mountDAW = (target, options = {}) => {
     getSoloTrackId: () => isSolo ? activeTrackId : null,
     getAudioTime,
     onPlayNote: (e) => {
-      const volume = e.volume * (masterVolume / 100);
-      options.onPlayNote?.({ ...e, volume });
+      const idx = trackStates.findIndex((t) => t.config.id === e.trackId);
+      const consumed = idx >= 0 ? lyricsConductor.consume(idx) : null;
+      options.onPlayNote?.(
+        consumed ? {
+          ...e,
+          // 歌唱は velocity を参照せず、声量×マスタ音量を使う
+          volume: consumed.volume * (masterVolume / 100),
+          syllable: consumed.syllable,
+          voiceModel: consumed.model
+        } : { ...e, volume: e.volume * (masterVolume / 100) }
+      );
     },
     onPlayDrum: (e) => {
       const velocity = e.velocity * (drumVolume / 100) * (masterVolume / 100);
@@ -3450,6 +3880,7 @@ var mountDAW = (target, options = {}) => {
       setDrawOffset(currentOffsetX, currentOffsetY);
     }
     playbackState = "playing";
+    lyricsConductor = createLyricsConductor(buildLyricsMap());
     sequencer.start(fromStep);
     updateTransport();
   };
@@ -3510,6 +3941,79 @@ var mountDAW = (target, options = {}) => {
       active.volume = Number.parseInt(volInput.value, 10);
       active.core.setVolume(active.volume);
       volLabel.textContent = String(active.volume);
+    });
+    const lyricDiv = document.createElement("div");
+    lyricDiv.className = "dtm-row";
+    lyricDiv.style.flexDirection = "column";
+    lyricDiv.style.alignItems = "stretch";
+    lyricDiv.innerHTML = `
+      <div class="dtm-row">
+        <span class="dtm-label">\u266A \u6B4C\u8A5E</span>
+        <select class="dtm-select" data-dtm="lyric-model" aria-label="\u6B4C\u5531\u30E2\u30C7\u30EB"></select>
+        <span class="dtm-label dtm-grow" data-dtm="lyric-count" style="text-align:right"></span>
+      </div>
+      <div class="dtm-row" data-dtm="lyric-body" style="flex-direction:column;align-items:stretch">
+        <div class="dtm-row">
+          <span class="dtm-label">\u58F0\u91CF</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="100" aria-label="\u6B4C\u5531\u306E\u58F0\u91CF">
+          <span class="dtm-label" data-dtm="lyric-vol-label"></span>
+        </div>
+        <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="\u3072\u3089\u304C\u306A\u30FB\u30AB\u30BF\u30AB\u30CA\u3067\u6B4C\u8A5E\uFF08\u4F8B: \u3069\u308C\u307F\u3075\u3041\u305D\u3089\u3057\u3069\uFF09"></textarea>
+      </div>`;
+    refs.trackBody.appendChild(lyricDiv);
+    const lyricModelSel = lyricDiv.querySelector(
+      '[data-dtm="lyric-model"]'
+    );
+    const lyricBody = lyricDiv.querySelector(
+      '[data-dtm="lyric-body"]'
+    );
+    const lyricInput = lyricDiv.querySelector(
+      '[data-dtm="lyric-input"]'
+    );
+    const lyricCount = lyricDiv.querySelector(
+      '[data-dtm="lyric-count"]'
+    );
+    const lyricVol = lyricDiv.querySelector(
+      '[data-dtm="lyric-vol"]'
+    );
+    const lyricVolLabel = lyricDiv.querySelector(
+      '[data-dtm="lyric-vol-label"]'
+    );
+    const addOpt = (value, label) => {
+      const o = document.createElement("option");
+      o.value = value;
+      o.textContent = label;
+      lyricModelSel.appendChild(o);
+    };
+    addOpt("", "\u306A\u3057");
+    for (const m of LYRIC_MODELS) addOpt(m, m);
+    if (active.lyricModel && !LYRIC_MODELS.includes(active.lyricModel)) {
+      addOpt(active.lyricModel, active.lyricModel);
+    }
+    lyricModelSel.value = active.lyricModel;
+    lyricInput.value = active.lyrics;
+    lyricVol.value = String(active.vocalVolume);
+    lyricVolLabel.textContent = String(active.vocalVolume);
+    const updateLyricCount = () => {
+      const n = normalizeLyrics(lyricInput.value).length;
+      lyricCount.textContent = active.lyricModel && n > 0 ? `${n}\u97F3\u7BC0` : "";
+    };
+    const syncLyricVisibility = () => {
+      lyricBody.style.display = active.lyricModel ? "" : "none";
+      updateLyricCount();
+    };
+    syncLyricVisibility();
+    lyricModelSel.addEventListener("change", () => {
+      active.lyricModel = lyricModelSel.value;
+      syncLyricVisibility();
+    });
+    lyricInput.addEventListener("input", () => {
+      active.lyrics = lyricInput.value;
+      updateLyricCount();
+    });
+    lyricVol.addEventListener("input", () => {
+      active.vocalVolume = Number.parseInt(lyricVol.value, 10);
+      lyricVolLabel.textContent = lyricVol.value;
     });
     if (active.config.id === "chord" && showChord) {
       const div = document.createElement("div");
@@ -3621,12 +4125,22 @@ var mountDAW = (target, options = {}) => {
         barLimit: barLimitBars
       };
     }
-    const full = trackStates.map(
+    const trackLines = trackStates.map(
       (t, i) => `@${i} ${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim()}`
-    ).join(";\n");
-    const minified = trackStates.map(
+    );
+    const trackLinesMini = trackStates.map(
       (t, i) => `@${i}${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim().replace(/\s+/g, "")}`
-    ).join(";");
+    );
+    const lyricLines = trackStates.map((t, i) => ({
+      i,
+      text: t.lyrics.trim(),
+      model: t.lyricModel.trim(),
+      vol: t.vocalVolume
+    })).filter((x) => x.model.length > 0 && x.text.length > 0).map(
+      (x) => `@@${x.i} ${x.vol === 100 ? x.model : `${x.model}:${x.vol}`} ${x.text}`
+    );
+    const full = [...trackLines, ...lyricLines].join(";\n");
+    const minified = [...trackLinesMini, ...lyricLines].join(";");
     return {
       full,
       minified,
@@ -3658,9 +4172,29 @@ var mountDAW = (target, options = {}) => {
     if (!mml) return;
     clearAll();
     for (const t of trackStates) t.core.setLoadMode(true);
-    const { placements, bpm: parsedBpm } = parseMML(mml, {
-      stepsPerBar: renderConfig.stepsPerBar
+    const {
+      placements,
+      bpm: parsedBpm,
+      lyrics
+    } = parseMML(mml, {
+      stepsPerBar: renderConfig.stepsPerBar,
+      collectLyrics: true,
+      // このDAWのトラック数を超えるチャンネルはベースへ畳み込む（従来挙動）
+      clampTrackCount: trackStates.length
     });
+    for (const t of trackStates) {
+      t.lyrics = "";
+      t.lyricModel = "";
+      t.vocalVolume = 100;
+    }
+    lyrics?.forEach((lt, idx) => {
+      const t = trackStates[idx];
+      if (!t) return;
+      t.lyrics = lt.syllables.map((s) => s.kana).join("");
+      t.lyricModel = lt.model;
+      t.vocalVolume = lt.volume;
+    });
+    lyricsConductor = createLyricsConductor(buildLyricsMap());
     for (const p of placements) {
       const t = trackStates[p.trackIndex];
       if (!t) continue;
@@ -3677,6 +4211,7 @@ var mountDAW = (target, options = {}) => {
     currentOffsetX = 0;
     setDrawOffset(currentOffsetX, currentOffsetY);
     redrawAll();
+    updateTrackPanel();
     updateUndoRedo();
   };
   const applyChord = () => {
@@ -4128,6 +4663,248 @@ var INSTRUMENT_PRESETS = {
   }
 };
 
+// src/mml-player.ts
+var STEPS_PER_BEAT3 = 48;
+var STEPS_PER_BAR = 192;
+var DEFAULT_TRACK_COLORS = ["#00e436", "#29adff", "#ff77a8", "#ffec27"];
+var activePlayer = null;
+var formatTime = (seconds) => {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+};
+var freqFromPitch = (pitch) => 440 * 2 ** ((pitch - 69) / 12);
+var mountMmlPlayer = (target, mml, options = {}) => {
+  injectStyles(target.ownerDocument ?? document);
+  const {
+    placements,
+    bpm: parsedBpm,
+    tokenTracks,
+    lyrics
+  } = parseMML(mml, {
+    collectTokens: true,
+    collectLyrics: true
+  });
+  const conductor = createLyricsConductor(lyrics ?? /* @__PURE__ */ new Map());
+  const hasLyrics = (lyrics?.size ?? 0) > 0;
+  const bpm = parsedBpm ?? options.defaultBpm ?? 120;
+  const trackVolume = options.volume ?? 100;
+  const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
+  const useSynth = options.synth ?? !options.onPlayNote;
+  const secondsPerStep = 60 / bpm / STEPS_PER_BEAT3;
+  const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
+    (a, b) => a - b
+  );
+  const seqTracks = trackIndices.map((index) => {
+    let id = 0;
+    const notes = placements.filter((p) => p.trackIndex === index).map((p) => ({
+      id: id++,
+      startStep: p.startStep,
+      durationSteps: p.durationSteps,
+      pitch: p.pitch,
+      velocity: 100
+    }));
+    return { id: String(index), volume: trackVolume, notes };
+  });
+  const colorOf = (index) => colors[index % colors.length] ?? DEFAULT_TRACK_COLORS[0];
+  let audioCtx = null;
+  const ensureCtx = () => {
+    if (!audioCtx) audioCtx = new AudioContext();
+    return audioCtx;
+  };
+  const synthPlay = (e) => {
+    const ctx = ensureCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = freqFromPitch(e.pitch);
+    const t0 = ctx.currentTime + e.when;
+    const peak = Math.max(1e-4, 0.06 * e.volume * 1.5);
+    gain.gain.setValueAtTime(peak, t0);
+    gain.gain.exponentialRampToValueAtTime(1e-3, t0 + e.duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + e.duration + 0.02);
+  };
+  let klattVoice = null;
+  const ensureKlatt = () => {
+    if (!klattVoice) {
+      const ctx = ensureCtx();
+      klattVoice = createKlattVoice(ctx, ctx.destination);
+    }
+    return klattVoice;
+  };
+  const getAudioTime = () => {
+    if (useSynth) return ensureCtx().currentTime;
+    return options.getAudioTime?.() ?? performance.now() / 1e3;
+  };
+  const doc = target.ownerDocument ?? document;
+  const root = doc.createElement("div");
+  root.className = "dtm-daw dtm-player";
+  const head = doc.createElement("div");
+  head.className = "dtm-player-head";
+  const playBtn = doc.createElement("button");
+  playBtn.type = "button";
+  playBtn.className = "dtm-player-play";
+  playBtn.innerHTML = icon("play", 12);
+  playBtn.disabled = trackIndices.length === 0;
+  const tempoEl = doc.createElement("span");
+  tempoEl.className = "dtm-player-tempo";
+  tempoEl.textContent = `\u2669=${bpm}`;
+  const timeEl = doc.createElement("span");
+  timeEl.className = "dtm-player-time";
+  timeEl.textContent = "00:00";
+  const dots = doc.createElement("div");
+  dots.className = "dtm-player-dots";
+  for (const index of trackIndices) {
+    const dot = doc.createElement("span");
+    dot.className = "dtm-player-dot";
+    dot.style.backgroundColor = colorOf(index);
+    dots.appendChild(dot);
+  }
+  head.append(playBtn, tempoEl, timeEl, dots);
+  root.appendChild(head);
+  const laneViews = [];
+  for (const index of trackIndices) {
+    const tokens = tokenTracks?.get(index) ?? [];
+    const row = doc.createElement("div");
+    row.className = "dtm-player-lane-row";
+    const label = doc.createElement("div");
+    label.className = "dtm-player-lane-label";
+    const swatch = doc.createElement("span");
+    swatch.className = "dtm-player-dot";
+    swatch.style.backgroundColor = colorOf(index);
+    const no = doc.createElement("span");
+    no.className = "dtm-player-lane-no";
+    no.textContent = `@${index}`;
+    label.append(swatch, no);
+    const lane = doc.createElement("div");
+    lane.className = "dtm-player-lane";
+    lane.style.setProperty("--tk", colorOf(index));
+    const laneTokens = [];
+    for (const tok of tokens) {
+      const span = doc.createElement("span");
+      span.className = `dtm-tk dtm-tk--${tok.type}`;
+      span.textContent = tok.text;
+      lane.appendChild(span);
+      if (tok.durationSteps > 0) {
+        laneTokens.push({
+          el: span,
+          startStep: tok.startStep,
+          durationSteps: tok.durationSteps
+        });
+      }
+    }
+    row.append(label, lane);
+    root.appendChild(row);
+    laneViews.push({ lane, tokens: laneTokens });
+  }
+  target.appendChild(root);
+  const autoScroll = (lane, el) => {
+    if (el.offsetWidth === 0 || lane.clientWidth === 0) return;
+    const elementCenter = el.offsetLeft + el.offsetWidth / 2;
+    const maxScroll = Math.max(0, lane.scrollWidth - lane.clientWidth);
+    const next = elementCenter - lane.clientWidth / 2;
+    lane.scrollLeft = Math.max(0, Math.min(next, maxScroll));
+  };
+  const renderPlayhead = (step) => {
+    timeEl.textContent = formatTime(Math.max(0, step) * secondsPerStep);
+    for (const view of laneViews) {
+      let active = null;
+      for (const t of view.tokens) {
+        const on = step >= t.startStep && step < t.startStep + t.durationSteps;
+        t.el.classList.toggle("is-active", on);
+        if (on && !active) active = t;
+      }
+      if (active) autoScroll(view.lane, active.el);
+    }
+  };
+  const resetPlayhead = () => {
+    timeEl.textContent = "00:00";
+    for (const view of laneViews) {
+      for (const t of view.tokens) t.el.classList.remove("is-active");
+      view.lane.scrollLeft = 0;
+    }
+  };
+  const seq = createSequencer({
+    getTracks: () => seqTracks,
+    getBpm: () => bpm,
+    getPlayStartStep: () => 0,
+    getDrumPattern: () => null,
+    getSoloTrackId: () => null,
+    getAudioTime,
+    onPlayNote: (e) => {
+      const consumed = hasLyrics ? conductor.consume(Number(e.trackId)) : null;
+      const ev = consumed ? {
+        ...e,
+        volume: consumed.volume * (trackVolume / 100),
+        syllable: consumed.syllable,
+        voiceModel: consumed.model
+      } : e;
+      options.onPlayNote?.(ev);
+      if (useSynth) {
+        if (consumed) ensureKlatt()(consumed.syllable, ev);
+        else synthPlay(ev);
+      }
+    },
+    onPlayDrum: () => {
+    },
+    onTick: (step) => renderPlayhead(step),
+    onEnd: () => finish(),
+    stepsPerBar: STEPS_PER_BAR
+  });
+  let playing = false;
+  const setPlayingUI = (on) => {
+    playing = on;
+    playBtn.innerHTML = icon(on ? "stop" : "play", 12);
+    playBtn.classList.toggle("dtm-player-play--stop", on);
+  };
+  const finish = () => {
+    setPlayingUI(false);
+    resetPlayhead();
+    if (activePlayer === instance) activePlayer = null;
+  };
+  const play = () => {
+    if (playing || trackIndices.length === 0) return;
+    if (activePlayer && activePlayer !== instance) activePlayer.stop();
+    activePlayer = instance;
+    setPlayingUI(true);
+    void options.onResumeAudio?.();
+    if (useSynth) {
+      const ctx = ensureCtx();
+      if (ctx.state === "suspended") void ctx.resume();
+    }
+    conductor.reset();
+    seq.start(0);
+  };
+  const stop = () => {
+    if (!playing) return;
+    seq.stop();
+    finish();
+  };
+  playBtn.addEventListener("click", () => {
+    if (playing) stop();
+    else play();
+  });
+  const destroy = () => {
+    seq.stop();
+    if (activePlayer === instance) activePlayer = null;
+    if (audioCtx) {
+      void audioCtx.close();
+      audioCtx = null;
+    }
+    root.remove();
+  };
+  const instance = {
+    play,
+    stop,
+    isPlaying: () => playing,
+    destroy
+  };
+  return instance;
+};
+
 // src/piano-roll.ts
 var createPianoRoll = (options, handlers) => {
   const {
@@ -4427,8 +5204,11 @@ export {
   buildChordPlacements,
   buildNameToKeyMapping,
   createAudioContext,
+  createKlattVoice,
+  createLyricsConductor,
   createPianoRoll,
   createSequencer,
+  createVoiceRegistry,
   decomposeToMonophonic,
   drawGrid,
   drawHeader,
@@ -4454,9 +5234,13 @@ export {
   injectStyles,
   isChordHeavyTrack,
   mountDAW,
+  mountMmlPlayer,
+  normalizeLyrics,
   onClick,
+  parseLyrics,
   parseMML,
   setDrawOffset,
   setupRecorder,
-  shiftNotes
+  shiftNotes,
+  stripLyrics
 };
