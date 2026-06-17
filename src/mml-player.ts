@@ -91,8 +91,8 @@ export const mountMmlPlayer = (
 		collectTokens: true,
 		collectLyrics: true,
 	});
-	const conductor = createLyricsConductor(lyrics ?? new Map());
-	const hasLyrics = (lyrics?.size ?? 0) > 0;
+	const lyricTracks = lyrics ?? new Map();
+	const conductor = createLyricsConductor(lyricTracks);
 	const bpm = parsedBpm ?? options.defaultBpm ?? 120;
 	const trackVolume = options.volume ?? 100;
 	const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
@@ -137,7 +137,15 @@ export const mountMmlPlayer = (
 		gain.gain.setValueAtTime(peak, t0);
 		gain.gain.exponentialRampToValueAtTime(0.001, t0 + e.duration);
 		osc.connect(gain);
-		gain.connect(ctx.destination);
+		// ステレオ定位（非対応環境では destination 直結）
+		if (typeof ctx.createStereoPanner === "function" && e.pan) {
+			const panner = ctx.createStereoPanner();
+			panner.pan.value = Math.max(-1, Math.min(1, e.pan));
+			gain.connect(panner);
+			panner.connect(ctx.destination);
+		} else {
+			gain.connect(ctx.destination);
+		}
 		osc.start(t0);
 		osc.stop(t0 + e.duration + 0.02);
 	};
@@ -194,7 +202,8 @@ export const mountMmlPlayer = (
 	// ── トラック帯 ──
 	const laneViews: LaneView[] = [];
 	for (const index of trackIndices) {
-		const tokens = tokenTracks?.get(index) ?? [];
+		const lyricTrack = lyricTracks.get(index);
+		const isLyricLane = !!lyricTrack && lyricTrack.syllables.length > 0;
 
 		const row = doc.createElement("div");
 		row.className = "dtm-player-lane-row";
@@ -214,17 +223,43 @@ export const mountMmlPlayer = (
 		lane.style.setProperty("--tk", colorOf(index));
 
 		const laneTokens: LaneToken[] = [];
-		for (const tok of tokens) {
-			const span = doc.createElement("span");
-			span.className = `dtm-tk dtm-tk--${tok.type}`;
-			span.textContent = tok.text;
-			lane.appendChild(span);
-			if (tok.durationSteps > 0) {
+		if (isLyricLane) {
+			// 歌詞トラックは元の楽器ノート列を表示せず、歌う音節を帯として表示する。
+			// 演奏ノート（@n）と音節を発音順（startStep昇順）で対応づけ、歌っている音節をハイライトする。
+			const notes = placements
+				.filter((p) => p.trackIndex === index)
+				.sort((a, b) => a.startStep - b.startStep);
+			const gateScale = (lyricTrack.gate ?? 100) / 100;
+			const count = Math.min(notes.length, lyricTrack.syllables.length);
+			for (let i = 0; i < count; i++) {
+				const note = notes[i];
+				const span = doc.createElement("span");
+				span.className = "dtm-tk dtm-tk--lyric";
+				span.textContent = lyricTrack.syllables[i].kana;
+				lane.appendChild(span);
 				laneTokens.push({
 					el: span,
-					startStep: tok.startStep,
-					durationSteps: tok.durationSteps,
+					startStep: note.startStep,
+					durationSteps: Math.max(
+						1,
+						Math.round(note.durationSteps * gateScale),
+					),
 				});
+			}
+		} else {
+			const tokens = tokenTracks?.get(index) ?? [];
+			for (const tok of tokens) {
+				const span = doc.createElement("span");
+				span.className = `dtm-tk dtm-tk--${tok.type}`;
+				span.textContent = tok.text;
+				lane.appendChild(span);
+				if (tok.durationSteps > 0) {
+					laneTokens.push({
+						el: span,
+						startStep: tok.startStep,
+						durationSteps: tok.durationSteps,
+					});
+				}
 			}
 		}
 
@@ -274,13 +309,20 @@ export const mountMmlPlayer = (
 		getSoloTrackId: () => null,
 		getAudioTime,
 		onPlayNote: (e) => {
-			// 歌詞トラックがあれば、対応する演奏トラックのNote Onで音節を1つ消費する
-			const consumed = hasLyrics ? conductor.consume(Number(e.trackId)) : null;
-			// 歌唱は velocity を参照せず、歌詞トラック独自の声量×トラック音量を使う
+			const trackId = Number(e.trackId);
+			const isLyricTrack = lyricTracks.has(trackId);
+			// 歌詞トラックなら、対応する演奏トラックのNote Onで音節を1つ消費する
+			const consumed = isLyricTrack ? conductor.consume(trackId) : null;
+			// 歌詞トラックの元の楽器音は鳴らさない（音節を使い切ったら無音）
+			if (isLyricTrack && !consumed) return;
+			// 歌唱は velocity を参照せず、歌詞トラック独自の声量×トラック音量を使う。
+			// 発音長は歌詞トラックの gate（0-1）でスケールする。
 			const ev: PlayNoteEvent = consumed
 				? {
 						...e,
 						volume: consumed.volume * (trackVolume / 100),
+						duration: e.duration * consumed.gate,
+						pan: consumed.pan,
 						syllable: consumed.syllable,
 						voiceModel: consumed.model,
 					}

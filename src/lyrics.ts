@@ -205,9 +205,19 @@ const splitSegments = (mml: string): string[] =>
 		.map((s) => s.trim())
 		.filter((s) => s.length > 0);
 
+/** 値を [lo, hi] にクリップする（パーサのクラッシュ・暴走防止） */
+const clamp = (value: number, lo: number, hi: number): number =>
+	Math.min(hi, Math.max(lo, value));
+
 /**
  * MMLから全歌詞トラックを解析し、トラックIDをキーにした辞書を返す（プリスキャン）。
  * 同一IDが複数あれば後勝ち。
+ *
+ * 記法: `@@<トラックID> <モデル名> [v<声量>] [q<ゲート>] <歌詞>`
+ *   例: `@@4 klatt v100 歌詞`（声量100＝最大で歌う）
+ * 声量・ゲートはともに 0-100。モデル名直後の `v`/`q` トークンとして任意順で付与でき、
+ * 最初に現れた歌詞（かな）トークンより前にあるものだけを解釈する。
+ * 後方互換として `klatt:80` のコロン区切り声量も受け付ける。
  */
 export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 	const tracks = new Map<number, LyricTrack>();
@@ -215,26 +225,51 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		const m = seg.match(LYRIC_LINE);
 		if (!m) continue;
 		const trackId = Number.parseInt(m[1], 10);
-		// "<モデル名[:声量]> <歌詞>" を先頭の空白で分離（歌詞内の空白は破棄されるので残余を結合）
-		const rest = m[2].trim();
-		const sp = rest.search(/\s/);
-		const modelToken = sp === -1 ? rest : rest.slice(0, sp);
-		const lyricText = sp === -1 ? "" : rest.slice(sp + 1);
-		// モデル名に "klatt:80" のようにコロン区切りで声量(0-100)を付与できる
+		// 空白区切りトークンへ分解（歌詞内の空白は sanitize で破棄されるので後で結合する）
+		const tokens = m[2].trim().split(/\s+/);
+		const modelToken = tokens.shift() ?? "";
+
+		let volume = 100; // 省略時の声量（最大）
+		let gate = 100; // 省略時のゲート（レガート）
+		let pan = 64; // 省略時の定位（中央）
+
+		// 後方互換: "klatt:80" のコロン区切り声量
 		const colon = modelToken.indexOf(":");
-		const model = colon === -1 ? modelToken : modelToken.slice(0, colon);
-		const parsedVol =
-			colon === -1
-				? Number.NaN
-				: Number.parseInt(modelToken.slice(colon + 1), 10);
-		const volume = Number.isFinite(parsedVol)
-			? Math.min(100, Math.max(0, parsedVol))
-			: 100;
+		const model = (
+			colon === -1 ? modelToken : modelToken.slice(0, colon)
+		).toLowerCase();
+		if (colon !== -1) {
+			const v = Number.parseInt(modelToken.slice(colon + 1), 10);
+			if (Number.isFinite(v)) volume = clamp(v, 0, 100);
+		}
+
+		// モデル名直後の v<n>/q<n>/p<n> トークンを声量・ゲート・定位として消費する。
+		// 歌詞はかな（非ASCII）なので v/q/p と衝突しない。
+		while (tokens.length > 0) {
+			const v = /^v(\d+)$/.exec(tokens[0]);
+			const q = /^q(\d+)$/.exec(tokens[0]);
+			const p = /^p(\d+)$/.exec(tokens[0]);
+			if (v) {
+				volume = clamp(Number.parseInt(v[1], 10), 0, 100);
+				tokens.shift();
+			} else if (q) {
+				gate = clamp(Number.parseInt(q[1], 10), 0, 100);
+				tokens.shift();
+			} else if (p) {
+				pan = clamp(Number.parseInt(p[1], 10), 0, 127);
+				tokens.shift();
+			} else {
+				break;
+			}
+		}
+
 		tracks.set(trackId, {
 			trackId,
-			model: model.toLowerCase(),
+			model,
 			volume,
-			syllables: normalizeLyrics(lyricText),
+			gate,
+			pan,
+			syllables: normalizeLyrics(tokens.join(" ")),
 		});
 	}
 	return tracks;
@@ -264,7 +299,21 @@ export type ConsumedSyllable = {
 	 * ノートのvelocityとは独立。利用側はこれにマスタ音量を掛けて発音音量とする。
 	 */
 	volume: number;
+	/**
+	 * 歌唱のゲートタイム係数 0-1（歌詞トラックの gate 0-100 を正規化したもの）。
+	 * 利用側はノートの発音長（秒）にこれを掛けて実際の歌唱長とする。既定1（レガート）。
+	 */
+	gate: number;
+	/**
+	 * ステレオ定位 -1(左)〜+1(右)、0が中央（歌詞トラックの pan 0-127 を正規化したもの）。
+	 * 利用側は StereoPannerNode.pan などへそのまま渡す。
+	 */
+	pan: number;
 };
+
+/** MML の pan 値(0-127, 64=中央) を StereoPanner 用の -1〜+1 へ正規化する */
+export const panToStereo = (pan: number): number =>
+	Math.max(-1, Math.min(1, (pan - 64) / 64));
 
 /** 歌詞同期コンダクタ。音節ポインタを保持し、Note On ごとに1音節消費する */
 export type LyricsConductor = {
@@ -299,6 +348,8 @@ export const createLyricsConductor = (
 			model: track.model,
 			syllable,
 			volume: (track.volume ?? 100) / 100,
+			gate: (track.gate ?? 100) / 100,
+			pan: panToStereo(track.pan ?? 64),
 		};
 	};
 
@@ -353,6 +404,17 @@ export const createKlattVoice = (
 		const release = 0.06;
 		const sustainEnd = t0 + Math.max(attack + 0.02, e.duration);
 
+		// ステレオ定位。母音(env)と子音ノイズの両方をまとめて左右へ振る。
+		// StereoPanner非対応の古い環境では destination へ直結（中央）にフォールバック。
+		let panner: StereoPannerNode | null = null;
+		let out: AudioNode = destination;
+		if (typeof ctx.createStereoPanner === "function") {
+			panner = ctx.createStereoPanner();
+			panner.pan.value = Math.max(-1, Math.min(1, e.pan ?? 0));
+			panner.connect(destination);
+			out = panner;
+		}
+
 		// 声門音源（倍音豊富なのこぎり波）
 		const osc = ctx.createOscillator();
 		osc.type = "sawtooth";
@@ -384,7 +446,7 @@ export const createKlattVoice = (
 		const MAKEUP = 4.0;
 		makeFormant(f1, 6, MAKEUP).connect(env);
 		makeFormant(f2, 9, MAKEUP * 0.7).connect(env);
-		env.connect(destination);
+		env.connect(out);
 
 		// 子音の頭にノイズ（摩擦音/破裂音の質感）
 		const fricatives = new Set(["s", "sh", "ch", "ts", "h", "f"]);
@@ -402,7 +464,7 @@ export const createKlattVoice = (
 			const ng = ctx.createGain();
 			ng.gain.setValueAtTime(peak * 0.5, t0);
 			ng.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-			src.connect(hp).connect(ng).connect(destination);
+			src.connect(hp).connect(ng).connect(out);
 			src.start(t0);
 			src.stop(t0 + dur);
 			src.onended = () => {
@@ -414,7 +476,10 @@ export const createKlattVoice = (
 
 		osc.start(t0);
 		osc.stop(sustainEnd + release + 0.02);
-		osc.onended = () => osc.disconnect();
+		osc.onended = () => {
+			osc.disconnect();
+			panner?.disconnect();
+		};
 	};
 };
 

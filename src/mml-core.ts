@@ -344,7 +344,7 @@ export class MMLCore {
 		const vol = volumeOverride ?? this.volume;
 		const HALF_BAR = config.stepsPerBar / 2;
 
-		const header = `t${this.tempo} q50 v${vol}`;
+		const header = `t${this.tempo} v${vol}`;
 		const segments: string[] = [];
 		let lastOctave = -1;
 		let currentCursor = 0;

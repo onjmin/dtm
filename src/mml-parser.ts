@@ -21,6 +21,16 @@ const PITCH_MAP: Record<string, number> = {
 	b: 11,
 };
 
+/**
+ * 値を [lo, hi] にクリップする。範囲外の値でプレイヤーが暴走しないための保険。
+ * 各コマンドの値の範囲（MIDI/一般的なMML準拠）:
+ *   t テンポ 1-255、o オクターブ 0-8、l 音長 1-64。
+ * 値を省略した場合のフォールバックは本アプリ慣習（o4 / 16分グリッド l16）に従う。
+ * （v 音量・q ゲート・p パンは本パーサでは発音位置に影響しないため値を読み飛ばすのみ）
+ */
+const clamp = (value: number, lo: number, hi: number): number =>
+	Math.min(hi, Math.max(lo, value));
+
 export type MMLNotePlacement = {
 	/** 0:melody 1:submelody 2:bass 3:chord */
 	trackIndex: number;
@@ -159,7 +169,9 @@ export const parseMML = (
 				numStr += body[j];
 				j++;
 			}
-			const len = numStr ? Number.parseInt(numStr, 10) : baseLength;
+			const len = numStr
+				? clamp(Number.parseInt(numStr, 10), 1, 64)
+				: baseLength;
 			let steps = Math.round(stepsPerBar / len);
 			while (j < body.length && body[j] === ".") {
 				steps = Math.round(steps * 1.5);
@@ -179,7 +191,7 @@ export const parseMML = (
 					numStr += body[j];
 					j++;
 				}
-				octave = Number.parseInt(numStr, 10) || 4;
+				octave = clamp(Number.parseInt(numStr, 10) || 4, 0, 8);
 				pushTok("octave", currentStep, 0, tokStart);
 			} else if (ch === ">") {
 				octave++;
@@ -196,7 +208,7 @@ export const parseMML = (
 					numStr += body[j];
 					j++;
 				}
-				baseLength = Number.parseInt(numStr, 10) || 16;
+				baseLength = clamp(Number.parseInt(numStr, 10) || 16, 1, 64);
 				pushTok("length", currentStep, 0, tokStart);
 			} else if (ch === "r") {
 				j++;
@@ -204,7 +216,9 @@ export const parseMML = (
 				const restSteps = parseLength();
 				pushTok("rest", restStart, restSteps, tokStart);
 				currentStep += restSteps;
-			} else if (ch === "t" || ch === "v" || ch === "q") {
+			} else if (ch === "t" || ch === "v" || ch === "q" || ch === "p") {
+				// 制御コマンドの数値を消費する。発音位置には影響しない。
+				// t（テンポ）のみメロディトラックからBPMとして拾い、範囲をクリップする。
 				j++;
 				let numStr = "";
 				while (j < body.length && /\d/.test(body[j])) {
@@ -212,7 +226,7 @@ export const parseMML = (
 					j++;
 				}
 				if (ch === "t" && trackIndex === 0 && numStr) {
-					bpm = Number.parseInt(numStr, 10);
+					bpm = clamp(Number.parseInt(numStr, 10), 1, 255);
 				}
 			} else if (ch === "[") {
 				// 和音
@@ -245,7 +259,7 @@ export const parseMML = (
 							numStr += body[j];
 							j++;
 						}
-						octave = Number.parseInt(numStr, 10) || 4;
+						octave = clamp(Number.parseInt(numStr, 10) || 4, 0, 8);
 					} else {
 						j++;
 					}

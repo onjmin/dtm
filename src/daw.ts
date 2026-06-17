@@ -225,6 +225,10 @@ type TrackState = {
 	lyricModel: string;
 	/** 歌唱の声量 0-100。ノートvelocityとは独立した合成音声専用パラメータ。既定100 */
 	vocalVolume: number;
+	/** 歌唱のゲートタイム 0-100（音価に対する発音長の割合）。既定100（レガート） */
+	vocalGate: number;
+	/** 歌唱のステレオ定位 0-127（0=左, 64=中央, 127=右）。既定64（中央） */
+	vocalPan: number;
 };
 
 /**
@@ -320,6 +324,8 @@ export const mountDAW = (
 			lyrics: "",
 			lyricModel: "", // 既定は「なし」（歌わない）
 			vocalVolume: 100,
+			vocalGate: 100,
+			vocalPan: 64,
 		}));
 	};
 
@@ -336,6 +342,8 @@ export const mountDAW = (
 				trackId: i,
 				model: model.toLowerCase(),
 				volume: t.vocalVolume,
+				gate: t.vocalGate,
+				pan: t.vocalPan,
 				syllables,
 			});
 		});
@@ -1000,6 +1008,10 @@ export const mountDAW = (
 							...e,
 							// 歌唱は velocity を参照せず、声量×マスタ音量を使う
 							volume: consumed.volume * (masterVolume / 100),
+							// 発音長は歌詞トラックの gate（0-1）でスケールする
+							duration: e.duration * consumed.gate,
+							// ステレオ定位（-1〜+1）
+							pan: consumed.pan,
 							syllable: consumed.syllable,
 							voiceModel: consumed.model,
 						}
@@ -1142,6 +1154,11 @@ export const mountDAW = (
           <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="100" aria-label="歌唱の声量">
           <span class="dtm-label" data-dtm="lyric-vol-label"></span>
         </div>
+        <div class="dtm-row">
+          <span class="dtm-label">定位</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-pan" min="0" max="127" aria-label="歌唱のステレオ定位（左右）">
+          <span class="dtm-label" data-dtm="lyric-pan-label"></span>
+        </div>
         <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）"></textarea>
       </div>`;
 		refs.trackBody.appendChild(lyricDiv);
@@ -1163,6 +1180,15 @@ export const mountDAW = (
 		const lyricVolLabel = lyricDiv.querySelector(
 			'[data-dtm="lyric-vol-label"]',
 		) as HTMLElement;
+		const lyricPan = lyricDiv.querySelector(
+			'[data-dtm="lyric-pan"]',
+		) as HTMLInputElement;
+		const lyricPanLabel = lyricDiv.querySelector(
+			'[data-dtm="lyric-pan-label"]',
+		) as HTMLElement;
+		// 定位ラベル: 64=C / 左寄りは L<量> / 右寄りは R<量>
+		const fmtPan = (pan: number): string =>
+			pan === 64 ? "C" : pan < 64 ? `L${64 - pan}` : `R${pan - 64}`;
 		// 選択肢: なし(空＝無効、既定) + 既知モデル + 読込MML由来の非標準モデル（往復維持）
 		const addOpt = (value: string, label: string): void => {
 			const o = document.createElement("option");
@@ -1180,6 +1206,8 @@ export const mountDAW = (
 		lyricInput.value = active.lyrics;
 		lyricVol.value = String(active.vocalVolume);
 		lyricVolLabel.textContent = String(active.vocalVolume);
+		lyricPan.value = String(active.vocalPan);
+		lyricPanLabel.textContent = fmtPan(active.vocalPan);
 		const updateLyricCount = (): void => {
 			const n = normalizeLyrics(lyricInput.value).length;
 			lyricCount.textContent = active.lyricModel && n > 0 ? `${n}音節` : "";
@@ -1200,6 +1228,18 @@ export const mountDAW = (
 		lyricVol.addEventListener("input", () => {
 			active.vocalVolume = Number.parseInt(lyricVol.value, 10);
 			lyricVolLabel.textContent = lyricVol.value;
+		});
+		lyricPan.addEventListener("input", () => {
+			active.vocalPan = Number.parseInt(lyricPan.value, 10);
+			lyricPanLabel.textContent = fmtPan(active.vocalPan);
+		});
+		// モバイルでスライダーをちょうど中央に合わせるのは難しいため、ラベルタップで中央へ戻す
+		lyricPanLabel.style.cursor = "pointer";
+		lyricPanLabel.title = "タップで中央(C)へ";
+		lyricPanLabel.addEventListener("click", () => {
+			active.vocalPan = 64;
+			lyricPan.value = "64";
+			lyricPanLabel.textContent = fmtPan(64);
 		});
 
 		if (active.config.id === "chord" && showChord) {
@@ -1347,20 +1387,29 @@ export const mountDAW = (
 			(t, i) =>
 				`@${i}${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim().replace(/\s+/g, "")}`,
 		);
-		// 歌詞行（@@n model[:声量] lyrics）。スペースは仕様上の区切りなのでminifyでも残す。
-		// 声量が既定(100)でないときだけ model:vol 形式で付与する。
+		// 歌詞行（@@n model [v声量] [qゲート] [p定位] lyrics）。スペースは仕様上の区切りなのでminifyでも残す。
+		// 声量・ゲート・定位は既定(声量/ゲート=100, 定位=64)でないときだけ v/q/p トークンで付与する。
 		const lyricLines = trackStates
 			.map((t, i) => ({
 				i,
 				text: t.lyrics.trim(),
 				model: t.lyricModel.trim(),
 				vol: t.vocalVolume,
+				gate: t.vocalGate,
+				pan: t.vocalPan,
 			}))
 			.filter((x) => x.model.length > 0 && x.text.length > 0)
-			.map(
-				(x) =>
-					`@@${x.i} ${x.vol === 100 ? x.model : `${x.model}:${x.vol}`} ${x.text}`,
-			);
+			.map((x) => {
+				const params = [
+					x.vol === 100 ? "" : `v${x.vol}`,
+					x.gate === 100 ? "" : `q${x.gate}`,
+					x.pan === 64 ? "" : `p${x.pan}`,
+				]
+					.filter((s) => s.length > 0)
+					.join(" ");
+				const head = params ? `${x.model} ${params}` : x.model;
+				return `@@${x.i} ${head} ${x.text}`;
+			});
 		const full = [...trackLines, ...lyricLines].join(";\n");
 		const minified = [...trackLinesMini, ...lyricLines].join(";");
 		return {
@@ -1415,6 +1464,8 @@ export const mountDAW = (
 			t.lyrics = "";
 			t.lyricModel = ""; // 既定は「なし」（歌わない）
 			t.vocalVolume = 100;
+			t.vocalGate = 100;
+			t.vocalPan = 64;
 		}
 		lyrics?.forEach((lt, idx) => {
 			const t = trackStates[idx];
@@ -1422,6 +1473,8 @@ export const mountDAW = (
 			t.lyrics = lt.syllables.map((s) => s.kana).join("");
 			t.lyricModel = lt.model;
 			t.vocalVolume = lt.volume;
+			t.vocalGate = lt.gate;
+			t.vocalPan = lt.pan;
 		});
 		lyricsConductor = createLyricsConductor(buildLyricsMap());
 		for (const p of placements) {

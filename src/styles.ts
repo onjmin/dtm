@@ -594,6 +594,7 @@ export const DAW_CSS = `
 .dtm-tk--octave,
 .dtm-tk--shift,
 .dtm-tk--length { color: var(--dtm-border2); }
+.dtm-tk--lyric { color: var(--dtm-text); letter-spacing: 1px; }
 .dtm-tk.is-active {
   background: var(--tk, var(--dtm-primary));
   color: var(--c-black);
