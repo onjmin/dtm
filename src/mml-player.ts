@@ -10,6 +10,11 @@
  */
 
 import { icon } from "./icons";
+import {
+	createKlattVoice,
+	createLyricsConductor,
+	type VoiceModel,
+} from "./lyrics";
 import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
 import { injectStyles } from "./styles";
@@ -81,9 +86,13 @@ export const mountMmlPlayer = (
 		placements,
 		bpm: parsedBpm,
 		tokenTracks,
+		lyrics,
 	} = parseMML(mml, {
 		collectTokens: true,
+		collectLyrics: true,
 	});
+	const conductor = createLyricsConductor(lyrics ?? new Map());
+	const hasLyrics = (lyrics?.size ?? 0) > 0;
 	const bpm = parsedBpm ?? options.defaultBpm ?? 120;
 	const trackVolume = options.volume ?? 100;
 	const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
@@ -131,6 +140,16 @@ export const mountMmlPlayer = (
 		gain.connect(ctx.destination);
 		osc.start(t0);
 		osc.stop(t0 + e.duration + 0.02);
+	};
+
+	// 歌詞付きノートを内蔵synthで歌うためのフォルマント合成（遅延生成）
+	let klattVoice: VoiceModel | null = null;
+	const ensureKlatt = (): VoiceModel => {
+		if (!klattVoice) {
+			const ctx = ensureCtx();
+			klattVoice = createKlattVoice(ctx, ctx.destination);
+		}
+		return klattVoice;
 	};
 
 	const getAudioTime = (): number => {
@@ -255,8 +274,23 @@ export const mountMmlPlayer = (
 		getSoloTrackId: () => null,
 		getAudioTime,
 		onPlayNote: (e) => {
-			options.onPlayNote?.(e);
-			if (useSynth) synthPlay(e);
+			// 歌詞トラックがあれば、対応する演奏トラックのNote Onで音節を1つ消費する
+			const consumed = hasLyrics ? conductor.consume(Number(e.trackId)) : null;
+			// 歌唱は velocity を参照せず、歌詞トラック独自の声量×トラック音量を使う
+			const ev: PlayNoteEvent = consumed
+				? {
+						...e,
+						volume: consumed.volume * (trackVolume / 100),
+						syllable: consumed.syllable,
+						voiceModel: consumed.model,
+					}
+				: e;
+			options.onPlayNote?.(ev);
+			if (useSynth) {
+				// 音節があれば歌唱（klatt）、無ければ通常の楽器音
+				if (consumed) ensureKlatt()(consumed.syllable, ev);
+				else synthPlay(ev);
+			}
 		},
 		onPlayDrum: () => {},
 		onTick: (step) => renderPlayhead(step),
@@ -288,6 +322,7 @@ export const mountMmlPlayer = (
 			const ctx = ensureCtx();
 			if (ctx.state === "suspended") void ctx.resume();
 		}
+		conductor.reset(); // 歌詞ポインタを先頭へ戻す
 		seq.start(0);
 	};
 

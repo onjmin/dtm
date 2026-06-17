@@ -232,7 +232,7 @@
                            shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
                     ▶ LOAD FROM DAW
                 </button>
-                <span class="text-pico-lavend text-xs uppercase tracking-widest">READ-ONLY · BUILT-IN SYNTH</span>
+                <span class="text-pico-lavend text-xs uppercase tracking-widest">READ-ONLY · @@n KLATT 歌詞同期 · BUILT-IN SYNTH</span>
             </div>
         </div>
         <div id="player-app"></div>
@@ -269,6 +269,9 @@
         gainNode.gain.value = 1;
         drumGainNode.gain.value = 1;
         const recorder = setupRecorder(audioCtx, gainNode, drumGainNode);
+
+        // 歌詞付きノート（@@n）を歌うフォルマント合成。SoundFontと同じ master gain へ流す。
+        const klatt = DTM.createKlattVoice(audioCtx, gainNode);
 
         const soundFonts = {};
         const currentFont = 'FluidR3_GM_sf2_file';
@@ -360,7 +363,10 @@
         const dawBaseOptions = {
             getAudioTime: () => audioCtx.currentTime,
             onResumeAudio: () => { if (audioCtx.state === 'suspended') audioCtx.resume(); },
-            onPlayNote: ({ trackId, pitch, volume, when, duration }) => {
+            onPlayNote: (e) => {
+                // 歌詞トラックがあると syllable が載って届く。あれば歌い、無ければ楽器音。
+                if (e.syllable) { klatt(e.syllable, e); return; }
+                const { trackId, pitch, volume, when, duration } = e;
                 const sf = soundFonts[trackId];
                 if (!sf) return;
                 sf.play({ ctx: audioCtx, destination: gainNode, pitch, volume, when, duration });
@@ -425,7 +431,8 @@
         // ════ 再生専用ビュー (mountMmlPlayer) ════
         // 発音は内蔵の簡易square-wave synth（onPlayNote未指定なので既定ON）。SoundFont不要で即鳴る。
         const { mountMmlPlayer } = DTM;
-        const SAMPLE_MML = '@0 t135 o5 l8 e d c d e e e4 d d d4 e g g4 r e d c d e e e e d d e d c4 ; @1 o3 l4 c g c g c g c g';
+        // @@0 klatt … が歌詞トラック。@0 のメロディに音節を1つずつ同期して内蔵synthが歌う。
+        const SAMPLE_MML = '@0 t135 o5 l8 e d c d e e e4 d d d4 e g g4 r e d c d e e e e d d e d c4 ; @1 o3 l4 c g c g c g c g ; @@0 klatt ちょうちょうちょうちょうなのはにとまれなのはにあいたらさくらにとまれ';
         let player = null;
         const mountPlayer = (mml) => {
             if (player) player.destroy();

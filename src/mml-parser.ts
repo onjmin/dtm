@@ -3,7 +3,13 @@
  *
  * 旧来 demo/index.html の `loadMML` をライブラリへ移植・整理したもの。
  * 実際のノート追加（MMLCore への反映）は呼び出し側で行う。
+ *
+ * 歌詞専用行（@@n model lyrics）は演奏ノートではないため常に取り除く。
+ * `collectLyrics` 指定時は解析済みの歌詞トラック辞書も併せて返す。
  */
+
+import { parseLyrics, stripLyrics } from "./lyrics";
+import type { LyricTrack } from "./types";
 
 const PITCH_MAP: Record<string, number> = {
 	c: 0,
@@ -14,9 +20,6 @@ const PITCH_MAP: Record<string, number> = {
 	a: 9,
 	b: 11,
 };
-
-// @n → トラックインデックス（melody/submelody/bass/chord）。@4以上は bass(2) へ寄せる。
-const TRACK_INDEX_COUNT = 4;
 
 export type MMLNotePlacement = {
 	/** 0:melody 1:submelody 2:bass 3:chord */
@@ -46,6 +49,11 @@ export type ParsedMML = {
 	 * placements と同一パスで構築するため発音位置と完全に同期する。
 	 */
 	tokenTracks?: Map<number, MMLDisplayToken[]>;
+	/**
+	 * 歌詞トラックID → 歌詞トラック。`collectLyrics` 指定時のみ生成。
+	 * 演奏トラック（@n）の n と同じIDで対応づく。
+	 */
+	lyrics?: Map<number, LyricTrack>;
 };
 
 export type ParseMMLOptions = {
@@ -53,6 +61,14 @@ export type ParseMMLOptions = {
 	stepsPerBar?: number;
 	/** 再生ビュー用の表示トークン列も併せて返す。既定 false */
 	collectTokens?: boolean;
+	/** 歌詞トラック（@@n）の解析結果も併せて返す。既定 false */
+	collectLyrics?: boolean;
+	/**
+	 * このトラック数以上のチャンネル（@n）をベース(index 2)へ畳み込む。
+	 * 4トラックDAWの読込専用の都合。未指定なら畳み込まず実際の @n をそのまま使う
+	 * （再生専用ビュー等、全トラックを忠実に表示したい用途の既定）。
+	 */
+	clampTrackCount?: number;
 };
 
 /**
@@ -64,6 +80,8 @@ export const parseMML = (
 ): ParsedMML => {
 	const stepsPerBar = options.stepsPerBar ?? 192;
 	const collectTokens = options.collectTokens ?? false;
+	const collectLyrics = options.collectLyrics ?? false;
+	const clampTrackCount = options.clampTrackCount;
 	const placements: MMLNotePlacement[] = [];
 	const tokenTracks: Map<number, MMLDisplayToken[]> = new Map();
 	let bpm: number | null = null;
@@ -73,13 +91,19 @@ export const parseMML = (
 			placements,
 			bpm,
 			tokenTracks: collectTokens ? tokenTracks : undefined,
+			lyrics: collectLyrics ? new Map() : undefined,
 		};
 	}
 
-	// 1. コメント除去・改行畳み込み
-	const fullMML = mml
+	// 1. コメント除去。歌詞行（@@n）の解析・除去は改行を畳み込む前に行う
+	const noComments = mml
 		.replace(/\/\*[\s\S]*?\*\//g, "") // ブロックコメント
-		.replace(/\/\/.*$/gm, "") // 行コメント
+		.replace(/\/\/.*$/gm, ""); // 行コメント
+
+	const lyrics = collectLyrics ? parseLyrics(noComments) : undefined;
+
+	// 歌詞行を取り除いてから改行を畳み込む（@@n を演奏ノートと誤解釈しないため）
+	const fullMML = stripLyrics(noComments)
 		.replace(/[\n\r]+/g, " ")
 		.trim();
 
@@ -97,7 +121,8 @@ export const parseMML = (
 		// ヘッダー（@0,@1...）
 		if (part.startsWith("@")) {
 			let idx = Number.parseInt(part.substring(1), 10);
-			if (idx >= TRACK_INDEX_COUNT) idx = 2; // @4以上はベースへ
+			// clampTrackCount 指定時のみ、超過チャンネルをベース(2)へ畳み込む
+			if (clampTrackCount !== undefined && idx >= clampTrackCount) idx = 2;
 			trackIndex = idx;
 			octave = 4;
 			currentStep = 0;
@@ -269,5 +294,6 @@ export const parseMML = (
 		placements,
 		bpm,
 		tokenTracks: collectTokens ? tokenTracks : undefined,
+		lyrics,
 	};
 };

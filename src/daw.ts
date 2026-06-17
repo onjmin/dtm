@@ -10,6 +10,11 @@ import { buildUI } from "./daw-ui";
 import { DRUM_PATTERNS } from "./drum-config";
 import { icon } from "./icons";
 import {
+	createLyricsConductor,
+	type LyricsConductor,
+	normalizeLyrics,
+} from "./lyrics";
+import {
 	applyHarmonicFilter,
 	applyMonophonic,
 	generateRandomPattern,
@@ -40,6 +45,7 @@ import { injectStyles } from "./styles";
 import type {
 	DawInstance,
 	DawOptions,
+	LyricTrack,
 	Note,
 	PlaybackState,
 	RenderConfig,
@@ -200,6 +206,9 @@ export const TRACKS_ADVANCED: TrackConfig[] = [
 
 const DEFAULT_TRACKS = TRACKS_SIMPLE;
 
+/** 歌詞エディタのモデル選択肢（空文字＝「なし」は別途先頭に追加する） */
+const LYRIC_MODELS = ["klatt"];
+
 const clamp = (v: number, min: number, max: number): number =>
 	Math.min(Math.max(v, min), max);
 
@@ -210,6 +219,12 @@ type TrackState = {
 	savedChordInput: string;
 	savedChordPattern: ChordPatternType;
 	savedChordRoot: number;
+	/** 歌詞（生のかな入力。空なら歌わない） */
+	lyrics: string;
+	/** 歌唱合成モデル名（既定 "klatt"） */
+	lyricModel: string;
+	/** 歌唱の声量 0-100。ノートvelocityとは独立した合成音声専用パラメータ。既定100 */
+	vocalVolume: number;
 };
 
 /**
@@ -264,6 +279,8 @@ export const mountDAW = (
 	let currentOffsetY = (104 - 1 - 60) * renderConfig.keyHeight - 215;
 	let playStartStep = 0;
 	let isSolo = false;
+	// loadMML で取り込んだ歌詞トラック（@@n）の同期コンダクタ。歌詞が無ければ空
+	let lyricsConductor: LyricsConductor = createLyricsConductor(new Map());
 	let playbackState: PlaybackState = "stopped";
 	let pausedPlayStep = 0;
 	let currentPlayStep = 0;
@@ -300,7 +317,29 @@ export const mountDAW = (
 			savedChordInput: "",
 			savedChordPattern: "block",
 			savedChordRoot: 0,
+			lyrics: "",
+			lyricModel: "", // 既定は「なし」（歌わない）
+			vocalVolume: 100,
 		}));
+	};
+
+	// 各トラックの歌詞入力から歌詞トラック辞書を構築する（@@n の n = トラックの並び順）
+	const buildLyricsMap = (): Map<number, LyricTrack> => {
+		const map = new Map<number, LyricTrack>();
+		trackStates.forEach((t, i) => {
+			const model = t.lyricModel.trim();
+			const text = t.lyrics.trim();
+			if (!model || !text) return; // モデル「なし」または歌詞空なら歌わない
+			const syllables = normalizeLyrics(text);
+			if (syllables.length === 0) return;
+			map.set(i, {
+				trackId: i,
+				model: model.toLowerCase(),
+				volume: t.vocalVolume,
+				syllables,
+			});
+		});
+		return map;
 	};
 
 	const getActive = (): TrackState =>
@@ -951,8 +990,21 @@ export const mountDAW = (
 		getSoloTrackId: () => (isSolo ? activeTrackId : null),
 		getAudioTime,
 		onPlayNote: (e) => {
-			const volume = e.volume * (masterVolume / 100);
-			options.onPlayNote?.({ ...e, volume });
+			// 歌詞トラックがあれば、対応する演奏トラックのNote Onで音節を1つ消費する。
+			// @@n の n は trackStates の並び順（@n）に対応づく。
+			const idx = trackStates.findIndex((t) => t.config.id === e.trackId);
+			const consumed = idx >= 0 ? lyricsConductor.consume(idx) : null;
+			options.onPlayNote?.(
+				consumed
+					? {
+							...e,
+							// 歌唱は velocity を参照せず、声量×マスタ音量を使う
+							volume: consumed.volume * (masterVolume / 100),
+							syllable: consumed.syllable,
+							voiceModel: consumed.model,
+						}
+					: { ...e, volume: e.volume * (masterVolume / 100) },
+			);
 		},
 		onPlayDrum: (e) => {
 			const velocity = e.velocity * (drumVolume / 100) * (masterVolume / 100);
@@ -996,6 +1048,8 @@ export const mountDAW = (
 			setDrawOffset(currentOffsetX, currentOffsetY);
 		}
 		playbackState = "playing";
+		// 各トラックの歌詞入力から同期コンダクタを再構築（ポインタは先頭から）
+		lyricsConductor = createLyricsConductor(buildLyricsMap());
 		sequencer.start(fromStep);
 		updateTransport();
 	};
@@ -1068,6 +1122,84 @@ export const mountDAW = (
 			active.volume = Number.parseInt(volInput.value, 10);
 			active.core.setVolume(active.volume);
 			volLabel.textContent = String(active.volume);
+		});
+
+		// 歌詞エディタ（全トラック共通）。歌唱モデルのプルダウン既定「なし」が無効状態を兼ねる。
+		// モデルを選んだときだけ声量・歌詞欄を出す（使わないときは隠す）。@@n model[:声量] lyrics として往復。
+		const lyricDiv = document.createElement("div");
+		lyricDiv.className = "dtm-row";
+		lyricDiv.style.flexDirection = "column";
+		lyricDiv.style.alignItems = "stretch";
+		lyricDiv.innerHTML = `
+      <div class="dtm-row">
+        <span class="dtm-label">♪ 歌詞</span>
+        <select class="dtm-select" data-dtm="lyric-model" aria-label="歌唱モデル"></select>
+        <span class="dtm-label dtm-grow" data-dtm="lyric-count" style="text-align:right"></span>
+      </div>
+      <div class="dtm-row" data-dtm="lyric-body" style="flex-direction:column;align-items:stretch">
+        <div class="dtm-row">
+          <span class="dtm-label">声量</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="100" aria-label="歌唱の声量">
+          <span class="dtm-label" data-dtm="lyric-vol-label"></span>
+        </div>
+        <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）"></textarea>
+      </div>`;
+		refs.trackBody.appendChild(lyricDiv);
+		const lyricModelSel = lyricDiv.querySelector(
+			'[data-dtm="lyric-model"]',
+		) as HTMLSelectElement;
+		const lyricBody = lyricDiv.querySelector(
+			'[data-dtm="lyric-body"]',
+		) as HTMLElement;
+		const lyricInput = lyricDiv.querySelector(
+			'[data-dtm="lyric-input"]',
+		) as HTMLTextAreaElement;
+		const lyricCount = lyricDiv.querySelector(
+			'[data-dtm="lyric-count"]',
+		) as HTMLElement;
+		const lyricVol = lyricDiv.querySelector(
+			'[data-dtm="lyric-vol"]',
+		) as HTMLInputElement;
+		const lyricVolLabel = lyricDiv.querySelector(
+			'[data-dtm="lyric-vol-label"]',
+		) as HTMLElement;
+		// 選択肢: なし(空＝無効、既定) + 既知モデル + 読込MML由来の非標準モデル（往復維持）
+		const addOpt = (value: string, label: string): void => {
+			const o = document.createElement("option");
+			o.value = value;
+			o.textContent = label;
+			lyricModelSel.appendChild(o);
+		};
+		addOpt("", "なし");
+		for (const m of LYRIC_MODELS) addOpt(m, m);
+		if (active.lyricModel && !LYRIC_MODELS.includes(active.lyricModel)) {
+			addOpt(active.lyricModel, active.lyricModel);
+		}
+		lyricModelSel.value = active.lyricModel;
+		// 値はプロパティ経由で設定（HTML文字列に混ぜず、</textarea>等の混入を防ぐ）
+		lyricInput.value = active.lyrics;
+		lyricVol.value = String(active.vocalVolume);
+		lyricVolLabel.textContent = String(active.vocalVolume);
+		const updateLyricCount = (): void => {
+			const n = normalizeLyrics(lyricInput.value).length;
+			lyricCount.textContent = active.lyricModel && n > 0 ? `${n}音節` : "";
+		};
+		const syncLyricVisibility = (): void => {
+			lyricBody.style.display = active.lyricModel ? "" : "none";
+			updateLyricCount();
+		};
+		syncLyricVisibility();
+		lyricModelSel.addEventListener("change", () => {
+			active.lyricModel = lyricModelSel.value;
+			syncLyricVisibility();
+		});
+		lyricInput.addEventListener("input", () => {
+			active.lyrics = lyricInput.value;
+			updateLyricCount();
+		});
+		lyricVol.addEventListener("input", () => {
+			active.vocalVolume = Number.parseInt(lyricVol.value, 10);
+			lyricVolLabel.textContent = lyricVol.value;
 		});
 
 		if (active.config.id === "chord" && showChord) {
@@ -1207,18 +1339,30 @@ export const mountDAW = (
 				barLimit: barLimitBars,
 			};
 		}
-		const full = trackStates
+		const trackLines = trackStates.map(
+			(t, i) =>
+				`@${i} ${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim()}`,
+		);
+		const trackLinesMini = trackStates.map(
+			(t, i) =>
+				`@${i}${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim().replace(/\s+/g, "")}`,
+		);
+		// 歌詞行（@@n model[:声量] lyrics）。スペースは仕様上の区切りなのでminifyでも残す。
+		// 声量が既定(100)でないときだけ model:vol 形式で付与する。
+		const lyricLines = trackStates
+			.map((t, i) => ({
+				i,
+				text: t.lyrics.trim(),
+				model: t.lyricModel.trim(),
+				vol: t.vocalVolume,
+			}))
+			.filter((x) => x.model.length > 0 && x.text.length > 0)
 			.map(
-				(t, i) =>
-					`@${i} ${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim()}`,
-			)
-			.join(";\n");
-		const minified = trackStates
-			.map(
-				(t, i) =>
-					`@${i}${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim().replace(/\s+/g, "")}`,
-			)
-			.join(";");
+				(x) =>
+					`@@${x.i} ${x.vol === 100 ? x.model : `${x.model}:${x.vol}`} ${x.text}`,
+			);
+		const full = [...trackLines, ...lyricLines].join(";\n");
+		const minified = [...trackLinesMini, ...lyricLines].join(";");
 		return {
 			full,
 			minified,
@@ -1255,9 +1399,31 @@ export const mountDAW = (
 		if (!mml) return;
 		clearAll();
 		for (const t of trackStates) t.core.setLoadMode(true);
-		const { placements, bpm: parsedBpm } = parseMML(mml, {
+		const {
+			placements,
+			bpm: parsedBpm,
+			lyrics,
+		} = parseMML(mml, {
 			stepsPerBar: renderConfig.stepsPerBar,
+			collectLyrics: true,
+			// このDAWのトラック数を超えるチャンネルはベースへ畳み込む（従来挙動）
+			clampTrackCount: trackStates.length,
 		});
+		// 歌詞トラック（@@n）を各トラックの歌詞入力へ復元する（編集UIに反映）。
+		// 表示用かなは正規化済み音節を結合したもの（長音は母音かなに展開済み）。
+		for (const t of trackStates) {
+			t.lyrics = "";
+			t.lyricModel = ""; // 既定は「なし」（歌わない）
+			t.vocalVolume = 100;
+		}
+		lyrics?.forEach((lt, idx) => {
+			const t = trackStates[idx];
+			if (!t) return;
+			t.lyrics = lt.syllables.map((s) => s.kana).join("");
+			t.lyricModel = lt.model;
+			t.vocalVolume = lt.volume;
+		});
+		lyricsConductor = createLyricsConductor(buildLyricsMap());
 		for (const p of placements) {
 			const t = trackStates[p.trackIndex];
 			if (!t) continue;
@@ -1274,6 +1440,7 @@ export const mountDAW = (
 		currentOffsetX = 0;
 		setDrawOffset(currentOffsetX, currentOffsetY);
 		redrawAll();
+		updateTrackPanel(); // 読み込んだ歌詞を編集UIへ反映
 		updateUndoRedo();
 	};
 

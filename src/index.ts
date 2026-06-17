@@ -10,6 +10,8 @@ export * from "./drum-config";
 export { icon } from "./icons";
 export * from "./instrument-presets";
 export * from "./linked-list";
+// 歌詞拡張（@@n model lyrics）— 解析・正規化・同期・歌唱合成ヘルパ
+export * from "./lyrics";
 export * from "./macros";
 export * from "./midi-io";
 // ============================================================

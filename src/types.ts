@@ -73,6 +73,46 @@ export type PlayNoteEvent = {
 	when: number;
 	/** 秒 */
 	duration: number;
+	/**
+	 * 歌詞同期で消費された音節（@@n 歌詞トラックがあるときのみ）。
+	 * 利用側は voiceModel に応じて歌唱合成へ回す。未指定なら楽器音として鳴らす。
+	 *
+	 * この音節が載っているとき、volume はノートのvelocityではなく
+	 * 歌詞トラック独自の「声量」(model:vol) ×マスタ音量を反映する。
+	 * 合成音声は velocity を参照せず volume をそのまま音量係数として使えばよい。
+	 */
+	syllable?: LyricSyllable;
+	/** syllable を歌う合成モデル名（"klatt" 等）。syllable とセットで届く */
+	voiceModel?: string;
+};
+
+// ============================================================
+// 歌詞拡張（MML歌詞拡張仕様）関連の型
+// ============================================================
+
+// 解析済みの1音節。子音・母音はフォルマント合成のパラメータ選択に使う
+export type LyricSyllable = {
+	/** 表示用かな（"きょ" 等。長音は置換後の母音かな） */
+	kana: string;
+	/** ローマ字子音（"k" "sh" 等。母音始まり・撥音は ""／"N"、促音は "Q"） */
+	consonant: string;
+	/** 母音 "a"|"i"|"u"|"e"|"o"、撥音 "N"、促音 "" */
+	vowel: string;
+};
+
+// 1本の歌詞トラック（@@n model[:volume] lyrics）
+export type LyricTrack = {
+	/** 対応する演奏トラックID（@n の n） */
+	trackId: number;
+	/** 合成モデル名（"klatt" 等。小文字化済み） */
+	model: string;
+	/**
+	 * 歌唱の声量 0-100。ノートのvelocity（楽器の強弱）とは独立した合成音声専用パラメータ。
+	 * MMLでは `@@n model:80 …` のように model にコロン区切りで付与する。既定100。
+	 */
+	volume: number;
+	/** 正規化済み音節列 */
+	syllables: LyricSyllable[];
 };
 
 // 発音フックに渡すドラムノートの情報
