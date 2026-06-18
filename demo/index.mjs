@@ -2392,11 +2392,14 @@ var createSequencer = (options) => {
   let animationId = null;
   let active = false;
   let fromStepValue = 0;
+  let trackVolumeMap = /* @__PURE__ */ new Map();
   const secondsPerStep = () => 60 / options.getBpm() / STEPS_PER_BEAT2;
   const buildTimeline = (fromStep) => {
     timeline = [];
+    trackVolumeMap = /* @__PURE__ */ new Map();
     const sps = secondsPerStep();
     for (const track of options.getTracks()) {
+      trackVolumeMap.set(track.id, track.volume);
       for (const note of track.notes) {
         const relativeStart = note.startStep - fromStep;
         if (relativeStart < 0) continue;
@@ -2417,6 +2420,9 @@ var createSequencer = (options) => {
     const sps = secondsPerStep();
     const time = options.getAudioTime() - startTime;
     const soloId = options.getSoloTrackId();
+    for (const track of options.getTracks()) {
+      trackVolumeMap.set(track.id, track.volume);
+    }
     while (nowIndex < timeline.length) {
       const ev = timeline[nowIndex];
       if (soloId && ev.trackId !== soloId) {
@@ -2427,11 +2433,12 @@ var createSequencer = (options) => {
       if (_when > PLAN_TIME) break;
       nowIndex++;
       const velocityVolume = ev.velocity / 127;
+      const currentVolume = (trackVolumeMap.get(ev.trackId) ?? ev.volume * 100) / 100;
       options.onPlayNote({
         trackId: ev.trackId,
         pitch: ev.pitch,
         velocity: ev.velocity,
-        volume: ev.volume * velocityVolume,
+        volume: currentVolume * velocityVolume,
         when: Math.max(0, _when),
         duration: ev.duration
       });
