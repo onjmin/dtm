@@ -58,13 +58,16 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 	let animationId: number | null = null;
 	let active = false;
 	let fromStepValue = 0;
+	let trackVolumeMap: Map<string, number> = new Map();
 
 	const secondsPerStep = (): number => 60 / options.getBpm() / STEPS_PER_BEAT;
 
 	const buildTimeline = (fromStep: number): void => {
 		timeline = [];
+		trackVolumeMap = new Map();
 		const sps = secondsPerStep();
 		for (const track of options.getTracks()) {
+			trackVolumeMap.set(track.id, track.volume);
 			for (const note of track.notes) {
 				const relativeStart = note.startStep - fromStep;
 				if (relativeStart < 0) continue;
@@ -87,6 +90,11 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		const time = options.getAudioTime() - startTime;
 		const soloId = options.getSoloTrackId();
 
+		// トラック音量をリアルタイムで更新
+		for (const track of options.getTracks()) {
+			trackVolumeMap.set(track.id, track.volume);
+		}
+
 		// メロディックノート
 		while (nowIndex < timeline.length) {
 			const ev = timeline[nowIndex];
@@ -98,11 +106,12 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 			if (_when > PLAN_TIME) break;
 			nowIndex++;
 			const velocityVolume = ev.velocity / 127;
+			const currentVolume = (trackVolumeMap.get(ev.trackId) ?? ev.volume * 100) / 100;
 			options.onPlayNote({
 				trackId: ev.trackId,
 				pitch: ev.pitch,
 				velocity: ev.velocity,
-				volume: ev.volume * velocityVolume,
+				volume: currentVolume * velocityVolume,
 				when: Math.max(0, _when),
 				duration: ev.duration,
 			});
