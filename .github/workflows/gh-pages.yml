@@ -1,48 +1,54 @@
-name: Deploy demo to GitHub Pages
+name: GitHub Pages
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
+  push:
+    branches:
+      - main
 
 jobs:
-  build-and-deploy:
+  build-deploy:
+    permissions:
+      actions: write
+      checks: write
+      contents: write
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v3
 
-      - uses: pnpm/action-setup@v4
+      - name: Setup Node.js with pnpm
+        uses: pnpm/action-setup@v3
         with:
-          version: 10
+          version: 8
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
-          node-version: 22
-          cache: pnpm
+          node-version: '22'
+          cache: 'pnpm'
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      - name: Install dependencies
+        run: pnpm install
 
-      - run: |
-          mkdir -p _site
-          cp demo/index.html _site/
-          cp dist/index.mjs _site/
+      - name: Build docs
+        run: pnpm exec rimraf docs && pnpm exec typedoc src/index.ts --out docs
 
-      - uses: actions/configure-pages@v5
+      - name: Build package
+        run: pnpm exec tsup src/index.ts --format esm --dts --out-dir dist
 
-      - uses: actions/upload-pages-artifact@v3
+      - name: Copy demo files
+        run: |
+          mkdir -p docs/demo
+          cp demo/index.html docs/demo/index.html
+          cp dist/index.mjs docs/demo/index.mjs
+
+      - name: Add .nojekyll
+        run: touch ./docs/.nojekyll
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
         with:
-          path: _site
-
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
