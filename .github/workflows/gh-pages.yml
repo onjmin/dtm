@@ -1,54 +1,48 @@
-name: GitHub Pages
+name: Deploy demo to GitHub Pages
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  build-deploy:
-    permissions:
-      actions: write
-      checks: write
-      contents: write
+  build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js with pnpm
-        uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v4
         with:
-          version: 8
+          version: 10
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'pnpm'
+          node-version: 22
+          cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm install
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
 
-      - name: Build docs
-        run: pnpm exec rimraf docs && pnpm exec typedoc src/index.ts --out docs
+      - run: |
+          mkdir -p _site
+          cp demo/index.html _site/
+          cp dist/index.mjs _site/
 
-      - name: Build package
-        run: pnpm exec tsup src/index.ts --format esm --dts --out-dir dist
+      - uses: actions/configure-pages@v5
 
-      - name: Copy demo files
-        run: |
-          mkdir -p docs/demo
-          cp demo/index.html docs/demo/index.html
-          cp dist/index.mjs docs/demo/index.mjs
-
-      - name: Add .nojekyll
-        run: touch ./docs/.nojekyll
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      - uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs
+          path: _site
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
