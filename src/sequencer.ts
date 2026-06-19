@@ -106,7 +106,8 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 			if (_when > PLAN_TIME) break;
 			nowIndex++;
 			const velocityVolume = ev.velocity / 127;
-			const currentVolume = (trackVolumeMap.get(ev.trackId) ?? ev.volume * 100) / 100;
+			const currentVolume =
+				(trackVolumeMap.get(ev.trackId) ?? ev.volume * 100) / 100;
 			options.onPlayNote({
 				trackId: ev.trackId,
 				pitch: ev.pitch,
