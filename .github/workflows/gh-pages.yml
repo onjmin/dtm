@@ -35,14 +35,6 @@ jobs:
       - name: Build package
         run: pnpm exec tsup src/index.ts --format esm --dts --out-dir dist
 
-      - name: Copy demo files
-        run: |
-          cp demo/index.html docs/index.html
-          cp dist/index.mjs docs/index.mjs
-          mkdir -p docs/demo
-          cp demo/index.html docs/demo/index.html
-          cp dist/index.mjs docs/demo/index.mjs
-
       - name: Add .nojekyll
         run: touch ./docs/.nojekyll
 
