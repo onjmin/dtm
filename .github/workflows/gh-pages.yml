@@ -26,20 +26,22 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '22'
-          cache: 'pnpm'
+          node-version: "22"
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install
 
       - name: Build docs
-        run: pnpm exec rimraf docs && pnpm exec typedoc src/index.ts --out docs
+        run: pnpm exec rimraf docs && pnpm exec typedoc src/index.ts --out docs/api
 
       - name: Build package
         run: pnpm exec tsup src/index.ts --format esm --dts --out-dir dist
 
       - name: Copy demo files
         run: |
+          cp demo/index.html docs/index.html
+          cp dist/index.mjs docs/index.mjs
           mkdir -p docs/demo
           cp demo/index.html docs/demo/index.html
           cp dist/index.mjs docs/demo/index.mjs
