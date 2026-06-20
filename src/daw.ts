@@ -11,10 +11,8 @@ import { DRUM_PATTERNS } from "./drum-config";
 import { icon } from "./icons";
 import {
 	KOE_VOICEBANK_LABELS,
+	KOE_VOICEBANK_TERMS,
 	KOE_VOICEBANKS,
-	LYRIC_MODEL_LABELS,
-	LYRIC_MODEL_TERMS,
-	lyricModelLabel,
 	MAX_VOCAL_VOLUME,
 	normalizeLyrics,
 	panToStereo,
@@ -218,6 +216,16 @@ const DEFAULT_TRACKS = TRACKS_SIMPLE;
  * 内蔵フォルマント合成 "klatt" に加え、@onjmin/koe のUTAU音源（簡略キーワード）を並べる。
  */
 const LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
+
+/** モデルキーワード → プルダウン表示名。未登録はキーワードをそのまま表示する */
+const LYRIC_MODEL_LABELS: Record<string, string> = {
+	klatt: "軽量ロボ声",
+	...KOE_VOICEBANK_LABELS,
+};
+
+/** モデルキーワードのUI表示名を返す（未登録はキーワードそのまま） */
+const lyricModelLabel = (model: string): string =>
+	LYRIC_MODEL_LABELS[model] ?? model;
 
 const clamp = (v: number, min: number, max: number): number =>
 	Math.min(Math.max(v, min), max);
@@ -1282,11 +1290,11 @@ export const mountDAW = (
 		};
 		const syncLyricTerms = (): void => {
 			const url = active.lyricModel
-				? LYRIC_MODEL_TERMS[active.lyricModel]
+				? KOE_VOICEBANK_TERMS[active.lyricModel]
 				: undefined;
 			if (url) {
 				const label = lyricModelLabel(active.lyricModel);
-				lyricTermsLink.textContent = `${label}UTAU音源`;
+				lyricTermsLink.textContent = label;
 				lyricTermsLink.href = url;
 				lyricTerms.classList.remove("dtm-hidden");
 			} else {

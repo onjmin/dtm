@@ -13,8 +13,8 @@ import { DRUM_PATTERNS, type DrumPattern } from "./drum-config";
 import { icon } from "./icons";
 import {
 	createSingingVoices,
-	LYRIC_MODEL_TERMS,
-	lyricModelLabel,
+	KOE_VOICEBANK_LABELS,
+	KOE_VOICEBANK_TERMS,
 	panToStereo,
 	type SingingVoices,
 	type StreamVoiceTrack,
@@ -367,30 +367,50 @@ export const mountMmlPlayer = (
 		laneViews.push({ lane, tokens: laneTokens });
 	}
 
-	// ── 利用規約 ──
-	const termModels = [...new Set([...lyricTracks.values()].map((t) => t.model))].filter(
-		(m): m is string => !!m && !!LYRIC_MODEL_TERMS[m],
-	);
-	if (termModels.length > 0) {
-		const foot = doc.createElement("div");
-		foot.className = "dtm-player-terms";
-		foot.textContent = "使用時には ";
-		const links = termModels.map((m) => {
+	// ── 利用規約の表示（下部） ──
+	const termsModels = [
+		...new Set([...lyricTracks.values()].map((lt) => lt.model)),
+	].filter((model) => KOE_VOICEBANK_TERMS[model]);
+
+	if (termsModels.length > 0) {
+		const termsDiv = doc.createElement("div");
+		termsDiv.className = "dtm-player-terms";
+		termsDiv.style.fontSize = "10px";
+		termsDiv.style.color = "var(--dtm-warn)";
+		termsDiv.style.display = "flex";
+		termsDiv.style.flexDirection = "column";
+		termsDiv.style.gap = "4px";
+		termsDiv.style.marginTop = "4px";
+		termsDiv.style.padding = "0 4px";
+
+		for (const model of termsModels) {
+			const termsRow = doc.createElement("div");
+			termsRow.style.display = "flex";
+			termsRow.style.alignItems = "center";
+			termsRow.style.gap = "4px";
+			termsRow.style.flexWrap = "wrap";
+
+			const label = KOE_VOICEBANK_LABELS[model] ?? model;
+			const url = KOE_VOICEBANK_TERMS[model];
+
+			const span1 = doc.createElement("span");
+			span1.textContent = "使用時には";
+
 			const a = doc.createElement("a");
-			a.href = LYRIC_MODEL_TERMS[m];
+			a.textContent = label;
+			a.href = url;
 			a.target = "_blank";
 			a.rel = "noopener";
-			a.textContent = lyricModelLabel(m);
 			a.style.color = "var(--dtm-primary)";
 			a.style.textDecoration = "underline";
-			return a;
-		});
-		for (let i = 0; i < links.length; i++) {
-			if (i > 0) foot.append(" / ");
-			foot.append(links[i]);
+
+			const span2 = doc.createElement("span");
+			span2.textContent = "の利用規約に従ってください";
+
+			termsRow.append(span1, a, span2);
+			termsDiv.appendChild(termsRow);
 		}
-		foot.append(" の利用規約に従ってください");
-		root.appendChild(foot);
+		root.appendChild(termsDiv);
 	}
 
 	target.appendChild(root);

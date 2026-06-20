@@ -647,13 +647,10 @@ export const KOE_VOICEBANK_LABELS: Record<string, string> = {
 	shiyo: "革命シヨ",
 };
 
-export const LYRIC_MODEL_LABELS: Record<string, string> = {
-	klatt: "軽量ロボ声",
-	...KOE_VOICEBANK_LABELS,
-};
-
-/** モデルキーワード → 利用規約URL */
-export const LYRIC_MODEL_TERMS: Record<string, string> = {
+/**
+ * UTAU音源キーワード → 利用規約URL。
+ */
+export const KOE_VOICEBANK_TERMS: Record<string, string> = {
 	tsukuyomi: "https://tyc.rei-yumesaki.net/material/utau/terms/",
 	rino: "https://hatenakun1.github.io/halunelino/",
 	roze: "https://tabaneroze.ninja-web.net/terms-of-use.html",
@@ -661,9 +658,6 @@ export const LYRIC_MODEL_TERMS: Record<string, string> = {
 	teto: "https://kasaneteto.jp/guidelines/voice.html",
 	shiyo: "https://kakumeisiyo.my.canva.site/dagkuyjwycs",
 };
-
-export const lyricModelLabel = (model: string): string =>
-	LYRIC_MODEL_LABELS[model] ?? model;
 
 /** ファイル名（日本語可）を encodeURIComponent して .koe のフルURLにする */
 export const koeUrl = (name: string, base: string = KOE_BASE_URL): string =>

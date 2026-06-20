@@ -612,11 +612,6 @@ export const DAW_CSS = `
   scrollbar-width: none;
 }
 .dtm-player-lane::-webkit-scrollbar { display: none; }
-.dtm-player-terms {
-  font-size: 10px;
-  color: var(--dtm-warn);
-  text-align: center;
-}
 .dtm-tk {
   font-family: 'k8x12', monospace;
   font-size: 12px;
