@@ -10,12 +10,13 @@ import { buildUI } from "./daw-ui";
 import { DRUM_PATTERNS } from "./drum-config";
 import { icon } from "./icons";
 import {
-	createLyricsConductor,
 	KOE_VOICEBANK_LABELS,
 	KOE_VOICEBANKS,
-	type LyricsConductor,
 	MAX_VOCAL_VOLUME,
 	normalizeLyrics,
+	panToStereo,
+	type StreamVoiceTrack,
+	vocalVolumeToGain,
 } from "./lyrics";
 import {
 	applyHarmonicFilter,
@@ -302,7 +303,9 @@ export const mountDAW = (
 	let playStartStep = 0;
 	let isSolo = false;
 	// loadMML で取り込んだ歌詞トラック（@@n）の同期コンダクタ。歌詞が無ければ空
-	let lyricsConductor: LyricsConductor = createLyricsConductor(new Map());
+	// 歌声ストリーミングが担当するトラックの添字集合（play時に確定）。
+	// onPlayNote はここに含まれるトラックの楽器音を鳴らさない。
+	let lyricTrackIndices = new Set<number>();
 	let playbackState: PlaybackState = "stopped";
 	let pausedPlayStep = 0;
 	let currentPlayStep = 0;
@@ -1016,25 +1019,13 @@ export const mountDAW = (
 		getSoloTrackId: () => (isSolo ? activeTrackId : null),
 		getAudioTime,
 		onPlayNote: (e) => {
-			// 歌詞トラックがあれば、対応する演奏トラックのNote Onで音節を1つ消費する。
-			// @@n の n は trackStates の並び順（@n）に対応づく。
+			// 歌詞トラックの発音は歌声ストリーミング（startStream）が担当するため、
+			// 楽器音は鳴らさない。@@n の n は trackStates の並び順（@n）に対応づく。
 			const idx = trackStates.findIndex((t) => t.config.id === e.trackId);
-			const consumed = idx >= 0 ? lyricsConductor.consume(idx) : null;
-			options.onPlayNote?.(
-				consumed
-					? {
-							...e,
-							// 歌唱は velocity を参照せず、声量×マスタ音量を使う
-							volume: consumed.volume * (masterVolume / 100),
-							// 発音長は歌詞トラックの gate（0-1）でスケールする
-							duration: e.duration * consumed.gate,
-							// ステレオ定位（-1〜+1）
-							pan: consumed.pan,
-							syllable: consumed.syllable,
-							voiceModel: consumed.model,
-						}
-					: { ...e, volume: e.volume * (masterVolume / 100) },
-			);
+			if (idx >= 0 && lyricTrackIndices.has(idx) && options.singingVoices) {
+				return;
+			}
+			options.onPlayNote?.({ ...e, volume: e.volume * (masterVolume / 100) });
 		},
 		onPlayDrum: (e) => {
 			const velocity = e.velocity * (drumVolume / 100) * (masterVolume / 100);
@@ -1067,48 +1058,58 @@ export const mountDAW = (
 		options.onResumeAudio?.();
 		if (playbackState === "playing") return;
 
+		const fromStep =
+			playbackState === "paused" ? pausedPlayStep : playStartStep;
+
 		options.singingVoices?.reset();
 
-		if (options.singingVoices) {
-			const lyricMap = buildLyricsMap();
-			const models = new Set<string>();
-			for (const lt of lyricMap.values()) {
-				if (lt.model) models.add(lt.model);
-			}
-			if (models.size > 0) {
-				const secondsPerStep = 60 / bpm / 48; // STEPS_PER_BEAT = 48
-				const trackSyllables = [...lyricMap.values()].map((lt) => {
-					const trackState = trackStates.find(
-						(t) => t.config.id === String(lt.trackId),
-					);
-					const rawNotes = trackState ? trackState.core.getNotes() : [];
-					const sortedNotes = [...rawNotes].sort(
+		// 歌詞トラックを「絶対時刻ベースのストリーミング用」ノート列へ変換する。
+		// fromStep より前のノートは切り落とし、startSec は fromStep 基準にする。
+		const lyricMap = buildLyricsMap();
+		lyricTrackIndices = new Set(lyricMap.keys());
+		const secondsPerStep = 60 / bpm / 48; // STEPS_PER_BEAT = 48
+		const streamTracks: StreamVoiceTrack[] = options.singingVoices
+			? [...lyricMap.values()].map((lt) => {
+					const trackState = trackStates[lt.trackId];
+					const sorted = [...(trackState?.core.getNotes() ?? [])].sort(
 						(a, b) => a.startStep - b.startStep,
 					);
-					const notes = sortedNotes.map((n) => ({
-						pitch: n.pitch,
-						duration: n.durationSteps * secondsPerStep,
-					}));
+					const gate = (lt.gate ?? 100) / 100;
+					const count = Math.min(sorted.length, lt.syllables.length);
+					const notes = [];
+					for (let i = 0; i < count; i++) {
+						const n = sorted[i];
+						if (n.startStep < fromStep) continue;
+						notes.push({
+							syllable: lt.syllables[i],
+							pitch: n.pitch,
+							startSec: (n.startStep - fromStep) * secondsPerStep,
+							durationSec: n.durationSteps * secondsPerStep * gate,
+						});
+					}
 					return {
 						model: lt.model,
-						syllables: lt.syllables,
+						volume: vocalVolumeToGain(lt.volume ?? 300) * (masterVolume / 100),
+						pan: panToStereo(lt.pan ?? 64),
 						notes,
 					};
-				});
+				})
+			: [];
 
-				const removeOverlay = showLoadingOverlay(target);
-				try {
-					await options.singingVoices.preload(models, trackSyllables);
-				} catch (err) {
-					console.warn("[dtm] preload failed", err);
-				} finally {
-					removeOverlay();
-				}
+		const voices = options.singingVoices;
+		const streaming = !!voices && streamTracks.some((t) => t.notes.length > 0);
+		if (streaming && voices) {
+			const overlay = showLoadingOverlay(target);
+			try {
+				await voices.loadModels(streamTracks.map((t) => t.model));
+				await voices.warm(streamTracks);
+			} catch (err) {
+				console.warn("[dtm] voice preload failed", err);
+			} finally {
+				overlay.remove();
 			}
 		}
 
-		const fromStep =
-			playbackState === "paused" ? pausedPlayStep : playStartStep;
 		if (playbackState !== "paused") {
 			// 再生開始位置までスクロール
 			const canvas = getGridCanvas();
@@ -1119,30 +1120,24 @@ export const mountDAW = (
 			setDrawOffset(currentOffsetX, currentOffsetY);
 		}
 		playbackState = "playing";
-		// 各トラック of 歌詞入力から同期コンダクタを再構築（ポインタは先頭から）
-		lyricsConductor = createLyricsConductor(buildLyricsMap());
-		if (fromStep > 0) {
-			trackStates.forEach((t, i) => {
-				const skipCount = t.core
-					.getNotes()
-					.filter((n) => n.startStep < fromStep).length;
-				for (let skip = 0; skip < skipCount; skip++) {
-					lyricsConductor.consume(i);
-				}
-			});
-		}
 		sequencer.start(fromStep);
+		// 楽器と同じアンカー（開始時刻）で歌声の先読みストリーミングを開始する
+		if (streaming && voices) {
+			voices.startStream(streamTracks, sequencer.getStartTime());
+		}
 		updateTransport();
 	};
 	const pause = (): void => {
 		if (playbackState !== "playing") return;
 		pausedPlayStep = currentPlayStep;
 		sequencer.stop();
+		options.singingVoices?.stopStream();
 		playbackState = "paused";
 		updateTransport();
 	};
 	const stop = (): void => {
 		sequencer.stop();
+		options.singingVoices?.stopStream();
 		playbackState = "stopped";
 		currentPlayStep = 0;
 		updateTransport();
@@ -1602,7 +1597,6 @@ export const mountDAW = (
 			t.vocalGate = lt.gate;
 			t.vocalPan = lt.pan;
 		});
-		lyricsConductor = createLyricsConductor(buildLyricsMap());
 		for (const p of placements) {
 			const t = trackStates[p.trackIndex];
 			if (!t) continue;

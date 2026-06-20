@@ -443,12 +443,29 @@ export const createLyricsConductor = (
 
 /** 歌唱合成モデルの実装シグネチャ */
 export type VoiceModel = {
+	/** 1音節を `ctx.currentTime + e.when` のタイミングで即時発音する（直接呼び出し用）。 */
 	(syllable: LyricSyllable, e: PlayNoteEvent): void;
+	/** 内部状態（直前母音など）を初期化する。 */
 	reset?: () => void;
-	preloadRender?: (
-		syllables: LyricSyllable[],
-		notes: { pitch: number; duration: number }[],
-	) => Promise<void>;
+	/**
+	 * 1音節を合成してキャッシュへ積み、再生に使うキャッシュキーを返す（重い処理はここ）。
+	 * ストリーミングスケジューラが「先回り合成」に使う。直前母音は呼び出し側が明示で渡す
+	 * （モデル内部状態に依存しないので、同一モデルを複数トラックで共有しても干渉しない）。
+	 * 合成不能（該当音素なし・無声）なら null。klatt 等の軽量モデルは未実装でよい。
+	 */
+	renderToCache?: (
+		syllable: LyricSyllable,
+		prevVowel: string,
+		pitch: number,
+		durationMs: number,
+	) => Promise<string | null>;
+	/**
+	 * {@link renderToCache} 済みのバッファを絶対時刻 t0（AudioContextクロック秒）へスケジュールする。
+	 * t0 は未来の任意時刻でよく、再生はオーディオスレッドが担うのでメインスレッドのもたつきに影響されない。
+	 */
+	scheduleCached?: (key: string, t0: number, peak: number, pan: number) => void;
+	/** スケジュール済みの発音をすべて即停止する（停止・一時停止・シーク時）。 */
+	stopAll?: () => void;
 };
 
 /** 母音ごとのフォルマント周波数 [F1, F2]（Hz） */
@@ -478,7 +495,10 @@ export const createKlattVoice = (
 	ctx: AudioContext,
 	destination: AudioNode,
 ): VoiceModel => {
-	return (syllable, e) => {
+	// スケジュール済みの音源ノード。stopAll（停止/一時停止）で一括停止する。
+	const active = new Set<AudioScheduledSourceNode>();
+
+	const voice: VoiceModel = (syllable, e) => {
 		const t0 = ctx.currentTime + e.when;
 		// 声量は等倍=1。100超(>1)はブーストとして上限なしで通す（クリップは利用側の判断）。
 		const peak = Math.max(0.0001, e.volume);
@@ -554,7 +574,9 @@ export const createKlattVoice = (
 			src.connect(hp).connect(ng).connect(out);
 			src.start(t0);
 			src.stop(t0 + dur);
+			active.add(src);
 			src.onended = () => {
+				active.delete(src);
 				src.disconnect();
 				hp.disconnect();
 				ng.disconnect();
@@ -563,11 +585,25 @@ export const createKlattVoice = (
 
 		osc.start(t0);
 		osc.stop(sustainEnd + release + 0.02);
+		active.add(osc);
 		osc.onended = () => {
+			active.delete(osc);
 			osc.disconnect();
 			panner?.disconnect();
 		};
 	};
+
+	voice.stopAll = () => {
+		for (const n of active) {
+			try {
+				n.stop();
+			} catch {}
+			n.disconnect();
+		}
+		active.clear();
+	};
+
+	return voice;
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -682,7 +718,7 @@ export type KoeVoiceOptions = {
 };
 
 type RenderedNote = {
-	audio: Float32Array;
+	audio: AudioBuffer;
 	/** 母音オンセット（拍頭）までの先行秒。バッファをこの分だけ前から鳴らす */
 	preSec: number;
 	/** 再生レート（Worldline使用時は1、素片フォールバック時はピッチ比） */
@@ -722,7 +758,64 @@ export const createKoeVoice = async (
 	};
 	const renderCache = new Map<string, RenderedNote | null>();
 
+	// この音源がスケジュール済みの BufferSource 群。stopAll で一括停止する。
+	const active = new Set<AudioBufferSourceNode>();
+
+	// 直接呼び出し（VoiceModel as function）用の内部直前母音。
+	// ストリーミング経路（renderToCache）は使わず、呼び出し側が母音を明示で渡す。
 	let prevVowel = "";
+
+	const keyOf = (alias: string, pitch: number, durationMs: number): string =>
+		`${alias}|${pitch}|${Math.round(durationMs / 10) * 10}`;
+
+	/** 1音素を合成（重い）して renderCache へ積む。重複キーは即返す。 */
+	const renderOne = async (
+		alias: string,
+		pitch: number,
+		durationMs: number,
+	): Promise<RenderedNote | null> => {
+		const key = keyOf(alias, pitch, durationMs);
+		const existing = renderCache.get(key);
+		if (existing !== undefined) return existing;
+
+		const pcm = await getPcm(alias);
+		if (!pcm || pcm.length === 0) {
+			renderCache.set(key, null);
+			return null;
+		}
+		const entry = bank.manifest.phonemes[alias];
+		const lead = leadInFromEntry(entry);
+		const targetHz = midiToFreq(pitch);
+
+		let rendered: RenderedNote | null = null;
+		if (worldline) {
+			const audio = worldline.renderNote({
+				pcm,
+				pitch: targetHz,
+				durationMs,
+				...lead,
+			});
+			if (audio) {
+				const buf = ctx.createBuffer(1, audio.length, KOE_SAMPLE_RATE);
+				buf.copyToChannel(audio, 0);
+				rendered = { audio: buf, preSec: lead.preMs / 1000, rate: 1 };
+			}
+		}
+		if (!rendered) {
+			// Worldline不可（WASM未ロード or 素片が短すぎる）→ 素片をピッチシフト再生
+			const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
+			const audioData = Float32Array.from(pcm);
+			const buf = ctx.createBuffer(1, audioData.length, KOE_SAMPLE_RATE);
+			buf.copyToChannel(audioData, 0);
+			rendered = {
+				audio: buf,
+				preSec: entry.pre / KOE_SAMPLE_RATE / rate,
+				rate,
+			};
+		}
+		renderCache.set(key, rendered);
+		return rendered;
+	};
 
 	const schedule = (
 		r: RenderedNote,
@@ -740,15 +833,14 @@ export const createKoeVoice = async (
 			out = panner;
 		}
 
-		const buf = ctx.createBuffer(1, r.audio.length, KOE_SAMPLE_RATE);
-		buf.copyToChannel(r.audio, 0);
 		const src = ctx.createBufferSource();
-		src.buffer = buf;
+		src.buffer = r.audio;
 		src.playbackRate.value = r.rate;
 
-		// 拍頭 t0 に母音オンセットが来るよう、先行（子音・前うち）ぶん前から鳴らす
+		// 拍頭 t0 に母音オンセットが来るよう、先行（子音・前うち）ぶん前から鳴らす。
+		// t0 は未来の絶対時刻（AudioContextクロック）。先読みで貯金がある限り過去落ちしない。
 		const startAt = Math.max(ctx.currentTime + 0.001, t0 - r.preSec);
-		const bufDurSec = r.audio.length / KOE_SAMPLE_RATE / r.rate;
+		const bufDurSec = r.audio.duration / r.rate;
 		const endAt = startAt + bufDurSec;
 
 		// クリック防止のフェードと声量エンベロープ
@@ -764,134 +856,53 @@ export const createKoeVoice = async (
 		src.connect(env).connect(out);
 		src.start(startAt);
 		src.stop(endAt + 0.02);
+		active.add(src);
 		src.onended = () => {
+			active.delete(src);
 			src.disconnect();
 			env.disconnect();
 			panner?.disconnect();
 		};
 	};
 
+	// 直接呼び出し（その場で合成→発音）。ストリーミング経路では使われないが、
+	// VoiceModel が callable であることの後方互換のために残す。
 	const model: VoiceModel = (syllable, e) => {
-		// 促音(っ)・無声は発音せず間として消費する
 		if (syllable.consonant === "Q" || syllable.vowel === "") return;
-
 		const alias = resolveKoeAlias(bank, syllable, prevVowel);
 		if (syllable.vowel && syllable.vowel !== "N") prevVowel = syllable.vowel;
-		if (!alias) return; // 音源に該当音素が無ければ無音
-
+		if (!alias) return;
 		const t0 = ctx.currentTime + e.when;
-		// 声量は等倍=1。100超(>1)はブーストとして上限なしで通す（クリップは利用側の判断）。
 		const peak = Math.max(0.0001, e.volume);
 		const pan = e.pan ?? 0;
-		const targetHz = midiToFreq(e.pitch);
 		const durationMs = Math.max(60, e.duration * 1000);
-		const key = `${alias}|${e.pitch}|${Math.round(durationMs)}`;
-
-		const cached = renderCache.get(key);
-		if (cached !== undefined) {
-			if (cached) schedule(cached, t0, peak, pan);
-			return;
-		}
-
-		void getPcm(alias).then((pcm) => {
-			if (!pcm || pcm.length === 0) {
-				renderCache.set(key, null);
-				return;
-			}
-			const entry = bank.manifest.phonemes[alias];
-			const lead = leadInFromEntry(entry);
-
-			let rendered: RenderedNote | null = null;
-			if (worldline) {
-				const audio = worldline.renderNote({
-					pcm,
-					pitch: targetHz,
-					durationMs,
-					...lead,
-				});
-				if (audio) rendered = { audio, preSec: lead.preMs / 1000, rate: 1 };
-			}
-			if (!rendered) {
-				// Worldline不可（WASM未ロード or 素片が短すぎる）→ 素片をピッチシフト再生
-				const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
-				rendered = {
-					audio: Float32Array.from(pcm),
-					preSec: entry.pre / KOE_SAMPLE_RATE / rate,
-					rate,
-				};
-			}
-
-			renderCache.set(key, rendered);
-			schedule(rendered, t0, peak, pan);
+		void renderOne(alias, e.pitch, durationMs).then((r) => {
+			if (r) schedule(r, t0, peak, pan);
 		});
 	};
 
-	model.preloadRender = async (syllables, notes) => {
-		let tempPrevVowel = "";
-		const promises: Promise<void>[] = [];
-		const count = Math.min(syllables.length, notes.length);
+	model.renderToCache = async (syllable, prevVowelArg, pitch, durationMs) => {
+		if (syllable.consonant === "Q" || syllable.vowel === "") return null;
+		const alias = resolveKoeAlias(bank, syllable, prevVowelArg);
+		if (!alias) return null;
+		const dMs = Math.max(60, durationMs);
+		const r = await renderOne(alias, pitch, dMs);
+		return r ? keyOf(alias, pitch, dMs) : null;
+	};
 
-		for (let i = 0; i < count; i++) {
-			const syllable = syllables[i];
-			const note = notes[i];
+	model.scheduleCached = (key, t0, peak, pan) => {
+		const r = renderCache.get(key);
+		if (r) schedule(r, t0, peak, pan);
+	};
 
-			if (syllable.consonant === "Q" || syllable.vowel === "") {
-				continue;
-			}
-
-			const alias = resolveKoeAlias(bank, syllable, tempPrevVowel);
-			if (syllable.vowel && syllable.vowel !== "N") {
-				tempPrevVowel = syllable.vowel;
-			}
-			if (!alias) continue;
-
-			const targetHz = midiToFreq(note.pitch);
-			const durationMs = Math.max(60, note.duration * 1000);
-			const key = `${alias}|${note.pitch}|${Math.round(durationMs)}`;
-
-			if (renderCache.has(key)) {
-				continue;
-			}
-
-			const p = (async () => {
-				try {
-					const pcm = await getPcm(alias);
-					if (!pcm || pcm.length === 0) {
-						renderCache.set(key, null);
-						return;
-					}
-					const entry = bank.manifest.phonemes[alias];
-					const lead = leadInFromEntry(entry);
-
-					let rendered: RenderedNote | null = null;
-					if (worldline) {
-						const audio = worldline.renderNote({
-							pcm,
-							pitch: targetHz,
-							durationMs,
-							...lead,
-						});
-						if (audio) {
-							rendered = { audio, preSec: lead.preMs / 1000, rate: 1 };
-						}
-					}
-					if (!rendered) {
-						const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
-						rendered = {
-							audio: Float32Array.from(pcm),
-							preSec: entry.pre / KOE_SAMPLE_RATE / rate,
-							rate,
-						};
-					}
-					renderCache.set(key, rendered);
-				} catch (err) {
-					console.warn(`[dtm] preloadRender failed for ${key}`, err);
-				}
-			})();
-			promises.push(p);
+	model.stopAll = () => {
+		for (const src of active) {
+			try {
+				src.stop();
+			} catch {}
+			src.disconnect();
 		}
-
-		await Promise.all(promises);
+		active.clear();
 	};
 
 	model.reset = () => {
@@ -901,30 +912,75 @@ export const createKoeVoice = async (
 	return model;
 };
 
+/** ストリーミング再生する歌唱ノート1つ（絶対時刻ベース）。 */
+export type StreamVoiceNote = {
+	syllable: LyricSyllable;
+	/** MIDIノート番号 */
+	pitch: number;
+	/** アンカー（再生開始時刻）からの相対秒。実発音時刻 = anchorTime + startSec。 */
+	startSec: number;
+	/** ゲート適用済みの発音長（秒）。 */
+	durationSec: number;
+};
+
+/** ストリーミング再生する歌詞トラック1本。 */
+export type StreamVoiceTrack = {
+	/** 歌唱モデル名（koe音源キーワード or "klatt"）。 */
+	model: string;
+	/** 最終ゲイン（声量×マスタ等を適用済み。1=等倍）。 */
+	volume: number;
+	/** ステレオ定位 -1〜+1。 */
+	pan: number;
+	/** 発音順（startSec昇順）の歌唱ノート列。 */
+	notes: StreamVoiceNote[];
+};
+
 /**
- * 歌唱モデルをまとめて管理する高レベルヘルパ。
+ * 歌唱モデルをまとめて管理し、koeデモ式の「先読みストリーミング合成」で歌わせる高レベルヘルパ。
  *
- * "klatt"（内蔵フォルマント合成）は同期生成し、koe音源（{@link KOE_VOICEBANKS} の
- * キーワードや任意のURL/Blob）は要求時に非同期ロードする。ロードが終わるまでは無音、
- * 未知のモデル名は klatt へフォールバックする。
+ * 再生開始時に {@link startStream} を呼ぶと、各音を**全力で先回り合成**しながら、
+ * 出来た音を AudioContext クロックの**絶対時刻へ即スケジュール**する。再生はオーディオスレッドが
+ * 担うため、合成中にメインスレッドがもたついても同期ズレ・音切れが起きない。スロットルは掛けない。
  *
- * 再生開始前に {@link SingingVoices.preload} で使用モデルを先読みしておくと、初回から歌える。
+ * 典型的な使い方（呼び出し側＝シーケンサ）:
+ *   await voices.loadModels(models);          // .koe をfetch（ローディング表示）
+ *   await voices.warm(tracks);                // 先頭数音だけ先に合成（頭出しの貯金）
+ *   seq.start(fromStep);                      // 楽器とUIはシーケンサ
+ *   voices.startStream(tracks, seq.getStartTime()); // 歌声は同じアンカーで先読み合成
  */
 export type SingingVoices = {
-	/** 指定モデルで1音節を歌う。koe音源はロード完了までは無音、未知モデルは klatt */
-	sing: (model: string, syllable: LyricSyllable, e: PlayNoteEvent) => void;
-	/** 指定モデル群を事前ロードする（再生開始前に await すると初回から歌える） */
-	preload: (
-		models: Iterable<string>,
-		trackSyllables?: {
-			model: string;
-			syllables: LyricSyllable[];
-			notes?: { pitch: number; duration: number }[];
-		}[],
-	) => Promise<void>;
-	/** 歌唱モデルの内部状態（直前母音など）を初期化する */
+	/** 使用する歌唱モデル（.koe）をロードして完了を待つ。 */
+	loadModels: (models: Iterable<string>) => Promise<void>;
+	/**
+	 * 各トラック先頭の数音を先に合成してキャッシュへ積む（頭出しの貯金）。
+	 * これで再生開始直後の密なフレーズでもアンダーランしにくくなる。count 既定 {@link PREWARM_NOTES}。
+	 */
+	warm: (tracks: StreamVoiceTrack[], count?: number) => Promise<void>;
+	/**
+	 * 歌声のストリーミング再生を開始する。anchorTime は startSec=0 が鳴るべき
+	 * AudioContextクロック秒（＝シーケンサの開始時刻と一致させること）。
+	 * 即座に return し、合成は裏で先回り進行する。
+	 */
+	startStream: (tracks: StreamVoiceTrack[], anchorTime: number) => void;
+	/** 進行中のストリームを中断し、スケジュール済みの発音をすべて止める（停止・一時停止・シーク）。 */
+	stopStream: () => void;
+	/** ストリーム停止＋各モデルの内部状態を初期化する。 */
 	reset: () => void;
 };
+
+/** {@link SingingVoices.warm} の既定先合成数（各トラック先頭からの音数）。 */
+export const PREWARM_NOTES = 3;
+
+/**
+ * ストリーミング合成の先読み上限（秒）。再生ヘッドからこの秒数より先のノートは、
+ * ヘッドが近づくまで合成しない。これにより「再生直後に全曲ぶんを一気に合成」して
+ * メインスレッドを長時間占有する（→ 楽器スケジューラが枯渇してもたつく）のを防ぎ、
+ * 合成負荷を曲全体へ平準化する。小さすぎると密なフレーズでアンダーランしやすくなる。
+ */
+const STREAM_LOOKAHEAD_SEC = 1.5;
+
+/** 先読み上限に達したときの再ポーリング間隔（ミリ秒）。 */
+const STREAM_POLL_MS = 100;
 
 export type SingingVoicesOptions = {
 	/** 追加・上書きするkoe音源カタログ（キーワード → .koe URL または Blob） */
@@ -952,6 +1008,10 @@ export const createSingingVoices = (
 		catalog[k] = koeUrl(file);
 	for (const [k, v] of Object.entries(options.voicebanks ?? {}))
 		catalog[k.toLowerCase()] = v;
+
+	// 進行中のストリームを世代番号で識別する。stopStream() でインクリメントして
+	// 走行中の合成ループを中断（停止・一時停止・別曲への切り替え）させる。
+	let streamSession = 0;
 
 	const loaded = new Map<string, VoiceModel>([
 		[FALLBACK_MODEL, createKlattVoice(ctx, destination)],
@@ -993,57 +1053,133 @@ export const createSingingVoices = (
 		return p;
 	};
 
-	const sing: SingingVoices["sing"] = (model, syllable, e) => {
-		const m = (model || FALLBACK_MODEL).toLowerCase();
-		const v = loaded.get(m);
-		if (v) {
-			v(syllable, e);
-			return;
-		}
-		// 未知モデルは klatt で歌う。koe音源ならロードを開始（完了までは無音）。
-		if (!catalog[m]) {
-			loaded.get(FALLBACK_MODEL)?.(syllable, e);
-			return;
-		}
-		void load(m);
-	};
-
-	const preload: SingingVoices["preload"] = async (models, trackSyllables) => {
+	const loadModels: SingingVoices["loadModels"] = async (models) => {
 		const set = new Set<string>();
 		for (const m of models) if (m) set.add(m.toLowerCase());
+		await Promise.all([...set].map((m) => load(m)));
+	};
 
-		// 1. 各モデルのロードを開始して完了を待つ（.koeファイル自体のロード）
-		const loadedModels = new Map<string, VoiceModel | null>();
-		await Promise.all(
-			[...set].map(async (m) => {
-				const v = await load(m);
-				loadedModels.set(m, v);
-			}),
-		);
+	/** 1トラックを発音順に走査し、直前母音を伝播させながらコールバックする（promote/警告共通）。 */
+	const forEachSungNote = (
+		track: StreamVoiceTrack,
+		fn: (note: StreamVoiceNote, prevVowel: string) => void,
+	): void => {
+		let prevVowel = "";
+		for (const note of track.notes) {
+			const syl = note.syllable;
+			// 促音(っ)・無声は歌わない（合成対象外）。ただし直前母音は維持する
+			if (syl.consonant === "Q" || syl.vowel === "") continue;
+			fn(note, prevVowel);
+			if (syl.vowel && syl.vowel !== "N") prevVowel = syl.vowel;
+		}
+	};
 
-		// 2. trackSyllables が渡されている場合は、プリロード（音声合成キャッシュ）を実行する
-		if (trackSyllables) {
-			const promises: Promise<void>[] = [];
-			for (const ts of trackSyllables) {
-				const m = ts.model.toLowerCase();
-				const v = loadedModels.get(m);
-				if (!v) continue;
+	const warm: SingingVoices["warm"] = async (tracks, count = PREWARM_NOTES) => {
+		const promises: Promise<unknown>[] = [];
+		for (const track of tracks) {
+			const m = loaded.get(track.model.toLowerCase());
+			if (!m?.renderToCache) continue; // klatt等（軽量）は先合成不要
+			let n = 0;
+			forEachSungNote(track, (note, prevVowel) => {
+				if (n >= count) return;
+				n++;
+				promises.push(
+					m.renderToCache?.(
+						note.syllable,
+						prevVowel,
+						note.pitch,
+						note.durationSec * 1000,
+					) ?? Promise.resolve(null),
+				);
+			});
+		}
+		await Promise.all(promises);
+	};
 
-				if (ts.notes && typeof v.preloadRender === "function") {
-					promises.push(v.preloadRender(ts.syllables, ts.notes));
+	const startStream: SingingVoices["startStream"] = (tracks, anchorTime) => {
+		const session = ++streamSession;
+
+		// 全トラックを平坦化し、直前母音を焼き込んでから startSec 昇順に並べる。
+		type Item = {
+			model: VoiceModel;
+			note: StreamVoiceNote;
+			prevVowel: string;
+			volume: number;
+			pan: number;
+		};
+		const items: Item[] = [];
+		for (const track of tracks) {
+			const model = loaded.get(track.model.toLowerCase());
+			if (!model) continue;
+			forEachSungNote(track, (note, prevVowel) => {
+				items.push({
+					model,
+					note,
+					prevVowel,
+					volume: track.volume,
+					pan: track.pan,
+				});
+			});
+		}
+		items.sort((a, b) => a.note.startSec - b.note.startSec);
+
+		// 先回り合成ループ。出来た音から絶対時刻へ即スケジュールする（スロットル無し）。
+		void (async () => {
+			for (const item of items) {
+				if (session !== streamSession) return; // 中断
+				// 先読み上限を超えていれば、再生ヘッドが近づくまで待つ（合成を曲全体へ分散）。
+				// elapsed = ctx.currentTime - anchorTime が現在の再生位置（秒）。
+				while (
+					item.note.startSec - (ctx.currentTime - anchorTime) >
+					STREAM_LOOKAHEAD_SEC
+				) {
+					await new Promise((resolve) => setTimeout(resolve, STREAM_POLL_MS));
+					if (session !== streamSession) return;
 				}
+				const t0 = anchorTime + item.note.startSec;
+				const peak = Math.max(0.0001, item.volume);
+				const { model, note } = item;
+
+				if (model.renderToCache && model.scheduleCached) {
+					// koe音源: 重い合成を await してからスケジュール
+					const key = await model.renderToCache(
+						note.syllable,
+						item.prevVowel,
+						note.pitch,
+						note.durationSec * 1000,
+					);
+					if (session !== streamSession) return;
+					if (key) model.scheduleCached(key, t0, peak, item.pan);
+				} else {
+					// klatt等（軽量・状態なし）: 絶対未来時刻へ直接スケジュール
+					const when = t0 - ctx.currentTime;
+					model(note.syllable, {
+						trackId: "",
+						pitch: note.pitch,
+						velocity: 100,
+						volume: peak,
+						when,
+						duration: note.durationSec,
+						pan: item.pan,
+					});
+				}
+				// メインスレッドへ制御を返す（UI応答性）。合成は再生より速いので貯金は育つ。
+				await new Promise((resolve) => setTimeout(resolve, 0));
 			}
-			await Promise.all(promises);
-		}
+		})();
 	};
 
-	const reset = (): void => {
-		for (const v of loaded.values()) {
-			if (typeof v.reset === "function") v.reset();
-		}
+	const stopStream: SingingVoices["stopStream"] = () => {
+		streamSession++; // 進行中の合成ループをキャンセル
+		for (const v of loaded.values()) v.stopAll?.();
 	};
 
-	return { sing, preload, reset };
+	const reset: SingingVoices["reset"] = () => {
+		stopStream();
+		for (const v of loaded.values()) v.reset?.();
+	};
+
+	return { loadModels, warm, startStream, stopStream, reset };
 };
 
 /** 歌唱合成モデルのレジストリ（プラグイン方式） */

@@ -496,6 +496,22 @@ export const DAW_CSS = `
   animation: dtm-load 1.6s steps(8) infinite;
 }
 @keyframes dtm-load { 0%{width:0} 100%{width:100%} }
+/* 進捗が確定したら無限ループ演出を止め、実測値で塗りつぶす */
+.dtm-spinner--determinate::after { display: none; }
+.dtm-spinner-fill {
+  position: absolute;
+  left: 0; top: 0; height: 100%;
+  width: 0;
+  background: var(--dtm-primary);
+  transition: width .12s steps(8);
+}
+.dtm-loading-label {
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  color: var(--dtm-primary);
+  letter-spacing: .15em;
+  min-height: 1em;
+}
 
 @keyframes dtm-blink { 0%,100%{opacity:1} 50%{opacity:0} }
 .dtm-blink { animation: dtm-blink 1s steps(1) infinite; }
@@ -628,26 +644,59 @@ export const injectStyles = (doc: Document = document): void => {
 };
 
 /**
- * container 内にローディング画面を表示し、非表示にするための関数を返す。
+ * container 内にローディング画面を表示する。
+ *
+ * - `remove()` でオーバーレイを除去する。
+ * - `setProgress(done, total)` で進捗を反映する。total>0 のときはバーを実測値で
+ *   塗り、`done / total (NN%)` を表示する。total<=0 なら不確定（無限ループ）演出に戻す。
  */
-export const showLoadingOverlay = (container: HTMLElement): (() => void) => {
+export const showLoadingOverlay = (
+	container: HTMLElement,
+): {
+	remove: () => void;
+	setProgress: (done: number, total: number) => void;
+} => {
 	const origPos = container.style.position;
 	const computed = window.getComputedStyle(container).position;
 	if (computed === "static") {
 		container.style.position = "relative";
 	}
 
-	const overlay = (container.ownerDocument ?? document).createElement("div");
+	const doc = container.ownerDocument ?? document;
+	const overlay = doc.createElement("div");
 	overlay.className = "dtm-overlay";
 
-	const spinner = (container.ownerDocument ?? document).createElement("div");
+	const spinner = doc.createElement("div");
 	spinner.className = "dtm-spinner";
+	const fill = doc.createElement("i");
+	fill.className = "dtm-spinner-fill";
+	spinner.appendChild(fill);
 	overlay.appendChild(spinner);
+
+	const label = doc.createElement("div");
+	label.className = "dtm-loading-label";
+	overlay.appendChild(label);
 
 	container.appendChild(overlay);
 
-	return () => {
-		overlay.remove();
-		container.style.position = origPos;
+	const setProgress = (done: number, total: number): void => {
+		if (total > 0) {
+			const pct = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+			spinner.classList.add("dtm-spinner--determinate");
+			fill.style.width = `${pct}%`;
+			label.textContent = `${done} / ${total} (${pct}%)`;
+		} else {
+			spinner.classList.remove("dtm-spinner--determinate");
+			fill.style.width = "0";
+			label.textContent = "";
+		}
+	};
+
+	return {
+		remove: () => {
+			overlay.remove();
+			container.style.position = origPos;
+		},
+		setProgress,
 	};
 };

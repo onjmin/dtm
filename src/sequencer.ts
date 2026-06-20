@@ -10,7 +10,11 @@ import type { DrumPattern } from "./drum-config";
 import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 
 const STEPS_PER_BEAT = 48;
-const PLAN_TIME = 0.1; // 先読み秒
+// 先読み秒。ノートは AudioContext クロックへ最大この秒数だけ先に予約される。
+// 歌声合成（worldline.renderNote ≈ 200ms/音）がメインスレッドを単発で塞いでも、
+// 楽器・ドラムは既にこの分だけ先までスケジュール済みなので音切れ・もたつきが起きない。
+// renderNote の最大ブロック(~200ms)を十分上回る値にする。
+const PLAN_TIME = 0.5;
 const TICK_INTERVAL_MS = 20;
 
 export type SequencerTrack = {
@@ -39,6 +43,11 @@ export type Sequencer = {
 	start: (fromStep?: number) => void;
 	stop: () => void;
 	isActive: () => boolean;
+	/**
+	 * 直近の start() が確定した再生開始時刻（getAudioTimeクロック秒、START_DELAY込み）。
+	 * 歌声ストリーミング等を同じアンカーで揃えるのに使う。start前は0。
+	 */
+	getStartTime: () => number;
 };
 
 type TimelineEvent = {
@@ -174,13 +183,15 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		active = false;
 	};
 
+	const START_DELAY = 0.1; // 100msの安全先読みバッファ
+
 	const start = (fromStep?: number): void => {
 		stop();
 		fromStepValue = fromStep ?? options.getPlayStartStep();
 		buildTimeline(fromStepValue);
 		if (timeline.length === 0 && !options.getDrumPattern()?.length) return;
 		active = true;
-		startTime = options.getAudioTime();
+		startTime = options.getAudioTime() + START_DELAY;
 		nowIndex = 0;
 		intervalId = setInterval(scheduleTick, TICK_INTERVAL_MS);
 		animationId = requestAnimationFrame(animate);
@@ -190,5 +201,6 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		start,
 		stop,
 		isActive: () => active,
+		getStartTime: () => startTime,
 	};
 };

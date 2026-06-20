@@ -12,9 +12,11 @@
 import { DRUM_PATTERNS, type DrumPattern } from "./drum-config";
 import { icon } from "./icons";
 import {
-	createLyricsConductor,
 	createSingingVoices,
+	panToStereo,
 	type SingingVoices,
+	type StreamVoiceTrack,
+	vocalVolumeToGain,
 } from "./lyrics";
 import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
@@ -49,6 +51,8 @@ export type MmlPlayerOptions = {
 	volume?: number;
 	/** trackIndex順の表示色。既定はPICO-8パレット4色 */
 	trackColors?: string[];
+	/** 歌唱合成の先読みや制御を行うヘルパ（.koe音源の再生前プリロードに使用） */
+	singingVoices?: SingingVoices;
 };
 
 export type MmlPlayerInstance = {
@@ -101,7 +105,6 @@ export const mountMmlPlayer = (
 		collectLyrics: true,
 	});
 	const lyricTracks = lyrics ?? new Map();
-	const conductor = createLyricsConductor(lyricTracks);
 	const bpm = parsedBpm ?? options.defaultBpm ?? 120;
 	// トップレベル宣言: ドラムパターンを解決（曲全体に効く。トラックとは1対1でない）
 	const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
@@ -213,12 +216,18 @@ export const mountMmlPlayer = (
 	// 歌詞付きノートを歌うための歌唱合成（klatt + koe音源。遅延生成）
 	let voices: SingingVoices | null = null;
 	const ensureVoices = (): SingingVoices => {
+		if (options.singingVoices) return options.singingVoices;
 		if (!voices) {
 			const ctx = ensureCtx();
 			voices = createSingingVoices(ctx, ctx.destination);
 		}
 		return voices;
 	};
+	// 歌声を鳴らせるか（内蔵synth or 外部から singingVoices を注入）。
+	const voicesAvailable = useSynth || !!options.singingVoices;
+	// 生成せずに現在の歌唱合成を覗く（停止処理用。未生成なら null）。
+	const peekVoices = (): SingingVoices | null =>
+		options.singingVoices ?? voices;
 
 	const getAudioTime = (): number => {
 		if (useSynth) return ensureCtx().currentTime;
@@ -397,38 +406,20 @@ export const mountMmlPlayer = (
 		getSoloTrackId: () => null,
 		getAudioTime,
 		onPlayNote: (e) => {
-			const trackId = Number(e.trackId);
-			const isLyricTrack = lyricTracks.has(trackId);
-			// 歌詞トラックなら、対応する演奏トラックのNote Onで音節を1つ消費する
-			const consumed = isLyricTrack ? conductor.consume(trackId) : null;
-			// 歌詞トラックの元の楽器音は鳴らさない（音節を使い切ったら無音）
-			if (isLyricTrack && !consumed) return;
-			// 歌唱は velocity を参照せず、歌詞トラック独自の声量×トラック音量を使う。
-			// 発音長は歌詞トラックの gate（0-1）でスケールする。
-			const ev: PlayNoteEvent = consumed
-				? {
-						...e,
-						volume: consumed.volume * (trackVolume / 100),
-						duration: e.duration * consumed.gate,
-						pan: consumed.pan,
-						syllable: consumed.syllable,
-						voiceModel: consumed.model,
-					}
-				: e;
-			options.onPlayNote?.(ev);
-			if (useSynth) {
-				// 音節があれば歌唱（klatt or koe音源）、無ければ通常の楽器音
-				if (consumed)
-					ensureVoices().sing(consumed.model, consumed.syllable, ev);
-				else synthPlay(ev);
-			}
+			// 歌詞トラックの発音は歌声ストリーミング（startStream）が担当するため、
+			// ここでは楽器音も歌声も鳴らさない。
+			if (lyricTracks.has(Number(e.trackId))) return;
+			options.onPlayNote?.(e);
+			if (useSynth) synthPlay(e);
 		},
 		onPlayDrum: (e) => {
 			const velocity = e.velocity * (trackVolume / 100);
 			options.onPlayDrum?.({ ...e, velocity });
 			if (useSynth) drumSynth({ ...e, velocity });
 		},
-		onTick: (step) => renderPlayhead(step),
+		onTick: (step) => {
+			renderPlayhead(step);
+		},
 		onEnd: () => finish(),
 		stepsPerBar: STEPS_PER_BAR,
 	});
@@ -447,39 +438,53 @@ export const mountMmlPlayer = (
 		if (activePlayer === instance) activePlayer = null;
 	};
 
-	// 内蔵synthで歌う場合、koe音源を先読みしてから開始する（初回から歌えるように）。
-	// 先読み中に停止／別プレイヤー開始されたら起動しない。
-	const startWhenReady = async (): Promise<void> => {
-		if (useSynth && lyricTracks.size > 0) {
-			const models = [...lyricTracks.values()].map((t) => t.model);
-			const trackSyllables = [...lyricTracks.entries()].map(([index, lt]) => {
-				const seqTrack = seqTracks.find((t) => Number(t.id) === index);
-				const rawNotes = seqTrack ? seqTrack.notes : [];
-				const sortedNotes = [...rawNotes].sort(
-					(a, b) => a.startStep - b.startStep,
-				);
-				const notes = sortedNotes.map((n) => ({
+	// 歌詞トラックを「絶対時刻ベースのストリーミング用」ノート列へ変換する（再生は常に step0 から）。
+	const buildStreamTracks = (): StreamVoiceTrack[] =>
+		[...lyricTracks.entries()].map(([index, lt]) => {
+			const seqTrack = seqTracks.find((t) => Number(t.id) === index);
+			const sorted = [...(seqTrack?.notes ?? [])].sort(
+				(a, b) => a.startStep - b.startStep,
+			);
+			const gate = (lt.gate ?? 100) / 100;
+			const count = Math.min(sorted.length, lt.syllables.length);
+			const notes = [];
+			for (let i = 0; i < count; i++) {
+				const n = sorted[i];
+				notes.push({
+					syllable: lt.syllables[i],
 					pitch: n.pitch,
-					duration: n.durationSteps * secondsPerStep,
-				}));
-				return {
-					model: lt.model,
-					syllables: lt.syllables,
-					notes,
-				};
-			});
+					startSec: n.startStep * secondsPerStep,
+					durationSec: n.durationSteps * secondsPerStep * gate,
+				});
+			}
+			return {
+				model: lt.model,
+				volume: vocalVolumeToGain(lt.volume ?? 300) * (trackVolume / 100),
+				pan: panToStereo(lt.pan ?? 64),
+				notes,
+			};
+		});
 
-			const removeOverlay = showLoadingOverlay(root);
+	// 歌声がある場合は .koe ロード＋頭出し合成を待ってから、楽器と同じアンカーで
+	// ストリーミング再生を開始する。待機中に停止／別プレイヤー開始されたら起動しない。
+	const startWhenReady = async (): Promise<void> => {
+		const streaming = voicesAvailable && lyricTracks.size > 0;
+		const tracks = streaming ? buildStreamTracks() : [];
+		if (streaming) {
+			const v = ensureVoices();
+			const overlay = showLoadingOverlay(root);
 			try {
-				await ensureVoices().preload(models, trackSyllables);
+				await v.loadModels(tracks.map((t) => t.model));
+				await v.warm(tracks);
 			} catch (err) {
-				console.warn("[dtm] preload failed", err);
+				console.warn("[dtm] voice preload failed", err);
 			} finally {
-				removeOverlay();
+				overlay.remove();
 			}
 			if (!playing || activePlayer !== instance) return;
 		}
 		seq.start(0);
+		if (streaming) ensureVoices().startStream(tracks, seq.getStartTime());
 	};
 
 	const play = (): void => {
@@ -491,15 +496,15 @@ export const mountMmlPlayer = (
 		if (useSynth) {
 			const ctx = ensureCtx();
 			if (ctx.state === "suspended") void ctx.resume();
-			ensureVoices().reset();
 		}
-		conductor.reset(); // 歌詞ポインタを先頭へ戻す
+		if (voicesAvailable && lyricTracks.size > 0) ensureVoices().reset();
 		void startWhenReady();
 	};
 
 	const stop = (): void => {
 		if (!playing) return;
 		seq.stop();
+		peekVoices()?.stopStream();
 		finish();
 	};
 
@@ -510,6 +515,7 @@ export const mountMmlPlayer = (
 
 	const destroy = (): void => {
 		seq.stop();
+		peekVoices()?.stopStream();
 		if (activePlayer === instance) activePlayer = null;
 		if (audioCtx) {
 			void audioCtx.close();
