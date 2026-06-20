@@ -574,6 +574,40 @@ export const DAW_CSS = `
   gap: 6px;
 }
 .dtm-player-dot { width: 8px; height: 8px; display: inline-block; }
+.dtm-player-mml-header {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.dtm-player-mml-link {
+  font-family: 'k8x12', monospace;
+  font-size: 10px;
+  color: var(--dtm-muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.dtm-player-mml-link:hover { color: var(--dtm-primary); }
+.dtm-player-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  user-select: none;
+}
+@keyframes dtm-emoji-jump {
+  0%   { transform: translateY(0); }
+  35%  { transform: translateY(-5px); }
+  65%  { transform: translateY(-5px); }
+  100% { transform: translateY(0); }
+}
+.dtm-player-emoji--jump {
+  animation: dtm-emoji-jump 0.18s ease-out forwards;
+}
 .dtm-player-chip {
   font-family: 'k8x12', monospace;
   font-size: 9px;

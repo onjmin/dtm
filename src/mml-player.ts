@@ -61,6 +61,8 @@ export type MmlPlayerOptions = {
 	trackColors?: string[];
 	/** 歌唱合成の先読みや制御を行うヘルパ（.koe音源の再生前プリロードに使用） */
 	singingVoices?: SingingVoices;
+	/** ヘッダの「#mml」テキストのリンク先URL。未指定ならリンクなし */
+	mmlLink?: string;
 };
 
 export type MmlPlayerInstance = {
@@ -264,8 +266,66 @@ export const mountMmlPlayer = (
 	timeEl.className = "dtm-player-time";
 	timeEl.textContent = "00:00";
 
+	// 絵文字ヘッダ（#mml + トラック数分の🥺）
+	const mmlHeader = doc.createElement("div");
+	mmlHeader.className = "dtm-player-mml-header";
+
+	const mmlLinkEl = options.mmlLink
+		? (() => {
+				const a = doc.createElement("a");
+				a.className = "dtm-player-mml-link";
+				a.textContent = "#mml";
+				a.href = options.mmlLink;
+				a.target = "_blank";
+				a.rel = "noopener";
+				return a;
+			})()
+		: (() => {
+				const span = doc.createElement("span");
+				span.className = "dtm-player-mml-link";
+				span.textContent = "#mml";
+				return span;
+			})();
+	mmlHeader.appendChild(mmlLinkEl);
+
+	const emojiEls: HTMLSpanElement[] = [];
+	const emojiByTrack = new Map<number, HTMLSpanElement>();
+	for (const index of trackIndices) {
+		const em = doc.createElement("span");
+		em.className = "dtm-player-emoji";
+		em.style.backgroundColor = colorOf(index);
+		em.textContent = "🥺";
+		mmlHeader.appendChild(em);
+		emojiEls.push(em);
+		emojiByTrack.set(index, em);
+	}
+
+	const jumpEmoji = (em: HTMLSpanElement): void => {
+		em.classList.remove("dtm-player-emoji--jump");
+		void em.offsetWidth; // reflow でアニメをリセット
+		em.classList.add("dtm-player-emoji--jump");
+	};
+
+	// 瞬きアニメ: 各絵文字がランダムなタイミングで😌に一瞬変わる
+	const blinkTimers: ReturnType<typeof setTimeout>[] = [];
+	const scheduleBlink = (em: HTMLSpanElement): void => {
+		const delay = 2000 + Math.random() * 5000;
+		const t = setTimeout(() => {
+			em.textContent = "😌";
+			const t2 = setTimeout(() => {
+				em.textContent = "🥺";
+				scheduleBlink(em);
+			}, 200 + Math.random() * 150);
+			blinkTimers.push(t2);
+		}, delay);
+		blinkTimers.push(t);
+	};
+	for (const em of emojiEls) scheduleBlink(em);
+
+	// 旧来のドット（カラー丸）も残す（lane ラベル用に使いまわされているため）
 	const dots = doc.createElement("div");
 	dots.className = "dtm-player-dots";
+	dots.style.display = "none";
 	for (const index of trackIndices) {
 		const dot = doc.createElement("span");
 		dot.className = "dtm-player-dot";
@@ -287,6 +347,7 @@ export const mountMmlPlayer = (
 	if (meta.volume !== undefined) addChip(`🔊 ${meta.volume}%`);
 
 	head.appendChild(dots);
+	head.appendChild(mmlHeader);
 	root.appendChild(head);
 
 	// ── トラック帯 ──
@@ -466,13 +527,19 @@ export const mountMmlPlayer = (
 		getSoloTrackId: () => null,
 		getAudioTime,
 		onPlayNote: (e) => {
+			const trackIdx = Number(e.trackId);
+			const em = emojiByTrack.get(trackIdx);
+			if (em) jumpEmoji(em);
 			// 歌詞トラックの発音は歌声ストリーミング（startStream）が担当するため、
 			// ここでは楽器音も歌声も鳴らさない。
-			if (lyricTracks.has(Number(e.trackId))) return;
+			if (lyricTracks.has(trackIdx)) return;
 			options.onPlayNote?.(e);
 			if (useSynth) synthPlay(e);
 		},
 		onPlayDrum: (e) => {
+			// ドラムは trackIndex を持たないため先頭以外の絵文字は対象外
+			const em = emojiEls[0];
+			if (em) jumpEmoji(em);
 			const velocity = e.velocity * (trackVolume / 100);
 			options.onPlayDrum?.({ ...e, velocity });
 			if (useSynth) drumSynth({ ...e, velocity });
@@ -584,6 +651,7 @@ export const mountMmlPlayer = (
 			void audioCtx.close();
 			audioCtx = null;
 		}
+		for (const t of blinkTimers) clearTimeout(t);
 		root.remove();
 	};
 
