@@ -666,15 +666,67 @@ const expandSeparators = (candidate: string): string[] =>
 		? [candidate, candidate.replace(/ /g, "　"), candidate.replace(/ /g, "")]
 		: [candidate];
 
+/** 多音階エイリアスの末尾ピッチ接尾辞（例: "a か_G4" の "_G4"）。 */
+const PITCH_SUFFIX = /_([A-G][#b]?-?\d+)$/;
+
+/** 音名 → 半音オフセット（C=0）。ピッチトークンのMIDI換算に使う。 */
+const NAME_SEMITONE: Record<string, number> = {
+	c: 0,
+	d: 2,
+	e: 4,
+	f: 5,
+	g: 7,
+	a: 9,
+	b: 11,
+};
+
+/** ピッチトークン（"G4" / "D#4" / "C-1" など）→ MIDIノート番号。不正なら null。 */
+const pitchTokenToMidi = (token: string): number | null => {
+	const m = /^([A-Ga-g])([#b]?)(-?\d+)$/.exec(token);
+	if (!m) return null;
+	let semi = NAME_SEMITONE[m[1].toLowerCase()];
+	if (m[2] === "#") semi++;
+	else if (m[2] === "b") semi--;
+	// UTAU/MIDI慣習: C4 = MIDI 60（オクターブ+1して12倍）
+	return (Number.parseInt(m[3], 10) + 1) * 12 + semi;
+};
+
+/** 多音階バンクのピッチトークン1件（トークン文字列とそのMIDI番号）。 */
+export type PitchToken = { token: string; midi: number };
+
+/**
+ * 音源マニフェストのエイリアス一覧から、多音階のピッチトークン（"_G4" 等）を収集する。
+ * 接尾辞を持つエイリアスが1つも無ければ空配列（＝単独音/連続音バンク）。
+ * 多音階バンクでは全エイリアスが `_ピッチ` 付きで bare エイリアスが存在しないことがあり、
+ * その場合は目標ノートに最も近いトークンを base に付与しないと解決できない。
+ */
+export const collectPitchTokens = (aliases: Iterable<string>): PitchToken[] => {
+	const seen = new Map<string, number>();
+	for (const a of aliases) {
+		const m = PITCH_SUFFIX.exec(a);
+		if (!m || seen.has(m[1])) continue;
+		const midi = pitchTokenToMidi(m[1]);
+		if (midi != null) seen.set(m[1], midi);
+	}
+	return [...seen].map(([token, midi]) => ({ token, midi }));
+};
+
 /**
  * 音節（子音・母音・かな）と直前母音から、音源マニフェストに実在する音素エイリアスを解決する。
  * 単独音（"か"）・連続音（"a か" / "- か"）・ローマ字命名（"ka"）など幅広い命名を順に試す。
+ *
+ * 多音階バンク（全エイリアスが "_G4" 等のピッチ接尾辞付き、例: つくよみちゃん・束音ロゼ）では、
+ * 各 base 候補に目標ノートへ最も近いピッチトークンを付与して照合する（koeデモと同等のロジック）。
+ * pitchTokens が空（接尾辞なしバンク）なら bare 候補のみで解決する。
+ *
  * 見つからなければ母音単独へフォールバックし、それも無ければ null。
  */
 const resolveKoeAlias = (
 	hasAlias: (alias: string) => boolean,
+	pitchTokens: PitchToken[],
 	syl: LyricSyllable,
 	prevVowel: string,
+	noteNum: number,
 ): string | null => {
 	const kana = syl.kana;
 	const cons = syl.consonant === "N" ? "n" : syl.consonant;
@@ -697,12 +749,32 @@ const resolveKoeAlias = (
 	if (syl.vowel === "N") raw.push("ん", "n", "N", `${pv} ん`);
 
 	const seen = new Set<string>();
-	for (const c of raw) {
-		for (const v of expandSeparators(c)) {
+	const tryAlias = (candidate: string): string | null => {
+		for (const v of expandSeparators(candidate)) {
 			if (seen.has(v)) continue;
 			seen.add(v);
 			if (hasAlias(v)) return v;
 		}
+		return null;
+	};
+
+	// 多音階: 目標ノートに近いピッチ順で base に接尾辞を付けて試す（pitch優先・base副次）。
+	if (pitchTokens.length) {
+		const nearest = pitchTokens
+			.slice()
+			.sort((a, b) => Math.abs(a.midi - noteNum) - Math.abs(b.midi - noteNum));
+		for (const { token } of nearest) {
+			for (const base of raw) {
+				const hit = tryAlias(`${base}_${token}`);
+				if (hit) return hit;
+			}
+		}
+	}
+
+	// bare エイリアス（接尾辞なしバンク or 多音階で素のキーも持つバンク）
+	for (const base of raw) {
+		const hit = tryAlias(base);
+		if (hit) return hit;
 	}
 	return null;
 };
@@ -748,6 +820,8 @@ type BackendRender = { pcm: Float32Array; preSec: number; rate: number } | null;
 type RenderBackend = {
 	/** 音源マニフェストに該当エイリアスが存在するか（エイリアス解決用）。 */
 	hasAlias: (alias: string) => boolean;
+	/** 多音階バンクのピッチトークン一覧（単独音/連続音バンクでは空配列）。 */
+	pitchTokens: PitchToken[];
 	/** エイリアスを目標ピッチ・音価で合成して生PCMを返す（重い処理）。 */
 	renderAlias: (
 		alias: string,
@@ -806,7 +880,12 @@ const createLocalBackend = async (
 		};
 	};
 
-	return { hasAlias: (a) => bank.has(a), renderAlias, dispose: () => {} };
+	return {
+		hasAlias: (a) => bank.has(a),
+		pitchTokens: collectPitchTokens(Object.keys(bank.manifest.phonemes)),
+		renderAlias,
+		dispose: () => {},
+	};
 };
 
 /** クロスオリジン（CDN配信）でも起動できるよう Worker を生成する。 */
@@ -891,6 +970,7 @@ const createWorkerBackend = async (
 
 	return {
 		hasAlias: (a) => aliasSet.has(a),
+		pitchTokens: collectPitchTokens(aliasSet),
 		renderAlias,
 		dispose: () => worker.terminate(),
 	};
@@ -1010,7 +1090,13 @@ export const createKoeVoice = async (
 	// VoiceModel が callable であることの後方互換のために残す。
 	const model: VoiceModel = (syllable, e) => {
 		if (syllable.consonant === "Q" || syllable.vowel === "") return;
-		const alias = resolveKoeAlias(backend.hasAlias, syllable, prevVowel);
+		const alias = resolveKoeAlias(
+			backend.hasAlias,
+			backend.pitchTokens,
+			syllable,
+			prevVowel,
+			e.pitch,
+		);
 		if (syllable.vowel && syllable.vowel !== "N") prevVowel = syllable.vowel;
 		if (!alias) return;
 		const t0 = ctx.currentTime + e.when;
@@ -1024,7 +1110,13 @@ export const createKoeVoice = async (
 
 	model.renderToCache = async (syllable, prevVowelArg, pitch, durationMs) => {
 		if (syllable.consonant === "Q" || syllable.vowel === "") return null;
-		const alias = resolveKoeAlias(backend.hasAlias, syllable, prevVowelArg);
+		const alias = resolveKoeAlias(
+			backend.hasAlias,
+			backend.pitchTokens,
+			syllable,
+			prevVowelArg,
+			pitch,
+		);
 		if (!alias) return null;
 		const dMs = Math.max(60, durationMs);
 		const r = await renderInto(alias, pitch, dMs);
