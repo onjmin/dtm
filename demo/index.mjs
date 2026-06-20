@@ -608,6 +608,290 @@ var DRUM_PATTERNS = {
   ]
 };
 
+// node_modules/.pnpm/@onjmin+koe@1.0.2/node_modules/@onjmin/koe/dist/index.js
+var MAGIC = 1263486208;
+function parseKoeHeader(headerBytes) {
+  const view = new DataView(headerBytes);
+  if (view.byteLength < 8 || view.getUint32(0, false) !== MAGIC) {
+    throw new Error("Not a .koe file (bad magic)");
+  }
+  return { jsonLength: view.getUint32(4, true) };
+}
+var pcmBase = (jsonLength) => 8 + jsonLength;
+var BlobVoiceSource = class {
+  constructor(blob, base) {
+    this.blob = blob;
+    this.base = base;
+  }
+  blob;
+  base;
+  readBytes(offset, length) {
+    const start = this.base + offset;
+    return this.blob.slice(start, start + length).arrayBuffer();
+  }
+};
+var RangeVoiceSource = class {
+  constructor(url, base) {
+    this.url = url;
+    this.base = base;
+  }
+  url;
+  base;
+  async readBytes(offset, length) {
+    const start = this.base + offset;
+    const res = await fetch(this.url, {
+      headers: { Range: `bytes=${start}-${start + length - 1}` }
+    });
+    if (!res.ok && res.status !== 206) {
+      throw new Error(`.koe range request failed: ${res.status}`);
+    }
+    return res.arrayBuffer();
+  }
+};
+async function rangeFetch(url, start, length) {
+  const res = await fetch(url, {
+    headers: { Range: `bytes=${start}-${start + length - 1}` }
+  });
+  if (!res.ok && res.status !== 206)
+    throw new Error(`.koe fetch failed: ${res.status}`);
+  return res.arrayBuffer();
+}
+var VoiceBank = class _VoiceBank {
+  constructor(manifest, source) {
+    this.manifest = manifest;
+    this.source = source;
+  }
+  manifest;
+  source;
+  /**
+   * Parse a .koe archive header + manifest and bind a lazy PCM source.
+   * @param koe a Blob/File of the .koe archive, or a URL (served with Range support)
+   */
+  static async load(koe) {
+    if (typeof koe === "string") {
+      const header2 = await rangeFetch(koe, 0, 8);
+      const { jsonLength: jsonLength2 } = parseKoeHeader(header2);
+      const json2 = await rangeFetch(koe, 8, jsonLength2);
+      const manifest2 = JSON.parse(new TextDecoder().decode(json2));
+      return new _VoiceBank(
+        manifest2,
+        new RangeVoiceSource(koe, pcmBase(jsonLength2))
+      );
+    }
+    const header = await koe.slice(0, 8).arrayBuffer();
+    const { jsonLength } = parseKoeHeader(header);
+    const json = await koe.slice(8, 8 + jsonLength).arrayBuffer();
+    const manifest = JSON.parse(new TextDecoder().decode(json));
+    return new _VoiceBank(
+      manifest,
+      new BlobVoiceSource(koe, pcmBase(jsonLength))
+    );
+  }
+  /** True if the bank contains a phoneme under this alias. */
+  has(phoneme) {
+    return this.manifest.phonemes[phoneme] !== void 0;
+  }
+  /**
+   * Raw Int16 PCM bytes (48 kHz / mono) for a phoneme, or null if unknown.
+   * The returned ArrayBuffer is freshly allocated and safe to transfer to a
+   * worker / AudioWorklet.
+   */
+  async readPcmBytes(phoneme) {
+    const entry = this.manifest.phonemes[phoneme];
+    if (!entry) return null;
+    return this.source.readBytes(entry.offset, entry.length * 2);
+  }
+  /**
+   * A phoneme's PCM as a Float64Array normalised to [-1, 1], or null if unknown.
+   * Intended for external analysis / resynthesis such as the WORLD vocoder.
+   */
+  async getPcm(phoneme) {
+    const buf = await this.readPcmBytes(phoneme);
+    if (!buf) return null;
+    const int16 = new Int16Array(buf);
+    const f64 = new Float64Array(int16.length);
+    for (let i = 0; i < int16.length; i++) f64[i] = int16[i] / 32768;
+    return f64;
+  }
+};
+var WORLDLINE_SAMPLE_RATE = 48e3;
+var MIN_WORLDLINE_SAMPLES = 4096;
+var SYNTH_REQ_SIZE = 120;
+var WL_FRAME_MS = 10;
+var samplesToMs = (samples) => samples / WORLDLINE_SAMPLE_RATE * 1e3;
+function leadInFromEntry(entry) {
+  return {
+    preMs: samplesToMs(entry.pre || 0),
+    consonantMs: samplesToMs(entry.consonant || 0)
+  };
+}
+var moduleCache = /* @__PURE__ */ new Map();
+function injectScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(
+      `script[data-koe-worldline="${src}"]`
+    );
+    if (existing) {
+      resolve();
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = src;
+    s.dataset.koeWorldline = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error(`worldline: failed to load ${src}`));
+    document.head.appendChild(s);
+  });
+}
+function loadWasm(scriptUrl) {
+  const cached = moduleCache.get(scriptUrl);
+  if (cached) return cached;
+  if (typeof document === "undefined") {
+    return Promise.reject(
+      new Error(
+        "Worldline.load requires a DOM (browser) environment to load worldline.js"
+      )
+    );
+  }
+  const baseUrl = scriptUrl.slice(0, scriptUrl.lastIndexOf("/") + 1);
+  const promise = injectScript(scriptUrl).then(() => {
+    const factory = globalThis.WorldlineModule;
+    if (!factory)
+      throw new Error(
+        "worldline: WorldlineModule global was not defined by the script"
+      );
+    return factory({ locateFile: (f) => baseUrl + f });
+  });
+  moduleCache.set(scriptUrl, promise);
+  return promise;
+}
+var Worldline = class _Worldline {
+  constructor(wasm) {
+    this.wasm = wasm;
+  }
+  wasm;
+  sampleRate = WORLDLINE_SAMPLE_RATE;
+  /** Load + instantiate the worldline WASM module (deduped per scriptUrl). */
+  static async load(options) {
+    return new _Worldline(await loadWasm(options.scriptUrl));
+  }
+  /**
+   * Render one note to Float32 PCM at 48 kHz.
+   *
+   * The output buffer is laid out as [lead-in/consonant ≈ preMs][vowel ≈
+   * durationMs], rendered from sample offset 0 (no leading silence). The vowel
+   * onset (the "beat") sits at ≈ preMs into the buffer, so a sequencer should
+   * place the buffer at `beatTime − preMs` and may trim/crossfade the lead-in.
+   *
+   * No internal crossfade is applied — apply fades externally.
+   *
+   * @returns Float32 PCM, or null when `pcm` is shorter than
+   *          {@link MIN_WORLDLINE_SAMPLES} (too short for stable F0 analysis).
+   */
+  renderNote(params) {
+    const { pcm, pitch, durationMs, preMs, consonantMs, tempo = 120 } = params;
+    if (!pcm || pcm.length < MIN_WORLDLINE_SAMPLES) return null;
+    const WL = this.wasm;
+    const FS = WORLDLINE_SAMPLE_RATE;
+    const midiNote = Math.round(69 + 12 * Math.log2(pitch / 440));
+    const posMs = 0;
+    const reqLen = preMs + durationMs;
+    const cutMs = WL_FRAME_MS * 2;
+    const ps = WL._PhraseSynthNew();
+    if (!ps) return null;
+    const reqPtr = WL._malloc(SYNTH_REQ_SIZE);
+    if (!reqPtr) {
+      WL._PhraseSynthDelete(ps);
+      return null;
+    }
+    const samplePtr = WL._malloc(pcm.length * 8);
+    if (!samplePtr) {
+      WL._free(reqPtr);
+      WL._PhraseSynthDelete(ps);
+      return null;
+    }
+    WL.HEAPF64.set(pcm, samplePtr >> 3);
+    const sv = (off, val, type) => WL.setValue(reqPtr + off, val, type);
+    sv(0, FS, "i32");
+    sv(4, pcm.length, "i32");
+    sv(8, samplePtr, "*");
+    sv(12, 0, "i32");
+    sv(16, 0, "*");
+    sv(20, midiNote, "i32");
+    sv(24, 100, "double");
+    sv(32, 0, "double");
+    sv(40, reqLen, "double");
+    sv(48, consonantMs, "double");
+    sv(56, cutMs, "double");
+    sv(64, 100, "double");
+    sv(72, 0, "double");
+    sv(80, tempo, "double");
+    sv(88, 0, "i32");
+    sv(92, 0, "*");
+    sv(96, 0, "i32");
+    sv(100, 0, "i32");
+    sv(104, 100, "i32");
+    sv(108, 0, "i32");
+    sv(112, 0, "i32");
+    sv(116, 100, "i32");
+    WL._PhraseSynthAddRequest(ps, reqPtr, posMs, 0, reqLen, 0, 0, 0);
+    WL._free(samplePtr);
+    WL._free(reqPtr);
+    const totalMs = posMs + reqLen + WL_FRAME_MS * 2;
+    const nFrames = Math.ceil(totalMs / WL_FRAME_MS) + 4;
+    const f0Arr = new Float64Array(nFrames).fill(pitch);
+    const gArr = new Float64Array(nFrames).fill(0.5);
+    const tArr = new Float64Array(nFrames).fill(0.5);
+    const bArr = new Float64Array(nFrames).fill(0.5);
+    const vArr = new Float64Array(nFrames).fill(1);
+    const f0Ptr = WL._malloc(nFrames * 8);
+    const gPtr = WL._malloc(nFrames * 8);
+    const tPtr = WL._malloc(nFrames * 8);
+    const bPtr = WL._malloc(nFrames * 8);
+    const vPtr = WL._malloc(nFrames * 8);
+    if (!f0Ptr || !gPtr || !tPtr || !bPtr || !vPtr) {
+      if (f0Ptr) WL._free(f0Ptr);
+      if (gPtr) WL._free(gPtr);
+      if (tPtr) WL._free(tPtr);
+      if (bPtr) WL._free(bPtr);
+      if (vPtr) WL._free(vPtr);
+      WL._PhraseSynthDelete(ps);
+      return null;
+    }
+    WL.HEAPF64.set(f0Arr, f0Ptr >> 3);
+    WL.HEAPF64.set(gArr, gPtr >> 3);
+    WL.HEAPF64.set(tArr, tPtr >> 3);
+    WL.HEAPF64.set(bArr, bPtr >> 3);
+    WL.HEAPF64.set(vArr, vPtr >> 3);
+    WL._PhraseSynthSetCurves(
+      ps,
+      f0Ptr,
+      gPtr,
+      tPtr,
+      bPtr,
+      vPtr,
+      nFrames,
+      WL_FRAME_MS
+    );
+    WL._free(f0Ptr);
+    WL._free(gPtr);
+    WL._free(tPtr);
+    WL._free(bPtr);
+    WL._free(vPtr);
+    const yPtrPtr = WL._malloc(4);
+    if (!yPtrPtr) {
+      WL._PhraseSynthDelete(ps);
+      return null;
+    }
+    const outLen = WL._PhraseSynthSynth(ps, yPtrPtr, 0);
+    const yPtr = WL.getValue(yPtrPtr, "*");
+    const audio = outLen > 0 ? new Float32Array(WL.HEAPF32.buffer, yPtr, outLen).slice() : null;
+    WL._free(yPtrPtr);
+    WL._PhraseSynthDelete(ps);
+    return audio;
+  }
+};
+
 // src/lyrics.ts
 var kanaTable = {
   \u3042: ["", "a"],
@@ -750,6 +1034,7 @@ var normalizeLyrics = (text) => resolveLongVowels(splitSyllables(sanitizeText(te
 var LYRIC_LINE = /^@@(\d+)\s+(.*)$/;
 var splitSegments = (mml) => mml.split(/[;\n\r]+/).map((s) => s.trim()).filter((s) => s.length > 0);
 var clamp = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
+var MAX_VOCAL_VOLUME = 200;
 var parseLyrics = (mml) => {
   const tracks = /* @__PURE__ */ new Map();
   for (const seg of splitSegments(mml)) {
@@ -765,14 +1050,14 @@ var parseLyrics = (mml) => {
     const model = (colon === -1 ? modelToken : modelToken.slice(0, colon)).toLowerCase();
     if (colon !== -1) {
       const v = Number.parseInt(modelToken.slice(colon + 1), 10);
-      if (Number.isFinite(v)) volume = clamp(v, 0, 100);
+      if (Number.isFinite(v)) volume = clamp(v, 0, MAX_VOCAL_VOLUME);
     }
     while (tokens.length > 0) {
       const v = /^v(\d+)$/.exec(tokens[0]);
       const q2 = /^q(\d+)$/.exec(tokens[0]);
       const p = /^p(\d+)$/.exec(tokens[0]);
       if (v) {
-        volume = clamp(Number.parseInt(v[1], 10), 0, 100);
+        volume = clamp(Number.parseInt(v[1], 10), 0, MAX_VOCAL_VOLUME);
         tokens.shift();
       } else if (q2) {
         gate = clamp(Number.parseInt(q2[1], 10), 0, 100);
@@ -830,7 +1115,7 @@ var midiToFreq = (m) => 440 * 2 ** ((m - 69) / 12);
 var createKlattVoice = (ctx, destination) => {
   return (syllable, e) => {
     const t0 = ctx.currentTime + e.when;
-    const peak = Math.max(1e-4, Math.min(1, e.volume));
+    const peak = Math.max(1e-4, e.volume);
     if (syllable.vowel === "" || syllable.consonant === "Q") return;
     const [f1, f2] = FORMANTS[syllable.vowel] ?? FORMANTS.a;
     const attack = 0.02;
@@ -897,6 +1182,203 @@ var createKlattVoice = (ctx, destination) => {
       panner?.disconnect();
     };
   };
+};
+var KOE_BASE_URL = "https://pub-12482a6b5cbc4c9e906b2e1904cabae5.r2.dev";
+var KOE_VOICEBANKS = {
+  tsukuyomi: "\u3064\u304F\u3088\u307F\u3061\u3083\u3093.koe",
+  rino: "\u6625\u97F3\u30EA\u30CEver0.3.koe",
+  roze: "\u675F\u97F3\u30ED\u30BCver0.\uFF151(\u591A\u97F3\u968E).koe",
+  ruko: "\u6B32\u97F3\u30EB\u30B3\u2640\u6B4C\u9023\u7D9A\u97F3\u666E1.00.koe",
+  teto: "\u91CD\u97F3\u30C6\u30C8\u5358\u72EC\u97F3.koe",
+  shiyo: "\u9769\u547D\u30B7\u30E8.koe"
+};
+var KOE_VOICEBANK_LABELS = {
+  tsukuyomi: "\u3064\u304F\u3088\u307F\u3061\u3083\u3093",
+  rino: "\u6625\u97F3\u30EA\u30CE",
+  roze: "\u675F\u97F3\u30ED\u30BC",
+  ruko: "\u6B32\u97F3\u30EB\u30B3",
+  teto: "\u91CD\u97F3\u30C6\u30C8",
+  shiyo: "\u9769\u547D\u30B7\u30E8"
+};
+var koeUrl = (name, base = KOE_BASE_URL) => `${base}/${encodeURIComponent(name)}`;
+var DEFAULT_WORLDLINE_SCRIPT = "https://onjmin.github.io/koe/demo/world/worldline.js";
+var KOE_SAMPLE_RATE = 48e3;
+var expandSeparators = (candidate) => candidate.includes(" ") ? [candidate, candidate.replace(/ /g, "\u3000"), candidate.replace(/ /g, "")] : [candidate];
+var resolveKoeAlias = (bank, syl, prevVowel) => {
+  const kana = syl.kana;
+  const cons = syl.consonant === "N" ? "n" : syl.consonant;
+  const vow = syl.vowel === "N" ? "" : syl.vowel;
+  const romaji = `${cons}${vow}` || vow;
+  const pv = prevVowel || "-";
+  const raw = [
+    // 連続音（VCV）: 直前母音つき
+    `${pv} ${kana}`,
+    `${pv} ${romaji}`,
+    // 単独音 / CVVC
+    kana,
+    romaji
+  ];
+  const vk = VOWEL_KANA[syl.vowel];
+  if (vk) raw.push(`${pv} ${vk}`, vk, syl.vowel);
+  if (syl.vowel === "N") raw.push("\u3093", "n", "N", `${pv} \u3093`);
+  const seen = /* @__PURE__ */ new Set();
+  for (const c of raw) {
+    for (const v of expandSeparators(c)) {
+      if (seen.has(v)) continue;
+      seen.add(v);
+      if (bank.has(v)) return v;
+    }
+  }
+  return null;
+};
+var createKoeVoice = async (ctx, destination, options) => {
+  const bank = await VoiceBank.load(options.koe);
+  const worldline = options.lightweight ? null : await Worldline.load({
+    scriptUrl: options.worldlineScriptUrl ?? DEFAULT_WORLDLINE_SCRIPT
+  }).catch(() => null);
+  const pcmCache = /* @__PURE__ */ new Map();
+  const getPcm = (alias) => {
+    let p = pcmCache.get(alias);
+    if (!p) {
+      p = bank.getPcm(alias);
+      pcmCache.set(alias, p);
+    }
+    return p;
+  };
+  const renderCache = /* @__PURE__ */ new Map();
+  let prevVowel = "";
+  const schedule = (r, t0, peak, pan) => {
+    let out = destination;
+    let panner = null;
+    if (typeof ctx.createStereoPanner === "function") {
+      panner = ctx.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, pan));
+      panner.connect(destination);
+      out = panner;
+    }
+    const buf = ctx.createBuffer(1, r.audio.length, KOE_SAMPLE_RATE);
+    buf.copyToChannel(r.audio, 0);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = r.rate;
+    const startAt = Math.max(ctx.currentTime + 1e-3, t0 - r.preSec);
+    const bufDurSec = r.audio.length / KOE_SAMPLE_RATE / r.rate;
+    const endAt = startAt + bufDurSec;
+    const attack = 0.01;
+    const release = 0.04;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(1e-4, startAt);
+    env.gain.exponentialRampToValueAtTime(peak, startAt + attack);
+    const fadeStart = Math.max(startAt + attack, endAt - release);
+    env.gain.setValueAtTime(peak, fadeStart);
+    env.gain.exponentialRampToValueAtTime(1e-4, endAt);
+    src.connect(env).connect(out);
+    src.start(startAt);
+    src.stop(endAt + 0.02);
+    src.onended = () => {
+      src.disconnect();
+      env.disconnect();
+      panner?.disconnect();
+    };
+  };
+  return (syllable, e) => {
+    if (syllable.consonant === "Q" || syllable.vowel === "") return;
+    const alias = resolveKoeAlias(bank, syllable, prevVowel);
+    if (syllable.vowel && syllable.vowel !== "N") prevVowel = syllable.vowel;
+    if (!alias) return;
+    const t0 = ctx.currentTime + e.when;
+    const peak = Math.max(1e-4, e.volume);
+    const pan = e.pan ?? 0;
+    const targetHz = midiToFreq(e.pitch);
+    const durationMs = Math.max(60, e.duration * 1e3);
+    const key = `${alias}|${e.pitch}|${Math.round(durationMs)}`;
+    const cached = renderCache.get(key);
+    if (cached !== void 0) {
+      if (cached) schedule(cached, t0, peak, pan);
+      return;
+    }
+    void getPcm(alias).then((pcm) => {
+      if (!pcm || pcm.length === 0) {
+        renderCache.set(key, null);
+        return;
+      }
+      const entry = bank.manifest.phonemes[alias];
+      const lead = leadInFromEntry(entry);
+      let rendered = null;
+      if (worldline) {
+        const audio = worldline.renderNote({
+          pcm,
+          pitch: targetHz,
+          durationMs,
+          ...lead
+        });
+        if (audio) rendered = { audio, preSec: lead.preMs / 1e3, rate: 1 };
+      }
+      if (!rendered) {
+        const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
+        rendered = {
+          audio: Float32Array.from(pcm),
+          preSec: entry.pre / KOE_SAMPLE_RATE / rate,
+          rate
+        };
+      }
+      renderCache.set(key, rendered);
+      schedule(rendered, t0, peak, pan);
+    });
+  };
+};
+var FALLBACK_MODEL = "klatt";
+var createSingingVoices = (ctx, destination, options = {}) => {
+  const catalog = {};
+  for (const [k, file] of Object.entries(KOE_VOICEBANKS))
+    catalog[k] = koeUrl(file);
+  for (const [k, v] of Object.entries(options.voicebanks ?? {}))
+    catalog[k.toLowerCase()] = v;
+  const loaded = /* @__PURE__ */ new Map([
+    [FALLBACK_MODEL, createKlattVoice(ctx, destination)]
+  ]);
+  const loading = /* @__PURE__ */ new Map();
+  const load = (model) => {
+    const m = model.toLowerCase();
+    const ready = loaded.get(m);
+    if (ready) return Promise.resolve(ready);
+    const inflight = loading.get(m);
+    if (inflight) return inflight;
+    const koe = catalog[m];
+    if (!koe) return Promise.resolve(null);
+    const p = createKoeVoice(ctx, destination, {
+      koe,
+      worldlineScriptUrl: options.worldlineScriptUrl,
+      lightweight: options.lightweight
+    }).then((v) => {
+      loaded.set(m, v);
+      return v;
+    }).catch((err) => {
+      console.warn(`[dtm] koe\u97F3\u6E90 "${m}" \u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557\u3057\u307E\u3057\u305F`, err);
+      return null;
+    });
+    loading.set(m, p);
+    return p;
+  };
+  const sing = (model, syllable, e) => {
+    const m = (model || FALLBACK_MODEL).toLowerCase();
+    const v = loaded.get(m);
+    if (v) {
+      v(syllable, e);
+      return;
+    }
+    if (!catalog[m]) {
+      loaded.get(FALLBACK_MODEL)?.(syllable, e);
+      return;
+    }
+    void load(m);
+  };
+  const preload = async (models) => {
+    const set = /* @__PURE__ */ new Set();
+    for (const m of models) if (m) set.add(m.toLowerCase());
+    await Promise.all([...set].map(load));
+  };
+  return { sing, preload };
 };
 var createVoiceRegistry = (models = {}, fallback = "klatt") => {
   const sing = (model, syllable, e) => {
@@ -3268,7 +3750,12 @@ var TRACKS_ADVANCED = [
   }
 ];
 var DEFAULT_TRACKS = TRACKS_SIMPLE;
-var LYRIC_MODELS = ["klatt"];
+var LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
+var LYRIC_MODEL_LABELS = {
+  klatt: "\u8EFD\u91CF\u30ED\u30DC\u58F0",
+  ...KOE_VOICEBANK_LABELS
+};
+var lyricModelLabel = (model) => LYRIC_MODEL_LABELS[model] ?? model;
 var clamp3 = (v, min, max) => Math.min(Math.max(v, min), max);
 var mountDAW = (target, options = {}) => {
   injectStyles();
@@ -4022,7 +4509,7 @@ var mountDAW = (target, options = {}) => {
       <div class="dtm-row" data-dtm="lyric-body" style="flex-direction:column;align-items:stretch">
         <div class="dtm-row">
           <span class="dtm-label">\u58F0\u91CF</span>
-          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="100" aria-label="\u6B4C\u5531\u306E\u58F0\u91CF">
+          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="\u6B4C\u5531\u306E\u58F0\u91CF\uFF08100=\u7B49\u500D\u3001100\u8D85\u3067\u30D6\u30FC\u30B9\u30C8\uFF09">
           <span class="dtm-label" data-dtm="lyric-vol-label"></span>
         </div>
         <div class="dtm-row">
@@ -4065,9 +4552,9 @@ var mountDAW = (target, options = {}) => {
       lyricModelSel.appendChild(o);
     };
     addOpt("", "\u306A\u3057");
-    for (const m of LYRIC_MODELS) addOpt(m, m);
+    for (const m of LYRIC_MODELS) addOpt(m, lyricModelLabel(m));
     if (active.lyricModel && !LYRIC_MODELS.includes(active.lyricModel)) {
-      addOpt(active.lyricModel, active.lyricModel);
+      addOpt(active.lyricModel, lyricModelLabel(active.lyricModel));
     }
     lyricModelSel.value = active.lyricModel;
     lyricInput.value = active.lyrics;
@@ -4897,13 +5384,13 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       g.disconnect();
     };
   };
-  let klattVoice = null;
-  const ensureKlatt = () => {
-    if (!klattVoice) {
+  let voices = null;
+  const ensureVoices = () => {
+    if (!voices) {
       const ctx = ensureCtx();
-      klattVoice = createKlattVoice(ctx, ctx.destination);
+      voices = createSingingVoices(ctx, ctx.destination);
     }
-    return klattVoice;
+    return voices;
   };
   const getAudioTime = () => {
     if (useSynth) return ensureCtx().currentTime;
@@ -5051,7 +5538,8 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       } : e;
       options.onPlayNote?.(ev);
       if (useSynth) {
-        if (consumed) ensureKlatt()(consumed.syllable, ev);
+        if (consumed)
+          ensureVoices().sing(consumed.model, consumed.syllable, ev);
         else synthPlay(ev);
       }
     },
@@ -5074,6 +5562,17 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     resetPlayhead();
     if (activePlayer === instance) activePlayer = null;
   };
+  const startWhenReady = async () => {
+    if (useSynth && lyricTracks.size > 0) {
+      const models = [...lyricTracks.values()].map((t) => t.model);
+      try {
+        await ensureVoices().preload(models);
+      } catch {
+      }
+      if (!playing || activePlayer !== instance) return;
+    }
+    seq.start(0);
+  };
   const play = () => {
     if (playing || trackIndices.length === 0) return;
     if (activePlayer && activePlayer !== instance) activePlayer.stop();
@@ -5085,7 +5584,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       if (ctx.state === "suspended") void ctx.resume();
     }
     conductor.reset();
-    seq.start(0);
+    void startWhenReady();
   };
   const stop = () => {
     if (!playing) return;
@@ -5402,7 +5901,11 @@ export {
   DRUM_KEYS,
   DRUM_PATTERNS,
   INSTRUMENT_PRESETS,
+  KOE_BASE_URL,
+  KOE_VOICEBANKS,
+  KOE_VOICEBANK_LABELS,
   LinkedList,
+  MAX_VOCAL_VOLUME,
   MMLCore,
   PITCH_MAP,
   TRACKS_ADVANCED,
@@ -5414,9 +5917,11 @@ export {
   buildNameToKeyMapping,
   createAudioContext,
   createKlattVoice,
+  createKoeVoice,
   createLyricsConductor,
   createPianoRoll,
   createSequencer,
+  createSingingVoices,
   createVoiceRegistry,
   decomposeToMonophonic,
   drawGrid,
@@ -5443,6 +5948,7 @@ export {
   init,
   injectStyles,
   isChordHeavyTrack,
+  koeUrl,
   mountDAW,
   mountMmlPlayer,
   normalizeLyrics,
