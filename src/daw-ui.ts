@@ -137,7 +137,10 @@ export const buildUI = (
   <div class="dtm-tracks" data-dtm="track-tabs"></div>
 
   <div class="dtm-roll-wrap">
-    <div class="dtm-roll" data-dtm="roll"><div data-dtm="wrapper" style="position:absolute;inset:0;"></div></div>
+    <div class="dtm-roll" data-dtm="roll">
+      <div data-dtm="wrapper" style="position:absolute;inset:0;"></div>
+      <div class="dtm-overlay" data-dtm="overlay" hidden><div class="dtm-spinner"></div></div>
+    </div>
     <div class="dtm-vscroll" data-dtm="vscroll"><div class="dtm-vscroll-thumb" data-dtm="vscroll-thumb"></div></div>
   </div>
   <div class="dtm-hscroll" data-dtm="hscroll"><div class="dtm-hscroll-thumb" data-dtm="hscroll-thumb"></div></div>
@@ -270,8 +273,6 @@ export const buildUI = (
       </div>
     </div>
   </details>
-
-  <div class="dtm-overlay" data-dtm="overlay" hidden><div class="dtm-spinner"></div></div>
 </div>`;
 
 	const root = q<HTMLElement>(target, '[data-dtm="root"]');

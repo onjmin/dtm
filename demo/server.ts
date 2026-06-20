@@ -10,6 +10,9 @@ app.get("/", serveStatic({ root: "./demo" }));
 // dist 配信
 app.get("/dist/*", serveStatic({ root: "./" }));
 
+// assets 配信
+app.get("/assets/*", serveStatic({ root: "./" }));
+
 // CORS ヘッダ
 app.use("*", (c, next) => {
 	c.header("Access-Control-Allow-Origin", "*");

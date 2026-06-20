@@ -63,8 +63,6 @@ export type MmlPlayerOptions = {
 	trackColors?: string[];
 	/** 歌唱合成の先読みや制御を行うヘルパ（.koe音源の再生前プリロードに使用） */
 	singingVoices?: SingingVoices;
-	/** ヘッダの「#mml」テキストのリンク先URL。未指定ならリンクなし */
-	mmlLink?: string;
 };
 
 export type MmlPlayerInstance = {
@@ -86,12 +84,6 @@ type LaneToken = {
 type LaneView = {
 	lane: HTMLDivElement;
 	tokens: LaneToken[];
-};
-
-const formatTime = (seconds: number): string => {
-	const m = Math.floor(seconds / 60);
-	const s = Math.floor(seconds % 60);
-	return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
 
 const freqFromPitch = (pitch: number): number => 440 * 2 ** ((pitch - 69) / 12);
@@ -260,35 +252,9 @@ export const mountMmlPlayer = (
 	playBtn.innerHTML = icon("play", 12);
 	playBtn.disabled = trackIndices.length === 0;
 
-	const tempoEl = doc.createElement("span");
-	tempoEl.className = "dtm-player-tempo";
-	tempoEl.textContent = `♩=${bpm}`;
-
-	const timeEl = doc.createElement("span");
-	timeEl.className = "dtm-player-time";
-	timeEl.textContent = "00:00";
-
-	// 絵文字ヘッダ（#mml + トラック数分の🥺）
+	// 絵文字ヘッダ（トラック数分の🥺）
 	const mmlHeader = doc.createElement("div");
 	mmlHeader.className = "dtm-player-mml-header";
-
-	const mmlLinkEl = options.mmlLink
-		? (() => {
-				const a = doc.createElement("a");
-				a.className = "dtm-player-mml-link";
-				a.textContent = "#mml";
-				a.href = options.mmlLink;
-				a.target = "_blank";
-				a.rel = "noopener";
-				return a;
-			})()
-		: (() => {
-				const span = doc.createElement("span");
-				span.className = "dtm-player-mml-link";
-				span.textContent = "#mml";
-				return span;
-			})();
-	mmlHeader.appendChild(mmlLinkEl);
 
 	const emojiEls: HTMLSpanElement[] = [];
 	const emojiByTrack = new Map<number, HTMLSpanElement>();
@@ -302,26 +268,72 @@ export const mountMmlPlayer = (
 		emojiByTrack.set(index, em);
 	}
 
+	// 歌声トラックは初期表示からキャラクター画像に差し替える（ロード待ち不要）
+	const promotedToImage = new Set<HTMLSpanElement>();
+	for (const [index, lt] of lyricTracks) {
+		const em = emojiByTrack.get(index);
+		if (!em) continue;
+		const imgKey = VOICE_IMAGE_KEY[lt.model.toLowerCase()];
+		const src = imgKey ? VOICE_IMAGES[imgKey] : undefined;
+		if (!src) continue;
+		const img = doc.createElement("img");
+		img.src = src;
+		img.width = 20;
+		img.height = 20;
+		img.style.borderRadius = "50%";
+		img.style.objectFit = "cover";
+		img.draggable = false;
+		promotedToImage.add(em);
+		em.textContent = "";
+		em.appendChild(img);
+	}
+
+	// 和音は同じトラックで複数ノートが同時（同じ when）に来るため、ジャンプ発火が
+	// 重複する。直近に同じ絵文字をジャンプさせた直後は無視し、最初の1つだけ反映する。
+	const JUMP_DEDUPE_MS = 50;
+	const lastJumpAt = new WeakMap<HTMLSpanElement, number>();
 	const jumpEmoji = (em: HTMLSpanElement): void => {
+		const now = performance.now();
+		const prev = lastJumpAt.get(em);
+		if (prev !== undefined && now - prev < JUMP_DEDUPE_MS) return;
+		lastJumpAt.set(em, now);
 		em.classList.remove("dtm-player-emoji--jump");
 		void em.offsetWidth; // reflow でアニメをリセット
 		em.classList.add("dtm-player-emoji--jump");
 	};
 
+	// onPlayNote/onPlayDrum はノートを最大 PLAN_TIME 秒だけ先読みして呼ばれる。
+	// 即ジャンプすると発音より早く（かつ近接ノートが上書きしあって裏拍に）ズレるため、
+	// e.when 分だけ遅らせて「実際になり始める瞬間」にジャンプさせる。
+	const jumpTimers: ReturnType<typeof setTimeout>[] = [];
+	const jumpEmojiAt = (em: HTMLSpanElement, when: number): void => {
+		if (when <= 0) {
+			jumpEmoji(em);
+			return;
+		}
+		jumpTimers.push(setTimeout(() => jumpEmoji(em), when * 1000));
+	};
+	const clearJumpTimers = (): void => {
+		for (const t of jumpTimers) clearTimeout(t);
+		jumpTimers.length = 0;
+	};
+
 	// 瞬きアニメ: 各絵文字がランダムなタイミングで😌に一瞬変わる
-	// 画像に差し替えられた要素はこのSetに入れて瞬きをスキップする
-	const promotedToImage = new Set<HTMLSpanElement>();
+	// 画像に差し替えられた要素は promotedToImage に入れて瞬きをスキップする
 	const blinkTimers: ReturnType<typeof setTimeout>[] = [];
 	const scheduleBlink = (em: HTMLSpanElement): void => {
 		const delay = 2000 + Math.random() * 5000;
 		const t = setTimeout(() => {
 			if (promotedToImage.has(em)) return;
 			em.textContent = "😌";
-			const t2 = setTimeout(() => {
-				if (promotedToImage.has(em)) return;
-				em.textContent = "🥺";
-				scheduleBlink(em);
-			}, 200 + Math.random() * 150);
+			const t2 = setTimeout(
+				() => {
+					if (promotedToImage.has(em)) return;
+					em.textContent = "🥺";
+					scheduleBlink(em);
+				},
+				200 + Math.random() * 150,
+			);
 			blinkTimers.push(t2);
 		}, delay);
 		blinkTimers.push(t);
@@ -339,21 +351,37 @@ export const mountMmlPlayer = (
 		dots.appendChild(dot);
 	}
 
-	head.append(playBtn, tempoEl, timeEl);
+	// ビート表示（●○○○ → ○●○○ → …）と小節番号
+	const beatRow = doc.createElement("div");
+	beatRow.className = "dtm-player-beat-row";
 
-	// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量）をチップ表示する
-	const addChip = (label: string): void => {
+	const beatDots: HTMLSpanElement[] = [];
+	for (let i = 0; i < 4; i++) {
+		const d = doc.createElement("span");
+		d.className = "dtm-player-beat-dot";
+		beatRow.appendChild(d);
+		beatDots.push(d);
+	}
+
+	const barEl = doc.createElement("span");
+	barEl.className = "dtm-player-bar";
+	barEl.textContent = "-";
+	beatRow.appendChild(barEl);
+
+	// トップレベル宣言チップ（#inst / #drum / #volume）
+	const chips: HTMLSpanElement[] = [];
+	const makeChip = (label: string): HTMLSpanElement => {
 		const chip = doc.createElement("span");
 		chip.className = "dtm-player-chip";
 		chip.textContent = label;
-		head.appendChild(chip);
+		chips.push(chip);
+		return chip;
 	};
-	if (meta.instrument) addChip(`♪ ${meta.instrument}`);
-	if (meta.drum) addChip(`🥁 ${meta.drum}${drumPattern ? "" : " (?)"}`);
-	if (meta.volume !== undefined) addChip(`🔊 ${meta.volume}%`);
+	if (meta.instrument) makeChip(`♪ ${meta.instrument}`);
+	if (meta.drum) makeChip(`🥁 ${meta.drum}${drumPattern ? "" : " (?)"}`);
+	if (meta.volume !== undefined) makeChip(`🔊 ${meta.volume}%`);
 
-	head.appendChild(dots);
-	head.appendChild(mmlHeader);
+	head.append(playBtn, beatRow, ...chips, dots, mmlHeader);
 	root.appendChild(head);
 
 	// ── トラック帯 ──
@@ -362,6 +390,8 @@ export const mountMmlPlayer = (
 	const body = doc.createElement("div");
 	body.className = "dtm-player-body";
 	root.appendChild(body);
+
+	const mutedTracks = new Set<number>();
 
 	const laneViews: LaneView[] = [];
 	for (const index of trackIndices) {
@@ -372,7 +402,7 @@ export const mountMmlPlayer = (
 		row.className = "dtm-player-lane-row";
 
 		const label = doc.createElement("div");
-		label.className = "dtm-player-lane-label";
+		label.className = "dtm-player-lane-label dtm-player-lane-label--btn";
 		const swatch = doc.createElement("span");
 		swatch.className = "dtm-player-dot";
 		swatch.style.backgroundColor = colorOf(index);
@@ -380,6 +410,15 @@ export const mountMmlPlayer = (
 		no.className = "dtm-player-lane-no";
 		no.textContent = `@${index}`;
 		label.append(swatch, no);
+		label.addEventListener("click", () => {
+			if (mutedTracks.has(index)) {
+				mutedTracks.delete(index);
+				label.classList.remove("dtm-player-lane-label--muted");
+			} else {
+				mutedTracks.add(index);
+				label.classList.add("dtm-player-lane-label--muted");
+			}
+		});
 
 		const lane = doc.createElement("div");
 		lane.className = "dtm-player-lane";
@@ -504,7 +543,10 @@ export const mountMmlPlayer = (
 	};
 
 	const renderPlayhead = (step: number): void => {
-		timeEl.textContent = formatTime(Math.max(0, step) * secondsPerStep);
+		const beatIndex = Math.floor(step / STEPS_PER_BEAT) % 4;
+		for (let i = 0; i < 4; i++)
+			beatDots[i].classList.toggle("dtm-player-beat-dot--on", i === beatIndex);
+		barEl.textContent = String(Math.floor(step / STEPS_PER_BAR) + 1);
 		for (const view of laneViews) {
 			let active: LaneToken | null = null;
 			for (const t of view.tokens) {
@@ -517,7 +559,8 @@ export const mountMmlPlayer = (
 	};
 
 	const resetPlayhead = (): void => {
-		timeEl.textContent = "00:00";
+		for (const d of beatDots) d.classList.remove("dtm-player-beat-dot--on");
+		barEl.textContent = "-";
 		for (const view of laneViews) {
 			for (const t of view.tokens) t.el.classList.remove("is-active");
 			view.lane.scrollLeft = 0;
@@ -534,8 +577,9 @@ export const mountMmlPlayer = (
 		getAudioTime,
 		onPlayNote: (e) => {
 			const trackIdx = Number(e.trackId);
+			if (mutedTracks.has(trackIdx)) return;
 			const em = emojiByTrack.get(trackIdx);
-			if (em) jumpEmoji(em);
+			if (em) jumpEmojiAt(em, e.when);
 			// 歌詞トラックの発音は歌声ストリーミング（startStream）が担当するため、
 			// ここでは楽器音も歌声も鳴らさない。
 			if (lyricTracks.has(trackIdx)) return;
@@ -545,7 +589,7 @@ export const mountMmlPlayer = (
 		onPlayDrum: (e) => {
 			// ドラムは trackIndex を持たないため先頭以外の絵文字は対象外
 			const em = emojiEls[0];
-			if (em) jumpEmoji(em);
+			if (em) jumpEmojiAt(em, e.when);
 			const velocity = e.velocity * (trackVolume / 100);
 			options.onPlayDrum?.({ ...e, velocity });
 			if (useSynth) drumSynth({ ...e, velocity });
@@ -567,6 +611,7 @@ export const mountMmlPlayer = (
 
 	const finish = (): void => {
 		setPlayingUI(false);
+		clearJumpTimers();
 		resetPlayhead();
 		if (activePlayer === instance) activePlayer = null;
 	};
@@ -612,25 +657,6 @@ export const mountMmlPlayer = (
 			try {
 				await v.loadModels(tracks.map((t) => t.model));
 				await v.warm(tracks);
-				// ロード完了後: 各歌声トラックの絵文字をキャラクター画像に差し替える
-				for (const [index, lt] of lyricTracks) {
-					const em = emojiByTrack.get(index);
-					if (!em) continue;
-					const imgKey = VOICE_IMAGE_KEY[lt.model.toLowerCase()];
-					const src = imgKey ? VOICE_IMAGES[imgKey] : undefined;
-					if (!src) continue;
-					const img = doc.createElement("img");
-					img.src = src;
-					img.width = 20;
-					img.height = 20;
-					img.style.borderRadius = "50%";
-					img.style.objectFit = "cover";
-					img.draggable = false;
-					// 絵文字の background・text を引き継ぎつつ span の内容を img に置換
-					promotedToImage.add(em);
-					em.textContent = "";
-					em.appendChild(img);
-				}
 			} catch (err) {
 				console.warn("[dtm] voice preload failed", err);
 			} finally {
@@ -677,6 +703,7 @@ export const mountMmlPlayer = (
 			audioCtx = null;
 		}
 		for (const t of blinkTimers) clearTimeout(t);
+		clearJumpTimers();
 		root.remove();
 	};
 

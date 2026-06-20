@@ -186,6 +186,21 @@ export type ParseChordsFn = (
 // 注入されるMIDIバイナリ解析関数（midi-parser-js 互換）
 export type ParseMidiFn = (bytes: Uint8Array) => unknown;
 
+/**
+ * 永続化対象の表示・出力設定。利用側がブラウザ再訪時に復元する用途に使う。
+ * （ノートやMML本体ではなく、エディタの見え方/出力の挙動の設定）
+ */
+export type DawViewState = {
+	/** 横方向ズーム（%） */
+	zoomX: number;
+	/** 縦方向ズーム（%） */
+	zoomY: number;
+	/** 和音分解モード（getMMLで和音を単音トラックへ分解する） */
+	decomposeChord: boolean;
+	/** 和音分解時に和音伴奏トラックを分解対象から除外するフラグ */
+	ignoreChordHeavy: boolean;
+};
+
 // mountDAW のオプション
 export type DawOptions = {
 	// --- 発音フック（ライブラリは音を出さない） ---
@@ -199,6 +214,16 @@ export type DawOptions = {
 	getAudioTime?: () => number;
 	/** 録音ボタン押下（利用側のオーディオグラフに依存するため任意） */
 	onToggleRecord?: () => void;
+	/**
+	 * ドラムパターンが変化したときに呼ばれる（ユーザー操作・MML読み込みによる自動入力の両方）。
+	 * 利用側が選択状態を永続化する用途に使う。
+	 */
+	onDrumChange?: (name: string) => void;
+	/**
+	 * 表示・出力設定（ズーム / 和音分解モード / 和音伴奏トラック無視）が変化したときに呼ばれる。
+	 * 利用側が選択状態を永続化する用途に使う。
+	 */
+	onViewStateChange?: (state: DawViewState) => void;
 
 	// --- 注入される外部パーサ（任意） ---
 	parseChord?: ParseChordFn;
@@ -230,6 +255,14 @@ export type DawInstance = {
 	 * 空文字で宣言なし。ライブラリ自体は音源を持たないため、名前を運ぶだけ（再生側が解決する）。
 	 */
 	setInstrument: (name: string) => void;
+	/** 現在のドラムパターン名を返す（永続化の保存用）。 */
+	getDrum: () => string;
+	/** ドラムパターンを設定する（未知のキーは無視）。選択UIにも反映する。 */
+	setDrum: (name: string) => void;
+	/** 現在の表示・出力設定を返す（永続化の保存用）。 */
+	getViewState: () => DawViewState;
+	/** 表示・出力設定を復元する（指定したキーのみ反映。UIにも反映する）。 */
+	setViewState: (state: Partial<DawViewState>) => void;
 	loadMML: (mml: string) => void;
 	loadMIDI: (bytes: Uint8Array) => void;
 	exportMIDI: () => Blob;

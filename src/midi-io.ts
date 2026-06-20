@@ -420,8 +420,9 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 			const endTick = Math.round(
 				(n.startStep + (n.durationSteps || 1)) * tickPerStep,
 			);
+			// volume 0（ミュート）を 100 に化けさせないため ?? を使う（0 は有効値）
 			const vel = Math.round(
-				((n.velocity ?? DEFAULT_VELOCITY) * (track.volume || 100)) / 100,
+				((n.velocity ?? DEFAULT_VELOCITY) * (track.volume ?? 100)) / 100,
 			);
 			events.push({ t: startTick, m: [0x90 | (ch & 0x0f), n.pitch, vel] });
 			events.push({ t: endTick, m: [0x90 | (ch & 0x0f), n.pitch, 0] });

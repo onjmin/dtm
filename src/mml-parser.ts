@@ -244,14 +244,16 @@ export const parseMML = (
 					numStr += body[j];
 					j++;
 				}
-				octave = clamp(Number.parseInt(numStr, 10) || 4, 0, 8);
+				// numStr が空（o単独）のときだけ既定4。"0" を falsy 扱いして
+				// o0 を o4 に化けさせないよう、|| ではなく空判定でフォールバックする。
+				octave = numStr ? clamp(Number.parseInt(numStr, 10), 0, 8) : 4;
 				pushTok("octave", currentStep, 0, tokStart);
 			} else if (ch === ">") {
-				octave++;
+				octave = Math.min(8, octave + 1);
 				j++;
 				pushTok("shift", currentStep, 0, tokStart);
 			} else if (ch === "<") {
-				octave--;
+				octave = Math.max(0, octave - 1);
 				j++;
 				pushTok("shift", currentStep, 0, tokStart);
 			} else if (ch === "l") {
@@ -303,10 +305,10 @@ export const parseMML = (
 						}
 						chordNotes.push((octave + 1) * 12 + pitch);
 					} else if (c === ">") {
-						octave++;
+						octave = Math.min(8, octave + 1);
 						j++;
 					} else if (c === "<") {
-						octave--;
+						octave = Math.max(0, octave - 1);
 						j++;
 					} else if (c === "o") {
 						j++;
@@ -315,7 +317,8 @@ export const parseMML = (
 							numStr += body[j];
 							j++;
 						}
-						octave = clamp(Number.parseInt(numStr, 10) || 4, 0, 8);
+						// o0 を o4 に化けさせない（"0" は falsy なので || は使わない）
+						octave = numStr ? clamp(Number.parseInt(numStr, 10), 0, 8) : 4;
 					} else {
 						j++;
 					}

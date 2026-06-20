@@ -17,6 +17,7 @@ import {
 	normalizeLyrics,
 	panToStereo,
 	type StreamVoiceTrack,
+	VOICE_IMAGE_KEY,
 	vocalVolumeToGain,
 } from "./lyrics";
 import {
@@ -56,6 +57,7 @@ import {
 import type {
 	DawInstance,
 	DawOptions,
+	DawViewState,
 	LyricTrack,
 	Note,
 	PlaybackState,
@@ -63,6 +65,7 @@ import type {
 	ToolMode,
 	TrackConfig,
 } from "./types";
+import { VOICE_IMAGES } from "./voice-images";
 
 const BASE_STEP_WIDTH = 0.5;
 const BASE_KEY_HEIGHT = 15;
@@ -247,7 +250,7 @@ type TrackState = {
 	lyrics: string;
 	/** 歌唱合成モデル名（既定 "klatt"） */
 	lyricModel: string;
-	/** 歌唱の声量 0-400（100=等倍、100超でブースト＝dB対数）。ノートvelocityとは独立した合成音声専用パラメータ。既定300 */
+	/** 歌唱の声量 0-400（100=等倍、100超でブースト＝dB対数）。ノートvelocityとは独立した合成音声専用パラメータ。既定 {@link DEFAULT_VOCAL_VOLUME} */
 	vocalVolume: number;
 	/** 歌唱のゲートタイム 0-100（音価に対する発音長の割合）。既定100（レガート） */
 	vocalGate: number;
@@ -353,7 +356,7 @@ export const mountDAW = (
 			savedChordRoot: 0,
 			lyrics: "",
 			lyricModel: "", // 既定は「なし」（歌わない）
-			vocalVolume: 300,
+			vocalVolume: DEFAULT_VOCAL_VOLUME,
 			vocalGate: 100,
 			vocalPan: 64,
 			vocalOctave: 0,
@@ -999,6 +1002,16 @@ export const mountDAW = (
 		redrawAll();
 	};
 
+	// 永続化対象の表示・出力設定（ズーム / 和音分解）を収集・通知する
+	const getViewState = (): DawViewState => ({
+		zoomX,
+		zoomY,
+		decomposeChord: refs.decomposeChordToggle.checked,
+		ignoreChordHeavy: refs.ignoreChordHeavyToggle.checked,
+	});
+	const notifyViewState = (): void =>
+		options.onViewStateChange?.(getViewState());
+
 	// ============================================================
 	// 発音ディスパッチ（マスタ/ドラム音量を適用してフックへ）
 	// ============================================================
@@ -1225,6 +1238,7 @@ export const mountDAW = (
       <div class="dtm-row">
         <span class="dtm-label">♪ 歌詞</span>
         <select class="dtm-select" data-dtm="lyric-model" aria-label="歌唱モデル"></select>
+        <img class="dtm-lyric-icon dtm-hidden" data-dtm="lyric-icon" width="20" height="20" alt="" draggable="false">
         <select class="dtm-select" data-dtm="lyric-octave" aria-label="オクターブ（音源の得意音域に合わせる）" title="オクターブ">
           <option value="2">+2 oct</option>
           <option value="1">+1 oct</option>
@@ -1242,7 +1256,7 @@ export const mountDAW = (
       <div class="dtm-row" data-dtm="lyric-body" style="flex-direction:column;align-items:stretch">
         <div class="dtm-row">
           <span class="dtm-label">声量</span>
-          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="歌唱の声量（100=等倍、100超でブースト、既定300）">
+          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="歌唱の声量（100=等倍、100超でブースト、既定200）">
           <span class="dtm-label" data-dtm="lyric-vol-label"></span>
         </div>
         <div class="dtm-row">
@@ -1259,6 +1273,9 @@ export const mountDAW = (
 		const lyricOctaveSel = lyricDiv.querySelector(
 			'[data-dtm="lyric-octave"]',
 		) as HTMLSelectElement;
+		const lyricIcon = lyricDiv.querySelector(
+			'[data-dtm="lyric-icon"]',
+		) as HTMLImageElement;
 		const lyricBody = lyricDiv.querySelector(
 			'[data-dtm="lyric-body"]',
 		) as HTMLElement;
@@ -1326,12 +1343,26 @@ export const mountDAW = (
 				lyricTerms.classList.add("dtm-hidden");
 			}
 		};
+		const syncLyricIcon = (): void => {
+			const imgKey = active.lyricModel
+				? VOICE_IMAGE_KEY[active.lyricModel.toLowerCase()]
+				: undefined;
+			const src = imgKey ? VOICE_IMAGES[imgKey] : undefined;
+			if (src) {
+				lyricIcon.src = src;
+				lyricIcon.classList.remove("dtm-hidden");
+			} else {
+				lyricIcon.removeAttribute("src");
+				lyricIcon.classList.add("dtm-hidden");
+			}
+		};
 		const syncLyricVisibility = (): void => {
 			lyricBody.style.display = active.lyricModel ? "" : "none";
 			// オクターブは歌うときだけ意味を持つので、モデル「なし」では隠す
 			lyricOctaveSel.style.display = active.lyricModel ? "" : "none";
 			updateLyricCount();
 			syncLyricTerms();
+			syncLyricIcon();
 		};
 		syncLyricVisibility();
 		lyricModelSel.addEventListener("change", () => {
@@ -1518,7 +1549,7 @@ export const mountDAW = (
 				`@${i}${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim().replace(/\s+/g, "")}`,
 		);
 		// 歌詞行（@@n model [v声量] [qゲート] [p定位] [oオクターブ] lyrics）。スペースは仕様上の区切りなのでminifyでも残す。
-		// 声量・ゲート・定位・オクターブは既定(声量=300, ゲート=100, 定位=64, オクターブ=0)でないときだけ v/q/p/o トークンで付与する。
+		// 声量・ゲート・定位・オクターブは既定(声量=DEFAULT_VOCAL_VOLUME, ゲート=100, 定位=64, オクターブ=0)でないときだけ v/q/p/o トークンで付与する。
 		const lyricLines = trackStates
 			.map((t, i) => ({
 				i,
@@ -1532,7 +1563,7 @@ export const mountDAW = (
 			.filter((x) => x.model.length > 0 && x.text.length > 0)
 			.map((x) => {
 				const params = [
-					x.vol === 300 ? "" : `v${x.vol}`,
+					x.vol === DEFAULT_VOCAL_VOLUME ? "" : `v${x.vol}`,
 					x.gate === 100 ? "" : `q${x.gate}`,
 					x.pan === 64 ? "" : `p${x.pan}`,
 					x.oct === 0 ? "" : `o${x.oct}`,
@@ -1631,6 +1662,7 @@ export const mountDAW = (
 		if (meta.drum && drumPatterns[meta.drum]) {
 			currentDrumPattern = meta.drum;
 			refs.drumSelect.value = meta.drum;
+			options.onDrumChange?.(meta.drum);
 		}
 		if (meta.volume !== undefined) {
 			masterVolume = meta.volume;
@@ -1642,7 +1674,7 @@ export const mountDAW = (
 		for (const t of trackStates) {
 			t.lyrics = "";
 			t.lyricModel = ""; // 既定は「なし」（歌わない）
-			t.vocalVolume = 300;
+			t.vocalVolume = DEFAULT_VOCAL_VOLUME;
 			t.vocalGate = 100;
 			t.vocalPan = 64;
 			t.vocalOctave = 0;
@@ -1831,19 +1863,27 @@ export const mountDAW = (
 		refs.zoomXIn.addEventListener("click", () => {
 			zoomX = Math.min(200, zoomX + 25);
 			applyZoomX();
+			notifyViewState();
 		});
 		refs.zoomXOut.addEventListener("click", () => {
 			zoomX = Math.max(25, zoomX - 25);
 			applyZoomX();
+			notifyViewState();
 		});
 		refs.zoomYIn.addEventListener("click", () => {
 			zoomY = Math.min(200, zoomY + 25);
 			applyZoomY();
+			notifyViewState();
 		});
 		refs.zoomYOut.addEventListener("click", () => {
 			zoomY = Math.max(50, zoomY - 25);
 			applyZoomY();
+			notifyViewState();
 		});
+
+		// 和音分解モード / 和音伴奏トラック無視のチェック状態変化を通知（永続化用）
+		refs.decomposeChordToggle.addEventListener("change", notifyViewState);
+		refs.ignoreChordHeavyToggle.addEventListener("change", notifyViewState);
 
 		refs.masterVolume.addEventListener("input", () => {
 			masterVolume = Number.parseInt(refs.masterVolume.value, 10) || 0;
@@ -1851,6 +1891,7 @@ export const mountDAW = (
 		});
 		refs.drumSelect.addEventListener("change", () => {
 			currentDrumPattern = refs.drumSelect.value;
+			options.onDrumChange?.(currentDrumPattern);
 		});
 		refs.drumVolume.addEventListener("input", () => {
 			drumVolume = Number.parseInt(refs.drumVolume.value, 10) || 0;
@@ -2069,6 +2110,31 @@ export const mountDAW = (
 		getMML: generateMML,
 		setInstrument: (name: string) => {
 			currentInstrument = name;
+		},
+		getDrum: () => currentDrumPattern,
+		setDrum: (name: string) => {
+			// "none"（ドラムなし）も有効な選択肢。それ以外は既知のパターンのみ受け付ける
+			if (name !== "none" && !drumPatterns[name]) return;
+			currentDrumPattern = name;
+			refs.drumSelect.value = name;
+			options.onDrumChange?.(name);
+		},
+		getViewState,
+		setViewState: (state: Partial<DawViewState>) => {
+			if (typeof state.zoomX === "number") {
+				zoomX = clamp(state.zoomX, 25, 200);
+				applyZoomX();
+			}
+			if (typeof state.zoomY === "number") {
+				zoomY = clamp(state.zoomY, 50, 200);
+				applyZoomY();
+			}
+			if (typeof state.decomposeChord === "boolean") {
+				refs.decomposeChordToggle.checked = state.decomposeChord;
+			}
+			if (typeof state.ignoreChordHeavy === "boolean") {
+				refs.ignoreChordHeavyToggle.checked = state.ignoreChordHeavy;
+			}
 		},
 		loadMML,
 		loadMIDI,

@@ -518,6 +518,13 @@ export const DAW_CSS = `
 
 .dtm-hidden { display: none !important; }
 .dtm-grow { flex: 1 1 auto; }
+.dtm-lyric-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
 
 /* ─── 広幅拡張 ─── */
 @media (min-width: 768px) {
@@ -560,13 +567,26 @@ export const DAW_CSS = `
 .dtm-player-play:active { transform: translate(2px, 2px); box-shadow: none; }
 .dtm-player-play--stop { background: var(--dtm-danger); }
 .dtm-player-play:disabled { opacity: 0.4; cursor: default; }
-.dtm-player-tempo,
-.dtm-player-time {
-  font-family: 'k8x12', monospace;
-  font-size: 12px;
-  color: var(--dtm-muted);
+.dtm-player-beat-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
-.dtm-player-time { color: var(--dtm-text); min-width: 3em; }
+.dtm-player-beat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dtm-border2);
+  transition: background 0.06s;
+}
+.dtm-player-beat-dot--on { background: var(--dtm-primary); }
+.dtm-player-bar {
+  font-family: 'k8x12', monospace;
+  font-size: 11px;
+  color: var(--dtm-text);
+  min-width: 2em;
+  margin-left: 4px;
+}
 .dtm-player-dots {
   margin-left: auto;
   display: flex;
@@ -595,7 +615,7 @@ export const DAW_CSS = `
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  font-size: 13px;
+  font-size: 18px;
   line-height: 1;
   user-select: none;
 }
@@ -636,6 +656,12 @@ export const DAW_CSS = `
   gap: 2px;
   padding-top: 4px;
 }
+.dtm-player-lane-label--btn {
+  cursor: pointer;
+  user-select: none;
+}
+.dtm-player-lane-label--btn:hover { opacity: 0.7; }
+.dtm-player-lane-label--muted { opacity: 0.3; }
 .dtm-player-lane-no {
   font-family: 'k8x12', monospace;
   font-size: 9px;
