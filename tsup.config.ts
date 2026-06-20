@@ -9,6 +9,9 @@ export default defineConfig([
 		sourcemap: false,
 		clean: true,
 		target: "es2024",
+		// assets/*.png をビルド時に base64 data URI 化してバンドルに同梱する。
+		// ライブラリ利用者の手元に画像が確実に届き、実行時の外部URL依存をなくす。
+		loader: { ".png": "dataurl" },
 		// @onjmin/koe をバンドルに同梱する。デモ（dist/index.mjs をブラウザ直読み）が
 		// import 解決のためのimportmap無しで koe を使えるようにするため。
 		noExternal: ["@onjmin/koe"],
