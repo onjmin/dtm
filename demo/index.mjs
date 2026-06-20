@@ -1363,6 +1363,65 @@ var createKoeVoice = async (ctx, destination, options) => {
       schedule(rendered, t0, peak, pan);
     });
   };
+  model.preloadRender = async (syllables, notes) => {
+    let tempPrevVowel = "";
+    const promises = [];
+    const count = Math.min(syllables.length, notes.length);
+    for (let i = 0; i < count; i++) {
+      const syllable = syllables[i];
+      const note = notes[i];
+      if (syllable.consonant === "Q" || syllable.vowel === "") {
+        continue;
+      }
+      const alias = resolveKoeAlias(bank, syllable, tempPrevVowel);
+      if (syllable.vowel && syllable.vowel !== "N") {
+        tempPrevVowel = syllable.vowel;
+      }
+      if (!alias) continue;
+      const targetHz = midiToFreq(note.pitch);
+      const durationMs = Math.max(60, note.duration * 1e3);
+      const key = `${alias}|${note.pitch}|${Math.round(durationMs)}`;
+      if (renderCache.has(key)) {
+        continue;
+      }
+      const p = (async () => {
+        try {
+          const pcm = await getPcm(alias);
+          if (!pcm || pcm.length === 0) {
+            renderCache.set(key, null);
+            return;
+          }
+          const entry = bank.manifest.phonemes[alias];
+          const lead = leadInFromEntry(entry);
+          let rendered = null;
+          if (worldline) {
+            const audio = worldline.renderNote({
+              pcm,
+              pitch: targetHz,
+              durationMs,
+              ...lead
+            });
+            if (audio) {
+              rendered = { audio, preSec: lead.preMs / 1e3, rate: 1 };
+            }
+          }
+          if (!rendered) {
+            const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
+            rendered = {
+              audio: Float32Array.from(pcm),
+              preSec: entry.pre / KOE_SAMPLE_RATE / rate,
+              rate
+            };
+          }
+          renderCache.set(key, rendered);
+        } catch (err) {
+          console.warn(`[dtm] preloadRender failed for ${key}`, err);
+        }
+      })();
+      promises.push(p);
+    }
+    await Promise.all(promises);
+  };
   model.reset = () => {
     prevVowel = "";
   };
@@ -1424,10 +1483,28 @@ var createSingingVoices = (ctx, destination, options = {}) => {
     }
     void load(m);
   };
-  const preload = async (models) => {
+  const preload = async (models, trackSyllables) => {
     const set = /* @__PURE__ */ new Set();
     for (const m of models) if (m) set.add(m.toLowerCase());
-    await Promise.all([...set].map((m) => load(m)));
+    const loadedModels = /* @__PURE__ */ new Map();
+    await Promise.all(
+      [...set].map(async (m) => {
+        const v = await load(m);
+        loadedModels.set(m, v);
+      })
+    );
+    if (trackSyllables) {
+      const promises = [];
+      for (const ts of trackSyllables) {
+        const m = ts.model.toLowerCase();
+        const v = loadedModels.get(m);
+        if (!v) continue;
+        if (ts.notes && typeof v.preloadRender === "function") {
+          promises.push(v.preloadRender(ts.syllables, ts.notes));
+        }
+      }
+      await Promise.all(promises);
+    }
   };
   const reset = () => {
     for (const v of loaded.values()) {
@@ -4516,9 +4593,28 @@ var mountDAW = (target, options = {}) => {
         if (lt.model) models.add(lt.model);
       }
       if (models.size > 0) {
+        const secondsPerStep = 60 / bpm / 48;
+        const trackSyllables = [...lyricMap.values()].map((lt) => {
+          const trackState = trackStates.find(
+            (t) => t.config.id === String(lt.trackId)
+          );
+          const rawNotes = trackState ? trackState.core.getNotes() : [];
+          const sortedNotes = [...rawNotes].sort(
+            (a, b) => a.startStep - b.startStep
+          );
+          const notes = sortedNotes.map((n) => ({
+            pitch: n.pitch,
+            duration: n.durationSteps * secondsPerStep
+          }));
+          return {
+            model: lt.model,
+            syllables: lt.syllables,
+            notes
+          };
+        });
         const removeOverlay = showLoadingOverlay(target);
         try {
-          await options.singingVoices.preload(models);
+          await options.singingVoices.preload(models, trackSyllables);
         } catch (err) {
           console.warn("[dtm] preload failed", err);
         } finally {
@@ -5734,9 +5830,25 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const startWhenReady = async () => {
     if (useSynth && lyricTracks.size > 0) {
       const models = [...lyricTracks.values()].map((t) => t.model);
+      const trackSyllables = [...lyricTracks.entries()].map(([index, lt]) => {
+        const seqTrack = seqTracks.find((t) => Number(t.id) === index);
+        const rawNotes = seqTrack ? seqTrack.notes : [];
+        const sortedNotes = [...rawNotes].sort(
+          (a, b) => a.startStep - b.startStep
+        );
+        const notes = sortedNotes.map((n) => ({
+          pitch: n.pitch,
+          duration: n.durationSteps * secondsPerStep
+        }));
+        return {
+          model: lt.model,
+          syllables: lt.syllables,
+          notes
+        };
+      });
       const removeOverlay = showLoadingOverlay(root);
       try {
-        await ensureVoices().preload(models);
+        await ensureVoices().preload(models, trackSyllables);
       } catch (err) {
         console.warn("[dtm] preload failed", err);
       } finally {
