@@ -608,7 +608,7 @@ var DRUM_PATTERNS = {
   ]
 };
 
-// node_modules/.pnpm/@onjmin+koe@1.0.2/node_modules/@onjmin/koe/dist/index.js
+// node_modules/.pnpm/@onjmin+koe@1.0.3/node_modules/@onjmin/koe/dist/index.js
 var MAGIC = 1263486208;
 function parseKoeHeader(headerBytes) {
   const view = new DataView(headerBytes);
@@ -746,22 +746,30 @@ function injectScript(src) {
 function loadWasm(scriptUrl) {
   const cached = moduleCache.get(scriptUrl);
   if (cached) return cached;
-  if (typeof document === "undefined") {
-    return Promise.reject(
-      new Error(
-        "Worldline.load requires a DOM (browser) environment to load worldline.js"
-      )
-    );
-  }
   const baseUrl = scriptUrl.slice(0, scriptUrl.lastIndexOf("/") + 1);
-  const promise = injectScript(scriptUrl).then(() => {
+  const instantiate = () => {
     const factory = globalThis.WorldlineModule;
     if (!factory)
       throw new Error(
         "worldline: WorldlineModule global was not defined by the script"
       );
     return factory({ locateFile: (f) => baseUrl + f });
-  });
+  };
+  let promise;
+  if (typeof document !== "undefined") {
+    promise = injectScript(scriptUrl).then(instantiate);
+  } else if (typeof globalThis.importScripts === "function") {
+    promise = Promise.resolve().then(() => {
+      globalThis.importScripts(scriptUrl);
+      return instantiate();
+    });
+  } else {
+    return Promise.reject(
+      new Error(
+        "Worldline.load requires a DOM or a classic Web Worker (importScripts) to load worldline.js"
+      )
+    );
+  }
   moduleCache.set(scriptUrl, promise);
   return promise;
 }
@@ -771,7 +779,13 @@ var Worldline = class _Worldline {
   }
   wasm;
   sampleRate = WORLDLINE_SAMPLE_RATE;
-  /** Load + instantiate the worldline WASM module (deduped per scriptUrl). */
+  /**
+   * Load + instantiate the worldline WASM module (deduped per scriptUrl).
+   *
+   * Works on the main thread (loads via `<script>`) and inside a classic Web
+   * Worker (loads via `importScripts`), so the heavy synthesis can run
+   * off-thread. The matching `worldline.wasm` is fetched next to scriptUrl.
+   */
   static async load(options) {
     return new _Worldline(await loadWasm(options.scriptUrl));
   }
@@ -1257,7 +1271,7 @@ var koeUrl = (name, base = KOE_BASE_URL) => `${base}/${encodeURIComponent(name)}
 var DEFAULT_WORLDLINE_SCRIPT = "https://onjmin.github.io/koe/demo/world/worldline.js";
 var KOE_SAMPLE_RATE = 48e3;
 var expandSeparators = (candidate) => candidate.includes(" ") ? [candidate, candidate.replace(/ /g, "\u3000"), candidate.replace(/ /g, "")] : [candidate];
-var resolveKoeAlias = (bank, syl, prevVowel) => {
+var resolveKoeAlias = (hasAlias, syl, prevVowel) => {
   const kana = syl.kana;
   const cons = syl.consonant === "N" ? "n" : syl.consonant;
   const vow = syl.vowel === "N" ? "" : syl.vowel;
@@ -1279,12 +1293,12 @@ var resolveKoeAlias = (bank, syl, prevVowel) => {
     for (const v of expandSeparators(c)) {
       if (seen.has(v)) continue;
       seen.add(v);
-      if (bank.has(v)) return v;
+      if (hasAlias(v)) return v;
     }
   }
   return null;
 };
-var createKoeVoice = async (ctx, destination, options) => {
+var createLocalBackend = async (options) => {
   const bank = await VoiceBank.load(options.koe);
   const worldline = options.lightweight ? null : await Worldline.load({
     scriptUrl: options.worldlineScriptUrl ?? DEFAULT_WORLDLINE_SCRIPT
@@ -1298,23 +1312,12 @@ var createKoeVoice = async (ctx, destination, options) => {
     }
     return p;
   };
-  const renderCache = /* @__PURE__ */ new Map();
-  const active = /* @__PURE__ */ new Set();
-  let prevVowel = "";
-  const keyOf = (alias, pitch, durationMs) => `${alias}|${pitch}|${Math.round(durationMs / 10) * 10}`;
-  const renderOne = async (alias, pitch, durationMs) => {
-    const key = keyOf(alias, pitch, durationMs);
-    const existing = renderCache.get(key);
-    if (existing !== void 0) return existing;
+  const renderAlias = async (alias, pitch, durationMs) => {
     const pcm = await getPcm(alias);
-    if (!pcm || pcm.length === 0) {
-      renderCache.set(key, null);
-      return null;
-    }
+    if (!pcm || pcm.length === 0) return null;
     const entry = bank.manifest.phonemes[alias];
     const lead = leadInFromEntry(entry);
     const targetHz = midiToFreq(pitch);
-    let rendered = null;
     if (worldline) {
       const audio = worldline.renderNote({
         pcm,
@@ -1322,25 +1325,112 @@ var createKoeVoice = async (ctx, destination, options) => {
         durationMs,
         ...lead
       });
-      if (audio) {
-        const buf = ctx.createBuffer(1, audio.length, KOE_SAMPLE_RATE);
-        buf.copyToChannel(audio, 0);
-        rendered = { audio: buf, preSec: lead.preMs / 1e3, rate: 1 };
+      if (audio) return { pcm: audio, preSec: lead.preMs / 1e3, rate: 1 };
+    }
+    const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
+    return {
+      pcm: Float32Array.from(pcm),
+      preSec: entry.pre / KOE_SAMPLE_RATE / rate,
+      rate
+    };
+  };
+  return { hasAlias: (a) => bank.has(a), renderAlias, dispose: () => {
+  } };
+};
+var spawnVoiceWorker = async (url) => {
+  const sameOrigin = new URL(url, location.href).origin === location.origin;
+  if (sameOrigin) return new Worker(url);
+  const text = await fetch(url).then((r) => r.text());
+  return new Worker(
+    URL.createObjectURL(new Blob([text], { type: "text/javascript" }))
+  );
+};
+var createWorkerBackend = async (workerUrl, options) => {
+  const worker = await spawnVoiceWorker(workerUrl);
+  const aliasSet = /* @__PURE__ */ new Set();
+  const pending = /* @__PURE__ */ new Map();
+  let reqId = 0;
+  let onReady = null;
+  let onFail = null;
+  worker.onmessage = (ev) => {
+    const m = ev.data;
+    if (m.type === "ready") {
+      for (const a of m.aliases) aliasSet.add(a);
+      onReady?.();
+    } else if (m.type === "error") {
+      onFail?.(new Error(m.message));
+    } else if (m.type === "rendered") {
+      const cb = pending.get(m.id);
+      if (cb) {
+        pending.delete(m.id);
+        cb(m);
       }
     }
-    if (!rendered) {
-      const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
-      const audioData = Float32Array.from(pcm);
-      const buf = ctx.createBuffer(1, audioData.length, KOE_SAMPLE_RATE);
-      buf.copyToChannel(audioData, 0);
-      rendered = {
-        audio: buf,
-        preSec: entry.pre / KOE_SAMPLE_RATE / rate,
-        rate
-      };
-    }
-    renderCache.set(key, rendered);
-    return rendered;
+  };
+  worker.onerror = (e) => onFail?.(
+    new Error(`voice worker error: ${e.message || e}`)
+  );
+  await new Promise((resolve, reject) => {
+    onReady = resolve;
+    onFail = reject;
+    worker.postMessage({
+      type: "init",
+      koe: options.koe,
+      worldlineScriptUrl: options.worldlineScriptUrl ?? DEFAULT_WORLDLINE_SCRIPT,
+      lightweight: !!options.lightweight
+    });
+  });
+  onReady = null;
+  onFail = null;
+  const renderAlias = (alias, pitch, durationMs) => new Promise((resolve) => {
+    const id = ++reqId;
+    pending.set(
+      id,
+      (m) => resolve(
+        m.pcm ? { pcm: m.pcm, preSec: m.preSec ?? 0, rate: m.rate ?? 1 } : null
+      )
+    );
+    worker.postMessage({
+      type: "render",
+      id,
+      alias,
+      pitch,
+      durationMs
+    });
+  });
+  return {
+    hasAlias: (a) => aliasSet.has(a),
+    renderAlias,
+    dispose: () => worker.terminate()
+  };
+};
+var createKoeVoice = async (ctx, destination, options) => {
+  const backend = options.voiceWorkerUrl ? await createWorkerBackend(options.voiceWorkerUrl, options) : await createLocalBackend(options);
+  const renderCache = /* @__PURE__ */ new Map();
+  const inflight = /* @__PURE__ */ new Map();
+  const active = /* @__PURE__ */ new Set();
+  let prevVowel = "";
+  const keyOf = (alias, pitch, durationMs) => `${alias}|${pitch}|${Math.round(durationMs / 10) * 10}`;
+  const renderInto = (alias, pitch, durationMs) => {
+    const key = keyOf(alias, pitch, durationMs);
+    const existing = renderCache.get(key);
+    if (existing !== void 0) return Promise.resolve(existing);
+    const flying = inflight.get(key);
+    if (flying) return flying;
+    const p = (async () => {
+      const out = await backend.renderAlias(alias, pitch, durationMs);
+      let rendered = null;
+      if (out) {
+        const buf = ctx.createBuffer(1, out.pcm.length, KOE_SAMPLE_RATE);
+        buf.copyToChannel(out.pcm, 0);
+        rendered = { audio: buf, preSec: out.preSec, rate: out.rate };
+      }
+      renderCache.set(key, rendered);
+      inflight.delete(key);
+      return rendered;
+    })();
+    inflight.set(key, p);
+    return p;
   };
   const schedule = (r, t0, peak, pan) => {
     let out = destination;
@@ -1378,23 +1468,23 @@ var createKoeVoice = async (ctx, destination, options) => {
   };
   const model = (syllable, e) => {
     if (syllable.consonant === "Q" || syllable.vowel === "") return;
-    const alias = resolveKoeAlias(bank, syllable, prevVowel);
+    const alias = resolveKoeAlias(backend.hasAlias, syllable, prevVowel);
     if (syllable.vowel && syllable.vowel !== "N") prevVowel = syllable.vowel;
     if (!alias) return;
     const t0 = ctx.currentTime + e.when;
     const peak = Math.max(1e-4, e.volume);
     const pan = e.pan ?? 0;
     const durationMs = Math.max(60, e.duration * 1e3);
-    void renderOne(alias, e.pitch, durationMs).then((r) => {
+    void renderInto(alias, e.pitch, durationMs).then((r) => {
       if (r) schedule(r, t0, peak, pan);
     });
   };
   model.renderToCache = async (syllable, prevVowelArg, pitch, durationMs) => {
     if (syllable.consonant === "Q" || syllable.vowel === "") return null;
-    const alias = resolveKoeAlias(bank, syllable, prevVowelArg);
+    const alias = resolveKoeAlias(backend.hasAlias, syllable, prevVowelArg);
     if (!alias) return null;
     const dMs = Math.max(60, durationMs);
-    const r = await renderOne(alias, pitch, dMs);
+    const r = await renderInto(alias, pitch, dMs);
     return r ? keyOf(alias, pitch, dMs) : null;
   };
   model.scheduleCached = (key, t0, peak, pan) => {
@@ -1451,7 +1541,8 @@ var createSingingVoices = (ctx, destination, options = {}) => {
       return createKoeVoice(ctx, destination, {
         koe: source,
         worldlineScriptUrl: options.worldlineScriptUrl,
-        lightweight: options.lightweight
+        lightweight: options.lightweight,
+        voiceWorkerUrl: options.voiceWorkerUrl
       });
     })().then((v) => {
       loaded.set(m, v);

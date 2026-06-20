@@ -258,9 +258,14 @@
         import { SoundFont_drum } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs';
         import { SoundFont_list } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs';
 
-        const DTM = await import(location.hostname === 'localhost'
+        const isLocal = location.hostname === 'localhost';
+        const DTM = await import(isLocal
             ? 'http://localhost:40298/dist/index.mjs'
             : './index.mjs');
+        // 歌声合成Workerのスクリプト（DTM本体と同じ場所に置かれる）。
+        const VOICE_WORKER_URL = isLocal
+            ? 'http://localhost:40298/dist/voice-worker.js'
+            : new URL('./voice-worker.js', import.meta.url).href;
 
         const { createAudioContext, setupRecorder, buildNameToKeyMapping } = DTM;
         const { DRUM_KEYS, DRUM_FONT, INSTRUMENT_PRESETS } = DTM;
@@ -272,7 +277,7 @@
 
         // 歌詞付きノート（@@n）を歌う歌唱合成。klatt（内蔵）＋ koe音源（UTAU由来）を一括管理。
         // SoundFontと同じ master gain へ流す。koe音源はキーワード（roze / teto …）で選べる。
-        const voices = DTM.createSingingVoices(audioCtx, gainNode);
+        const voices = DTM.createSingingVoices(audioCtx, gainNode, { voiceWorkerUrl: VOICE_WORKER_URL });
 
         const soundFonts = {};
         const currentFont = 'FluidR3_GM_sf2_file';
