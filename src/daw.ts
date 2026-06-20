@@ -12,6 +12,9 @@ import { icon } from "./icons";
 import {
 	KOE_VOICEBANK_LABELS,
 	KOE_VOICEBANKS,
+	LYRIC_MODEL_LABELS,
+	LYRIC_MODEL_TERMS,
+	lyricModelLabel,
 	MAX_VOCAL_VOLUME,
 	normalizeLyrics,
 	panToStereo,
@@ -215,26 +218,6 @@ const DEFAULT_TRACKS = TRACKS_SIMPLE;
  * 内蔵フォルマント合成 "klatt" に加え、@onjmin/koe のUTAU音源（簡略キーワード）を並べる。
  */
 const LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
-
-/** モデルキーワード → プルダウン表示名。未登録はキーワードをそのまま表示する */
-const LYRIC_MODEL_LABELS: Record<string, string> = {
-	klatt: "軽量ロボ声",
-	...KOE_VOICEBANK_LABELS,
-};
-
-/** モデルキーワード → 利用規約URL。空文字は未設定（後日追記） */
-const LYRIC_MODEL_TERMS: Record<string, string> = {
-	tsukuyomi: "https://tyc.rei-yumesaki.net/material/utau/terms/",
-	rino: "https://hatenakun1.github.io/halunelino/",
-	roze: "https://tabaneroze.ninja-web.net/terms-of-use.html",
-	ruko: "https://long-sleeper.net/index.php?id=22",
-	teto: "https://kasaneteto.jp/guidelines/voice.html",
-	shiyo: "https://kakumeisiyo.my.canva.site/dagkuyjwycs",
-};
-
-/** モデルキーワードのUI表示名を返す（未登録はキーワードそのまま） */
-const lyricModelLabel = (model: string): string =>
-	LYRIC_MODEL_LABELS[model] ?? model;
 
 const clamp = (v: number, min: number, max: number): number =>
 	Math.min(Math.max(v, min), max);
@@ -1303,7 +1286,7 @@ export const mountDAW = (
 				: undefined;
 			if (url) {
 				const label = lyricModelLabel(active.lyricModel);
-				lyricTermsLink.textContent = label;
+				lyricTermsLink.textContent = `${label}UTAU音源`;
 				lyricTermsLink.href = url;
 				lyricTerms.classList.remove("dtm-hidden");
 			} else {

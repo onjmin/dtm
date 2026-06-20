@@ -13,6 +13,8 @@ import { DRUM_PATTERNS, type DrumPattern } from "./drum-config";
 import { icon } from "./icons";
 import {
 	createSingingVoices,
+	LYRIC_MODEL_TERMS,
+	lyricModelLabel,
 	panToStereo,
 	type SingingVoices,
 	type StreamVoiceTrack,
@@ -363,6 +365,32 @@ export const mountMmlPlayer = (
 		row.append(label, lane);
 		root.appendChild(row);
 		laneViews.push({ lane, tokens: laneTokens });
+	}
+
+	// ── 利用規約 ──
+	const termModels = [...new Set([...lyricTracks.values()].map((t) => t.model))].filter(
+		(m): m is string => !!m && !!LYRIC_MODEL_TERMS[m],
+	);
+	if (termModels.length > 0) {
+		const foot = doc.createElement("div");
+		foot.className = "dtm-player-terms";
+		foot.textContent = "使用時には ";
+		const links = termModels.map((m) => {
+			const a = doc.createElement("a");
+			a.href = LYRIC_MODEL_TERMS[m];
+			a.target = "_blank";
+			a.rel = "noopener";
+			a.textContent = lyricModelLabel(m);
+			a.style.color = "var(--dtm-primary)";
+			a.style.textDecoration = "underline";
+			return a;
+		});
+		for (let i = 0; i < links.length; i++) {
+			if (i > 0) foot.append(" / ");
+			foot.append(links[i]);
+		}
+		foot.append(" の利用規約に従ってください");
+		root.appendChild(foot);
 	}
 
 	target.appendChild(root);
