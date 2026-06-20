@@ -222,6 +222,16 @@ const LYRIC_MODEL_LABELS: Record<string, string> = {
 	...KOE_VOICEBANK_LABELS,
 };
 
+/** モデルキーワード → 利用規約URL。空文字は未設定（後日追記） */
+const LYRIC_MODEL_TERMS: Record<string, string> = {
+	tsukuyomi: "https://tyc.rei-yumesaki.net/material/utau/terms/",
+	rino: "https://hatenakun1.github.io/halunelino/",
+	roze: "https://tabaneroze.ninja-web.net/terms-of-use.html",
+	ruko: "https://long-sleeper.net/index.php?id=22",
+	teto: "https://kasaneteto.jp/guidelines/voice.html",
+	shiyo: "https://kakumeisiyo.my.canva.site/dagkuyjwycs",
+};
+
 /** モデルキーワードのUI表示名を返す（未登録はキーワードそのまま） */
 const lyricModelLabel = (model: string): string =>
 	LYRIC_MODEL_LABELS[model] ?? model;
@@ -1212,6 +1222,11 @@ export const mountDAW = (
         <select class="dtm-select" data-dtm="lyric-model" aria-label="歌唱モデル"></select>
         <span class="dtm-label dtm-grow" data-dtm="lyric-count" style="text-align:right"></span>
       </div>
+      <div class="dtm-row dtm-hidden" data-dtm="lyric-terms" style="font-size:10px;gap:4px;color:var(--dtm-warn)">
+        <span>使用時には</span>
+        <a data-dtm="lyric-terms-link" target="_blank" rel="noopener" style="color:var(--dtm-primary);text-decoration:underline"></a>
+        <span>の利用規約に従ってください</span>
+      </div>
       <div class="dtm-row" data-dtm="lyric-body" style="flex-direction:column;align-items:stretch">
         <div class="dtm-row">
           <span class="dtm-label">声量</span>
@@ -1250,6 +1265,12 @@ export const mountDAW = (
 		const lyricPanLabel = lyricDiv.querySelector(
 			'[data-dtm="lyric-pan-label"]',
 		) as HTMLElement;
+		const lyricTerms = lyricDiv.querySelector(
+			'[data-dtm="lyric-terms"]',
+		) as HTMLElement;
+		const lyricTermsLink = lyricDiv.querySelector(
+			'[data-dtm="lyric-terms-link"]',
+		) as HTMLAnchorElement;
 		// 定位ラベル: 64=C / 左寄りは L<量> / 右寄りは R<量>
 		const fmtPan = (pan: number): string =>
 			pan === 64 ? "C" : pan < 64 ? `L${64 - pan}` : `R${pan - 64}`;
@@ -1276,9 +1297,23 @@ export const mountDAW = (
 			const n = normalizeLyrics(lyricInput.value).length;
 			lyricCount.textContent = active.lyricModel && n > 0 ? `${n}音節` : "";
 		};
+		const syncLyricTerms = (): void => {
+			const url = active.lyricModel
+				? LYRIC_MODEL_TERMS[active.lyricModel]
+				: undefined;
+			if (url) {
+				const label = lyricModelLabel(active.lyricModel);
+				lyricTermsLink.textContent = label;
+				lyricTermsLink.href = url;
+				lyricTerms.classList.remove("dtm-hidden");
+			} else {
+				lyricTerms.classList.add("dtm-hidden");
+			}
+		};
 		const syncLyricVisibility = (): void => {
 			lyricBody.style.display = active.lyricModel ? "" : "none";
 			updateLyricCount();
+			syncLyricTerms();
 		};
 		syncLyricVisibility();
 		lyricModelSel.addEventListener("change", () => {
