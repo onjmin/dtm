@@ -6387,8 +6387,6 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       if (useSynth) synthPlay(e);
     },
     onPlayDrum: (e) => {
-      const em = emojiEls[0];
-      if (em) jumpEmojiAt(em, e.when);
       const velocity = e.velocity * (trackVolume / 100);
       options.onPlayDrum?.({ ...e, velocity });
       if (useSynth) drumSynth({ ...e, velocity });
