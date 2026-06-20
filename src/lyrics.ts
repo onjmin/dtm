@@ -17,6 +17,12 @@
 
 import { leadInFromEntry, VoiceBank, Worldline } from "@onjmin/koe";
 import type { LyricSyllable, LyricTrack, PlayNoteEvent } from "./types";
+import type {
+	VoiceWorkerInit,
+	VoiceWorkerOutbound,
+	VoiceWorkerRendered,
+	VoiceWorkerRenderReq,
+} from "./voice-worker-types";
 
 export type { LyricSyllable, LyricTrack } from "./types";
 
@@ -666,7 +672,7 @@ const expandSeparators = (candidate: string): string[] =>
  * 見つからなければ母音単独へフォールバックし、それも無ければ null。
  */
 const resolveKoeAlias = (
-	bank: VoiceBank,
+	hasAlias: (alias: string) => boolean,
 	syl: LyricSyllable,
 	prevVowel: string,
 ): string | null => {
@@ -695,7 +701,7 @@ const resolveKoeAlias = (
 		for (const v of expandSeparators(c)) {
 			if (seen.has(v)) continue;
 			seen.add(v);
-			if (bank.has(v)) return v;
+			if (hasAlias(v)) return v;
 		}
 	}
 	return null;
@@ -715,6 +721,12 @@ export type KoeVoiceOptions = {
 	 * ピッチシフトして鳴らす軽量モード。WASMの読み込みを避けたいときに。
 	 */
 	lightweight?: boolean;
+	/**
+	 * 歌声合成Worker（`voice-worker.js`）のURL。指定すると重いWORLD再合成を
+	 * 別スレッドで実行し、メインスレッド（楽器・UI）を一切ブロックしない。
+	 * 省略時は従来どおりメインスレッドで合成する（後方互換）。
+	 */
+	voiceWorkerUrl?: string;
 };
 
 type RenderedNote = {
@@ -723,6 +735,165 @@ type RenderedNote = {
 	preSec: number;
 	/** 再生レート（Worldline使用時は1、素片フォールバック時はピッチ比） */
 	rate: number;
+};
+
+/** backend が返す生PCM（メイン側でAudioBuffer化する）。 */
+type BackendRender = { pcm: Float32Array; preSec: number; rate: number } | null;
+
+/**
+ * 「エイリアス → 合成PCM」を供給するバックエンド。
+ * - local: メインスレッドで VoiceBank + Worldline を持って合成（後方互換）。
+ * - worker: 別スレッドの {@link file://./voice-worker.ts} へ委譲（メインを塞がない）。
+ */
+type RenderBackend = {
+	/** 音源マニフェストに該当エイリアスが存在するか（エイリアス解決用）。 */
+	hasAlias: (alias: string) => boolean;
+	/** エイリアスを目標ピッチ・音価で合成して生PCMを返す（重い処理）。 */
+	renderAlias: (
+		alias: string,
+		pitch: number,
+		durationMs: number,
+	) => Promise<BackendRender>;
+	/** 破棄（Worker終了など）。 */
+	dispose: () => void;
+};
+
+/** メインスレッドで合成する従来バックエンド（voiceWorkerUrl 未指定時）。 */
+const createLocalBackend = async (
+	options: KoeVoiceOptions,
+): Promise<RenderBackend> => {
+	const bank = await VoiceBank.load(options.koe);
+	const worldline = options.lightweight
+		? null
+		: await Worldline.load({
+				scriptUrl: options.worldlineScriptUrl ?? DEFAULT_WORLDLINE_SCRIPT,
+			}).catch(() => null); // WASM不可なら素片フォールバックで動かす
+
+	const pcmCache = new Map<string, Promise<Float64Array | null>>();
+	const getPcm = (alias: string): Promise<Float64Array | null> => {
+		let p = pcmCache.get(alias);
+		if (!p) {
+			p = bank.getPcm(alias);
+			pcmCache.set(alias, p);
+		}
+		return p;
+	};
+
+	const renderAlias = async (
+		alias: string,
+		pitch: number,
+		durationMs: number,
+	): Promise<BackendRender> => {
+		const pcm = await getPcm(alias);
+		if (!pcm || pcm.length === 0) return null;
+		const entry = bank.manifest.phonemes[alias];
+		const lead = leadInFromEntry(entry);
+		const targetHz = midiToFreq(pitch);
+		if (worldline) {
+			const audio = worldline.renderNote({
+				pcm,
+				pitch: targetHz,
+				durationMs,
+				...lead,
+			});
+			if (audio) return { pcm: audio, preSec: lead.preMs / 1000, rate: 1 };
+		}
+		const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
+		return {
+			pcm: Float32Array.from(pcm),
+			preSec: entry.pre / KOE_SAMPLE_RATE / rate,
+			rate,
+		};
+	};
+
+	return { hasAlias: (a) => bank.has(a), renderAlias, dispose: () => {} };
+};
+
+/** クロスオリジン（CDN配信）でも起動できるよう Worker を生成する。 */
+const spawnVoiceWorker = async (url: string): Promise<Worker> => {
+	const sameOrigin = new URL(url, location.href).origin === location.origin;
+	if (sameOrigin) return new Worker(url);
+	// 別オリジンの URL は直接 new Worker できないため、取得して Blob URL から起動する。
+	const text = await fetch(url).then((r) => r.text());
+	return new Worker(
+		URL.createObjectURL(new Blob([text], { type: "text/javascript" })),
+	);
+};
+
+/** 重い合成を別スレッドへ委譲するバックエンド（voiceWorkerUrl 指定時）。 */
+const createWorkerBackend = async (
+	workerUrl: string,
+	options: KoeVoiceOptions,
+): Promise<RenderBackend> => {
+	const worker = await spawnVoiceWorker(workerUrl);
+	const aliasSet = new Set<string>();
+	const pending = new Map<number, (m: VoiceWorkerRendered) => void>();
+	let reqId = 0;
+	let onReady: (() => void) | null = null;
+	let onFail: ((e: Error) => void) | null = null;
+
+	worker.onmessage = (ev: MessageEvent<VoiceWorkerOutbound>) => {
+		const m = ev.data;
+		if (m.type === "ready") {
+			for (const a of m.aliases) aliasSet.add(a);
+			onReady?.();
+		} else if (m.type === "error") {
+			onFail?.(new Error(m.message));
+		} else if (m.type === "rendered") {
+			const cb = pending.get(m.id);
+			if (cb) {
+				pending.delete(m.id);
+				cb(m);
+			}
+		}
+	};
+	worker.onerror = (e) =>
+		onFail?.(
+			new Error(`voice worker error: ${(e as ErrorEvent).message || e}`),
+		);
+
+	await new Promise<void>((resolve, reject) => {
+		onReady = resolve;
+		onFail = reject;
+		worker.postMessage({
+			type: "init",
+			koe: options.koe,
+			worldlineScriptUrl:
+				options.worldlineScriptUrl ?? DEFAULT_WORLDLINE_SCRIPT,
+			lightweight: !!options.lightweight,
+		} satisfies VoiceWorkerInit);
+	});
+	onReady = null;
+	onFail = null;
+
+	const renderAlias = (
+		alias: string,
+		pitch: number,
+		durationMs: number,
+	): Promise<BackendRender> =>
+		new Promise((resolve) => {
+			const id = ++reqId;
+			pending.set(id, (m) =>
+				resolve(
+					m.pcm
+						? { pcm: m.pcm, preSec: m.preSec ?? 0, rate: m.rate ?? 1 }
+						: null,
+				),
+			);
+			worker.postMessage({
+				type: "render",
+				id,
+				alias,
+				pitch,
+				durationMs,
+			} satisfies VoiceWorkerRenderReq);
+		});
+
+	return {
+		hasAlias: (a) => aliasSet.has(a),
+		renderAlias,
+		dispose: () => worker.terminate(),
+	};
 };
 
 /**
@@ -739,24 +910,15 @@ export const createKoeVoice = async (
 	destination: AudioNode,
 	options: KoeVoiceOptions,
 ): Promise<VoiceModel> => {
-	const bank = await VoiceBank.load(options.koe);
-	const worldline = options.lightweight
-		? null
-		: await Worldline.load({
-				scriptUrl: options.worldlineScriptUrl ?? DEFAULT_WORLDLINE_SCRIPT,
-			}).catch(() => null); // WASM不可なら素片フォールバックで動かす
+	// 重い合成のバックエンド。voiceWorkerUrl があれば別スレッド、無ければメインスレッド。
+	const backend = options.voiceWorkerUrl
+		? await createWorkerBackend(options.voiceWorkerUrl, options)
+		: await createLocalBackend(options);
 
-	// 音素PCM（fetch）と再合成結果のキャッシュ。同じ音素・ピッチ・音価の再演を高速化する。
-	const pcmCache = new Map<string, Promise<Float64Array | null>>();
-	const getPcm = (alias: string): Promise<Float64Array | null> => {
-		let p = pcmCache.get(alias);
-		if (!p) {
-			p = bank.getPcm(alias);
-			pcmCache.set(alias, p);
-		}
-		return p;
-	};
+	// 合成済み AudioBuffer のキャッシュ（同じ音素・ピッチ・音価の再演を高速化）。
 	const renderCache = new Map<string, RenderedNote | null>();
+	// 同一キーの同時要求をまとめる（warm と stream の競合で二重合成しないため）。
+	const inflight = new Map<string, Promise<RenderedNote | null>>();
 
 	// この音源がスケジュール済みの BufferSource 群。stopAll で一括停止する。
 	const active = new Set<AudioBufferSourceNode>();
@@ -768,53 +930,32 @@ export const createKoeVoice = async (
 	const keyOf = (alias: string, pitch: number, durationMs: number): string =>
 		`${alias}|${pitch}|${Math.round(durationMs / 10) * 10}`;
 
-	/** 1音素を合成（重い）して renderCache へ積む。重複キーは即返す。 */
-	const renderOne = async (
+	/** backend で合成 → AudioBuffer 化して renderCache へ積む。重複・同時要求はまとめる。 */
+	const renderInto = (
 		alias: string,
 		pitch: number,
 		durationMs: number,
 	): Promise<RenderedNote | null> => {
 		const key = keyOf(alias, pitch, durationMs);
 		const existing = renderCache.get(key);
-		if (existing !== undefined) return existing;
+		if (existing !== undefined) return Promise.resolve(existing);
+		const flying = inflight.get(key);
+		if (flying) return flying;
 
-		const pcm = await getPcm(alias);
-		if (!pcm || pcm.length === 0) {
-			renderCache.set(key, null);
-			return null;
-		}
-		const entry = bank.manifest.phonemes[alias];
-		const lead = leadInFromEntry(entry);
-		const targetHz = midiToFreq(pitch);
-
-		let rendered: RenderedNote | null = null;
-		if (worldline) {
-			const audio = worldline.renderNote({
-				pcm,
-				pitch: targetHz,
-				durationMs,
-				...lead,
-			});
-			if (audio) {
-				const buf = ctx.createBuffer(1, audio.length, KOE_SAMPLE_RATE);
-				buf.copyToChannel(audio, 0);
-				rendered = { audio: buf, preSec: lead.preMs / 1000, rate: 1 };
+		const p = (async () => {
+			const out = await backend.renderAlias(alias, pitch, durationMs);
+			let rendered: RenderedNote | null = null;
+			if (out) {
+				const buf = ctx.createBuffer(1, out.pcm.length, KOE_SAMPLE_RATE);
+				buf.copyToChannel(out.pcm, 0);
+				rendered = { audio: buf, preSec: out.preSec, rate: out.rate };
 			}
-		}
-		if (!rendered) {
-			// Worldline不可（WASM未ロード or 素片が短すぎる）→ 素片をピッチシフト再生
-			const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
-			const audioData = Float32Array.from(pcm);
-			const buf = ctx.createBuffer(1, audioData.length, KOE_SAMPLE_RATE);
-			buf.copyToChannel(audioData, 0);
-			rendered = {
-				audio: buf,
-				preSec: entry.pre / KOE_SAMPLE_RATE / rate,
-				rate,
-			};
-		}
-		renderCache.set(key, rendered);
-		return rendered;
+			renderCache.set(key, rendered);
+			inflight.delete(key);
+			return rendered;
+		})();
+		inflight.set(key, p);
+		return p;
 	};
 
 	const schedule = (
@@ -869,24 +1010,24 @@ export const createKoeVoice = async (
 	// VoiceModel が callable であることの後方互換のために残す。
 	const model: VoiceModel = (syllable, e) => {
 		if (syllable.consonant === "Q" || syllable.vowel === "") return;
-		const alias = resolveKoeAlias(bank, syllable, prevVowel);
+		const alias = resolveKoeAlias(backend.hasAlias, syllable, prevVowel);
 		if (syllable.vowel && syllable.vowel !== "N") prevVowel = syllable.vowel;
 		if (!alias) return;
 		const t0 = ctx.currentTime + e.when;
 		const peak = Math.max(0.0001, e.volume);
 		const pan = e.pan ?? 0;
 		const durationMs = Math.max(60, e.duration * 1000);
-		void renderOne(alias, e.pitch, durationMs).then((r) => {
+		void renderInto(alias, e.pitch, durationMs).then((r) => {
 			if (r) schedule(r, t0, peak, pan);
 		});
 	};
 
 	model.renderToCache = async (syllable, prevVowelArg, pitch, durationMs) => {
 		if (syllable.consonant === "Q" || syllable.vowel === "") return null;
-		const alias = resolveKoeAlias(bank, syllable, prevVowelArg);
+		const alias = resolveKoeAlias(backend.hasAlias, syllable, prevVowelArg);
 		if (!alias) return null;
 		const dMs = Math.max(60, durationMs);
-		const r = await renderOne(alias, pitch, dMs);
+		const r = await renderInto(alias, pitch, dMs);
 		return r ? keyOf(alias, pitch, dMs) : null;
 	};
 
@@ -989,6 +1130,12 @@ export type SingingVoicesOptions = {
 	worldlineScriptUrl?: string;
 	/** koe音源を軽量モード（素片ピッチシフト）で鳴らす */
 	lightweight?: boolean;
+	/**
+	 * 歌声合成Worker（`voice-worker.js`）のURL。指定すると重いWORLD再合成を
+	 * 別スレッドで実行し、メインスレッド（楽器・UI）を一切ブロックしない（モバイル推奨）。
+	 * 省略時は従来どおりメインスレッドで合成する。
+	 */
+	voiceWorkerUrl?: string;
 };
 
 /** 内蔵フォルマント合成のモデル名（koe音源が見つからないときのフォールバック先） */
@@ -1039,6 +1186,7 @@ export const createSingingVoices = (
 				koe: source,
 				worldlineScriptUrl: options.worldlineScriptUrl,
 				lightweight: options.lightweight,
+				voiceWorkerUrl: options.voiceWorkerUrl,
 			});
 		})()
 			.then((v) => {
