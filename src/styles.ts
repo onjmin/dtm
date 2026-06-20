@@ -602,8 +602,11 @@ export const DAW_CSS = `
 .dtm-tk--rest { color: var(--dtm-muted); }
 .dtm-tk--octave,
 .dtm-tk--shift,
-.dtm-tk--length { color: var(--dtm-border2); }
+.dtm-tk--length,
+.dtm-tk--ctrl { color: var(--dtm-border2); }
 .dtm-tk--lyric { color: var(--dtm-text); letter-spacing: 1px; }
+.dtm-tk--break { color: var(--dtm-muted); opacity: 0.7; margin: 0 2px; }
+.dtm-tk--meta { color: var(--dtm-border2); margin-right: 4px; }
 .dtm-tk.is-active {
   background: var(--tk, var(--dtm-primary));
   color: var(--c-black);

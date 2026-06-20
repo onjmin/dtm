@@ -85,7 +85,7 @@ export type MMLDisplayToken = {
 	startStep: number;
 	/** 長さステップ。制御トークンは 0（ハイライト対象外） */
 	durationSteps: number;
-	type: "note" | "chord" | "rest" | "octave" | "shift" | "length";
+	type: "note" | "chord" | "rest" | "octave" | "shift" | "length" | "ctrl";
 };
 
 export type ParsedMML = {
@@ -273,6 +273,9 @@ export const parseMML = (
 				if (ch === "t" && trackIndex === 0 && numStr) {
 					bpm = clamp(Number.parseInt(numStr, 10), 1, 255);
 				}
+				// 発音位置には影響しないが、再生専用UIがグレーアウト表示できるよう
+				// トークンとして残す（durationSteps 0 でハイライト対象外）。
+				pushTok("ctrl", currentStep, 0, tokStart);
 			} else if (ch === "[") {
 				// 和音
 				j++;

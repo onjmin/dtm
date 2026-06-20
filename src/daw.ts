@@ -239,7 +239,7 @@ type TrackState = {
 	lyrics: string;
 	/** 歌唱合成モデル名（既定 "klatt"） */
 	lyricModel: string;
-	/** 歌唱の声量 0-200（100=等倍、100超でブースト）。ノートvelocityとは独立した合成音声専用パラメータ。既定100 */
+	/** 歌唱の声量 0-400（100=等倍、100超でブースト＝dB対数）。ノートvelocityとは独立した合成音声専用パラメータ。既定100 */
 	vocalVolume: number;
 	/** 歌唱のゲートタイム 0-100（音価に対する発音長の割合）。既定100（レガート） */
 	vocalGate: number;

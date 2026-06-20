@@ -196,8 +196,33 @@ const resolveLongVowels = (syllables: LyricSyllable[]): LyricSyllable[] => {
 export const normalizeLyrics = (text: string): LyricSyllable[] =>
 	resolveLongVowels(splitSyllables(sanitizeText(text)).map(analyzeSyllable));
 
+/**
+ * 複数行に分かれた歌詞を1つの音節列へまとめ、改行位置を併せて返す。
+ * lineBreaks には「直前に改行があった」音節のインデックスが入る（先頭行ぶんは含めない）。
+ * 長音(ー)は行ごとに解決する（改行は自然なフレーズの切れ目なので前の母音は引き継がない）。
+ */
+const normalizeLyricLines = (
+	lines: string[],
+): { syllables: LyricSyllable[]; lineBreaks: number[] } => {
+	const syllables: LyricSyllable[] = [];
+	const lineBreaks: number[] = [];
+	for (const line of lines) {
+		const part = normalizeLyrics(line);
+		if (part.length === 0) continue; // 空行・かな無しの行は改行として数えない
+		if (syllables.length > 0) lineBreaks.push(syllables.length);
+		syllables.push(...part);
+	}
+	return { syllables, lineBreaks };
+};
+
 /** 歌詞専用行か判定する（@@<数字> で始まる行） */
 const LYRIC_LINE = /^@@(\d+)\s+(.*)$/;
+
+/**
+ * 歌詞の継続行か判定する。@@n 歌詞行のあとに改行で続くセグメントのうち、
+ * 新しい文（@… のトラック/歌詞行、#… のトップレベル宣言）でないものを歌詞の続きとみなす。
+ */
+const isLyricContinuation = (seg: string): boolean => !/^[@#]/.test(seg);
 
 /** MMLを物理行・`;`区切りでセグメントへ分割する */
 const splitSegments = (mml: string): string[] =>
@@ -212,10 +237,33 @@ const clamp = (value: number, lo: number, hi: number): number =>
 
 /**
  * 歌唱の声量の上限（%）。100=等倍。100超は合成音声をブースト（増幅）する。
- * 100では音量が足りないケース向けに 200（2倍）まで許容する。
+ * 100では音量が足りないケース向けに大きめのヘッドルームを確保する。
  * UIスライダー・MML（`v<n>`）パースの双方でこの上限を共有する。
+ * {@link vocalVolumeToGain} により v=400 で約 +24dB（≒15.8倍）まで上げられる。
  */
-export const MAX_VOCAL_VOLUME = 200;
+export const MAX_VOCAL_VOLUME = 400;
+
+/**
+ * 100超ブースト域での 1%（=1目盛り）あたりの増分（dB）。
+ * v=400 のとき (400-100)*0.08 = +24dB ≒ 15.8倍。
+ */
+const VOCAL_BOOST_DB_PER_PERCENT = 0.08;
+
+/**
+ * 声量値（0-{@link MAX_VOCAL_VOLUME}）を実際のゲイン係数へ変換する。
+ *
+ * - 0 → 0（無音）, 100 → 1（等倍）。
+ * - 0-100 は従来どおりの線形（既存MMLの音量を変えないため）。
+ * - 100超は dB 線形（=ゲインは対数）のブースト。スライダーを等間隔で動かすと
+ *   等dB＝知覚的に均等な音量変化になる。
+ *
+ * v=100 で両分岐が連続（線形側=1、対数側=10^0=1）するため、つなぎ目で段差は出ない。
+ */
+export const vocalVolumeToGain = (v: number): number => {
+	if (v <= 0) return 0;
+	if (v <= 100) return v / 100; // 0-100は従来互換の線形フェード
+	return 10 ** (((v - 100) * VOCAL_BOOST_DB_PER_PERCENT) / 20);
+};
 
 /**
  * MMLから全歌詞トラックを解析し、トラックIDをキーにした辞書を返す（プリスキャン）。
@@ -229,15 +277,16 @@ export const MAX_VOCAL_VOLUME = 200;
  */
 export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 	const tracks = new Map<number, LyricTrack>();
-	for (const seg of splitSegments(mml)) {
-		const m = seg.match(LYRIC_LINE);
+	const segments = splitSegments(mml);
+	for (let i = 0; i < segments.length; i++) {
+		const m = segments[i].match(LYRIC_LINE);
 		if (!m) continue;
 		const trackId = Number.parseInt(m[1], 10);
 		// 空白区切りトークンへ分解（歌詞内の空白は sanitize で破棄されるので後で結合する）
 		const tokens = m[2].trim().split(/\s+/);
 		const modelToken = tokens.shift() ?? "";
 
-		let volume = 100; // 省略時の声量（最大）
+		let volume = 100; // 省略時の声量（等倍）
 		let gate = 100; // 省略時のゲート（レガート）
 		let pan = 64; // 省略時の定位（中央）
 
@@ -251,6 +300,9 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 			if (Number.isFinite(v)) volume = clamp(v, 0, MAX_VOCAL_VOLUME);
 		}
 
+		// メタ部分（モデル名＋オプション）の原文。再生専用UIがグレーアウト表示に使う。
+		const metaTokens = [modelToken];
+
 		// モデル名直後の v<n>/q<n>/p<n> トークンを声量・ゲート・定位として消費する。
 		// 歌詞はかな（非ASCII）なので v/q/p と衝突しない。
 		while (tokens.length > 0) {
@@ -259,17 +311,23 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 			const p = /^p(\d+)$/.exec(tokens[0]);
 			if (v) {
 				volume = clamp(Number.parseInt(v[1], 10), 0, MAX_VOCAL_VOLUME);
-				tokens.shift();
 			} else if (q) {
 				gate = clamp(Number.parseInt(q[1], 10), 0, 100);
-				tokens.shift();
 			} else if (p) {
 				pan = clamp(Number.parseInt(p[1], 10), 0, 127);
-				tokens.shift();
 			} else {
 				break;
 			}
+			metaTokens.push(tokens.shift() as string);
 		}
+
+		// 先頭行の残り＋改行で続く継続行を1つの歌詞として扱う。
+		// 継続行は新しい文（@… / #…）が現れるか、空行で途切れるまで歌詞の続きとみなす。
+		const lyricLines = [tokens.join(" ")];
+		while (i + 1 < segments.length && isLyricContinuation(segments[i + 1])) {
+			lyricLines.push(segments[++i]);
+		}
+		const { syllables, lineBreaks } = normalizeLyricLines(lyricLines);
 
 		tracks.set(trackId, {
 			trackId,
@@ -277,7 +335,9 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 			volume,
 			gate,
 			pan,
-			syllables: normalizeLyrics(tokens.join(" ")),
+			syllables,
+			metaText: metaTokens.join(" "),
+			...(lineBreaks.length > 0 ? { lineBreaks } : {}),
 		});
 	}
 	return tracks;
@@ -287,10 +347,20 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
  * 歌詞専用行を除去し、演奏トラックのみのMMLを返す。
  * parseMML が @@n を演奏ノートとして誤解釈しないよう前処理する。
  */
-export const stripLyrics = (mml: string): string =>
-	splitSegments(mml)
-		.filter((seg) => !LYRIC_LINE.test(seg))
-		.join("\n");
+export const stripLyrics = (mml: string): string => {
+	const segments = splitSegments(mml);
+	const kept: string[] = [];
+	for (let i = 0; i < segments.length; i++) {
+		if (LYRIC_LINE.test(segments[i])) {
+			// 歌詞行に続く継続行（改行で書かれた歌詞の続き）もまとめて除去する
+			while (i + 1 < segments.length && isLyricContinuation(segments[i + 1]))
+				i++;
+			continue;
+		}
+		kept.push(segments[i]);
+	}
+	return kept.join("\n");
+};
 
 // ─────────────────────────────────────────────────────────────
 // 同期（ヘッドレス）
@@ -356,7 +426,7 @@ export const createLyricsConductor = (
 		return {
 			model: track.model,
 			syllable,
-			volume: (track.volume ?? 100) / 100,
+			volume: vocalVolumeToGain(track.volume ?? 100),
 			gate: (track.gate ?? 100) / 100,
 			pan: panToStereo(track.pan ?? 64),
 		};

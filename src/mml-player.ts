@@ -302,9 +302,24 @@ export const mountMmlPlayer = (
 				.filter((p) => p.trackIndex === index)
 				.sort((a, b) => a.startStep - b.startStep);
 			const gateScale = (lyricTrack.gate ?? 100) / 100;
+			const breaks = new Set(lyricTrack.lineBreaks ?? []);
+			// メタ部分（モデル名＋オプション）を先頭にグレーアウト表示する（ハイライトしない）
+			if (lyricTrack.metaText) {
+				const metaEl = doc.createElement("span");
+				metaEl.className = "dtm-tk dtm-tk--meta";
+				metaEl.textContent = lyricTrack.metaText;
+				lane.appendChild(metaEl);
+			}
 			const count = Math.min(notes.length, lyricTrack.syllables.length);
 			for (let i = 0; i < count; i++) {
 				const note = notes[i];
+				// 元の歌詞が改行されていた位置に \n 表記の区切りを差し込む（発音はしない）
+				if (breaks.has(i)) {
+					const br = doc.createElement("span");
+					br.className = "dtm-tk dtm-tk--break";
+					br.textContent = "\\n";
+					lane.appendChild(br);
+				}
 				const span = doc.createElement("span");
 				span.className = "dtm-tk dtm-tk--lyric";
 				span.textContent = lyricTrack.syllables[i].kana;
