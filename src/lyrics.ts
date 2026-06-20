@@ -16,6 +16,7 @@
  */
 
 import { leadInFromEntry, VoiceBank, Worldline } from "@onjmin/koe";
+import { DEFAULT_GATE, DEFAULT_PAN, DEFAULT_VOCAL_VOLUME } from "./types";
 import type { LyricSyllable, LyricTrack, PlayNoteEvent } from "./types";
 import type {
 	VoiceWorkerInit,
@@ -292,9 +293,10 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		const tokens = m[2].trim().split(/\s+/);
 		const modelToken = tokens.shift() ?? "";
 
-		let volume = 300; // 省略時の声量
+		let volume = DEFAULT_VOCAL_VOLUME; // 省略時の声量
 		let gate = 100; // 省略時のゲート（レガート）
 		let pan = 64; // 省略時の定位（中央）
+		let octave = 0; // 省略時のオクターブシフト（演奏ノートのピッチそのまま）
 
 		// 後方互換: "klatt:80" のコロン区切り声量
 		const colon = modelToken.indexOf(":");
@@ -309,18 +311,21 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		// メタ部分（モデル名＋オプション）の原文。再生専用UIがグレーアウト表示に使う。
 		const metaTokens = [modelToken];
 
-		// モデル名直後の v<n>/q<n>/p<n> トークンを声量・ゲート・定位として消費する。
-		// 歌詞はかな（非ASCII）なので v/q/p と衝突しない。
+		// モデル名直後の v<n>/q<n>/p<n>/o<±n> トークンを声量・ゲート・定位・オクターブとして消費する。
+		// 歌詞はかな（非ASCII）なので v/q/p/o と衝突しない。
 		while (tokens.length > 0) {
 			const v = /^v(\d+)$/.exec(tokens[0]);
 			const q = /^q(\d+)$/.exec(tokens[0]);
 			const p = /^p(\d+)$/.exec(tokens[0]);
+			const o = /^o(-?\d+)$/.exec(tokens[0]);
 			if (v) {
 				volume = clamp(Number.parseInt(v[1], 10), 0, MAX_VOCAL_VOLUME);
 			} else if (q) {
 				gate = clamp(Number.parseInt(q[1], 10), 0, 100);
 			} else if (p) {
 				pan = clamp(Number.parseInt(p[1], 10), 0, 127);
+			} else if (o) {
+				octave = clamp(Number.parseInt(o[1], 10), -2, 2);
 			} else {
 				break;
 			}
@@ -341,6 +346,7 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 			volume,
 			gate,
 			pan,
+			octave,
 			syllables,
 			metaText: metaTokens.join(" "),
 			...(lineBreaks.length > 0 ? { lineBreaks } : {}),
@@ -432,9 +438,9 @@ export const createLyricsConductor = (
 		return {
 			model: track.model,
 			syllable,
-			volume: vocalVolumeToGain(track.volume ?? 300),
-			gate: (track.gate ?? 100) / 100,
-			pan: panToStereo(track.pan ?? 64),
+			volume: vocalVolumeToGain(track.volume ?? DEFAULT_VOCAL_VOLUME),
+			gate: (track.gate ?? DEFAULT_GATE) / 100,
+			pan: panToStereo(track.pan ?? DEFAULT_PAN),
 		};
 	};
 
@@ -629,7 +635,8 @@ export const KOE_VOICEBANKS: Record<string, string> = {
 	tsukuyomi: "つくよみちゃん.koe",
 	rino: "春音リノver0.3.koe",
 	roze: "束音ロゼver0.５1(多音階).koe",
-	ruko: "欲音ルコ♀歌連続音普1.00.koe",
+	ruko_male: "欲音ルコ♂連続音Ver.1.03.koe",
+	ruko_female: "欲音ルコ♀歌連続音普1.00.koe",
 	teto: "重音テト単独音.koe",
 	shiyo: "革命シヨ.koe",
 };
@@ -642,7 +649,8 @@ export const KOE_VOICEBANK_LABELS: Record<string, string> = {
 	tsukuyomi: "つくよみちゃん",
 	rino: "春音リノ",
 	roze: "束音ロゼ",
-	ruko: "欲音ルコ",
+	ruko_male: "欲音ルコ♂",
+	ruko_female: "欲音ルコ♀",
 	teto: "重音テト",
 	shiyo: "革命シヨ",
 };
@@ -654,7 +662,8 @@ export const KOE_VOICEBANK_TERMS: Record<string, string> = {
 	tsukuyomi: "https://tyc.rei-yumesaki.net/material/utau/terms/",
 	rino: "https://hatenakun1.github.io/halunelino/",
 	roze: "https://tabaneroze.ninja-web.net/terms-of-use.html",
-	ruko: "https://long-sleeper.net/index.php?id=22",
+	ruko_male: "https://long-sleeper.net/index.php?id=22",
+	ruko_female: "https://long-sleeper.net/index.php?id=22",
 	teto: "https://kasaneteto.jp/guidelines/voice.html",
 	shiyo: "https://kakumeisiyo.my.canva.site/dagkuyjwycs",
 };

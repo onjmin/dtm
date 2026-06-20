@@ -7,6 +7,7 @@
  */
 
 import type { DrumPattern } from "./drum-config";
+import { DEFAULT_PLAYBACK_VELOCITY } from "./types";
 import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 
 const STEPS_PER_BEAT = 48;
@@ -80,7 +81,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 			for (const note of track.notes) {
 				const relativeStart = note.startStep - fromStep;
 				if (relativeStart < 0) continue;
-				const velocity = note.velocity ?? 127;
+				const velocity = note.velocity ?? DEFAULT_PLAYBACK_VELOCITY;
 				timeline.push({
 					trackId: track.id,
 					pitch: note.pitch,

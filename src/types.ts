@@ -1,5 +1,13 @@
 import type { SingingVoices } from "./lyrics";
 
+export const DEFAULT_VOCAL_VOLUME = 200;
+export const DEFAULT_BPM = 120;
+export const DEFAULT_GATE = 100;
+export const DEFAULT_PAN = 64;
+export const DEFAULT_VELOCITY = 100;
+export const DEFAULT_PLAYBACK_VELOCITY = 127;
+export const DEFAULT_STEPS_PER_BAR = 192;
+
 // ノートデータ構造
 export type Note = {
 	id: number;
@@ -128,10 +136,17 @@ export type LyricTrack = {
 	 */
 	gate: number;
 	/**
-	 * ステレオ定位 0-127（0=完全左, 64=中央, 127=完全右）。既定64。
+	 * ステレオ定位 0-127（0=完全左, 64=中央, 127=右）。既定64。
 	 * MMLでは `@@n klatt p0 …` のように p トークンで付与する。
 	 */
 	pan: number;
+	/**
+	 * オクターブシフト -2〜+2（半音換算で octave×12 だけ歌唱ピッチを上下する）。既定0。
+	 * 音源ごとに得意な音域が異なるため、演奏ノート（@n）のピッチをそのまま使わず
+	 * オクターブ単位でずらして歌わせるための合成専用パラメータ。
+	 * MMLでは `@@n klatt o-1 …` のように o トークンで付与する。
+	 */
+	octave?: number;
 	/** 正規化済み音節列 */
 	syllables: LyricSyllable[];
 	/**

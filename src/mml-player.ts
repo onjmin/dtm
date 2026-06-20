@@ -23,6 +23,12 @@ import {
 import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
 import { injectStyles, showLoadingOverlay } from "./styles";
+import {
+	DEFAULT_BPM,
+	DEFAULT_GATE,
+	DEFAULT_PAN,
+	DEFAULT_VOCAL_VOLUME,
+} from "./types";
 import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 
 const STEPS_PER_BEAT = 48;
@@ -107,7 +113,7 @@ export const mountMmlPlayer = (
 		collectLyrics: true,
 	});
 	const lyricTracks = lyrics ?? new Map();
-	const bpm = parsedBpm ?? options.defaultBpm ?? 120;
+	const bpm = parsedBpm ?? options.defaultBpm ?? DEFAULT_BPM;
 	// トップレベル宣言: ドラムパターンを解決（曲全体に効く。トラックとは1対1でない）
 	const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
 	const drumPattern: DrumPattern | null = meta.drum
@@ -319,7 +325,7 @@ export const mountMmlPlayer = (
 			const notes = placements
 				.filter((p) => p.trackIndex === index)
 				.sort((a, b) => a.startStep - b.startStep);
-			const gateScale = (lyricTrack.gate ?? 100) / 100;
+			const gateScale = (lyricTrack.gate ?? DEFAULT_GATE) / 100;
 			const breaks = new Set(lyricTrack.lineBreaks ?? []);
 			// メタ部分（モデル名＋オプション）を先頭にグレーアウト表示する（ハイライトしない）
 			if (lyricTrack.metaText) {
@@ -499,22 +505,25 @@ export const mountMmlPlayer = (
 			const sorted = [...(seqTrack?.notes ?? [])].sort(
 				(a, b) => a.startStep - b.startStep,
 			);
-			const gate = (lt.gate ?? 100) / 100;
+			const gate = (lt.gate ?? DEFAULT_GATE) / 100;
+			const semis = (lt.octave ?? 0) * 12; // オクターブシフトを半音換算でピッチへ加算
 			const count = Math.min(sorted.length, lt.syllables.length);
 			const notes = [];
 			for (let i = 0; i < count; i++) {
 				const n = sorted[i];
 				notes.push({
 					syllable: lt.syllables[i],
-					pitch: n.pitch,
+					pitch: n.pitch + semis,
 					startSec: n.startStep * secondsPerStep,
 					durationSec: n.durationSteps * secondsPerStep * gate,
 				});
 			}
 			return {
 				model: lt.model,
-				volume: vocalVolumeToGain(lt.volume ?? 300) * (trackVolume / 100),
-				pan: panToStereo(lt.pan ?? 64),
+				volume:
+					vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) *
+					(trackVolume / 100),
+				pan: panToStereo(lt.pan ?? DEFAULT_PAN),
 				notes,
 			};
 		});

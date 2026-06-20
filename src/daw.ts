@@ -47,6 +47,12 @@ import {
 } from "./renderer";
 import { createSequencer, type Sequencer } from "./sequencer";
 import { injectStyles, showLoadingOverlay } from "./styles";
+import {
+	DEFAULT_BPM,
+	DEFAULT_GATE,
+	DEFAULT_PAN,
+	DEFAULT_VOCAL_VOLUME,
+} from "./types";
 import type {
 	DawInstance,
 	DawOptions,
@@ -247,6 +253,8 @@ type TrackState = {
 	vocalGate: number;
 	/** 歌唱のステレオ定位 0-127（0=左, 64=中央, 127=右）。既定64（中央） */
 	vocalPan: number;
+	/** 歌唱のオクターブシフト -2〜+2（音源の得意音域に合わせてピッチを上下）。既定0 */
+	vocalOctave: number;
 };
 
 /**
@@ -270,7 +278,7 @@ export const mountDAW = (
 		defaultDrumPattern: drumPatterns.dance
 			? "dance"
 			: (Object.keys(drumPatterns)[0] ?? "none"),
-		defaultBpm: options.defaultBpm ?? 120,
+		defaultBpm: options.defaultBpm ?? DEFAULT_BPM,
 		showMidi,
 		showChord,
 	});
@@ -288,7 +296,7 @@ export const mountDAW = (
 	// --- 状態 ---
 	let zoomX = 100;
 	let zoomY = 100;
-	let bpm = options.defaultBpm ?? 120;
+	let bpm = options.defaultBpm ?? DEFAULT_BPM;
 	let masterVolume = 50;
 	let drumVolume = 80;
 	let currentDrumPattern = refs.drumSelect.value;
@@ -348,6 +356,7 @@ export const mountDAW = (
 			vocalVolume: 300,
 			vocalGate: 100,
 			vocalPan: 64,
+			vocalOctave: 0,
 		}));
 	};
 
@@ -366,6 +375,7 @@ export const mountDAW = (
 				volume: t.vocalVolume,
 				gate: t.vocalGate,
 				pan: t.vocalPan,
+				octave: t.vocalOctave,
 				syllables,
 			});
 		});
@@ -1075,7 +1085,8 @@ export const mountDAW = (
 					const sorted = [...(trackState?.core.getNotes() ?? [])].sort(
 						(a, b) => a.startStep - b.startStep,
 					);
-					const gate = (lt.gate ?? 100) / 100;
+					const gate = (lt.gate ?? DEFAULT_GATE) / 100;
+					const semis = (lt.octave ?? 0) * 12; // オクターブシフトを半音換算でピッチへ加算
 					const count = Math.min(sorted.length, lt.syllables.length);
 					const notes = [];
 					for (let i = 0; i < count; i++) {
@@ -1083,15 +1094,17 @@ export const mountDAW = (
 						if (n.startStep < fromStep) continue;
 						notes.push({
 							syllable: lt.syllables[i],
-							pitch: n.pitch,
+							pitch: n.pitch + semis,
 							startSec: (n.startStep - fromStep) * secondsPerStep,
 							durationSec: n.durationSteps * secondsPerStep * gate,
 						});
 					}
 					return {
 						model: lt.model,
-						volume: vocalVolumeToGain(lt.volume ?? 300) * (masterVolume / 100),
-						pan: panToStereo(lt.pan ?? 64),
+						volume:
+							vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) *
+							(masterVolume / 100),
+						pan: panToStereo(lt.pan ?? DEFAULT_PAN),
 						notes,
 					};
 				})
@@ -1212,6 +1225,13 @@ export const mountDAW = (
       <div class="dtm-row">
         <span class="dtm-label">♪ 歌詞</span>
         <select class="dtm-select" data-dtm="lyric-model" aria-label="歌唱モデル"></select>
+        <select class="dtm-select" data-dtm="lyric-octave" aria-label="オクターブ（音源の得意音域に合わせる）" title="オクターブ">
+          <option value="2">+2 oct</option>
+          <option value="1">+1 oct</option>
+          <option value="0">±0 oct</option>
+          <option value="-1">-1 oct</option>
+          <option value="-2">-2 oct</option>
+        </select>
         <span class="dtm-label dtm-grow" data-dtm="lyric-count" style="text-align:right"></span>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="lyric-terms" style="font-size:10px;gap:4px;color:var(--dtm-warn)">
@@ -1235,6 +1255,9 @@ export const mountDAW = (
 		refs.trackBody.appendChild(lyricDiv);
 		const lyricModelSel = lyricDiv.querySelector(
 			'[data-dtm="lyric-model"]',
+		) as HTMLSelectElement;
+		const lyricOctaveSel = lyricDiv.querySelector(
+			'[data-dtm="lyric-octave"]',
 		) as HTMLSelectElement;
 		const lyricBody = lyricDiv.querySelector(
 			'[data-dtm="lyric-body"]',
@@ -1279,6 +1302,7 @@ export const mountDAW = (
 			addOpt(active.lyricModel, lyricModelLabel(active.lyricModel));
 		}
 		lyricModelSel.value = active.lyricModel;
+		lyricOctaveSel.value = String(active.vocalOctave);
 		// 値はプロパティ経由で設定（HTML文字列に混ぜず、</textarea>等の混入を防ぐ）
 		lyricInput.value = active.lyrics;
 		lyricVol.value = String(active.vocalVolume);
@@ -1304,6 +1328,8 @@ export const mountDAW = (
 		};
 		const syncLyricVisibility = (): void => {
 			lyricBody.style.display = active.lyricModel ? "" : "none";
+			// オクターブは歌うときだけ意味を持つので、モデル「なし」では隠す
+			lyricOctaveSel.style.display = active.lyricModel ? "" : "none";
 			updateLyricCount();
 			syncLyricTerms();
 		};
@@ -1311,6 +1337,9 @@ export const mountDAW = (
 		lyricModelSel.addEventListener("change", () => {
 			active.lyricModel = lyricModelSel.value;
 			syncLyricVisibility();
+		});
+		lyricOctaveSel.addEventListener("change", () => {
+			active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
 		});
 		lyricInput.addEventListener("input", () => {
 			active.lyrics = lyricInput.value;
@@ -1488,8 +1517,8 @@ export const mountDAW = (
 			(t, i) =>
 				`@${i}${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim().replace(/\s+/g, "")}`,
 		);
-		// 歌詞行（@@n model [v声量] [qゲート] [p定位] lyrics）。スペースは仕様上の区切りなのでminifyでも残す。
-		// 声量・ゲート・定位は既定(声量=300, ゲート=100, 定位=64)でないときだけ v/q/p トークンで付与する。
+		// 歌詞行（@@n model [v声量] [qゲート] [p定位] [oオクターブ] lyrics）。スペースは仕様上の区切りなのでminifyでも残す。
+		// 声量・ゲート・定位・オクターブは既定(声量=300, ゲート=100, 定位=64, オクターブ=0)でないときだけ v/q/p/o トークンで付与する。
 		const lyricLines = trackStates
 			.map((t, i) => ({
 				i,
@@ -1498,6 +1527,7 @@ export const mountDAW = (
 				vol: t.vocalVolume,
 				gate: t.vocalGate,
 				pan: t.vocalPan,
+				oct: t.vocalOctave,
 			}))
 			.filter((x) => x.model.length > 0 && x.text.length > 0)
 			.map((x) => {
@@ -1505,6 +1535,7 @@ export const mountDAW = (
 					x.vol === 300 ? "" : `v${x.vol}`,
 					x.gate === 100 ? "" : `q${x.gate}`,
 					x.pan === 64 ? "" : `p${x.pan}`,
+					x.oct === 0 ? "" : `o${x.oct}`,
 				]
 					.filter((s) => s.length > 0)
 					.join(" ");
@@ -1614,6 +1645,7 @@ export const mountDAW = (
 			t.vocalVolume = 300;
 			t.vocalGate = 100;
 			t.vocalPan = 64;
+			t.vocalOctave = 0;
 		}
 		lyrics?.forEach((lt, idx) => {
 			const t = trackStates[idx];
@@ -1623,6 +1655,7 @@ export const mountDAW = (
 			t.vocalVolume = lt.volume;
 			t.vocalGate = lt.gate;
 			t.vocalPan = lt.pan;
+			t.vocalOctave = lt.octave ?? 0;
 		});
 		for (const p of placements) {
 			const t = trackStates[p.trackIndex];

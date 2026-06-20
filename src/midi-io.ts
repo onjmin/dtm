@@ -10,6 +10,7 @@
  */
 
 import type { DrumPattern } from "./drum-config";
+import { DEFAULT_VELOCITY } from "./types";
 import type { Note } from "./types";
 
 const STEPS_PER_BEAT = 48;
@@ -420,7 +421,7 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 				(n.startStep + (n.durationSteps || 1)) * tickPerStep,
 			);
 			const vel = Math.round(
-				((n.velocity ?? 100) * (track.volume || 100)) / 100,
+				((n.velocity ?? DEFAULT_VELOCITY) * (track.volume || 100)) / 100,
 			);
 			events.push({ t: startTick, m: [0x90 | (ch & 0x0f), n.pitch, vel] });
 			events.push({ t: endTick, m: [0x90 | (ch & 0x0f), n.pitch, 0] });

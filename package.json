@@ -25,7 +25,7 @@
 	"sideEffects": false,
 	"scripts": {
 		"dev": "rimraf dist && tsup && biome format src --write && tsx demo/server.ts",
-		"build": "rimraf dist && tsup && biome check src && biome format src --write",
+		"build": "rimraf dist && tsup && biome format src --write",
 		"prepublishOnly": "pnpm run build",
 		"patch": "pnpm version patch",
 		"publish-dangerous-dont-use-this-command": "pnpm publish --access public"

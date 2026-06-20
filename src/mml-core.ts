@@ -1,5 +1,6 @@
 import { LinkedList } from "./linked-list";
 import { getRenderConfig } from "./renderer";
+import { DEFAULT_VELOCITY } from "./types";
 import type { AddNoteOptions, CoreEventHandlers, Note } from "./types";
 
 export const PITCH_MAP = [
@@ -149,7 +150,7 @@ export class MMLCore {
 				startStep: step,
 				durationSteps: options.noteLengthSteps,
 				pitch: pitch,
-				velocity: options.velocity ?? 100,
+				velocity: options.velocity ?? DEFAULT_VELOCITY,
 			};
 			this.notes.push(newNote);
 		}

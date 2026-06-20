@@ -9,6 +9,7 @@
  */
 
 import { parseLyrics, stripLyrics } from "./lyrics";
+import { DEFAULT_STEPS_PER_BAR } from "./types";
 import type { LyricTrack } from "./types";
 
 const PITCH_MAP: Record<string, number> = {
@@ -135,7 +136,7 @@ export const parseMML = (
 	mml: string,
 	options: ParseMMLOptions = {},
 ): ParsedMML => {
-	const stepsPerBar = options.stepsPerBar ?? 192;
+	const stepsPerBar = options.stepsPerBar ?? DEFAULT_STEPS_PER_BAR;
 	const collectTokens = options.collectTokens ?? false;
 	const collectLyrics = options.collectLyrics ?? false;
 	const clampTrackCount = options.clampTrackCount;

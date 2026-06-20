@@ -11,28 +11,35 @@
         @font-face {
             font-family: 'k8x12';
             src: url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff2') format('woff2'),
-                 url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff') format('woff'),
-                 url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.ttf') format('truetype');
+                url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff') format('woff'),
+                url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.ttf') format('truetype');
         }
-        *, *::before, *::after { box-sizing: border-box; }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
 
         :root {
-            --c-black:  #000000;
-            --c-navy:   #1d2b53;
-            --c-green:  #00e436;
-            --c-cyan:   #29adff;
+            --c-black: #000000;
+            --c-navy: #1d2b53;
+            --c-green: #00e436;
+            --c-cyan: #29adff;
             --c-yellow: #ffec27;
-            --c-pink:   #ff77a8;
-            --c-gray:   #5f574f;
-            --c-text:   #fff1e8;
-            --c-muted:  #83769c;
+            --c-pink: #ff77a8;
+            --c-gray: #5f574f;
+            --c-text: #fff1e8;
+            --c-muted: #83769c;
         }
 
-        html, body {
-            margin: 0; padding: 0;
+        html,
+        body {
+            margin: 0;
+            padding: 0;
             background: var(--c-black);
             color: var(--c-text);
-            font-family: 'k8x12',ui-monospace,monospace;
+            font-family: 'k8x12', ui-monospace, monospace;
             font-size: 14px;
             -webkit-font-smoothing: none;
             -moz-osx-font-smoothing: unset;
@@ -51,11 +58,10 @@
         /* 全体スキャンライン */
         body::after {
             content: '';
-            position: fixed; inset: 0;
-            background: repeating-linear-gradient(
-                0deg, transparent 0px, transparent 2px,
-                rgba(0,0,0,.22) 2px, rgba(0,0,0,.22) 3px
-            );
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(0deg, transparent 0px, transparent 2px,
+                    rgba(0, 0, 0, .22) 2px, rgba(0, 0, 0, .22) 3px);
             pointer-events: none;
             z-index: 9999;
         }
@@ -77,12 +83,14 @@
             padding: 8px 12px;
             background: var(--c-navy);
         }
+
         .title-banner::before {
             content: '█▓▒░';
             color: var(--c-cyan);
             font-size: 12px;
             letter-spacing: .04em;
         }
+
         .title-banner::after {
             content: '░▒▓█';
             color: var(--c-cyan);
@@ -91,24 +99,64 @@
         }
 
         /* ブリンクカーソル */
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-        .blink { animation: blink 1s steps(1) infinite; }
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: 0
+            }
+        }
+
+        .blink {
+            animation: blink 1s steps(1) infinite;
+        }
 
         /* 音源ローディング：ドットが埋まるアニメ */
         @keyframes dot-fill {
-          0%  { content: '[░░░░░░░░]'; }
-          12% { content: '[▓░░░░░░░]'; }
-          25% { content: '[▓▓░░░░░░]'; }
-          37% { content: '[▓▓▓░░░░░]'; }
-          50% { content: '[▓▓▓▓░░░░]'; }
-          62% { content: '[▓▓▓▓▓░░░]'; }
-          75% { content: '[▓▓▓▓▓▓░░]'; }
-          87% { content: '[▓▓▓▓▓▓▓░]'; }
-          100%{ content: '[▓▓▓▓▓▓▓▓]'; }
+            0% {
+                content: '[░░░░░░░░]';
+            }
+
+            12% {
+                content: '[▓░░░░░░░]';
+            }
+
+            25% {
+                content: '[▓▓░░░░░░]';
+            }
+
+            37% {
+                content: '[▓▓▓░░░░░]';
+            }
+
+            50% {
+                content: '[▓▓▓▓░░░░]';
+            }
+
+            62% {
+                content: '[▓▓▓▓▓░░░]';
+            }
+
+            75% {
+                content: '[▓▓▓▓▓▓░░]';
+            }
+
+            87% {
+                content: '[▓▓▓▓▓▓▓░]';
+            }
+
+            100% {
+                content: '[▓▓▓▓▓▓▓▓]';
+            }
         }
+
         #loading::before {
-          content: '[░░░░░░░░]';
-          animation: dot-fill 1.6s steps(8) infinite;
+            content: '[░░░░░░░░]';
+            animation: dot-fill 1.6s steps(8) infinite;
         }
 
         /* セレクト */
@@ -125,15 +173,15 @@
         tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: { pixel: ['k8x12','ui-monospace','monospace'] },
+                    fontFamily: { pixel: ['k8x12', 'ui-monospace', 'monospace'] },
                     colors: {
                         pico: {
-                            black:  '#000000', navy:   '#1d2b53', purple: '#7e2553',
-                            dkgrn:  '#008751', brown:  '#ab5236', gray:   '#5f574f',
-                            silver: '#c2c3c7', white:  '#fff1e8', red:    '#ff004d',
-                            orange: '#ffa300', yellow: '#ffec27', green:  '#00e436',
-                            cyan:   '#29adff', lavend: '#83769c', pink:   '#ff77a8',
-                            peach:  '#ffccaa',
+                            black: '#000000', navy: '#1d2b53', purple: '#7e2553',
+                            dkgrn: '#008751', brown: '#ab5236', gray: '#5f574f',
+                            silver: '#c2c3c7', white: '#fff1e8', red: '#ff004d',
+                            orange: '#ffa300', yellow: '#ffec27', green: '#00e436',
+                            cyan: '#29adff', lavend: '#83769c', pink: '#ff77a8',
+                            peach: '#ffccaa',
                         }
                     }
                 }
@@ -153,7 +201,7 @@
                     @onjmin/dtm
                 </div>
                 <div class="text-pico-lavend text-xs tracking-widest mt-0.5">
-                    PIXEL MUSIC STUDIO  v0.1.0
+                    PIXEL MUSIC STUDIO v0.1.0
                 </div>
             </div>
             <div class="ml-auto text-right">
@@ -165,7 +213,8 @@
         </div>
 
         <!-- ステータスバー -->
-        <div class="flex items-center gap-4 px-3 py-1.5 bg-pico-black text-xs text-pico-lavend tracking-widest uppercase border-t-2 border-pico-gray">
+        <div
+            class="flex items-center gap-4 px-3 py-1.5 bg-pico-black text-xs text-pico-lavend tracking-widest uppercase border-t-2 border-pico-gray">
             <span class="text-pico-green">● SOUND ON</span>
             <span>|</span>
             <span>MOBILE FIRST DAW</span>
@@ -183,8 +232,7 @@
         <div class="game-win bg-pico-navy px-4 py-3">
             <div class="flex flex-wrap items-center gap-3">
                 <span class="text-pico-pink text-xs uppercase tracking-widest shrink-0">► INSTRUMENT</span>
-                <select id="preset"
-                    class="game-win grow min-h-[40px] px-3 bg-pico-black text-pico-white font-pixel text-sm
+                <select id="preset" class="game-win grow min-h-[40px] px-3 bg-pico-black text-pico-white font-pixel text-sm
                            tracking-wide uppercase border-0 focus:outline-none cursor-pointer">
                 </select>
                 <span class="text-pico-orange text-xs font-pixel shrink-0" id="loading" style="display:none"></span>
@@ -232,7 +280,8 @@
                            shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
                     ▶ LOAD FROM DAW
                 </button>
-                <span class="text-pico-lavend text-xs uppercase tracking-widest">READ-ONLY · @@n KLATT 歌詞同期 · BUILT-IN SYNTH</span>
+                <span class="text-pico-lavend text-xs uppercase tracking-widest">READ-ONLY · @@n KLATT 歌詞同期 · BUILT-IN
+                    SYNTH</span>
             </div>
         </div>
         <div id="player-app"></div>
@@ -448,7 +497,7 @@
         // ════ 再生専用ビュー (mountMmlPlayer) ════
         const { mountMmlPlayer } = DTM;
         // @@0 klatt … が歌詞トラック。@0 のメロディに音節を1つずつ同期して内蔵synthが歌う。
-        // モデル名を koe音源キーワード（roze / teto / tsukuyomi / rino / ruko / shiyo）に
+        // モデル名を koe音源キーワード（roze / teto / tsukuyomi / rino / ruko_female / shiyo）に
         // 変えると、@onjmin/koe のUTAU音源で歌う（例: `@@0 roze ちょうちょう…`）。
         const SAMPLE_MML = '@0 t135 o5 l8 e d c d e e e4 d d d4 e g g4 r e d c d e e e e d d e d c4 ; @1 o3 l4 c g c g c g c g ; @@0 klatt ちょうちょうちょうちょうなのはにとまれなのはにあいたらさくらにとまれ';
         // 再生専用ビューの音量をDAWの既定に合わせるための係数（DAW: マスタ50% / ドラム80%）
