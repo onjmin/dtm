@@ -1031,14 +1031,33 @@ var resolveLongVowels = (syllables) => {
   return result;
 };
 var normalizeLyrics = (text) => resolveLongVowels(splitSyllables(sanitizeText(text)).map(analyzeSyllable));
+var normalizeLyricLines = (lines) => {
+  const syllables = [];
+  const lineBreaks = [];
+  for (const line of lines) {
+    const part = normalizeLyrics(line);
+    if (part.length === 0) continue;
+    if (syllables.length > 0) lineBreaks.push(syllables.length);
+    syllables.push(...part);
+  }
+  return { syllables, lineBreaks };
+};
 var LYRIC_LINE = /^@@(\d+)\s+(.*)$/;
+var isLyricContinuation = (seg) => !/^[@#]/.test(seg);
 var splitSegments = (mml) => mml.split(/[;\n\r]+/).map((s) => s.trim()).filter((s) => s.length > 0);
 var clamp = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
-var MAX_VOCAL_VOLUME = 200;
+var MAX_VOCAL_VOLUME = 400;
+var VOCAL_BOOST_DB_PER_PERCENT = 0.08;
+var vocalVolumeToGain = (v) => {
+  if (v <= 0) return 0;
+  if (v <= 100) return v / 100;
+  return 10 ** ((v - 100) * VOCAL_BOOST_DB_PER_PERCENT / 20);
+};
 var parseLyrics = (mml) => {
   const tracks = /* @__PURE__ */ new Map();
-  for (const seg of splitSegments(mml)) {
-    const m = seg.match(LYRIC_LINE);
+  const segments = splitSegments(mml);
+  for (let i = 0; i < segments.length; i++) {
+    const m = segments[i].match(LYRIC_LINE);
     if (!m) continue;
     const trackId = Number.parseInt(m[1], 10);
     const tokens = m[2].trim().split(/\s+/);
@@ -1052,35 +1071,53 @@ var parseLyrics = (mml) => {
       const v = Number.parseInt(modelToken.slice(colon + 1), 10);
       if (Number.isFinite(v)) volume = clamp(v, 0, MAX_VOCAL_VOLUME);
     }
+    const metaTokens = [modelToken];
     while (tokens.length > 0) {
       const v = /^v(\d+)$/.exec(tokens[0]);
       const q2 = /^q(\d+)$/.exec(tokens[0]);
       const p = /^p(\d+)$/.exec(tokens[0]);
       if (v) {
         volume = clamp(Number.parseInt(v[1], 10), 0, MAX_VOCAL_VOLUME);
-        tokens.shift();
       } else if (q2) {
         gate = clamp(Number.parseInt(q2[1], 10), 0, 100);
-        tokens.shift();
       } else if (p) {
         pan = clamp(Number.parseInt(p[1], 10), 0, 127);
-        tokens.shift();
       } else {
         break;
       }
+      metaTokens.push(tokens.shift());
     }
+    const lyricLines = [tokens.join(" ")];
+    while (i + 1 < segments.length && isLyricContinuation(segments[i + 1])) {
+      lyricLines.push(segments[++i]);
+    }
+    const { syllables, lineBreaks } = normalizeLyricLines(lyricLines);
     tracks.set(trackId, {
       trackId,
       model,
       volume,
       gate,
       pan,
-      syllables: normalizeLyrics(tokens.join(" "))
+      syllables,
+      metaText: metaTokens.join(" "),
+      ...lineBreaks.length > 0 ? { lineBreaks } : {}
     });
   }
   return tracks;
 };
-var stripLyrics = (mml) => splitSegments(mml).filter((seg) => !LYRIC_LINE.test(seg)).join("\n");
+var stripLyrics = (mml) => {
+  const segments = splitSegments(mml);
+  const kept = [];
+  for (let i = 0; i < segments.length; i++) {
+    if (LYRIC_LINE.test(segments[i])) {
+      while (i + 1 < segments.length && isLyricContinuation(segments[i + 1]))
+        i++;
+      continue;
+    }
+    kept.push(segments[i]);
+  }
+  return kept.join("\n");
+};
 var panToStereo = (pan) => Math.max(-1, Math.min(1, (pan - 64) / 64));
 var createLyricsConductor = (lyrics) => {
   const pointers = /* @__PURE__ */ new Map();
@@ -1094,7 +1131,7 @@ var createLyricsConductor = (lyrics) => {
     return {
       model: track.model,
       syllable,
-      volume: (track.volume ?? 100) / 100,
+      volume: vocalVolumeToGain(track.volume ?? 100),
       gate: (track.gate ?? 100) / 100,
       pan: panToStereo(track.pan ?? 64)
     };
@@ -2780,6 +2817,7 @@ var parseMML = (mml, options = {}) => {
         if (ch === "t" && trackIndex === 0 && numStr) {
           bpm = clamp2(Number.parseInt(numStr, 10), 1, 255);
         }
+        pushTok("ctrl", currentStep, 0, tokStart);
       } else if (ch === "[") {
         j++;
         const chordNotes = [];
@@ -3586,8 +3624,11 @@ var DAW_CSS = `
 .dtm-tk--rest { color: var(--dtm-muted); }
 .dtm-tk--octave,
 .dtm-tk--shift,
-.dtm-tk--length { color: var(--dtm-border2); }
+.dtm-tk--length,
+.dtm-tk--ctrl { color: var(--dtm-border2); }
 .dtm-tk--lyric { color: var(--dtm-text); letter-spacing: 1px; }
+.dtm-tk--break { color: var(--dtm-muted); opacity: 0.7; margin: 0 2px; }
+.dtm-tk--meta { color: var(--dtm-border2); margin-right: 4px; }
 .dtm-tk.is-active {
   background: var(--tk, var(--dtm-primary));
   color: var(--c-black);
@@ -5453,9 +5494,22 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     if (isLyricLane) {
       const notes = placements.filter((p) => p.trackIndex === index).sort((a, b) => a.startStep - b.startStep);
       const gateScale = (lyricTrack.gate ?? 100) / 100;
+      const breaks = new Set(lyricTrack.lineBreaks ?? []);
+      if (lyricTrack.metaText) {
+        const metaEl = doc.createElement("span");
+        metaEl.className = "dtm-tk dtm-tk--meta";
+        metaEl.textContent = lyricTrack.metaText;
+        lane.appendChild(metaEl);
+      }
       const count = Math.min(notes.length, lyricTrack.syllables.length);
       for (let i = 0; i < count; i++) {
         const note = notes[i];
+        if (breaks.has(i)) {
+          const br = doc.createElement("span");
+          br.className = "dtm-tk dtm-tk--break";
+          br.textContent = "\\n";
+          lane.appendChild(br);
+        }
         const span = doc.createElement("span");
         span.className = "dtm-tk dtm-tk--lyric";
         span.textContent = lyricTrack.syllables[i].kana;
@@ -5961,5 +6015,6 @@ export {
   setupRecorder,
   shiftNotes,
   stripLyrics,
-  stripMmlMeta
+  stripMmlMeta,
+  vocalVolumeToGain
 };
