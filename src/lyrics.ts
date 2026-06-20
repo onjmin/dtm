@@ -15,6 +15,7 @@
  * オプトインのフォルマント合成ヘルパ（createKlattVoice / createVoiceRegistry）を分離して提供する。
  */
 
+import { leadInFromEntry, VoiceBank, Worldline } from "@onjmin/koe";
 import type { LyricSyllable, LyricTrack, PlayNoteEvent } from "./types";
 
 export type { LyricSyllable, LyricTrack } from "./types";
@@ -210,12 +211,19 @@ const clamp = (value: number, lo: number, hi: number): number =>
 	Math.min(hi, Math.max(lo, value));
 
 /**
+ * 歌唱の声量の上限（%）。100=等倍。100超は合成音声をブースト（増幅）する。
+ * 100では音量が足りないケース向けに 200（2倍）まで許容する。
+ * UIスライダー・MML（`v<n>`）パースの双方でこの上限を共有する。
+ */
+export const MAX_VOCAL_VOLUME = 200;
+
+/**
  * MMLから全歌詞トラックを解析し、トラックIDをキーにした辞書を返す（プリスキャン）。
  * 同一IDが複数あれば後勝ち。
  *
  * 記法: `@@<トラックID> <モデル名> [v<声量>] [q<ゲート>] <歌詞>`
- *   例: `@@4 klatt v100 歌詞`（声量100＝最大で歌う）
- * 声量・ゲートはともに 0-100。モデル名直後の `v`/`q` トークンとして任意順で付与でき、
+ *   例: `@@4 klatt v100 歌詞`（声量100＝等倍。100超でブースト、上限 {@link MAX_VOCAL_VOLUME}）
+ * 声量は 0-{@link MAX_VOCAL_VOLUME}、ゲートは 0-100。モデル名直後の `v`/`q` トークンとして任意順で付与でき、
  * 最初に現れた歌詞（かな）トークンより前にあるものだけを解釈する。
  * 後方互換として `klatt:80` のコロン区切り声量も受け付ける。
  */
@@ -240,7 +248,7 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		).toLowerCase();
 		if (colon !== -1) {
 			const v = Number.parseInt(modelToken.slice(colon + 1), 10);
-			if (Number.isFinite(v)) volume = clamp(v, 0, 100);
+			if (Number.isFinite(v)) volume = clamp(v, 0, MAX_VOCAL_VOLUME);
 		}
 
 		// モデル名直後の v<n>/q<n>/p<n> トークンを声量・ゲート・定位として消費する。
@@ -250,7 +258,7 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 			const q = /^q(\d+)$/.exec(tokens[0]);
 			const p = /^p(\d+)$/.exec(tokens[0]);
 			if (v) {
-				volume = clamp(Number.parseInt(v[1], 10), 0, 100);
+				volume = clamp(Number.parseInt(v[1], 10), 0, MAX_VOCAL_VOLUME);
 				tokens.shift();
 			} else if (q) {
 				gate = clamp(Number.parseInt(q[1], 10), 0, 100);
@@ -295,8 +303,9 @@ export type ConsumedSyllable = {
 	/** 消費した音節 */
 	syllable: LyricSyllable;
 	/**
-	 * 歌唱の声量係数 0-1（歌詞トラックの volume 0-100 を正規化したもの）。
-	 * ノートのvelocityとは独立。利用側はこれにマスタ音量を掛けて発音音量とする。
+	 * 歌唱の声量係数（歌詞トラックの volume 0-{@link MAX_VOCAL_VOLUME} を正規化したもの）。
+	 * 1=等倍で、100超指定時は 1 を超える（ブースト）。ノートのvelocityとは独立。
+	 * 利用側はこれにマスタ音量を掛けて発音音量とする。
 	 */
 	volume: number;
 	/**
@@ -394,7 +403,8 @@ export const createKlattVoice = (
 ): VoiceModel => {
 	return (syllable, e) => {
 		const t0 = ctx.currentTime + e.when;
-		const peak = Math.max(0.0001, Math.min(1, e.volume));
+		// 声量は等倍=1。100超(>1)はブーストとして上限なしで通す（クリップは利用側の判断）。
+		const peak = Math.max(0.0001, e.volume);
 
 		// 促音(っ)は無声。発音せず間（ま）として消費する
 		if (syllable.vowel === "" || syllable.consonant === "Q") return;
@@ -481,6 +491,360 @@ export const createKlattVoice = (
 			panner?.disconnect();
 		};
 	};
+};
+
+// ─────────────────────────────────────────────────────────────
+// koe音源（@onjmin/koe）による歌唱合成
+// ─────────────────────────────────────────────────────────────
+
+/** koe音源（.koe）が置かれているパブリックバケットのベースURL */
+export const KOE_BASE_URL =
+	"https://pub-12482a6b5cbc4c9e906b2e1904cabae5.r2.dev";
+
+/**
+ * 内蔵koe音源カタログ: MML中の簡略キーワード → バケット直下の .koe ファイル名。
+ * 例: `@@0 roze かな…` で「束音ロゼ」を使う。
+ * ファイル名はそのまま encodeURIComponent して URL を組み立てる（{@link koeUrl}）。
+ */
+export const KOE_VOICEBANKS: Record<string, string> = {
+	tsukuyomi: "つくよみちゃん.koe",
+	rino: "春音リノver0.3.koe",
+	roze: "束音ロゼver0.５1(多音階).koe",
+	ruko: "欲音ルコ♀歌連続音普1.00.koe",
+	teto: "重音テト単独音.koe",
+	shiyo: "革命シヨ.koe",
+};
+
+/**
+ * koe音源キーワード → UI表示名（日本語）。歌詞モデルのプルダウン等で使う。
+ * MML中の値はキーワード（{@link KOE_VOICEBANKS} のキー）のまま、表示だけ和名にする。
+ */
+export const KOE_VOICEBANK_LABELS: Record<string, string> = {
+	tsukuyomi: "つくよみちゃん",
+	rino: "春音リノ",
+	roze: "束音ロゼ",
+	ruko: "欲音ルコ",
+	teto: "重音テト",
+	shiyo: "革命シヨ",
+};
+
+/** ファイル名（日本語可）を encodeURIComponent して .koe のフルURLにする */
+export const koeUrl = (name: string, base: string = KOE_BASE_URL): string =>
+	`${base}/${encodeURIComponent(name)}`;
+
+/** worldline.js（WORLDボコーダWASMローダ）の既定ホスト */
+const DEFAULT_WORLDLINE_SCRIPT =
+	"https://onjmin.github.io/koe/demo/world/worldline.js";
+
+const KOE_SAMPLE_RATE = 48000;
+
+/**
+ * 候補エイリアス文字列のスペース表記を揺らす（半角/全角/無し）。
+ * 連続音は音源ごとに "a か" / "a　か" / "aか" など区切りが異なるため。
+ */
+const expandSeparators = (candidate: string): string[] =>
+	candidate.includes(" ")
+		? [candidate, candidate.replace(/ /g, "　"), candidate.replace(/ /g, "")]
+		: [candidate];
+
+/**
+ * 音節（子音・母音・かな）と直前母音から、音源マニフェストに実在する音素エイリアスを解決する。
+ * 単独音（"か"）・連続音（"a か" / "- か"）・ローマ字命名（"ka"）など幅広い命名を順に試す。
+ * 見つからなければ母音単独へフォールバックし、それも無ければ null。
+ */
+const resolveKoeAlias = (
+	bank: VoiceBank,
+	syl: LyricSyllable,
+	prevVowel: string,
+): string | null => {
+	const kana = syl.kana;
+	const cons = syl.consonant === "N" ? "n" : syl.consonant;
+	const vow = syl.vowel === "N" ? "" : syl.vowel;
+	const romaji = `${cons}${vow}` || vow;
+	const pv = prevVowel || "-"; // 直前母音が無ければ語頭扱い
+
+	const raw: string[] = [
+		// 連続音（VCV）: 直前母音つき
+		`${pv} ${kana}`,
+		`${pv} ${romaji}`,
+		// 単独音 / CVVC
+		kana,
+		romaji,
+	];
+	// 母音フォールバック
+	const vk = VOWEL_KANA[syl.vowel];
+	if (vk) raw.push(`${pv} ${vk}`, vk, syl.vowel);
+	// 撥音(ん)
+	if (syl.vowel === "N") raw.push("ん", "n", "N", `${pv} ん`);
+
+	const seen = new Set<string>();
+	for (const c of raw) {
+		for (const v of expandSeparators(c)) {
+			if (seen.has(v)) continue;
+			seen.add(v);
+			if (bank.has(v)) return v;
+		}
+	}
+	return null;
+};
+
+/** koe音源の生成オプション */
+export type KoeVoiceOptions = {
+	/** .koe アーカイブのURL、または Blob/File */
+	koe: string | Blob;
+	/**
+	 * worldline.js のURL（WORLDボコーダによる高品質再合成）。
+	 * 省略時は GitHub Pages のホストを使う。`worldline.wasm` は同じ階層から解決される。
+	 */
+	worldlineScriptUrl?: string;
+	/**
+	 * Worldline（WASM）を使わず、素片を AudioBufferSource の playbackRate で
+	 * ピッチシフトして鳴らす軽量モード。WASMの読み込みを避けたいときに。
+	 */
+	lightweight?: boolean;
+};
+
+type RenderedNote = {
+	audio: Float32Array;
+	/** 母音オンセット（拍頭）までの先行秒。バッファをこの分だけ前から鳴らす */
+	preSec: number;
+	/** 再生レート（Worldline使用時は1、素片フォールバック時はピッチ比） */
+	rate: number;
+};
+
+/**
+ * @onjmin/koe の音源（UTAU由来 .koe）で1音節を歌う {@link VoiceModel} を生成する。
+ *
+ * VoiceBank で音素PCMをオンデマンド取得し、Worldline（WORLDボコーダ）で目標ピッチ・
+ * 音価へ再合成して、共有 AudioContext のタイムライン（`ctx.currentTime + e.when`）へ
+ * スケジュールする。Worldlineが使えない／素片が短すぎる場合は素片のピッチシフトへ自動フォールバックする。
+ *
+ * 音源とWASMの読み込みは非同期のため、戻り値は Promise。`await` してから歌わせること。
+ */
+export const createKoeVoice = async (
+	ctx: AudioContext,
+	destination: AudioNode,
+	options: KoeVoiceOptions,
+): Promise<VoiceModel> => {
+	const bank = await VoiceBank.load(options.koe);
+	const worldline = options.lightweight
+		? null
+		: await Worldline.load({
+				scriptUrl: options.worldlineScriptUrl ?? DEFAULT_WORLDLINE_SCRIPT,
+			}).catch(() => null); // WASM不可なら素片フォールバックで動かす
+
+	// 音素PCM（fetch）と再合成結果のキャッシュ。同じ音素・ピッチ・音価の再演を高速化する。
+	const pcmCache = new Map<string, Promise<Float64Array | null>>();
+	const getPcm = (alias: string): Promise<Float64Array | null> => {
+		let p = pcmCache.get(alias);
+		if (!p) {
+			p = bank.getPcm(alias);
+			pcmCache.set(alias, p);
+		}
+		return p;
+	};
+	const renderCache = new Map<string, RenderedNote | null>();
+
+	let prevVowel = "";
+
+	const schedule = (
+		r: RenderedNote,
+		t0: number,
+		peak: number,
+		pan: number,
+	): void => {
+		// ステレオ定位（非対応環境では destination 直結）
+		let out: AudioNode = destination;
+		let panner: StereoPannerNode | null = null;
+		if (typeof ctx.createStereoPanner === "function") {
+			panner = ctx.createStereoPanner();
+			panner.pan.value = Math.max(-1, Math.min(1, pan));
+			panner.connect(destination);
+			out = panner;
+		}
+
+		const buf = ctx.createBuffer(1, r.audio.length, KOE_SAMPLE_RATE);
+		buf.copyToChannel(r.audio, 0);
+		const src = ctx.createBufferSource();
+		src.buffer = buf;
+		src.playbackRate.value = r.rate;
+
+		// 拍頭 t0 に母音オンセットが来るよう、先行（子音・前うち）ぶん前から鳴らす
+		const startAt = Math.max(ctx.currentTime + 0.001, t0 - r.preSec);
+		const bufDurSec = r.audio.length / KOE_SAMPLE_RATE / r.rate;
+		const endAt = startAt + bufDurSec;
+
+		// クリック防止のフェードと声量エンベロープ
+		const attack = 0.01;
+		const release = 0.04;
+		const env = ctx.createGain();
+		env.gain.setValueAtTime(0.0001, startAt);
+		env.gain.exponentialRampToValueAtTime(peak, startAt + attack);
+		const fadeStart = Math.max(startAt + attack, endAt - release);
+		env.gain.setValueAtTime(peak, fadeStart);
+		env.gain.exponentialRampToValueAtTime(0.0001, endAt);
+
+		src.connect(env).connect(out);
+		src.start(startAt);
+		src.stop(endAt + 0.02);
+		src.onended = () => {
+			src.disconnect();
+			env.disconnect();
+			panner?.disconnect();
+		};
+	};
+
+	return (syllable, e) => {
+		// 促音(っ)・無声は発音せず間として消費する
+		if (syllable.consonant === "Q" || syllable.vowel === "") return;
+
+		const alias = resolveKoeAlias(bank, syllable, prevVowel);
+		if (syllable.vowel && syllable.vowel !== "N") prevVowel = syllable.vowel;
+		if (!alias) return; // 音源に該当音素が無ければ無音
+
+		const t0 = ctx.currentTime + e.when;
+		// 声量は等倍=1。100超(>1)はブーストとして上限なしで通す（クリップは利用側の判断）。
+		const peak = Math.max(0.0001, e.volume);
+		const pan = e.pan ?? 0;
+		const targetHz = midiToFreq(e.pitch);
+		const durationMs = Math.max(60, e.duration * 1000);
+		const key = `${alias}|${e.pitch}|${Math.round(durationMs)}`;
+
+		const cached = renderCache.get(key);
+		if (cached !== undefined) {
+			if (cached) schedule(cached, t0, peak, pan);
+			return;
+		}
+
+		void getPcm(alias).then((pcm) => {
+			if (!pcm || pcm.length === 0) {
+				renderCache.set(key, null);
+				return;
+			}
+			const entry = bank.manifest.phonemes[alias];
+			const lead = leadInFromEntry(entry);
+
+			let rendered: RenderedNote | null = null;
+			if (worldline) {
+				const audio = worldline.renderNote({
+					pcm,
+					pitch: targetHz,
+					durationMs,
+					...lead,
+				});
+				if (audio) rendered = { audio, preSec: lead.preMs / 1000, rate: 1 };
+			}
+			if (!rendered) {
+				// Worldline不可（WASM未ロード or 素片が短すぎる）→ 素片をピッチシフト再生
+				const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
+				rendered = {
+					audio: Float32Array.from(pcm),
+					preSec: entry.pre / KOE_SAMPLE_RATE / rate,
+					rate,
+				};
+			}
+
+			renderCache.set(key, rendered);
+			schedule(rendered, t0, peak, pan);
+		});
+	};
+};
+
+/**
+ * 歌唱モデルをまとめて管理する高レベルヘルパ。
+ *
+ * "klatt"（内蔵フォルマント合成）は同期生成し、koe音源（{@link KOE_VOICEBANKS} の
+ * キーワードや任意のURL/Blob）は要求時に非同期ロードする。ロードが終わるまでは無音、
+ * 未知のモデル名は klatt へフォールバックする。
+ *
+ * 再生開始前に {@link SingingVoices.preload} で使用モデルを先読みしておくと、初回から歌える。
+ */
+export type SingingVoices = {
+	/** 指定モデルで1音節を歌う。koe音源はロード完了までは無音、未知モデルは klatt */
+	sing: (model: string, syllable: LyricSyllable, e: PlayNoteEvent) => void;
+	/** 指定モデル群を事前ロードする（再生開始前に await すると初回から歌える） */
+	preload: (models: Iterable<string>) => Promise<void>;
+};
+
+export type SingingVoicesOptions = {
+	/** 追加・上書きするkoe音源カタログ（キーワード → .koe URL または Blob） */
+	voicebanks?: Record<string, string | Blob>;
+	/** worldline.js のURL（{@link createKoeVoice} に渡す） */
+	worldlineScriptUrl?: string;
+	/** koe音源を軽量モード（素片ピッチシフト）で鳴らす */
+	lightweight?: boolean;
+};
+
+/** 内蔵フォルマント合成のモデル名（koe音源が見つからないときのフォールバック先） */
+const FALLBACK_MODEL = "klatt";
+
+/**
+ * klatt と koe音源を一括で扱う {@link SingingVoices} を生成する。
+ */
+export const createSingingVoices = (
+	ctx: AudioContext,
+	destination: AudioNode,
+	options: SingingVoicesOptions = {},
+): SingingVoices => {
+	// 既定カタログ（キーワード→フルURL）に利用側のカタログを重ねる
+	const catalog: Record<string, string | Blob> = {};
+	for (const [k, file] of Object.entries(KOE_VOICEBANKS))
+		catalog[k] = koeUrl(file);
+	for (const [k, v] of Object.entries(options.voicebanks ?? {}))
+		catalog[k.toLowerCase()] = v;
+
+	const loaded = new Map<string, VoiceModel>([
+		[FALLBACK_MODEL, createKlattVoice(ctx, destination)],
+	]);
+	const loading = new Map<string, Promise<VoiceModel | null>>();
+
+	const load = (model: string): Promise<VoiceModel | null> => {
+		const m = model.toLowerCase();
+		const ready = loaded.get(m);
+		if (ready) return Promise.resolve(ready);
+		const inflight = loading.get(m);
+		if (inflight) return inflight;
+		const koe = catalog[m];
+		if (!koe) return Promise.resolve(null); // 未知モデル（sing側でklattへ）
+		const p = createKoeVoice(ctx, destination, {
+			koe,
+			worldlineScriptUrl: options.worldlineScriptUrl,
+			lightweight: options.lightweight,
+		})
+			.then((v) => {
+				loaded.set(m, v);
+				return v;
+			})
+			.catch((err) => {
+				console.warn(`[dtm] koe音源 "${m}" の読み込みに失敗しました`, err);
+				return null;
+			});
+		loading.set(m, p);
+		return p;
+	};
+
+	const sing: SingingVoices["sing"] = (model, syllable, e) => {
+		const m = (model || FALLBACK_MODEL).toLowerCase();
+		const v = loaded.get(m);
+		if (v) {
+			v(syllable, e);
+			return;
+		}
+		// 未知モデルは klatt で歌う。koe音源ならロードを開始（完了までは無音）。
+		if (!catalog[m]) {
+			loaded.get(FALLBACK_MODEL)?.(syllable, e);
+			return;
+		}
+		void load(m);
+	};
+
+	const preload: SingingVoices["preload"] = async (models) => {
+		const set = new Set<string>();
+		for (const m of models) if (m) set.add(m.toLowerCase());
+		await Promise.all([...set].map(load));
+	};
+
+	return { sing, preload };
 };
 
 /** 歌唱合成モデルのレジストリ（プラグイン方式） */

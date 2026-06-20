@@ -8,4 +8,7 @@ export default defineConfig({
 	sourcemap: false,
 	clean: true,
 	target: "es2024",
+	// @onjmin/koe をバンドルに同梱する。デモ（dist/index.mjs をブラウザ直読み）が
+	// import 解決のためのimportmap無しで koe を使えるようにするため。
+	noExternal: ["@onjmin/koe"],
 });

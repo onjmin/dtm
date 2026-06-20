@@ -270,8 +270,9 @@
         drumGainNode.gain.value = 1;
         const recorder = setupRecorder(audioCtx, gainNode, drumGainNode);
 
-        // 歌詞付きノート（@@n）を歌うフォルマント合成。SoundFontと同じ master gain へ流す。
-        const klatt = DTM.createKlattVoice(audioCtx, gainNode);
+        // 歌詞付きノート（@@n）を歌う歌唱合成。klatt（内蔵）＋ koe音源（UTAU由来）を一括管理。
+        // SoundFontと同じ master gain へ流す。koe音源はキーワード（roze / teto …）で選べる。
+        const voices = DTM.createSingingVoices(audioCtx, gainNode);
 
         const soundFonts = {};
         const currentFont = 'FluidR3_GM_sf2_file';
@@ -374,8 +375,8 @@
             getAudioTime: () => audioCtx.currentTime,
             onResumeAudio: () => { if (audioCtx.state === 'suspended') audioCtx.resume(); },
             onPlayNote: (e) => {
-                // 歌詞トラックがあると syllable が載って届く。あれば歌い、無ければ楽器音。
-                if (e.syllable) { klatt(e.syllable, e); return; }
+                // 歌詞トラックがあると syllable が載って届く。あればモデル別に歌い、無ければ楽器音。
+                if (e.syllable) { voices.sing(e.voiceModel, e.syllable, e); return; }
                 const { trackId, pitch, volume, when, duration } = e;
                 const sf = soundFonts[trackId];
                 if (!sf) return;
@@ -441,6 +442,8 @@
         // ════ 再生専用ビュー (mountMmlPlayer) ════
         const { mountMmlPlayer } = DTM;
         // @@0 klatt … が歌詞トラック。@0 のメロディに音節を1つずつ同期して内蔵synthが歌う。
+        // モデル名を koe音源キーワード（roze / teto / tsukuyomi / rino / ruko / shiyo）に
+        // 変えると、@onjmin/koe のUTAU音源で歌う（例: `@@0 roze ちょうちょう…`）。
         const SAMPLE_MML = '@0 t135 o5 l8 e d c d e e e4 d d d4 e g g4 r e d c d e e e e d d e d c4 ; @1 o3 l4 c g c g c g c g ; @@0 klatt ちょうちょうちょうちょうなのはにとまれなのはにあいたらさくらにとまれ';
         // 再生専用ビューの音量をDAWの既定に合わせるための係数（DAW: マスタ50% / ドラム80%）
         const PLAYER_MASTER = 50;          // ノート音量（mountMmlPlayer の volume オプション 0-100）
@@ -467,7 +470,7 @@
                     getAudioTime: () => audioCtx.currentTime,
                     onResumeAudio: () => { if (audioCtx.state === 'suspended') audioCtx.resume(); },
                     onPlayNote: (e) => {
-                        if (e.syllable) { klatt(e.syllable, e); return; } // 歌詞トラックは歌う
+                        if (e.syllable) { voices.sing(e.voiceModel, e.syllable, e); return; } // 歌詞トラックは歌う
                         const sf = sfForTrack(e.trackId);
                         if (!sf) return;
                         sf.play({ ctx: audioCtx, destination: gainNode, pitch: e.pitch, volume: e.volume, when: e.when, duration: e.duration });

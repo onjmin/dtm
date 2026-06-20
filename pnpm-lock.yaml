@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@onjmin/koe':
+        specifier: 1.0.2
+        version: 1.0.2
     devDependencies:
       '@biomejs/biome':
         specifier: 2.2.3
@@ -277,6 +281,10 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@onjmin/koe@1.0.2':
+    resolution: {integrity: sha512-YCJZZHHO58bx/5AlZmdyYxMX8+CDOcqja5tIMsM4iVSaghtV4Q6dAeRWinzuk8bPO8HM2GDS7VhBqCOnmZWdCg==}
+    hasBin: true
 
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
@@ -1003,6 +1011,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@onjmin/koe@1.0.2': {}
 
   '@pkgjs/parseargs@0.11.0':
     optional: true

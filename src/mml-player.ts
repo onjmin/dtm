@@ -12,9 +12,9 @@
 import { DRUM_PATTERNS, type DrumPattern } from "./drum-config";
 import { icon } from "./icons";
 import {
-	createKlattVoice,
 	createLyricsConductor,
-	type VoiceModel,
+	createSingingVoices,
+	type SingingVoices,
 } from "./lyrics";
 import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
@@ -210,14 +210,14 @@ export const mountMmlPlayer = (
 		};
 	};
 
-	// 歌詞付きノートを内蔵synthで歌うためのフォルマント合成（遅延生成）
-	let klattVoice: VoiceModel | null = null;
-	const ensureKlatt = (): VoiceModel => {
-		if (!klattVoice) {
+	// 歌詞付きノートを歌うための歌唱合成（klatt + koe音源。遅延生成）
+	let voices: SingingVoices | null = null;
+	const ensureVoices = (): SingingVoices => {
+		if (!voices) {
 			const ctx = ensureCtx();
-			klattVoice = createKlattVoice(ctx, ctx.destination);
+			voices = createSingingVoices(ctx, ctx.destination);
 		}
-		return klattVoice;
+		return voices;
 	};
 
 	const getAudioTime = (): number => {
@@ -401,8 +401,9 @@ export const mountMmlPlayer = (
 				: e;
 			options.onPlayNote?.(ev);
 			if (useSynth) {
-				// 音節があれば歌唱（klatt）、無ければ通常の楽器音
-				if (consumed) ensureKlatt()(consumed.syllable, ev);
+				// 音節があれば歌唱（klatt or koe音源）、無ければ通常の楽器音
+				if (consumed)
+					ensureVoices().sing(consumed.model, consumed.syllable, ev);
 				else synthPlay(ev);
 			}
 		},
@@ -429,6 +430,19 @@ export const mountMmlPlayer = (
 		if (activePlayer === instance) activePlayer = null;
 	};
 
+	// 内蔵synthで歌う場合、koe音源を先読みしてから開始する（初回から歌えるように）。
+	// 先読み中に停止／別プレイヤー開始されたら起動しない。
+	const startWhenReady = async (): Promise<void> => {
+		if (useSynth && lyricTracks.size > 0) {
+			const models = [...lyricTracks.values()].map((t) => t.model);
+			try {
+				await ensureVoices().preload(models);
+			} catch {}
+			if (!playing || activePlayer !== instance) return;
+		}
+		seq.start(0);
+	};
+
 	const play = (): void => {
 		if (playing || trackIndices.length === 0) return;
 		if (activePlayer && activePlayer !== instance) activePlayer.stop();
@@ -440,7 +454,7 @@ export const mountMmlPlayer = (
 			if (ctx.state === "suspended") void ctx.resume();
 		}
 		conductor.reset(); // 歌詞ポインタを先頭へ戻す
-		seq.start(0);
+		void startWhenReady();
 	};
 
 	const stop = (): void => {

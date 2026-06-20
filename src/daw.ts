@@ -11,7 +11,10 @@ import { DRUM_PATTERNS } from "./drum-config";
 import { icon } from "./icons";
 import {
 	createLyricsConductor,
+	KOE_VOICEBANK_LABELS,
+	KOE_VOICEBANKS,
 	type LyricsConductor,
+	MAX_VOCAL_VOLUME,
 	normalizeLyrics,
 } from "./lyrics";
 import {
@@ -206,8 +209,21 @@ export const TRACKS_ADVANCED: TrackConfig[] = [
 
 const DEFAULT_TRACKS = TRACKS_SIMPLE;
 
-/** 歌詞エディタのモデル選択肢（空文字＝「なし」は別途先頭に追加する） */
-const LYRIC_MODELS = ["klatt"];
+/**
+ * 歌詞エディタのモデル選択肢（空文字＝「なし」は別途先頭に追加する）。
+ * 内蔵フォルマント合成 "klatt" に加え、@onjmin/koe のUTAU音源（簡略キーワード）を並べる。
+ */
+const LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
+
+/** モデルキーワード → プルダウン表示名。未登録はキーワードをそのまま表示する */
+const LYRIC_MODEL_LABELS: Record<string, string> = {
+	klatt: "軽量ロボ声",
+	...KOE_VOICEBANK_LABELS,
+};
+
+/** モデルキーワードのUI表示名を返す（未登録はキーワードそのまま） */
+const lyricModelLabel = (model: string): string =>
+	LYRIC_MODEL_LABELS[model] ?? model;
 
 const clamp = (v: number, min: number, max: number): number =>
 	Math.min(Math.max(v, min), max);
@@ -223,7 +239,7 @@ type TrackState = {
 	lyrics: string;
 	/** 歌唱合成モデル名（既定 "klatt"） */
 	lyricModel: string;
-	/** 歌唱の声量 0-100。ノートvelocityとは独立した合成音声専用パラメータ。既定100 */
+	/** 歌唱の声量 0-200（100=等倍、100超でブースト）。ノートvelocityとは独立した合成音声専用パラメータ。既定100 */
 	vocalVolume: number;
 	/** 歌唱のゲートタイム 0-100（音価に対する発音長の割合）。既定100（レガート） */
 	vocalGate: number;
@@ -1153,7 +1169,7 @@ export const mountDAW = (
       <div class="dtm-row" data-dtm="lyric-body" style="flex-direction:column;align-items:stretch">
         <div class="dtm-row">
           <span class="dtm-label">声量</span>
-          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="100" aria-label="歌唱の声量">
+          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="歌唱の声量（100=等倍、100超でブースト）">
           <span class="dtm-label" data-dtm="lyric-vol-label"></span>
         </div>
         <div class="dtm-row">
@@ -1199,9 +1215,9 @@ export const mountDAW = (
 			lyricModelSel.appendChild(o);
 		};
 		addOpt("", "なし");
-		for (const m of LYRIC_MODELS) addOpt(m, m);
+		for (const m of LYRIC_MODELS) addOpt(m, lyricModelLabel(m));
 		if (active.lyricModel && !LYRIC_MODELS.includes(active.lyricModel)) {
-			addOpt(active.lyricModel, active.lyricModel);
+			addOpt(active.lyricModel, lyricModelLabel(active.lyricModel));
 		}
 		lyricModelSel.value = active.lyricModel;
 		// 値はプロパティ経由で設定（HTML文字列に混ぜず、</textarea>等の混入を防ぐ）
