@@ -587,9 +587,9 @@ export const mountMmlPlayer = (
 			if (useSynth) synthPlay(e);
 		},
 		onPlayDrum: (e) => {
-			// ドラムは trackIndex を持たないため先頭以外の絵文字は対象外
-			const em = emojiEls[0];
-			if (em) jumpEmojiAt(em, e.when);
+			// ドラムは曲全体に効くトップレベル宣言でトラックと1対1ではないため、
+			// 特定トラックの絵文字（旧実装は先頭を流用）を跳ねさせない。
+			// 先頭トラックがドラムの度に跳ね続けるバグの原因だった。
 			const velocity = e.velocity * (trackVolume / 100);
 			options.onPlayDrum?.({ ...e, velocity });
 			if (useSynth) drumSynth({ ...e, velocity });
