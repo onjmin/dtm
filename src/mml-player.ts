@@ -18,7 +18,7 @@ import {
 } from "./lyrics";
 import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
-import { injectStyles } from "./styles";
+import { injectStyles, showLoadingOverlay } from "./styles";
 import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 
 const STEPS_PER_BEAT = 48;
@@ -108,7 +108,7 @@ export const mountMmlPlayer = (
 	const drumPattern: DrumPattern | null = meta.drum
 		? (drumPatternDict[meta.drum] ?? null)
 		: null;
-	const trackVolume = options.volume ?? 100;
+	const trackVolume = meta.volume ?? options.volume ?? 100;
 	const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
 	const useSynth = options.synth ?? !options.onPlayNote;
 	const secondsPerStep = 60 / bpm / STEPS_PER_BEAT;
@@ -258,7 +258,7 @@ export const mountMmlPlayer = (
 
 	head.append(playBtn, tempoEl, timeEl);
 
-	// トップレベル宣言（楽器プリセット・ドラムパターン）をチップ表示する
+	// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量）をチップ表示する
 	const addChip = (label: string): void => {
 		const chip = doc.createElement("span");
 		chip.className = "dtm-player-chip";
@@ -267,6 +267,7 @@ export const mountMmlPlayer = (
 	};
 	if (meta.instrument) addChip(`♪ ${meta.instrument}`);
 	if (meta.drum) addChip(`🥁 ${meta.drum}${drumPattern ? "" : " (?)"}`);
+	if (meta.volume !== undefined) addChip(`🔊 ${meta.volume}%`);
 
 	head.appendChild(dots);
 	root.appendChild(head);
@@ -423,8 +424,9 @@ export const mountMmlPlayer = (
 			}
 		},
 		onPlayDrum: (e) => {
-			options.onPlayDrum?.(e);
-			if (useSynth) drumSynth(e);
+			const velocity = e.velocity * (trackVolume / 100);
+			options.onPlayDrum?.({ ...e, velocity });
+			if (useSynth) drumSynth({ ...e, velocity });
 		},
 		onTick: (step) => renderPlayhead(step),
 		onEnd: () => finish(),
@@ -450,9 +452,15 @@ export const mountMmlPlayer = (
 	const startWhenReady = async (): Promise<void> => {
 		if (useSynth && lyricTracks.size > 0) {
 			const models = [...lyricTracks.values()].map((t) => t.model);
+
+			const removeOverlay = showLoadingOverlay(root);
 			try {
 				await ensureVoices().preload(models);
-			} catch {}
+			} catch (err) {
+				console.warn("[dtm] preload failed", err);
+			} finally {
+				removeOverlay();
+			}
 			if (!playing || activePlayer !== instance) return;
 		}
 		seq.start(0);
@@ -467,6 +475,7 @@ export const mountMmlPlayer = (
 		if (useSynth) {
 			const ctx = ensureCtx();
 			if (ctx.state === "suspended") void ctx.resume();
+			ensureVoices().reset();
 		}
 		conductor.reset(); // 歌詞ポインタを先頭へ戻す
 		void startWhenReady();

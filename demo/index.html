@@ -396,6 +396,7 @@
                 }
             },
             parseChord, parseChords, parseMidi,
+            singingVoices: voices,
             defaultBpm: 120,
         };
 
@@ -447,7 +448,7 @@
         const SAMPLE_MML = '@0 t135 o5 l8 e d c d e e e4 d d d4 e g g4 r e d c d e e e e d d e d c4 ; @1 o3 l4 c g c g c g c g ; @@0 klatt ちょうちょうちょうちょうなのはにとまれなのはにあいたらさくらにとまれ';
         // 再生専用ビューの音量をDAWの既定に合わせるための係数（DAW: マスタ50% / ドラム80%）
         const PLAYER_MASTER = 50;          // ノート音量（mountMmlPlayer の volume オプション 0-100）
-        const PLAYER_DRUM_GAIN = 0.8 * 0.5; // ドラム velocity に掛ける係数（ドラム音量×マスタ）
+        const PLAYER_DRUM_GAIN = 0.8;       // ドラム velocity に掛ける係数（ドラム音量。マスタはplayer内部で適用済）
         // プレイヤーの @n（数値）→ 音源キーの対応。プリセットはトラックの役割順で割り当てる。
         const TRACK_ROLES = ['melody', 'submelody', 'bass', 'chord'];
         const sfForTrack = (trackId) =>

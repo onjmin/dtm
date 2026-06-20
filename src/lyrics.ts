@@ -286,7 +286,7 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		const tokens = m[2].trim().split(/\s+/);
 		const modelToken = tokens.shift() ?? "";
 
-		let volume = 100; // 省略時の声量（等倍）
+		let volume = 300; // 省略時の声量
 		let gate = 100; // 省略時のゲート（レガート）
 		let pan = 64; // 省略時の定位（中央）
 
@@ -426,7 +426,7 @@ export const createLyricsConductor = (
 		return {
 			model: track.model,
 			syllable,
-			volume: vocalVolumeToGain(track.volume ?? 100),
+			volume: vocalVolumeToGain(track.volume ?? 300),
 			gate: (track.gate ?? 100) / 100,
 			pan: panToStereo(track.pan ?? 64),
 		};
@@ -442,7 +442,10 @@ export const createLyricsConductor = (
 // ─────────────────────────────────────────────────────────────
 
 /** 歌唱合成モデルの実装シグネチャ */
-export type VoiceModel = (syllable: LyricSyllable, e: PlayNoteEvent) => void;
+export type VoiceModel = {
+	(syllable: LyricSyllable, e: PlayNoteEvent): void;
+	reset?: () => void;
+};
 
 /** 母音ごとのフォルマント周波数 [F1, F2]（Hz） */
 const FORMANTS: Record<string, [number, number]> = {
@@ -764,7 +767,7 @@ export const createKoeVoice = async (
 		};
 	};
 
-	return (syllable, e) => {
+	const model: VoiceModel = (syllable, e) => {
 		// 促音(っ)・無声は発音せず間として消費する
 		if (syllable.consonant === "Q" || syllable.vowel === "") return;
 
@@ -818,6 +821,12 @@ export const createKoeVoice = async (
 			schedule(rendered, t0, peak, pan);
 		});
 	};
+
+	model.reset = () => {
+		prevVowel = "";
+	};
+
+	return model;
 };
 
 /**
@@ -834,6 +843,8 @@ export type SingingVoices = {
 	sing: (model: string, syllable: LyricSyllable, e: PlayNoteEvent) => void;
 	/** 指定モデル群を事前ロードする（再生開始前に await すると初回から歌える） */
 	preload: (models: Iterable<string>) => Promise<void>;
+	/** 歌唱モデルの内部状態（直前母音など）を初期化する */
+	reset: () => void;
 };
 
 export type SingingVoicesOptions = {
@@ -876,11 +887,21 @@ export const createSingingVoices = (
 		if (inflight) return inflight;
 		const koe = catalog[m];
 		if (!koe) return Promise.resolve(null); // 未知モデル（sing側でklattへ）
-		const p = createKoeVoice(ctx, destination, {
-			koe,
-			worldlineScriptUrl: options.worldlineScriptUrl,
-			lightweight: options.lightweight,
-		})
+		const p = (async () => {
+			let source = koe;
+			if (typeof source === "string") {
+				const res = await fetch(source);
+				if (!res.ok) {
+					throw new Error(`fetch failed: ${res.statusText}`);
+				}
+				source = await res.blob();
+			}
+			return createKoeVoice(ctx, destination, {
+				koe: source,
+				worldlineScriptUrl: options.worldlineScriptUrl,
+				lightweight: options.lightweight,
+			});
+		})()
 			.then((v) => {
 				loaded.set(m, v);
 				return v;
@@ -911,10 +932,17 @@ export const createSingingVoices = (
 	const preload: SingingVoices["preload"] = async (models) => {
 		const set = new Set<string>();
 		for (const m of models) if (m) set.add(m.toLowerCase());
-		await Promise.all([...set].map(load));
+
+		await Promise.all([...set].map((m) => load(m)));
 	};
 
-	return { sing, preload };
+	const reset = (): void => {
+		for (const v of loaded.values()) {
+			if (typeof v.reset === "function") v.reset();
+		}
+	};
+
+	return { sing, preload, reset };
 };
 
 /** 歌唱合成モデルのレジストリ（プラグイン方式） */

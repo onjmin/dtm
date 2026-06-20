@@ -44,7 +44,7 @@ import {
 	setDrawOffset,
 } from "./renderer";
 import { createSequencer, type Sequencer } from "./sequencer";
-import { injectStyles } from "./styles";
+import { injectStyles, showLoadingOverlay } from "./styles";
 import type {
 	DawInstance,
 	DawOptions,
@@ -239,7 +239,7 @@ type TrackState = {
 	lyrics: string;
 	/** 歌唱合成モデル名（既定 "klatt"） */
 	lyricModel: string;
-	/** 歌唱の声量 0-400（100=等倍、100超でブースト＝dB対数）。ノートvelocityとは独立した合成音声専用パラメータ。既定100 */
+	/** 歌唱の声量 0-400（100=等倍、100超でブースト＝dB対数）。ノートvelocityとは独立した合成音声専用パラメータ。既定300 */
 	vocalVolume: number;
 	/** 歌唱のゲートタイム 0-100（音価に対する発音長の割合）。既定100（レガート） */
 	vocalGate: number;
@@ -341,7 +341,7 @@ export const mountDAW = (
 			savedChordRoot: 0,
 			lyrics: "",
 			lyricModel: "", // 既定は「なし」（歌わない）
-			vocalVolume: 100,
+			vocalVolume: 300,
 			vocalGate: 100,
 			vocalPan: 64,
 		}));
@@ -1063,9 +1063,30 @@ export const mountDAW = (
 		stepsPerBar: renderConfig.stepsPerBar,
 	});
 
-	const play = (): void => {
+	const play = async (): Promise<void> => {
 		options.onResumeAudio?.();
 		if (playbackState === "playing") return;
+
+		options.singingVoices?.reset();
+
+		if (options.singingVoices) {
+			const lyricMap = buildLyricsMap();
+			const models = new Set<string>();
+			for (const lt of lyricMap.values()) {
+				if (lt.model) models.add(lt.model);
+			}
+			if (models.size > 0) {
+				const removeOverlay = showLoadingOverlay(target);
+				try {
+					await options.singingVoices.preload(models);
+				} catch (err) {
+					console.warn("[dtm] preload failed", err);
+				} finally {
+					removeOverlay();
+				}
+			}
+		}
+
 		const fromStep =
 			playbackState === "paused" ? pausedPlayStep : playStartStep;
 		if (playbackState !== "paused") {
@@ -1078,7 +1099,7 @@ export const mountDAW = (
 			setDrawOffset(currentOffsetX, currentOffsetY);
 		}
 		playbackState = "playing";
-		// 各トラックの歌詞入力から同期コンダクタを再構築（ポインタは先頭から）
+		// 各トラック of 歌詞入力から同期コンダクタを再構築（ポインタは先頭から）
 		lyricsConductor = createLyricsConductor(buildLyricsMap());
 		if (fromStep > 0) {
 			trackStates.forEach((t, i) => {
@@ -1179,7 +1200,7 @@ export const mountDAW = (
       <div class="dtm-row" data-dtm="lyric-body" style="flex-direction:column;align-items:stretch">
         <div class="dtm-row">
           <span class="dtm-label">声量</span>
-          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="歌唱の声量（100=等倍、100超でブースト）">
+          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="歌唱の声量（100=等倍、100超でブースト、既定300）">
           <span class="dtm-label" data-dtm="lyric-vol-label"></span>
         </div>
         <div class="dtm-row">
@@ -1376,11 +1397,12 @@ export const mountDAW = (
 				? notes
 				: notes.filter((n) => n.startStep < limitSteps);
 
-		// トップレベル宣言（楽器プリセット・ドラムパターン）。トラックとは1対1でなく曲全体に効く。
+		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量）。トラックとは1対1でなく曲全体に効く。
 		// 既定/未設定（楽器=空, ドラム="none"）の項目は出力しない。
 		const metaLine = formatMmlMeta({
 			instrument: currentInstrument || undefined,
 			drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
+			volume: masterVolume,
 		});
 
 		if (refs.decomposeChordToggle.checked) {
@@ -1425,7 +1447,7 @@ export const mountDAW = (
 				`@${i}${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim().replace(/\s+/g, "")}`,
 		);
 		// 歌詞行（@@n model [v声量] [qゲート] [p定位] lyrics）。スペースは仕様上の区切りなのでminifyでも残す。
-		// 声量・ゲート・定位は既定(声量/ゲート=100, 定位=64)でないときだけ v/q/p トークンで付与する。
+		// 声量・ゲート・定位は既定(声量=300, ゲート=100, 定位=64)でないときだけ v/q/p トークンで付与する。
 		const lyricLines = trackStates
 			.map((t, i) => ({
 				i,
@@ -1438,7 +1460,7 @@ export const mountDAW = (
 			.filter((x) => x.model.length > 0 && x.text.length > 0)
 			.map((x) => {
 				const params = [
-					x.vol === 100 ? "" : `v${x.vol}`,
+					x.vol === 300 ? "" : `v${x.vol}`,
 					x.gate === 100 ? "" : `q${x.gate}`,
 					x.pan === 64 ? "" : `p${x.pan}`,
 				]
@@ -1477,6 +1499,37 @@ export const mountDAW = (
 		updateUndoRedo();
 	};
 
+	const getFirstDetectedPitch = (): number | null => {
+		let minStep = Number.MAX_SAFE_INTEGER;
+		let candidateNotes: Note[] = [];
+		for (const t of trackStates) {
+			for (const note of t.core.getNotes()) {
+				if (note.startStep < minStep) {
+					minStep = note.startStep;
+					candidateNotes = [note];
+				} else if (note.startStep === minStep) {
+					candidateNotes.push(note);
+				}
+			}
+		}
+		if (candidateNotes.length === 0) return null;
+		const sum = candidateNotes.reduce((acc, note) => acc + note.pitch, 0);
+		return Math.round(sum / candidateNotes.length);
+	};
+
+	const centerPitch = (pitch: number): void => {
+		const canvas = getGridCanvas();
+		const yIndex =
+			renderConfig.keyCount - 1 - (pitch - renderConfig.pitchRangeStart);
+		const logicalY = yIndex * renderConfig.keyHeight;
+		currentOffsetY = clamp(
+			logicalY - (canvas.height - renderConfig.keyHeight) / 2,
+			0,
+			getMaxOffsetY(),
+		);
+		setDrawOffset(currentOffsetX, currentOffsetY);
+	};
+
 	const clearAll = (): void => {
 		for (const t of trackStates) {
 			t.core.resetHistory();
@@ -1500,18 +1553,23 @@ export const mountDAW = (
 			// このDAWのトラック数を超えるチャンネルはベースへ畳み込む（従来挙動）
 			clampTrackCount: trackStates.length,
 		});
-		// トップレベル宣言（楽器プリセット・ドラムパターン）を復元する
+		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量）を復元する
 		currentInstrument = meta.instrument ?? "";
 		if (meta.drum && drumPatterns[meta.drum]) {
 			currentDrumPattern = meta.drum;
 			refs.drumSelect.value = meta.drum;
+		}
+		if (meta.volume !== undefined) {
+			masterVolume = meta.volume;
+			refs.masterVolume.value = String(meta.volume);
+			refs.masterVolumeLabel.textContent = `${meta.volume}%`;
 		}
 		// 歌詞トラック（@@n）を各トラックの歌詞入力へ復元する（編集UIに反映）。
 		// 表示用かなは正規化済み音節を結合したもの（長音は母音かなに展開済み）。
 		for (const t of trackStates) {
 			t.lyrics = "";
 			t.lyricModel = ""; // 既定は「なし」（歌わない）
-			t.vocalVolume = 100;
+			t.vocalVolume = 300;
 			t.vocalGate = 100;
 			t.vocalPan = 64;
 		}
@@ -1539,7 +1597,12 @@ export const mountDAW = (
 		}
 		playStartStep = 0;
 		currentOffsetX = 0;
-		setDrawOffset(currentOffsetX, currentOffsetY);
+		const firstPitch = getFirstDetectedPitch();
+		if (firstPitch !== null) {
+			centerPitch(firstPitch);
+		} else {
+			setDrawOffset(currentOffsetX, currentOffsetY);
+		}
 		redrawAll();
 		updateTrackPanel(); // 読み込んだ歌詞を編集UIへ反映
 		updateUndoRedo();
@@ -1610,7 +1673,12 @@ export const mountDAW = (
 		}
 		playStartStep = 0;
 		currentOffsetX = 0;
-		setDrawOffset(currentOffsetX, currentOffsetY);
+		const firstPitch = getFirstDetectedPitch();
+		if (firstPitch !== null) {
+			centerPitch(firstPitch);
+		} else {
+			setDrawOffset(currentOffsetX, currentOffsetY);
+		}
 		redrawAll();
 		updateUndoRedo();
 	};

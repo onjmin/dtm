@@ -463,10 +463,12 @@ export const DAW_CSS = `
 
 /* ─── ローディングオーバーレイ ─── */
 .dtm-overlay {
-  position: fixed; inset: 0; z-index: 1000;
+  position: absolute; inset: 0; z-index: 1000;
   background: rgba(0,0,0,.92);
   display: flex; align-items: center; justify-content: center;
   flex-direction: column; gap: 14px;
+  pointer-events: auto;
+  cursor: wait;
 }
 .dtm-overlay[hidden] { display: none; }
 .dtm-overlay::before {
@@ -623,4 +625,29 @@ export const injectStyles = (doc: Document = document): void => {
 	style.id = STYLE_ID;
 	style.textContent = DAW_CSS;
 	doc.head.appendChild(style);
+};
+
+/**
+ * container 内にローディング画面を表示し、非表示にするための関数を返す。
+ */
+export const showLoadingOverlay = (container: HTMLElement): (() => void) => {
+	const origPos = container.style.position;
+	const computed = window.getComputedStyle(container).position;
+	if (computed === "static") {
+		container.style.position = "relative";
+	}
+
+	const overlay = (container.ownerDocument ?? document).createElement("div");
+	overlay.className = "dtm-overlay";
+
+	const spinner = (container.ownerDocument ?? document).createElement("div");
+	spinner.className = "dtm-spinner";
+	overlay.appendChild(spinner);
+
+	container.appendChild(overlay);
+
+	return () => {
+		overlay.remove();
+		container.style.position = origPos;
+	};
 };

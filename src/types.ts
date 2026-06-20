@@ -1,3 +1,5 @@
+import type { SingingVoices } from "./lyrics";
+
 // ノートデータ構造
 export type Note = {
 	id: number;
@@ -114,7 +116,7 @@ export type LyricTrack = {
 	model: string;
 	/**
 	 * 歌唱の声量 0-400。ノートのvelocity（楽器の強弱）とは独立した合成音声専用パラメータ。
-	 * MMLでは `@@n klatt v80 …` のように v トークンで付与する（`model:80` も後方互換で可）。既定100。
+	 * MMLでは `@@n klatt v80 …` のように v トークンで付与する（`model:80` も後方互換で可）。既定300。
 	 * 0 で無音、100 で等倍、100超は増幅（ブースト）。実ゲインは vocalVolumeToGain により
 	 * 0-100は線形・100超はdB線形（対数）で換算され、v=400 で約 +24dB（≒15.8倍）になる。
 	 */
@@ -193,6 +195,8 @@ export type DawOptions = {
 	tracks?: TrackConfig[];
 	/** ドラムパターン辞書。既定は DRUM_PATTERNS */
 	drumPatterns?: Record<string, import("./drum-config").DrumPattern>;
+	/** 歌唱合成の先読みや制御を行うヘルパ（.koe音源の再生前プリロードに使用） */
+	singingVoices?: SingingVoices;
 	defaultBpm?: number;
 	initialMML?: string;
 };
