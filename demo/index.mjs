@@ -2866,19 +2866,15 @@ var MMLCore = class _MMLCore {
       notesByStep.set(n.startStep, list);
     }
     const sortedSteps = Array.from(notesByStep.keys()).sort((a, b) => a - b);
+    const MIN_STEP = config.stepsPerBar / 64;
     const fillRests = (until) => {
-      while (currentCursor < until) {
+      while (until - currentCursor >= MIN_STEP) {
         const gap = until - currentCursor;
-        if (gap <= 2) {
-          currentCursor = until;
-          break;
-        }
         const { dur, steps } = this.findBestFitDuration(gap);
         segments.push(`r${dur}`);
         currentCursor += steps;
       }
     };
-    const MIN_STEP = config.stepsPerBar / 64;
     for (let i = 0; i < sortedSteps.length; i++) {
       const startStep = sortedSteps[i];
       const notes = notesByStep.get(startStep);
@@ -2887,7 +2883,6 @@ var MMLCore = class _MMLCore {
       const nextStart = sortedSteps[i + 1] ?? endStep;
       const physicsLimit = nextStart - currentCursor;
       if (physicsLimit < MIN_STEP) {
-        currentCursor = startStep;
         continue;
       }
       const idealDuration = notes[0].durationSteps;
@@ -3913,6 +3908,12 @@ var DAW_CSS = `
   padding: 2px 6px;
   white-space: nowrap;
 }
+.dtm-player-body {
+  position: relative; /* \u30ED\u30FC\u30C7\u30A3\u30F3\u30B0\u30AA\u30FC\u30D0\u30FC\u30EC\u30A4\u306E\u57FA\u6E96\u3002\u30EC\u30FC\u30F3\u7FA4\u3060\u3051\u3092\u8986\u3046 */
+  display: flex;
+  flex-direction: column;
+  gap: var(--dtm-gap);
+}
 .dtm-player-lane-row {
   display: flex;
   align-items: stretch;
@@ -4854,7 +4855,7 @@ var mountDAW = (target, options = {}) => {
     const voices = options.singingVoices;
     const streaming = !!voices && streamTracks.some((t) => t.notes.length > 0);
     if (streaming && voices) {
-      const overlay = showLoadingOverlay(target);
+      const overlay = showLoadingOverlay(refs.rollContainer);
       try {
         await voices.loadModels(streamTracks.map((t) => t.model));
         await voices.warm(streamTracks);
@@ -5943,6 +5944,9 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   if (meta.volume !== void 0) addChip(`\u{1F50A} ${meta.volume}%`);
   head.appendChild(dots);
   root.appendChild(head);
+  const body = doc.createElement("div");
+  body.className = "dtm-player-body";
+  root.appendChild(body);
   const laneViews = [];
   for (const index of trackIndices) {
     const lyricTrack = lyricTracks.get(index);
@@ -6011,7 +6015,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       }
     }
     row.append(label, lane);
-    root.appendChild(row);
+    body.appendChild(row);
     laneViews.push({ lane, tokens: laneTokens });
   }
   const termsModels = [
@@ -6141,7 +6145,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     const tracks = streaming ? buildStreamTracks() : [];
     if (streaming) {
       const v = ensureVoices();
-      const overlay = showLoadingOverlay(root);
+      const overlay = showLoadingOverlay(body);
       try {
         await v.loadModels(tracks.map((t) => t.model));
         await v.warm(tracks);
