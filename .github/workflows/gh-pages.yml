@@ -32,17 +32,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Build docs
+        run: pnpm exec rimraf docs && pnpm exec typedoc src/index.ts --out docs
+
       - name: Build package
         run: pnpm exec tsup
 
-      - name: Prepare publish directory
+      - name: Copy demo files
         run: |
-          rm -rf docs
           mkdir -p docs/demo
           cp demo/index.html docs/demo/index.html
           cp dist/index.mjs docs/demo/index.mjs
-          cp README.md docs/README.md
-          touch docs/.nojekyll
+
+      - name: Add .nojekyll
+        run: touch ./docs/.nojekyll
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
