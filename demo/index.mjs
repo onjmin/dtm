@@ -1267,6 +1267,19 @@ var KOE_VOICEBANK_LABELS = {
   teto: "\u91CD\u97F3\u30C6\u30C8",
   shiyo: "\u9769\u547D\u30B7\u30E8"
 };
+var LYRIC_MODEL_LABELS = {
+  klatt: "\u8EFD\u91CF\u30ED\u30DC\u58F0",
+  ...KOE_VOICEBANK_LABELS
+};
+var LYRIC_MODEL_TERMS = {
+  tsukuyomi: "https://tyc.rei-yumesaki.net/material/utau/terms/",
+  rino: "https://hatenakun1.github.io/halunelino/",
+  roze: "https://tabaneroze.ninja-web.net/terms-of-use.html",
+  ruko: "https://long-sleeper.net/index.php?id=22",
+  teto: "https://kasaneteto.jp/guidelines/voice.html",
+  shiyo: "https://kakumeisiyo.my.canva.site/dagkuyjwycs"
+};
+var lyricModelLabel = (model) => LYRIC_MODEL_LABELS[model] ?? model;
 var koeUrl = (name, base = KOE_BASE_URL) => `${base}/${encodeURIComponent(name)}`;
 var DEFAULT_WORLDLINE_SCRIPT = "https://onjmin.github.io/koe/demo/world/worldline.js";
 var KOE_SAMPLE_RATE = 48e3;
@@ -3939,6 +3952,11 @@ var DAW_CSS = `
   scrollbar-width: none;
 }
 .dtm-player-lane::-webkit-scrollbar { display: none; }
+.dtm-player-terms {
+  font-size: 10px;
+  color: var(--dtm-warn);
+  text-align: center;
+}
 .dtm-tk {
   font-family: 'k8x12', monospace;
   font-size: 12px;
@@ -4154,19 +4172,6 @@ var TRACKS_ADVANCED = [
 ];
 var DEFAULT_TRACKS = TRACKS_SIMPLE;
 var LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
-var LYRIC_MODEL_LABELS = {
-  klatt: "\u8EFD\u91CF\u30ED\u30DC\u58F0",
-  ...KOE_VOICEBANK_LABELS
-};
-var LYRIC_MODEL_TERMS = {
-  tsukuyomi: "https://tyc.rei-yumesaki.net/material/utau/terms/",
-  rino: "https://hatenakun1.github.io/halunelino/",
-  roze: "https://tabaneroze.ninja-web.net/terms-of-use.html",
-  ruko: "https://long-sleeper.net/index.php?id=22",
-  teto: "https://kasaneteto.jp/guidelines/voice.html",
-  shiyo: "https://kakumeisiyo.my.canva.site/dagkuyjwycs"
-};
-var lyricModelLabel = (model) => LYRIC_MODEL_LABELS[model] ?? model;
 var clamp3 = (v, min, max) => Math.min(Math.max(v, min), max);
 var mountDAW = (target, options = {}) => {
   injectStyles();
@@ -5028,7 +5033,7 @@ var mountDAW = (target, options = {}) => {
       const url = active.lyricModel ? LYRIC_MODEL_TERMS[active.lyricModel] : void 0;
       if (url) {
         const label = lyricModelLabel(active.lyricModel);
-        lyricTermsLink.textContent = label;
+        lyricTermsLink.textContent = `${label}UTAU\u97F3\u6E90`;
         lyricTermsLink.href = url;
         lyricTerms.classList.remove("dtm-hidden");
       } else {
@@ -6018,6 +6023,30 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     root.appendChild(row);
     laneViews.push({ lane, tokens: laneTokens });
   }
+  const termModels = [...new Set([...lyricTracks.values()].map((t) => t.model))].filter(
+    (m) => !!m && !!LYRIC_MODEL_TERMS[m]
+  );
+  if (termModels.length > 0) {
+    const foot = doc.createElement("div");
+    foot.className = "dtm-player-terms";
+    foot.textContent = "\u4F7F\u7528\u6642\u306B\u306F ";
+    const links = termModels.map((m) => {
+      const a = doc.createElement("a");
+      a.href = LYRIC_MODEL_TERMS[m];
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = lyricModelLabel(m);
+      a.style.color = "var(--dtm-primary)";
+      a.style.textDecoration = "underline";
+      return a;
+    });
+    for (let i = 0; i < links.length; i++) {
+      if (i > 0) foot.append(" / ");
+      foot.append(links[i]);
+    }
+    foot.append(" \u306E\u5229\u7528\u898F\u7D04\u306B\u5F93\u3063\u3066\u304F\u3060\u3055\u3044");
+    root.appendChild(foot);
+  }
   target.appendChild(root);
   const autoScroll = (lane, el) => {
     if (el.offsetWidth === 0 || lane.clientWidth === 0) return;
@@ -6455,6 +6484,8 @@ export {
   KOE_BASE_URL,
   KOE_VOICEBANKS,
   KOE_VOICEBANK_LABELS,
+  LYRIC_MODEL_LABELS,
+  LYRIC_MODEL_TERMS,
   LinkedList,
   MAX_VOCAL_VOLUME,
   MMLCore,
@@ -6502,6 +6533,7 @@ export {
   injectStyles,
   isChordHeavyTrack,
   koeUrl,
+  lyricModelLabel,
   mountDAW,
   mountMmlPlayer,
   normalizeLyrics,
