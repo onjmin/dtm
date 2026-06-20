@@ -1283,22 +1283,17 @@ export const createSingingVoices = (
 		if (inflight) return inflight;
 		const koe = catalog[m];
 		if (!koe) return Promise.resolve(null); // 未知モデル（sing側でklattへ）
-		const p = (async () => {
-			let source = koe;
-			if (typeof source === "string") {
-				const res = await fetch(source);
-				if (!res.ok) {
-					throw new Error(`fetch failed: ${res.statusText}`);
-				}
-				source = await res.blob();
-			}
-			return createKoeVoice(ctx, destination, {
-				koe: source,
+		const p = (async () =>
+			// URL文字列はそのまま渡す。koe側が VoiceBank.load 内で HTTP Range により
+			// マニフェストだけ先読みし、音素PCMは歌う直前にオンデマンド取得する
+			// （= 初回に .koe 全体をDLしない。モバイル初回ロードの待ちを解消）。
+			// Blob/File が直接渡されたケース（ローカル読み込み）はそのまま BlobVoiceSource。
+			createKoeVoice(ctx, destination, {
+				koe,
 				worldlineScriptUrl: options.worldlineScriptUrl,
 				lightweight: options.lightweight,
 				voiceWorkerUrl: options.voiceWorkerUrl,
-			});
-		})()
+			}))()
 			.then((v) => {
 				loaded.set(m, v);
 				return v;
