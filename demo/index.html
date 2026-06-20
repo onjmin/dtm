@@ -352,6 +352,8 @@
         const loadPreset = async (presetKey) => {
             const preset = INSTRUMENT_PRESETS[presetKey];
             if (!preset) return;
+            // どの経路（手動選択 / 初期化 / MMLの #inst= 自動入力）からでも選択を永続化する
+            writeStored(INSTRUMENT_STORAGE_KEY, presetKey);
             // MML出力の先頭に楽器プリセット名を埋め込む（再生専用モジュールが音源解決に使う）
             daw?.setInstrument?.(presetKey);
             // 再生中に音源を切り替えたら、読み込み中は一旦停止し、完了後に同じ位置から再開する
@@ -452,11 +454,40 @@
             parseChord, parseChords, parseMidi,
             singingVoices: voices,
             defaultBpm: 120,
+            // ドラムパターン変更（手動・MMLの #drum= 自動入力の両方）を永続化する
+            onDrumChange: (name) => writeStored(DRUM_STORAGE_KEY, name),
         };
 
-        let currentMode = 'simple';
-        let daw = DTM.mountDAW(document.getElementById('app'), { ...dawBaseOptions, tracks: DTM.TRACKS_SIMPLE });
+        // モード選択（simple / advanced）はブラウザを閉じても維持する
+        const MODE_STORAGE_KEY = 'dtm-mode';
+        const readSavedMode = () => {
+            try { return localStorage.getItem(MODE_STORAGE_KEY) === 'advanced' ? 'advanced' : 'simple'; }
+            catch { return 'simple'; }
+        };
+        const saveMode = (mode) => {
+            try { localStorage.setItem(MODE_STORAGE_KEY, mode); } catch {}
+        };
+
+        // INSTRUMENT（楽器プリセット）・ドラムパターンもブラウザを閉じても維持する。
+        // どちらもMML読み込み時に #inst= / #drum= で自動入力され得るため、その値も保存する。
+        const INSTRUMENT_STORAGE_KEY = 'dtm-instrument';
+        const DRUM_STORAGE_KEY = 'dtm-drum';
+        // 表示・出力設定（ズーム / 和音分解モード / 和音伴奏トラック無視）も維持する
+        const VIEW_STORAGE_KEY = 'dtm-view';
+        const readStored = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+        const writeStored = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
+
+        let currentMode = readSavedMode();
+        let daw = DTM.mountDAW(document.getElementById('app'), { ...dawBaseOptions, tracks: currentMode === 'simple' ? DTM.TRACKS_SIMPLE : DTM.TRACKS_ADVANCED });
         window.daw = daw;
+
+        // 保存済みドラムパターンを（再）マウント後のDAWへ復元する。
+        // remount時はMMLラウンドトリップが #drum= を復元するが、"なし"はMMLに乗らないため明示復元する。
+        const restoreDrum = () => {
+            const saved = readStored(DRUM_STORAGE_KEY);
+            if (saved) daw.setDrum(saved);
+        };
+        restoreDrum();
 
         const BTN_ACTIVE = 'min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-cyan text-pico-black text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none';
         const BTN_INACTIVE = 'min-h-[40px] px-4 border-2 border-pico-gray bg-pico-black text-pico-gray text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none';
@@ -469,16 +500,25 @@
             btnAdvanced.className = mode === 'advanced' ? BTN_ACTIVE : BTN_INACTIVE;
             desc.textContent = mode === 'simple' ? 'AUTO MIDI CLASSIFY' : 'MIDI 1:1 TRACK MAPPING';
         };
+        // 保存されたモードでボタンの見た目を初期化（advanced 復元時に SIMPLE が点灯したままになるのを防ぐ）
+        updateModeButtons(currentMode);
 
         const remountDAW = async (mode) => {
             if (mode === currentMode) return;
+            const mmlData = daw.getMML();
             daw.destroy();
             currentMode = mode;
+            saveMode(mode);
             const tracks = mode === 'simple' ? DTM.TRACKS_SIMPLE : DTM.TRACKS_ADVANCED;
             daw = DTM.mountDAW(document.getElementById('app'), { ...dawBaseOptions, tracks });
             window.daw = daw;
             updateModeButtons(mode);
             await loadPreset(document.getElementById('preset').value);
+            if (mmlData && mmlData.full) {
+                daw.loadMML(mmlData.full);
+            }
+            // MMLに乗らない "なし" 等も含め、保存済みドラムパターンを新DAWへ復元する
+            restoreDrum();
         };
 
         document.getElementById('mode-simple').addEventListener('click', () => remountDAW('simple'));
@@ -490,7 +530,9 @@
             opt.value = key; opt.textContent = preset.displayName;
             presetSelect.appendChild(opt);
         }
-        const defaultPreset = 'retro_game';
+        // 保存済みINSTRUMENTがあれば初期値に使う（無効値は無視して既定へフォールバック）
+        const savedInstrument = readStored(INSTRUMENT_STORAGE_KEY);
+        const defaultPreset = (savedInstrument && INSTRUMENT_PRESETS[savedInstrument]) ? savedInstrument : 'retro_game';
         presetSelect.value = defaultPreset;
         presetSelect.addEventListener('change', () => loadPreset(presetSelect.value));
 
