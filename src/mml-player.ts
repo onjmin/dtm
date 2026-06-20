@@ -397,7 +397,7 @@ export const mountMmlPlayer = (
 			span1.textContent = "使用時には";
 
 			const a = doc.createElement("a");
-			a.textContent = label;
+			a.textContent = `${label}UTAU音源`;
 			a.href = url;
 			a.target = "_blank";
 			a.rel = "noopener";

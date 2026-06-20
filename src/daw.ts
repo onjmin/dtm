@@ -1294,7 +1294,7 @@ export const mountDAW = (
 				: undefined;
 			if (url) {
 				const label = lyricModelLabel(active.lyricModel);
-				lyricTermsLink.textContent = label;
+				lyricTermsLink.textContent = `${label}UTAU音源`;
 				lyricTermsLink.href = url;
 				lyricTerms.classList.remove("dtm-hidden");
 			} else {
