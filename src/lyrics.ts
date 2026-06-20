@@ -1038,6 +1038,10 @@ export const createKoeVoice = async (
 		return p;
 	};
 
+	/** プリ発声(preutterance)の最大長（秒）。VCV連続音の長い先行母音を切り詰めて
+	 * 「2重声」を防ぐ。koeデモの LEADCAP_MS=90 に準拠。 */
+	const LEADCAP_S = 0.09;
+
 	const schedule = (
 		r: RenderedNote,
 		t0: number,
@@ -1058,11 +1062,13 @@ export const createKoeVoice = async (
 		src.buffer = r.audio;
 		src.playbackRate.value = r.rate;
 
-		// 拍頭 t0 に母音オンセットが来るよう、先行（子音・前うち）ぶん前から鳴らす。
-		// t0 は未来の絶対時刻（AudioContextクロック）。先読みで貯金がある限り過去落ちしない。
-		const startAt = Math.max(ctx.currentTime + 0.001, t0 - r.preSec);
-		const bufDurSec = r.audio.duration / r.rate;
-		const endAt = startAt + bufDurSec;
+		// VCV連続音の長いプリ発声（〜300ms以上）を cap し、前のノートの母音と
+		// 重なり過ぎないようにする。余剰分はバッファ先頭からスキップする。
+		const effPre = Math.min(r.preSec, LEADCAP_S);
+		const skipS = r.preSec - effPre;
+		const startAt = Math.max(ctx.currentTime + 0.001, t0 - effPre);
+		const playDurSec = r.audio.duration / r.rate - skipS;
+		const endAt = startAt + playDurSec;
 
 		// クリック防止のフェードと声量エンベロープ
 		const attack = 0.01;
@@ -1075,7 +1081,7 @@ export const createKoeVoice = async (
 		env.gain.exponentialRampToValueAtTime(0.0001, endAt);
 
 		src.connect(env).connect(out);
-		src.start(startAt);
+		src.start(startAt, skipS);
 		src.stop(endAt + 0.02);
 		active.add(src);
 		src.onended = () => {
