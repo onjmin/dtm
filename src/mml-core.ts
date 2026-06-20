@@ -371,20 +371,21 @@ export class MMLCore {
 		}
 		const sortedSteps = Array.from(notesByStep.keys()).sort((a, b) => a - b);
 
+		const MIN_STEP = config.stepsPerBar / 64;
+
 		const fillRests = (until: number): void => {
-			while (currentCursor < until) {
+			// currentCursor は「実際に出力したトークンの合計ステップ数」と常に一致させる。
+			// 表現できる最小休符(64分=MIN_STEP)未満の端数はトークン化せず、カーソルも
+			// 進めずに残差として次回へ持ち越す。次の fillRests はこの残差を含んだ
+			// currentCursor からギャップを測り直すため、ずれが累積せず後続のタイミングが
+			// 早まっていくのを防げる（細かいリズムは近似、後続は不動）。
+			while (until - currentCursor >= MIN_STEP) {
 				const gap = until - currentCursor;
-				if (gap <= 2) {
-					currentCursor = until;
-					break;
-				}
 				const { dur, steps } = this.findBestFitDuration(gap);
 				segments.push(`r${dur}`);
 				currentCursor += steps;
 			}
 		};
-
-		const MIN_STEP = config.stepsPerBar / 64;
 
 		for (let i = 0; i < sortedSteps.length; i++) {
 			const startStep = sortedSteps[i];
@@ -398,9 +399,9 @@ export class MMLCore {
 			const nextStart = sortedSteps[i + 1] ?? endStep;
 			const physicsLimit = nextStart - currentCursor;
 
-			// 空き容量が最小単位未満なら、このノートは無視（位置だけ合わせる）
+			// 空き容量が最小単位未満なら、このノートは音価を表現できないので省略する。
+			// カーソルは動かさず（残差を持ち越し）、後続のタイミングをずらさない。
 			if (physicsLimit < MIN_STEP) {
-				currentCursor = startStep;
 				continue;
 			}
 
