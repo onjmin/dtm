@@ -1080,6 +1080,16 @@ export const mountDAW = (
 		playbackState = "playing";
 		// 各トラックの歌詞入力から同期コンダクタを再構築（ポインタは先頭から）
 		lyricsConductor = createLyricsConductor(buildLyricsMap());
+		if (fromStep > 0) {
+			trackStates.forEach((t, i) => {
+				const skipCount = t.core
+					.getNotes()
+					.filter((n) => n.startStep < fromStep).length;
+				for (let skip = 0; skip < skipCount; skip++) {
+					lyricsConductor.consume(i);
+				}
+			});
+		}
 		sequencer.start(fromStep);
 		updateTransport();
 	};
