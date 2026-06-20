@@ -1414,9 +1414,10 @@ var createWorkerBackend = async (workerUrl, options) => {
       }
     }
   };
-  worker.onerror = (e) => onFail?.(
-    new Error(`voice worker error: ${e.message || e}`)
-  );
+  worker.onerror = (e) => {
+    const ev = e;
+    onFail?.(new Error(ev.message || ev.error || `Event: ${ev.type}`));
+  };
   await new Promise((resolve, reject) => {
     onReady = resolve;
     onFail = reject;
