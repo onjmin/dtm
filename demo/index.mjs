@@ -5028,7 +5028,7 @@ var mountDAW = (target, options = {}) => {
       const url = active.lyricModel ? KOE_VOICEBANK_TERMS[active.lyricModel] : void 0;
       if (url) {
         const label = lyricModelLabel(active.lyricModel);
-        lyricTermsLink.textContent = label;
+        lyricTermsLink.textContent = `${label}UTAU\u97F3\u6E90`;
         lyricTermsLink.href = url;
         lyricTerms.classList.remove("dtm-hidden");
       } else {
@@ -6042,7 +6042,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       const span1 = doc.createElement("span");
       span1.textContent = "\u4F7F\u7528\u6642\u306B\u306F";
       const a = doc.createElement("a");
-      a.textContent = label;
+      a.textContent = `${label}UTAU\u97F3\u6E90`;
       a.href = url;
       a.target = "_blank";
       a.rel = "noopener";
