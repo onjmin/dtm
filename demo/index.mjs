@@ -1062,7 +1062,7 @@ var parseLyrics = (mml) => {
     const trackId = Number.parseInt(m[1], 10);
     const tokens = m[2].trim().split(/\s+/);
     const modelToken = tokens.shift() ?? "";
-    let volume = 100;
+    let volume = 300;
     let gate = 100;
     let pan = 64;
     const colon = modelToken.indexOf(":");
@@ -1131,7 +1131,7 @@ var createLyricsConductor = (lyrics) => {
     return {
       model: track.model,
       syllable,
-      volume: vocalVolumeToGain(track.volume ?? 100),
+      volume: vocalVolumeToGain(track.volume ?? 300),
       gate: (track.gate ?? 100) / 100,
       pan: panToStereo(track.pan ?? 64)
     };
@@ -1318,7 +1318,7 @@ var createKoeVoice = async (ctx, destination, options) => {
       panner?.disconnect();
     };
   };
-  return (syllable, e) => {
+  const model = (syllable, e) => {
     if (syllable.consonant === "Q" || syllable.vowel === "") return;
     const alias = resolveKoeAlias(bank, syllable, prevVowel);
     if (syllable.vowel && syllable.vowel !== "N") prevVowel = syllable.vowel;
@@ -1363,6 +1363,10 @@ var createKoeVoice = async (ctx, destination, options) => {
       schedule(rendered, t0, peak, pan);
     });
   };
+  model.reset = () => {
+    prevVowel = "";
+  };
+  return model;
 };
 var FALLBACK_MODEL = "klatt";
 var createSingingVoices = (ctx, destination, options = {}) => {
@@ -1383,11 +1387,21 @@ var createSingingVoices = (ctx, destination, options = {}) => {
     if (inflight) return inflight;
     const koe = catalog[m];
     if (!koe) return Promise.resolve(null);
-    const p = createKoeVoice(ctx, destination, {
-      koe,
-      worldlineScriptUrl: options.worldlineScriptUrl,
-      lightweight: options.lightweight
-    }).then((v) => {
+    const p = (async () => {
+      let source = koe;
+      if (typeof source === "string") {
+        const res = await fetch(source);
+        if (!res.ok) {
+          throw new Error(`fetch failed: ${res.statusText}`);
+        }
+        source = await res.blob();
+      }
+      return createKoeVoice(ctx, destination, {
+        koe: source,
+        worldlineScriptUrl: options.worldlineScriptUrl,
+        lightweight: options.lightweight
+      });
+    })().then((v) => {
       loaded.set(m, v);
       return v;
     }).catch((err) => {
@@ -1413,9 +1427,14 @@ var createSingingVoices = (ctx, destination, options = {}) => {
   const preload = async (models) => {
     const set = /* @__PURE__ */ new Set();
     for (const m of models) if (m) set.add(m.toLowerCase());
-    await Promise.all([...set].map(load));
+    await Promise.all([...set].map((m) => load(m)));
   };
-  return { sing, preload };
+  const reset = () => {
+    for (const v of loaded.values()) {
+      if (typeof v.reset === "function") v.reset();
+    }
+  };
+  return { sing, preload, reset };
 };
 var createVoiceRegistry = (models = {}, fallback = "klatt") => {
   const sing = (model, syllable, e) => {
@@ -2687,13 +2706,17 @@ var PITCH_MAP2 = {
   b: 11
 };
 var clamp2 = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
-var META_DIRECTIVE = /#(inst|drum)=([\w-]+)/gi;
+var META_DIRECTIVE = /#(inst|drum|volume)=([\w-]+)/gi;
 var parseMmlMeta = (mml) => {
   const meta = {};
   for (const m of mml.matchAll(META_DIRECTIVE)) {
     const key = m[1].toLowerCase();
     if (key === "inst") meta.instrument = m[2];
     else if (key === "drum") meta.drum = m[2];
+    else if (key === "volume") {
+      const v = Number.parseInt(m[2], 10);
+      if (!Number.isNaN(v)) meta.volume = v;
+    }
   }
   return meta;
 };
@@ -2702,6 +2725,7 @@ var formatMmlMeta = (meta) => {
   const parts = [];
   if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
   if (meta.drum) parts.push(`#drum=${meta.drum}`);
+  if (meta.volume !== void 0) parts.push(`#volume=${meta.volume}`);
   return parts.join(" ");
 };
 var parseMML = (mml, options = {}) => {
@@ -3485,10 +3509,12 @@ var DAW_CSS = `
 
 /* \u2500\u2500\u2500 \u30ED\u30FC\u30C7\u30A3\u30F3\u30B0\u30AA\u30FC\u30D0\u30FC\u30EC\u30A4 \u2500\u2500\u2500 */
 .dtm-overlay {
-  position: fixed; inset: 0; z-index: 1000;
+  position: absolute; inset: 0; z-index: 1000;
   background: rgba(0,0,0,.92);
   display: flex; align-items: center; justify-content: center;
   flex-direction: column; gap: 14px;
+  pointer-events: auto;
+  cursor: wait;
 }
 .dtm-overlay[hidden] { display: none; }
 .dtm-overlay::before {
@@ -3641,6 +3667,23 @@ var injectStyles = (doc = document) => {
   style.id = STYLE_ID;
   style.textContent = DAW_CSS;
   doc.head.appendChild(style);
+};
+var showLoadingOverlay = (container) => {
+  const origPos = container.style.position;
+  const computed = window.getComputedStyle(container).position;
+  if (computed === "static") {
+    container.style.position = "relative";
+  }
+  const overlay = (container.ownerDocument ?? document).createElement("div");
+  overlay.className = "dtm-overlay";
+  const spinner = (container.ownerDocument ?? document).createElement("div");
+  spinner.className = "dtm-spinner";
+  overlay.appendChild(spinner);
+  container.appendChild(overlay);
+  return () => {
+    overlay.remove();
+    container.style.position = origPos;
+  };
 };
 
 // src/daw.ts
@@ -3869,7 +3912,7 @@ var mountDAW = (target, options = {}) => {
       lyrics: "",
       lyricModel: "",
       // 既定は「なし」（歌わない）
-      vocalVolume: 100,
+      vocalVolume: 300,
       vocalGate: 100,
       vocalPan: 64
     }));
@@ -4462,9 +4505,27 @@ var mountDAW = (target, options = {}) => {
     },
     stepsPerBar: renderConfig.stepsPerBar
   });
-  const play = () => {
+  const play = async () => {
     options.onResumeAudio?.();
     if (playbackState === "playing") return;
+    options.singingVoices?.reset();
+    if (options.singingVoices) {
+      const lyricMap = buildLyricsMap();
+      const models = /* @__PURE__ */ new Set();
+      for (const lt of lyricMap.values()) {
+        if (lt.model) models.add(lt.model);
+      }
+      if (models.size > 0) {
+        const removeOverlay = showLoadingOverlay(target);
+        try {
+          await options.singingVoices.preload(models);
+        } catch (err) {
+          console.warn("[dtm] preload failed", err);
+        } finally {
+          removeOverlay();
+        }
+      }
+    }
     const fromStep = playbackState === "paused" ? pausedPlayStep : playStartStep;
     if (playbackState !== "paused") {
       const canvas = getGridCanvas();
@@ -4476,6 +4537,14 @@ var mountDAW = (target, options = {}) => {
     }
     playbackState = "playing";
     lyricsConductor = createLyricsConductor(buildLyricsMap());
+    if (fromStep > 0) {
+      trackStates.forEach((t, i) => {
+        const skipCount = t.core.getNotes().filter((n) => n.startStep < fromStep).length;
+        for (let skip = 0; skip < skipCount; skip++) {
+          lyricsConductor.consume(i);
+        }
+      });
+    }
     sequencer.start(fromStep);
     updateTransport();
   };
@@ -4550,7 +4619,7 @@ var mountDAW = (target, options = {}) => {
       <div class="dtm-row" data-dtm="lyric-body" style="flex-direction:column;align-items:stretch">
         <div class="dtm-row">
           <span class="dtm-label">\u58F0\u91CF</span>
-          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="\u6B4C\u5531\u306E\u58F0\u91CF\uFF08100=\u7B49\u500D\u3001100\u8D85\u3067\u30D6\u30FC\u30B9\u30C8\uFF09">
+          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="\u6B4C\u5531\u306E\u58F0\u91CF\uFF08100=\u7B49\u500D\u3001100\u8D85\u3067\u30D6\u30FC\u30B9\u30C8\u3001\u65E2\u5B9A300\uFF09">
           <span class="dtm-label" data-dtm="lyric-vol-label"></span>
         </div>
         <div class="dtm-row">
@@ -4724,7 +4793,8 @@ var mountDAW = (target, options = {}) => {
     const clipNotes = (notes) => limitSteps === Infinity ? notes : notes.filter((n) => n.startStep < limitSteps);
     const metaLine = formatMmlMeta({
       instrument: currentInstrument || void 0,
-      drum: currentDrumPattern !== "none" ? currentDrumPattern : void 0
+      drum: currentDrumPattern !== "none" ? currentDrumPattern : void 0,
+      volume: masterVolume
     });
     if (refs.decomposeChordToggle.checked) {
       const ignoreHeavy = refs.ignoreChordHeavyToggle.checked;
@@ -4766,7 +4836,7 @@ var mountDAW = (target, options = {}) => {
       pan: t.vocalPan
     })).filter((x) => x.model.length > 0 && x.text.length > 0).map((x) => {
       const params = [
-        x.vol === 100 ? "" : `v${x.vol}`,
+        x.vol === 300 ? "" : `v${x.vol}`,
         x.gate === 100 ? "" : `q${x.gate}`,
         x.pan === 64 ? "" : `p${x.pan}`
       ].filter((s) => s.length > 0).join(" ");
@@ -4795,6 +4865,34 @@ var mountDAW = (target, options = {}) => {
     refs.outputContainer.classList.remove("dtm-hidden");
     updateUndoRedo();
   };
+  const getFirstDetectedPitch = () => {
+    let minStep = Number.MAX_SAFE_INTEGER;
+    let candidateNotes = [];
+    for (const t of trackStates) {
+      for (const note of t.core.getNotes()) {
+        if (note.startStep < minStep) {
+          minStep = note.startStep;
+          candidateNotes = [note];
+        } else if (note.startStep === minStep) {
+          candidateNotes.push(note);
+        }
+      }
+    }
+    if (candidateNotes.length === 0) return null;
+    const sum = candidateNotes.reduce((acc, note) => acc + note.pitch, 0);
+    return Math.round(sum / candidateNotes.length);
+  };
+  const centerPitch = (pitch) => {
+    const canvas = getGridCanvas();
+    const yIndex = renderConfig.keyCount - 1 - (pitch - renderConfig.pitchRangeStart);
+    const logicalY = yIndex * renderConfig.keyHeight;
+    currentOffsetY = clamp3(
+      logicalY - (canvas.height - renderConfig.keyHeight) / 2,
+      0,
+      getMaxOffsetY()
+    );
+    setDrawOffset(currentOffsetX, currentOffsetY);
+  };
   const clearAll = () => {
     for (const t of trackStates) {
       t.core.resetHistory();
@@ -4822,10 +4920,15 @@ var mountDAW = (target, options = {}) => {
       currentDrumPattern = meta.drum;
       refs.drumSelect.value = meta.drum;
     }
+    if (meta.volume !== void 0) {
+      masterVolume = meta.volume;
+      refs.masterVolume.value = String(meta.volume);
+      refs.masterVolumeLabel.textContent = `${meta.volume}%`;
+    }
     for (const t of trackStates) {
       t.lyrics = "";
       t.lyricModel = "";
-      t.vocalVolume = 100;
+      t.vocalVolume = 300;
       t.vocalGate = 100;
       t.vocalPan = 64;
     }
@@ -4853,7 +4956,12 @@ var mountDAW = (target, options = {}) => {
     }
     playStartStep = 0;
     currentOffsetX = 0;
-    setDrawOffset(currentOffsetX, currentOffsetY);
+    const firstPitch = getFirstDetectedPitch();
+    if (firstPitch !== null) {
+      centerPitch(firstPitch);
+    } else {
+      setDrawOffset(currentOffsetX, currentOffsetY);
+    }
     redrawAll();
     updateTrackPanel();
     updateUndoRedo();
@@ -4915,7 +5023,12 @@ var mountDAW = (target, options = {}) => {
     }
     playStartStep = 0;
     currentOffsetX = 0;
-    setDrawOffset(currentOffsetX, currentOffsetY);
+    const firstPitch = getFirstDetectedPitch();
+    if (firstPitch !== null) {
+      centerPitch(firstPitch);
+    } else {
+      setDrawOffset(currentOffsetX, currentOffsetY);
+    }
     redrawAll();
     updateUndoRedo();
   };
@@ -5338,7 +5451,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const bpm = parsedBpm ?? options.defaultBpm ?? 120;
   const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
   const drumPattern = meta.drum ? drumPatternDict[meta.drum] ?? null : null;
-  const trackVolume = options.volume ?? 100;
+  const trackVolume = meta.volume ?? options.volume ?? 100;
   const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
   const useSynth = options.synth ?? !options.onPlayNote;
   const secondsPerStep = 60 / bpm / STEPS_PER_BEAT3;
@@ -5470,6 +5583,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   };
   if (meta.instrument) addChip(`\u266A ${meta.instrument}`);
   if (meta.drum) addChip(`\u{1F941} ${meta.drum}${drumPattern ? "" : " (?)"}`);
+  if (meta.volume !== void 0) addChip(`\u{1F50A} ${meta.volume}%`);
   head.appendChild(dots);
   root.appendChild(head);
   const laneViews = [];
@@ -5598,8 +5712,9 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       }
     },
     onPlayDrum: (e) => {
-      options.onPlayDrum?.(e);
-      if (useSynth) drumSynth(e);
+      const velocity = e.velocity * (trackVolume / 100);
+      options.onPlayDrum?.({ ...e, velocity });
+      if (useSynth) drumSynth({ ...e, velocity });
     },
     onTick: (step) => renderPlayhead(step),
     onEnd: () => finish(),
@@ -5619,9 +5734,13 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const startWhenReady = async () => {
     if (useSynth && lyricTracks.size > 0) {
       const models = [...lyricTracks.values()].map((t) => t.model);
+      const removeOverlay = showLoadingOverlay(root);
       try {
         await ensureVoices().preload(models);
-      } catch {
+      } catch (err) {
+        console.warn("[dtm] preload failed", err);
+      } finally {
+        removeOverlay();
       }
       if (!playing || activePlayer !== instance) return;
     }
@@ -5636,6 +5755,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     if (useSynth) {
       const ctx = ensureCtx();
       if (ctx.state === "suspended") void ctx.resume();
+      ensureVoices().reset();
     }
     conductor.reset();
     void startWhenReady();
