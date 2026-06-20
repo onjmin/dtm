@@ -628,7 +628,7 @@ export const KOE_BASE_URL =
 export const KOE_VOICEBANKS: Record<string, string> = {
 	tsukuyomi: "つくよみちゃん.koe",
 	rino: "春音リノver0.3.koe",
-	roze: "束音ロゼver0.51(多音階).koe",
+	roze: "束音ロゼver0.５1(多音階).koe",
 	ruko: "欲音ルコ♀歌連続音普1.00.koe",
 	teto: "重音テト単独音.koe",
 	shiyo: "革命シヨ.koe",
