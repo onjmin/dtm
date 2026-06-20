@@ -495,9 +495,12 @@ export const createDtmStudio = async (
 		};
 
 		// プリセット選択UI（任意）。daw のマウント前に target 先頭へ差し込む。
+		// 同じ target への再マウントで select が重複しないよう、既存分は除去する。
 		const wantPresetUI = presetUI ?? features.presetUI;
+		let select: HTMLSelectElement | null = null;
 		if (wantPresetUI) {
-			const select = target.ownerDocument.createElement("select");
+			editorPresetSelects.get(target)?.remove();
+			select = target.ownerDocument.createElement("select");
 			select.className = "dtm-studio-preset";
 			for (const [key, p] of Object.entries(INSTRUMENT_PRESETS)) {
 				const opt = target.ownerDocument.createElement("option");
@@ -510,6 +513,7 @@ export const createDtmStudio = async (
 			target.appendChild(select);
 			editorPresetSelects.set(target, select);
 			select.addEventListener("change", async () => {
+				if (!select) return;
 				daw.setInstrument(select.value);
 				await loadPreset(select.value, trackIds);
 			});
@@ -524,7 +528,16 @@ export const createDtmStudio = async (
 		daw.setInstrument(presetKey);
 		void loadPreset(presetKey, trackIds);
 
-		return daw;
+		// destroy 時に、注入した select と内部参照も後始末する。
+		const destroy = (): void => {
+			daw.destroy();
+			select?.remove();
+			if (editorPresetSelects.get(target) === select)
+				editorPresetSelects.delete(target);
+			const i = mountedEditors.indexOf(daw);
+			if (i >= 0) mountedEditors.splice(i, 1);
+		};
+		return { ...daw, destroy };
 	};
 
 	const mountPlayer = (
@@ -546,7 +559,13 @@ export const createDtmStudio = async (
 			...opts,
 		});
 		mountedPlayers.push(player);
-		return player;
+		// destroy 時に内部リストからも外す（多数の再生UIを生成し続けても溜まらないように）。
+		const destroy = (): void => {
+			player.destroy();
+			const i = mountedPlayers.indexOf(player);
+			if (i >= 0) mountedPlayers.splice(i, 1);
+		};
+		return { ...player, destroy };
 	};
 
 	const dispose = (): void => {
