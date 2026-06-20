@@ -33,7 +33,7 @@ jobs:
         run: pnpm install
 
       - name: Build package
-        run: pnpm exec tsup src/index.ts --format esm --dts --out-dir dist
+        run: pnpm exec tsup
 
       - name: Prepare publish directory
         run: |
@@ -41,7 +41,6 @@ jobs:
           mkdir -p docs/demo
           cp demo/index.html docs/demo/index.html
           cp dist/index.mjs docs/demo/index.mjs
-          cp dist/index.d.ts docs/demo/index.d.ts
           cp README.md docs/README.md
           touch docs/.nojekyll
 
