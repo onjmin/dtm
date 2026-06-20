@@ -1076,9 +1076,29 @@ export const mountDAW = (
 				if (lt.model) models.add(lt.model);
 			}
 			if (models.size > 0) {
+				const secondsPerStep = 60 / bpm / 48; // STEPS_PER_BEAT = 48
+				const trackSyllables = [...lyricMap.values()].map((lt) => {
+					const trackState = trackStates.find(
+						(t) => t.config.id === String(lt.trackId),
+					);
+					const rawNotes = trackState ? trackState.core.getNotes() : [];
+					const sortedNotes = [...rawNotes].sort(
+						(a, b) => a.startStep - b.startStep,
+					);
+					const notes = sortedNotes.map((n) => ({
+						pitch: n.pitch,
+						duration: n.durationSteps * secondsPerStep,
+					}));
+					return {
+						model: lt.model,
+						syllables: lt.syllables,
+						notes,
+					};
+				});
+
 				const removeOverlay = showLoadingOverlay(target);
 				try {
-					await options.singingVoices.preload(models);
+					await options.singingVoices.preload(models, trackSyllables);
 				} catch (err) {
 					console.warn("[dtm] preload failed", err);
 				} finally {

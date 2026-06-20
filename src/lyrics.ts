@@ -445,6 +445,10 @@ export const createLyricsConductor = (
 export type VoiceModel = {
 	(syllable: LyricSyllable, e: PlayNoteEvent): void;
 	reset?: () => void;
+	preloadRender?: (
+		syllables: LyricSyllable[],
+		notes: { pitch: number; duration: number }[],
+	) => Promise<void>;
 };
 
 /** 母音ごとのフォルマント周波数 [F1, F2]（Hz） */
@@ -822,6 +826,74 @@ export const createKoeVoice = async (
 		});
 	};
 
+	model.preloadRender = async (syllables, notes) => {
+		let tempPrevVowel = "";
+		const promises: Promise<void>[] = [];
+		const count = Math.min(syllables.length, notes.length);
+
+		for (let i = 0; i < count; i++) {
+			const syllable = syllables[i];
+			const note = notes[i];
+
+			if (syllable.consonant === "Q" || syllable.vowel === "") {
+				continue;
+			}
+
+			const alias = resolveKoeAlias(bank, syllable, tempPrevVowel);
+			if (syllable.vowel && syllable.vowel !== "N") {
+				tempPrevVowel = syllable.vowel;
+			}
+			if (!alias) continue;
+
+			const targetHz = midiToFreq(note.pitch);
+			const durationMs = Math.max(60, note.duration * 1000);
+			const key = `${alias}|${note.pitch}|${Math.round(durationMs)}`;
+
+			if (renderCache.has(key)) {
+				continue;
+			}
+
+			const p = (async () => {
+				try {
+					const pcm = await getPcm(alias);
+					if (!pcm || pcm.length === 0) {
+						renderCache.set(key, null);
+						return;
+					}
+					const entry = bank.manifest.phonemes[alias];
+					const lead = leadInFromEntry(entry);
+
+					let rendered: RenderedNote | null = null;
+					if (worldline) {
+						const audio = worldline.renderNote({
+							pcm,
+							pitch: targetHz,
+							durationMs,
+							...lead,
+						});
+						if (audio) {
+							rendered = { audio, preSec: lead.preMs / 1000, rate: 1 };
+						}
+					}
+					if (!rendered) {
+						const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
+						rendered = {
+							audio: Float32Array.from(pcm),
+							preSec: entry.pre / KOE_SAMPLE_RATE / rate,
+							rate,
+						};
+					}
+					renderCache.set(key, rendered);
+				} catch (err) {
+					console.warn(`[dtm] preloadRender failed for ${key}`, err);
+				}
+			})();
+			promises.push(p);
+		}
+
+		await Promise.all(promises);
+	};
+
 	model.reset = () => {
 		prevVowel = "";
 	};
@@ -842,7 +914,14 @@ export type SingingVoices = {
 	/** 指定モデルで1音節を歌う。koe音源はロード完了までは無音、未知モデルは klatt */
 	sing: (model: string, syllable: LyricSyllable, e: PlayNoteEvent) => void;
 	/** 指定モデル群を事前ロードする（再生開始前に await すると初回から歌える） */
-	preload: (models: Iterable<string>) => Promise<void>;
+	preload: (
+		models: Iterable<string>,
+		trackSyllables?: {
+			model: string;
+			syllables: LyricSyllable[];
+			notes?: { pitch: number; duration: number }[];
+		}[],
+	) => Promise<void>;
 	/** 歌唱モデルの内部状態（直前母音など）を初期化する */
 	reset: () => void;
 };
@@ -929,11 +1008,33 @@ export const createSingingVoices = (
 		void load(m);
 	};
 
-	const preload: SingingVoices["preload"] = async (models) => {
+	const preload: SingingVoices["preload"] = async (models, trackSyllables) => {
 		const set = new Set<string>();
 		for (const m of models) if (m) set.add(m.toLowerCase());
 
-		await Promise.all([...set].map((m) => load(m)));
+		// 1. 各モデルのロードを開始して完了を待つ（.koeファイル自体のロード）
+		const loadedModels = new Map<string, VoiceModel | null>();
+		await Promise.all(
+			[...set].map(async (m) => {
+				const v = await load(m);
+				loadedModels.set(m, v);
+			}),
+		);
+
+		// 2. trackSyllables が渡されている場合は、プリロード（音声合成キャッシュ）を実行する
+		if (trackSyllables) {
+			const promises: Promise<void>[] = [];
+			for (const ts of trackSyllables) {
+				const m = ts.model.toLowerCase();
+				const v = loadedModels.get(m);
+				if (!v) continue;
+
+				if (ts.notes && typeof v.preloadRender === "function") {
+					promises.push(v.preloadRender(ts.syllables, ts.notes));
+				}
+			}
+			await Promise.all(promises);
+		}
 	};
 
 	const reset = (): void => {

@@ -452,10 +452,26 @@ export const mountMmlPlayer = (
 	const startWhenReady = async (): Promise<void> => {
 		if (useSynth && lyricTracks.size > 0) {
 			const models = [...lyricTracks.values()].map((t) => t.model);
+			const trackSyllables = [...lyricTracks.entries()].map(([index, lt]) => {
+				const seqTrack = seqTracks.find((t) => Number(t.id) === index);
+				const rawNotes = seqTrack ? seqTrack.notes : [];
+				const sortedNotes = [...rawNotes].sort(
+					(a, b) => a.startStep - b.startStep,
+				);
+				const notes = sortedNotes.map((n) => ({
+					pitch: n.pitch,
+					duration: n.durationSteps * secondsPerStep,
+				}));
+				return {
+					model: lt.model,
+					syllables: lt.syllables,
+					notes,
+				};
+			});
 
 			const removeOverlay = showLoadingOverlay(root);
 			try {
-				await ensureVoices().preload(models);
+				await ensureVoices().preload(models, trackSyllables);
 			} catch (err) {
 				console.warn("[dtm] preload failed", err);
 			} finally {
