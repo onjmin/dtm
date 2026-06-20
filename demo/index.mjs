@@ -1150,7 +1150,8 @@ var FORMANTS = {
 };
 var midiToFreq = (m) => 440 * 2 ** ((m - 69) / 12);
 var createKlattVoice = (ctx, destination) => {
-  return (syllable, e) => {
+  const active = /* @__PURE__ */ new Set();
+  const voice = (syllable, e) => {
     const t0 = ctx.currentTime + e.when;
     const peak = Math.max(1e-4, e.volume);
     if (syllable.vowel === "" || syllable.consonant === "Q") return;
@@ -1206,7 +1207,9 @@ var createKlattVoice = (ctx, destination) => {
       src.connect(hp).connect(ng).connect(out);
       src.start(t0);
       src.stop(t0 + dur);
+      active.add(src);
       src.onended = () => {
+        active.delete(src);
         src.disconnect();
         hp.disconnect();
         ng.disconnect();
@@ -1214,11 +1217,24 @@ var createKlattVoice = (ctx, destination) => {
     }
     osc.start(t0);
     osc.stop(sustainEnd + release + 0.02);
+    active.add(osc);
     osc.onended = () => {
+      active.delete(osc);
       osc.disconnect();
       panner?.disconnect();
     };
   };
+  voice.stopAll = () => {
+    for (const n of active) {
+      try {
+        n.stop();
+      } catch {
+      }
+      n.disconnect();
+    }
+    active.clear();
+  };
+  return voice;
 };
 var KOE_BASE_URL = "https://pub-12482a6b5cbc4c9e906b2e1904cabae5.r2.dev";
 var KOE_VOICEBANKS = {
@@ -1283,7 +1299,49 @@ var createKoeVoice = async (ctx, destination, options) => {
     return p;
   };
   const renderCache = /* @__PURE__ */ new Map();
+  const active = /* @__PURE__ */ new Set();
   let prevVowel = "";
+  const keyOf = (alias, pitch, durationMs) => `${alias}|${pitch}|${Math.round(durationMs / 10) * 10}`;
+  const renderOne = async (alias, pitch, durationMs) => {
+    const key = keyOf(alias, pitch, durationMs);
+    const existing = renderCache.get(key);
+    if (existing !== void 0) return existing;
+    const pcm = await getPcm(alias);
+    if (!pcm || pcm.length === 0) {
+      renderCache.set(key, null);
+      return null;
+    }
+    const entry = bank.manifest.phonemes[alias];
+    const lead = leadInFromEntry(entry);
+    const targetHz = midiToFreq(pitch);
+    let rendered = null;
+    if (worldline) {
+      const audio = worldline.renderNote({
+        pcm,
+        pitch: targetHz,
+        durationMs,
+        ...lead
+      });
+      if (audio) {
+        const buf = ctx.createBuffer(1, audio.length, KOE_SAMPLE_RATE);
+        buf.copyToChannel(audio, 0);
+        rendered = { audio: buf, preSec: lead.preMs / 1e3, rate: 1 };
+      }
+    }
+    if (!rendered) {
+      const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
+      const audioData = Float32Array.from(pcm);
+      const buf = ctx.createBuffer(1, audioData.length, KOE_SAMPLE_RATE);
+      buf.copyToChannel(audioData, 0);
+      rendered = {
+        audio: buf,
+        preSec: entry.pre / KOE_SAMPLE_RATE / rate,
+        rate
+      };
+    }
+    renderCache.set(key, rendered);
+    return rendered;
+  };
   const schedule = (r, t0, peak, pan) => {
     let out = destination;
     let panner = null;
@@ -1293,13 +1351,11 @@ var createKoeVoice = async (ctx, destination, options) => {
       panner.connect(destination);
       out = panner;
     }
-    const buf = ctx.createBuffer(1, r.audio.length, KOE_SAMPLE_RATE);
-    buf.copyToChannel(r.audio, 0);
     const src = ctx.createBufferSource();
-    src.buffer = buf;
+    src.buffer = r.audio;
     src.playbackRate.value = r.rate;
     const startAt = Math.max(ctx.currentTime + 1e-3, t0 - r.preSec);
-    const bufDurSec = r.audio.length / KOE_SAMPLE_RATE / r.rate;
+    const bufDurSec = r.audio.duration / r.rate;
     const endAt = startAt + bufDurSec;
     const attack = 0.01;
     const release = 0.04;
@@ -1312,7 +1368,9 @@ var createKoeVoice = async (ctx, destination, options) => {
     src.connect(env).connect(out);
     src.start(startAt);
     src.stop(endAt + 0.02);
+    active.add(src);
     src.onended = () => {
+      active.delete(src);
       src.disconnect();
       env.disconnect();
       panner?.disconnect();
@@ -1326,107 +1384,41 @@ var createKoeVoice = async (ctx, destination, options) => {
     const t0 = ctx.currentTime + e.when;
     const peak = Math.max(1e-4, e.volume);
     const pan = e.pan ?? 0;
-    const targetHz = midiToFreq(e.pitch);
     const durationMs = Math.max(60, e.duration * 1e3);
-    const key = `${alias}|${e.pitch}|${Math.round(durationMs)}`;
-    const cached = renderCache.get(key);
-    if (cached !== void 0) {
-      if (cached) schedule(cached, t0, peak, pan);
-      return;
-    }
-    void getPcm(alias).then((pcm) => {
-      if (!pcm || pcm.length === 0) {
-        renderCache.set(key, null);
-        return;
-      }
-      const entry = bank.manifest.phonemes[alias];
-      const lead = leadInFromEntry(entry);
-      let rendered = null;
-      if (worldline) {
-        const audio = worldline.renderNote({
-          pcm,
-          pitch: targetHz,
-          durationMs,
-          ...lead
-        });
-        if (audio) rendered = { audio, preSec: lead.preMs / 1e3, rate: 1 };
-      }
-      if (!rendered) {
-        const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
-        rendered = {
-          audio: Float32Array.from(pcm),
-          preSec: entry.pre / KOE_SAMPLE_RATE / rate,
-          rate
-        };
-      }
-      renderCache.set(key, rendered);
-      schedule(rendered, t0, peak, pan);
+    void renderOne(alias, e.pitch, durationMs).then((r) => {
+      if (r) schedule(r, t0, peak, pan);
     });
   };
-  model.preloadRender = async (syllables, notes) => {
-    let tempPrevVowel = "";
-    const promises = [];
-    const count = Math.min(syllables.length, notes.length);
-    for (let i = 0; i < count; i++) {
-      const syllable = syllables[i];
-      const note = notes[i];
-      if (syllable.consonant === "Q" || syllable.vowel === "") {
-        continue;
+  model.renderToCache = async (syllable, prevVowelArg, pitch, durationMs) => {
+    if (syllable.consonant === "Q" || syllable.vowel === "") return null;
+    const alias = resolveKoeAlias(bank, syllable, prevVowelArg);
+    if (!alias) return null;
+    const dMs = Math.max(60, durationMs);
+    const r = await renderOne(alias, pitch, dMs);
+    return r ? keyOf(alias, pitch, dMs) : null;
+  };
+  model.scheduleCached = (key, t0, peak, pan) => {
+    const r = renderCache.get(key);
+    if (r) schedule(r, t0, peak, pan);
+  };
+  model.stopAll = () => {
+    for (const src of active) {
+      try {
+        src.stop();
+      } catch {
       }
-      const alias = resolveKoeAlias(bank, syllable, tempPrevVowel);
-      if (syllable.vowel && syllable.vowel !== "N") {
-        tempPrevVowel = syllable.vowel;
-      }
-      if (!alias) continue;
-      const targetHz = midiToFreq(note.pitch);
-      const durationMs = Math.max(60, note.duration * 1e3);
-      const key = `${alias}|${note.pitch}|${Math.round(durationMs)}`;
-      if (renderCache.has(key)) {
-        continue;
-      }
-      const p = (async () => {
-        try {
-          const pcm = await getPcm(alias);
-          if (!pcm || pcm.length === 0) {
-            renderCache.set(key, null);
-            return;
-          }
-          const entry = bank.manifest.phonemes[alias];
-          const lead = leadInFromEntry(entry);
-          let rendered = null;
-          if (worldline) {
-            const audio = worldline.renderNote({
-              pcm,
-              pitch: targetHz,
-              durationMs,
-              ...lead
-            });
-            if (audio) {
-              rendered = { audio, preSec: lead.preMs / 1e3, rate: 1 };
-            }
-          }
-          if (!rendered) {
-            const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
-            rendered = {
-              audio: Float32Array.from(pcm),
-              preSec: entry.pre / KOE_SAMPLE_RATE / rate,
-              rate
-            };
-          }
-          renderCache.set(key, rendered);
-        } catch (err) {
-          console.warn(`[dtm] preloadRender failed for ${key}`, err);
-        }
-      })();
-      promises.push(p);
+      src.disconnect();
     }
-    await Promise.all(promises);
+    active.clear();
   };
   model.reset = () => {
     prevVowel = "";
   };
   return model;
 };
+var PREWARM_NOTES = 3;
+var STREAM_LOOKAHEAD_SEC = 1.5;
+var STREAM_POLL_MS = 100;
 var FALLBACK_MODEL = "klatt";
 var createSingingVoices = (ctx, destination, options = {}) => {
   const catalog = {};
@@ -1434,6 +1426,7 @@ var createSingingVoices = (ctx, destination, options = {}) => {
     catalog[k] = koeUrl(file);
   for (const [k, v] of Object.entries(options.voicebanks ?? {}))
     catalog[k.toLowerCase()] = v;
+  let streamSession = 0;
   const loaded = /* @__PURE__ */ new Map([
     [FALLBACK_MODEL, createKlattVoice(ctx, destination)]
   ]);
@@ -1470,48 +1463,102 @@ var createSingingVoices = (ctx, destination, options = {}) => {
     loading.set(m, p);
     return p;
   };
-  const sing = (model, syllable, e) => {
-    const m = (model || FALLBACK_MODEL).toLowerCase();
-    const v = loaded.get(m);
-    if (v) {
-      v(syllable, e);
-      return;
-    }
-    if (!catalog[m]) {
-      loaded.get(FALLBACK_MODEL)?.(syllable, e);
-      return;
-    }
-    void load(m);
-  };
-  const preload = async (models, trackSyllables) => {
+  const loadModels = async (models) => {
     const set = /* @__PURE__ */ new Set();
     for (const m of models) if (m) set.add(m.toLowerCase());
-    const loadedModels = /* @__PURE__ */ new Map();
-    await Promise.all(
-      [...set].map(async (m) => {
-        const v = await load(m);
-        loadedModels.set(m, v);
-      })
-    );
-    if (trackSyllables) {
-      const promises = [];
-      for (const ts of trackSyllables) {
-        const m = ts.model.toLowerCase();
-        const v = loadedModels.get(m);
-        if (!v) continue;
-        if (ts.notes && typeof v.preloadRender === "function") {
-          promises.push(v.preloadRender(ts.syllables, ts.notes));
-        }
-      }
-      await Promise.all(promises);
+    await Promise.all([...set].map((m) => load(m)));
+  };
+  const forEachSungNote = (track, fn) => {
+    let prevVowel = "";
+    for (const note of track.notes) {
+      const syl = note.syllable;
+      if (syl.consonant === "Q" || syl.vowel === "") continue;
+      fn(note, prevVowel);
+      if (syl.vowel && syl.vowel !== "N") prevVowel = syl.vowel;
     }
+  };
+  const warm = async (tracks, count = PREWARM_NOTES) => {
+    const promises = [];
+    for (const track of tracks) {
+      const m = loaded.get(track.model.toLowerCase());
+      if (!m?.renderToCache) continue;
+      let n = 0;
+      forEachSungNote(track, (note, prevVowel) => {
+        if (n >= count) return;
+        n++;
+        promises.push(
+          m.renderToCache?.(
+            note.syllable,
+            prevVowel,
+            note.pitch,
+            note.durationSec * 1e3
+          ) ?? Promise.resolve(null)
+        );
+      });
+    }
+    await Promise.all(promises);
+  };
+  const startStream = (tracks, anchorTime) => {
+    const session = ++streamSession;
+    const items = [];
+    for (const track of tracks) {
+      const model = loaded.get(track.model.toLowerCase());
+      if (!model) continue;
+      forEachSungNote(track, (note, prevVowel) => {
+        items.push({
+          model,
+          note,
+          prevVowel,
+          volume: track.volume,
+          pan: track.pan
+        });
+      });
+    }
+    items.sort((a, b) => a.note.startSec - b.note.startSec);
+    void (async () => {
+      for (const item of items) {
+        if (session !== streamSession) return;
+        while (item.note.startSec - (ctx.currentTime - anchorTime) > STREAM_LOOKAHEAD_SEC) {
+          await new Promise((resolve) => setTimeout(resolve, STREAM_POLL_MS));
+          if (session !== streamSession) return;
+        }
+        const t0 = anchorTime + item.note.startSec;
+        const peak = Math.max(1e-4, item.volume);
+        const { model, note } = item;
+        if (model.renderToCache && model.scheduleCached) {
+          const key = await model.renderToCache(
+            note.syllable,
+            item.prevVowel,
+            note.pitch,
+            note.durationSec * 1e3
+          );
+          if (session !== streamSession) return;
+          if (key) model.scheduleCached(key, t0, peak, item.pan);
+        } else {
+          const when = t0 - ctx.currentTime;
+          model(note.syllable, {
+            trackId: "",
+            pitch: note.pitch,
+            velocity: 100,
+            volume: peak,
+            when,
+            duration: note.durationSec,
+            pan: item.pan
+          });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    })();
+  };
+  const stopStream = () => {
+    streamSession++;
+    for (const v of loaded.values()) v.stopAll?.();
   };
   const reset = () => {
-    for (const v of loaded.values()) {
-      if (typeof v.reset === "function") v.reset();
-    }
+    stopStream();
+    for (const v of loaded.values()) v.reset?.();
   };
-  return { sing, preload, reset };
+  return { loadModels, warm, startStream, stopStream, reset };
 };
 var createVoiceRegistry = (models = {}, fallback = "klatt") => {
   const sing = (model, syllable, e) => {
@@ -3003,7 +3050,7 @@ var parseMML = (mml, options = {}) => {
 
 // src/sequencer.ts
 var STEPS_PER_BEAT2 = 48;
-var PLAN_TIME = 0.1;
+var PLAN_TIME = 0.5;
 var TICK_INTERVAL_MS = 20;
 var createSequencer = (options) => {
   let timeline = [];
@@ -3110,13 +3157,14 @@ var createSequencer = (options) => {
     }
     active = false;
   };
+  const START_DELAY = 0.1;
   const start = (fromStep) => {
     stop();
     fromStepValue = fromStep ?? options.getPlayStartStep();
     buildTimeline(fromStepValue);
     if (timeline.length === 0 && !options.getDrumPattern()?.length) return;
     active = true;
-    startTime = options.getAudioTime();
+    startTime = options.getAudioTime() + START_DELAY;
     nowIndex = 0;
     intervalId = setInterval(scheduleTick, TICK_INTERVAL_MS);
     animationId = requestAnimationFrame(animate);
@@ -3124,7 +3172,8 @@ var createSequencer = (options) => {
   return {
     start,
     stop,
-    isActive: () => active
+    isActive: () => active,
+    getStartTime: () => startTime
   };
 };
 
@@ -3619,6 +3668,22 @@ var DAW_CSS = `
   animation: dtm-load 1.6s steps(8) infinite;
 }
 @keyframes dtm-load { 0%{width:0} 100%{width:100%} }
+/* \u9032\u6357\u304C\u78BA\u5B9A\u3057\u305F\u3089\u7121\u9650\u30EB\u30FC\u30D7\u6F14\u51FA\u3092\u6B62\u3081\u3001\u5B9F\u6E2C\u5024\u3067\u5857\u308A\u3064\u3076\u3059 */
+.dtm-spinner--determinate::after { display: none; }
+.dtm-spinner-fill {
+  position: absolute;
+  left: 0; top: 0; height: 100%;
+  width: 0;
+  background: var(--dtm-primary);
+  transition: width .12s steps(8);
+}
+.dtm-loading-label {
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  color: var(--dtm-primary);
+  letter-spacing: .15em;
+  min-height: 1em;
+}
 
 @keyframes dtm-blink { 0%,100%{opacity:1} 50%{opacity:0} }
 .dtm-blink { animation: dtm-blink 1s steps(1) infinite; }
@@ -3751,15 +3816,37 @@ var showLoadingOverlay = (container) => {
   if (computed === "static") {
     container.style.position = "relative";
   }
-  const overlay = (container.ownerDocument ?? document).createElement("div");
+  const doc = container.ownerDocument ?? document;
+  const overlay = doc.createElement("div");
   overlay.className = "dtm-overlay";
-  const spinner = (container.ownerDocument ?? document).createElement("div");
+  const spinner = doc.createElement("div");
   spinner.className = "dtm-spinner";
+  const fill = doc.createElement("i");
+  fill.className = "dtm-spinner-fill";
+  spinner.appendChild(fill);
   overlay.appendChild(spinner);
+  const label = doc.createElement("div");
+  label.className = "dtm-loading-label";
+  overlay.appendChild(label);
   container.appendChild(overlay);
-  return () => {
-    overlay.remove();
-    container.style.position = origPos;
+  const setProgress = (done, total) => {
+    if (total > 0) {
+      const pct = Math.max(0, Math.min(100, Math.round(done / total * 100)));
+      spinner.classList.add("dtm-spinner--determinate");
+      fill.style.width = `${pct}%`;
+      label.textContent = `${done} / ${total} (${pct}%)`;
+    } else {
+      spinner.classList.remove("dtm-spinner--determinate");
+      fill.style.width = "0";
+      label.textContent = "";
+    }
+  };
+  return {
+    remove: () => {
+      overlay.remove();
+      container.style.position = origPos;
+    },
+    setProgress
   };
 };
 
@@ -3958,7 +4045,7 @@ var mountDAW = (target, options = {}) => {
   let currentOffsetY = (104 - 1 - 60) * renderConfig.keyHeight - 215;
   let playStartStep = 0;
   let isSolo = false;
-  let lyricsConductor = createLyricsConductor(/* @__PURE__ */ new Map());
+  let lyricTrackIndices = /* @__PURE__ */ new Set();
   let playbackState = "stopped";
   let pausedPlayStep = 0;
   let currentPlayStep = 0;
@@ -4543,20 +4630,10 @@ var mountDAW = (target, options = {}) => {
     getAudioTime,
     onPlayNote: (e) => {
       const idx = trackStates.findIndex((t) => t.config.id === e.trackId);
-      const consumed = idx >= 0 ? lyricsConductor.consume(idx) : null;
-      options.onPlayNote?.(
-        consumed ? {
-          ...e,
-          // 歌唱は velocity を参照せず、声量×マスタ音量を使う
-          volume: consumed.volume * (masterVolume / 100),
-          // 発音長は歌詞トラックの gate（0-1）でスケールする
-          duration: e.duration * consumed.gate,
-          // ステレオ定位（-1〜+1）
-          pan: consumed.pan,
-          syllable: consumed.syllable,
-          voiceModel: consumed.model
-        } : { ...e, volume: e.volume * (masterVolume / 100) }
-      );
+      if (idx >= 0 && lyricTrackIndices.has(idx) && options.singingVoices) {
+        return;
+      }
+      options.onPlayNote?.({ ...e, volume: e.volume * (masterVolume / 100) });
     },
     onPlayDrum: (e) => {
       const velocity = e.velocity * (drumVolume / 100) * (masterVolume / 100);
@@ -4585,44 +4662,49 @@ var mountDAW = (target, options = {}) => {
   const play = async () => {
     options.onResumeAudio?.();
     if (playbackState === "playing") return;
+    const fromStep = playbackState === "paused" ? pausedPlayStep : playStartStep;
     options.singingVoices?.reset();
-    if (options.singingVoices) {
-      const lyricMap = buildLyricsMap();
-      const models = /* @__PURE__ */ new Set();
-      for (const lt of lyricMap.values()) {
-        if (lt.model) models.add(lt.model);
-      }
-      if (models.size > 0) {
-        const secondsPerStep = 60 / bpm / 48;
-        const trackSyllables = [...lyricMap.values()].map((lt) => {
-          const trackState = trackStates.find(
-            (t) => t.config.id === String(lt.trackId)
-          );
-          const rawNotes = trackState ? trackState.core.getNotes() : [];
-          const sortedNotes = [...rawNotes].sort(
-            (a, b) => a.startStep - b.startStep
-          );
-          const notes = sortedNotes.map((n) => ({
-            pitch: n.pitch,
-            duration: n.durationSteps * secondsPerStep
-          }));
-          return {
-            model: lt.model,
-            syllables: lt.syllables,
-            notes
-          };
+    const lyricMap = buildLyricsMap();
+    lyricTrackIndices = new Set(lyricMap.keys());
+    const secondsPerStep = 60 / bpm / 48;
+    const streamTracks = options.singingVoices ? [...lyricMap.values()].map((lt) => {
+      const trackState = trackStates[lt.trackId];
+      const sorted = [...trackState?.core.getNotes() ?? []].sort(
+        (a, b) => a.startStep - b.startStep
+      );
+      const gate = (lt.gate ?? 100) / 100;
+      const count = Math.min(sorted.length, lt.syllables.length);
+      const notes = [];
+      for (let i = 0; i < count; i++) {
+        const n = sorted[i];
+        if (n.startStep < fromStep) continue;
+        notes.push({
+          syllable: lt.syllables[i],
+          pitch: n.pitch,
+          startSec: (n.startStep - fromStep) * secondsPerStep,
+          durationSec: n.durationSteps * secondsPerStep * gate
         });
-        const removeOverlay = showLoadingOverlay(target);
-        try {
-          await options.singingVoices.preload(models, trackSyllables);
-        } catch (err) {
-          console.warn("[dtm] preload failed", err);
-        } finally {
-          removeOverlay();
-        }
+      }
+      return {
+        model: lt.model,
+        volume: vocalVolumeToGain(lt.volume ?? 300) * (masterVolume / 100),
+        pan: panToStereo(lt.pan ?? 64),
+        notes
+      };
+    }) : [];
+    const voices = options.singingVoices;
+    const streaming = !!voices && streamTracks.some((t) => t.notes.length > 0);
+    if (streaming && voices) {
+      const overlay = showLoadingOverlay(target);
+      try {
+        await voices.loadModels(streamTracks.map((t) => t.model));
+        await voices.warm(streamTracks);
+      } catch (err) {
+        console.warn("[dtm] voice preload failed", err);
+      } finally {
+        overlay.remove();
       }
     }
-    const fromStep = playbackState === "paused" ? pausedPlayStep : playStartStep;
     if (playbackState !== "paused") {
       const canvas = getGridCanvas();
       currentOffsetX = Math.max(
@@ -4632,27 +4714,23 @@ var mountDAW = (target, options = {}) => {
       setDrawOffset(currentOffsetX, currentOffsetY);
     }
     playbackState = "playing";
-    lyricsConductor = createLyricsConductor(buildLyricsMap());
-    if (fromStep > 0) {
-      trackStates.forEach((t, i) => {
-        const skipCount = t.core.getNotes().filter((n) => n.startStep < fromStep).length;
-        for (let skip = 0; skip < skipCount; skip++) {
-          lyricsConductor.consume(i);
-        }
-      });
-    }
     sequencer.start(fromStep);
+    if (streaming && voices) {
+      voices.startStream(streamTracks, sequencer.getStartTime());
+    }
     updateTransport();
   };
   const pause = () => {
     if (playbackState !== "playing") return;
     pausedPlayStep = currentPlayStep;
     sequencer.stop();
+    options.singingVoices?.stopStream();
     playbackState = "paused";
     updateTransport();
   };
   const stop = () => {
     sequencer.stop();
+    options.singingVoices?.stopStream();
     playbackState = "stopped";
     currentPlayStep = 0;
     updateTransport();
@@ -5037,7 +5115,6 @@ var mountDAW = (target, options = {}) => {
       t.vocalGate = lt.gate;
       t.vocalPan = lt.pan;
     });
-    lyricsConductor = createLyricsConductor(buildLyricsMap());
     for (const p of placements) {
       const t = trackStates[p.trackIndex];
       if (!t) continue;
@@ -5543,7 +5620,6 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     collectLyrics: true
   });
   const lyricTracks = lyrics ?? /* @__PURE__ */ new Map();
-  const conductor = createLyricsConductor(lyricTracks);
   const bpm = parsedBpm ?? options.defaultBpm ?? 120;
   const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
   const drumPattern = meta.drum ? drumPatternDict[meta.drum] ?? null : null;
@@ -5636,12 +5712,15 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   };
   let voices = null;
   const ensureVoices = () => {
+    if (options.singingVoices) return options.singingVoices;
     if (!voices) {
       const ctx = ensureCtx();
       voices = createSingingVoices(ctx, ctx.destination);
     }
     return voices;
   };
+  const voicesAvailable = useSynth || !!options.singingVoices;
+  const peekVoices = () => options.singingVoices ?? voices;
   const getAudioTime = () => {
     if (useSynth) return ensureCtx().currentTime;
     return options.getAudioTime?.() ?? performance.now() / 1e3;
@@ -5788,31 +5867,18 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     getSoloTrackId: () => null,
     getAudioTime,
     onPlayNote: (e) => {
-      const trackId = Number(e.trackId);
-      const isLyricTrack = lyricTracks.has(trackId);
-      const consumed = isLyricTrack ? conductor.consume(trackId) : null;
-      if (isLyricTrack && !consumed) return;
-      const ev = consumed ? {
-        ...e,
-        volume: consumed.volume * (trackVolume / 100),
-        duration: e.duration * consumed.gate,
-        pan: consumed.pan,
-        syllable: consumed.syllable,
-        voiceModel: consumed.model
-      } : e;
-      options.onPlayNote?.(ev);
-      if (useSynth) {
-        if (consumed)
-          ensureVoices().sing(consumed.model, consumed.syllable, ev);
-        else synthPlay(ev);
-      }
+      if (lyricTracks.has(Number(e.trackId))) return;
+      options.onPlayNote?.(e);
+      if (useSynth) synthPlay(e);
     },
     onPlayDrum: (e) => {
       const velocity = e.velocity * (trackVolume / 100);
       options.onPlayDrum?.({ ...e, velocity });
       if (useSynth) drumSynth({ ...e, velocity });
     },
-    onTick: (step) => renderPlayhead(step),
+    onTick: (step) => {
+      renderPlayhead(step);
+    },
     onEnd: () => finish(),
     stepsPerBar: STEPS_PER_BAR
   });
@@ -5827,36 +5893,48 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     resetPlayhead();
     if (activePlayer === instance) activePlayer = null;
   };
-  const startWhenReady = async () => {
-    if (useSynth && lyricTracks.size > 0) {
-      const models = [...lyricTracks.values()].map((t) => t.model);
-      const trackSyllables = [...lyricTracks.entries()].map(([index, lt]) => {
-        const seqTrack = seqTracks.find((t) => Number(t.id) === index);
-        const rawNotes = seqTrack ? seqTrack.notes : [];
-        const sortedNotes = [...rawNotes].sort(
-          (a, b) => a.startStep - b.startStep
-        );
-        const notes = sortedNotes.map((n) => ({
-          pitch: n.pitch,
-          duration: n.durationSteps * secondsPerStep
-        }));
-        return {
-          model: lt.model,
-          syllables: lt.syllables,
-          notes
-        };
+  const buildStreamTracks = () => [...lyricTracks.entries()].map(([index, lt]) => {
+    const seqTrack = seqTracks.find((t) => Number(t.id) === index);
+    const sorted = [...seqTrack?.notes ?? []].sort(
+      (a, b) => a.startStep - b.startStep
+    );
+    const gate = (lt.gate ?? 100) / 100;
+    const count = Math.min(sorted.length, lt.syllables.length);
+    const notes = [];
+    for (let i = 0; i < count; i++) {
+      const n = sorted[i];
+      notes.push({
+        syllable: lt.syllables[i],
+        pitch: n.pitch,
+        startSec: n.startStep * secondsPerStep,
+        durationSec: n.durationSteps * secondsPerStep * gate
       });
-      const removeOverlay = showLoadingOverlay(root);
+    }
+    return {
+      model: lt.model,
+      volume: vocalVolumeToGain(lt.volume ?? 300) * (trackVolume / 100),
+      pan: panToStereo(lt.pan ?? 64),
+      notes
+    };
+  });
+  const startWhenReady = async () => {
+    const streaming = voicesAvailable && lyricTracks.size > 0;
+    const tracks = streaming ? buildStreamTracks() : [];
+    if (streaming) {
+      const v = ensureVoices();
+      const overlay = showLoadingOverlay(root);
       try {
-        await ensureVoices().preload(models, trackSyllables);
+        await v.loadModels(tracks.map((t) => t.model));
+        await v.warm(tracks);
       } catch (err) {
-        console.warn("[dtm] preload failed", err);
+        console.warn("[dtm] voice preload failed", err);
       } finally {
-        removeOverlay();
+        overlay.remove();
       }
       if (!playing || activePlayer !== instance) return;
     }
     seq.start(0);
+    if (streaming) ensureVoices().startStream(tracks, seq.getStartTime());
   };
   const play = () => {
     if (playing || trackIndices.length === 0) return;
@@ -5867,14 +5945,14 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     if (useSynth) {
       const ctx = ensureCtx();
       if (ctx.state === "suspended") void ctx.resume();
-      ensureVoices().reset();
     }
-    conductor.reset();
+    if (voicesAvailable && lyricTracks.size > 0) ensureVoices().reset();
     void startWhenReady();
   };
   const stop = () => {
     if (!playing) return;
     seq.stop();
+    peekVoices()?.stopStream();
     finish();
   };
   playBtn.addEventListener("click", () => {
@@ -5883,6 +5961,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   });
   const destroy = () => {
     seq.stop();
+    peekVoices()?.stopStream();
     if (activePlayer === instance) activePlayer = null;
     if (audioCtx) {
       void audioCtx.close();
@@ -6194,6 +6273,7 @@ export {
   MAX_VOCAL_VOLUME,
   MMLCore,
   PITCH_MAP,
+  PREWARM_NOTES,
   TRACKS_ADVANCED,
   TRACKS_SIMPLE,
   analyzeMidiTracks,
