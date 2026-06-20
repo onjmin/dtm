@@ -906,6 +906,15 @@ var Worldline = class _Worldline {
   }
 };
 
+// src/types.ts
+var DEFAULT_VOCAL_VOLUME = 200;
+var DEFAULT_BPM = 120;
+var DEFAULT_GATE = 100;
+var DEFAULT_PAN = 64;
+var DEFAULT_VELOCITY = 100;
+var DEFAULT_PLAYBACK_VELOCITY = 127;
+var DEFAULT_STEPS_PER_BAR = 192;
+
 // src/lyrics.ts
 var kanaTable = {
   \u3042: ["", "a"],
@@ -1076,9 +1085,10 @@ var parseLyrics = (mml) => {
     const trackId = Number.parseInt(m[1], 10);
     const tokens = m[2].trim().split(/\s+/);
     const modelToken = tokens.shift() ?? "";
-    let volume = 300;
+    let volume = DEFAULT_VOCAL_VOLUME;
     let gate = 100;
     let pan = 64;
+    let octave = 0;
     const colon = modelToken.indexOf(":");
     const model = (colon === -1 ? modelToken : modelToken.slice(0, colon)).toLowerCase();
     if (colon !== -1) {
@@ -1090,12 +1100,15 @@ var parseLyrics = (mml) => {
       const v = /^v(\d+)$/.exec(tokens[0]);
       const q2 = /^q(\d+)$/.exec(tokens[0]);
       const p = /^p(\d+)$/.exec(tokens[0]);
+      const o = /^o(-?\d+)$/.exec(tokens[0]);
       if (v) {
         volume = clamp(Number.parseInt(v[1], 10), 0, MAX_VOCAL_VOLUME);
       } else if (q2) {
         gate = clamp(Number.parseInt(q2[1], 10), 0, 100);
       } else if (p) {
         pan = clamp(Number.parseInt(p[1], 10), 0, 127);
+      } else if (o) {
+        octave = clamp(Number.parseInt(o[1], 10), -2, 2);
       } else {
         break;
       }
@@ -1112,6 +1125,7 @@ var parseLyrics = (mml) => {
       volume,
       gate,
       pan,
+      octave,
       syllables,
       metaText: metaTokens.join(" "),
       ...lineBreaks.length > 0 ? { lineBreaks } : {}
@@ -1145,9 +1159,9 @@ var createLyricsConductor = (lyrics) => {
     return {
       model: track.model,
       syllable,
-      volume: vocalVolumeToGain(track.volume ?? 300),
-      gate: (track.gate ?? 100) / 100,
-      pan: panToStereo(track.pan ?? 64)
+      volume: vocalVolumeToGain(track.volume ?? DEFAULT_VOCAL_VOLUME),
+      gate: (track.gate ?? DEFAULT_GATE) / 100,
+      pan: panToStereo(track.pan ?? DEFAULT_PAN)
     };
   };
   const reset = () => pointers.clear();
@@ -1255,7 +1269,8 @@ var KOE_VOICEBANKS = {
   tsukuyomi: "\u3064\u304F\u3088\u307F\u3061\u3083\u3093.koe",
   rino: "\u6625\u97F3\u30EA\u30CEver0.3.koe",
   roze: "\u675F\u97F3\u30ED\u30BCver0.\uFF151(\u591A\u97F3\u968E).koe",
-  ruko: "\u6B32\u97F3\u30EB\u30B3\u2640\u6B4C\u9023\u7D9A\u97F3\u666E1.00.koe",
+  ruko_male: "\u6B32\u97F3\u30EB\u30B3\u2642\u9023\u7D9A\u97F3Ver.1.03.koe",
+  ruko_female: "\u6B32\u97F3\u30EB\u30B3\u2640\u6B4C\u9023\u7D9A\u97F3\u666E1.00.koe",
   teto: "\u91CD\u97F3\u30C6\u30C8\u5358\u72EC\u97F3.koe",
   shiyo: "\u9769\u547D\u30B7\u30E8.koe"
 };
@@ -1263,7 +1278,8 @@ var KOE_VOICEBANK_LABELS = {
   tsukuyomi: "\u3064\u304F\u3088\u307F\u3061\u3083\u3093",
   rino: "\u6625\u97F3\u30EA\u30CE",
   roze: "\u675F\u97F3\u30ED\u30BC",
-  ruko: "\u6B32\u97F3\u30EB\u30B3",
+  ruko_male: "\u6B32\u97F3\u30EB\u30B3\u2642",
+  ruko_female: "\u6B32\u97F3\u30EB\u30B3\u2640",
   teto: "\u91CD\u97F3\u30C6\u30C8",
   shiyo: "\u9769\u547D\u30B7\u30E8"
 };
@@ -1271,7 +1287,8 @@ var KOE_VOICEBANK_TERMS = {
   tsukuyomi: "https://tyc.rei-yumesaki.net/material/utau/terms/",
   rino: "https://hatenakun1.github.io/halunelino/",
   roze: "https://tabaneroze.ninja-web.net/terms-of-use.html",
-  ruko: "https://long-sleeper.net/index.php?id=22",
+  ruko_male: "https://long-sleeper.net/index.php?id=22",
+  ruko_female: "https://long-sleeper.net/index.php?id=22",
   teto: "https://kasaneteto.jp/guidelines/voice.html",
   shiyo: "https://kakumeisiyo.my.canva.site/dagkuyjwycs"
 };
@@ -2136,7 +2153,7 @@ var exportMIDI = (options) => {
         (n.startStep + (n.durationSteps || 1)) * tickPerStep
       );
       const vel = Math.round(
-        (n.velocity ?? 100) * (track.volume || 100) / 100
+        (n.velocity ?? DEFAULT_VELOCITY) * (track.volume || 100) / 100
       );
       events.push({ t: startTick, m: [144 | ch & 15, n.pitch, vel] });
       events.push({ t: endTick, m: [144 | ch & 15, n.pitch, 0] });
@@ -2691,7 +2708,7 @@ var MMLCore = class _MMLCore {
         startStep: step,
         durationSteps: options.noteLengthSteps,
         pitch,
-        velocity: options.velocity ?? 100
+        velocity: options.velocity ?? DEFAULT_VELOCITY
       };
       this.notes.push(newNote);
     }
@@ -3007,7 +3024,7 @@ var formatMmlMeta = (meta) => {
   return parts.join(" ");
 };
 var parseMML = (mml, options = {}) => {
-  const stepsPerBar = options.stepsPerBar ?? 192;
+  const stepsPerBar = options.stepsPerBar ?? DEFAULT_STEPS_PER_BAR;
   const collectTokens = options.collectTokens ?? false;
   const collectLyrics = options.collectLyrics ?? false;
   const clampTrackCount = options.clampTrackCount;
@@ -3225,7 +3242,7 @@ var createSequencer = (options) => {
       for (const note of track.notes) {
         const relativeStart = note.startStep - fromStep;
         if (relativeStart < 0) continue;
-        const velocity = note.velocity ?? 127;
+        const velocity = note.velocity ?? DEFAULT_PLAYBACK_VELOCITY;
         timeline.push({
           trackId: track.id,
           pitch: note.pitch,
@@ -4176,7 +4193,7 @@ var mountDAW = (target, options = {}) => {
     tracks: trackConfigs,
     drumPatternNames: Object.keys(drumPatterns),
     defaultDrumPattern: drumPatterns.dance ? "dance" : Object.keys(drumPatterns)[0] ?? "none",
-    defaultBpm: options.defaultBpm ?? 120,
+    defaultBpm: options.defaultBpm ?? DEFAULT_BPM,
     showMidi,
     showChord
   });
@@ -4191,7 +4208,7 @@ var mountDAW = (target, options = {}) => {
   const leftPaddingSteps = renderConfig.stepsPerBar * 16;
   let zoomX = 100;
   let zoomY = 100;
-  let bpm = options.defaultBpm ?? 120;
+  let bpm = options.defaultBpm ?? DEFAULT_BPM;
   let masterVolume = 50;
   let drumVolume = 80;
   let currentDrumPattern = refs.drumSelect.value;
@@ -4238,7 +4255,8 @@ var mountDAW = (target, options = {}) => {
       // 既定は「なし」（歌わない）
       vocalVolume: 300,
       vocalGate: 100,
-      vocalPan: 64
+      vocalPan: 64,
+      vocalOctave: 0
     }));
   };
   const buildLyricsMap = () => {
@@ -4255,6 +4273,7 @@ var mountDAW = (target, options = {}) => {
         volume: t.vocalVolume,
         gate: t.vocalGate,
         pan: t.vocalPan,
+        octave: t.vocalOctave,
         syllables
       });
     });
@@ -4832,7 +4851,8 @@ var mountDAW = (target, options = {}) => {
       const sorted = [...trackState?.core.getNotes() ?? []].sort(
         (a, b) => a.startStep - b.startStep
       );
-      const gate = (lt.gate ?? 100) / 100;
+      const gate = (lt.gate ?? DEFAULT_GATE) / 100;
+      const semis = (lt.octave ?? 0) * 12;
       const count = Math.min(sorted.length, lt.syllables.length);
       const notes = [];
       for (let i = 0; i < count; i++) {
@@ -4840,15 +4860,15 @@ var mountDAW = (target, options = {}) => {
         if (n.startStep < fromStep) continue;
         notes.push({
           syllable: lt.syllables[i],
-          pitch: n.pitch,
+          pitch: n.pitch + semis,
           startSec: (n.startStep - fromStep) * secondsPerStep,
           durationSec: n.durationSteps * secondsPerStep * gate
         });
       }
       return {
         model: lt.model,
-        volume: vocalVolumeToGain(lt.volume ?? 300) * (masterVolume / 100),
-        pan: panToStereo(lt.pan ?? 64),
+        volume: vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) * (masterVolume / 100),
+        pan: panToStereo(lt.pan ?? DEFAULT_PAN),
         notes
       };
     }) : [];
@@ -4948,6 +4968,13 @@ var mountDAW = (target, options = {}) => {
       <div class="dtm-row">
         <span class="dtm-label">\u266A \u6B4C\u8A5E</span>
         <select class="dtm-select" data-dtm="lyric-model" aria-label="\u6B4C\u5531\u30E2\u30C7\u30EB"></select>
+        <select class="dtm-select" data-dtm="lyric-octave" aria-label="\u30AA\u30AF\u30BF\u30FC\u30D6\uFF08\u97F3\u6E90\u306E\u5F97\u610F\u97F3\u57DF\u306B\u5408\u308F\u305B\u308B\uFF09" title="\u30AA\u30AF\u30BF\u30FC\u30D6">
+          <option value="2">+2 oct</option>
+          <option value="1">+1 oct</option>
+          <option value="0">\xB10 oct</option>
+          <option value="-1">-1 oct</option>
+          <option value="-2">-2 oct</option>
+        </select>
         <span class="dtm-label dtm-grow" data-dtm="lyric-count" style="text-align:right"></span>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="lyric-terms" style="font-size:10px;gap:4px;color:var(--dtm-warn)">
@@ -4971,6 +4998,9 @@ var mountDAW = (target, options = {}) => {
     refs.trackBody.appendChild(lyricDiv);
     const lyricModelSel = lyricDiv.querySelector(
       '[data-dtm="lyric-model"]'
+    );
+    const lyricOctaveSel = lyricDiv.querySelector(
+      '[data-dtm="lyric-octave"]'
     );
     const lyricBody = lyricDiv.querySelector(
       '[data-dtm="lyric-body"]'
@@ -5012,6 +5042,7 @@ var mountDAW = (target, options = {}) => {
       addOpt(active.lyricModel, lyricModelLabel(active.lyricModel));
     }
     lyricModelSel.value = active.lyricModel;
+    lyricOctaveSel.value = String(active.vocalOctave);
     lyricInput.value = active.lyrics;
     lyricVol.value = String(active.vocalVolume);
     lyricVolLabel.textContent = String(active.vocalVolume);
@@ -5034,6 +5065,7 @@ var mountDAW = (target, options = {}) => {
     };
     const syncLyricVisibility = () => {
       lyricBody.style.display = active.lyricModel ? "" : "none";
+      lyricOctaveSel.style.display = active.lyricModel ? "" : "none";
       updateLyricCount();
       syncLyricTerms();
     };
@@ -5041,6 +5073,9 @@ var mountDAW = (target, options = {}) => {
     lyricModelSel.addEventListener("change", () => {
       active.lyricModel = lyricModelSel.value;
       syncLyricVisibility();
+    });
+    lyricOctaveSel.addEventListener("change", () => {
+      active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
     });
     lyricInput.addEventListener("input", () => {
       active.lyrics = lyricInput.value;
@@ -5190,12 +5225,14 @@ var mountDAW = (target, options = {}) => {
       model: t.lyricModel.trim(),
       vol: t.vocalVolume,
       gate: t.vocalGate,
-      pan: t.vocalPan
+      pan: t.vocalPan,
+      oct: t.vocalOctave
     })).filter((x) => x.model.length > 0 && x.text.length > 0).map((x) => {
       const params = [
         x.vol === 300 ? "" : `v${x.vol}`,
         x.gate === 100 ? "" : `q${x.gate}`,
-        x.pan === 64 ? "" : `p${x.pan}`
+        x.pan === 64 ? "" : `p${x.pan}`,
+        x.oct === 0 ? "" : `o${x.oct}`
       ].filter((s) => s.length > 0).join(" ");
       const head = params ? `${x.model} ${params}` : x.model;
       return `@@${x.i} ${head} ${x.text}`;
@@ -5288,6 +5325,7 @@ var mountDAW = (target, options = {}) => {
       t.vocalVolume = 300;
       t.vocalGate = 100;
       t.vocalPan = 64;
+      t.vocalOctave = 0;
     }
     lyrics?.forEach((lt, idx) => {
       const t = trackStates[idx];
@@ -5297,6 +5335,7 @@ var mountDAW = (target, options = {}) => {
       t.vocalVolume = lt.volume;
       t.vocalGate = lt.gate;
       t.vocalPan = lt.pan;
+      t.vocalOctave = lt.octave ?? 0;
     });
     for (const p of placements) {
       const t = trackStates[p.trackIndex];
@@ -5803,7 +5842,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     collectLyrics: true
   });
   const lyricTracks = lyrics ?? /* @__PURE__ */ new Map();
-  const bpm = parsedBpm ?? options.defaultBpm ?? 120;
+  const bpm = parsedBpm ?? options.defaultBpm ?? DEFAULT_BPM;
   const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
   const drumPattern = meta.drum ? drumPatternDict[meta.drum] ?? null : null;
   const trackVolume = meta.volume ?? options.volume ?? 100;
@@ -5968,7 +6007,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     const laneTokens = [];
     if (isLyricLane) {
       const notes = placements.filter((p) => p.trackIndex === index).sort((a, b) => a.startStep - b.startStep);
-      const gateScale = (lyricTrack.gate ?? 100) / 100;
+      const gateScale = (lyricTrack.gate ?? DEFAULT_GATE) / 100;
       const breaks = new Set(lyricTrack.lineBreaks ?? []);
       if (lyricTrack.metaText) {
         const metaEl = doc.createElement("span");
@@ -6121,22 +6160,23 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     const sorted = [...seqTrack?.notes ?? []].sort(
       (a, b) => a.startStep - b.startStep
     );
-    const gate = (lt.gate ?? 100) / 100;
+    const gate = (lt.gate ?? DEFAULT_GATE) / 100;
+    const semis = (lt.octave ?? 0) * 12;
     const count = Math.min(sorted.length, lt.syllables.length);
     const notes = [];
     for (let i = 0; i < count; i++) {
       const n = sorted[i];
       notes.push({
         syllable: lt.syllables[i],
-        pitch: n.pitch,
+        pitch: n.pitch + semis,
         startSec: n.startStep * secondsPerStep,
         durationSec: n.durationSteps * secondsPerStep * gate
       });
     }
     return {
       model: lt.model,
-      volume: vocalVolumeToGain(lt.volume ?? 300) * (trackVolume / 100),
-      pan: panToStereo(lt.pan ?? 64),
+      volume: vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) * (trackVolume / 100),
+      pan: panToStereo(lt.pan ?? DEFAULT_PAN),
       notes
     };
   });
@@ -6485,6 +6525,13 @@ var createPianoRoll = (options, handlers) => {
 };
 export {
   DAW_CSS,
+  DEFAULT_BPM,
+  DEFAULT_GATE,
+  DEFAULT_PAN,
+  DEFAULT_PLAYBACK_VELOCITY,
+  DEFAULT_STEPS_PER_BAR,
+  DEFAULT_VELOCITY,
+  DEFAULT_VOCAL_VOLUME,
   DRUM_FONT,
   DRUM_KEYS,
   DRUM_PATTERNS,
