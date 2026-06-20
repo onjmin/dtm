@@ -44,6 +44,7 @@
 		"canvas",
 		"web-audio"
 	],
+	"packageManager": "pnpm@10.11.0",
 	"volta": {
 		"node": "22.15.1",
 		"pnpm": "10.11.0"
