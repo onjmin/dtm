@@ -6779,6 +6779,323 @@ var createPianoRoll = (options, handlers) => {
     }
   };
 };
+
+// src/studio.ts
+var DEFAULT_CDN = {
+  soundFont: "https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont.mjs",
+  soundFontDrum: "https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs",
+  soundFontList: "https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs",
+  parseChord: "https://rpgen3.github.io/piano/mjs/parseChord.mjs",
+  parseChords: "https://rpgen3.github.io/piano/mjs/parseChords.mjs",
+  midiParser: "https://cdn.jsdelivr.net/npm/midi-parser-js@4.0.4/+esm"
+};
+var SOUNDFONT_NAME = "FluidR3_GM_sf2_file";
+var TRACK_ROLES = ["melody", "submelody", "bass", "chord"];
+var resolveDefaultVoiceWorkerUrl = () => {
+  try {
+    return new URL("./voice-worker.js", import.meta.url).href;
+  } catch {
+    return void 0;
+  }
+};
+var importFrom = async (url, name) => {
+  const mod = await import(
+    /* @vite-ignore */
+    url
+  );
+  return mod[name] ?? mod.default;
+};
+var createDtmStudio = async (options = {}) => {
+  const cdn = { ...DEFAULT_CDN, ...options.cdn };
+  const features = {
+    recorder: true,
+    midi: true,
+    chord: true,
+    presetUI: true,
+    ...options.features
+  };
+  const audioCtx = options.audioContext ?? new AudioContext();
+  const masterGain = audioCtx.createGain();
+  masterGain.gain.value = options.masterVolume ?? 1;
+  masterGain.connect(audioCtx.destination);
+  const drumGain = audioCtx.createGain();
+  drumGain.gain.value = options.drumVolume ?? 1;
+  drumGain.connect(audioCtx.destination);
+  const resumeAudio = () => {
+    if (audioCtx.state === "suspended") void audioCtx.resume();
+  };
+  const eng = options.engines ?? {};
+  const [SoundFont, SoundFont_drum, SoundFont_list] = await Promise.all([
+    eng.SoundFont ?? importFrom(cdn.soundFont, "SoundFont"),
+    eng.SoundFont_drum ?? importFrom(cdn.soundFontDrum, "SoundFont_drum"),
+    eng.SoundFont_list ?? importFrom(cdn.soundFontList, "SoundFont_list")
+  ]);
+  let parseChord = eng.parseChord;
+  let parseChords = eng.parseChords;
+  if (features.chord && (!parseChord || !parseChords)) {
+    try {
+      [parseChord, parseChords] = await Promise.all([
+        parseChord ?? importFrom(
+          cdn.parseChord,
+          "parseChord"
+        ),
+        parseChords ?? importFrom(
+          cdn.parseChords,
+          "parseChords"
+        )
+      ]);
+    } catch (e) {
+      console.warn("[dtm] \u30B3\u30FC\u30C9\u89E3\u6790\u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557\u3057\u307E\u3057\u305F", e);
+    }
+  }
+  let midiParser = null;
+  let parseMidi;
+  if (features.midi) {
+    parseMidi = eng.parseMidi;
+    if (!parseMidi) {
+      const midiPromise = importFrom(
+        cdn.midiParser,
+        "default"
+      ).then((m) => {
+        midiParser = m;
+      }).catch((e) => console.warn("[dtm] midi-parser \u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557", e));
+      void midiPromise;
+      parseMidi = (bytes) => {
+        if (!midiParser) throw new Error("midi-parser not ready");
+        return midiParser.parse(bytes);
+      };
+    }
+  }
+  const voiceWorkerUrl = options.voiceWorkerUrl === null ? void 0 : options.voiceWorkerUrl ?? resolveDefaultVoiceWorkerUrl();
+  const singingVoices = createSingingVoices(audioCtx, masterGain, {
+    voiceWorkerUrl
+  });
+  const recorder = features.recorder ? setupRecorder(audioCtx, masterGain, drumGain) : null;
+  const downloadWav = () => {
+    if (!recorder) return;
+    const recordedData = recorder.getRecordedData();
+    const ch = recordedData.length;
+    const len = recordedData[0].length;
+    if (len === 0) return;
+    const bufSize = recordedData[0][0].length;
+    const wave = new Float32Array(ch * len * bufSize);
+    let idx = 0;
+    for (let i = 0; i < len; i++)
+      for (let j = 0; j < bufSize; j++)
+        for (let k = 0; k < ch; k++) wave[idx++] = recordedData[k][i][j];
+    const sampleRate = audioCtx.sampleRate;
+    const channels = 2;
+    const bitRate = 16;
+    const step = bitRate / 8;
+    const blockSize = channels * step;
+    const byteLen = wave.length * step;
+    const view = new DataView(new ArrayBuffer(44 + byteLen));
+    const ws = (off2, s) => {
+      for (let i = 0; i < s.length; i++)
+        view.setUint8(off2 + i, s.charCodeAt(i));
+    };
+    ws(0, "RIFF");
+    view.setUint32(4, 32 + byteLen, true);
+    ws(8, "WAVE");
+    ws(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, channels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockSize, true);
+    view.setUint16(32, blockSize, true);
+    view.setUint16(34, bitRate, true);
+    ws(36, "data");
+    view.setUint32(40, byteLen, true);
+    const clamp4 = (n, a2, b) => Math.max(a2, Math.min(b, n));
+    let off = 44;
+    for (let i = 0; i < wave.length; i++, off += step)
+      view.setInt16(
+        off,
+        clamp4(Math.round(wave[i] * 32768), -32768, 32767),
+        true
+      );
+    const blob = new Blob([view], { type: "audio/wav" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "record.wav";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const onToggleRecord = recorder ? () => {
+    if (recorder.isRecording()) {
+      recorder.stopRecording();
+      downloadWav();
+    } else {
+      recorder.clearRecordedData();
+      recorder.startRecording();
+    }
+  } : void 0;
+  const listReady = new Promise((resolve) => {
+    SoundFont_list.init();
+    SoundFont_list.onload(() => resolve());
+  });
+  const drumReady = (async () => {
+    try {
+      await SoundFont_drum.load({
+        ctx: audioCtx,
+        font: DRUM_FONT,
+        id: "0",
+        keys: Object.values(DRUM_KEYS)
+      });
+    } catch (e) {
+      console.error("[dtm] \u30C9\u30E9\u30E0\u97F3\u6E90\u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557", e);
+    }
+  })();
+  let nameToKey = {};
+  const soundFonts = /* @__PURE__ */ new Map();
+  const loadedKeyByTrack = /* @__PURE__ */ new Map();
+  const loadSoundFont = async (instrumentKey, trackId) => {
+    if (loadedKeyByTrack.get(trackId) === instrumentKey) return;
+    try {
+      const fullName = `${instrumentKey}_${SOUNDFONT_NAME}`;
+      soundFonts.set(
+        trackId,
+        await SoundFont.load({
+          ctx: audioCtx,
+          fontName: `_tone_${fullName}`,
+          url: SoundFont.toURL(fullName)
+        })
+      );
+      loadedKeyByTrack.set(trackId, instrumentKey);
+    } catch (e) {
+      console.error(`[dtm] \u697D\u5668 "${instrumentKey}" \u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557`, e);
+    }
+  };
+  const defaultPreset = options.defaultPreset ?? "retro_game";
+  const instrumentNameFor = (preset, trackId) => preset[trackId] ?? preset.melody;
+  const loadPreset = async (presetKey, trackIds = [...TRACK_ROLES]) => {
+    const preset = INSTRUMENT_PRESETS[presetKey];
+    if (!preset) return;
+    await listReady;
+    await Promise.all(
+      trackIds.map((trackId) => {
+        const key = nameToKey[instrumentNameFor(preset, trackId)];
+        return key ? loadSoundFont(key, trackId) : Promise.resolve();
+      })
+    );
+  };
+  await listReady;
+  nameToKey = await buildNameToKeyMapping();
+  await Promise.all([drumReady, loadPreset(defaultPreset)]);
+  const playNote = (e) => {
+    const sf = soundFonts.get(e.trackId);
+    if (!sf) return;
+    sf.play({
+      ctx: audioCtx,
+      destination: masterGain,
+      pitch: e.pitch,
+      volume: e.volume,
+      when: e.when,
+      duration: e.duration
+    });
+  };
+  const playDrum = (e) => {
+    if (!SoundFont_drum.font) return;
+    SoundFont_drum.play({
+      ctx: audioCtx,
+      destination: drumGain,
+      pitch: e.pitch,
+      volume: e.velocity,
+      when: e.when,
+      duration: e.duration
+    });
+  };
+  const sfForPlayerTrack = (trackId) => soundFonts.get(TRACK_ROLES[Number(trackId)] ?? "") ?? soundFonts.get(`t${trackId}`);
+  const playPlayerNote = (e) => {
+    const sf = sfForPlayerTrack(e.trackId);
+    if (!sf) return;
+    sf.play({
+      ctx: audioCtx,
+      destination: masterGain,
+      pitch: e.pitch,
+      volume: e.volume,
+      when: e.when,
+      duration: e.duration
+    });
+  };
+  const editorPresetSelects = /* @__PURE__ */ new WeakMap();
+  const mountedEditors = [];
+  const mountedPlayers = [];
+  const mountEditor = (target, opts = {}) => {
+    const { preset, presetUI, ...dawOverrides } = opts;
+    const tracks = dawOverrides.tracks ?? TRACKS_SIMPLE;
+    const trackIds = tracks.map((t) => t.id);
+    const base = {
+      getAudioTime: () => audioCtx.currentTime,
+      onResumeAudio: resumeAudio,
+      onPlayNote: playNote,
+      onPlayDrum: playDrum,
+      singingVoices,
+      parseChord,
+      parseChords,
+      parseMidi,
+      onToggleRecord,
+      ...dawOverrides
+    };
+    const wantPresetUI = presetUI ?? features.presetUI;
+    if (wantPresetUI) {
+      const select = target.ownerDocument.createElement("select");
+      select.className = "dtm-studio-preset";
+      for (const [key, p] of Object.entries(INSTRUMENT_PRESETS)) {
+        const opt = target.ownerDocument.createElement("option");
+        opt.value = key;
+        opt.textContent = p.displayName;
+        select.appendChild(opt);
+      }
+      select.value = preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
+      target.appendChild(select);
+      editorPresetSelects.set(target, select);
+      select.addEventListener("change", async () => {
+        daw.setInstrument(select.value);
+        await loadPreset(select.value, trackIds);
+      });
+    }
+    const daw = mountDAW(target, base);
+    mountedEditors.push(daw);
+    const presetKey = preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
+    daw.setInstrument(presetKey);
+    void loadPreset(presetKey, trackIds);
+    return daw;
+  };
+  const mountPlayer = (target, mml, opts = {}) => {
+    const meta = parseMML(mml, {}).meta ?? {};
+    if (meta.instrument && INSTRUMENT_PRESETS[meta.instrument]) {
+      void loadPreset(meta.instrument);
+    }
+    const player = mountMmlPlayer(target, mml, {
+      getAudioTime: () => audioCtx.currentTime,
+      onResumeAudio: resumeAudio,
+      onPlayNote: playPlayerNote,
+      onPlayDrum: playDrum,
+      singingVoices,
+      ...opts
+    });
+    mountedPlayers.push(player);
+    return player;
+  };
+  const dispose = () => {
+    for (const p of mountedPlayers) p.destroy();
+    for (const d of mountedEditors) d.destroy();
+    mountedPlayers.length = 0;
+    mountedEditors.length = 0;
+    void audioCtx.close();
+  };
+  return {
+    audioContext: audioCtx,
+    singingVoices,
+    mountEditor,
+    mountPlayer,
+    loadPreset,
+    dispose
+  };
+};
 export {
   DAW_CSS,
   DEFAULT_BPM,
@@ -6811,6 +7128,7 @@ export {
   buildNameToKeyMapping,
   collectPitchTokens,
   createAudioContext,
+  createDtmStudio,
   createKlattVoice,
   createKoeVoice,
   createLyricsConductor,
