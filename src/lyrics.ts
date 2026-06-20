@@ -656,6 +656,21 @@ export const KOE_VOICEBANK_LABELS: Record<string, string> = {
 };
 
 /**
+ * モデルキーワード → 内蔵キャラクター画像キー（voice-images.ts の VOICE_IMAGES キー）。
+ * klatt合成は "puyuyu"、koe音源は音源名に対応する画像キーを返す。
+ */
+export const VOICE_IMAGE_KEY: Record<string, string> = {
+	klatt: "puyuyu",
+	tsukuyomi: "tsukuyomi",
+	rino: "rino",
+	roze: "roze",
+	ruko_male: "ruko",
+	ruko_female: "ruko",
+	teto: "teto",
+	shiyo: "shiyo",
+};
+
+/**
  * UTAU音源キーワード → 利用規約URL。
  */
 export const KOE_VOICEBANK_TERMS: Record<string, string> = {

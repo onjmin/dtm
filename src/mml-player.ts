@@ -18,8 +18,10 @@ import {
 	panToStereo,
 	type SingingVoices,
 	type StreamVoiceTrack,
+	VOICE_IMAGE_KEY,
 	vocalVolumeToGain,
 } from "./lyrics";
+import { VOICE_IMAGES } from "./voice-images";
 import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
 import { injectStyles, showLoadingOverlay } from "./styles";
@@ -307,12 +309,16 @@ export const mountMmlPlayer = (
 	};
 
 	// 瞬きアニメ: 各絵文字がランダムなタイミングで😌に一瞬変わる
+	// 画像に差し替えられた要素はこのSetに入れて瞬きをスキップする
+	const promotedToImage = new Set<HTMLSpanElement>();
 	const blinkTimers: ReturnType<typeof setTimeout>[] = [];
 	const scheduleBlink = (em: HTMLSpanElement): void => {
 		const delay = 2000 + Math.random() * 5000;
 		const t = setTimeout(() => {
+			if (promotedToImage.has(em)) return;
 			em.textContent = "😌";
 			const t2 = setTimeout(() => {
+				if (promotedToImage.has(em)) return;
 				em.textContent = "🥺";
 				scheduleBlink(em);
 			}, 200 + Math.random() * 150);
@@ -606,6 +612,25 @@ export const mountMmlPlayer = (
 			try {
 				await v.loadModels(tracks.map((t) => t.model));
 				await v.warm(tracks);
+				// ロード完了後: 各歌声トラックの絵文字をキャラクター画像に差し替える
+				for (const [index, lt] of lyricTracks) {
+					const em = emojiByTrack.get(index);
+					if (!em) continue;
+					const imgKey = VOICE_IMAGE_KEY[lt.model.toLowerCase()];
+					const src = imgKey ? VOICE_IMAGES[imgKey] : undefined;
+					if (!src) continue;
+					const img = doc.createElement("img");
+					img.src = src;
+					img.width = 20;
+					img.height = 20;
+					img.style.borderRadius = "50%";
+					img.style.objectFit = "cover";
+					img.draggable = false;
+					// 絵文字の background・text を引き継ぎつつ span の内容を img に置換
+					promotedToImage.add(em);
+					em.textContent = "";
+					em.appendChild(img);
+				}
 			} catch (err) {
 				console.warn("[dtm] voice preload failed", err);
 			} finally {
