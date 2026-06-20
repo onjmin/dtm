@@ -1271,7 +1271,35 @@ var koeUrl = (name, base = KOE_BASE_URL) => `${base}/${encodeURIComponent(name)}
 var DEFAULT_WORLDLINE_SCRIPT = "https://onjmin.github.io/koe/demo/world/worldline.js";
 var KOE_SAMPLE_RATE = 48e3;
 var expandSeparators = (candidate) => candidate.includes(" ") ? [candidate, candidate.replace(/ /g, "\u3000"), candidate.replace(/ /g, "")] : [candidate];
-var resolveKoeAlias = (hasAlias, syl, prevVowel) => {
+var PITCH_SUFFIX = /_([A-G][#b]?-?\d+)$/;
+var NAME_SEMITONE = {
+  c: 0,
+  d: 2,
+  e: 4,
+  f: 5,
+  g: 7,
+  a: 9,
+  b: 11
+};
+var pitchTokenToMidi = (token) => {
+  const m = /^([A-Ga-g])([#b]?)(-?\d+)$/.exec(token);
+  if (!m) return null;
+  let semi = NAME_SEMITONE[m[1].toLowerCase()];
+  if (m[2] === "#") semi++;
+  else if (m[2] === "b") semi--;
+  return (Number.parseInt(m[3], 10) + 1) * 12 + semi;
+};
+var collectPitchTokens = (aliases) => {
+  const seen = /* @__PURE__ */ new Map();
+  for (const a of aliases) {
+    const m = PITCH_SUFFIX.exec(a);
+    if (!m || seen.has(m[1])) continue;
+    const midi = pitchTokenToMidi(m[1]);
+    if (midi != null) seen.set(m[1], midi);
+  }
+  return [...seen].map(([token, midi]) => ({ token, midi }));
+};
+var resolveKoeAlias = (hasAlias, pitchTokens, syl, prevVowel, noteNum) => {
   const kana = syl.kana;
   const cons = syl.consonant === "N" ? "n" : syl.consonant;
   const vow = syl.vowel === "N" ? "" : syl.vowel;
@@ -1289,12 +1317,26 @@ var resolveKoeAlias = (hasAlias, syl, prevVowel) => {
   if (vk) raw.push(`${pv} ${vk}`, vk, syl.vowel);
   if (syl.vowel === "N") raw.push("\u3093", "n", "N", `${pv} \u3093`);
   const seen = /* @__PURE__ */ new Set();
-  for (const c of raw) {
-    for (const v of expandSeparators(c)) {
+  const tryAlias = (candidate) => {
+    for (const v of expandSeparators(candidate)) {
       if (seen.has(v)) continue;
       seen.add(v);
       if (hasAlias(v)) return v;
     }
+    return null;
+  };
+  if (pitchTokens.length) {
+    const nearest = pitchTokens.slice().sort((a, b) => Math.abs(a.midi - noteNum) - Math.abs(b.midi - noteNum));
+    for (const { token } of nearest) {
+      for (const base of raw) {
+        const hit = tryAlias(`${base}_${token}`);
+        if (hit) return hit;
+      }
+    }
+  }
+  for (const base of raw) {
+    const hit = tryAlias(base);
+    if (hit) return hit;
   }
   return null;
 };
@@ -1334,8 +1376,13 @@ var createLocalBackend = async (options) => {
       rate
     };
   };
-  return { hasAlias: (a) => bank.has(a), renderAlias, dispose: () => {
-  } };
+  return {
+    hasAlias: (a) => bank.has(a),
+    pitchTokens: collectPitchTokens(Object.keys(bank.manifest.phonemes)),
+    renderAlias,
+    dispose: () => {
+    }
+  };
 };
 var spawnVoiceWorker = async (url) => {
   const sameOrigin = new URL(url, location.href).origin === location.origin;
@@ -1400,6 +1447,7 @@ var createWorkerBackend = async (workerUrl, options) => {
   });
   return {
     hasAlias: (a) => aliasSet.has(a),
+    pitchTokens: collectPitchTokens(aliasSet),
     renderAlias,
     dispose: () => worker.terminate()
   };
@@ -1432,6 +1480,7 @@ var createKoeVoice = async (ctx, destination, options) => {
     inflight.set(key, p);
     return p;
   };
+  const LEADCAP_S = 0.09;
   const schedule = (r, t0, peak, pan) => {
     let out = destination;
     let panner = null;
@@ -1444,9 +1493,11 @@ var createKoeVoice = async (ctx, destination, options) => {
     const src = ctx.createBufferSource();
     src.buffer = r.audio;
     src.playbackRate.value = r.rate;
-    const startAt = Math.max(ctx.currentTime + 1e-3, t0 - r.preSec);
-    const bufDurSec = r.audio.duration / r.rate;
-    const endAt = startAt + bufDurSec;
+    const effPre = Math.min(r.preSec, LEADCAP_S);
+    const skipS = r.preSec - effPre;
+    const startAt = Math.max(ctx.currentTime + 1e-3, t0 - effPre);
+    const playDurSec = r.audio.duration / r.rate - skipS;
+    const endAt = startAt + playDurSec;
     const attack = 0.01;
     const release = 0.04;
     const env = ctx.createGain();
@@ -1456,7 +1507,7 @@ var createKoeVoice = async (ctx, destination, options) => {
     env.gain.setValueAtTime(peak, fadeStart);
     env.gain.exponentialRampToValueAtTime(1e-4, endAt);
     src.connect(env).connect(out);
-    src.start(startAt);
+    src.start(startAt, skipS);
     src.stop(endAt + 0.02);
     active.add(src);
     src.onended = () => {
@@ -1468,7 +1519,13 @@ var createKoeVoice = async (ctx, destination, options) => {
   };
   const model = (syllable, e) => {
     if (syllable.consonant === "Q" || syllable.vowel === "") return;
-    const alias = resolveKoeAlias(backend.hasAlias, syllable, prevVowel);
+    const alias = resolveKoeAlias(
+      backend.hasAlias,
+      backend.pitchTokens,
+      syllable,
+      prevVowel,
+      e.pitch
+    );
     if (syllable.vowel && syllable.vowel !== "N") prevVowel = syllable.vowel;
     if (!alias) return;
     const t0 = ctx.currentTime + e.when;
@@ -1481,7 +1538,13 @@ var createKoeVoice = async (ctx, destination, options) => {
   };
   model.renderToCache = async (syllable, prevVowelArg, pitch, durationMs) => {
     if (syllable.consonant === "Q" || syllable.vowel === "") return null;
-    const alias = resolveKoeAlias(backend.hasAlias, syllable, prevVowelArg);
+    const alias = resolveKoeAlias(
+      backend.hasAlias,
+      backend.pitchTokens,
+      syllable,
+      prevVowelArg,
+      pitch
+    );
     if (!alias) return null;
     const dMs = Math.max(60, durationMs);
     const r = await renderInto(alias, pitch, dMs);
@@ -6372,6 +6435,7 @@ export {
   applyMonophonic,
   buildChordPlacements,
   buildNameToKeyMapping,
+  collectPitchTokens,
   createAudioContext,
   createKlattVoice,
   createKoeVoice,
