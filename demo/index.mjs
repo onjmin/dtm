@@ -7040,8 +7040,10 @@ var createDtmStudio = async (options = {}) => {
       ...dawOverrides
     };
     const wantPresetUI = presetUI ?? features.presetUI;
+    let select = null;
     if (wantPresetUI) {
-      const select = target.ownerDocument.createElement("select");
+      editorPresetSelects.get(target)?.remove();
+      select = target.ownerDocument.createElement("select");
       select.className = "dtm-studio-preset";
       for (const [key, p] of Object.entries(INSTRUMENT_PRESETS)) {
         const opt = target.ownerDocument.createElement("option");
@@ -7053,6 +7055,7 @@ var createDtmStudio = async (options = {}) => {
       target.appendChild(select);
       editorPresetSelects.set(target, select);
       select.addEventListener("change", async () => {
+        if (!select) return;
         daw.setInstrument(select.value);
         await loadPreset(select.value, trackIds);
       });
@@ -7062,7 +7065,15 @@ var createDtmStudio = async (options = {}) => {
     const presetKey = preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
     daw.setInstrument(presetKey);
     void loadPreset(presetKey, trackIds);
-    return daw;
+    const destroy = () => {
+      daw.destroy();
+      select?.remove();
+      if (editorPresetSelects.get(target) === select)
+        editorPresetSelects.delete(target);
+      const i = mountedEditors.indexOf(daw);
+      if (i >= 0) mountedEditors.splice(i, 1);
+    };
+    return { ...daw, destroy };
   };
   const mountPlayer = (target, mml, opts = {}) => {
     const meta = parseMML(mml, {}).meta ?? {};
@@ -7078,7 +7089,12 @@ var createDtmStudio = async (options = {}) => {
       ...opts
     });
     mountedPlayers.push(player);
-    return player;
+    const destroy = () => {
+      player.destroy();
+      const i = mountedPlayers.indexOf(player);
+      if (i >= 0) mountedPlayers.splice(i, 1);
+    };
+    return { ...player, destroy };
   };
   const dispose = () => {
     for (const p of mountedPlayers) p.destroy();
