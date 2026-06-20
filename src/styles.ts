@@ -582,6 +582,12 @@ export const DAW_CSS = `
   padding: 2px 6px;
   white-space: nowrap;
 }
+.dtm-player-body {
+  position: relative; /* ローディングオーバーレイの基準。レーン群だけを覆う */
+  display: flex;
+  flex-direction: column;
+  gap: var(--dtm-gap);
+}
 .dtm-player-lane-row {
   display: flex;
   align-items: stretch;

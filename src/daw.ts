@@ -1100,7 +1100,8 @@ export const mountDAW = (
 		const voices = options.singingVoices;
 		const streaming = !!voices && streamTracks.some((t) => t.notes.length > 0);
 		if (streaming && voices) {
-			const overlay = showLoadingOverlay(target);
+			// オーバーレイはピアノロール部分だけに被せる（操作パネルまで覆わない）
+			const overlay = showLoadingOverlay(refs.rollContainer);
 			try {
 				await voices.loadModels(streamTracks.map((t) => t.model));
 				await voices.warm(streamTracks);

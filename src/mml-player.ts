@@ -284,6 +284,12 @@ export const mountMmlPlayer = (
 	root.appendChild(head);
 
 	// ── トラック帯 ──
+	// レーン群をまとめる本体。ローディングオーバーレイはこの領域だけに被せ、
+	// 再生ボタン（head）まで覆わないようにする。
+	const body = doc.createElement("div");
+	body.className = "dtm-player-body";
+	root.appendChild(body);
+
 	const laneViews: LaneView[] = [];
 	for (const index of trackIndices) {
 		const lyricTrack = lyricTracks.get(index);
@@ -363,7 +369,7 @@ export const mountMmlPlayer = (
 		}
 
 		row.append(label, lane);
-		root.appendChild(row);
+		body.appendChild(row);
 		laneViews.push({ lane, tokens: laneTokens });
 	}
 
@@ -520,7 +526,7 @@ export const mountMmlPlayer = (
 		const tracks = streaming ? buildStreamTracks() : [];
 		if (streaming) {
 			const v = ensureVoices();
-			const overlay = showLoadingOverlay(root);
+			const overlay = showLoadingOverlay(body);
 			try {
 				await v.loadModels(tracks.map((t) => t.model));
 				await v.warm(tracks);
