@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="icon" href="https://avatars.githubusercontent.com/u/88383494" />
+    <title>DTM Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @font-face {
+            font-family: 'k8x12';
+            src: url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff2') format('woff2'),
+                 url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff') format('woff'),
+                 url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.ttf') format('truetype');
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+
+        :root {
+            --c-black:  #000000;
+            --c-navy:   #1d2b53;
+            --c-green:  #00e436;
+            --c-cyan:   #29adff;
+            --c-yellow: #ffec27;
+            --c-pink:   #ff77a8;
+            --c-gray:   #5f574f;
+            --c-text:   #fff1e8;
+            --c-muted:  #83769c;
+        }
+
+        html, body {
+            margin: 0; padding: 0;
+            background: var(--c-black);
+            color: var(--c-text);
+            font-family: 'k8x12',ui-monospace,monospace;
+            font-size: 14px;
+            -webkit-font-smoothing: none;
+            -moz-osx-font-smoothing: unset;
+            font-smooth: never;
+            min-height: 100vh;
+        }
+
+        /* 背景：ドット格子 */
+        body {
+            background-color: #000;
+            background-image:
+                radial-gradient(circle, #1a1c2c 1px, transparent 1px);
+            background-size: 8px 8px;
+        }
+
+        /* 全体スキャンライン */
+        body::after {
+            content: '';
+            position: fixed; inset: 0;
+            background: repeating-linear-gradient(
+                0deg, transparent 0px, transparent 2px,
+                rgba(0,0,0,.22) 2px, rgba(0,0,0,.22) 3px
+            );
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* ゲームウィンドウ枠ヘルパー */
+        .game-win {
+            border: 2px solid #000;
+            box-shadow:
+                inset 0 0 0 2px #000,
+                0 0 0 2px var(--c-cyan),
+                4px 4px 0 #000;
+        }
+
+        /* タイトルバナー */
+        .title-banner {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            background: var(--c-navy);
+        }
+        .title-banner::before {
+            content: '█▓▒░';
+            color: var(--c-cyan);
+            font-size: 12px;
+            letter-spacing: .04em;
+        }
+        .title-banner::after {
+            content: '░▒▓█';
+            color: var(--c-cyan);
+            font-size: 12px;
+            letter-spacing: .04em;
+        }
+
+        /* ブリンクカーソル */
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+        .blink { animation: blink 1s steps(1) infinite; }
+
+        /* 音源ローディング：ドットが埋まるアニメ */
+        @keyframes dot-fill {
+          0%  { content: '[░░░░░░░░]'; }
+          12% { content: '[▓░░░░░░░]'; }
+          25% { content: '[▓▓░░░░░░]'; }
+          37% { content: '[▓▓▓░░░░░]'; }
+          50% { content: '[▓▓▓▓░░░░]'; }
+          62% { content: '[▓▓▓▓▓░░░]'; }
+          75% { content: '[▓▓▓▓▓▓░░]'; }
+          87% { content: '[▓▓▓▓▓▓▓░]'; }
+          100%{ content: '[▓▓▓▓▓▓▓▓]'; }
+        }
+        #loading::before {
+          content: '[░░░░░░░░]';
+          animation: dot-fill 1.6s steps(8) infinite;
+        }
+
+        /* セレクト */
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M0 0l6 8 6-8z' fill='%2329adff'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 28px !important;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { pixel: ['k8x12','ui-monospace','monospace'] },
+                    colors: {
+                        pico: {
+                            black:  '#000000', navy:   '#1d2b53', purple: '#7e2553',
+                            dkgrn:  '#008751', brown:  '#ab5236', gray:   '#5f574f',
+                            silver: '#c2c3c7', white:  '#fff1e8', red:    '#ff004d',
+                            orange: '#ffa300', yellow: '#ffec27', green:  '#00e436',
+                            cyan:   '#29adff', lavend: '#83769c', pink:   '#ff77a8',
+                            peach:  '#ffccaa',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="font-pixel">
+
+    <!-- ════ タイトル画面ヘッダー ════ -->
+    <header class="border-b-4 border-pico-black" style="box-shadow: 0 4px 0 var(--c-cyan);">
+        <!-- ロゴ行 -->
+        <div class="title-banner">
+            <div>
+                <div class="text-pico-cyan text-base tracking-widest uppercase">
+                    @onjmin/dtm
+                </div>
+                <div class="text-pico-lavend text-xs tracking-widest mt-0.5">
+                    PIXEL MUSIC STUDIO  v0.1.0
+                </div>
+            </div>
+            <div class="ml-auto text-right">
+                <div class="text-pico-green text-xs tracking-widest">
+                    ♪ <span class="blink">█</span>
+                </div>
+                <div class="text-pico-lavend text-xs mt-0.5">READY</div>
+            </div>
+        </div>
+
+        <!-- ステータスバー -->
+        <div class="flex items-center gap-4 px-3 py-1.5 bg-pico-black text-xs text-pico-lavend tracking-widest uppercase border-t-2 border-pico-gray">
+            <span class="text-pico-green">● SOUND ON</span>
+            <span>|</span>
+            <span>MOBILE FIRST DAW</span>
+            <span>|</span>
+            <span class="text-pico-cyan">
+                mountDAW<span class="text-pico-yellow">()</span>
+            </span>
+        </div>
+    </header>
+
+    <!-- ════ コントロールバー ════ -->
+    <div class="max-w-4xl mx-auto px-3 pt-4 flex flex-col gap-2">
+
+        <!-- 楽器選択 -->
+        <div class="game-win bg-pico-navy px-4 py-3">
+            <div class="flex flex-wrap items-center gap-3">
+                <span class="text-pico-pink text-xs uppercase tracking-widest shrink-0">► INSTRUMENT</span>
+                <select id="preset"
+                    class="game-win grow min-h-[40px] px-3 bg-pico-black text-pico-white font-pixel text-sm
+                           tracking-wide uppercase border-0 focus:outline-none cursor-pointer">
+                </select>
+                <span class="text-pico-orange text-xs font-pixel shrink-0" id="loading" style="display:none"></span>
+            </div>
+        </div>
+
+        <!-- モード切替 -->
+        <div class="game-win bg-pico-navy px-4 py-3">
+            <div class="flex flex-wrap items-center gap-3">
+                <span class="text-pico-yellow text-xs uppercase tracking-widest shrink-0">► MODE</span>
+                <button id="mode-simple"
+                    class="min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-cyan text-pico-black
+                           text-xs uppercase tracking-widest cursor-pointer font-pixel
+                           shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
+                    ■ SIMPLE (4 TRACKS)
+                </button>
+                <button id="mode-advanced"
+                    class="min-h-[40px] px-4 border-2 border-pico-gray bg-pico-black text-pico-gray
+                           text-xs uppercase tracking-widest cursor-pointer font-pixel
+                           shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
+                    □ ADVANCED (16 TRACKS)
+                </button>
+                <span id="mode-desc" class="text-pico-lavend text-xs uppercase tracking-widest">
+                    AUTO MIDI CLASSIFY
+                </span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ════ DAW マウント ════ -->
+    <div id="app" class="max-w-4xl mx-auto px-3 pb-8 pt-3"></div>
+
+    <!-- ════ 再生専用ビュー (mountMmlPlayer) ════ -->
+    <div class="max-w-4xl mx-auto px-3 pb-8 flex flex-col gap-2">
+        <div class="game-win bg-pico-navy px-4 py-3">
+            <div class="flex flex-wrap items-center gap-3">
+                <span class="text-pico-green text-xs uppercase tracking-widest shrink-0">► PLAYER</span>
+                <span class="text-pico-cyan text-xs font-pixel shrink-0">
+                    mountMmlPlayer<span class="text-pico-yellow">()</span>
+                </span>
+                <button id="player-load-daw"
+                    class="min-h-[40px] px-4 border-2 border-pico-green bg-pico-black text-pico-green
+                           text-xs uppercase tracking-widest cursor-pointer font-pixel
+                           shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
+                    ▶ LOAD FROM DAW
+                </button>
+                <span class="text-pico-lavend text-xs uppercase tracking-widest">READ-ONLY · @@n KLATT 歌詞同期 · BUILT-IN SYNTH</span>
+            </div>
+        </div>
+        <div id="player-app"></div>
+    </div>
+
+    <!-- ════ フッター ════ -->
+    <footer class="max-w-4xl mx-auto px-3 pb-4 text-pico-gray text-xs uppercase tracking-widest">
+        <div class="flex gap-4 flex-wrap">
+            <span>© 2025 <span class="text-pico-cyan">@onjmin</span></span>
+            <span>|</span>
+            <a href="https://github.com/onjmin/dtm" class="text-pico-cyan hover:text-pico-yellow">GITHUB</a>
+            <span>|</span>
+            <a href="https://www.npmjs.com/package/@onjmin/dtm" class="text-pico-pink hover:text-pico-yellow">NPM</a>
+            <span>|</span>
+            <span class="text-pico-lavend">MIT LICENSE</span>
+        </div>
+    </footer>
+
+    <script type="module">
+        import { parseChord } from 'https://rpgen3.github.io/piano/mjs/parseChord.mjs';
+        import { parseChords } from 'https://rpgen3.github.io/piano/mjs/parseChords.mjs';
+        import { SoundFont } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont.mjs';
+        import { SoundFont_drum } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs';
+        import { SoundFont_list } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs';
+
+        const DTM = await import(location.hostname === 'localhost'
+            ? 'http://localhost:40298/dist/index.mjs'
+            : './index.mjs');
+
+        const { createAudioContext, setupRecorder, buildNameToKeyMapping } = DTM;
+        const { DRUM_KEYS, DRUM_FONT, INSTRUMENT_PRESETS } = DTM;
+
+        const { audioCtx, gainNode, drumGainNode } = createAudioContext();
+        gainNode.gain.value = 1;
+        drumGainNode.gain.value = 1;
+        const recorder = setupRecorder(audioCtx, gainNode, drumGainNode);
+
+        // 歌詞付きノート（@@n）を歌うフォルマント合成。SoundFontと同じ master gain へ流す。
+        const klatt = DTM.createKlattVoice(audioCtx, gainNode);
+
+        const soundFonts = {};
+        const currentFont = 'FluidR3_GM_sf2_file';
+        let nameToKey = {};
+
+        const loadDrum = async () => {
+            try {
+                await SoundFont_drum.load({ ctx: audioCtx, font: DRUM_FONT, id: '0', keys: Object.values(DRUM_KEYS) });
+            } catch (e) { console.error('drum load failed', e); }
+        };
+
+        const loadSoundFont = async (instrumentKey, trackId) => {
+            try {
+                const fullName = `${instrumentKey}_${currentFont}`;
+                soundFonts[trackId] = await SoundFont.load({
+                    ctx: audioCtx,
+                    fontName: `_tone_${fullName}`,
+                    url: SoundFont.toURL(fullName),
+                });
+            } catch (e) { console.error(`load ${instrumentKey} failed`, e); }
+        };
+
+        const loadPreset = async (presetKey) => {
+            const preset = INSTRUMENT_PRESETS[presetKey];
+            if (!preset) return;
+            // MML出力の先頭に楽器プリセット名を埋め込む（再生専用モジュールが音源解決に使う）
+            daw?.setInstrument?.(presetKey);
+            // 再生中に音源を切り替えたら、読み込み中は一旦停止し、完了後に同じ位置から再開する
+            const wasPlaying = daw?.getPlaybackState?.() === 'playing';
+            if (wasPlaying) daw.pause();
+            document.getElementById('loading').style.display = '';
+            try {
+                if (currentMode === 'simple') {
+                    const trackIds = ['melody', 'submelody', 'bass', 'chord'];
+                    await Promise.all(trackIds.map((trackId) => {
+                        const key = nameToKey[preset[trackId]];
+                        return key ? loadSoundFont(key, trackId) : Promise.resolve();
+                    }));
+                } else {
+                    // 上級者モード: t0〜t15 に melody 音源をデフォルトとしてロード
+                    const melodyKey = nameToKey[preset.melody];
+                    if (melodyKey) {
+                        const trackIds = DTM.TRACKS_ADVANCED.map(t => t.id);
+                        await Promise.all(trackIds.map(trackId => loadSoundFont(melodyKey, trackId)));
+                    }
+                }
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                // 読み込み完了後、停止前に再生中だったなら同じ位置から再開
+                if (wasPlaying) daw.play();
+            }
+        };
+
+        const downloadWav = (recordedData) => {
+            const mergeData = () => {
+                const ch = recordedData.length;
+                const len = recordedData[0].length;
+                if (len === 0) return new Float32Array(0);
+                const bufSize = recordedData[0][0].length;
+                const wave = new Float32Array(ch * len * bufSize);
+                let idx = 0;
+                for (let i = 0; i < len; i++)
+                    for (let j = 0; j < bufSize; j++)
+                        for (let k = 0; k < ch; k++) wave[idx++] = recordedData[k][i][j];
+                return wave;
+            };
+            const wave = mergeData();
+            const sampleRate = audioCtx.sampleRate, channels = 2, bitRate = 16;
+            const step = bitRate / 8, blockSize = channels * step, len = wave.length * step;
+            const view = new DataView(new ArrayBuffer(44 + len));
+            const ws = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+            ws(0, 'RIFF'); view.setUint32(4, 32 + len, true); ws(8, 'WAVE'); ws(12, 'fmt ');
+            view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, channels, true);
+            view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * blockSize, true);
+            view.setUint16(32, blockSize, true); view.setUint16(34, bitRate, true);
+            ws(36, 'data'); view.setUint32(40, len, true);
+            const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+            let off = 44;
+            for (let i = 0; i < wave.length; i++, off += step)
+                view.setInt16(off, clamp(Math.round(wave[i] * 0x8000), -0x8000, 0x7fff), true);
+            const blob = new Blob([view], { type: 'audio/wav' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'record.wav'; a.click();
+            URL.revokeObjectURL(url);
+        };
+
+        const parseMidi = (() => {
+            let MidiParser = null;
+            import('https://cdn.jsdelivr.net/npm/midi-parser-js@4.0.4/+esm')
+                .then((m) => { MidiParser = m.default ?? m; })
+                .catch((e) => console.error('midi-parser load failed', e));
+            return (bytes) => {
+                if (!MidiParser) throw new Error('midi-parser not ready');
+                return MidiParser.parse(bytes);
+            };
+        })();
+
+        const dawBaseOptions = {
+            getAudioTime: () => audioCtx.currentTime,
+            onResumeAudio: () => { if (audioCtx.state === 'suspended') audioCtx.resume(); },
+            onPlayNote: (e) => {
+                // 歌詞トラックがあると syllable が載って届く。あれば歌い、無ければ楽器音。
+                if (e.syllable) { klatt(e.syllable, e); return; }
+                const { trackId, pitch, volume, when, duration } = e;
+                const sf = soundFonts[trackId];
+                if (!sf) return;
+                sf.play({ ctx: audioCtx, destination: gainNode, pitch, volume, when, duration });
+            },
+            onPlayDrum: ({ pitch, velocity, when, duration }) => {
+                if (!SoundFont_drum.font) return;
+                SoundFont_drum.play({ ctx: audioCtx, pitch, volume: velocity, when, duration, destination: drumGainNode });
+            },
+            onToggleRecord: () => {
+                if (recorder.isRecording()) {
+                    recorder.stopRecording();
+                    downloadWav(recorder.getRecordedData());
+                } else {
+                    recorder.clearRecordedData();
+                    recorder.startRecording();
+                }
+            },
+            parseChord, parseChords, parseMidi,
+            defaultBpm: 120,
+        };
+
+        let currentMode = 'simple';
+        let daw = DTM.mountDAW(document.getElementById('app'), { ...dawBaseOptions, tracks: DTM.TRACKS_SIMPLE });
+        window.daw = daw;
+
+        const BTN_ACTIVE = 'min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-cyan text-pico-black text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none';
+        const BTN_INACTIVE = 'min-h-[40px] px-4 border-2 border-pico-gray bg-pico-black text-pico-gray text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none';
+
+        const updateModeButtons = (mode) => {
+            const btnSimple = document.getElementById('mode-simple');
+            const btnAdvanced = document.getElementById('mode-advanced');
+            const desc = document.getElementById('mode-desc');
+            btnSimple.className = mode === 'simple' ? BTN_ACTIVE : BTN_INACTIVE;
+            btnAdvanced.className = mode === 'advanced' ? BTN_ACTIVE : BTN_INACTIVE;
+            desc.textContent = mode === 'simple' ? 'AUTO MIDI CLASSIFY' : 'MIDI 1:1 TRACK MAPPING';
+        };
+
+        const remountDAW = async (mode) => {
+            if (mode === currentMode) return;
+            daw.destroy();
+            currentMode = mode;
+            const tracks = mode === 'simple' ? DTM.TRACKS_SIMPLE : DTM.TRACKS_ADVANCED;
+            daw = DTM.mountDAW(document.getElementById('app'), { ...dawBaseOptions, tracks });
+            window.daw = daw;
+            updateModeButtons(mode);
+            await loadPreset(document.getElementById('preset').value);
+        };
+
+        document.getElementById('mode-simple').addEventListener('click', () => remountDAW('simple'));
+        document.getElementById('mode-advanced').addEventListener('click', () => remountDAW('advanced'));
+
+        const presetSelect = document.getElementById('preset');
+        for (const [key, preset] of Object.entries(INSTRUMENT_PRESETS)) {
+            const opt = document.createElement('option');
+            opt.value = key; opt.textContent = preset.displayName;
+            presetSelect.appendChild(opt);
+        }
+        const defaultPreset = 'retro_game';
+        presetSelect.value = defaultPreset;
+        presetSelect.addEventListener('change', () => loadPreset(presetSelect.value));
+
+        // ════ 再生専用ビュー (mountMmlPlayer) ════
+        const { mountMmlPlayer } = DTM;
+        // @@0 klatt … が歌詞トラック。@0 のメロディに音節を1つずつ同期して内蔵synthが歌う。
+        const SAMPLE_MML = '@0 t135 o5 l8 e d c d e e e4 d d d4 e g g4 r e d c d e e e e d d e d c4 ; @1 o3 l4 c g c g c g c g ; @@0 klatt ちょうちょうちょうちょうなのはにとまれなのはにあいたらさくらにとまれ';
+        // 再生専用ビューの音量をDAWの既定に合わせるための係数（DAW: マスタ50% / ドラム80%）
+        const PLAYER_MASTER = 50;          // ノート音量（mountMmlPlayer の volume オプション 0-100）
+        const PLAYER_DRUM_GAIN = 0.8 * 0.5; // ドラム velocity に掛ける係数（ドラム音量×マスタ）
+        // プレイヤーの @n（数値）→ 音源キーの対応。プリセットはトラックの役割順で割り当てる。
+        const TRACK_ROLES = ['melody', 'submelody', 'bass', 'chord'];
+        const sfForTrack = (trackId) =>
+            currentMode === 'simple' ? soundFonts[TRACK_ROLES[Number(trackId)]] : soundFonts['t' + trackId];
+        let player = null;
+        const mountPlayer = async (mml) => {
+            if (player) player.destroy();
+            const src = mml || SAMPLE_MML;
+            // MMLに埋め込まれたトップレベル宣言（#inst= / #drum=）を読む
+            const meta = DTM.parseMML(src, {}).meta ?? {};
+            if (meta.instrument && INSTRUMENT_PRESETS[meta.instrument]) {
+                // 宣言された楽器プリセットの音源を用意（未ロードなら読み込む）してSoundFontで再生
+                if (presetSelect.value !== meta.instrument) {
+                    presetSelect.value = meta.instrument;
+                    await loadPreset(meta.instrument);
+                }
+                player = mountMmlPlayer(document.getElementById('player-app'), src, {
+                    // DAWの既定マスタ音量(50%)に合わせる。これが無いと再生専用モードだけ音が倍近く大きくなる
+                    volume: PLAYER_MASTER,
+                    getAudioTime: () => audioCtx.currentTime,
+                    onResumeAudio: () => { if (audioCtx.state === 'suspended') audioCtx.resume(); },
+                    onPlayNote: (e) => {
+                        if (e.syllable) { klatt(e.syllable, e); return; } // 歌詞トラックは歌う
+                        const sf = sfForTrack(e.trackId);
+                        if (!sf) return;
+                        sf.play({ ctx: audioCtx, destination: gainNode, pitch: e.pitch, volume: e.volume, when: e.when, duration: e.duration });
+                    },
+                    // #drum= はライブラリが解決し、ここにドラムノートとして届く。DAWのドラム音量(80%)×マスタ(50%)に合わせる
+                    onPlayDrum: ({ pitch, velocity, when, duration }) => {
+                        if (!SoundFont_drum.font) return;
+                        SoundFont_drum.play({ ctx: audioCtx, pitch, volume: velocity * PLAYER_DRUM_GAIN, when, duration, destination: drumGainNode });
+                    },
+                });
+            } else {
+                // 楽器宣言なし（サンプル等）は内蔵の簡易synth＋簡易ドラムで即鳴らす
+                player = mountMmlPlayer(document.getElementById('player-app'), src, { synth: true, volume: PLAYER_MASTER });
+            }
+            window.player = player;
+        };
+        mountPlayer(SAMPLE_MML);
+        document.getElementById('player-load-daw').addEventListener('click', async () => {
+            const { full } = daw.getMML();
+            await mountPlayer(full);
+        });
+
+        loadDrum();
+        SoundFont_list.init();
+        SoundFont_list.onload(async () => {
+            nameToKey = await buildNameToKeyMapping();
+            await loadPreset(defaultPreset);
+        });
+    </script>
+</body>
+
+</html>
