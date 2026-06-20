@@ -4157,6 +4157,14 @@ var LYRIC_MODEL_LABELS = {
   klatt: "\u8EFD\u91CF\u30ED\u30DC\u58F0",
   ...KOE_VOICEBANK_LABELS
 };
+var LYRIC_MODEL_TERMS = {
+  tsukuyomi: "https://tyc.rei-yumesaki.net/material/utau/terms/",
+  rino: "https://hatenakun1.github.io/halunelino/",
+  roze: "https://tabaneroze.ninja-web.net/terms-of-use.html",
+  ruko: "https://long-sleeper.net/index.php?id=22",
+  teto: "https://kasaneteto.jp/guidelines/voice.html",
+  shiyo: "https://kakumeisiyo.my.canva.site/dagkuyjwycs"
+};
 var lyricModelLabel = (model) => LYRIC_MODEL_LABELS[model] ?? model;
 var clamp3 = (v, min, max) => Math.min(Math.max(v, min), max);
 var mountDAW = (target, options = {}) => {
@@ -4944,6 +4952,11 @@ var mountDAW = (target, options = {}) => {
         <select class="dtm-select" data-dtm="lyric-model" aria-label="\u6B4C\u5531\u30E2\u30C7\u30EB"></select>
         <span class="dtm-label dtm-grow" data-dtm="lyric-count" style="text-align:right"></span>
       </div>
+      <div class="dtm-row dtm-hidden" data-dtm="lyric-terms" style="font-size:10px;gap:4px;color:var(--dtm-warn)">
+        <span>\u4F7F\u7528\u6642\u306B\u306F</span>
+        <a data-dtm="lyric-terms-link" target="_blank" rel="noopener" style="color:var(--dtm-primary);text-decoration:underline"></a>
+        <span>\u306E\u5229\u7528\u898F\u7D04\u306B\u5F93\u3063\u3066\u304F\u3060\u3055\u3044</span>
+      </div>
       <div class="dtm-row" data-dtm="lyric-body" style="flex-direction:column;align-items:stretch">
         <div class="dtm-row">
           <span class="dtm-label">\u58F0\u91CF</span>
@@ -4982,6 +4995,12 @@ var mountDAW = (target, options = {}) => {
     const lyricPanLabel = lyricDiv.querySelector(
       '[data-dtm="lyric-pan-label"]'
     );
+    const lyricTerms = lyricDiv.querySelector(
+      '[data-dtm="lyric-terms"]'
+    );
+    const lyricTermsLink = lyricDiv.querySelector(
+      '[data-dtm="lyric-terms-link"]'
+    );
     const fmtPan = (pan) => pan === 64 ? "C" : pan < 64 ? `L${64 - pan}` : `R${pan - 64}`;
     const addOpt = (value, label) => {
       const o = document.createElement("option");
@@ -5004,9 +5023,21 @@ var mountDAW = (target, options = {}) => {
       const n = normalizeLyrics(lyricInput.value).length;
       lyricCount.textContent = active.lyricModel && n > 0 ? `${n}\u97F3\u7BC0` : "";
     };
+    const syncLyricTerms = () => {
+      const url = active.lyricModel ? LYRIC_MODEL_TERMS[active.lyricModel] : void 0;
+      if (url) {
+        const label = lyricModelLabel(active.lyricModel);
+        lyricTermsLink.textContent = label;
+        lyricTermsLink.href = url;
+        lyricTerms.classList.remove("dtm-hidden");
+      } else {
+        lyricTerms.classList.add("dtm-hidden");
+      }
+    };
     const syncLyricVisibility = () => {
       lyricBody.style.display = active.lyricModel ? "" : "none";
       updateLyricCount();
+      syncLyricTerms();
     };
     syncLyricVisibility();
     lyricModelSel.addEventListener("change", () => {
