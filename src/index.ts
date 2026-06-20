@@ -26,6 +26,17 @@ export { mountMmlPlayer } from "./mml-player";
 export * from "./piano-roll";
 export * from "./renderer";
 export * from "./sequencer";
+// ============================================================
+// Layer 3: 全部入りスタジオ（CDN SoundFont + 歌声 + 録音 を内包）
+// ============================================================
+export {
+	createDtmStudio,
+	type DtmStudio,
+	type DtmStudioEngines,
+	type DtmStudioOptions,
+	type MountEditorOptions,
+	type MountPlayerOptions,
+} from "./studio";
 
 // UIユーティリティ
 export { DAW_CSS, injectStyles } from "./styles";

@@ -301,194 +301,68 @@
     </footer>
 
     <script type="module">
-        import { parseChord } from 'https://rpgen3.github.io/piano/mjs/parseChord.mjs';
-        import { parseChords } from 'https://rpgen3.github.io/piano/mjs/parseChords.mjs';
-        import { SoundFont } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont.mjs';
-        import { SoundFont_drum } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs';
-        import { SoundFont_list } from 'https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs';
-
         const isLocal = location.hostname === 'localhost';
         const DTM = await import(isLocal
             ? 'http://localhost:40298/dist/index.mjs'
             : './index.mjs');
-        // 歌声合成Workerのスクリプト（DTM本体と同じ場所に置かれる）。
-        const VOICE_WORKER_URL = isLocal
-            ? 'http://localhost:40298/dist/voice-worker.js'
-            : new URL('./voice-worker.js', import.meta.url).href;
 
-        const { createAudioContext, setupRecorder, buildNameToKeyMapping } = DTM;
-        const { DRUM_KEYS, DRUM_FONT, INSTRUMENT_PRESETS } = DTM;
+        const { createDtmStudio, INSTRUMENT_PRESETS, TRACKS_SIMPLE, TRACKS_ADVANCED } = DTM;
 
-        const { audioCtx, gainNode, drumGainNode } = createAudioContext();
-        gainNode.gain.value = 1;
-        drumGainNode.gain.value = 1;
-        const recorder = setupRecorder(audioCtx, gainNode, drumGainNode);
-
-        // 歌詞付きノート（@@n）を歌う歌唱合成。klatt（内蔵）＋ koe音源（UTAU由来）を一括管理。
-        // SoundFontと同じ master gain へ流す。koe音源はキーワード（roze / teto …）で選べる。
-        const voices = DTM.createSingingVoices(audioCtx, gainNode, { voiceWorkerUrl: VOICE_WORKER_URL });
-
-        const soundFonts = {};
-        const currentFont = 'FluidR3_GM_sf2_file';
-        let nameToKey = {};
-
-        const loadDrum = async () => {
-            try {
-                await SoundFont_drum.load({ ctx: audioCtx, font: DRUM_FONT, id: '0', keys: Object.values(DRUM_KEYS) });
-            } catch (e) { console.error('drum load failed', e); }
-        };
-
-        const loadSoundFont = async (instrumentKey, trackId) => {
-            try {
-                const fullName = `${instrumentKey}_${currentFont}`;
-                soundFonts[trackId] = await SoundFont.load({
-                    ctx: audioCtx,
-                    fontName: `_tone_${fullName}`,
-                    url: SoundFont.toURL(fullName),
-                });
-            } catch (e) { console.error(`load ${instrumentKey} failed`, e); }
-        };
-
-        const loadPreset = async (presetKey) => {
-            const preset = INSTRUMENT_PRESETS[presetKey];
-            if (!preset) return;
-            // どの経路（手動選択 / 初期化 / MMLの #inst= 自動入力）からでも選択を永続化する
-            writeStored(INSTRUMENT_STORAGE_KEY, presetKey);
-            // MML出力の先頭に楽器プリセット名を埋め込む（再生専用モジュールが音源解決に使う）
-            daw?.setInstrument?.(presetKey);
-            // 再生中に音源を切り替えたら、読み込み中は一旦停止し、完了後に同じ位置から再開する
-            const wasPlaying = daw?.getPlaybackState?.() === 'playing';
-            if (wasPlaying) daw.pause();
-            document.getElementById('loading').style.display = '';
-            try {
-                if (currentMode === 'simple') {
-                    const trackIds = ['melody', 'submelody', 'bass', 'chord'];
-                    await Promise.all(trackIds.map((trackId) => {
-                        const key = nameToKey[preset[trackId]];
-                        return key ? loadSoundFont(key, trackId) : Promise.resolve();
-                    }));
-                } else {
-                    // 上級者モード: t0〜t15 に melody 音源をデフォルトとしてロード
-                    const melodyKey = nameToKey[preset.melody];
-                    if (melodyKey) {
-                        const trackIds = DTM.TRACKS_ADVANCED.map(t => t.id);
-                        await Promise.all(trackIds.map(trackId => loadSoundFont(melodyKey, trackId)));
-                    }
-                }
-            } finally {
-                document.getElementById('loading').style.display = 'none';
-                // 読み込み完了後、停止前に再生中だったなら同じ位置から再開
-                if (wasPlaying) daw.play();
-            }
-        };
-
-        const downloadWav = (recordedData) => {
-            const mergeData = () => {
-                const ch = recordedData.length;
-                const len = recordedData[0].length;
-                if (len === 0) return new Float32Array(0);
-                const bufSize = recordedData[0][0].length;
-                const wave = new Float32Array(ch * len * bufSize);
-                let idx = 0;
-                for (let i = 0; i < len; i++)
-                    for (let j = 0; j < bufSize; j++)
-                        for (let k = 0; k < ch; k++) wave[idx++] = recordedData[k][i][j];
-                return wave;
-            };
-            const wave = mergeData();
-            const sampleRate = audioCtx.sampleRate, channels = 2, bitRate = 16;
-            const step = bitRate / 8, blockSize = channels * step, len = wave.length * step;
-            const view = new DataView(new ArrayBuffer(44 + len));
-            const ws = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
-            ws(0, 'RIFF'); view.setUint32(4, 32 + len, true); ws(8, 'WAVE'); ws(12, 'fmt ');
-            view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, channels, true);
-            view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * blockSize, true);
-            view.setUint16(32, blockSize, true); view.setUint16(34, bitRate, true);
-            ws(36, 'data'); view.setUint32(40, len, true);
-            const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-            let off = 44;
-            for (let i = 0; i < wave.length; i++, off += step)
-                view.setInt16(off, clamp(Math.round(wave[i] * 0x8000), -0x8000, 0x7fff), true);
-            const blob = new Blob([view], { type: 'audio/wav' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = 'record.wav'; a.click();
-            URL.revokeObjectURL(url);
-        };
-
-        const parseMidi = (() => {
-            let MidiParser = null;
-            import('https://cdn.jsdelivr.net/npm/midi-parser-js@4.0.4/+esm')
-                .then((m) => { MidiParser = m.default ?? m; })
-                .catch((e) => console.error('midi-parser load failed', e));
-            return (bytes) => {
-                if (!MidiParser) throw new Error('midi-parser not ready');
-                return MidiParser.parse(bytes);
-            };
-        })();
-
-        const dawBaseOptions = {
-            getAudioTime: () => audioCtx.currentTime,
-            onResumeAudio: () => { if (audioCtx.state === 'suspended') audioCtx.resume(); },
-            onPlayNote: (e) => {
-                // 歌詞トラックの歌声は singingVoices の先読みストリーミングが担当するため、
-                // ここには楽器ノートだけが届く（歌詞トラックはミュートされる）。
-                const { trackId, pitch, volume, when, duration } = e;
-                const sf = soundFonts[trackId];
-                if (!sf) return;
-                sf.play({ ctx: audioCtx, destination: gainNode, pitch, volume, when, duration });
-            },
-            onPlayDrum: ({ pitch, velocity, when, duration }) => {
-                if (!SoundFont_drum.font) return;
-                SoundFont_drum.play({ ctx: audioCtx, pitch, volume: velocity, when, duration, destination: drumGainNode });
-            },
-            onToggleRecord: () => {
-                if (recorder.isRecording()) {
-                    recorder.stopRecording();
-                    downloadWav(recorder.getRecordedData());
-                } else {
-                    recorder.clearRecordedData();
-                    recorder.startRecording();
-                }
-            },
-            parseChord, parseChords, parseMidi,
-            singingVoices: voices,
-            defaultBpm: 120,
-            // ドラムパターン変更（手動・MMLの #drum= 自動入力の両方）を永続化する
-            onDrumChange: (name) => writeStored(DRUM_STORAGE_KEY, name),
-        };
-
-        // モード選択（simple / advanced）はブラウザを閉じても維持する
+        // ── 永続化（モード / 楽器 / ドラム）。MML読込で #inst= / #drum= が自動入力され得るため値も保存する ──
         const MODE_STORAGE_KEY = 'dtm-mode';
-        const readSavedMode = () => {
-            try { return localStorage.getItem(MODE_STORAGE_KEY) === 'advanced' ? 'advanced' : 'simple'; }
-            catch { return 'simple'; }
-        };
-        const saveMode = (mode) => {
-            try { localStorage.setItem(MODE_STORAGE_KEY, mode); } catch {}
-        };
-
-        // INSTRUMENT（楽器プリセット）・ドラムパターンもブラウザを閉じても維持する。
-        // どちらもMML読み込み時に #inst= / #drum= で自動入力され得るため、その値も保存する。
         const INSTRUMENT_STORAGE_KEY = 'dtm-instrument';
         const DRUM_STORAGE_KEY = 'dtm-drum';
-        // 表示・出力設定（ズーム / 和音分解モード / 和音伴奏トラック無視）も維持する
-        const VIEW_STORAGE_KEY = 'dtm-view';
         const readStored = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
         const writeStored = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
+        const readSavedMode = () => readStored(MODE_STORAGE_KEY) === 'advanced' ? 'advanced' : 'simple';
+
+        const loadingEl = document.getElementById('loading');
+        const appEl = document.getElementById('app');
+        const presetSelect = document.getElementById('preset');
+
+        // 楽器プリセットのドロップダウンを構築（保存値があれば初期選択に使う）
+        for (const [key, preset] of Object.entries(INSTRUMENT_PRESETS)) {
+            const opt = document.createElement('option');
+            opt.value = key; opt.textContent = preset.displayName;
+            presetSelect.appendChild(opt);
+        }
+        const savedInstrument = readStored(INSTRUMENT_STORAGE_KEY);
+        const defaultPreset = (savedInstrument && INSTRUMENT_PRESETS[savedInstrument]) ? savedInstrument : 'retro_game';
+        presetSelect.value = defaultPreset;
+
+        // ════ ここが主役: 関数1つで AudioContext・SoundFont(楽器/ドラム)・歌声・録音・MIDI・コードを一括配線 ════
+        // 楽器/ドラムのSoundFontはCDNから動的import、歌声ワーカーは同梱 dist/voice-worker.js を自動解決する。
+        // このデモは自前の #preset を使うため、内蔵のプリセット選択UIは無効化している。
+        const studio = await createDtmStudio({ defaultPreset, features: { presetUI: false } });
+        window.studio = studio;
+
+        const tracksFor = (mode) => mode === 'simple' ? TRACKS_SIMPLE : TRACKS_ADVANCED;
+        const trackIdsFor = (mode) => tracksFor(mode).map((t) => t.id);
 
         let currentMode = readSavedMode();
-        let daw = DTM.mountDAW(document.getElementById('app'), { ...dawBaseOptions, tracks: currentMode === 'simple' ? DTM.TRACKS_SIMPLE : DTM.TRACKS_ADVANCED });
-        window.daw = daw;
+        let daw = null;
 
-        // 保存済みドラムパターンを（再）マウント後のDAWへ復元する。
-        // remount時はMMLラウンドトリップが #drum= を復元するが、"なし"はMMLに乗らないため明示復元する。
+        // 保存済みドラムパターンを（再）マウント後のDAWへ復元する（"なし"はMMLに乗らないため明示復元）。
         const restoreDrum = () => {
             const saved = readStored(DRUM_STORAGE_KEY);
             if (saved) daw.setDrum(saved);
         };
-        restoreDrum();
 
+        // mountEditor がトラック構成ぶんのSoundFontを自動ロードし、#inst= 名も埋め込む。
+        const mountEditor = (mode, mml) => {
+            daw = studio.mountEditor(appEl, {
+                tracks: tracksFor(mode),
+                preset: presetSelect.value,
+                initialMML: mml || undefined,
+                defaultBpm: 120,
+                onDrumChange: (name) => writeStored(DRUM_STORAGE_KEY, name),
+            });
+            window.daw = daw;
+            restoreDrum();
+        };
+        mountEditor(currentMode, '');
+
+        // ── モード切替（simple / advanced）はブラウザを閉じても維持する ──
         const BTN_ACTIVE = 'min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-cyan text-pico-black text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none';
         const BTN_INACTIVE = 'min-h-[40px] px-4 border-2 border-pico-gray bg-pico-black text-pico-gray text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none';
 
@@ -503,99 +377,49 @@
         // 保存されたモードでボタンの見た目を初期化（advanced 復元時に SIMPLE が点灯したままになるのを防ぐ）
         updateModeButtons(currentMode);
 
-        const remountDAW = async (mode) => {
+        const remountDAW = (mode) => {
             if (mode === currentMode) return;
-            const mmlData = daw.getMML();
+            const { full } = daw.getMML();
             daw.destroy();
             currentMode = mode;
-            saveMode(mode);
-            const tracks = mode === 'simple' ? DTM.TRACKS_SIMPLE : DTM.TRACKS_ADVANCED;
-            daw = DTM.mountDAW(document.getElementById('app'), { ...dawBaseOptions, tracks });
-            window.daw = daw;
+            writeStored(MODE_STORAGE_KEY, mode);
             updateModeButtons(mode);
-            await loadPreset(document.getElementById('preset').value);
-            if (mmlData && mmlData.full) {
-                daw.loadMML(mmlData.full);
-            }
-            // MMLに乗らない "なし" 等も含め、保存済みドラムパターンを新DAWへ復元する
-            restoreDrum();
+            // 新しいトラック構成で再マウント。SoundFontロードとMML復元は mountEditor が行う。
+            mountEditor(mode, full);
         };
 
         document.getElementById('mode-simple').addEventListener('click', () => remountDAW('simple'));
         document.getElementById('mode-advanced').addEventListener('click', () => remountDAW('advanced'));
 
-        const presetSelect = document.getElementById('preset');
-        for (const [key, preset] of Object.entries(INSTRUMENT_PRESETS)) {
-            const opt = document.createElement('option');
-            opt.value = key; opt.textContent = preset.displayName;
-            presetSelect.appendChild(opt);
-        }
-        // 保存済みINSTRUMENTがあれば初期値に使う（無効値は無視して既定へフォールバック）
-        const savedInstrument = readStored(INSTRUMENT_STORAGE_KEY);
-        const defaultPreset = (savedInstrument && INSTRUMENT_PRESETS[savedInstrument]) ? savedInstrument : 'retro_game';
-        presetSelect.value = defaultPreset;
-        presetSelect.addEventListener('change', () => loadPreset(presetSelect.value));
+        // ── 楽器プリセット変更（再生中なら一旦停止→ロード→同じ位置から再開）──
+        presetSelect.addEventListener('change', async () => {
+            const v = presetSelect.value;
+            writeStored(INSTRUMENT_STORAGE_KEY, v);
+            daw.setInstrument(v); // MML出力の先頭に #inst= を埋め込む（再生専用ビューが音源解決に使う）
+            const wasPlaying = daw.getPlaybackState() === 'playing';
+            if (wasPlaying) daw.pause();
+            loadingEl.style.display = '';
+            try { await studio.loadPreset(v, trackIdsFor(currentMode)); }
+            finally { loadingEl.style.display = 'none'; if (wasPlaying) daw.play(); }
+        });
 
         // ════ 再生専用ビュー (mountMmlPlayer) ════
-        const { mountMmlPlayer } = DTM;
-        // @@0 klatt … が歌詞トラック。@0 のメロディに音節を1つずつ同期して内蔵synthが歌う。
+        // @@0 klatt … が歌詞トラック。@0 のメロディに音節を1つずつ同期して歌う。
         // モデル名を koe音源キーワード（roze / teto / tsukuyomi / rino / ruko_female / shiyo）に
-        // 変えると、@onjmin/koe のUTAU音源で歌う（例: `@@0 roze ちょうちょう…`）。
+        // 変えると @onjmin/koe のUTAU音源で歌う（例: `@@0 roze ちょうちょう…`）。
+        // 楽器・ドラム・歌声・#inst= 解決はすべて studio.mountPlayer が内部で配線する。
         const SAMPLE_MML = '@0 t135 o5 l8 e d c d e e e4 d d d4 e g g4 r e d c d e e e e d d e d c4 ; @1 o3 l4 c g c g c g c g ; @@0 klatt ちょうちょうちょうちょうなのはにとまれなのはにあいたらさくらにとまれ';
-        // 再生専用ビューの音量をDAWの既定に合わせるための係数（DAW: マスタ50% / ドラム80%）
-        const PLAYER_MASTER = 50;          // ノート音量（mountMmlPlayer の volume オプション 0-100）
-        const PLAYER_DRUM_GAIN = 0.8;       // ドラム velocity に掛ける係数（ドラム音量。マスタはplayer内部で適用済）
-        // プレイヤーの @n（数値）→ 音源キーの対応。プリセットはトラックの役割順で割り当てる。
-        const TRACK_ROLES = ['melody', 'submelody', 'bass', 'chord'];
-        const sfForTrack = (trackId) =>
-            currentMode === 'simple' ? soundFonts[TRACK_ROLES[Number(trackId)]] : soundFonts['t' + trackId];
         let player = null;
-        const mountPlayer = async (mml) => {
+        const mountPlayer = (mml) => {
             if (player) player.destroy();
-            const src = mml || SAMPLE_MML;
-            // MMLに埋め込まれたトップレベル宣言（#inst= / #drum=）を読む
-            const meta = DTM.parseMML(src, {}).meta ?? {};
-            if (meta.instrument && INSTRUMENT_PRESETS[meta.instrument]) {
-                // 宣言された楽器プリセットの音源を用意（未ロードなら読み込む）してSoundFontで再生
-                if (presetSelect.value !== meta.instrument) {
-                    presetSelect.value = meta.instrument;
-                    await loadPreset(meta.instrument);
-                }
-                player = mountMmlPlayer(document.getElementById('player-app'), src, {
-                    // DAWの既定マスタ音量(50%)に合わせる。これが無いと再生専用モードだけ音が倍近く大きくなる
-                    volume: PLAYER_MASTER,
-                    getAudioTime: () => audioCtx.currentTime,
-                    onResumeAudio: () => { if (audioCtx.state === 'suspended') audioCtx.resume(); },
-                    onPlayNote: (e) => {
-                        // 歌詞トラックの歌声は singingVoices の先読みストリーミングが担当（ここには楽器ノートのみ届く）
-                        const sf = sfForTrack(e.trackId);
-                        if (!sf) return;
-                        sf.play({ ctx: audioCtx, destination: gainNode, pitch: e.pitch, volume: e.volume, when: e.when, duration: e.duration });
-                    },
-                    // #drum= はライブラリが解決し、ここにドラムノートとして届く。DAWのドラム音量(80%)×マスタ(50%)に合わせる
-                    onPlayDrum: ({ pitch, velocity, when, duration }) => {
-                        if (!SoundFont_drum.font) return;
-                        SoundFont_drum.play({ ctx: audioCtx, pitch, volume: velocity * PLAYER_DRUM_GAIN, when, duration, destination: drumGainNode });
-                    },
-                    singingVoices: voices,
-                });
-            } else {
-                // 楽器宣言なし（サンプル等）は内蔵の簡易synth＋簡易ドラムで即鳴らす
-                player = mountMmlPlayer(document.getElementById('player-app'), src, { synth: true, volume: PLAYER_MASTER, singingVoices: voices });
-            }
+            // volume:50 はDAWの既定マスタ音量に合わせる係数（再生専用だけ音が倍近く大きくなるのを防ぐ）
+            player = studio.mountPlayer(document.getElementById('player-app'), mml || SAMPLE_MML, { volume: 50 });
             window.player = player;
         };
         mountPlayer(SAMPLE_MML);
-        document.getElementById('player-load-daw').addEventListener('click', async () => {
+        document.getElementById('player-load-daw').addEventListener('click', () => {
             const { full } = daw.getMML();
-            await mountPlayer(full);
-        });
-
-        loadDrum();
-        SoundFont_list.init();
-        SoundFont_list.onload(async () => {
-            nameToKey = await buildNameToKeyMapping();
-            await loadPreset(defaultPreset);
+            mountPlayer(full);
         });
     </script>
 </body>
