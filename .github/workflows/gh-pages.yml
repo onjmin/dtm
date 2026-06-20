@@ -16,17 +16,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js with pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 8
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: "pnpm"
 
       - name: Install dependencies
@@ -35,8 +33,15 @@ jobs:
       - name: Build package
         run: pnpm exec tsup src/index.ts --format esm --dts --out-dir dist
 
-      - name: Add .nojekyll
-        run: touch ./docs/.nojekyll
+      - name: Prepare publish directory
+        run: |
+          rm -rf docs
+          mkdir -p docs/demo
+          cp demo/index.html docs/demo/index.html
+          cp dist/index.mjs docs/demo/index.mjs
+          cp dist/index.d.ts docs/demo/index.d.ts
+          cp README.md docs/README.md
+          touch docs/.nojekyll
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3

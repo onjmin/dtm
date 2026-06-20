@@ -1,7 +1,7 @@
 # @onjmin/dtm
 MML を中間言語に用いた、モバイルファーストな DAW / ピアノロール打ち込みコンポーネント。
 
-- [DEMO](https://onjmin.github.io/dtm/demo)
+- [DEMO](https://onjmin.github.io/koe/demo)
 - [npm](https://www.npmjs.com/package/@onjmin/dtm)
 
 ## インストール
