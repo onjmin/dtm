@@ -1254,7 +1254,7 @@ var KOE_BASE_URL = "https://pub-12482a6b5cbc4c9e906b2e1904cabae5.r2.dev";
 var KOE_VOICEBANKS = {
   tsukuyomi: "\u3064\u304F\u3088\u307F\u3061\u3083\u3093.koe",
   rino: "\u6625\u97F3\u30EA\u30CEver0.3.koe",
-  roze: "\u675F\u97F3\u30ED\u30BCver0.\uFF151(\u591A\u97F3\u968E).koe",
+  roze: "\u675F\u97F3\u30ED\u30BCver0.51(\u591A\u97F3\u968E).koe",
   ruko: "\u6B32\u97F3\u30EB\u30B3\u2640\u6B4C\u9023\u7D9A\u97F3\u666E1.00.koe",
   teto: "\u91CD\u97F3\u30C6\u30C8\u5358\u72EC\u97F3.koe",
   shiyo: "\u9769\u547D\u30B7\u30E8.koe"
