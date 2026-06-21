@@ -4177,6 +4177,18 @@ var VOICE_IMAGES = {
 var STEPS_PER_BEAT2 = 48;
 var PLAN_TIME = 0.5;
 var TICK_INTERVAL_MS = 20;
+var resolveLoopPoint = (point, bpm, stepsPerBar, sps) => {
+  if ("step" in point) {
+    return point.step;
+  }
+  if ("bar" in point) {
+    return Math.max(0, point.bar - 1) * stepsPerBar;
+  }
+  if ("seconds" in point) {
+    return point.seconds / sps;
+  }
+  return 0;
+};
 var createSequencer = (options) => {
   let timeline = [];
   let startTime = 0;
@@ -4186,35 +4198,74 @@ var createSequencer = (options) => {
   let active = false;
   let fromStepValue = 0;
   let trackVolumeMap = /* @__PURE__ */ new Map();
-  let loopLengthSec = 0;
+  let isLooping = false;
+  let loopStartStep = 0;
+  let loopEndStep = 0;
+  let loopStartSec = 0;
+  let loopEndSec = 0;
+  let loopDurationSec = 0;
+  let loopStartIndex = 0;
   let loopBase = 0;
+  let lastPlayStep = 0;
   const secondsPerStep = () => 60 / options.getBpm() / STEPS_PER_BEAT2;
+  const getWrappedPlayStep = (time, sps) => {
+    if (!isLooping || loopDurationSec <= 0 || time < loopEndSec) {
+      return fromStepValue + time / sps;
+    }
+    const elapsedInLoop = (time - loopEndSec) % loopDurationSec;
+    return loopStartStep + elapsedInLoop / sps;
+  };
   const buildTimeline = (fromStep) => {
     timeline = [];
     trackVolumeMap = /* @__PURE__ */ new Map();
     const sps = secondsPerStep();
-    let maxEnd = 0;
+    const bpm = options.getBpm();
+    const stepsPerBar = options.stepsPerBar;
+    const loopOption = options.getLoop?.() ?? false;
+    isLooping = !!loopOption;
+    if (typeof loopOption === "object") {
+      loopStartStep = loopOption.start ? resolveLoopPoint(loopOption.start, bpm, stepsPerBar, sps) : 0;
+      const endVal = loopOption.end ? resolveLoopPoint(loopOption.end, bpm, stepsPerBar, sps) : null;
+      loopEndStep = endVal !== null ? endVal : -1;
+    } else {
+      loopStartStep = 0;
+      loopEndStep = -1;
+    }
+    const startLimit = isLooping ? Math.min(fromStep, loopStartStep) : fromStep;
+    let maxEndStep = 0;
     for (const track of options.getTracks()) {
       trackVolumeMap.set(track.id, track.volume);
       for (const note of track.notes) {
+        if (note.startStep < startLimit) continue;
         const relativeStart = note.startStep - fromStep;
-        if (relativeStart < 0) continue;
-        const velocity = note.velocity ?? DEFAULT_PLAYBACK_VELOCITY;
         const when = relativeStart * sps;
         const duration = note.durationSteps * sps;
-        maxEnd = Math.max(maxEnd, when + duration);
+        maxEndStep = Math.max(maxEndStep, note.startStep + note.durationSteps);
         timeline.push({
           trackId: track.id,
           pitch: note.pitch,
           volume: track.volume / 100,
-          velocity,
+          velocity: note.velocity ?? DEFAULT_PLAYBACK_VELOCITY,
           when,
           duration
         });
       }
     }
     timeline.sort((a, b) => a.when - b.when);
-    loopLengthSec = maxEnd;
+    if (loopEndStep === -1) {
+      loopEndStep = maxEndStep;
+    }
+    loopStartSec = (loopStartStep - fromStep) * sps;
+    loopEndSec = (loopEndStep - fromStep) * sps;
+    loopDurationSec = loopEndSec - loopStartSec;
+    loopStartIndex = 0;
+    while (loopStartIndex < timeline.length) {
+      const noteStartStep = fromStep + timeline[loopStartIndex].when / sps;
+      if (noteStartStep >= loopStartStep - 1e-4) {
+        break;
+      }
+      loopStartIndex++;
+    }
   };
   const scheduleTick = () => {
     const sps = secondsPerStep();
@@ -4223,14 +4274,15 @@ var createSequencer = (options) => {
     for (const track of options.getTracks()) {
       trackVolumeMap.set(track.id, track.volume);
     }
-    const loop = options.getLoop?.() ?? false;
     while (true) {
-      if (nowIndex >= timeline.length) {
-        if (!loop || loopLengthSec <= 0) break;
-        nowIndex = 0;
-        loopBase += loopLengthSec;
+      let ev = timeline[nowIndex];
+      if (nowIndex >= timeline.length || isLooping && ev && ev.when >= loopEndSec) {
+        if (!isLooping || loopDurationSec <= 0) break;
+        nowIndex = loopStartIndex;
+        loopBase += loopDurationSec;
+        ev = timeline[nowIndex];
       }
-      const ev = timeline[nowIndex];
+      if (!ev) break;
       const _when = ev.when + loopBase - time;
       if (_when > PLAN_TIME) break;
       nowIndex++;
@@ -4249,7 +4301,7 @@ var createSequencer = (options) => {
     const pattern = options.getDrumPattern();
     if (pattern && pattern.length > 0) {
       const { stepsPerBar } = options;
-      const currentStep = (fromStepValue * sps + (options.getAudioTime() - startTime)) / sps;
+      const currentStep = getWrappedPlayStep(time, sps);
       const currentStepInBar = currentStep % stepsPerBar;
       const nextStep = currentStepInBar + 4;
       const crossedBar = currentStepInBar < 4;
@@ -4266,7 +4318,30 @@ var createSequencer = (options) => {
         });
       }
     }
-    if (!loop) {
+    if (time >= 0) {
+      const currentStep = getWrappedPlayStep(time, sps);
+      if (options.cues && options.cues.length > 0 && options.onCue) {
+        const bpm = options.getBpm();
+        const stepsPerBar = options.stepsPerBar;
+        const isCueCrossed = (cueStep, prevStep, currStep) => {
+          if (currStep >= prevStep) {
+            return cueStep > prevStep && cueStep <= currStep;
+          } else {
+            const reachedEnd = cueStep > prevStep && cueStep <= loopEndStep;
+            const startedNew = cueStep >= loopStartStep && cueStep <= currStep;
+            return reachedEnd || startedNew;
+          }
+        };
+        for (const cue of options.cues) {
+          const cueStep = resolveLoopPoint(cue.time, bpm, stepsPerBar, sps);
+          if (isCueCrossed(cueStep, lastPlayStep, currentStep)) {
+            options.onCue(cue.id);
+          }
+        }
+      }
+      lastPlayStep = currentStep;
+    }
+    if (!isLooping) {
       const last = timeline[timeline.length - 1];
       const lastWhen = last?.when ?? 0;
       const lastDuration = last?.duration ?? 0;
@@ -4280,7 +4355,7 @@ var createSequencer = (options) => {
     if (!active) return;
     const sps = secondsPerStep();
     const time = options.getAudioTime() - startTime;
-    options.onTick(fromStepValue + time / sps);
+    options.onTick(getWrappedPlayStep(time, sps));
     animationId = requestAnimationFrame(animate);
   };
   const stop = () => {
@@ -4302,8 +4377,17 @@ var createSequencer = (options) => {
     if (timeline.length === 0 && !options.getDrumPattern()?.length) return;
     active = true;
     startTime = options.getAudioTime() + START_DELAY;
+    const sps = secondsPerStep();
     nowIndex = 0;
+    while (nowIndex < timeline.length) {
+      const noteStartStep = fromStepValue + timeline[nowIndex].when / sps;
+      if (noteStartStep >= fromStepValue - 1e-4) {
+        break;
+      }
+      nowIndex++;
+    }
     loopBase = 0;
+    lastPlayStep = fromStepValue - 1e-4;
     intervalId = setInterval(scheduleTick, TICK_INTERVAL_MS);
     animationId = requestAnimationFrame(animate);
   };
@@ -8257,6 +8341,8 @@ var playMML = (mml, options = {}) => {
     getDrumPattern: () => drumPattern,
     getSoloTrackId: () => null,
     getLoop: () => options.loop ?? false,
+    cues: options.cues,
+    onCue: options.onCue,
     getAudioTime: () => ctx.currentTime,
     onPlayNote: (e) => {
       options.onPlayNote?.(e);

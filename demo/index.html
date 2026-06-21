@@ -290,6 +290,118 @@
         <div id="player-app"></div>
     </div>
 
+    <!-- ════ ヘッドレスBGM再生デモ (playMML) ════ -->
+    <div class="max-w-4xl mx-auto px-3 pb-8">
+        <details class="game-win bg-pico-navy overflow-hidden group">
+            <summary class="flex items-center justify-between px-4 py-3 cursor-pointer select-none focus:outline-none list-none [&::-webkit-details-marker]:hidden">
+                <div class="flex items-center gap-3">
+                    <span class="text-pico-orange text-xs uppercase tracking-widest shrink-0">► HEADLESS BGM PLAYER</span>
+                    <span class="text-pico-cyan text-xs font-pixel shrink-0">
+                        playMML<span class="text-pico-yellow">()</span>
+                    </span>
+                    <span class="text-pico-lavend text-[10px] uppercase tracking-widest border border-pico-orange/40 px-1.5 py-0.5 rounded-sm">
+                        ゲーム開発者向け / FOR GAME DEVS
+                    </span>
+                    <button id="headless-info-btn" class="w-5 h-5 flex items-center justify-center border border-pico-gray bg-pico-navy text-pico-lavend cursor-pointer text-[10px] hover:text-pico-cyan hover:border-pico-cyan active:translate-x-[1px] active:translate-y-[1px] shadow-[1px_1px_0_#000] font-pixel shrink-0" title="ヘッドレスBGM再生API解説">i</button>
+                </div>
+                <span class="text-pico-cyan text-xs font-bold transition-transform group-open:rotate-180">▼</span>
+            </summary>
+
+            <div class="bg-pico-black p-4 border-t-2 border-pico-black flex flex-col gap-4">
+                <!-- note for devs -->
+                <div class="text-[10px] text-pico-lavend bg-pico-navy/40 p-2 border border-pico-cyan/20 leading-normal">
+                    ※ 本デモは画面を持たない音源再生API <span class="text-pico-cyan">playMML()</span> の動作確認用です。任意の小節や秒数でのBGMループ境界の制御、サビなどの位置を正確に検出するタイムラインイベント（Cues）の発火など、Webゲーム開発向けの高度な機能をシミュレートできます。<br>
+                    <span class="text-pico-yellow">※ ロード時間と帯域を節約するため、本デモでの playMML() はSoundFontを使用せず軽量な内蔵矩形波シンセで発音します（ゲームへの組み込み時は、フックを介して任意の音源に差し替え可能です）。</span>
+                </div>
+
+                <!-- MML Input and Load from DAW button -->
+                <div class="flex flex-col gap-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-pico-lavend text-xs">MML STRING:</span>
+                        <button id="headless-load-daw" class="px-2 py-1 bg-pico-navy border border-pico-cyan text-pico-cyan text-[10px] uppercase cursor-pointer hover:bg-pico-cyan hover:text-pico-black">
+                            LOAD FROM DAW
+                        </button>
+                    </div>
+                    <textarea id="headless-mml-input" class="w-full h-24 p-2 bg-pico-navy border-2 border-pico-gray text-pico-white font-mono text-xs focus:outline-none focus:border-pico-cyan"></textarea>
+                </div>
+
+                <!-- Loop Config and Cues -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Loop Settings -->
+                    <div class="border border-pico-gray/40 p-3 bg-pico-navy/30">
+                        <div class="text-pico-yellow text-xs uppercase tracking-widest mb-3 border-b border-pico-gray/30 pb-1">Loop Configuration</div>
+                        <div class="flex flex-col gap-3">
+                            <label class="flex items-center gap-2 cursor-pointer text-xs">
+                                <input type="checkbox" id="headless-loop-enable" checked class="accent-pico-cyan">
+                                <span>ENABLE LOOP</span>
+                            </label>
+                            <div id="headless-loop-range-container" class="flex flex-col gap-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-pico-lavend text-xs w-20">START:</span>
+                                    <select id="headless-loop-start-type" class="game-win bg-pico-black text-pico-white text-xs px-2 py-1 border-0 focus:outline-none cursor-pointer">
+                                        <option value="bar">BAR</option>
+                                        <option value="step">STEP</option>
+                                        <option value="seconds">SECONDS</option>
+                                    </select>
+                                    <input type="number" id="headless-loop-start-val" value="2" class="w-16 bg-pico-black border border-pico-gray p-1 text-center text-xs text-pico-white">
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-pico-lavend text-xs w-20">END (OPT):</span>
+                                    <select id="headless-loop-end-type" class="game-win bg-pico-black text-pico-white text-xs px-2 py-1 border-0 focus:outline-none cursor-pointer">
+                                        <option value="none">NONE (SONG END)</option>
+                                        <option value="bar">BAR</option>
+                                        <option value="step">STEP</option>
+                                        <option value="seconds">SECONDS</option>
+                                    </select>
+                                    <input type="number" id="headless-loop-end-val" value="4" disabled class="w-16 bg-pico-black border border-pico-gray p-1 text-center text-xs text-pico-white opacity-40">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cues Definition -->
+                    <div class="border border-pico-gray/40 p-3 bg-pico-navy/30">
+                        <div class="text-pico-yellow text-xs uppercase tracking-widest mb-3 border-b border-pico-gray/30 pb-1">Cues (Checkpoints)</div>
+                        <div class="flex flex-col gap-2 max-h-[160px] overflow-y-auto pr-1" id="headless-cues-list">
+                            <!-- Dynamic items -->
+                        </div>
+                        <button id="headless-add-cue-btn" class="mt-2 w-full py-1 bg-pico-black border border-pico-gray text-pico-lavend text-xs uppercase cursor-pointer hover:border-pico-cyan hover:text-pico-cyan">
+                            + ADD CUE POINT
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Controls and Event Log -->
+                <div class="flex flex-col md:flex-row gap-4 items-stretch">
+                    <!-- Action Buttons -->
+                    <div class="flex flex-col gap-2 shrink-0 justify-center">
+                        <button id="headless-play-btn" class="min-h-[40px] px-6 border-2 border-pico-orange bg-pico-black text-pico-orange text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+                            ▶ PLAY BGM
+                        </button>
+                        <button id="headless-stop-btn" class="min-h-[40px] px-6 border-2 border-pico-red bg-pico-black text-pico-red text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+                            ■ STOP
+                        </button>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="text-pico-lavend text-[10px]">VOLUME:</span>
+                            <input type="range" id="headless-vol" min="0" max="100" value="50" class="grow accent-pico-orange">
+                        </div>
+                    </div>
+
+                    <!-- Event Console -->
+                    <div class="grow flex flex-col border border-pico-gray/40 bg-pico-navy/10 p-3 min-h-[120px] max-h-[160px] overflow-hidden">
+                        <div class="flex justify-between items-center border-b border-pico-gray/30 pb-1 mb-2">
+                            <span class="text-pico-green text-xs uppercase tracking-widest">CONSOLE OUTPUT</span>
+                            <button id="headless-console-clear" class="text-pico-lavend hover:text-pico-white text-[10px] cursor-pointer">CLEAR</button>
+                        </div>
+                        <div id="headless-console" class="grow overflow-y-auto font-mono text-[10px] text-pico-silver flex flex-col gap-1 pr-1">
+                            <div class="text-pico-lavend">Console initialized. Ready to play BGM...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </details>
+    </div>
+
     <!-- ════ フッター ════ -->
     <footer class="max-w-4xl mx-auto px-3 pb-4 text-pico-gray text-xs uppercase tracking-widest">
         <div class="flex gap-4 flex-wrap">
@@ -309,7 +421,7 @@
             ? 'http://localhost:40298/dist/index.mjs'
             : './index.mjs');
 
-        const { createDtmStudio, INSTRUMENT_PRESETS, TRACKS_SIMPLE, TRACKS_ADVANCED } = DTM;
+        const { createDtmStudio, playMML, INSTRUMENT_PRESETS, TRACKS_SIMPLE, TRACKS_ADVANCED } = DTM;
 
         // ── 永続化（モード / 楽器 / ドラム）。MML読込で #inst= / #drum= が自動入力され得るため値も保存する ──
         const MODE_STORAGE_KEY = 'dtm-mode';
@@ -426,6 +538,200 @@
             mountPlayer(full);
         });
 
+        // ════ ヘッドレスBGM再生デモ (playMML) ════
+        const HEADLESS_SAMPLE_MML = `#drum=dance #volume=50;\n@0 t135 v100 o4e8 r8 e8 e8 g+8 r8 f+8 r8 c8 b8 b8 b8 g+8 r8 e8 g+8 >e8 r4 e8 e8 r8 d+8 c+8 <b8 >c+8 <b8 a8 g+8 r8 d8 r8 e8 e8 e8 e8 c+8 c+8 a8 f+8 g+8 f+8 e8 g+8 f+8 c8 g+8 f+8 e8 r8 e8 e8 c+8 r8 f+8 r8 g+8 f+8 e8 g+8 e8 r8 c+8 d+8;\n@1 t135 v100 o6e8 r1 r1 r1 r4 e8 b8 a24 b24 a24 g+8 f+8 g+8 r1 r1 r1 e8 f+8 g8 g+8 f+24 g+24 f+24 e8 g+8 e8;\n@2 t135 v100 o2f+8 >f+8 <f+8 >f+8 <f+8 >f+8 <f+8 >f+8 <g+8 >g+8 <g+8 >g+8 <g+8 >g+8 r16 <g+16 >g+8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <f+8 >f+8 <f+8 >f+8 <f+8 >f+8 <f+8 >f+8 <g+8 >g+8 <g+8 >g+8 <g+8 >g+8 <g+8 >g+8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <a8 >a8 <a8 >a8 <a8 >a8 <a8 >a8;\n@3 t135 v100 [o3f+o3ao4c+o4e]2 r2 [o3g+o4co4d+o4f+o5e]2 r2 [o3c+o3eo3g+o3b]2 r2 [o3eo3g+o3bo4d]2 r2 [o3f+o3ao4c+o4e]2 r2 [o3g+o4co4d+o4f+o5e]2 r2 [o3c+o3eo3g+o3b]2 r2 [o3f+o3ao4g+o4c+]2 [o4eo3ao3f+]2;\n#end;`;
+        let activeHeadlessPlayback = null;
+        let cueList = [
+            { id: "intro_end", type: "step", val: 96 },
+            { id: "chorus_start", type: "bar", val: 2 },
+            { id: "chorus_mid", type: "seconds", val: 4.5 }
+        ];
+
+        const consoleLog = (msg, colorClass = "text-pico-silver") => {
+            const consoleEl = document.getElementById("headless-console");
+            if (!consoleEl) return;
+            const timeStr = new Date().toLocaleTimeString(undefined, { hour12: false });
+            const line = document.createElement("div");
+            line.className = colorClass;
+            line.textContent = `[${timeStr}] ${msg}`;
+            consoleEl.appendChild(line);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        };
+
+        const renderCuesList = () => {
+            const container = document.getElementById("headless-cues-list");
+            if (!container) return;
+            container.innerHTML = "";
+            if (cueList.length === 0) {
+                container.innerHTML = `<div class="text-pico-gray text-[10px] text-center py-2">NO CUES DEFINED</div>`;
+                return;
+            }
+            cueList.forEach((cue, idx) => {
+                const row = document.createElement("div");
+                row.className = "flex items-center gap-1 bg-pico-black/40 p-1 border border-pico-gray/20 text-xs";
+                row.innerHTML = `
+                    <input type="text" value="${cue.id}" placeholder="ID" class="w-20 bg-pico-black text-pico-white border border-pico-gray p-1 text-[10px] cue-id-input" data-idx="${idx}">
+                    <select class="bg-pico-black text-pico-white text-[10px] p-1 border border-pico-gray cue-type-select" data-idx="${idx}">
+                        <option value="bar" ${cue.type === 'bar' ? 'selected' : ''}>BAR</option>
+                        <option value="step" ${cue.type === 'step' ? 'selected' : ''}>STEP</option>
+                        <option value="seconds" ${cue.type === 'seconds' ? 'selected' : ''}>SEC</option>
+                    </select>
+                    <input type="number" value="${cue.val}" class="w-12 bg-pico-black text-pico-white border border-pico-gray p-1 text-[10px] text-center cue-val-input" data-idx="${idx}">
+                    <button class="ml-auto text-pico-red hover:text-pico-white text-xs cursor-pointer px-1 cue-del-btn" data-idx="${idx}">&times;</button>
+                `;
+                container.appendChild(row);
+            });
+
+            // Hook up events
+            container.querySelectorAll(".cue-id-input").forEach(input => {
+                input.addEventListener("input", (e) => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    cueList[idx].id = e.target.value;
+                });
+            });
+            container.querySelectorAll(".cue-type-select").forEach(select => {
+                select.addEventListener("change", (e) => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    cueList[idx].type = e.target.value;
+                });
+            });
+            container.querySelectorAll(".cue-val-input").forEach(input => {
+                input.addEventListener("input", (e) => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    cueList[idx].val = parseFloat(e.target.value) || 0;
+                });
+            });
+            container.querySelectorAll(".cue-del-btn").forEach(btn => {
+                btn.addEventListener("click", (e) => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    cueList.splice(idx, 1);
+                    renderCuesList();
+                });
+            });
+        };
+
+        document.getElementById("headless-add-cue-btn").addEventListener("click", () => {
+            cueList.push({ id: `cue_${cueList.length + 1}`, type: "bar", val: 1 });
+            renderCuesList();
+        });
+
+        document.getElementById("headless-console-clear").addEventListener("click", () => {
+            document.getElementById("headless-console").innerHTML = "";
+        });
+
+        document.getElementById("headless-load-daw").addEventListener("click", () => {
+            if (daw) {
+                const { full } = daw.getMML();
+                document.getElementById("headless-mml-input").value = full;
+                consoleLog("Loaded MML from DAW editor.");
+            }
+        });
+
+        document.getElementById("headless-loop-enable").addEventListener("change", (e) => {
+            const container = document.getElementById("headless-loop-range-container");
+            container.style.opacity = e.target.checked ? "1" : "0.4";
+            container.querySelectorAll("input, select").forEach(el => {
+                if (el.id !== "headless-loop-end-val" || document.getElementById("headless-loop-end-type").value !== "none") {
+                    el.disabled = !e.target.checked;
+                }
+            });
+        });
+
+        document.getElementById("headless-loop-end-type").addEventListener("change", (e) => {
+            const input = document.getElementById("headless-loop-end-val");
+            const enabled = e.target.value !== "none" && document.getElementById("headless-loop-enable").checked;
+            input.disabled = !enabled;
+            input.style.opacity = enabled ? "1" : "0.4";
+        });
+
+        document.getElementById("headless-play-btn").addEventListener("click", async () => {
+            if (activeHeadlessPlayback) {
+                activeHeadlessPlayback.destroy();
+                activeHeadlessPlayback = null;
+            }
+
+            const mml = document.getElementById("headless-mml-input").value || HEADLESS_SAMPLE_MML;
+            const vol = parseInt(document.getElementById("headless-vol").value);
+
+            // Resolve LoopConfig
+            const loopEnabled = document.getElementById("headless-loop-enable").checked;
+            let loopOption = false;
+            if (loopEnabled) {
+                const startType = document.getElementById("headless-loop-start-type").value;
+                const startVal = parseFloat(document.getElementById("headless-loop-start-val").value) || 0;
+                const endType = document.getElementById("headless-loop-end-type").value;
+                const endVal = parseFloat(document.getElementById("headless-loop-end-val").value) || 0;
+
+                const startConfig = {};
+                startConfig[startType] = startVal;
+
+                let endConfig = null;
+                if (endType !== "none") {
+                    endConfig = {};
+                    endConfig[endType] = endVal;
+                }
+
+                loopOption = {
+                    start: startConfig,
+                    ...(endConfig ? { end: endConfig } : {})
+                };
+            }
+
+            // Resolve cues
+            const resolvedCues = cueList.filter(c => c.id.trim() !== "").map(c => {
+                const timeConfig = {};
+                timeConfig[c.type] = c.val;
+                return {
+                    id: c.id,
+                    time: timeConfig
+                };
+            });
+
+            consoleLog(`Starting playMML(). Loop: ${JSON.stringify(loopOption)}, Cues: ${resolvedCues.length} registered`, "text-pico-yellow");
+
+            try {
+                const audioContext = studio.audioContext;
+                if (audioContext.state === "suspended") {
+                    await audioContext.resume();
+                }
+                activeHeadlessPlayback = playMML(mml, {
+                    audioContext,
+                    volume: vol,
+                    loop: loopOption,
+                    cues: resolvedCues,
+                    onCue: (cueId) => {
+                        consoleLog(`CUE ACTIVATED: ${cueId}`, "text-pico-green font-bold");
+                    },
+                    onStop: () => {
+                        consoleLog("BGM playback stopped.", "text-pico-red");
+                    }
+                });
+            } catch (err) {
+                consoleLog(`Error playing BGM: ${err.message}`, "text-pico-red");
+            }
+        });
+
+        document.getElementById("headless-stop-btn").addEventListener("click", () => {
+            if (activeHeadlessPlayback) {
+                activeHeadlessPlayback.destroy();
+                activeHeadlessPlayback = null;
+                consoleLog("Stopped playMML() and cleaned context.");
+            } else {
+                consoleLog("No active BGM playing.");
+            }
+        });
+
+        document.getElementById("headless-vol").addEventListener("input", (e) => {
+            const vol = parseInt(e.target.value);
+            if (activeHeadlessPlayback) {
+                activeHeadlessPlayback.setVolume(vol);
+            }
+        });
+
+        // Initialize Headless demo
+        document.getElementById("headless-mml-input").value = HEADLESS_SAMPLE_MML;
+        renderCuesList();
+
         // ── モード解説モーダル ──
         const modeInfoBtn = document.getElementById('mode-info');
         const modeModalOverlay = document.getElementById('mode-modal-overlay');
@@ -440,6 +746,25 @@
         modeModalOverlay.addEventListener('click', (e) => {
             if (e.target === modeModalOverlay) {
                 modeModalOverlay.classList.add('hidden');
+            }
+        });
+
+        // ── ヘッドレスBGM解説モーダル ──
+        const headlessInfoBtn = document.getElementById('headless-info-btn');
+        const headlessModalOverlay = document.getElementById('headless-modal-overlay');
+        const headlessModalClose = document.getElementById('headless-modal-close');
+
+        headlessInfoBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            headlessModalOverlay.classList.remove('hidden');
+        });
+        headlessModalClose.addEventListener('click', () => {
+            headlessModalOverlay.classList.add('hidden');
+        });
+        headlessModalOverlay.addEventListener('click', (e) => {
+            if (e.target === headlessModalOverlay) {
+                headlessModalOverlay.classList.add('hidden');
             }
         });
     </script>
@@ -471,6 +796,59 @@
                         <li>役割の制限や自動の振り分けはなく、どこに何の音でも自由に置けます。</li>
                     </ul>
                     <p class="text-pico-lavend mt-1">※MIDIを読み込むと、ファイルのトラック構成がそのまま反映されます（1対1）。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════ ヘッドレスBGM解説モーダル ════ -->
+    <div id="headless-modal-overlay" class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden">
+        <div class="game-win bg-pico-navy max-w-lg w-full max-h-[85vh] flex flex-col overflow-hidden text-pico-white font-pixel">
+            <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
+                <span class="text-pico-yellow text-sm font-bold">playMML() API & デモ解説</span>
+                <button id="headless-modal-close" class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none">&times;</button>
+            </div>
+            <div class="p-4 overflow-y-auto text-xs leading-relaxed flex flex-col gap-4">
+                <div>
+                    <h4 class="text-pico-cyan text-sm font-bold mb-1">■ 既存の音声再生方式（HTML5 audio等）との違い</h4>
+                    <ul class="list-disc pl-4 mt-1 text-pico-lavend flex flex-col gap-2">
+                        <li>
+                            <strong class="text-pico-white">小節・ステップ精度でのループ制御</strong><br>
+                            一般的なオーディオファイル（MP3/OGG等）を再生するAPIでは、秒数（Time）やサンプル数でループを定義します。一方、<code class="text-pico-cyan">playMML()</code> はMML楽譜情報を内部ステップ単位で解釈し、Web Audio API 上にスケジュールを先読み予約するため、拍のタイミングと同期したシームレスループが可能です。
+                        </li>
+                        <li>
+                            <strong class="text-pico-white">再生位置に応じたコールバック発火 (Cues)</strong><br>
+                            特定の小節（Bar）、ステップ（Step）、秒数（Seconds）を再生ヘッドが通過した瞬間にコールバック（<code class="text-pico-orange">onCue</code>）を実行できます。再生時間を毎フレーム手動監視するロジックを実装することなく、音楽同期のゲーム演出が実装可能です。
+                        </li>
+                        <li>
+                            <strong class="text-pico-white">AudioContext と出力先 (Destination) の注入</strong><br>
+                            すでに効果音（SE）再生用などで利用している <code class="text-pico-cyan">AudioContext</code> や、出力先ノード（ミキサー等）を外部から渡すことができます。これにより、ゲーム全体の再生系統を統一できます。
+                        </li>
+                    </ul>
+                </div>
+                <div class="border-t border-pico-gray/30 pt-3">
+                    <h4 class="text-pico-cyan text-sm font-bold mb-1">■ 音色の違いについて（簡易シンセサイザーの採用）</h4>
+                    <p class="text-pico-lavend">
+                        本エディタ（編集UI）や再生専用UIでは、CDNから大容量の高品質なSoundFont（ピアノやベース等の実音サンプル）をロードして鳴らしていますが、ヘッドレス再生関数 <code class="text-pico-cyan">playMML()</code> はデフォルトで<strong class="text-pico-white">ネットワーク非依存の軽量な簡易矩形波（Square Wave）シンセ</strong>を使用しています。
+                    </p>
+                    <p class="text-pico-lavend mt-1">
+                        これは、ゲームへの組み込み時に音源ロード待ちによる起動遅延や不要なデータ通信を防ぐためです。開発時には <code class="text-pico-orange">onPlayNote</code> フックを介して、自前のシンセサイザーやロード済みのSoundFontエンジンへ自由に接続し、音色を差し替えることができます。
+                    </p>
+                </div>
+                <div class="border-t border-pico-gray/30 pt-3">
+                    <h4 class="text-pico-cyan text-sm font-bold mb-1">■ デモでの体験方法</h4>
+                    <ul class="list-disc pl-4 mt-1 text-pico-lavend flex flex-col gap-1.5">
+                        <li>
+                            <strong class="text-pico-white">イントロとループの繋ぎ目を聴く</strong><br>
+                            1. 上のDAWエディタで、1小節目に簡単なイントロ、2小節目以降にメインフレーズを書きます。<br>
+                            2. 本セクションの「LOAD FROM DAW」を押し、<code class="text-pico-cyan">START: BAR 2</code>（2小節目からループ）に設定して「PLAY BGM」で再生します。<br>
+                            3. 1周目はイントロから流れますが、2周目以降はイントロを飛ばして2小節目に綺麗に戻るループを体験できます。
+                        </li>
+                        <li>
+                            <strong class="text-pico-white">イベント発火をコンソールで見る</strong><br>
+                            Cueリストに登録されたポイント（デフォルトで <code class="text-pico-cyan">chorus_start</code> = <code class="text-pico-cyan">BAR 2</code> 等）を通過した瞬間、CONSOLE OUTPUTにリアルタイムに通知が出力されます。
+                        </li>
+                    </ul>
                 </div>
             </div>
         </div>
