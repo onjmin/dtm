@@ -432,60 +432,190 @@ var QUALITY_BY_PCSET = (() => {
   }
   return map;
 })();
-var detectChord = (notes, options = {}) => {
-  if (!notes.length) return [];
-  const { flat = false } = options;
-  const pcs = [...new Set(notes.map(toPitchClass))].sort((a, b) => a - b);
-  const bass = toPitchClass(
-    options.bass ?? notes.reduce((m, v) => Math.min(m, v), notes[0])
-  );
-  const scored = [];
-  for (const root of pcs) {
-    const relSet = new Set(pcs.map((pc) => toPitchClass(pc - root)));
-    for (const def of QUALITY_BY_PCSET.values()) {
-      let matchCount = 0;
-      let hasRoot = false;
-      for (const pc of def.pitchClasses) {
-        if (relSet.has(pc)) {
-          matchCount++;
-          if (pc === 0) hasRoot = true;
-        }
-      }
-      if (!hasRoot) continue;
-      if (matchCount < Math.min(2, def.pitchClasses.length)) continue;
-      const missingCount = def.pitchClasses.length - matchCount;
-      let extraCount = 0;
-      const defSet = new Set(def.pitchClasses);
-      for (const pc of relSet) {
-        if (!defSet.has(pc)) {
-          extraCount++;
-        }
-      }
-      const score = matchCount * 2 - missingCount * 1 - extraCount * 0.5;
-      const rootSymbol = noteName(root, flat) + def.quality;
-      const inversion = root !== bass;
-      scored.push({
-        score,
-        priority: def.priority,
-        candidate: {
-          symbol: inversion ? `${rootSymbol}/${noteName(bass, flat)}` : rootSymbol,
-          rootSymbol,
-          root,
-          quality: def.quality,
-          bass,
-          inversion
-        }
+var MAJOR_PROFILE = [
+  6.35,
+  2.23,
+  3.48,
+  2.33,
+  4.38,
+  4.09,
+  2.52,
+  5.19,
+  2.39,
+  3.66,
+  2.29,
+  2.88
+];
+var MINOR_PROFILE = [
+  6.33,
+  2.68,
+  3.52,
+  5.38,
+  2.6,
+  3.53,
+  2.54,
+  4.75,
+  3.98,
+  2.69,
+  3.34,
+  3.17
+];
+var mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+var pearson = (a, b) => {
+  const ma = mean(a);
+  const mb = mean(b);
+  let num = 0;
+  let da = 0;
+  let db = 0;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i] - ma;
+    const y = b[i] - mb;
+    num += x * y;
+    da += x * x;
+    db += y * y;
+  }
+  const den = Math.sqrt(da * db);
+  return den === 0 ? 0 : num / den;
+};
+var keyName = (tonic, mode, flat) => `${noteName(tonic, flat)} ${mode}`;
+var stripScore = (c) => ({
+  tonic: c.tonic,
+  mode: c.mode,
+  name: c.name
+});
+var sameKey = (a, b) => a.tonic === b.tonic && a.mode === b.mode;
+var buildHistogram = (notes) => {
+  const h = new Array(12).fill(0);
+  for (const n of notes) {
+    if (typeof n === "number") h[toPitchClass(n)] += 1;
+    else h[toPitchClass(n.pitch)] += n.duration ?? 1;
+  }
+  return h;
+};
+var windowHistogram = (notes, start, end) => {
+  const h = new Array(12).fill(0);
+  for (const n of notes) {
+    if (n.duration <= 0) {
+      if (n.when >= start && n.when < end) h[toPitchClass(n.pitch)] += 1;
+      continue;
+    }
+    const s = Math.max(n.when, start);
+    const e = Math.min(n.when + n.duration, end);
+    const overlap = e - s;
+    if (overlap > 0) h[toPitchClass(n.pitch)] += overlap;
+  }
+  return h;
+};
+var rankKeys = (histogram, flat) => {
+  const candidates = [];
+  for (let tonic = 0; tonic < 12; tonic++) {
+    for (const mode of ["major", "minor"]) {
+      const profile = mode === "major" ? MAJOR_PROFILE : MINOR_PROFILE;
+      const rotated = histogram.map(
+        (_, pc) => profile[toPitchClass(pc - tonic)]
+      );
+      candidates.push({
+        tonic,
+        mode,
+        name: keyName(tonic, mode, flat),
+        score: pearson(histogram, rotated)
       });
     }
   }
-  scored.sort((a, b) => {
-    if (Math.abs(a.score - b.score) > 1e-3) return b.score - a.score;
-    if (a.candidate.inversion !== b.candidate.inversion)
-      return a.candidate.inversion ? 1 : -1;
-    if (a.priority !== b.priority) return a.priority - b.priority;
-    return a.candidate.root - b.candidate.root;
-  });
-  return scored.map((s) => s.candidate);
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates;
+};
+var detectKey = (notes, options = {}) => {
+  if (!notes.length) return [];
+  const { flat = false } = options;
+  const histogram = buildHistogram(notes);
+  if (histogram.every((v) => v === 0)) return [];
+  return rankKeys(histogram, flat);
+};
+var coalesce = (segments) => {
+  const out = [];
+  for (const s of segments) {
+    const last = out[out.length - 1];
+    if (last && sameKey(last.key, s.key)) {
+      last.duration = s.when + s.duration - last.when;
+    } else {
+      out.push({ ...s });
+    }
+  }
+  return out;
+};
+var mergeShortSegments = (segments, min) => {
+  if (min <= 0) return segments;
+  const result = segments.map((s) => ({ ...s }));
+  let i = 0;
+  while (i < result.length && result.length > 1) {
+    if (result[i].duration >= min) {
+      i++;
+      continue;
+    }
+    if (i > 0) {
+      result[i - 1].duration += result[i].duration;
+      result.splice(i, 1);
+    } else {
+      result[i + 1].when = result[i].when;
+      result[i + 1].duration += result[i].duration;
+      result.splice(i, 1);
+    }
+  }
+  return coalesce(result);
+};
+var detectKeyChanges = (notes, options = {}) => {
+  if (!notes.length) return [];
+  const { flat = false } = options;
+  const start = notes.reduce(
+    (m, n) => Math.min(m, n.when),
+    Number.POSITIVE_INFINITY
+  );
+  const end = notes.reduce(
+    (m, n) => Math.max(m, n.when + Math.max(n.duration, 0)),
+    Number.NEGATIVE_INFINITY
+  );
+  const span = end - start;
+  if (span <= 0) {
+    const top = detectKey(
+      notes.map((n) => ({ pitch: n.pitch, duration: Math.max(n.duration, 1) })),
+      { flat }
+    )[0];
+    return top ? [{ key: stripScore(top), when: start, duration: 0 }] : [];
+  }
+  const windowSize = options.windowSize ?? span / 4;
+  const hopSize = options.hopSize ?? windowSize / 2;
+  const minSegmentDuration = options.minSegmentDuration ?? 0;
+  const switchMargin = options.switchMargin ?? 0.08;
+  const segments = [];
+  for (let t = start; t < end - 1e-9; t += hopSize) {
+    const regionEnd = Math.min(t + hopSize, end);
+    const winEnd = Math.min(t + windowSize, end);
+    const winStart = Math.max(start, winEnd - windowSize);
+    const histogram = windowHistogram(notes, winStart, winEnd);
+    const last = segments[segments.length - 1];
+    if (histogram.every((v) => v === 0)) {
+      if (last) last.duration = regionEnd - last.when;
+      continue;
+    }
+    const candidates = rankKeys(histogram, flat);
+    let chosen = candidates[0];
+    if (last) {
+      const current = candidates.find((c) => sameKey(c, last.key));
+      if (current && chosen.score - current.score <= switchMargin)
+        chosen = current;
+    }
+    if (last && sameKey(last.key, chosen)) {
+      last.duration = regionEnd - last.when;
+    } else {
+      segments.push({
+        key: stripScore(chosen),
+        when: t,
+        duration: regionEnd - t
+      });
+    }
+  }
+  return mergeShortSegments(coalesce(segments), minSegmentDuration);
 };
 var toneRoleWeight = (rel) => {
   if (rel === 0) return 1.3;
@@ -519,6 +649,231 @@ var CHORD_TEMPLATES = (() => {
   }
   return templates;
 })();
+var MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
+var NATURAL_MINOR_SCALE = [0, 2, 3, 5, 7, 8, 10];
+var scaleOf = (key) => {
+  const base = key.mode === "major" ? MAJOR_SCALE : NATURAL_MINOR_SCALE;
+  return base.map((d) => toPitchClass(d + key.tonic));
+};
+var keyBonus = (tmpl, key) => {
+  const scale = scaleOf(key);
+  const scaleSet = new Set(scale);
+  const rootDiatonic = scaleSet.has(tmpl.root);
+  let allDiatonic = true;
+  for (const pc of tmpl.pcs)
+    if (!scaleSet.has(pc)) {
+      allDiatonic = false;
+      break;
+    }
+  let bonus = 0;
+  if (allDiatonic) bonus += 0.25;
+  else if (rootDiatonic) bonus += 0.1;
+  const degree = toPitchClass(tmpl.root - key.tonic);
+  if (degree === 0 || degree === 5 || degree === 7) bonus += 0.05;
+  return bonus;
+};
+var makeFrame = (notes, start, end) => {
+  const raw = new Array(12).fill(0);
+  let total = 0;
+  let bassPitch = Number.POSITIVE_INFINITY;
+  let bass = -1;
+  for (const n of notes) {
+    const s = Math.max(n.when, start);
+    const e = Math.min(n.when + Math.max(n.duration, 0), end);
+    const overlap = n.duration <= 0 ? n.when >= start && n.when < end ? 1 : 0 : Math.max(e - s, 0);
+    if (overlap <= 0) continue;
+    raw[toPitchClass(n.pitch)] += overlap;
+    total += overlap;
+    if (n.pitch < bassPitch) {
+      bassPitch = n.pitch;
+      bass = toPitchClass(n.pitch);
+    }
+  }
+  const profile = total > 0 ? raw.map((v) => v / total) : raw;
+  return {
+    when: start,
+    duration: end - start,
+    profile,
+    bass,
+    empty: total === 0
+  };
+};
+var emissionScore = (frame, tmpl, key, ncTonePenalty) => {
+  let hit = 0;
+  let miss = 0;
+  for (let pc = 0; pc < 12; pc++) {
+    const w = frame.profile[pc];
+    if (w === 0) continue;
+    if (tmpl.pcs.has(pc)) hit += w * tmpl.weights[pc];
+    else miss += w;
+  }
+  let score = hit - ncTonePenalty * miss;
+  if (frame.profile[tmpl.root] === 0) score -= 0.3;
+  if (frame.bass !== -1 && tmpl.root === frame.bass) score += 0.3;
+  if (key) score += keyBonus(tmpl, key);
+  score -= tmpl.priority * 2e-3;
+  return score;
+};
+var ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII"];
+var chordDegree = (key, tmpl) => {
+  const scale = key.mode === "major" ? MAJOR_SCALE : NATURAL_MINOR_SCALE;
+  const rel = toPitchClass(tmpl.root - key.tonic);
+  let idx = scale.indexOf(rel);
+  let accidental = "";
+  if (idx === -1) {
+    const below = scale.indexOf(toPitchClass(rel - 1));
+    const above = scale.indexOf(toPitchClass(rel + 1));
+    if (below !== -1) {
+      idx = below;
+      accidental = "#";
+    } else if (above !== -1) {
+      idx = above;
+      accidental = "b";
+    } else {
+      idx = 0;
+      accidental = "?";
+    }
+  }
+  const hasM3 = tmpl.rel.has(4);
+  const hasm3 = tmpl.rel.has(3);
+  const hasDim5 = tmpl.rel.has(6);
+  const hasAug5 = tmpl.rel.has(8);
+  const hasMin7 = tmpl.rel.has(10);
+  let numeral = ROMAN[idx];
+  let suffix = "";
+  if (hasm3 && hasDim5) {
+    numeral = numeral.toLowerCase();
+    suffix = hasMin7 ? "\xF87" : "\xB0";
+    if (tmpl.rel.has(9)) suffix = "\xB07";
+  } else if (hasM3 && hasAug5) {
+    suffix = "+";
+  } else if (hasm3) {
+    numeral = numeral.toLowerCase();
+  } else if (!hasM3) {
+  }
+  if (!suffix) {
+    if (tmpl.rel.has(11)) suffix = "M7";
+    else if (hasMin7) suffix = "7";
+    else if (tmpl.rel.has(9) && !tmpl.rel.has(10)) suffix = "6";
+  }
+  return accidental + numeral + suffix;
+};
+var viterbi = (emissions, changePenalty) => {
+  const T = emissions.length;
+  const N = CHORD_TEMPLATES.length;
+  if (T === 0) return [];
+  const back = Array.from(
+    { length: T },
+    () => new Array(N).fill(-1)
+  );
+  let prev = emissions[0].slice();
+  for (let t = 1; t < T; t++) {
+    let bestPrevVal = Number.NEGATIVE_INFINITY;
+    let bestPrevIdx = 0;
+    for (let j = 0; j < N; j++)
+      if (prev[j] > bestPrevVal) {
+        bestPrevVal = prev[j];
+        bestPrevIdx = j;
+      }
+    const curr = new Array(N).fill(0);
+    const em = emissions[t];
+    const switchVal = bestPrevVal - changePenalty;
+    for (let i = 0; i < N; i++) {
+      if (prev[i] >= switchVal) {
+        curr[i] = em[i] + prev[i];
+        back[t][i] = i;
+      } else {
+        curr[i] = em[i] + switchVal;
+        back[t][i] = bestPrevIdx;
+      }
+    }
+    prev = curr;
+  }
+  let bestIdx = 0;
+  for (let i = 1; i < N; i++) if (prev[i] > prev[bestIdx]) bestIdx = i;
+  const path = new Array(T).fill(0);
+  path[T - 1] = bestIdx;
+  for (let t = T - 1; t > 0; t--) path[t - 1] = back[t][path[t]];
+  return path;
+};
+var keyAt = (keys, when) => {
+  for (const k of keys)
+    if (when >= k.when && when < k.when + k.duration) return k.key;
+  return keys.length ? keys[keys.length - 1].key : null;
+};
+var buildSymbol = (tmpl, bass, flat) => {
+  const rootSymbol = noteName(tmpl.root, flat) + tmpl.quality;
+  const inversion = bass !== -1 && bass !== tmpl.root && tmpl.pcs.has(bass);
+  return {
+    symbol: inversion ? `${rootSymbol}/${noteName(bass, flat)}` : rootSymbol,
+    rootSymbol,
+    inversion,
+    bass: bass === -1 ? tmpl.root : bass
+  };
+};
+var detectProgression = (notes, options = {}) => {
+  if (!notes.length) return { keys: [], chords: [] };
+  const {
+    flat = false,
+    bpm,
+    frameSize = 0.5,
+    changePenalty = 0.4,
+    nonChordTonePenalty = 0.55,
+    useKey = true
+  } = options;
+  const keys = detectKeyChanges(notes, options);
+  const start = notes.reduce(
+    (m, n) => Math.min(m, n.when),
+    Number.POSITIVE_INFINITY
+  );
+  const end = notes.reduce(
+    (m, n) => Math.max(m, n.when + Math.max(n.duration, 0)),
+    Number.NEGATIVE_INFINITY
+  );
+  if (end <= start) return { keys, chords: [] };
+  const frameDur = bpm ? 60 / bpm : Math.max(frameSize, 1e-3);
+  const frames = [];
+  for (let t = start; t < end - 1e-9; t += frameDur)
+    frames.push(makeFrame(notes, t, Math.min(t + frameDur, end)));
+  const emissions = frames.map((frame) => {
+    if (frame.empty) return new Array(CHORD_TEMPLATES.length).fill(0);
+    const key = useKey ? keyAt(keys, frame.when + frame.duration / 2) : null;
+    return CHORD_TEMPLATES.map(
+      (tmpl) => emissionScore(frame, tmpl, key, nonChordTonePenalty)
+    );
+  });
+  const path = viterbi(emissions, changePenalty);
+  const chords = [];
+  for (let t = 0; t < frames.length; t++) {
+    const frame = frames[t];
+    const tmpl = CHORD_TEMPLATES[path[t]];
+    const last = chords[chords.length - 1];
+    const sameAsLast = last && last.root === tmpl.root && last.quality === tmpl.quality;
+    if (sameAsLast) {
+      last.duration = frame.when + frame.duration - last.when;
+      continue;
+    }
+    const key = keyAt(keys, frame.when + frame.duration / 2);
+    const { symbol, rootSymbol, inversion, bass } = buildSymbol(
+      tmpl,
+      frame.bass,
+      flat
+    );
+    chords.push({
+      symbol,
+      rootSymbol,
+      root: tmpl.root,
+      quality: tmpl.quality,
+      bass,
+      inversion,
+      when: frame.when,
+      duration: frame.duration,
+      key,
+      degree: key ? chordDegree(key, tmpl) : null
+    });
+  }
+  return { keys, chords };
+};
 var toHan = (str) => str.replace(/[！-～]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 65248)).replace(/　/g, " ");
 var parseChords = (str, bpm = 120) => {
   const output = [];
@@ -6565,116 +6920,35 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
     (a, b) => a - b
   );
-  const trackStats = trackIndices.map((index) => {
-    const trackPlacements = placements.filter((p) => p.trackIndex === index);
-    if (trackPlacements.length === 0) {
-      return { index, isChords: false, avgPitch: 0, noteCount: 0 };
-    }
-    const sumPitch = trackPlacements.reduce((sum, p) => sum + p.pitch, 0);
-    const avgPitch = sumPitch / trackPlacements.length;
-    const stepCounts = /* @__PURE__ */ new Map();
-    for (const p of trackPlacements) {
-      for (let s = p.startStep; s < p.startStep + p.durationSteps; s++) {
-        stepCounts.set(s, (stepCounts.get(s) ?? 0) + 1);
-      }
-    }
-    const polyphonicSteps = Array.from(stepCounts.values()).filter(
-      (c) => c >= 2
-    ).length;
-    const isChords = polyphonicSteps > 0;
-    return {
-      index,
-      isChords,
-      avgPitch,
-      noteCount: trackPlacements.length
-    };
-  });
-  const chordTrackIndices = trackStats.filter((s) => s.isChords).map((s) => s.index);
-  const nonChordTracks = trackStats.filter(
-    (s) => !s.isChords && s.noteCount > 0
-  );
-  let bassTrackIndex = null;
-  if (nonChordTracks.length > 0) {
-    nonChordTracks.sort((a, b) => a.avgPitch - b.avgPitch);
-    bassTrackIndex = nonChordTracks[0].index;
-  }
-  const priorityTrackIndices = /* @__PURE__ */ new Set();
-  for (const idx of chordTrackIndices) {
-    priorityTrackIndices.add(idx);
-  }
-  if (bassTrackIndex !== null) {
-    priorityTrackIndices.add(bassTrackIndex);
-  }
-  const hasPriorityTracksInMml = priorityTrackIndices.size > 0;
   const maxStep = placements.reduce(
     (max, p) => Math.max(max, p.startStep + p.durationSteps),
     0
   );
-  const priorityPitches = Array.from(
-    { length: maxStep + 1 },
-    () => /* @__PURE__ */ new Set()
-  );
-  const allPitches = Array.from(
-    { length: maxStep + 1 },
-    () => /* @__PURE__ */ new Set()
-  );
-  for (const p of placements) {
-    for (let s = p.startStep; s < p.startStep + p.durationSteps; s++) {
-      if (s >= 0 && s <= maxStep) {
-        allPitches[s].add(p.pitch);
-        if (priorityTrackIndices.has(p.trackIndex)) {
-          priorityPitches[s].add(p.pitch);
-        }
-      }
-    }
-  }
+  const timedNotes = placements.map((p) => ({
+    pitch: p.pitch,
+    when: p.startStep * secondsPerStep,
+    duration: p.durationSteps * secondsPerStep
+  }));
   const stepChords = [];
-  const chordCache = /* @__PURE__ */ new Map();
-  let lastChord = "";
-  let hasPriorityStarted = false;
-  const GRID_SIZE = 48;
-  const MIN_DURATION = 12;
-  for (let g = 0; g <= Math.ceil(maxStep / GRID_SIZE); g++) {
-    const startS = g * GRID_SIZE;
-    const endS = Math.min(maxStep, (g + 1) * GRID_SIZE - 1);
-    if (startS > maxStep) break;
-    for (let s = startS; s <= endS; s++) {
-      const priorityPitchesAtStep = Array.from(priorityPitches[s]);
-      if (priorityPitchesAtStep.length > 0) {
-        hasPriorityStarted = true;
+  if (timedNotes.length > 0) {
+    let chordSegments = [];
+    try {
+      chordSegments = detectProgression(timedNotes, { bpm }).chords;
+    } catch {
+      chordSegments = [];
+    }
+    for (const seg of chordSegments) {
+      const startStep = Math.max(0, Math.round(seg.when / secondsPerStep));
+      const endStep = Math.round((seg.when + seg.duration) / secondsPerStep);
+      for (let s = startStep; s < endStep && s <= maxStep; s++) {
+        stepChords[s] = seg.symbol;
       }
     }
-    const pitchDurations = /* @__PURE__ */ new Map();
-    for (let s = startS; s <= endS; s++) {
-      const usePriority = hasPriorityStarted && hasPriorityTracksInMml;
-      const pitches = usePriority ? Array.from(priorityPitches[s]) : Array.from(allPitches[s]);
-      for (const p of pitches) {
-        pitchDurations.set(p, (pitchDurations.get(p) ?? 0) + 1);
-      }
+    let lastChord = "";
+    for (let s = 0; s <= maxStep; s++) {
+      if (stepChords[s]) lastChord = stepChords[s];
+      else stepChords[s] = lastChord;
     }
-    let activePitches = Array.from(pitchDurations.entries()).filter(([_, dur]) => dur >= MIN_DURATION).map(([p, _]) => p);
-    if (activePitches.length === 0 && pitchDurations.size > 0) {
-      const maxDur = Math.max(...pitchDurations.values());
-      activePitches = Array.from(pitchDurations.entries()).filter(([_, dur]) => dur === maxDur).map(([p, _]) => p);
-    }
-    let gridChord = lastChord;
-    if (activePitches.length > 0) {
-      const sortedPitches = activePitches.sort((a, b) => a - b);
-      const cacheKey = sortedPitches.join(",");
-      if (chordCache.has(cacheKey)) {
-        const chordName = chordCache.get(cacheKey);
-        if (chordName) gridChord = chordName;
-      } else {
-        const candidates = detectChord(sortedPitches);
-        const chordName = candidates[0]?.symbol ?? "";
-        if (chordName) gridChord = chordName;
-        chordCache.set(cacheKey, chordName);
-      }
-    }
-    for (let s = startS; s <= endS; s++) {
-      stepChords[s] = gridChord;
-    }
-    lastChord = gridChord;
   }
   const seqTracks = trackIndices.map((index) => {
     let id = 0;
