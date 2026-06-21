@@ -587,6 +587,14 @@ export const DAW_CSS = `
   min-width: 2em;
   margin-left: 4px;
 }
+.dtm-player-chord {
+  font-family: 'k8x12', monospace;
+  font-size: 11px;
+  color: var(--dtm-accent);
+  min-width: 4em;
+  margin-left: 8px;
+  font-weight: bold;
+}
 .dtm-player-dots {
   margin-left: auto;
   display: flex;

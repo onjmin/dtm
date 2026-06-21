@@ -23,6 +23,7 @@ import {
 } from "./lyrics";
 import { VOICE_IMAGES } from "./voice-images";
 import { parseMML } from "./mml-parser";
+import { detectChord } from "@onjmin/chord-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import {
@@ -119,6 +120,45 @@ export const mountMmlPlayer = (
 	const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
 	const useSynth = options.synth ?? !options.onPlayNote;
 	const secondsPerStep = 60 / bpm / STEPS_PER_BEAT;
+
+	// ── ステップごとのコードネーム事前計算 ──
+	const maxStep = placements.reduce(
+		(max, p) => Math.max(max, p.startStep + p.durationSteps),
+		0,
+	);
+	const stepPitches: Set<number>[] = Array.from(
+		{ length: maxStep + 1 },
+		() => new Set(),
+	);
+	for (const p of placements) {
+		// ドラムトラック以外のメロディックトラック（trackIndex 0-3）を対象にする
+		if (p.trackIndex >= 0 && p.trackIndex <= 3) {
+			for (let s = p.startStep; s < p.startStep + p.durationSteps; s++) {
+				if (s >= 0 && s <= maxStep) {
+					stepPitches[s].add(p.pitch);
+				}
+			}
+		}
+	}
+	const stepChords: string[] = [];
+	const chordCache = new Map<string, string>();
+	for (let s = 0; s <= maxStep; s++) {
+		const pitches = Array.from(stepPitches[s]);
+		if (pitches.length === 0) {
+			stepChords.push("");
+			continue;
+		}
+		const sortedPitches = pitches.sort((a, b) => a - b);
+		const cacheKey = sortedPitches.join(",");
+		if (chordCache.has(cacheKey)) {
+			stepChords.push(chordCache.get(cacheKey)!);
+		} else {
+			const candidates = detectChord(sortedPitches);
+			const chordName = candidates[0]?.symbol ?? "";
+			chordCache.set(cacheKey, chordName);
+			stepChords.push(chordName);
+		}
+	}
 
 	// placements を trackIndex ごとにまとめ、ノートを持つトラックだけ採用
 	const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
@@ -368,6 +408,11 @@ export const mountMmlPlayer = (
 	barEl.textContent = "-";
 	beatRow.appendChild(barEl);
 
+	const chordEl = doc.createElement("span");
+	chordEl.className = "dtm-player-chord";
+	chordEl.textContent = "";
+	beatRow.appendChild(chordEl);
+
 	// トップレベル宣言チップ（#inst / #drum / #volume）
 	const chips: HTMLSpanElement[] = [];
 	const makeChip = (label: string): HTMLSpanElement => {
@@ -547,6 +592,7 @@ export const mountMmlPlayer = (
 		for (let i = 0; i < 4; i++)
 			beatDots[i].classList.toggle("dtm-player-beat-dot--on", i === beatIndex);
 		barEl.textContent = String(Math.floor(step / STEPS_PER_BAR) + 1);
+		chordEl.textContent = stepChords[step] ?? "";
 		for (const view of laneViews) {
 			let active: LaneToken | null = null;
 			for (const t of view.tokens) {
@@ -561,6 +607,7 @@ export const mountMmlPlayer = (
 	const resetPlayhead = (): void => {
 		for (const d of beatDots) d.classList.remove("dtm-player-beat-dot--on");
 		barEl.textContent = "-";
+		chordEl.textContent = "";
 		for (const view of laneViews) {
 			for (const t of view.tokens) t.el.classList.remove("is-active");
 			view.lane.scrollLeft = 0;
