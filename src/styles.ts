@@ -22,7 +22,12 @@ export const DAW_CSS = `
    PICO-8カラーパレット・美咲フォント・ゲームウィンドウ枠
    ==================================================== */
 
-.dtm-daw {
+/* デザイントークンは編集UI本体（.dtm-daw）に加え、その外側に差し込まれる
+   コントロールバー（.dtm-controlbar）にも供給する。mountPresetSelect /
+   mountModeSwitch のUIは .dtm-daw の兄弟として置かれるため、ここで配らないと
+   var(--dtm-*) が解決できず無装飾（白地・既定フォント）になってしまう。 */
+.dtm-daw,
+.dtm-controlbar {
   /* PICO-8 16色パレットより */
   --c-black:   #000000;
   --c-navy:    #1d2b53;
@@ -59,7 +64,9 @@ export const DAW_CSS = `
   --dtm-tap:      40px;
   --dtm-gap:      6px;
   --dtm-font:     'k8x12',ui-monospace,monospace;
+}
 
+.dtm-daw {
   box-sizing: border-box;
   font-family: var(--dtm-font);
   font-size: 14px;
