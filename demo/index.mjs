@@ -8327,6 +8327,15 @@ var playMML = (mml, options = {}) => {
   };
 };
 
+// src/headless-singing-player.ts
+var playSingingMML = (_mml, _options = {}) => {
+  return Promise.reject(
+    new Error(
+      "playSingingMML is not implemented yet. See implementation notes at the top of headless-singing-player.ts."
+    )
+  );
+};
+
 // src/piano-roll.ts
 var createPianoRoll = (options, handlers) => {
   const {
@@ -8778,7 +8787,23 @@ var DEFAULT_CDN = {
   soundFontList: "https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs"
 };
 var SOUNDFONT_NAME = "FluidR3_GM_sf2_file";
-var TRACK_ROLES = ["melody", "submelody", "bass", "chord"];
+var TRACK_ROLES = [
+  "melody",
+  "submelody",
+  "bass",
+  "chord",
+  "t4",
+  "t5",
+  "t6",
+  "t7",
+  "t8",
+  "t9",
+  "t10",
+  "t11",
+  "t12",
+  "t13",
+  "t14"
+];
 var resolveDefaultVoiceWorkerUrl = () => {
   try {
     return new URL("./voice-worker.js", import.meta.url).href;
@@ -9185,12 +9210,17 @@ var createDtmStudio = async (options = {}) => {
     return instance;
   };
   const mountPlayer = (target, mml, opts = {}) => {
-    const meta = parseMML(mml, {}).meta ?? {};
+    const parsed = parseMML(mml, {});
+    const meta = parsed.meta ?? {};
     const playerPreset = meta.instrument && INSTRUMENT_PRESETS[meta.instrument] ? meta.instrument : defaultPreset;
-    void loadPreset(playerPreset);
+    const trackIndices = [
+      ...new Set(parsed.placements.map((p) => p.trackIndex))
+    ];
+    const trackIds = trackIndices.map((idx) => TRACK_ROLES[idx] ?? `t${idx}`);
+    const loadTrackIds = trackIds.length > 0 ? trackIds : [...TRACK_ROLES];
+    void loadPreset(playerPreset, loadTrackIds);
     const playPlayerNote = (e) => {
-      const role = TRACK_ROLES[Number(e.trackId)];
-      if (!role) return;
+      const role = TRACK_ROLES[Number(e.trackId)] ?? `t${e.trackId}`;
       const sf = resolveSoundFont(playerPreset, role);
       if (!sf) return;
       sf.play({
@@ -9317,6 +9347,7 @@ export {
   parseMML,
   parseMmlMeta,
   playMML,
+  playSingingMML,
   setDrawOffset,
   setupRecorder,
   shiftNotes,
