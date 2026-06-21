@@ -5093,6 +5093,7 @@ var DAW_CSS = `
 }
 .dtm-player-mml-link:hover { color: var(--dtm-primary); }
 .dtm-player-emoji {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5102,6 +5103,43 @@ var DAW_CSS = `
   font-size: 18px;
   line-height: 1;
   user-select: none;
+}
+.dtm-player-balloon {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: none;
+  pointer-events: none;
+  font-family: var(--dtm-font);
+  font-size: 9px;
+  color: var(--c-black);
+  background: var(--c-white);
+  border: 2px solid var(--c-black);
+  padding: 2px 4px;
+  white-space: nowrap;
+  box-shadow: 2px 2px 0 var(--c-black);
+}
+.dtm-player-balloon::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: var(--c-white);
+  border-right: 2px solid var(--c-black);
+  border-bottom: 2px solid var(--c-black);
+}
+.dtm-player-balloon--visible {
+  display: block;
+  animation: dtm-balloon-fade-in 0.1s steps(2);
+}
+@keyframes dtm-balloon-fade-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 @keyframes dtm-emoji-jump {
   0%   { transform: translateY(0); }
@@ -5127,11 +5165,13 @@ var DAW_CSS = `
   gap: var(--dtm-gap);
 }
 .dtm-player-lane-row {
+  position: relative;
   display: flex;
   align-items: stretch;
   gap: 6px;
 }
 .dtm-player-lane-label {
+  position: relative;
   flex: 0 0 auto;
   width: 16px;
   display: flex;
@@ -5146,6 +5186,66 @@ var DAW_CSS = `
 }
 .dtm-player-lane-label--btn:hover { opacity: 0.7; }
 .dtm-player-lane-label--muted { opacity: 0.3; }
+
+/* \u2500\u2500\u2500 \u30DF\u30E5\u30FC\u30C8\u8868\u793A\uFF08\u6392\u4ED6\u540C\u671F\uFF09 \u2500\u2500\u2500 */
+.dtm-player-emoji.is-muted,
+.dtm-player-lane-label.is-muted {
+  position: relative;
+}
+
+/* \u30DF\u30E5\u30FC\u30C8\u6642\u306E\u300C\xD7\u300D\u30DE\u30FC\u30AF\u91CD\u306D\u63CF\u304D */
+.dtm-player-emoji.is-muted::before,
+.dtm-player-lane-label.is-muted::before {
+  content: "\xD7";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dtm-danger);
+  font-family: var(--dtm-font);
+  font-size: 16px;
+  font-weight: bold;
+  z-index: 10;
+  pointer-events: none;
+  text-shadow: 1px 1px 0 var(--c-black);
+}
+
+.dtm-player-lane-label.is-muted::before {
+  font-size: 14px;
+}
+
+/* \u30DF\u30E5\u30FC\u30C8\u6642\u306E\u30A2\u30A4\u30B3\u30F3\u3084\u8981\u7D20\u306E\u8584\u6697\u5316\uFF08\u5439\u304D\u51FA\u3057\u306F\u9664\u5916\uFF09 */
+.dtm-player-emoji.is-muted > img,
+.dtm-player-emoji.is-muted > span:not(.dtm-player-balloon) {
+  opacity: 0.25;
+  filter: grayscale(80%);
+}
+
+.dtm-player-lane-label.is-muted {
+  opacity: 0.25;
+}
+
+/* \u30DF\u30E5\u30FC\u30C8\u6642\u306E\u30C8\u30E9\u30C3\u30AF\u30EC\u30FC\u30F3\uFF08\u30B9\u30AF\u30ED\u30FC\u30EB\u90E8\uFF09\u306E\u8584\u6697\u5316\u3068\u30C7\u30AB\xD7\u30DE\u30FC\u30AF\uFF08\u8272\u5F31\u5BFE\u5FDC\uFF09 */
+.dtm-player-lane-row.is-muted::after {
+  content: "\xD7";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 22px; /* label width (16px) + gap (6px) */
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dtm-danger);
+  font-family: var(--dtm-font);
+  font-size: 24px;
+  font-weight: bold;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 10;
+  pointer-events: none;
+  text-shadow: 1px 1px 0 var(--c-black);
+}
 .dtm-player-lane-no {
   font-family: 'k8x12', monospace;
   font-size: 9px;
@@ -5233,6 +5333,36 @@ var STEPS_PER_BEAT3 = 48;
 var STEPS_PER_BAR = 192;
 var DEFAULT_TRACK_COLORS = ["#00e436", "#29adff", "#ff77a8", "#ffec27"];
 var activePlayer = null;
+var LYRIC_MODEL_LABELS = {
+  klatt: "\u8EFD\u91CF\u30ED\u30DC\u58F0",
+  ...KOE_VOICEBANK_LABELS
+};
+var activeBalloonEl = null;
+var activeBalloonTimer = null;
+var hideActiveBalloon = () => {
+  if (activeBalloonEl) {
+    activeBalloonEl.classList.remove("dtm-player-balloon--visible");
+    activeBalloonEl = null;
+  }
+  if (activeBalloonTimer) {
+    clearTimeout(activeBalloonTimer);
+    activeBalloonTimer = null;
+  }
+};
+var showBalloon = (balloonEl) => {
+  if (activeBalloonEl === balloonEl) {
+    if (activeBalloonTimer) {
+      clearTimeout(activeBalloonTimer);
+    }
+  } else {
+    hideActiveBalloon();
+    activeBalloonEl = balloonEl;
+    balloonEl.classList.add("dtm-player-balloon--visible");
+  }
+  activeBalloonTimer = setTimeout(() => {
+    hideActiveBalloon();
+  }, 3e3);
+};
 var freqFromPitch = (pitch) => 440 * 2 ** ((pitch - 69) / 12);
 var mountMmlPlayer = (target, mml, options = {}) => {
   injectStyles(target.ownerDocument ?? document);
@@ -5392,15 +5522,47 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   playBtn.className = "dtm-player-play";
   playBtn.innerHTML = icon("play", 12);
   playBtn.disabled = trackIndices.length === 0;
+  const mutedTracks = /* @__PURE__ */ new Set();
+  const labelByTrack = /* @__PURE__ */ new Map();
+  const emojiByTrack = /* @__PURE__ */ new Map();
+  const rowByTrack = /* @__PURE__ */ new Map();
+  const toggleMute = (index) => {
+    if (mutedTracks.has(index)) {
+      mutedTracks.delete(index);
+    } else {
+      mutedTracks.add(index);
+    }
+    updateMuteUI(index);
+  };
+  const updateMuteUI = (index) => {
+    const isMuted = mutedTracks.has(index);
+    const row = rowByTrack.get(index);
+    if (row) {
+      row.classList.toggle("is-muted", isMuted);
+    }
+    const label = labelByTrack.get(index);
+    if (label) {
+      label.classList.toggle("is-muted", isMuted);
+    }
+    const em = emojiByTrack.get(index);
+    if (em) {
+      em.classList.toggle("is-muted", isMuted);
+    }
+  };
   const mmlHeader = doc.createElement("div");
   mmlHeader.className = "dtm-player-mml-header";
   const emojiEls = [];
-  const emojiByTrack = /* @__PURE__ */ new Map();
   for (const index of trackIndices) {
     const em = doc.createElement("span");
     em.className = "dtm-player-emoji";
     em.style.backgroundColor = colorOf(index);
-    em.textContent = "\u{1F97A}";
+    const textSpan = doc.createElement("span");
+    textSpan.textContent = "\u{1F97A}";
+    em.appendChild(textSpan);
+    em.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleMute(index);
+    });
     mmlHeader.appendChild(em);
     emojiEls.push(em);
     emojiByTrack.set(index, em);
@@ -5422,6 +5584,23 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     promotedToImage.add(em);
     em.textContent = "";
     em.appendChild(img);
+    const balloon = doc.createElement("div");
+    balloon.className = "dtm-player-balloon";
+    const modelKey = lt.model.toLowerCase();
+    balloon.textContent = LYRIC_MODEL_LABELS[modelKey] ?? lt.model;
+    em.appendChild(balloon);
+    em.addEventListener("mouseenter", () => {
+      showBalloon(balloon);
+    });
+    em.addEventListener("mouseleave", () => {
+      if (activeBalloonEl === balloon) {
+        hideActiveBalloon();
+      }
+    });
+    em.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showBalloon(balloon);
+    });
   }
   const JUMP_DEDUPE_MS = 50;
   const lastJumpAt = /* @__PURE__ */ new WeakMap();
@@ -5451,11 +5630,21 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     const delay = 2e3 + Math.random() * 5e3;
     const t = setTimeout(() => {
       if (promotedToImage.has(em)) return;
-      em.textContent = "\u{1F60C}";
+      const textSpan = em.querySelector("span");
+      if (textSpan) {
+        textSpan.textContent = "\u{1F60C}";
+      } else {
+        em.textContent = "\u{1F60C}";
+      }
       const t2 = setTimeout(
         () => {
           if (promotedToImage.has(em)) return;
-          em.textContent = "\u{1F97A}";
+          const textSpan2 = em.querySelector("span");
+          if (textSpan2) {
+            textSpan2.textContent = "\u{1F97A}";
+          } else {
+            em.textContent = "\u{1F97A}";
+          }
           scheduleBlink(em);
         },
         100 + Math.random() * 50
@@ -5507,13 +5696,13 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const body = doc.createElement("div");
   body.className = "dtm-player-body";
   root.appendChild(body);
-  const mutedTracks = /* @__PURE__ */ new Set();
   const laneViews = [];
   for (const index of trackIndices) {
     const lyricTrack = lyricTracks.get(index);
     const isLyricLane = !!lyricTrack && lyricTrack.syllables.length > 0;
     const row = doc.createElement("div");
     row.className = "dtm-player-lane-row";
+    rowByTrack.set(index, row);
     const label = doc.createElement("div");
     label.className = "dtm-player-lane-label dtm-player-lane-label--btn";
     const swatch = doc.createElement("span");
@@ -5523,14 +5712,9 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     no.className = "dtm-player-lane-no";
     no.textContent = `@${index}`;
     label.append(swatch, no);
+    labelByTrack.set(index, label);
     label.addEventListener("click", () => {
-      if (mutedTracks.has(index)) {
-        mutedTracks.delete(index);
-        label.classList.remove("dtm-player-lane-label--muted");
-      } else {
-        mutedTracks.add(index);
-        label.classList.add("dtm-player-lane-label--muted");
-      }
+      toggleMute(index);
     });
     const lane = doc.createElement("div");
     lane.className = "dtm-player-lane";
@@ -5789,6 +5973,9 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     }
     for (const t of blinkTimers) clearTimeout(t);
     clearJumpTimers();
+    if (activeBalloonEl && root.contains(activeBalloonEl)) {
+      hideActiveBalloon();
+    }
     root.remove();
   };
   const instance = {
@@ -6106,11 +6293,11 @@ var TRACKS_ADVANCED = [
 ];
 var DEFAULT_TRACKS = TRACKS_SIMPLE;
 var LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
-var LYRIC_MODEL_LABELS = {
+var LYRIC_MODEL_LABELS2 = {
   klatt: "\u8EFD\u91CF\u30ED\u30DC\u58F0",
   ...KOE_VOICEBANK_LABELS
 };
-var lyricModelLabel = (model) => LYRIC_MODEL_LABELS[model] ?? model;
+var lyricModelLabel = (model) => LYRIC_MODEL_LABELS2[model] ?? model;
 var clamp3 = (v, min, max) => Math.min(Math.max(v, min), max);
 var mountDAW = (target, options = {}) => {
   injectStyles();
