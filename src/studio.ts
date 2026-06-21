@@ -29,6 +29,7 @@ import { showLoadingOverlay } from "./styles";
 import { parseArrayBuffer } from "midi-json-parser";
 import type {
 	DawInstance,
+	DawMode,
 	DawOptions,
 	PlayDrumEvent,
 	PlayNoteEvent,
@@ -156,6 +157,99 @@ export type MountEditorOptions = Partial<DawOptions> & {
 /** 再生UIのマウント時オプション（MmlPlayerOptions を一部上書きできる）。 */
 export type MountPlayerOptions = Partial<MmlPlayerOptions>;
 
+/** {@link DtmStudio.mountPresetSelect} のオプション。 */
+export type PresetSelectOptions = {
+	/**
+	 * 操作対象の現在の DawInstance を返す getter。
+	 * モード再マウントで daw が差し替わるため、参照ではなく関数で受け取る。
+	 */
+	getDaw: () => DawInstance | null;
+	/**
+	 * プリセットをロードするトラックID群を返す（都度評価）。
+	 * モードでトラック構成が変わるため関数。未指定なら4役割（simpleモード相当）。
+	 */
+	getTrackIds?: () => string[];
+	/** 初期選択プリセットキー（未指定なら studio の defaultPreset）。 */
+	value?: string;
+	/**
+	 * プリセット読み込み中にローディングオーバーレイを被せる要素。
+	 * 未指定なら DAW 内蔵の「LOADING」表示（setLoading）だけに任せる。
+	 */
+	loadingTarget?: HTMLElement | null;
+	/** プリセット確定時に呼ばれる（永続化用）。 */
+	onChange?: (presetKey: string) => void;
+	/** wrapper 要素に付与する className（既定 "dtm-controlbar"）。 */
+	className?: string;
+	/** 先頭ラベルの文言（既定 "INSTRUMENT"）。`null` でラベル無し。 */
+	label?: string | null;
+	/** target への挿入位置（既定 "append"）。 */
+	position?: "append" | "prepend";
+};
+
+/** {@link DtmStudio.mountPresetSelect} の戻り値。 */
+export type PresetSelectInstance = {
+	/** 生成したUIのルート要素（ラベル＋select を内包）。 */
+	element: HTMLElement;
+	/** select 要素そのもの。 */
+	select: HTMLSelectElement;
+	/** 選択値を変更する（changeイベントは発火しない）。 */
+	setValue: (presetKey: string) => void;
+	/** 現在の選択プリセットキーを返す。 */
+	getValue: () => string;
+	/** UIを破棄する。 */
+	destroy: () => void;
+};
+
+/** {@link DtmStudio.mountModeSwitch} のオプション。 */
+export type ModeSwitchOptions = {
+	/** 編集UI（mountEditor）をマウントするコンテナ。 */
+	editorTarget: HTMLElement;
+	/** 初期モード（既定 "simple"）。 */
+	mode?: DawMode;
+	/**
+	 * モード→トラック構成。
+	 * 既定は simple→TRACKS_SIMPLE / advanced→TRACKS_ADVANCED。
+	 */
+	tracksFor?: (mode: DawMode) => TrackConfig[];
+	/**
+	 * mountEditor に渡す共通オプション（initialMML / preset / defaultBpm / 各コールバック等）。
+	 * 関数を渡すとモードごとに切り替えられる。`mode` / `tracks` / `initialMML` は
+	 * モード切替側が上書きするため、ここで指定しても再マウント時には無視される。
+	 */
+	editorOptions?: MountEditorOptions | ((mode: DawMode) => MountEditorOptions);
+	/** マウント／再マウント完了時に呼ばれる（最新 daw を受け取る。MMLポーリング開始等）。 */
+	onMount?: (daw: DawInstance, mode: DawMode) => void;
+	/**
+	 * 破棄直前に呼ばれる（MMLポーリング停止等）。
+	 * 再マウント時の最新MMLの引き継ぎは内部で行うため、ここでの保存は任意。
+	 */
+	onUnmount?: (daw: DawInstance, mode: DawMode) => void;
+	/** モード確定時に呼ばれる（永続化用。初期マウントでは呼ばれない）。 */
+	onChange?: (mode: DawMode) => void;
+	/** 各モードのボタンラベル（既定 simple="シンプル" / advanced="アドバンス"）。 */
+	labels?: Partial<Record<DawMode, string>>;
+	/** 先頭ラベルの文言（既定 "MODE"）。`null` でラベル無し。 */
+	label?: string | null;
+	/** wrapper 要素に付与する className（既定 "dtm-controlbar"）。 */
+	className?: string;
+	/** target への挿入位置（既定 "append"）。 */
+	position?: "append" | "prepend";
+};
+
+/** {@link DtmStudio.mountModeSwitch} の戻り値。 */
+export type ModeSwitchInstance = {
+	/** 生成したUIのルート要素。 */
+	element: HTMLElement;
+	/** 現在マウント中の DawInstance（再マウントで差し替わる）。 */
+	getDaw: () => DawInstance | null;
+	/** 現在のモード。 */
+	getMode: () => DawMode;
+	/** モードを変更し、編集UIを再マウントする（MMLは引き継ぐ）。 */
+	setMode: (mode: DawMode) => void;
+	/** UIと編集UIをまとめて破棄する。 */
+	destroy: () => void;
+};
+
 export type DtmStudio = {
 	/** 内部で使用している AudioContext。 */
 	audioContext: AudioContext;
@@ -174,6 +268,26 @@ export type DtmStudio = {
 	) => MmlPlayerInstance;
 	/** 楽器プリセットを（指定トラックぶん）ロードする。 */
 	loadPreset: (presetKey: string, trackIds?: string[]) => Promise<void>;
+	/** 既定の楽器プリセットキー（options.defaultPreset ?? "retro_game"）。 */
+	defaultPreset: string;
+	/**
+	 * 楽器プリセット選択UI（INSTRUMENT）を target に差し込む。
+	 * 変更時に内部で setInstrument＋loadPreset（再生中なら一旦停止→再開）まで配線する。
+	 * 編集UIの外側に独自配置したいライブラリ利用者向け（mountEditor の presetUI と同等）。
+	 */
+	mountPresetSelect: (
+		target: HTMLElement,
+		options: PresetSelectOptions,
+	) => PresetSelectInstance;
+	/**
+	 * モード切替UI（SIMPLE/ADVANCED）を target に差し込み、編集UIのマウントごと面倒を見る。
+	 * 切替時に「最新MML取り込み→destroy→新トラック構成で再マウント→MML復元」まで内部で行う。
+	 * getDaw() で現在の DawInstance を取得できる（mountPresetSelect の getDaw に渡せる）。
+	 */
+	mountModeSwitch: (
+		target: HTMLElement,
+		options: ModeSwitchOptions,
+	) => ModeSwitchInstance;
 	/** AudioContext を閉じ、生成物を破棄する。 */
 	dispose: () => void;
 };
@@ -390,6 +504,91 @@ export const createDtmStudio = async (
 		);
 	};
 
+	// 楽器プリセット変更の共通処理（編集UI内蔵・mountPresetSelect 双方で使う）。
+	// 再生中なら一旦停止し、ロード中はローディング表示、完了後に同じ位置から再開する。
+	const applyPreset = async (
+		daw: DawInstance,
+		presetKey: string,
+		trackIds: string[],
+		loadingTarget?: HTMLElement | null,
+	): Promise<void> => {
+		const wasPlaying = daw.getPlaybackState() === "playing";
+		if (wasPlaying) daw.pause();
+		const overlay = loadingTarget ? showLoadingOverlay(loadingTarget) : null;
+		daw.setLoading?.(true);
+		try {
+			daw.setInstrument(presetKey);
+			await loadPreset(presetKey, trackIds);
+		} finally {
+			overlay?.remove();
+			daw.setLoading?.(false);
+			if (wasPlaying) daw.play();
+		}
+	};
+
+	// 楽器プリセット選択UI（INSTRUMENT）を組み立てて target に差し込む。
+	const mountPresetSelect = (
+		target: HTMLElement,
+		opts: PresetSelectOptions,
+	): PresetSelectInstance => {
+		const doc = target.ownerDocument;
+		const wrapper = doc.createElement("div");
+		wrapper.className = opts.className ?? "dtm-controlbar";
+
+		if (opts.label !== null) {
+			const lab = doc.createElement("span");
+			lab.className = "dtm-controlbar-label";
+			lab.textContent = opts.label ?? "INSTRUMENT";
+			wrapper.appendChild(lab);
+		}
+
+		const select = doc.createElement("select");
+		select.className = "dtm-select dtm-grow";
+		for (const [key, p] of Object.entries(INSTRUMENT_PRESETS)) {
+			const o = doc.createElement("option");
+			o.value = key;
+			o.textContent = p.displayName;
+			select.appendChild(o);
+		}
+		select.value =
+			opts.value && INSTRUMENT_PRESETS[opts.value] ? opts.value : defaultPreset;
+		wrapper.appendChild(select);
+
+		// 連打で多重ロードしないよう、処理中は次の change を握りつぶす。
+		let busy = false;
+		const onChange = async (): Promise<void> => {
+			const daw = opts.getDaw();
+			if (!daw || busy) return;
+			busy = true;
+			const key = select.value;
+			opts.onChange?.(key);
+			const trackIds = opts.getTrackIds?.() ?? [...TRACK_ROLES];
+			try {
+				await applyPreset(daw, key, trackIds, opts.loadingTarget);
+			} finally {
+				busy = false;
+			}
+		};
+		select.addEventListener("change", onChange);
+
+		if (opts.position === "prepend")
+			target.insertBefore(wrapper, target.firstChild);
+		else target.appendChild(wrapper);
+
+		return {
+			element: wrapper,
+			select,
+			setValue: (k) => {
+				if (INSTRUMENT_PRESETS[k]) select.value = k;
+			},
+			getValue: () => select.value,
+			destroy: () => {
+				select.removeEventListener("change", onChange);
+				wrapper.remove();
+			},
+		};
+	};
+
 	// 初期化：リスト読み込み→名前マッピング→既定プリセット（4役割ぶん）を先読み。
 	await listReady;
 	nameToKey = await buildNameToKeyMapping();
@@ -437,9 +636,10 @@ export const createDtmStudio = async (
 	};
 
 	// ── マウント ──
-	const editorPresetSelects = new WeakMap<HTMLElement, HTMLSelectElement>();
+	const editorPresetSelects = new WeakMap<HTMLElement, PresetSelectInstance>();
 	const mountedEditors: DawInstance[] = [];
 	const mountedPlayers: MmlPlayerInstance[] = [];
+	const mountedModeSwitches: ModeSwitchInstance[] = [];
 
 	const mountEditor = (
 		target: HTMLElement,
@@ -460,51 +660,31 @@ export const createDtmStudio = async (
 			...dawOverrides,
 		};
 
-		// プリセット選択UI（任意）。daw のマウント前に target 先頭へ差し込む。
-		// 同じ target への再マウントで select が重複しないよう、既存分は除去する。
-		const wantPresetUI = presetUI ?? features.presetUI;
-		let select: HTMLSelectElement | null = null;
-		if (wantPresetUI) {
-			editorPresetSelects.get(target)?.remove();
-			select = target.ownerDocument.createElement("select");
-			select.className = "dtm-studio-preset";
-			for (const [key, p] of Object.entries(INSTRUMENT_PRESETS)) {
-				const opt = target.ownerDocument.createElement("option");
-				opt.value = key;
-				opt.textContent = p.displayName;
-				select.appendChild(opt);
-			}
-			select.value =
-				preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
-			target.appendChild(select);
-			editorPresetSelects.set(target, select);
-			select.addEventListener("change", async () => {
-				if (!select) return;
-				const wasPlaying = daw.getPlaybackState() === "playing";
-				if (wasPlaying) {
-					daw.pause();
-				}
-				const overlay = showLoadingOverlay(target);
-				daw.setLoading?.(true);
-				try {
-					daw.setInstrument(select.value);
-					await loadPreset(select.value, trackIds);
-				} finally {
-					overlay.remove();
-					daw.setLoading?.(false);
-					if (wasPlaying) {
-						daw.play();
-					}
-				}
-			});
-		}
-
+		// 先に DAW を組む。buildUI が target.innerHTML を総入れ替えするため、
+		// プリセット選択UIの差し込みは mountDAW の「後」でなければ消えてしまう。
 		const daw = mountDAW(target, base);
 		mountedEditors.push(daw);
 
-		// このエディタのトラック構成ぶんプリセットをロードして名前も埋め込む。
 		const presetKey =
 			preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
+
+		// プリセット選択UI（任意）。DAW の先頭へ差し込み、配線は mountPresetSelect に委ねる。
+		// 同じ target への再マウントで重複しないよう、既存分は破棄する。
+		const wantPresetUI = presetUI ?? features.presetUI;
+		let presetSelect: PresetSelectInstance | null = null;
+		if (wantPresetUI) {
+			editorPresetSelects.get(target)?.destroy();
+			presetSelect = mountPresetSelect(target, {
+				getDaw: () => daw,
+				getTrackIds: () => trackIds,
+				value: presetKey,
+				loadingTarget: target,
+				position: "prepend",
+			});
+			editorPresetSelects.set(target, presetSelect);
+		}
+
+		// このエディタのトラック構成ぶんプリセットをロードして名前も埋め込む。
 		daw.setInstrument(presetKey);
 		daw.setLoading?.(true);
 		void loadPreset(presetKey, trackIds).finally(() => {
@@ -514,13 +694,115 @@ export const createDtmStudio = async (
 		// destroy 時に、注入した select と内部参照も後始末する。
 		const destroy = (): void => {
 			daw.destroy();
-			select?.remove();
-			if (editorPresetSelects.get(target) === select)
+			presetSelect?.destroy();
+			if (editorPresetSelects.get(target) === presetSelect)
 				editorPresetSelects.delete(target);
 			const i = mountedEditors.indexOf(daw);
 			if (i >= 0) mountedEditors.splice(i, 1);
 		};
 		return { ...daw, destroy };
+	};
+
+	// モード切替UI（SIMPLE/ADVANCED）。編集UIのマウント／再マウントごと面倒を見る。
+	const mountModeSwitch = (
+		target: HTMLElement,
+		opts: ModeSwitchOptions,
+	): ModeSwitchInstance => {
+		const doc = target.ownerDocument;
+		const tracksFor =
+			opts.tracksFor ??
+			((m: DawMode) => (m === "advanced" ? TRACKS_ADVANCED : TRACKS_SIMPLE));
+		const labels: Record<DawMode, string> = {
+			simple: opts.labels?.simple ?? "シンプル",
+			advanced: opts.labels?.advanced ?? "アドバンス",
+		};
+		const editorOptionsFor = (mode: DawMode): MountEditorOptions =>
+			typeof opts.editorOptions === "function"
+				? opts.editorOptions(mode)
+				: (opts.editorOptions ?? {});
+
+		let currentMode: DawMode = opts.mode ?? "simple";
+		let daw: DawInstance | null = null;
+
+		// ── UI 構築 ──
+		const wrapper = doc.createElement("div");
+		wrapper.className = opts.className ?? "dtm-controlbar";
+		if (opts.label !== null) {
+			const lab = doc.createElement("span");
+			lab.className = "dtm-controlbar-label";
+			lab.textContent = opts.label ?? "MODE";
+			wrapper.appendChild(lab);
+		}
+		const seg = doc.createElement("div");
+		seg.className = "dtm-modeseg";
+		const buttons = new Map<DawMode, HTMLButtonElement>();
+		const updateButtons = (): void => {
+			for (const [mode, btn] of buttons)
+				btn.classList.toggle("dtm-modebtn--active", mode === currentMode);
+		};
+		for (const mode of ["simple", "advanced"] as const) {
+			const btn = doc.createElement("button");
+			btn.type = "button";
+			btn.className = "dtm-modebtn";
+			btn.textContent = labels[mode];
+			btn.addEventListener("click", () => setMode(mode));
+			seg.appendChild(btn);
+			buttons.set(mode, btn);
+		}
+		wrapper.appendChild(seg);
+
+		// ── マウント／アンマウント ──
+		const doMount = (mode: DawMode, mml?: string): void => {
+			const editorOpts = editorOptionsFor(mode);
+			daw = mountEditor(opts.editorTarget, {
+				...editorOpts,
+				mode,
+				tracks: tracksFor(mode),
+				initialMML: mml ?? editorOpts.initialMML,
+			});
+			opts.onMount?.(daw, mode);
+		};
+		const doUnmount = (): string | undefined => {
+			if (!daw) return undefined;
+			const mml = daw.getMML().full;
+			opts.onUnmount?.(daw, currentMode);
+			daw.destroy();
+			daw = null;
+			return mml;
+		};
+
+		function setMode(mode: DawMode): void {
+			if (mode === currentMode && daw) return;
+			const carried = doUnmount();
+			currentMode = mode;
+			updateButtons();
+			opts.onChange?.(mode);
+			// 初回（carried===undefined）は editorOptions.initialMML、以降は引き継いだMML。
+			doMount(mode, carried);
+		}
+
+		if (opts.position === "prepend")
+			target.insertBefore(wrapper, target.firstChild);
+		else target.appendChild(wrapper);
+
+		// 初期マウント（onChange は呼ばない）。
+		updateButtons();
+		doMount(currentMode, editorOptionsFor(currentMode).initialMML);
+
+		const instance: ModeSwitchInstance = {
+			element: wrapper,
+			getDaw: () => daw,
+			getMode: () => currentMode,
+			setMode,
+			destroy: () => {
+				doUnmount();
+				wrapper.remove();
+				const i = mountedModeSwitches.indexOf(instance);
+				if (i >= 0) mountedModeSwitches.splice(i, 1);
+			},
+		};
+		mountedModeSwitches.push(instance);
+		return instance;
 	};
 
 	const mountPlayer = (
@@ -552,8 +834,10 @@ export const createDtmStudio = async (
 	};
 
 	const dispose = (): void => {
+		for (const m of [...mountedModeSwitches]) m.destroy();
 		for (const p of mountedPlayers) p.destroy();
 		for (const d of mountedEditors) d.destroy();
+		mountedModeSwitches.length = 0;
 		mountedPlayers.length = 0;
 		mountedEditors.length = 0;
 		void audioCtx.close();
@@ -565,6 +849,9 @@ export const createDtmStudio = async (
 		mountEditor,
 		mountPlayer,
 		loadPreset,
+		defaultPreset,
+		mountPresetSelect,
+		mountModeSwitch,
 		dispose,
 	};
 };

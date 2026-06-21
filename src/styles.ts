@@ -299,6 +299,55 @@ export const DAW_CSS = `
 .dtm-textarea.dtm-grow { width: 0; }
 .dtm-range { height: var(--dtm-tap); accent-color: var(--dtm-primary); }
 
+/* ─── コントロールバー（楽器プリセット / モード切替などの差し込みUI） ─── */
+.dtm-controlbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dtm-gap);
+  padding: 6px 8px;
+  background: var(--dtm-deep);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-border2),
+    4px 4px 0 var(--c-black);
+  margin-bottom: var(--dtm-gap);
+}
+.dtm-controlbar-label {
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--dtm-accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.dtm-controlbar .dtm-select { flex: 1 1 160px; }
+
+/* モード切替（テキスト版セグメント） */
+.dtm-modeseg {
+  display: inline-flex;
+  border: 2px solid var(--dtm-border2);
+  box-shadow: 3px 3px 0 var(--c-black);
+}
+.dtm-modebtn {
+  min-height: var(--dtm-tap);
+  padding: 0 14px;
+  border: none;
+  border-right: 2px solid var(--dtm-border2);
+  background: var(--dtm-deep);
+  color: var(--dtm-muted);
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  cursor: pointer;
+}
+.dtm-modebtn:last-child { border-right: none; }
+.dtm-modebtn--active { background: var(--dtm-primary); color: var(--dtm-pfg); }
+.dtm-modebtn:not(.dtm-modebtn--active):active { background: var(--dtm-border2); }
+
 /* ─── トラックピル（キャラクター選択ボタン） ─── */
 .dtm-tracks {
   display: flex;

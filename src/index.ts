@@ -34,8 +34,12 @@ export {
 	type DtmStudio,
 	type DtmStudioEngines,
 	type DtmStudioOptions,
+	type ModeSwitchInstance,
+	type ModeSwitchOptions,
 	type MountEditorOptions,
 	type MountPlayerOptions,
+	type PresetSelectInstance,
+	type PresetSelectOptions,
 } from "./studio";
 
 // UIユーティリティ
