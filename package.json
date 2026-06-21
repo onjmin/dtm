@@ -61,6 +61,7 @@
 	},
 	"dependencies": {
 		"@onjmin/chord-parser": "1.0.2",
+		"@onjmin/dtm": "0.1.14",
 		"@onjmin/koe": "1.0.3"
 	}
 }

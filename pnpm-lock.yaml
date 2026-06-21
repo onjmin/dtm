@@ -11,6 +11,9 @@ importers:
       '@onjmin/chord-parser':
         specifier: 1.0.2
         version: 1.0.2
+      '@onjmin/dtm':
+        specifier: 0.1.14
+        version: 0.1.14
       '@onjmin/koe':
         specifier: 1.0.3
         version: 1.0.3
@@ -287,6 +290,9 @@ packages:
 
   '@onjmin/chord-parser@1.0.2':
     resolution: {integrity: sha512-dkx7CY0sSwCZH7QlVpBVCKCGZI7lJZUjriUrIIT4rcbyPJhPnkinCXkNHohZ5oKMFgE8J5ziB+WFSr4D5y/86g==}
+
+  '@onjmin/dtm@0.1.14':
+    resolution: {integrity: sha512-4sgVlv2X0uc4kd0qT+CxdZnRkV/RrK8nIqg6yvD/qYobKPj2I1OvGbzlG+73Nheiw64VSekP3MCKptvMq7+VZg==}
 
   '@onjmin/koe@1.0.3':
     resolution: {integrity: sha512-qxBtIKPcbtWJPo0jhi/pzfneOkE1s+Ok5DvCXpjI/NR8bbXEHM77XCn18buENe5eIZMdfUHEprIDuIp5eARONA==}
@@ -1019,6 +1025,11 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@onjmin/chord-parser@1.0.2': {}
+
+  '@onjmin/dtm@0.1.14':
+    dependencies:
+      '@onjmin/chord-parser': 1.0.2
+      '@onjmin/koe': 1.0.3
 
   '@onjmin/koe@1.0.3': {}
 
