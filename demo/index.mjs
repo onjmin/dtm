@@ -773,6 +773,7 @@ var buildUI = (target, options) => {
     <button class="dtm-play" data-dtm="play" disabled>${icon("play")}<span>\u8A66\u8074</span></button>
     <button class="dtm-iconbtn dtm-rec" data-dtm="rec" title="\u9332\u97F3">${icon("record")}</button>
     <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>\u30BD\u30ED</span></label>
+    <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
     <span class="dtm-grow"></span>
     <span class="dtm-label">BPM</span>
     <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
@@ -942,6 +943,8 @@ var buildUI = (target, options) => {
   const sel = (name) => q(root, `[data-dtm="${name}"]`);
   return {
     root,
+    topbar: sel("transport"),
+    topbarLoading: sel("topbar-loading"),
     playBtn: sel("play"),
     recBtn: sel("rec"),
     soloCheckbox: sel("solo"),
@@ -4325,7 +4328,7 @@ var DAW_CSS = `
 
 /* \u2500\u2500\u2500 \u30ED\u30FC\u30C7\u30A3\u30F3\u30B0\u30AA\u30FC\u30D0\u30FC\u30EC\u30A4 \u2500\u2500\u2500 */
 .dtm-overlay {
-  position: absolute; inset: 0; z-index: 1000;
+  position: absolute; inset: 0; z-index: 10;
   background: rgba(0,0,0,.92);
   display: flex; align-items: center; justify-content: center;
   flex-direction: column; gap: 14px;
@@ -4373,6 +4376,22 @@ var DAW_CSS = `
   color: var(--dtm-primary);
   letter-spacing: .15em;
   min-height: 1em;
+}
+.dtm-topbar-loading {
+  display: none;
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  color: var(--dtm-primary);
+  margin-left: 12px;
+  letter-spacing: .15em;
+  align-self: center;
+}
+.dtm-topbar.is-loading .dtm-topbar-loading {
+  display: inline-block;
+}
+.dtm-topbar.is-loading {
+  pointer-events: none;
+  opacity: 0.7;
 }
 
 @keyframes dtm-blink { 0%,100%{opacity:1} 50%{opacity:0} }
@@ -5503,6 +5522,7 @@ var mountDAW = (target, options = {}) => {
     const streaming = !!voices && streamTracks.some((t) => t.notes.length > 0);
     if (streaming && voices) {
       const overlay = showLoadingOverlay(refs.rollContainer);
+      setLoading(true);
       try {
         await voices.loadModels(streamTracks.map((t) => t.model));
         await voices.warm(streamTracks);
@@ -5510,6 +5530,7 @@ var mountDAW = (target, options = {}) => {
         console.warn("[dtm] voice preload failed", err2);
       } finally {
         overlay.remove();
+        setLoading(false);
       }
     }
     if (playbackState !== "paused") {
@@ -6108,9 +6129,11 @@ var mountDAW = (target, options = {}) => {
   };
   const overlayDuring = (fn) => {
     refs.overlay.hidden = false;
+    setLoading(true);
     setTimeout(() => {
       fn();
       refs.overlay.hidden = true;
+      setLoading(false);
     }, 30);
   };
   const wireEvents = () => {
@@ -6254,6 +6277,7 @@ var mountDAW = (target, options = {}) => {
       const file = refs.midiInput.files?.[0];
       if (!file || !options.parseMidi) return;
       refs.overlay.hidden = false;
+      setLoading(true);
       const buffer = new Uint8Array(await file.arrayBuffer());
       pendingMidi = options.parseMidi(buffer);
       detectedTracks = analyzeMidiTracks(pendingMidi);
@@ -6274,6 +6298,7 @@ var mountDAW = (target, options = {}) => {
       });
       refs.midiTrackSelection.classList.remove("dtm-hidden");
       refs.overlay.hidden = true;
+      setLoading(false);
     });
     refs.midiLoadBtn.addEventListener("click", () => {
       if (!pendingMidi) return;
@@ -6347,6 +6372,9 @@ var mountDAW = (target, options = {}) => {
   resizeObserver.observe(refs.rollContainer);
   document.addEventListener("pointermove", onPointerMove);
   document.addEventListener("pointerup", onPointerUp);
+  const setLoading = (loading) => {
+    refs.topbar.classList.toggle("is-loading", loading);
+  };
   return {
     play,
     pause,
@@ -6384,6 +6412,7 @@ var mountDAW = (target, options = {}) => {
     exportMIDI: exportMIDI2,
     setBpm,
     getPlaybackState: () => playbackState,
+    setLoading,
     destroy: () => {
       sequencer.stop();
       resizeObserver.disconnect();
@@ -7077,6 +7106,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       });
     }
     return {
+      id: String(index),
       model: lt.model,
       volume: vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) * (trackVolume / 100),
       pan: panToStereo(lt.pan ?? DEFAULT_PAN),
@@ -7100,7 +7130,11 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       if (!playing || activePlayer !== instance) return;
     }
     seq.start(0);
-    if (streaming) ensureVoices().startStream(tracks, seq.getStartTime());
+    if (streaming) {
+      ensureVoices().startStream(tracks, seq.getStartTime(), {
+        isAudible: (t) => !mutedTracks.has(Number(t.id))
+      });
+    }
   };
   const play = () => {
     if (playing || trackIndices.length === 0) return;
@@ -7688,11 +7722,13 @@ var createDtmStudio = async (options = {}) => {
           daw.pause();
         }
         const overlay = showLoadingOverlay(target);
+        daw.setLoading?.(true);
         try {
           daw.setInstrument(select.value);
           await loadPreset(select.value, trackIds);
         } finally {
           overlay.remove();
+          daw.setLoading?.(false);
           if (wasPlaying) {
             daw.play();
           }
@@ -7703,7 +7739,10 @@ var createDtmStudio = async (options = {}) => {
     mountedEditors.push(daw);
     const presetKey = preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
     daw.setInstrument(presetKey);
-    void loadPreset(presetKey, trackIds);
+    daw.setLoading?.(true);
+    void loadPreset(presetKey, trackIds).finally(() => {
+      daw.setLoading?.(false);
+    });
     const destroy = () => {
       daw.destroy();
       select?.remove();
