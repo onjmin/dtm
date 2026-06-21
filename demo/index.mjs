@@ -4186,28 +4186,35 @@ var createSequencer = (options) => {
   let active = false;
   let fromStepValue = 0;
   let trackVolumeMap = /* @__PURE__ */ new Map();
+  let loopLengthSec = 0;
+  let loopBase = 0;
   const secondsPerStep = () => 60 / options.getBpm() / STEPS_PER_BEAT2;
   const buildTimeline = (fromStep) => {
     timeline = [];
     trackVolumeMap = /* @__PURE__ */ new Map();
     const sps = secondsPerStep();
+    let maxEnd = 0;
     for (const track of options.getTracks()) {
       trackVolumeMap.set(track.id, track.volume);
       for (const note of track.notes) {
         const relativeStart = note.startStep - fromStep;
         if (relativeStart < 0) continue;
         const velocity = note.velocity ?? DEFAULT_PLAYBACK_VELOCITY;
+        const when = relativeStart * sps;
+        const duration = note.durationSteps * sps;
+        maxEnd = Math.max(maxEnd, when + duration);
         timeline.push({
           trackId: track.id,
           pitch: note.pitch,
           volume: track.volume / 100,
           velocity,
-          when: relativeStart * sps,
-          duration: note.durationSteps * sps
+          when,
+          duration
         });
       }
     }
     timeline.sort((a, b) => a.when - b.when);
+    loopLengthSec = maxEnd;
   };
   const scheduleTick = () => {
     const sps = secondsPerStep();
@@ -4216,9 +4223,15 @@ var createSequencer = (options) => {
     for (const track of options.getTracks()) {
       trackVolumeMap.set(track.id, track.volume);
     }
-    while (nowIndex < timeline.length) {
+    const loop = options.getLoop?.() ?? false;
+    while (true) {
+      if (nowIndex >= timeline.length) {
+        if (!loop || loopLengthSec <= 0) break;
+        nowIndex = 0;
+        loopBase += loopLengthSec;
+      }
       const ev = timeline[nowIndex];
-      const _when = ev.when - time;
+      const _when = ev.when + loopBase - time;
       if (_when > PLAN_TIME) break;
       nowIndex++;
       if (soloId && ev.trackId !== soloId) continue;
@@ -4253,12 +4266,14 @@ var createSequencer = (options) => {
         });
       }
     }
-    const last = timeline[timeline.length - 1];
-    const lastWhen = last?.when ?? 0;
-    const lastDuration = last?.duration ?? 0;
-    if (nowIndex >= timeline.length && time > lastWhen + lastDuration + 0.1) {
-      stop();
-      options.onEnd();
+    if (!loop) {
+      const last = timeline[timeline.length - 1];
+      const lastWhen = last?.when ?? 0;
+      const lastDuration = last?.duration ?? 0;
+      if (nowIndex >= timeline.length && time > lastWhen + lastDuration + 0.1) {
+        stop();
+        options.onEnd();
+      }
     }
   };
   const animate = () => {
@@ -4288,6 +4303,7 @@ var createSequencer = (options) => {
     active = true;
     startTime = options.getAudioTime() + START_DELAY;
     nowIndex = 0;
+    loopBase = 0;
     intervalId = setInterval(scheduleTick, TICK_INTERVAL_MS);
     animationId = requestAnimationFrame(animate);
   };
@@ -4297,6 +4313,73 @@ var createSequencer = (options) => {
     isActive: () => active,
     getStartTime: () => startTime
   };
+};
+
+// src/synth.ts
+var freqFromPitch = (pitch) => 440 * 2 ** ((pitch - 69) / 12);
+var createSynth = (ctx, destination = ctx.destination) => {
+  const playNote = (e) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = freqFromPitch(e.pitch);
+    const t0 = ctx.currentTime + e.when;
+    const peak = Math.max(1e-4, 0.06 * e.volume * 1.5);
+    gain.gain.setValueAtTime(peak, t0);
+    gain.gain.exponentialRampToValueAtTime(1e-3, t0 + e.duration);
+    osc.connect(gain);
+    if (typeof ctx.createStereoPanner === "function" && e.pan) {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, e.pan));
+      gain.connect(panner);
+      panner.connect(destination);
+    } else {
+      gain.connect(destination);
+    }
+    osc.start(t0);
+    osc.stop(t0 + e.duration + 0.02);
+  };
+  const playDrum = (e) => {
+    const t0 = ctx.currentTime + e.when;
+    const vol = Math.max(1e-4, Math.min(1, e.velocity));
+    const isKick = e.pitch === 35 || e.pitch === 36;
+    const isSnareLike = e.pitch === 38 || e.pitch === 39 || e.pitch === 40;
+    if (isKick) {
+      const osc = ctx.createOscillator();
+      const g2 = ctx.createGain();
+      osc.frequency.setValueAtTime(150, t0);
+      osc.frequency.exponentialRampToValueAtTime(50, t0 + 0.12);
+      g2.gain.setValueAtTime(vol * 0.9, t0);
+      g2.gain.exponentialRampToValueAtTime(1e-3, t0 + 0.18);
+      osc.connect(g2).connect(destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.2);
+      osc.onended = () => osc.disconnect();
+      return;
+    }
+    const dur = isSnareLike ? 0.18 : 0.05;
+    const length = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = isSnareLike ? "bandpass" : "highpass";
+    filter.frequency.value = isSnareLike ? 2e3 : 8e3;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol * (isSnareLike ? 0.7 : 0.4), t0);
+    g.gain.exponentialRampToValueAtTime(1e-3, t0 + dur);
+    src.connect(filter).connect(g).connect(destination);
+    src.start(t0);
+    src.stop(t0 + dur);
+    src.onended = () => {
+      src.disconnect();
+      filter.disconnect();
+      g.disconnect();
+    };
+  };
+  return { playNote, playDrum };
 };
 
 // src/styles.ts
@@ -4969,6 +5052,13 @@ var DAW_CSS = `
   font-size: 13px;
   line-height: 1.6;
 }
+.dtm-modal-body a {
+  color: var(--dtm-primary);
+  text-decoration: underline;
+}
+.dtm-modal-body a:hover {
+  color: var(--dtm-accent);
+}
 .dtm-modal-body h4 {
   margin: 12px 0 6px 0;
   color: var(--dtm-primary);
@@ -5423,7 +5513,6 @@ var showBalloon = (balloonEl) => {
     hideActiveBalloon();
   }, 3e3);
 };
-var freqFromPitch = (pitch) => 440 * 2 ** ((pitch - 69) / 12);
 var mountMmlPlayer = (target, mml, options = {}) => {
   injectStyles(target.ownerDocument ?? document);
   const {
@@ -5494,68 +5583,10 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     if (!audioCtx) audioCtx = new AudioContext();
     return audioCtx;
   };
-  const synthPlay = (e) => {
-    const ctx = ensureCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "square";
-    osc.frequency.value = freqFromPitch(e.pitch);
-    const t0 = ctx.currentTime + e.when;
-    const peak = Math.max(1e-4, 0.06 * e.volume * 1.5);
-    gain.gain.setValueAtTime(peak, t0);
-    gain.gain.exponentialRampToValueAtTime(1e-3, t0 + e.duration);
-    osc.connect(gain);
-    if (typeof ctx.createStereoPanner === "function" && e.pan) {
-      const panner = ctx.createStereoPanner();
-      panner.pan.value = Math.max(-1, Math.min(1, e.pan));
-      gain.connect(panner);
-      panner.connect(ctx.destination);
-    } else {
-      gain.connect(ctx.destination);
-    }
-    osc.start(t0);
-    osc.stop(t0 + e.duration + 0.02);
-  };
-  const drumSynth = (e) => {
-    const ctx = ensureCtx();
-    const t0 = ctx.currentTime + e.when;
-    const vol = Math.max(1e-4, Math.min(1, e.velocity));
-    const isKick = e.pitch === 35 || e.pitch === 36;
-    const isSnareLike = e.pitch === 38 || e.pitch === 39 || e.pitch === 40;
-    if (isKick) {
-      const osc = ctx.createOscillator();
-      const g2 = ctx.createGain();
-      osc.frequency.setValueAtTime(150, t0);
-      osc.frequency.exponentialRampToValueAtTime(50, t0 + 0.12);
-      g2.gain.setValueAtTime(vol * 0.9, t0);
-      g2.gain.exponentialRampToValueAtTime(1e-3, t0 + 0.18);
-      osc.connect(g2).connect(ctx.destination);
-      osc.start(t0);
-      osc.stop(t0 + 0.2);
-      osc.onended = () => osc.disconnect();
-      return;
-    }
-    const dur = isSnareLike ? 0.18 : 0.05;
-    const length = Math.max(1, Math.floor(ctx.sampleRate * dur));
-    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    const filter = ctx.createBiquadFilter();
-    filter.type = isSnareLike ? "bandpass" : "highpass";
-    filter.frequency.value = isSnareLike ? 2e3 : 8e3;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(vol * (isSnareLike ? 0.7 : 0.4), t0);
-    g.gain.exponentialRampToValueAtTime(1e-3, t0 + dur);
-    src.connect(filter).connect(g).connect(ctx.destination);
-    src.start(t0);
-    src.stop(t0 + dur);
-    src.onended = () => {
-      src.disconnect();
-      filter.disconnect();
-      g.disconnect();
-    };
+  let synthInstance = null;
+  const ensureSynth = () => {
+    if (!synthInstance) synthInstance = createSynth(ensureCtx());
+    return synthInstance;
   };
   let voices = null;
   const ensureVoices = () => {
@@ -5925,12 +5956,12 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       if (em) jumpEmojiAt(em, e.when);
       if (lyricTracks.has(trackIdx)) return;
       options.onPlayNote?.(e);
-      if (useSynth) synthPlay(e);
+      if (useSynth) ensureSynth().playNote(e);
     },
     onPlayDrum: (e) => {
       const velocity = e.velocity * (trackVolume / 100);
       options.onPlayDrum?.({ ...e, velocity });
-      if (useSynth) drumSynth({ ...e, velocity });
+      if (useSynth) ensureSynth().playDrum({ ...e, velocity });
     },
     onTick: (step) => {
       renderPlayhead(step);
@@ -8190,6 +8221,112 @@ var INSTRUMENT_PRESETS = {
   }
 };
 
+// src/headless-player.ts
+var STEPS_PER_BAR2 = 192;
+var playMML = (mml, options = {}) => {
+  const { placements, bpm: parsedBpm, meta } = parseMML(mml);
+  const bpm = parsedBpm ?? options.defaultBpm ?? DEFAULT_BPM;
+  const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
+  const drumPattern = meta.drum ? drumPatternDict[meta.drum] ?? null : null;
+  let masterVolume = meta.volume ?? options.volume ?? 100;
+  const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
+    (a, b) => a - b
+  );
+  const seqTracks = trackIndices.map((index) => {
+    let id = 0;
+    const notes = placements.filter((p) => p.trackIndex === index).map((p) => ({
+      id: id++,
+      startStep: p.startStep,
+      durationSteps: p.durationSteps,
+      pitch: p.pitch,
+      velocity: 100
+    }));
+    return { id: String(index), volume: masterVolume, notes };
+  });
+  const ownsCtx = !options.audioContext;
+  const ctx = options.audioContext ?? new AudioContext();
+  const destination = options.destination ?? ctx.destination;
+  const useSynth = options.synth ?? !options.onPlayNote;
+  const synth = useSynth ? createSynth(ctx, destination) : null;
+  const pauseWhenHidden = options.pauseWhenHidden ?? ownsCtx;
+  let playing = false;
+  const seq = createSequencer({
+    getTracks: () => seqTracks,
+    getBpm: () => bpm,
+    getPlayStartStep: () => 0,
+    getDrumPattern: () => drumPattern,
+    getSoloTrackId: () => null,
+    getLoop: () => options.loop ?? false,
+    getAudioTime: () => ctx.currentTime,
+    onPlayNote: (e) => {
+      options.onPlayNote?.(e);
+      synth?.playNote(e);
+    },
+    onPlayDrum: (e) => {
+      const velocity = e.velocity * (masterVolume / 100);
+      options.onPlayDrum?.({ ...e, velocity });
+      synth?.playDrum({ ...e, velocity });
+    },
+    onTick: () => {
+    },
+    onEnd: () => finish(),
+    stepsPerBar: STEPS_PER_BAR2
+  });
+  const finish = () => {
+    if (!playing) return;
+    playing = false;
+    options.onStop?.();
+  };
+  const onVisibilityChange = () => {
+    if (!playing) return;
+    if (document.hidden) {
+      void ctx.suspend();
+    } else if (ctx.state === "suspended") {
+      void ctx.resume();
+    }
+  };
+  if (pauseWhenHidden && typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+  }
+  playing = true;
+  void (async () => {
+    const resumes = [];
+    const r = options.onResumeAudio?.();
+    if (r) resumes.push(r);
+    if (ctx.state === "suspended") resumes.push(ctx.resume());
+    if (resumes.length > 0) await Promise.all(resumes);
+    if (!playing) return;
+    seq.start(0);
+  })();
+  const stop = () => {
+    if (!playing) return;
+    seq.stop();
+    finish();
+  };
+  const setVolume = (volume) => {
+    masterVolume = volume;
+    for (const t of seqTracks) t.volume = volume;
+  };
+  const suspend = () => ctx.suspend();
+  const resume = () => ctx.resume();
+  const destroy = () => {
+    seq.stop();
+    playing = false;
+    if (pauseWhenHidden && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    }
+    if (ownsCtx) void ctx.close();
+  };
+  return {
+    stop,
+    isPlaying: () => playing,
+    setVolume,
+    suspend,
+    resume,
+    destroy
+  };
+};
+
 // src/piano-roll.ts
 var createPianoRoll = (options, handlers) => {
   const {
@@ -9142,6 +9279,7 @@ export {
   createPianoRoll,
   createSequencer,
   createSingingVoices,
+  createSynth,
   createVoiceRegistry,
   decomposeToMonophonic,
   drawGrid,
@@ -9155,6 +9293,7 @@ export {
   extractMidiPlacementsByTrack,
   fetchSoundFontList,
   formatMmlMeta,
+  freqFromPitch,
   generateRandomPattern,
   getDrawOffset,
   getGridCanvas,
@@ -9177,6 +9316,7 @@ export {
   parseLyrics,
   parseMML,
   parseMmlMeta,
+  playMML,
   setDrawOffset,
   setupRecorder,
   shiftNotes,
