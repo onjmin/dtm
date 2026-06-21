@@ -4316,7 +4316,12 @@ var DAW_CSS = `
    PICO-8\u30AB\u30E9\u30FC\u30D1\u30EC\u30C3\u30C8\u30FB\u7F8E\u54B2\u30D5\u30A9\u30F3\u30C8\u30FB\u30B2\u30FC\u30E0\u30A6\u30A3\u30F3\u30C9\u30A6\u67A0
    ==================================================== */
 
-.dtm-daw {
+/* \u30C7\u30B6\u30A4\u30F3\u30C8\u30FC\u30AF\u30F3\u306F\u7DE8\u96C6UI\u672C\u4F53\uFF08.dtm-daw\uFF09\u306B\u52A0\u3048\u3001\u305D\u306E\u5916\u5074\u306B\u5DEE\u3057\u8FBC\u307E\u308C\u308B
+   \u30B3\u30F3\u30C8\u30ED\u30FC\u30EB\u30D0\u30FC\uFF08.dtm-controlbar\uFF09\u306B\u3082\u4F9B\u7D66\u3059\u308B\u3002mountPresetSelect /
+   mountModeSwitch \u306EUI\u306F .dtm-daw \u306E\u5144\u5F1F\u3068\u3057\u3066\u7F6E\u304B\u308C\u308B\u305F\u3081\u3001\u3053\u3053\u3067\u914D\u3089\u306A\u3044\u3068
+   var(--dtm-*) \u304C\u89E3\u6C7A\u3067\u304D\u305A\u7121\u88C5\u98FE\uFF08\u767D\u5730\u30FB\u65E2\u5B9A\u30D5\u30A9\u30F3\u30C8\uFF09\u306B\u306A\u3063\u3066\u3057\u307E\u3046\u3002 */
+.dtm-daw,
+.dtm-controlbar {
   /* PICO-8 16\u8272\u30D1\u30EC\u30C3\u30C8\u3088\u308A */
   --c-black:   #000000;
   --c-navy:    #1d2b53;
@@ -4353,7 +4358,9 @@ var DAW_CSS = `
   --dtm-tap:      40px;
   --dtm-gap:      6px;
   --dtm-font:     'k8x12',ui-monospace,monospace;
+}
 
+.dtm-daw {
   box-sizing: border-box;
   font-family: var(--dtm-font);
   font-size: 14px;
@@ -8924,11 +8931,12 @@ var createDtmStudio = async (options = {}) => {
     let presetSelect = null;
     if (wantPresetUI) {
       editorPresetSelects.get(target)?.destroy();
+      const rollEl = target.querySelector('[data-dtm="roll"]');
       presetSelect = mountPresetSelect(target, {
         getDaw: () => daw,
         getTrackIds: () => trackIds,
         value: presetKey,
-        loadingTarget: target,
+        loadingTarget: rollEl ?? target,
         position: "prepend"
       });
       editorPresetSelects.set(target, presetSelect);
@@ -8983,6 +8991,11 @@ var createDtmStudio = async (options = {}) => {
       buttons.set(mode, btn);
     }
     wrapper.appendChild(seg);
+    const attachWrapper = () => {
+      if (opts.position === "prepend")
+        target.insertBefore(wrapper, target.firstChild);
+      else target.appendChild(wrapper);
+    };
     const doMount = (mode, mml) => {
       const editorOpts = editorOptionsFor(mode);
       daw = mountEditor(opts.editorTarget, {
@@ -8991,6 +9004,7 @@ var createDtmStudio = async (options = {}) => {
         tracks: tracksFor(mode),
         initialMML: mml ?? editorOpts.initialMML
       });
+      attachWrapper();
       opts.onMount?.(daw, mode);
     };
     const doUnmount = () => {
@@ -9009,9 +9023,6 @@ var createDtmStudio = async (options = {}) => {
       opts.onChange?.(mode);
       doMount(mode, carried);
     }
-    if (opts.position === "prepend")
-      target.insertBefore(wrapper, target.firstChild);
-    else target.appendChild(wrapper);
     updateButtons();
     doMount(currentMode, editorOptionsFor(currentMode).initialMML);
     const instance = {
