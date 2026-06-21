@@ -1224,9 +1224,16 @@ var buildUI = (target, options) => {
         <textarea class="dtm-textarea dtm-grow" data-dtm="mml-input" placeholder="MML\u3092\u5165\u529B"></textarea>
         <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">\u8AAD\u8FBC</button>
       </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel">
+    <summary>\u30DE\u30AF\u30ED</summary>
+    <div class="dtm-panel-body">
       <div class="dtm-row">
         <span class="dtm-label">\u5168\u4F53\u30B7\u30D5\u30C8</span>
         <select class="dtm-select" data-dtm="shift-select">
+          <option value="-192">-1\u5C0F\u7BC0</option>
           <option value="-96">-2\u5206</option>
           <option value="-48">-4\u5206</option>
           <option value="-24">-8\u5206</option>
@@ -1235,15 +1242,10 @@ var buildUI = (target, options) => {
           <option value="24">+8\u5206</option>
           <option value="48">+4\u5206</option>
           <option value="96">+2\u5206</option>
+          <option value="192">+1\u5C0F\u7BC0</option>
         </select>
         <button class="dtm-btn dtm-btn--primary" data-dtm="shift-apply">\u9069\u7528</button>
       </div>
-    </div>
-  </details>
-
-  <details class="dtm-panel">
-    <summary>\u30DE\u30AF\u30ED</summary>
-    <div class="dtm-panel-body">
       <div class="dtm-row">
         <button class="dtm-btn dtm-btn--danger" data-dtm="macro-clear">\u5168\u6D88\u53BB</button>
         <button class="dtm-btn dtm-btn--accent" data-dtm="macro-random">\u30E9\u30F3\u30C0\u30E0\u914D\u7F6E</button>
@@ -2772,7 +2774,7 @@ var analyzeMidiTracks = (midi) => {
     const validNotes = notes.filter((n) => n.end !== void 0);
     result.push({
       index: i,
-      name: `Ch${i}`,
+      name: `Ch${i + 1}`,
       noteCount: validNotes.length,
       selected: validNotes.length > 0
     });
@@ -5968,11 +5970,13 @@ var mountDAW = (target, options = {}) => {
       active.core.setVolume(active.volume);
       volLabel.textContent = String(active.volume);
     });
-    const lyricDiv = document.createElement("div");
-    lyricDiv.className = "dtm-row";
-    lyricDiv.style.flexDirection = "column";
-    lyricDiv.style.alignItems = "stretch";
-    lyricDiv.innerHTML = `
+    const isAdvanced = trackStates.length > TRACKS_SIMPLE.length;
+    if (isAdvanced || active.config.id !== "chord") {
+      const lyricDiv = document.createElement("div");
+      lyricDiv.className = "dtm-row";
+      lyricDiv.style.flexDirection = "column";
+      lyricDiv.style.alignItems = "stretch";
+      lyricDiv.innerHTML = `
       <div class="dtm-row">
         <span class="dtm-label">\u266A \u6B4C\u8A5E</span>
         <select class="dtm-select" data-dtm="lyric-model" aria-label="\u6B4C\u5531\u30E2\u30C7\u30EB"></select>
@@ -6004,141 +6008,128 @@ var mountDAW = (target, options = {}) => {
         </div>
         <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="\u3072\u3089\u304C\u306A\u30FB\u30AB\u30BF\u30AB\u30CA\u3067\u6B4C\u8A5E\uFF08\u4F8B: \u3069\u308C\u307F\u3075\u3041\u305D\u3089\u3057\u3069\uFF09"></textarea>
       </div>`;
-    refs.trackBody.appendChild(lyricDiv);
-    const lyricModelSel = lyricDiv.querySelector(
-      '[data-dtm="lyric-model"]'
-    );
-    const lyricOctaveSel = lyricDiv.querySelector(
-      '[data-dtm="lyric-octave"]'
-    );
-    const lyricIcon = lyricDiv.querySelector(
-      '[data-dtm="lyric-icon"]'
-    );
-    const lyricBody = lyricDiv.querySelector(
-      '[data-dtm="lyric-body"]'
-    );
-    const lyricInput = lyricDiv.querySelector(
-      '[data-dtm="lyric-input"]'
-    );
-    const lyricCount = lyricDiv.querySelector(
-      '[data-dtm="lyric-count"]'
-    );
-    const lyricVol = lyricDiv.querySelector(
-      '[data-dtm="lyric-vol"]'
-    );
-    const lyricVolLabel = lyricDiv.querySelector(
-      '[data-dtm="lyric-vol-label"]'
-    );
-    const lyricPan = lyricDiv.querySelector(
-      '[data-dtm="lyric-pan"]'
-    );
-    const lyricPanLabel = lyricDiv.querySelector(
-      '[data-dtm="lyric-pan-label"]'
-    );
-    const lyricTerms = lyricDiv.querySelector(
-      '[data-dtm="lyric-terms"]'
-    );
-    const lyricTermsLink = lyricDiv.querySelector(
-      '[data-dtm="lyric-terms-link"]'
-    );
-    const fmtPan = (pan) => pan === 64 ? "C" : pan < 64 ? `L${64 - pan}` : `R${pan - 64}`;
-    const addOpt = (value, label) => {
-      const o = document.createElement("option");
-      o.value = value;
-      o.textContent = label;
-      lyricModelSel.appendChild(o);
-    };
-    addOpt("", "\u306A\u3057");
-    for (const m of LYRIC_MODELS) addOpt(m, lyricModelLabel(m));
-    if (active.lyricModel && !LYRIC_MODELS.includes(active.lyricModel)) {
-      addOpt(active.lyricModel, lyricModelLabel(active.lyricModel));
-    }
-    lyricModelSel.value = active.lyricModel;
-    lyricOctaveSel.value = String(active.vocalOctave);
-    lyricInput.value = active.lyrics;
-    lyricVol.value = String(active.vocalVolume);
-    lyricVolLabel.textContent = String(active.vocalVolume);
-    lyricPan.value = String(active.vocalPan);
-    lyricPanLabel.textContent = fmtPan(active.vocalPan);
-    const updateLyricCount = () => {
-      const n = normalizeLyrics(lyricInput.value).length;
-      lyricCount.textContent = active.lyricModel && n > 0 ? `${n}\u97F3\u7BC0` : "";
-    };
-    const syncLyricTerms = () => {
-      const url = active.lyricModel ? KOE_VOICEBANK_TERMS[active.lyricModel] : void 0;
-      if (url) {
-        const label = lyricModelLabel(active.lyricModel);
-        lyricTermsLink.textContent = `${label}UTAU\u97F3\u6E90`;
-        lyricTermsLink.href = url;
-        lyricTerms.classList.remove("dtm-hidden");
-      } else {
-        lyricTerms.classList.add("dtm-hidden");
+      refs.trackBody.appendChild(lyricDiv);
+      const lyricModelSel = lyricDiv.querySelector(
+        '[data-dtm="lyric-model"]'
+      );
+      const lyricOctaveSel = lyricDiv.querySelector(
+        '[data-dtm="lyric-octave"]'
+      );
+      const lyricIcon = lyricDiv.querySelector(
+        '[data-dtm="lyric-icon"]'
+      );
+      const lyricBody = lyricDiv.querySelector(
+        '[data-dtm="lyric-body"]'
+      );
+      const lyricInput = lyricDiv.querySelector(
+        '[data-dtm="lyric-input"]'
+      );
+      const lyricCount = lyricDiv.querySelector(
+        '[data-dtm="lyric-count"]'
+      );
+      const lyricVol = lyricDiv.querySelector(
+        '[data-dtm="lyric-vol"]'
+      );
+      const lyricVolLabel = lyricDiv.querySelector(
+        '[data-dtm="lyric-vol-label"]'
+      );
+      const lyricPan = lyricDiv.querySelector(
+        '[data-dtm="lyric-pan"]'
+      );
+      const lyricPanLabel = lyricDiv.querySelector(
+        '[data-dtm="lyric-pan-label"]'
+      );
+      const lyricTerms = lyricDiv.querySelector(
+        '[data-dtm="lyric-terms"]'
+      );
+      const lyricTermsLink = lyricDiv.querySelector(
+        '[data-dtm="lyric-terms-link"]'
+      );
+      const fmtPan = (pan) => pan === 64 ? "C" : pan < 64 ? `L${64 - pan}` : `R${pan - 64}`;
+      const addOpt = (value, label) => {
+        const o = document.createElement("option");
+        o.value = value;
+        o.textContent = label;
+        lyricModelSel.appendChild(o);
+      };
+      addOpt("", "\u306A\u3057");
+      for (const m of LYRIC_MODELS) addOpt(m, lyricModelLabel(m));
+      if (active.lyricModel && !LYRIC_MODELS.includes(active.lyricModel)) {
+        addOpt(active.lyricModel, lyricModelLabel(active.lyricModel));
       }
-    };
-    const syncLyricIcon = () => {
-      const imgKey = active.lyricModel ? VOICE_IMAGE_KEY[active.lyricModel.toLowerCase()] : void 0;
-      const src = imgKey ? VOICE_IMAGES[imgKey] : void 0;
-      if (src) {
-        lyricIcon.src = src;
-        lyricIcon.classList.remove("dtm-hidden");
-      } else {
-        lyricIcon.removeAttribute("src");
-        lyricIcon.classList.add("dtm-hidden");
-      }
-    };
-    const syncLyricVisibility = () => {
-      lyricBody.style.display = active.lyricModel ? "" : "none";
-      lyricOctaveSel.style.display = active.lyricModel ? "" : "none";
-      updateLyricCount();
-      syncLyricTerms();
-      syncLyricIcon();
-    };
-    syncLyricVisibility();
-    lyricModelSel.addEventListener("change", () => {
-      active.lyricModel = lyricModelSel.value;
-      syncLyricVisibility();
-    });
-    lyricOctaveSel.addEventListener("change", () => {
-      active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
-    });
-    lyricInput.addEventListener("input", () => {
-      active.lyrics = lyricInput.value;
-      updateLyricCount();
-    });
-    lyricVol.addEventListener("input", () => {
-      active.vocalVolume = Number.parseInt(lyricVol.value, 10);
-      lyricVolLabel.textContent = lyricVol.value;
-    });
-    lyricPan.addEventListener("input", () => {
-      active.vocalPan = Number.parseInt(lyricPan.value, 10);
+      lyricModelSel.value = active.lyricModel;
+      lyricOctaveSel.value = String(active.vocalOctave);
+      lyricInput.value = active.lyrics;
+      lyricVol.value = String(active.vocalVolume);
+      lyricVolLabel.textContent = String(active.vocalVolume);
+      lyricPan.value = String(active.vocalPan);
       lyricPanLabel.textContent = fmtPan(active.vocalPan);
-    });
-    lyricPanLabel.style.cursor = "pointer";
-    lyricPanLabel.title = "\u30BF\u30C3\u30D7\u3067\u4E2D\u592E(C)\u3078";
-    lyricPanLabel.addEventListener("click", () => {
-      active.vocalPan = 64;
-      lyricPan.value = "64";
-      lyricPanLabel.textContent = fmtPan(64);
-    });
+      const updateLyricCount = () => {
+        const n = normalizeLyrics(lyricInput.value).length;
+        lyricCount.textContent = active.lyricModel && n > 0 ? `${n}\u97F3\u7BC0` : "";
+      };
+      const syncLyricTerms = () => {
+        const url = active.lyricModel ? KOE_VOICEBANK_TERMS[active.lyricModel] : void 0;
+        if (url) {
+          const label = lyricModelLabel(active.lyricModel);
+          lyricTermsLink.textContent = `${label}UTAU\u97F3\u6E90`;
+          lyricTermsLink.href = url;
+          lyricTerms.classList.remove("dtm-hidden");
+        } else {
+          lyricTerms.classList.add("dtm-hidden");
+        }
+      };
+      const syncLyricIcon = () => {
+        const imgKey = active.lyricModel ? VOICE_IMAGE_KEY[active.lyricModel.toLowerCase()] : void 0;
+        const src = imgKey ? VOICE_IMAGES[imgKey] : void 0;
+        if (src) {
+          lyricIcon.src = src;
+          lyricIcon.classList.remove("dtm-hidden");
+        } else {
+          lyricIcon.removeAttribute("src");
+          lyricIcon.classList.add("dtm-hidden");
+        }
+      };
+      const syncLyricVisibility = () => {
+        lyricBody.style.display = active.lyricModel ? "" : "none";
+        lyricOctaveSel.style.display = active.lyricModel ? "" : "none";
+        updateLyricCount();
+        syncLyricTerms();
+        syncLyricIcon();
+      };
+      syncLyricVisibility();
+      lyricModelSel.addEventListener("change", () => {
+        active.lyricModel = lyricModelSel.value;
+        syncLyricVisibility();
+      });
+      lyricOctaveSel.addEventListener("change", () => {
+        active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
+      });
+      lyricInput.addEventListener("input", () => {
+        active.lyrics = lyricInput.value;
+        updateLyricCount();
+      });
+      lyricVol.addEventListener("input", () => {
+        active.vocalVolume = Number.parseInt(lyricVol.value, 10);
+        lyricVolLabel.textContent = lyricVol.value;
+      });
+      lyricPan.addEventListener("input", () => {
+        active.vocalPan = Number.parseInt(lyricPan.value, 10);
+        lyricPanLabel.textContent = fmtPan(active.vocalPan);
+      });
+      lyricPanLabel.style.cursor = "pointer";
+      lyricPanLabel.title = "\u30BF\u30C3\u30D7\u3067\u4E2D\u592E(C)\u3078";
+      lyricPanLabel.addEventListener("click", () => {
+        active.vocalPan = 64;
+        lyricPan.value = "64";
+        lyricPanLabel.textContent = fmtPan(64);
+      });
+    }
     if (active.config.id === "chord" && showChord) {
       const div = document.createElement("div");
       div.className = "dtm-row";
       div.style.flexDirection = "column";
       div.style.alignItems = "stretch";
-      const roots = [
-        "C",
-        "C#",
-        "D",
-        "D#",
-        "E",
-        "F",
-        "F#",
-        "G",
-        "G#",
-        "A",
-        "A#",
-        "B"
-      ];
       div.innerHTML = `
         <div class="dtm-row">
           <span class="dtm-label">\u548C\u97F3</span>
@@ -6150,31 +6141,24 @@ var mountDAW = (target, options = {}) => {
             <option value="yatsume">\u30E4\u30C4\u30E1\u7A74</option>
             <option value="alternating">\u4EA4\u4E92\u594F</option>
           </select>
-          <select class="dtm-select" data-dtm="chord-root">
-            ${roots.map((r, i) => `<option value="${i}">${r}</option>`).join("")}
-          </select>
-          <button class="dtm-btn dtm-btn--primary" data-dtm="chord-apply">\u9069\u7528</button>
         </div>
-        <textarea class="dtm-textarea" data-dtm="chord-input" placeholder="\u4F8B: C|G|Am|Em|F|C|F|G">${active.savedChordInput}</textarea>`;
+        <div class="dtm-row">
+          <textarea class="dtm-textarea dtm-grow" data-dtm="chord-input" placeholder="\u4F8B: C|G|Am|Em|F|C|F|G">${active.savedChordInput}</textarea>
+          <button class="dtm-btn dtm-btn--primary" data-dtm="chord-apply">\u9069\u7528</button>
+        </div>`;
       refs.trackBody.appendChild(div);
       const patternSel = div.querySelector(
         '[data-dtm="chord-pattern"]'
-      );
-      const rootSel = div.querySelector(
-        '[data-dtm="chord-root"]'
       );
       const input = div.querySelector(
         '[data-dtm="chord-input"]'
       );
       patternSel.value = active.savedChordPattern;
-      rootSel.value = String(active.savedChordRoot);
       const save = () => {
         active.savedChordInput = input.value;
         active.savedChordPattern = patternSel.value;
-        active.savedChordRoot = Number.parseInt(rootSel.value, 10);
       };
       patternSel.addEventListener("change", save);
-      rootSel.addEventListener("change", save);
       input.addEventListener("input", save);
       div.querySelector('[data-dtm="chord-apply"]').addEventListener("click", () => {
         save();
