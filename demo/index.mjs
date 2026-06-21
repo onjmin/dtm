@@ -5331,21 +5331,28 @@ var mountDAW = (target, options = {}) => {
         barLimit: barLimitBars
       };
     }
-    const trackLines = trackStates.map(
-      (t, i) => `@${i} ${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim()}`
-    );
-    const trackLinesMini = trackStates.map(
-      (t, i) => `@${i}${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim().replace(/\s+/g, "")}`
-    );
+    const trackLines = [];
+    const trackLinesMini = [];
+    trackStates.forEach((t, i) => {
+      const notes = clipNotes(t.core.getNotes());
+      if (notes.length > 0) {
+        const mml = t.core.getMMLFromNotes(notes, bpm, t.volume).trim();
+        trackLines.push(`@${i} ${mml}`);
+        trackLinesMini.push(`@${i}${mml.replace(/\s+/g, "")}`);
+      }
+    });
     const lyricLines = trackStates.map((t, i) => ({
       i,
+      notes: clipNotes(t.core.getNotes()),
       text: t.lyrics.replace(/[\r\n]+/g, " ").trim(),
       model: t.lyricModel.trim(),
       vol: t.vocalVolume,
       gate: t.vocalGate,
       pan: t.vocalPan,
       oct: t.vocalOctave
-    })).filter((x) => x.model.length > 0 && x.text.length > 0).map((x) => {
+    })).filter(
+      (x) => x.model.length > 0 && x.text.length > 0 && x.notes.length > 0
+    ).map((x) => {
       const params = [
         x.vol === DEFAULT_VOCAL_VOLUME ? "" : `v${x.vol}`,
         x.gate === 100 ? "" : `q${x.gate}`,
@@ -5361,7 +5368,7 @@ var mountDAW = (target, options = {}) => {
       full,
       minified,
       ignoredCount: 0,
-      trackCount: trackStates.length,
+      trackCount: trackLines.length,
       barLimit: barLimitBars
     };
   };
