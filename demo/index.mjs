@@ -1104,6 +1104,9 @@ var ICONS = {
   settings: {
     d: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z",
     stroke: true
+  },
+  info: {
+    d: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
   }
 };
 var icon = (name, size = 20) => {
@@ -1220,7 +1223,10 @@ var buildUI = (target, options) => {
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
       <div class="dtm-row">
-        <span class="dtm-label">MML</span>
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; min-width: 48px;">
+          <span class="dtm-label" style="line-height: 1;">MML</span>
+          <button class="dtm-infobtn" data-dtm="mml-info" title="MML\u306E\u66F8\u304D\u65B9\u89E3\u8AAC">${icon("info", 12)}</button>
+        </div>
         <textarea class="dtm-textarea dtm-grow" data-dtm="mml-input" placeholder="MML\u3092\u5165\u529B"></textarea>
         <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">\u8AAD\u8FBC</button>
       </div>
@@ -1295,6 +1301,17 @@ var buildUI = (target, options) => {
       </div>
     </div>
   </details>
+
+  <!-- \u2550\u2550\u2550\u2550 \u89E3\u8AAC\u30E2\u30FC\u30C0\u30EB \u2550\u2550\u2550\u2550 -->
+  <div class="dtm-modal-overlay" data-dtm="modal-overlay" hidden>
+    <div class="dtm-win dtm-modal">
+      <div class="dtm-modal-header">
+        <span class="dtm-modal-title" data-dtm="modal-title"></span>
+        <button class="dtm-modal-close" data-dtm="modal-close">&times;</button>
+      </div>
+      <div class="dtm-modal-body" data-dtm="modal-body"></div>
+    </div>
+  </div>
 </div>`;
   const root = q(target, '[data-dtm="root"]');
   const sel = (name) => q(root, `[data-dtm="${name}"]`);
@@ -1354,7 +1371,12 @@ var buildUI = (target, options) => {
     outputMini: sel("output-mini"),
     copyFullBtn: sel("copy-full"),
     copyMiniBtn: sel("copy-mini"),
-    overlay: sel("overlay")
+    overlay: sel("overlay"),
+    mmlInfoBtn: sel("mml-info"),
+    modalOverlay: sel("modal-overlay"),
+    modalTitle: sel("modal-title"),
+    modalBody: sel("modal-body"),
+    modalClose: sel("modal-close")
   };
 };
 
@@ -4757,6 +4779,128 @@ var DAW_CSS = `
 @keyframes dtm-blink { 0%,100%{opacity:1} 50%{opacity:0} }
 .dtm-blink { animation: dtm-blink 1s steps(1) infinite; }
 
+/* \u2500\u2500\u2500 \u30A4\u30F3\u30D5\u30A9\u30DC\u30BF\u30F3 \u2500\u2500\u2500 */
+.dtm-infobtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 2px solid var(--dtm-border2);
+  background: var(--dtm-surface);
+  color: var(--dtm-muted);
+  cursor: pointer;
+  box-shadow: 1px 1px 0 var(--c-black);
+  padding: 0;
+  margin: 0;
+}
+.dtm-infobtn:hover {
+  color: var(--dtm-primary);
+  border-color: var(--dtm-primary);
+}
+.dtm-infobtn:active {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+
+/* \u2500\u2500\u2500 \u89E3\u8AAC\u30E2\u30FC\u30C0\u30EB \u2500\u2500\u2500 */
+.dtm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(2px);
+}
+.dtm-modal-overlay[hidden] {
+  display: none !important;
+}
+.dtm-modal {
+  max-width: 500px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--dtm-surface);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-primary),
+    4px 4px 0 var(--c-black);
+  overflow: hidden;
+}
+.dtm-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--dtm-deep);
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--c-black);
+}
+.dtm-modal-title {
+  font-family: var(--dtm-font);
+  font-size: 14px;
+  color: var(--dtm-gold);
+  font-weight: bold;
+}
+.dtm-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--dtm-text);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.dtm-modal-close:hover {
+  color: var(--dtm-danger);
+}
+.dtm-modal-body {
+  padding: 12px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.dtm-modal-body h4 {
+  margin: 12px 0 6px 0;
+  color: var(--dtm-primary);
+  font-size: 13px;
+}
+.dtm-modal-body h4:first-child {
+  margin-top: 0;
+}
+.dtm-modal-body p {
+  margin: 0 0 8px 0;
+}
+.dtm-modal-body ul {
+  margin: 0 0 8px 0;
+  padding-left: 16px;
+}
+.dtm-modal-body li {
+  margin-bottom: 4px;
+}
+.dtm-modal-body code {
+  background: var(--dtm-deep);
+  color: var(--dtm-accent);
+  padding: 1px 4px;
+  font-family: var(--dtm-font);
+  font-size: 12px;
+}
+.dtm-modal-body pre {
+  background: var(--dtm-deep);
+  color: var(--dtm-success);
+  padding: 8px;
+  border: 1px solid var(--dtm-border2);
+  margin: 6px 0;
+  overflow-x: auto;
+  font-family: var(--dtm-font);
+  font-size: 12px;
+}
+
 .dtm-hidden { display: none !important; }
 .dtm-grow { flex: 1 1 auto; }
 .dtm-lyric-icon {
@@ -5026,6 +5170,85 @@ var VOICE_IMAGES = {
 };
 
 // src/daw.ts
+var CHORD_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>1. \u57FA\u672C\u306E\u66F8\u304D\u65B9</h4>
+  <p>\u30B3\u30FC\u30C9\u540D\uFF08\u548C\u97F3\u8A18\u53F7\uFF09\u3092\u7E26\u7DDA <code>|</code>\u3001\u30B9\u30DA\u30FC\u30B9\u3001\u307E\u305F\u306F\u30AB\u30F3\u30DE\u3067\u533A\u5207\u3063\u3066\u5165\u529B\u3057\u307E\u3059\u3002\u7E26\u7DDA\u3067\u533A\u5207\u308B\u30681\u5C0F\u7BC0\u3054\u3068\u306E\u914D\u7F6E\u306B\u306A\u308A\u307E\u3059\u3002</p>
+  <pre>\u4F8B: C | G | Am | F</pre>
+
+  <h4>2. 1\u5C0F\u7BC0\u306B\u8907\u6570\u30B3\u30FC\u30C9\u3092\u5165\u308C\u308B</h4>
+  <p>\u5C0F\u7BC0\u306E\u533A\u5207\u308A\uFF08\u7E26\u7DDA <code>|</code>\uFF09\u306E\u4E2D\u306B\u3001\u30B9\u30DA\u30FC\u30B9\u533A\u5207\u308A\u3067\u30B3\u30FC\u30C9\u3092\u4E26\u3079\u307E\u3059\u3002\u7B49\u9593\u9694\u306B\u914D\u7F6E\u3055\u308C\u307E\u3059\u3002</p>
+  <pre>\u4F8B: C G | Am F</pre>
+  <p style="margin-top:4px;"><small>\uFF081\u5C0F\u7BC0\u76EE\uFF1A\u524D\u534AC\u30FB\u5F8C\u534AG\u30012\u5C0F\u7BC0\u76EE\uFF1A\u524D\u534AAm\u30FB\u5F8C\u534AF\uFF09</small></p>
+
+  <h4>3. \u5BFE\u5FDC\u30B3\u30FC\u30C9\u540D</h4>
+  <ul>
+    <li>\u30E1\u30B8\u30E3\u30FC / \u30DE\u30A4\u30CA\u30FC: <code>C</code>, <code>Dm</code>, <code>Am</code> \u306A\u3069</li>
+    <li>\u30BB\u30D6\u30F3\u30B9: <code>C7</code>, <code>Am7</code>, <code>FM7</code> \u306A\u3069</li>
+    <li>\u305D\u306E\u4ED6: <code>Csus4</code>, <code>Cdim</code>, <code>Caug</code>, <code>Cadd9</code> \u306A\u3069</li>
+  </ul>
+
+  <h4>4. \u6F14\u594F\u30D1\u30BF\u30FC\u30F3</h4>
+  <ul>
+    <li><strong>\u30D6\u30ED\u30C3\u30AF</strong>: \u548C\u97F3\u306E\u69CB\u6210\u97F3\u3092\u3059\u3079\u3066\u540C\u6642\u306B\u4F38\u3070\u3057\u3066\u6F14\u594F\u3057\u307E\u3059\u3002</li>
+    <li><strong>\u30A2\u30EB\u30DA\u30B8\u30AA</strong>: \u548C\u97F3\u306E\u69CB\u6210\u97F3\u3092\u4F4E\u3044\u9806\u306B\u5206\u6563\u3057\u3066\u6F14\u594F\u3057\u307E\u3059\u3002</li>
+    <li><strong>\u30A2\u30EB\u30DA\u30B8\u30AA\uFF08\u30B8\u30E3\u30E9\u30FC\u30F3\uFF09</strong>: \u7D20\u65E9\u304F\u30A2\u30EB\u30DA\u30B8\u30AA\u3092\u9CF4\u3089\u3057\u307E\u3059\u3002</li>
+    <li><strong>\u88CF\u6253\u3061</strong>: \u5404\u62CD\u306E\u88CF\uFF088\u5206\u88CF\uFF09\u306E\u30BF\u30A4\u30DF\u30F3\u30B0\u3067\u30B3\u30FC\u30C9\u3092\u523B\u307F\u307E\u3059\u3002</li>
+    <li><strong>\u30E4\u30C4\u30E1\u7A74</strong>: \u30EA\u30BA\u30DF\u30AB\u30EB\u306A\u30D4\u30B3\u30D4\u30B3\u30B2\u30FC\u30E0\u98A8\u306E\u4F34\u594F\u30D1\u30BF\u30FC\u30F3\u3067\u3059\u3002</li>
+    <li><strong>\u4EA4\u4E92\u594F</strong>: \u30EB\u30FC\u30C8\u97F3\uFF08\u4F4E\u97F3\uFF09\u3068\u30B3\u30FC\u30C9\u69CB\u6210\u97F3\uFF08\u9AD8\u97F3\uFF09\u3092\u4EA4\u4E92\u306B\u523B\u307F\u307E\u3059\u3002</li>
+  </ul>
+</div>
+`;
+var MML_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>1. \u97F3\u7B26\u3068\u4F11\u7B26</h4>
+  <p><code>c</code>(\u30C9) <code>d</code>(\u30EC) <code>e</code>(\u30DF) <code>f</code>(\u30D5\u30A1) <code>g</code>(\u30BD) <code>a</code>(\u30E9) <code>b</code>(\u30B7) \u306E\u30A2\u30EB\u30D5\u30A1\u30D9\u30C3\u30C8\u3067\u8868\u3057\u307E\u3059\u3002</p>
+  <ul>
+    <li>\u534A\u97F3\u4E0A\u3052\u308B: <code>c#</code> \u307E\u305F\u306F <code>c+</code></li>
+    <li>\u534A\u97F3\u4E0B\u3052\u308B: <code>d-</code></li>
+    <li>\u4F11\u7B26: <code>r</code></li>
+  </ul>
+
+  <h4>2. \u97F3\u306E\u9577\u3055</h4>
+  <p>\u97F3\u540D\u3084\u4F11\u7B26\u306E\u5F8C\u306B\u6570\u5024\u3067\u6307\u5B9A\u3057\u307E\u3059\uFF08\u4F8B: <code>4</code> = 4\u5206\u97F3\u7B26, <code>8</code> = 8\u5206\u97F3\u7B26, <code>16</code> = 16\u5206\u97F3\u7B26\uFF09\u3002</p>
+  <ul>
+    <li><code>c4</code> : 4\u5206\u97F3\u7B26\u306E\u30C9</li>
+    <li><code>r8</code> : 8\u5206\u4F11\u7B26</li>
+    <li><code>c4.</code> : \u4ED8\u70B94\u5206\u97F3\u7B26\u306E\u30C9\uFF08\u9577\u3055\u30921.5\u500D\u306B\uFF09</li>
+    <li>\u6570\u5024\u3092\u7701\u7565\u3059\u308B\u3068\u3001<code>l</code> \u30B3\u30DE\u30F3\u30C9\u3067\u8A2D\u5B9A\u3055\u308C\u305F\u30C7\u30D5\u30A9\u30EB\u30C8\u9577\uFF08\u901A\u5E3816\u5206\uFF09\u306B\u306A\u308A\u307E\u3059\u3002</li>
+  </ul>
+
+  <h4>3. \u30AA\u30AF\u30BF\u30FC\u30D6\uFF08\u97F3\u306E\u9AD8\u3055\uFF09</h4>
+  <ul>
+    <li><code>o4</code>, <code>o5</code> : \u9AD8\u3055\u3092\u76F4\u63A5\u6307\u5B9A\uFF08\u3075\u3064\u3046\u306F o4 \u304B o5\uFF09</li>
+    <li><code>&gt;</code> : 1\u30AA\u30AF\u30BF\u30FC\u30D6\u4E0A\u3052\u308B</li>
+    <li><code>&lt;</code> : 1\u30AA\u30AF\u30BF\u30FC\u30D6\u4E0B\u3052\u308B</li>
+  </ul>
+
+  <h4>4. \u30C6\u30F3\u30DD</h4>
+  <ul>
+    <li><code>t120</code> : \u66F2\u306E\u901F\u3055\u3092BPM120\u306B\u6307\u5B9A\u3002\u203B\u30E1\u30ED\u30C7\u30A3\uFF08@0\uFF09\u306E\u30C6\u30F3\u30DD\u6307\u5B9A\u304C\u66F2\u5168\u4F53\u306B\u53CD\u6620\u3055\u308C\u307E\u3059\u3002</li>
+  </ul>
+
+  <h4>5. \u548C\u97F3</h4>
+  <p>\u97F3\u7B26\u3092 <code>[</code> \u3068 <code>]</code> \u3067\u56F2\u3080\u3068\u540C\u6642\u306B\u767A\u97F3\u3057\u307E\u3059\u3002</p>
+  <pre>\u4F8B: [ceg]4 \uFF08\u30C9\u30FB\u30DF\u30FB\u30BD\u30924\u5206\u97F3\u7B26\u3067\u540C\u6642\u306B\u767A\u97F3\uFF09</pre>
+
+  <h4>6. \u30C8\u30E9\u30C3\u30AF\u306E\u533A\u5207\u308A</h4>
+  <p><code>;</code> \u307E\u305F\u306F <code>@0</code>\u301C<code>@3</code> \u3067\u30C8\u30E9\u30C3\u30AF\u3092\u5207\u308A\u66FF\u3048\u307E\u3059\u3002</p>
+  <ul>
+    <li><code>@0</code>: \u30E1\u30ED\u30C7\u30A3</li>
+    <li><code>@1</code>: \u30B5\u30D6\u30E1\u30ED</li>
+    <li><code>@2</code>: \u30D9\u30FC\u30B9</li>
+    <li><code>@3</code>: \u4F34\u594F</li>
+  </ul>
+
+  <h4>7. \u6B4C\u58F0\u30FB\u6B4C\u8A5E\u5165\u529B</h4>
+  <p><code>@@&lt;\u30C8\u30E9\u30C3\u30AF\u756A\u53F7&gt; &lt;\u97F3\u6E90\u540D&gt; &lt;\u6B4C\u8A5E&gt;</code> \u306E\u5F62\u5F0F\u3067\u3001\u97F3\u7B26\u3068\u540C\u671F\u3059\u308B\u6B4C\u8A5E\u3092\u5165\u529B\u3067\u304D\u307E\u3059\u3002</p>
+  <pre>\u4F8B: @@0 klatt \u3061\u3087\u3046\u3061\u3087\u3046\u306A\u306E\u306F\u306B\u3068\u307E\u308C</pre>
+  <p style="margin-top:4px;"><small>\uFF08\u97F3\u6E90\u540D\u306F <code>klatt</code> \u3084 <code>roze</code>, <code>teto</code> \u306A\u3069\u306E\u97F3\u58F0\u30E2\u30C7\u30EB\u3092\u6307\u5B9A\u3067\u304D\u307E\u3059\uFF09</small></p>
+</div>
+`;
 var BASE_STEP_WIDTH = 0.5;
 var BASE_KEY_HEIGHT = 15;
 var TRACKS_SIMPLE = [
@@ -5278,6 +5501,7 @@ var mountDAW = (target, options = {}) => {
     return map;
   };
   const getActive = () => trackStates.find((t) => t.config.id === activeTrackId) ?? trackStates[0];
+  let showModal;
   const getMaxNoteStep = () => {
     let maxStep = renderConfig.stepsPerBar * 4;
     for (const t of trackStates) {
@@ -6131,8 +6355,11 @@ var mountDAW = (target, options = {}) => {
       div.style.flexDirection = "column";
       div.style.alignItems = "stretch";
       div.innerHTML = `
-        <div class="dtm-row">
-          <span class="dtm-label">\u548C\u97F3</span>
+        <div class="dtm-row" style="justify-content: space-between; align-items: center;">
+          <div style="display: inline-flex; align-items: center; gap: 6px;">
+            <span class="dtm-label">\u548C\u97F3</span>
+            <button class="dtm-infobtn" data-dtm="chord-info" title="\u30B3\u30FC\u30C9\u9032\u884C\u306E\u66F8\u304D\u65B9\u89E3\u8AAC">${icon("info", 12)}</button>
+          </div>
           <select class="dtm-select" data-dtm="chord-pattern">
             <option value="block">\u30D6\u30ED\u30C3\u30AF</option>
             <option value="arpeggio">\u30A2\u30EB\u30DA\u30B8\u30AA</option>
@@ -6160,6 +6387,9 @@ var mountDAW = (target, options = {}) => {
       };
       patternSel.addEventListener("change", save);
       input.addEventListener("input", save);
+      div.querySelector('[data-dtm="chord-info"]').addEventListener("click", () => {
+        showModal("\u30B3\u30FC\u30C9\u9032\u884C\u306E\u81EA\u52D5\u5165\u529B\u89E3\u8AAC", CHORD_INFO_HTML);
+      });
       div.querySelector('[data-dtm="chord-apply"]').addEventListener("click", () => {
         save();
         applyChord();
@@ -6597,6 +6827,22 @@ var mountDAW = (target, options = {}) => {
       "click",
       () => overlayDuring(() => loadMML(refs.mmlInput.value))
     );
+    showModal = (title, bodyHTML) => {
+      refs.modalTitle.textContent = title;
+      refs.modalBody.innerHTML = bodyHTML;
+      refs.modalOverlay.removeAttribute("hidden");
+    };
+    refs.modalClose.addEventListener("click", () => {
+      refs.modalOverlay.setAttribute("hidden", "");
+    });
+    refs.modalOverlay.addEventListener("click", (e) => {
+      if (e.target === refs.modalOverlay) {
+        refs.modalOverlay.setAttribute("hidden", "");
+      }
+    });
+    refs.mmlInfoBtn.addEventListener("click", () => {
+      showModal("MML\u306E\u66F8\u304D\u65B9\u89E3\u8AAC", MML_INFO_HTML);
+    });
     refs.shiftApplyBtn.addEventListener(
       "click",
       () => overlayDuring(() => {
