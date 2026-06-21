@@ -47,6 +47,7 @@ export type DawUIRefs = {
 	// io
 	midiInput: HTMLInputElement;
 	midiLoadBtn: HTMLButtonElement;
+	midiInfoBtn: HTMLButtonElement;
 	midiTrackSelection: HTMLElement;
 	midiPanel: HTMLElement;
 	mmlInput: HTMLTextAreaElement;
@@ -203,7 +204,10 @@ export const buildUI = (
     <summary>MIDI / MML 入力</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row">
-        <span class="dtm-label">MIDI</span>
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; min-width: 48px;">
+          <span class="dtm-label" style="line-height: 1;">MIDI</span>
+          <button class="dtm-infobtn" data-dtm="midi-info" title="MIDIの読み込み解説">${icon("info", 12)}</button>
+        </div>
         <input type="file" class="dtm-input dtm-grow" accept=".mid,.midi" data-dtm="midi-input">
         <button class="dtm-btn dtm-btn--success" data-dtm="midi-load">読込</button>
       </div>
@@ -339,6 +343,7 @@ export const buildUI = (
 		drumVolumeLabel: sel("drum-volume-label"),
 		midiInput: sel("midi-input"),
 		midiLoadBtn: sel("midi-load"),
+		midiInfoBtn: sel("midi-info"),
 		midiTrackSelection: sel("midi-track-selection"),
 		midiPanel: sel("midi-panel"),
 		mmlInput: sel("mml-input"),

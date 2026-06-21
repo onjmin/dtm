@@ -73,6 +73,7 @@ const CHORD_INFO_HTML = `
   <h4>1. 基本の書き方</h4>
   <p>コード名（和音記号）を縦線 <code>|</code>、スペース、またはカンマで区切って入力します。縦線で区切ると1小節ごとの配置になります。</p>
   <pre>例: C | G | Am | F</pre>
+  <p style="margin-top:4px;"><small>コード進行を自分で考えるのが難しいときは、コード進行の共有サイト（例: <a href="https://rechord.cc/scores" target="_blank" rel="noopener">rechord.cc</a>）から好きな進行を探してコピペするのも手です。区切り文字（<code>|</code> / スペース / カンマ）だけ上の形式に合わせれば、そのまま使えます。</small></p>
 
   <h4>2. 1小節に複数コードを入れる</h4>
   <p>小節の区切り（縦線 <code>|</code>）の中に、スペース区切りでコードを並べます。等間隔に配置されます。</p>
@@ -146,6 +147,39 @@ const MML_INFO_HTML = `
   <p><code>@@&lt;トラック番号&gt; &lt;音源名&gt; &lt;歌詞&gt;</code> の形式で、音符と同期する歌詞を入力できます。</p>
   <pre>例: @@0 klatt ちょうちょうなのはにとまれ</pre>
   <p style="margin-top:4px;"><small>（音源名は <code>klatt</code> や <code>roze</code>, <code>teto</code> などの音声モデルを指定できます）</small></p>
+</div>
+`;
+
+const MIDI_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>1. MIDIファイルとは</h4>
+  <p>「どの音を・いつ・どのくらいの長さで鳴らすか」を記録した、演奏データのファイル（拡張子 <code>.mid</code> / <code>.midi</code>）です。音そのものではなく楽譜に近いデータなので、読み込んでそのまま編集できます。</p>
+
+  <h4>2. 読み込みのしかた</h4>
+  <ul>
+    <li>「ファイルを選択」から <code>.mid</code> ファイルを選びます。</li>
+    <li>ファイル内のトラック一覧が出るので、取り込みたいトラックを選びます。</li>
+    <li>「読込」を押すと反映されます。</li>
+  </ul>
+
+  <h4>3. モードによる取り込み方の違い</h4>
+  <ul>
+    <li><strong>SIMPLE</strong>: 各トラックの特徴から、メロディー・サブメロ・ベース・伴奏の4つの役割に自動で振り分けられます。</li>
+    <li><strong>ADVANCED</strong>: MIDIのトラック構成がそのまま反映されます（1対1）。</li>
+  </ul>
+
+  <h4>4. MIDIファイルを手に入れる</h4>
+  <p>手元にMIDIが無いときは、「<code>曲名 midi</code>」などで検索すれば、無料で配布しているサイトが見つかります。</p>
+  <p style="margin-top:4px;"><small>みんながMIDIを投稿できる投稿型プラットフォーム: <a href="http://picotune.me/" target="_blank" rel="noopener">picotune.me</a>（いろんなジャンルのMIDIを無料ダウンロードできます。サイト上ではチップチューン風に再生されます）</small></p>
+  <p style="margin-top:4px;"><small>※検索で見つかる配布サイトは、個人運営のものから権利的にグレーなものまで様々です。そのため、それらへの直接リンクは載せていません。利用の際は配布元や権利関係をご自身でご確認ください。</small></p>
+
+  <h4>5. UST（UTAU）の歌詞を使う</h4>
+  <p>UTAUのUSTファイルから歌詞だけを取り出して、歌わせることもできます。</p>
+  <ul>
+    <li>音符: UTAUなどでUSTをMIDIに書き出し、上の手順で読み込みます。</li>
+    <li>歌詞: 下記サイトでUSTから歌詞テキストを抜き出し、MML/歌詞入力欄の <code>@@</code> 構文に貼り付けます。</li>
+  </ul>
+  <p style="margin-top:4px;"><small>歌詞の抽出: <a href="https://rpgen3.github.io/ust2txt/" target="_blank" rel="noopener">ust2txt</a></small></p>
 </div>
 `;
 
@@ -2068,6 +2102,9 @@ export const mountDAW = (
 
 		refs.mmlInfoBtn.addEventListener("click", () => {
 			showModal("MMLの書き方解説", MML_INFO_HTML);
+		});
+		refs.midiInfoBtn.addEventListener("click", () => {
+			showModal("MIDIの読み込み解説", MIDI_INFO_HTML);
 		});
 		refs.shiftApplyBtn.addEventListener("click", () =>
 			overlayDuring(() => {
