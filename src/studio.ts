@@ -751,6 +751,15 @@ export const createDtmStudio = async (
 		}
 		wrapper.appendChild(seg);
 
+		// wrapper を target へ（再）挿入する。target と editorTarget が同一要素のとき、
+		// mountEditor 内の buildUI が target.innerHTML を総入れ替えして wrapper を消すため、
+		// マウントの「後」に毎回呼んで貼り直す。別要素なら単に位置が保たれるだけで無害。
+		const attachWrapper = (): void => {
+			if (opts.position === "prepend")
+				target.insertBefore(wrapper, target.firstChild);
+			else target.appendChild(wrapper);
+		};
+
 		// ── マウント／アンマウント ──
 		const doMount = (mode: DawMode, mml?: string): void => {
 			const editorOpts = editorOptionsFor(mode);
@@ -760,6 +769,8 @@ export const createDtmStudio = async (
 				tracks: tracksFor(mode),
 				initialMML: mml ?? editorOpts.initialMML,
 			});
+			// buildUI による wipe の後に貼り直す（同一要素共有でも mode UI が残る）。
+			attachWrapper();
 			opts.onMount?.(daw, mode);
 		};
 		const doUnmount = (): string | undefined => {
@@ -781,11 +792,7 @@ export const createDtmStudio = async (
 			doMount(mode, carried);
 		}
 
-		if (opts.position === "prepend")
-			target.insertBefore(wrapper, target.firstChild);
-		else target.appendChild(wrapper);
-
-		// 初期マウント（onChange は呼ばない）。
+		// 初期マウント（onChange は呼ばない）。wrapper の挿入は doMount→attachWrapper が行う。
 		updateButtons();
 		doMount(currentMode, editorOptionsFor(currentMode).initialMML);
 
