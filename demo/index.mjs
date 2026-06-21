@@ -7048,8 +7048,20 @@ var createDtmStudio = async (options = {}) => {
       editorPresetSelects.set(target, select);
       select.addEventListener("change", async () => {
         if (!select) return;
-        daw.setInstrument(select.value);
-        await loadPreset(select.value, trackIds);
+        const wasPlaying = daw.getPlaybackState() === "playing";
+        if (wasPlaying) {
+          daw.pause();
+        }
+        const overlay = showLoadingOverlay(target);
+        try {
+          daw.setInstrument(select.value);
+          await loadPreset(select.value, trackIds);
+        } finally {
+          overlay.remove();
+          if (wasPlaying) {
+            daw.play();
+          }
+        }
       });
     }
     const daw = mountDAW(target, base);
