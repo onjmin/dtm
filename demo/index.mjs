@@ -6528,39 +6528,116 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
     (a, b) => a - b
   );
+  const trackStats = trackIndices.map((index) => {
+    const trackPlacements = placements.filter((p) => p.trackIndex === index);
+    if (trackPlacements.length === 0) {
+      return { index, isChords: false, avgPitch: 0, noteCount: 0 };
+    }
+    const sumPitch = trackPlacements.reduce((sum, p) => sum + p.pitch, 0);
+    const avgPitch = sumPitch / trackPlacements.length;
+    const stepCounts = /* @__PURE__ */ new Map();
+    for (const p of trackPlacements) {
+      for (let s = p.startStep; s < p.startStep + p.durationSteps; s++) {
+        stepCounts.set(s, (stepCounts.get(s) ?? 0) + 1);
+      }
+    }
+    const polyphonicSteps = Array.from(stepCounts.values()).filter(
+      (c) => c >= 2
+    ).length;
+    const isChords = polyphonicSteps > 0;
+    return {
+      index,
+      isChords,
+      avgPitch,
+      noteCount: trackPlacements.length
+    };
+  });
+  const chordTrackIndices = trackStats.filter((s) => s.isChords).map((s) => s.index);
+  const nonChordTracks = trackStats.filter(
+    (s) => !s.isChords && s.noteCount > 0
+  );
+  let bassTrackIndex = null;
+  if (nonChordTracks.length > 0) {
+    nonChordTracks.sort((a, b) => a.avgPitch - b.avgPitch);
+    bassTrackIndex = nonChordTracks[0].index;
+  }
+  const priorityTrackIndices = /* @__PURE__ */ new Set();
+  for (const idx of chordTrackIndices) {
+    priorityTrackIndices.add(idx);
+  }
+  if (bassTrackIndex !== null) {
+    priorityTrackIndices.add(bassTrackIndex);
+  }
+  const hasPriorityTracksInMml = priorityTrackIndices.size > 0;
   const maxStep = placements.reduce(
     (max, p) => Math.max(max, p.startStep + p.durationSteps),
     0
   );
-  const stepPitches = Array.from(
+  const priorityPitches = Array.from(
+    { length: maxStep + 1 },
+    () => /* @__PURE__ */ new Set()
+  );
+  const allPitches = Array.from(
     { length: maxStep + 1 },
     () => /* @__PURE__ */ new Set()
   );
   for (const p of placements) {
     for (let s = p.startStep; s < p.startStep + p.durationSteps; s++) {
       if (s >= 0 && s <= maxStep) {
-        stepPitches[s].add(p.pitch);
+        allPitches[s].add(p.pitch);
+        if (priorityTrackIndices.has(p.trackIndex)) {
+          priorityPitches[s].add(p.pitch);
+        }
       }
     }
   }
   const stepChords = [];
   const chordCache = /* @__PURE__ */ new Map();
-  for (let s = 0; s <= maxStep; s++) {
-    const pitches = Array.from(stepPitches[s]);
-    if (pitches.length === 0) {
-      stepChords.push("");
-      continue;
+  let lastChord = "";
+  let hasPriorityStarted = false;
+  const GRID_SIZE = 48;
+  const MIN_DURATION = 12;
+  for (let g = 0; g <= Math.ceil(maxStep / GRID_SIZE); g++) {
+    const startS = g * GRID_SIZE;
+    const endS = Math.min(maxStep, (g + 1) * GRID_SIZE - 1);
+    if (startS > maxStep) break;
+    for (let s = startS; s <= endS; s++) {
+      const priorityPitchesAtStep = Array.from(priorityPitches[s]);
+      if (priorityPitchesAtStep.length > 0) {
+        hasPriorityStarted = true;
+      }
     }
-    const sortedPitches = pitches.sort((a, b) => a - b);
-    const cacheKey = sortedPitches.join(",");
-    if (chordCache.has(cacheKey)) {
-      stepChords.push(chordCache.get(cacheKey));
-    } else {
-      const candidates = detectChord(sortedPitches);
-      const chordName = candidates[0]?.symbol ?? "";
-      chordCache.set(cacheKey, chordName);
-      stepChords.push(chordName);
+    const pitchDurations = /* @__PURE__ */ new Map();
+    for (let s = startS; s <= endS; s++) {
+      const usePriority = hasPriorityStarted && hasPriorityTracksInMml;
+      const pitches = usePriority ? Array.from(priorityPitches[s]) : Array.from(allPitches[s]);
+      for (const p of pitches) {
+        pitchDurations.set(p, (pitchDurations.get(p) ?? 0) + 1);
+      }
     }
+    let activePitches = Array.from(pitchDurations.entries()).filter(([_, dur]) => dur >= MIN_DURATION).map(([p, _]) => p);
+    if (activePitches.length === 0 && pitchDurations.size > 0) {
+      const maxDur = Math.max(...pitchDurations.values());
+      activePitches = Array.from(pitchDurations.entries()).filter(([_, dur]) => dur === maxDur).map(([p, _]) => p);
+    }
+    let gridChord = lastChord;
+    if (activePitches.length > 0) {
+      const sortedPitches = activePitches.sort((a, b) => a - b);
+      const cacheKey = sortedPitches.join(",");
+      if (chordCache.has(cacheKey)) {
+        const chordName = chordCache.get(cacheKey);
+        if (chordName) gridChord = chordName;
+      } else {
+        const candidates = detectChord(sortedPitches);
+        const chordName = candidates[0]?.symbol ?? "";
+        if (chordName) gridChord = chordName;
+        chordCache.set(cacheKey, chordName);
+      }
+    }
+    for (let s = startS; s <= endS; s++) {
+      stepChords[s] = gridChord;
+    }
+    lastChord = gridChord;
   }
   const seqTracks = trackIndices.map((index) => {
     let id = 0;
@@ -6909,16 +6986,17 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     lane.scrollLeft = Math.max(0, Math.min(next, maxScroll));
   };
   const renderPlayhead = (step) => {
+    const intStep = Math.floor(step);
     const beatIndex = Math.floor(step / STEPS_PER_BEAT3) % 4;
     for (let i = 0; i < 4; i++)
       beatDots[i].classList.toggle("dtm-player-beat-dot--on", i === beatIndex);
     barEl.textContent = String(Math.floor(step / STEPS_PER_BAR) + 1);
-    const chordName = stepChords[step] ?? "";
+    const chordName = stepChords[intStep] ?? "";
     if (chordEl.textContent !== chordName) {
       chordEl.textContent = chordName;
       if (chordName) {
         console.log(
-          `[dtm-player-chord] Active Chord: ${chordName} (step: ${step})`
+          `[dtm-player-chord] Active Chord: ${chordName} (step: ${intStep})`
         );
       }
     }
