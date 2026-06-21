@@ -56,17 +56,10 @@ async function buildNameToKeyMapping() {
 }
 
 // src/chords.ts
+import { parseChord, parseChords } from "@onjmin/chord-parser";
 var C3 = 48;
 var buildChordPlacements = (options) => {
-  const {
-    chordStr,
-    patternType,
-    rootShift,
-    bpm,
-    stepsPerBar,
-    parseChord,
-    parseChords
-  } = options;
+  const { chordStr, patternType, rootShift, bpm, stepsPerBar } = options;
   const placements = [];
   if (!chordStr.trim()) return placements;
   const offset = rootShift;
@@ -96,7 +89,7 @@ var buildChordPlacements = (options) => {
       for (const chord of group) {
         let notes;
         try {
-          notes = [...parseChord(`${chord.key}${chord.chord}`).value];
+          notes = [...parseChord(`${chord.key}${chord.chord}`).notes];
         } catch {
           continue;
         }
@@ -183,7 +176,7 @@ var buildChordPlacements = (options) => {
     chordNames.forEach((chordName, barIndex) => {
       let notes;
       try {
-        notes = [...parseChord(chordName).value];
+        notes = [...parseChord(chordName).notes];
       } catch {
         return;
       }
@@ -3930,6 +3923,14 @@ var DAW_CSS = `
   min-width: 2em;
   margin-left: 4px;
 }
+.dtm-player-chord {
+  font-family: 'k8x12', monospace;
+  font-size: 11px;
+  color: var(--dtm-accent);
+  min-width: 4em;
+  margin-left: 8px;
+  font-weight: bold;
+}
 .dtm-player-dots {
   margin-left: auto;
   display: flex;
@@ -4280,7 +4281,7 @@ var mountDAW = (target, options = {}) => {
   const trackConfigs = options.tracks ?? DEFAULT_TRACKS;
   const drumPatterns = options.drumPatterns ?? DRUM_PATTERNS;
   const showMidi = !!options.parseMidi;
-  const showChord = !!(options.parseChord && options.parseChords);
+  const showChord = true;
   const refs = buildUI(target, {
     tracks: trackConfigs,
     drumPatternNames: Object.keys(drumPatterns),
@@ -5488,7 +5489,6 @@ var mountDAW = (target, options = {}) => {
     updateUndoRedo();
   };
   const applyChord = () => {
-    if (!options.parseChord || !options.parseChords) return;
     const active = getActive();
     const chordTrack = trackStates.find((t) => t.config.id === "chord");
     if (!chordTrack) return;
@@ -5497,9 +5497,7 @@ var mountDAW = (target, options = {}) => {
       patternType: active.savedChordPattern,
       rootShift: active.savedChordRoot,
       bpm,
-      stepsPerBar: renderConfig.stepsPerBar,
-      parseChord: options.parseChord,
-      parseChords: options.parseChords
+      stepsPerBar: renderConfig.stepsPerBar
     });
     chordTrack.core.clearNotesWithoutHistory();
     chordTrack.core.beginBatch();
@@ -5976,6 +5974,7 @@ var INSTRUMENT_PRESETS = {
 };
 
 // src/mml-player.ts
+import { detectChord } from "@onjmin/chord-parser";
 var STEPS_PER_BEAT3 = 48;
 var STEPS_PER_BAR = 192;
 var DEFAULT_TRACK_COLORS = ["#00e436", "#29adff", "#ff77a8", "#ffec27"];
@@ -6001,6 +6000,42 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
   const useSynth = options.synth ?? !options.onPlayNote;
   const secondsPerStep = 60 / bpm / STEPS_PER_BEAT3;
+  const maxStep = placements.reduce(
+    (max, p) => Math.max(max, p.startStep + p.durationSteps),
+    0
+  );
+  const stepPitches = Array.from(
+    { length: maxStep + 1 },
+    () => /* @__PURE__ */ new Set()
+  );
+  for (const p of placements) {
+    if (p.trackIndex >= 0 && p.trackIndex <= 3) {
+      for (let s = p.startStep; s < p.startStep + p.durationSteps; s++) {
+        if (s >= 0 && s <= maxStep) {
+          stepPitches[s].add(p.pitch);
+        }
+      }
+    }
+  }
+  const stepChords = [];
+  const chordCache = /* @__PURE__ */ new Map();
+  for (let s = 0; s <= maxStep; s++) {
+    const pitches = Array.from(stepPitches[s]);
+    if (pitches.length === 0) {
+      stepChords.push("");
+      continue;
+    }
+    const sortedPitches = pitches.sort((a, b) => a - b);
+    const cacheKey = sortedPitches.join(",");
+    if (chordCache.has(cacheKey)) {
+      stepChords.push(chordCache.get(cacheKey));
+    } else {
+      const candidates = detectChord(sortedPitches);
+      const chordName = candidates[0]?.symbol ?? "";
+      chordCache.set(cacheKey, chordName);
+      stepChords.push(chordName);
+    }
+  }
   const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
     (a, b) => a - b
   );
@@ -6204,6 +6239,10 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   barEl.className = "dtm-player-bar";
   barEl.textContent = "-";
   beatRow.appendChild(barEl);
+  const chordEl = doc.createElement("span");
+  chordEl.className = "dtm-player-chord";
+  chordEl.textContent = "";
+  beatRow.appendChild(chordEl);
   const chips = [];
   const makeChip = (label) => {
     const chip = doc.createElement("span");
@@ -6351,6 +6390,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     for (let i = 0; i < 4; i++)
       beatDots[i].classList.toggle("dtm-player-beat-dot--on", i === beatIndex);
     barEl.textContent = String(Math.floor(step / STEPS_PER_BAR) + 1);
+    chordEl.textContent = stepChords[step] ?? "";
     for (const view of laneViews) {
       let active = null;
       for (const t of view.tokens) {
@@ -6364,6 +6404,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const resetPlayhead = () => {
     for (const d of beatDots) d.classList.remove("dtm-player-beat-dot--on");
     barEl.textContent = "-";
+    chordEl.textContent = "";
     for (const view of laneViews) {
       for (const t of view.tokens) t.el.classList.remove("is-active");
       view.lane.scrollLeft = 0;
@@ -6784,8 +6825,6 @@ var DEFAULT_CDN = {
   soundFont: "https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont.mjs",
   soundFontDrum: "https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs",
   soundFontList: "https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs",
-  parseChord: "https://rpgen3.github.io/piano/mjs/parseChord.mjs",
-  parseChords: "https://rpgen3.github.io/piano/mjs/parseChords.mjs",
   midiParser: "https://cdn.jsdelivr.net/npm/midi-parser-js@4.0.4/+esm"
 };
 var SOUNDFONT_NAME = "FluidR3_GM_sf2_file";
@@ -6829,24 +6868,6 @@ var createDtmStudio = async (options = {}) => {
     eng.SoundFont_drum ?? importFrom(cdn.soundFontDrum, "SoundFont_drum"),
     eng.SoundFont_list ?? importFrom(cdn.soundFontList, "SoundFont_list")
   ]);
-  let parseChord = eng.parseChord;
-  let parseChords = eng.parseChords;
-  if (features.chord && (!parseChord || !parseChords)) {
-    try {
-      [parseChord, parseChords] = await Promise.all([
-        parseChord ?? importFrom(
-          cdn.parseChord,
-          "parseChord"
-        ),
-        parseChords ?? importFrom(
-          cdn.parseChords,
-          "parseChords"
-        )
-      ]);
-    } catch (e) {
-      console.warn("[dtm] \u30B3\u30FC\u30C9\u89E3\u6790\u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557\u3057\u307E\u3057\u305F", e);
-    }
-  }
   let midiParser = null;
   let parseMidi;
   if (features.midi) {
@@ -7032,8 +7053,6 @@ var createDtmStudio = async (options = {}) => {
       onPlayNote: playNote,
       onPlayDrum: playDrum,
       singingVoices,
-      parseChord,
-      parseChords,
       parseMidi,
       onToggleRecord,
       ...dawOverrides
