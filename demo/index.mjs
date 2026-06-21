@@ -2972,13 +2972,11 @@ var extractMidiPlacementsByTrack = (midi, selectedIndices, trackIds) => {
   const bpm = getMidiBPM(midi);
   const ticksPerStep = ticksPerBeat / STEPS_PER_BEAT;
   const placements = [];
-  const selectedSet = new Set(selectedIndices);
-  for (let midiIdx = 0; midiIdx < track.length; midiIdx++) {
-    if (!selectedSet.has(midiIdx)) continue;
-    if (midiIdx >= trackIds.length) continue;
-    const trackId = trackIds[midiIdx];
+  selectedIndices.forEach((midiIdx, lane) => {
+    if (lane >= trackIds.length) return;
     const trackData = track[midiIdx];
-    if (!trackData) continue;
+    if (!trackData) return;
+    const trackId = trackIds[lane];
     const active = [];
     let currentTime = 0;
     for (const event of trackData.event) {
@@ -3013,7 +3011,7 @@ var extractMidiPlacementsByTrack = (midi, selectedIndices, trackIds) => {
         velocity: note.velocity
       });
     }
-  }
+  });
   return { placements, bpm };
 };
 var to2byte = (n) => [(n & 65280) >> 8, n & 255];
@@ -3054,6 +3052,7 @@ var exportMIDI = (options) => {
   const midiTracks = [];
   tracks.forEach((track, ch) => {
     if (track.notes.length === 0) return;
+    const channel = ch < 9 ? ch : ch + 1 & 15;
     const events = [];
     for (const n of track.notes) {
       const startTick = Math.round(n.startStep * tickPerStep);
@@ -3063,8 +3062,8 @@ var exportMIDI = (options) => {
       const vel = Math.round(
         (n.velocity ?? DEFAULT_VELOCITY) * (track.volume ?? 100) / 100
       );
-      events.push({ t: startTick, m: [144 | ch & 15, n.pitch, vel] });
-      events.push({ t: endTick, m: [144 | ch & 15, n.pitch, 0] });
+      events.push({ t: startTick, m: [144 | channel, n.pitch, vel] });
+      events.push({ t: endTick, m: [144 | channel, n.pitch, 0] });
     }
     events.sort((a, b) => a.t - b.t);
     midiTracks.push(events);
