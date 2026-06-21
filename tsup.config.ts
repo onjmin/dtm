@@ -14,7 +14,7 @@ export default defineConfig([
 		loader: { ".png": "dataurl" },
 		// @onjmin/koe をバンドルに同梱する。デモ（dist/index.mjs をブラウザ直読み）が
 		// import 解決のためのimportmap無しで koe を使えるようにするため。
-		noExternal: ["@onjmin/koe"],
+		noExternal: ["@onjmin/koe", "@onjmin/chord-parser"],
 	},
 	{
 		// 歌声合成Worker。classic Web Worker として importScripts で worldline.js を
@@ -25,7 +25,7 @@ export default defineConfig([
 		sourcemap: false,
 		clean: false,
 		target: "es2024",
-		noExternal: ["@onjmin/koe"],
+		noExternal: ["@onjmin/koe", "@onjmin/chord-parser"],
 		outExtension: () => ({ js: ".js" }),
 	},
 ]);
