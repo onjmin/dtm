@@ -323,8 +323,9 @@ export const createDtmStudio = async (
 	drumGain.gain.value = options.drumVolume ?? 1;
 	drumGain.connect(audioCtx.destination);
 
-	const resumeAudio = (): void => {
-		if (audioCtx.state === "suspended") void audioCtx.resume();
+	const resumeAudio = (): Promise<void> => {
+		if (audioCtx.state === "suspended") return audioCtx.resume();
+		return Promise.resolve();
 	};
 
 	// ── 外部エンジン（注入優先、無ければ CDN）──
@@ -455,30 +456,34 @@ export const createDtmStudio = async (
 	})();
 
 	let nameToKey: Record<string, string> = {};
+	// 楽器音源は「役割」ではなく「実際の楽器キー」で1つだけ持ち、編集UI・全再生UIで
+	// 安全に共有する。役割キー（melody等）で持つと、別プリセットを読むたびに同じ役割キーを
+	// 上書きし合い、再生UIの楽器が指定と別物になる（最後に解決したロードが勝つ）。
 	const soundFonts = new Map<string, SoundFontInstance>();
-	// trackId ごとに現在ロード済みの楽器キーを覚えておき、同一キーの再ロードを避ける
-	// （スタジオ生成時の先読みと mountEditor のロードが重複するのを防ぐ）。
-	const loadedKeyByTrack = new Map<string, string>();
+	// 同一楽器キーの多重ロードを避けるための進行中Promise。
+	const loadingByKey = new Map<string, Promise<void>>();
 
-	const loadSoundFont = async (
-		instrumentKey: string,
-		trackId: string,
-	): Promise<void> => {
-		if (loadedKeyByTrack.get(trackId) === instrumentKey) return;
-		try {
-			const fullName = `${instrumentKey}_${SOUNDFONT_NAME}`;
-			soundFonts.set(
-				trackId,
-				await SoundFont.load({
-					ctx: audioCtx,
-					fontName: `_tone_${fullName}`,
-					url: SoundFont.toURL(fullName),
-				}),
-			);
-			loadedKeyByTrack.set(trackId, instrumentKey);
-		} catch (e) {
-			console.error(`[dtm] 楽器 "${instrumentKey}" の読み込みに失敗`, e);
-		}
+	const loadInstrument = (instrumentKey: string): Promise<void> => {
+		if (soundFonts.has(instrumentKey)) return Promise.resolve();
+		const inflight = loadingByKey.get(instrumentKey);
+		if (inflight) return inflight;
+		const fullName = `${instrumentKey}_${SOUNDFONT_NAME}`;
+		const p = SoundFont.load({
+			ctx: audioCtx,
+			fontName: `_tone_${fullName}`,
+			url: SoundFont.toURL(fullName),
+		})
+			.then((sf) => {
+				soundFonts.set(instrumentKey, sf);
+			})
+			.catch((e) => {
+				console.error(`[dtm] 楽器 "${instrumentKey}" の読み込みに失敗`, e);
+			})
+			.finally(() => {
+				loadingByKey.delete(instrumentKey);
+			});
+		loadingByKey.set(instrumentKey, p);
+		return p;
 	};
 
 	const defaultPreset = options.defaultPreset ?? "retro_game";
@@ -489,6 +494,17 @@ export const createDtmStudio = async (
 		trackId: string,
 	): string => (preset as Record<string, string>)[trackId] ?? preset.melody;
 
+	/** プリセット＋トラック（役割）から、ロード済みの SoundFont を引く。 */
+	const resolveSoundFont = (
+		presetKey: string,
+		trackId: string,
+	): SoundFontInstance | undefined => {
+		const preset = INSTRUMENT_PRESETS[presetKey];
+		if (!preset) return undefined;
+		const key = nameToKey[instrumentNameFor(preset, trackId)];
+		return key ? soundFonts.get(key) : undefined;
+	};
+
 	const loadPreset = async (
 		presetKey: string,
 		trackIds: string[] = [...TRACK_ROLES],
@@ -496,12 +512,13 @@ export const createDtmStudio = async (
 		const preset = INSTRUMENT_PRESETS[presetKey];
 		if (!preset) return;
 		await listReady;
-		await Promise.all(
-			trackIds.map((trackId) => {
-				const key = nameToKey[instrumentNameFor(preset, trackId)];
-				return key ? loadSoundFont(key, trackId) : Promise.resolve();
-			}),
-		);
+		// 役割→楽器名→楽器キーへ畳み、重複を除いた楽器ぶんだけロードする。
+		const keys = new Set<string>();
+		for (const trackId of trackIds) {
+			const key = nameToKey[instrumentNameFor(preset, trackId)];
+			if (key) keys.add(key);
+		}
+		await Promise.all([...keys].map((key) => loadInstrument(key)));
 	};
 
 	// 楽器プリセット変更の共通処理（編集UI内蔵・mountPresetSelect 双方で使う）。
@@ -594,19 +611,7 @@ export const createDtmStudio = async (
 	nameToKey = await buildNameToKeyMapping();
 	await Promise.all([drumReady, loadPreset(defaultPreset)]);
 
-	// ── 発音ハンドラ（編集UI・再生UI 共通の楽器/ドラム） ──
-	const playNote = (e: PlayNoteEvent): void => {
-		const sf = soundFonts.get(e.trackId);
-		if (!sf) return;
-		sf.play({
-			ctx: audioCtx,
-			destination: masterGain,
-			pitch: e.pitch,
-			volume: e.volume,
-			when: e.when,
-			duration: e.duration,
-		});
-	};
+	// ── 発音ハンドラ（ドラムは曲全体共通。楽器音は編集UI/再生UIごとにプリセットを解決） ──
 	const playDrum = (e: PlayDrumEvent): void => {
 		if (!SoundFont_drum.font) return;
 		SoundFont_drum.play({
@@ -614,22 +619,6 @@ export const createDtmStudio = async (
 			destination: drumGain,
 			pitch: e.pitch,
 			volume: e.velocity,
-			when: e.when,
-			duration: e.duration,
-		});
-	};
-	// 再生専用ビューの @n（数値トラック）→ 読み込み済み SoundFont を引く。
-	const sfForPlayerTrack = (trackId: string): SoundFontInstance | undefined =>
-		soundFonts.get(TRACK_ROLES[Number(trackId)] ?? "") ??
-		soundFonts.get(`t${trackId}`);
-	const playPlayerNote = (e: PlayNoteEvent): void => {
-		const sf = sfForPlayerTrack(e.trackId);
-		if (!sf) return;
-		sf.play({
-			ctx: audioCtx,
-			destination: masterGain,
-			pitch: e.pitch,
-			volume: e.volume,
 			when: e.when,
 			duration: e.duration,
 		});
@@ -649,6 +638,24 @@ export const createDtmStudio = async (
 		const tracks: TrackConfig[] = dawOverrides.tracks ?? TRACKS_SIMPLE;
 		const trackIds = tracks.map((t) => t.id);
 
+		const presetKey =
+			preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
+		// このエディタが現在使うプリセット。プリセット選択UIの変更で更新する。
+		// 楽器解決をこのエディタ専属にすることで、他のエディタ/再生UIと音源を取り合わない。
+		let editorPreset = presetKey;
+		const playNote = (e: PlayNoteEvent): void => {
+			const sf = resolveSoundFont(editorPreset, e.trackId);
+			if (!sf) return;
+			sf.play({
+				ctx: audioCtx,
+				destination: masterGain,
+				pitch: e.pitch,
+				volume: e.volume,
+				when: e.when,
+				duration: e.duration,
+			});
+		};
+
 		const base: DawOptions = {
 			getAudioTime: () => audioCtx.currentTime,
 			onResumeAudio: resumeAudio,
@@ -665,9 +672,6 @@ export const createDtmStudio = async (
 		const daw = mountDAW(target, base);
 		mountedEditors.push(daw);
 
-		const presetKey =
-			preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
-
 		// プリセット選択UI（任意）。DAW の先頭へ差し込み、配線は mountPresetSelect に委ねる。
 		// 同じ target への再マウントで重複しないよう、既存分は破棄する。
 		const wantPresetUI = presetUI ?? features.presetUI;
@@ -683,6 +687,10 @@ export const createDtmStudio = async (
 				value: presetKey,
 				loadingTarget: rollEl ?? target,
 				position: "prepend",
+				// 楽器変更時、このエディタの発音解決が使うプリセットも追従させる。
+				onChange: (key) => {
+					editorPreset = key;
+				},
 			});
 			editorPresetSelects.set(target, presetSelect);
 		}
@@ -820,11 +828,30 @@ export const createDtmStudio = async (
 		mml: string,
 		opts: MountPlayerOptions = {},
 	): MmlPlayerInstance => {
-		// MMLの #inst= があれば、そのプリセットを用意してから再生する。
+		// MMLの #inst= からこの再生UI専属のプリセットを決め、そのプリセットの楽器を用意する。
+		// 楽器解決もこのプリセットに固定するため、他の再生UI/編集UIと音源を取り合わない。
 		const meta = parseMML(mml, {}).meta ?? {};
-		if (meta.instrument && INSTRUMENT_PRESETS[meta.instrument]) {
-			void loadPreset(meta.instrument);
-		}
+		const playerPreset =
+			meta.instrument && INSTRUMENT_PRESETS[meta.instrument]
+				? meta.instrument
+				: defaultPreset;
+		void loadPreset(playerPreset);
+		// 再生専用ビューの @n（数値トラック）→ 役割 → このプリセットの楽器。
+		// ロード未完了の間は undefined（無音）になるだけで、別楽器で鳴ることはない。
+		const playPlayerNote = (e: PlayNoteEvent): void => {
+			const role = TRACK_ROLES[Number(e.trackId)];
+			if (!role) return;
+			const sf = resolveSoundFont(playerPreset, role);
+			if (!sf) return;
+			sf.play({
+				ctx: audioCtx,
+				destination: masterGain,
+				pitch: e.pitch,
+				volume: e.volume,
+				when: e.when,
+				duration: e.duration,
+			});
+		};
 		const player = mountMmlPlayer(target, mml, {
 			getAudioTime: () => audioCtx.currentTime,
 			onResumeAudio: resumeAudio,

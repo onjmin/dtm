@@ -853,13 +853,23 @@ export const mountMmlPlayer = (
 		if (activePlayer && activePlayer !== instance) activePlayer.stop();
 		activePlayer = instance;
 		setPlayingUI(true);
-		void options.onResumeAudio?.();
-		if (useSynth) {
-			const ctx = ensureCtx();
-			if (ctx.state === "suspended") void ctx.resume();
-		}
-		if (voicesAvailable && lyricTracks.size > 0) ensureVoices().reset();
-		void startWhenReady();
+		// AudioContext の resume は非同期。suspended のまま（currentTime が凍結した状態で）
+		// スケジュールを始めると、resume 完了の瞬間に先読み予約が過去時刻となり一斉発音され、
+		// 冒頭で「ピチュ」という潰れた音が鳴る。resume の完了を待ってから再生を始める。
+		void (async () => {
+			const resumes: Promise<void>[] = [];
+			const r = options.onResumeAudio?.();
+			if (r) resumes.push(r);
+			if (useSynth) {
+				const ctx = ensureCtx();
+				if (ctx.state === "suspended") resumes.push(ctx.resume());
+			}
+			if (resumes.length > 0) await Promise.all(resumes);
+			// 待機中に停止／別プレイヤー開始されていたら起動しない。
+			if (!playing || activePlayer !== instance) return;
+			if (voicesAvailable && lyricTracks.size > 0) ensureVoices().reset();
+			await startWhenReady();
+		})();
 	};
 
 	const stop = (): void => {

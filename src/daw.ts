@@ -1257,8 +1257,11 @@ export const mountDAW = (
 	});
 
 	const play = async (): Promise<void> => {
-		options.onResumeAudio?.();
 		if (playbackState === "playing") return;
+		// AudioContext の resume は非同期。suspended（currentTime 凍結）のまま
+		// sequencer.start すると resume 完了の瞬間に先読み予約が一斉発音され、冒頭で
+		// 「ピチュ」という潰れた音が鳴る。resume の完了を待ってからスケジュールを始める。
+		await options.onResumeAudio?.();
 
 		const fromStep =
 			playbackState === "paused" ? pausedPlayStep : playStartStep;
