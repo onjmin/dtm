@@ -4593,6 +4593,55 @@ var DAW_CSS = `
 .dtm-textarea.dtm-grow { width: 0; }
 .dtm-range { height: var(--dtm-tap); accent-color: var(--dtm-primary); }
 
+/* \u2500\u2500\u2500 \u30B3\u30F3\u30C8\u30ED\u30FC\u30EB\u30D0\u30FC\uFF08\u697D\u5668\u30D7\u30EA\u30BB\u30C3\u30C8 / \u30E2\u30FC\u30C9\u5207\u66FF\u306A\u3069\u306E\u5DEE\u3057\u8FBC\u307FUI\uFF09 \u2500\u2500\u2500 */
+.dtm-controlbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dtm-gap);
+  padding: 6px 8px;
+  background: var(--dtm-deep);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-border2),
+    4px 4px 0 var(--c-black);
+  margin-bottom: var(--dtm-gap);
+}
+.dtm-controlbar-label {
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--dtm-accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.dtm-controlbar .dtm-select { flex: 1 1 160px; }
+
+/* \u30E2\u30FC\u30C9\u5207\u66FF\uFF08\u30C6\u30AD\u30B9\u30C8\u7248\u30BB\u30B0\u30E1\u30F3\u30C8\uFF09 */
+.dtm-modeseg {
+  display: inline-flex;
+  border: 2px solid var(--dtm-border2);
+  box-shadow: 3px 3px 0 var(--c-black);
+}
+.dtm-modebtn {
+  min-height: var(--dtm-tap);
+  padding: 0 14px;
+  border: none;
+  border-right: 2px solid var(--dtm-border2);
+  background: var(--dtm-deep);
+  color: var(--dtm-muted);
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  cursor: pointer;
+}
+.dtm-modebtn:last-child { border-right: none; }
+.dtm-modebtn--active { background: var(--dtm-primary); color: var(--dtm-pfg); }
+.dtm-modebtn:not(.dtm-modebtn--active):active { background: var(--dtm-border2); }
+
 /* \u2500\u2500\u2500 \u30C8\u30E9\u30C3\u30AF\u30D4\u30EB\uFF08\u30AD\u30E3\u30E9\u30AF\u30BF\u30FC\u9078\u629E\u30DC\u30BF\u30F3\uFF09 \u2500\u2500\u2500 */
 .dtm-tracks {
   display: flex;
@@ -8746,6 +8795,71 @@ var createDtmStudio = async (options = {}) => {
       })
     );
   };
+  const applyPreset = async (daw, presetKey, trackIds, loadingTarget) => {
+    const wasPlaying = daw.getPlaybackState() === "playing";
+    if (wasPlaying) daw.pause();
+    const overlay = loadingTarget ? showLoadingOverlay(loadingTarget) : null;
+    daw.setLoading?.(true);
+    try {
+      daw.setInstrument(presetKey);
+      await loadPreset(presetKey, trackIds);
+    } finally {
+      overlay?.remove();
+      daw.setLoading?.(false);
+      if (wasPlaying) daw.play();
+    }
+  };
+  const mountPresetSelect = (target, opts) => {
+    const doc = target.ownerDocument;
+    const wrapper = doc.createElement("div");
+    wrapper.className = opts.className ?? "dtm-controlbar";
+    if (opts.label !== null) {
+      const lab = doc.createElement("span");
+      lab.className = "dtm-controlbar-label";
+      lab.textContent = opts.label ?? "INSTRUMENT";
+      wrapper.appendChild(lab);
+    }
+    const select = doc.createElement("select");
+    select.className = "dtm-select dtm-grow";
+    for (const [key, p] of Object.entries(INSTRUMENT_PRESETS)) {
+      const o = doc.createElement("option");
+      o.value = key;
+      o.textContent = p.displayName;
+      select.appendChild(o);
+    }
+    select.value = opts.value && INSTRUMENT_PRESETS[opts.value] ? opts.value : defaultPreset;
+    wrapper.appendChild(select);
+    let busy = false;
+    const onChange = async () => {
+      const daw = opts.getDaw();
+      if (!daw || busy) return;
+      busy = true;
+      const key = select.value;
+      opts.onChange?.(key);
+      const trackIds = opts.getTrackIds?.() ?? [...TRACK_ROLES];
+      try {
+        await applyPreset(daw, key, trackIds, opts.loadingTarget);
+      } finally {
+        busy = false;
+      }
+    };
+    select.addEventListener("change", onChange);
+    if (opts.position === "prepend")
+      target.insertBefore(wrapper, target.firstChild);
+    else target.appendChild(wrapper);
+    return {
+      element: wrapper,
+      select,
+      setValue: (k) => {
+        if (INSTRUMENT_PRESETS[k]) select.value = k;
+      },
+      getValue: () => select.value,
+      destroy: () => {
+        select.removeEventListener("change", onChange);
+        wrapper.remove();
+      }
+    };
+  };
   await listReady;
   nameToKey = await buildNameToKeyMapping();
   await Promise.all([drumReady, loadPreset(defaultPreset)]);
@@ -8788,6 +8902,7 @@ var createDtmStudio = async (options = {}) => {
   const editorPresetSelects = /* @__PURE__ */ new WeakMap();
   const mountedEditors = [];
   const mountedPlayers = [];
+  const mountedModeSwitches = [];
   const mountEditor = (target, opts = {}) => {
     const { preset, presetUI, ...dawOverrides } = opts;
     const tracks = dawOverrides.tracks ?? TRACKS_SIMPLE;
@@ -8802,44 +8917,22 @@ var createDtmStudio = async (options = {}) => {
       onToggleRecord,
       ...dawOverrides
     };
-    const wantPresetUI = presetUI ?? features.presetUI;
-    let select = null;
-    if (wantPresetUI) {
-      editorPresetSelects.get(target)?.remove();
-      select = target.ownerDocument.createElement("select");
-      select.className = "dtm-studio-preset";
-      for (const [key, p] of Object.entries(INSTRUMENT_PRESETS)) {
-        const opt = target.ownerDocument.createElement("option");
-        opt.value = key;
-        opt.textContent = p.displayName;
-        select.appendChild(opt);
-      }
-      select.value = preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
-      target.appendChild(select);
-      editorPresetSelects.set(target, select);
-      select.addEventListener("change", async () => {
-        if (!select) return;
-        const wasPlaying = daw.getPlaybackState() === "playing";
-        if (wasPlaying) {
-          daw.pause();
-        }
-        const overlay = showLoadingOverlay(target);
-        daw.setLoading?.(true);
-        try {
-          daw.setInstrument(select.value);
-          await loadPreset(select.value, trackIds);
-        } finally {
-          overlay.remove();
-          daw.setLoading?.(false);
-          if (wasPlaying) {
-            daw.play();
-          }
-        }
-      });
-    }
     const daw = mountDAW(target, base);
     mountedEditors.push(daw);
     const presetKey = preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
+    const wantPresetUI = presetUI ?? features.presetUI;
+    let presetSelect = null;
+    if (wantPresetUI) {
+      editorPresetSelects.get(target)?.destroy();
+      presetSelect = mountPresetSelect(target, {
+        getDaw: () => daw,
+        getTrackIds: () => trackIds,
+        value: presetKey,
+        loadingTarget: target,
+        position: "prepend"
+      });
+      editorPresetSelects.set(target, presetSelect);
+    }
     daw.setInstrument(presetKey);
     daw.setLoading?.(true);
     void loadPreset(presetKey, trackIds).finally(() => {
@@ -8847,13 +8940,94 @@ var createDtmStudio = async (options = {}) => {
     });
     const destroy = () => {
       daw.destroy();
-      select?.remove();
-      if (editorPresetSelects.get(target) === select)
+      presetSelect?.destroy();
+      if (editorPresetSelects.get(target) === presetSelect)
         editorPresetSelects.delete(target);
       const i = mountedEditors.indexOf(daw);
       if (i >= 0) mountedEditors.splice(i, 1);
     };
     return { ...daw, destroy };
+  };
+  const mountModeSwitch = (target, opts) => {
+    const doc = target.ownerDocument;
+    const tracksFor = opts.tracksFor ?? ((m) => m === "advanced" ? TRACKS_ADVANCED : TRACKS_SIMPLE);
+    const labels = {
+      simple: opts.labels?.simple ?? "\u30B7\u30F3\u30D7\u30EB",
+      advanced: opts.labels?.advanced ?? "\u30A2\u30C9\u30D0\u30F3\u30B9"
+    };
+    const editorOptionsFor = (mode) => typeof opts.editorOptions === "function" ? opts.editorOptions(mode) : opts.editorOptions ?? {};
+    let currentMode = opts.mode ?? "simple";
+    let daw = null;
+    const wrapper = doc.createElement("div");
+    wrapper.className = opts.className ?? "dtm-controlbar";
+    if (opts.label !== null) {
+      const lab = doc.createElement("span");
+      lab.className = "dtm-controlbar-label";
+      lab.textContent = opts.label ?? "MODE";
+      wrapper.appendChild(lab);
+    }
+    const seg = doc.createElement("div");
+    seg.className = "dtm-modeseg";
+    const buttons = /* @__PURE__ */ new Map();
+    const updateButtons = () => {
+      for (const [mode, btn] of buttons)
+        btn.classList.toggle("dtm-modebtn--active", mode === currentMode);
+    };
+    for (const mode of ["simple", "advanced"]) {
+      const btn = doc.createElement("button");
+      btn.type = "button";
+      btn.className = "dtm-modebtn";
+      btn.textContent = labels[mode];
+      btn.addEventListener("click", () => setMode(mode));
+      seg.appendChild(btn);
+      buttons.set(mode, btn);
+    }
+    wrapper.appendChild(seg);
+    const doMount = (mode, mml) => {
+      const editorOpts = editorOptionsFor(mode);
+      daw = mountEditor(opts.editorTarget, {
+        ...editorOpts,
+        mode,
+        tracks: tracksFor(mode),
+        initialMML: mml ?? editorOpts.initialMML
+      });
+      opts.onMount?.(daw, mode);
+    };
+    const doUnmount = () => {
+      if (!daw) return void 0;
+      const mml = daw.getMML().full;
+      opts.onUnmount?.(daw, currentMode);
+      daw.destroy();
+      daw = null;
+      return mml;
+    };
+    function setMode(mode) {
+      if (mode === currentMode && daw) return;
+      const carried = doUnmount();
+      currentMode = mode;
+      updateButtons();
+      opts.onChange?.(mode);
+      doMount(mode, carried);
+    }
+    if (opts.position === "prepend")
+      target.insertBefore(wrapper, target.firstChild);
+    else target.appendChild(wrapper);
+    updateButtons();
+    doMount(currentMode, editorOptionsFor(currentMode).initialMML);
+    const instance = {
+      element: wrapper,
+      getDaw: () => daw,
+      getMode: () => currentMode,
+      setMode,
+      destroy: () => {
+        doUnmount();
+        wrapper.remove();
+        const i = mountedModeSwitches.indexOf(instance);
+        if (i >= 0) mountedModeSwitches.splice(i, 1);
+      }
+    };
+    mountedModeSwitches.push(instance);
+    return instance;
   };
   const mountPlayer = (target, mml, opts = {}) => {
     const meta = parseMML(mml, {}).meta ?? {};
@@ -8877,8 +9051,10 @@ var createDtmStudio = async (options = {}) => {
     return { ...player, destroy };
   };
   const dispose = () => {
+    for (const m of [...mountedModeSwitches]) m.destroy();
     for (const p of mountedPlayers) p.destroy();
     for (const d of mountedEditors) d.destroy();
+    mountedModeSwitches.length = 0;
     mountedPlayers.length = 0;
     mountedEditors.length = 0;
     void audioCtx.close();
@@ -8889,6 +9065,9 @@ var createDtmStudio = async (options = {}) => {
     mountEditor,
     mountPlayer,
     loadPreset,
+    defaultPreset,
+    mountPresetSelect,
+    mountModeSwitch,
     dispose
   };
 };
