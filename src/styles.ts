@@ -883,8 +883,8 @@ export const DAW_CSS = `
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 2px;
-  padding-top: 4px;
 }
 .dtm-player-lane-label--btn {
   cursor: pointer;
@@ -961,17 +961,21 @@ export const DAW_CSS = `
   position: relative; /* トークンの offsetParent をレーンに固定し、中央寄せ計算を正す */
   flex: 1 1 auto;
   overflow-x: auto;
+  overflow-y: hidden;
   white-space: nowrap;
   background: var(--c-black);
-  border: 2px solid var(--dtm-border2);
-  padding: 6px;
+  border: none;
+  padding: 0 6px;
   scrollbar-width: none;
+  display: flex;
+  align-items: center;
 }
 .dtm-player-lane::-webkit-scrollbar { display: none; }
 .dtm-tk {
   font-family: 'k8x12', monospace;
   font-size: 12px;
   color: var(--dtm-text);
+  flex: 0 0 auto;
 }
 .dtm-tk--rest { color: var(--dtm-muted); }
 .dtm-tk--octave,
