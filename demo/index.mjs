@@ -1434,6 +1434,7 @@ var DEFAULT_PAN = 64;
 var DEFAULT_VELOCITY = 100;
 var DEFAULT_PLAYBACK_VELOCITY = 127;
 var DEFAULT_STEPS_PER_BAR = 192;
+var MML_END_MARKER = "#end;";
 
 // src/lyrics.ts
 var kanaTable = {
@@ -3566,7 +3567,9 @@ var parseMML = (mml, options = {}) => {
   const meta = parseMmlMeta(noComments);
   const noMeta = stripMmlMeta(noComments);
   const lyrics = collectLyrics ? parseLyrics(noMeta) : void 0;
-  const fullMML = stripLyrics(noMeta).replace(/[\n\r]+/g, " ").trim();
+  const endMarkerBase = MML_END_MARKER.replace(/;+$/, "");
+  const endRegex = new RegExp(`(?<![cdafgCDAFG])${endMarkerBase}\\b;?`, "gi");
+  const fullMML = stripLyrics(noMeta).replace(endRegex, "").replace(/[\n\r]+/g, " ").trim();
   const parts = fullMML.split(/(@\d+)/).filter((p) => p.trim().length > 0);
   let trackIndex = 0;
   let octave = 4;
@@ -5869,8 +5872,8 @@ var mountDAW = (target, options = {}) => {
       const decomposedMini = monoTracks.map(
         (notes, i) => `@${i}${refCore.getMMLFromNotes(notes, bpm, 100).trim().replace(/\s+/g, "")}`
       );
-      const full2 = [metaLine, ...decomposedFull].filter((s) => s.length > 0).join(";\n");
-      const minified2 = [metaLine, ...decomposedMini].filter((s) => s.length > 0).join(";");
+      const full2 = [metaLine, ...decomposedFull, MML_END_MARKER].filter((s) => s.length > 0).join(";\n");
+      const minified2 = [metaLine, ...decomposedMini, MML_END_MARKER].filter((s) => s.length > 0).join(";");
       return {
         full: full2,
         minified: minified2,
@@ -5910,8 +5913,13 @@ var mountDAW = (target, options = {}) => {
       const head = params ? `${x.model} ${params}` : x.model;
       return `@@${x.i} ${head} ${x.text}`;
     });
-    const full = [metaLine, ...trackLines, ...lyricLines].filter((s) => s.length > 0).join(";\n");
-    const minified = [metaLine, ...trackLinesMini, ...lyricLines].filter((s) => s.length > 0).join(";");
+    const full = [metaLine, ...trackLines, ...lyricLines, MML_END_MARKER].filter((s) => s.length > 0).join(";\n");
+    const minified = [
+      metaLine,
+      ...trackLinesMini,
+      ...lyricLines,
+      MML_END_MARKER
+    ].filter((s) => s.length > 0).join(";");
     return {
       full,
       minified,
@@ -7810,6 +7818,7 @@ export {
   LinkedList,
   MAX_VOCAL_VOLUME,
   MMLCore,
+  MML_END_MARKER,
   PITCH_MAP,
   PREWARM_NOTES,
   TRACKS_ADVANCED,
