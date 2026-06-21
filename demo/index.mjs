@@ -1685,7 +1685,7 @@ var createSingingVoices = (ctx, destination, options = {}) => {
     }
     await Promise.all(promises);
   };
-  const startStream = (tracks, anchorTime) => {
+  const startStream = (tracks, anchorTime, opts) => {
     const session = ++streamSession;
     const runTrack = async (track) => {
       const model = loaded.get(track.model.toLowerCase());
@@ -1701,6 +1701,7 @@ var createSingingVoices = (ctx, destination, options = {}) => {
           await new Promise((resolve) => setTimeout(resolve, STREAM_POLL_MS));
           if (session !== streamSession) return;
         }
+        if (opts?.isAudible && !opts.isAudible(track)) continue;
         const t0 = anchorTime + note.startSec;
         if (model.renderToCache && model.scheduleCached) {
           const key = await model.renderToCache(
@@ -3266,13 +3267,10 @@ var createSequencer = (options) => {
     }
     while (nowIndex < timeline.length) {
       const ev = timeline[nowIndex];
-      if (soloId && ev.trackId !== soloId) {
-        nowIndex++;
-        continue;
-      }
       const _when = ev.when - time;
       if (_when > PLAN_TIME) break;
       nowIndex++;
+      if (soloId && ev.trackId !== soloId) continue;
       const velocityVolume = ev.velocity / 127;
       const currentVolume = (trackVolumeMap.get(ev.trackId) ?? ev.volume * 100) / 100;
       options.onPlayNote({
@@ -4967,6 +4965,7 @@ var mountDAW = (target, options = {}) => {
         });
       }
       return {
+        id: trackState?.config.id,
         model: lt.model,
         volume: vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) * (masterVolume / 100),
         pan: panToStereo(lt.pan ?? DEFAULT_PAN),
@@ -4997,7 +4996,9 @@ var mountDAW = (target, options = {}) => {
     playbackState = "playing";
     sequencer.start(fromStep);
     if (streaming && voices) {
-      voices.startStream(streamTracks, sequencer.getStartTime());
+      voices.startStream(streamTracks, sequencer.getStartTime(), {
+        isAudible: (t) => !isSolo || t.id === activeTrackId
+      });
     }
     updateTransport();
   };
