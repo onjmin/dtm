@@ -280,8 +280,10 @@ export const parseMML = (
 					numStr += body[j];
 					j++;
 				}
-				if (ch === "t" && trackIndex === 0 && numStr) {
-					bpm = clamp(Number.parseInt(numStr, 10), 1, 255);
+				if (ch === "t" && numStr) {
+					if (bpm === null) {
+						bpm = clamp(Number.parseInt(numStr, 10), 1, 255);
+					}
 				}
 				// 発音位置には影響しないが、再生専用UIがグレーアウト表示できるよう
 				// トークンとして残す（durationSteps 0 でハイライト対象外）。
