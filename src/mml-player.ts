@@ -145,21 +145,25 @@ export const mountMmlPlayer = (
 	}
 	const stepChords: string[] = [];
 	const chordCache = new Map<string, string>();
+	let lastChord = "";
 	for (let s = 0; s <= maxStep; s++) {
 		const pitches = Array.from(stepPitches[s]);
 		if (pitches.length === 0) {
-			stepChords.push("");
+			stepChords.push(lastChord);
 			continue;
 		}
 		const sortedPitches = pitches.sort((a, b) => a - b);
 		const cacheKey = sortedPitches.join(",");
 		if (chordCache.has(cacheKey)) {
-			stepChords.push(chordCache.get(cacheKey)!);
+			const chordName = chordCache.get(cacheKey)!;
+			if (chordName) lastChord = chordName;
+			stepChords.push(lastChord);
 		} else {
 			const candidates = detectChord(sortedPitches);
 			const chordName = candidates[0]?.symbol ?? "";
+			if (chordName) lastChord = chordName;
 			chordCache.set(cacheKey, chordName);
-			stepChords.push(chordName);
+			stepChords.push(lastChord);
 		}
 	}
 	const seqTracks: SequencerTrack[] = trackIndices.map((index) => {
@@ -586,16 +590,17 @@ export const mountMmlPlayer = (
 	};
 
 	const renderPlayhead = (step: number): void => {
+		const intStep = Math.floor(step);
 		const beatIndex = Math.floor(step / STEPS_PER_BEAT) % 4;
 		for (let i = 0; i < 4; i++)
 			beatDots[i].classList.toggle("dtm-player-beat-dot--on", i === beatIndex);
 		barEl.textContent = String(Math.floor(step / STEPS_PER_BAR) + 1);
-		const chordName = stepChords[step] ?? "";
+		const chordName = stepChords[intStep] ?? "";
 		if (chordEl.textContent !== chordName) {
 			chordEl.textContent = chordName;
 			if (chordName) {
 				console.log(
-					`[dtm-player-chord] Active Chord: ${chordName} (step: ${step})`,
+					`[dtm-player-chord] Active Chord: ${chordName} (step: ${intStep})`,
 				);
 			}
 		}
