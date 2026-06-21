@@ -799,6 +799,7 @@ export const DAW_CSS = `
 }
 .dtm-player-mml-link:hover { color: var(--dtm-primary); }
 .dtm-player-emoji {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -808,6 +809,43 @@ export const DAW_CSS = `
   font-size: 18px;
   line-height: 1;
   user-select: none;
+}
+.dtm-player-balloon {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: none;
+  pointer-events: none;
+  font-family: var(--dtm-font);
+  font-size: 9px;
+  color: var(--c-black);
+  background: var(--c-white);
+  border: 2px solid var(--c-black);
+  padding: 2px 4px;
+  white-space: nowrap;
+  box-shadow: 2px 2px 0 var(--c-black);
+}
+.dtm-player-balloon::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: var(--c-white);
+  border-right: 2px solid var(--c-black);
+  border-bottom: 2px solid var(--c-black);
+}
+.dtm-player-balloon--visible {
+  display: block;
+  animation: dtm-balloon-fade-in 0.1s steps(2);
+}
+@keyframes dtm-balloon-fade-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 @keyframes dtm-emoji-jump {
   0%   { transform: translateY(0); }
@@ -833,11 +871,13 @@ export const DAW_CSS = `
   gap: var(--dtm-gap);
 }
 .dtm-player-lane-row {
+  position: relative;
   display: flex;
   align-items: stretch;
   gap: 6px;
 }
 .dtm-player-lane-label {
+  position: relative;
   flex: 0 0 auto;
   width: 16px;
   display: flex;
@@ -852,6 +892,66 @@ export const DAW_CSS = `
 }
 .dtm-player-lane-label--btn:hover { opacity: 0.7; }
 .dtm-player-lane-label--muted { opacity: 0.3; }
+
+/* ─── ミュート表示（排他同期） ─── */
+.dtm-player-emoji.is-muted,
+.dtm-player-lane-label.is-muted {
+  position: relative;
+}
+
+/* ミュート時の「×」マーク重ね描き */
+.dtm-player-emoji.is-muted::before,
+.dtm-player-lane-label.is-muted::before {
+  content: "×";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dtm-danger);
+  font-family: var(--dtm-font);
+  font-size: 16px;
+  font-weight: bold;
+  z-index: 10;
+  pointer-events: none;
+  text-shadow: 1px 1px 0 var(--c-black);
+}
+
+.dtm-player-lane-label.is-muted::before {
+  font-size: 14px;
+}
+
+/* ミュート時のアイコンや要素の薄暗化（吹き出しは除外） */
+.dtm-player-emoji.is-muted > img,
+.dtm-player-emoji.is-muted > span:not(.dtm-player-balloon) {
+  opacity: 0.25;
+  filter: grayscale(80%);
+}
+
+.dtm-player-lane-label.is-muted {
+  opacity: 0.25;
+}
+
+/* ミュート時のトラックレーン（スクロール部）の薄暗化とデカ×マーク（色弱対応） */
+.dtm-player-lane-row.is-muted::after {
+  content: "×";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 22px; /* label width (16px) + gap (6px) */
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dtm-danger);
+  font-family: var(--dtm-font);
+  font-size: 24px;
+  font-weight: bold;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 10;
+  pointer-events: none;
+  text-shadow: 1px 1px 0 var(--c-black);
+}
 .dtm-player-lane-no {
   font-family: 'k8x12', monospace;
   font-size: 9px;

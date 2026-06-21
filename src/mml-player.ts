@@ -82,6 +82,41 @@ export type MmlPlayerInstance = {
 /** 同時に鳴るのは1プレイヤーのみ。再生開始時に他を止める（旧 AudioFocus 相当） */
 let activePlayer: MmlPlayerInstance | null = null;
 
+const LYRIC_MODEL_LABELS: Record<string, string> = {
+	klatt: "軽量ロボ声",
+	...KOE_VOICEBANK_LABELS,
+};
+
+/** 現在表示中の吹き出し要素とその自動非表示タイマー */
+let activeBalloonEl: HTMLElement | null = null;
+let activeBalloonTimer: ReturnType<typeof setTimeout> | null = null;
+
+const hideActiveBalloon = (): void => {
+	if (activeBalloonEl) {
+		activeBalloonEl.classList.remove("dtm-player-balloon--visible");
+		activeBalloonEl = null;
+	}
+	if (activeBalloonTimer) {
+		clearTimeout(activeBalloonTimer);
+		activeBalloonTimer = null;
+	}
+};
+
+const showBalloon = (balloonEl: HTMLElement): void => {
+	if (activeBalloonEl === balloonEl) {
+		if (activeBalloonTimer) {
+			clearTimeout(activeBalloonTimer);
+		}
+	} else {
+		hideActiveBalloon();
+		activeBalloonEl = balloonEl;
+		balloonEl.classList.add("dtm-player-balloon--visible");
+	}
+	activeBalloonTimer = setTimeout(() => {
+		hideActiveBalloon();
+	}, 3000);
+};
+
 type LaneToken = {
 	el: HTMLSpanElement;
 	startStep: number;
@@ -312,17 +347,55 @@ export const mountMmlPlayer = (
 	playBtn.innerHTML = icon("play", 12);
 	playBtn.disabled = trackIndices.length === 0;
 
+	const mutedTracks = new Set<number>();
+	const labelByTrack = new Map<number, HTMLDivElement>();
+	const emojiByTrack = new Map<number, HTMLSpanElement>();
+	const rowByTrack = new Map<number, HTMLDivElement>();
+
+	const toggleMute = (index: number): void => {
+		if (mutedTracks.has(index)) {
+			mutedTracks.delete(index);
+		} else {
+			mutedTracks.add(index);
+		}
+		updateMuteUI(index);
+	};
+
+	const updateMuteUI = (index: number): void => {
+		const isMuted = mutedTracks.has(index);
+		const row = rowByTrack.get(index);
+		if (row) {
+			row.classList.toggle("is-muted", isMuted);
+		}
+		const label = labelByTrack.get(index);
+		if (label) {
+			label.classList.toggle("is-muted", isMuted);
+		}
+		const em = emojiByTrack.get(index);
+		if (em) {
+			em.classList.toggle("is-muted", isMuted);
+		}
+	};
+
 	// 絵文字ヘッダ（トラック数分の🥺）
 	const mmlHeader = doc.createElement("div");
 	mmlHeader.className = "dtm-player-mml-header";
 
 	const emojiEls: HTMLSpanElement[] = [];
-	const emojiByTrack = new Map<number, HTMLSpanElement>();
 	for (const index of trackIndices) {
 		const em = doc.createElement("span");
 		em.className = "dtm-player-emoji";
 		em.style.backgroundColor = colorOf(index);
-		em.textContent = "🥺";
+
+		const textSpan = doc.createElement("span");
+		textSpan.textContent = "🥺";
+		em.appendChild(textSpan);
+
+		em.addEventListener("click", (e) => {
+			e.stopPropagation();
+			toggleMute(index);
+		});
+
 		mmlHeader.appendChild(em);
 		emojiEls.push(em);
 		emojiByTrack.set(index, em);
@@ -346,6 +419,25 @@ export const mountMmlPlayer = (
 		promotedToImage.add(em);
 		em.textContent = "";
 		em.appendChild(img);
+
+		const balloon = doc.createElement("div");
+		balloon.className = "dtm-player-balloon";
+		const modelKey = lt.model.toLowerCase();
+		balloon.textContent = LYRIC_MODEL_LABELS[modelKey] ?? lt.model;
+		em.appendChild(balloon);
+
+		em.addEventListener("mouseenter", () => {
+			showBalloon(balloon);
+		});
+		em.addEventListener("mouseleave", () => {
+			if (activeBalloonEl === balloon) {
+				hideActiveBalloon();
+			}
+		});
+		em.addEventListener("click", (e) => {
+			e.stopPropagation();
+			showBalloon(balloon);
+		});
 	}
 
 	// 和音は同じトラックで複数ノートが同時（同じ when）に来るため、ジャンプ発火が
@@ -385,11 +477,21 @@ export const mountMmlPlayer = (
 		const delay = 2000 + Math.random() * 5000;
 		const t = setTimeout(() => {
 			if (promotedToImage.has(em)) return;
-			em.textContent = "😌";
+			const textSpan = em.querySelector("span");
+			if (textSpan) {
+				textSpan.textContent = "😌";
+			} else {
+				em.textContent = "😌";
+			}
 			const t2 = setTimeout(
 				() => {
 					if (promotedToImage.has(em)) return;
-					em.textContent = "🥺";
+					const textSpan = em.querySelector("span");
+					if (textSpan) {
+						textSpan.textContent = "🥺";
+					} else {
+						em.textContent = "🥺";
+					}
 					scheduleBlink(em);
 				},
 				100 + Math.random() * 50,
@@ -456,7 +558,7 @@ export const mountMmlPlayer = (
 	body.className = "dtm-player-body";
 	root.appendChild(body);
 
-	const mutedTracks = new Set<number>();
+	// mutedTracks is defined above
 
 	const laneViews: LaneView[] = [];
 	for (const index of trackIndices) {
@@ -465,6 +567,7 @@ export const mountMmlPlayer = (
 
 		const row = doc.createElement("div");
 		row.className = "dtm-player-lane-row";
+		rowByTrack.set(index, row);
 
 		const label = doc.createElement("div");
 		label.className = "dtm-player-lane-label dtm-player-lane-label--btn";
@@ -475,14 +578,9 @@ export const mountMmlPlayer = (
 		no.className = "dtm-player-lane-no";
 		no.textContent = `@${index}`;
 		label.append(swatch, no);
+		labelByTrack.set(index, label);
 		label.addEventListener("click", () => {
-			if (mutedTracks.has(index)) {
-				mutedTracks.delete(index);
-				label.classList.remove("dtm-player-lane-label--muted");
-			} else {
-				mutedTracks.add(index);
-				label.classList.add("dtm-player-lane-label--muted");
-			}
+			toggleMute(index);
 		});
 
 		const lane = doc.createElement("div");
@@ -786,6 +884,9 @@ export const mountMmlPlayer = (
 		}
 		for (const t of blinkTimers) clearTimeout(t);
 		clearJumpTimers();
+		if (activeBalloonEl && root.contains(activeBalloonEl)) {
+			hideActiveBalloon();
+		}
 		root.remove();
 	};
 
