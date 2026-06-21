@@ -294,8 +294,13 @@ export const extractMidiPlacements = (
 };
 
 /**
- * 上級者モード用：MIDIトラックインデックス N → DAW トラック trackIds[N] へ直接マッピング。
- * 自動分類なし。選択された MIDI トラック K のノートは DAW トラック K に入る。
+ * advancedモード用：選択された MIDI トラックを選択順に DAW トラックへ上から詰める
+ * （k番目に選んだトラック → trackIds[k]）。自動分類なし。
+ *
+ * MIDIの実トラック番号ではなく「選択順の位置」で割り当てるため、先頭のテンポ/コンダクタ
+ * トラックや、空・ドラムだけのトラックが混ざっていても DAW レーンがずれない
+ * （これらは選択リストに出ない／選ばれないので位置を消費しない）。
+ * ドラム(ch10 = channel 9)のノートはスキップする。
  */
 export const extractMidiPlacementsByTrack = (
 	midi: unknown,
@@ -308,14 +313,12 @@ export const extractMidiPlacementsByTrack = (
 	const ticksPerStep = ticksPerBeat / STEPS_PER_BEAT;
 
 	const placements: MidiNotePlacement[] = [];
-	const selectedSet = new Set(selectedIndices);
 
-	for (let midiIdx = 0; midiIdx < track.length; midiIdx++) {
-		if (!selectedSet.has(midiIdx)) continue;
-		if (midiIdx >= trackIds.length) continue;
-		const trackId = trackIds[midiIdx];
+	selectedIndices.forEach((midiIdx, lane) => {
+		if (lane >= trackIds.length) return;
 		const trackData = track[midiIdx];
-		if (!trackData) continue;
+		if (!trackData) return;
+		const trackId = trackIds[lane];
 
 		type RawNote = {
 			pitch: number;
@@ -360,7 +363,7 @@ export const extractMidiPlacementsByTrack = (
 				velocity: note.velocity,
 			});
 		}
-	}
+	});
 
 	return { placements, bpm };
 };
@@ -420,6 +423,10 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 
 	tracks.forEach((track, ch) => {
 		if (track.notes.length === 0) return;
+		// GMの打楽器チャンネル(9 = MIDI ch10)を避ける。index 9以降は1つ繰り上げて割り当てる。
+		// そのまま ch を使うと TRACK 10 のノートが打楽器chに化け、GM音源でドラム音になったり
+		// 取り込み側の ch9 スキップで消えたりする。
+		const channel = ch < 9 ? ch : (ch + 1) & 0x0f;
 		const events: { t: number; m: number[] }[] = [];
 		for (const n of track.notes) {
 			const startTick = Math.round(n.startStep * tickPerStep);
@@ -430,8 +437,8 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 			const vel = Math.round(
 				((n.velocity ?? DEFAULT_VELOCITY) * (track.volume ?? 100)) / 100,
 			);
-			events.push({ t: startTick, m: [0x90 | (ch & 0x0f), n.pitch, vel] });
-			events.push({ t: endTick, m: [0x90 | (ch & 0x0f), n.pitch, 0] });
+			events.push({ t: startTick, m: [0x90 | channel, n.pitch, vel] });
+			events.push({ t: endTick, m: [0x90 | channel, n.pitch, 0] });
 		}
 		events.sort((a, b) => a.t - b.t);
 		midiTracks.push(events);
