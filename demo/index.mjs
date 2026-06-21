@@ -1522,8 +1522,8 @@ function parseKoeHeader(headerBytes) {
 }
 var pcmBase = (jsonLength) => 8 + jsonLength;
 var BlobVoiceSource = class {
-  constructor(blob, base) {
-    this.blob = blob;
+  constructor(blob2, base) {
+    this.blob = blob2;
     this.base = base;
   }
   blob;
@@ -1534,8 +1534,8 @@ var BlobVoiceSource = class {
   }
 };
 var RangeVoiceSource = class {
-  constructor(url, base) {
-    this.url = url;
+  constructor(url2, base) {
+    this.url = url2;
     this.base = base;
   }
   url;
@@ -1551,8 +1551,8 @@ var RangeVoiceSource = class {
     return res.arrayBuffer();
   }
 };
-async function rangeFetch(url, start, length) {
-  const res = await fetch(url, {
+async function rangeFetch(url2, start, length) {
+  const res = await fetch(url2, {
     headers: { Range: `bytes=${start}-${start + length - 1}` }
   });
   if (!res.ok && res.status !== 206)
@@ -2323,22 +2323,22 @@ var createLocalBackend = async (options) => {
     }
   };
 };
-var spawnVoiceWorker = async (url) => {
-  const sameOrigin = new URL(url, location.href).origin === location.origin;
-  if (sameOrigin) return new Worker(url);
-  const text = await fetch(url).then((r) => r.text());
+var spawnVoiceWorker = async (url2) => {
+  const sameOrigin = new URL(url2, location.href).origin === location.origin;
+  if (sameOrigin) return new Worker(url2);
+  const text = await fetch(url2).then((r) => r.text());
   return new Worker(
     URL.createObjectURL(new Blob([text], { type: "text/javascript" }))
   );
 };
 var createWorkerBackend = async (workerUrl, options) => {
-  const worker = await spawnVoiceWorker(workerUrl);
+  const worker2 = await spawnVoiceWorker(workerUrl);
   const aliasSet = /* @__PURE__ */ new Set();
   const pending = /* @__PURE__ */ new Map();
   let reqId = 0;
   let onReady = null;
   let onFail = null;
-  worker.onmessage = (ev) => {
+  worker2.onmessage = (ev) => {
     const m = ev.data;
     if (m.type === "ready") {
       for (const a of m.aliases) aliasSet.add(a);
@@ -2353,14 +2353,14 @@ var createWorkerBackend = async (workerUrl, options) => {
       }
     }
   };
-  worker.onerror = (e) => {
+  worker2.onerror = (e) => {
     const ev = e;
     onFail?.(new Error(ev.message || ev.error || `Event: ${ev.type}`));
   };
   await new Promise((resolve, reject) => {
     onReady = resolve;
     onFail = reject;
-    worker.postMessage({
+    worker2.postMessage({
       type: "init",
       koe: options.koe,
       worldlineScriptUrl: options.worldlineScriptUrl ?? DEFAULT_WORLDLINE_SCRIPT,
@@ -2377,7 +2377,7 @@ var createWorkerBackend = async (workerUrl, options) => {
         m.pcm ? { pcm: m.pcm, preSec: m.preSec ?? 0, rate: m.rate ?? 1 } : null
       )
     );
-    worker.postMessage({
+    worker2.postMessage({
       type: "render",
       id,
       alias,
@@ -2389,7 +2389,7 @@ var createWorkerBackend = async (workerUrl, options) => {
     hasAlias: (a) => aliasSet.has(a),
     pitchTokens: collectPitchTokens(aliasSet),
     renderAlias,
-    dispose: () => worker.terminate()
+    dispose: () => worker2.terminate()
   };
 };
 var createKoeVoice = async (ctx, destination, options) => {
@@ -2524,7 +2524,7 @@ var createSingingVoices = (ctx, destination, options = {}) => {
     [FALLBACK_MODEL, createKlattVoice(ctx, destination)]
   ]);
   const loading = /* @__PURE__ */ new Map();
-  const load = (model) => {
+  const load2 = (model) => {
     const m = model.toLowerCase();
     const ready = loaded.get(m);
     if (ready) return Promise.resolve(ready);
@@ -2556,7 +2556,7 @@ var createSingingVoices = (ctx, destination, options = {}) => {
   const loadModels = async (models) => {
     const set = /* @__PURE__ */ new Set();
     for (const m of models) if (m) set.add(m.toLowerCase());
-    await Promise.all([...set].map((m) => load(m)));
+    await Promise.all([...set].map((m) => load2(m)));
   };
   const forEachSungNote = (track, fn) => {
     let prevVowel = "";
@@ -2778,21 +2778,26 @@ var shiftNotes = (cores, shiftSteps) => {
 // src/midi-io.ts
 var STEPS_PER_BEAT = 48;
 var analyzeMidiTracks = (midi) => {
-  const { track } = midi;
+  const { tracks } = midi;
   const result = [];
-  for (let i = 0; i < track.length; i++) {
+  for (let i = 0; i < tracks.length; i++) {
     const notes = [];
     let currentTime = 0;
-    for (const event of track[i].event) {
-      currentTime += event.deltaTime;
-      const data = event.data;
-      if (event.type === 9 && data && data[1]) {
-        notes.push({ pitch: data[0], channel: event.channel ?? 0 });
-      } else if (event.type === 8) {
-        for (let k = notes.length - 1; k >= 0; k--) {
-          if (notes[k].pitch === data[0] && notes[k].end === void 0) {
-            notes[k].end = currentTime;
-            break;
+    for (const event of tracks[i]) {
+      currentTime += event.delta;
+      if (event.noteOn && event.noteOn.velocity > 0) {
+        notes.push({
+          pitch: event.noteOn.noteNumber,
+          channel: event.channel ?? 0
+        });
+      } else if (event.noteOff || event.noteOn && event.noteOn.velocity === 0) {
+        const noteOff = event.noteOff || event.noteOn;
+        if (noteOff) {
+          for (let k = notes.length - 1; k >= 0; k--) {
+            if (notes[k].pitch === noteOff.noteNumber && notes[k].end === void 0) {
+              notes[k].end = currentTime;
+              break;
+            }
           }
         }
       }
@@ -2810,51 +2815,54 @@ var analyzeMidiTracks = (midi) => {
   return result;
 };
 var getMidiBPM = (midi) => {
-  const { track } = midi;
-  for (const { event } of track) {
-    for (const { type, metaType, data } of event) {
-      if (type !== 255 || metaType !== 81) continue;
-      if (typeof data === "number") {
-        return 6e7 / data;
+  const { tracks } = midi;
+  for (const track of tracks) {
+    for (const event of track) {
+      if (event.setTempo && typeof event.setTempo.microsecondsPerQuarter === "number") {
+        return 6e7 / event.setTempo.microsecondsPerQuarter;
       }
-      const [b1, b2, b3] = data;
-      return 6e7 / (b1 << 16 | b2 << 8 | b3);
     }
   }
   return 120;
 };
 var extractMidiPlacements = (midi, selectedTrackIndices) => {
-  const { track, timeDivision } = midi;
-  const ticksPerBeat = timeDivision;
+  const { tracks, division } = midi;
+  const ticksPerBeat = division;
   const bpm = getMidiBPM(midi);
   const channelNotes = {};
   for (const trackIdx of selectedTrackIndices) {
-    const trackData = track[trackIdx];
+    const trackData = tracks[trackIdx];
     if (!trackData) continue;
     let currentTime = 0;
-    for (const event of trackData.event) {
-      currentTime += event.deltaTime;
+    for (const event of trackData) {
+      currentTime += event.delta;
       if (event.channel === 9) continue;
-      if (event.type !== 8 && event.type !== 9) continue;
-      const [pitch, velocity] = event.data;
-      const isNoteOff = event.type === 8 || !velocity;
-      const channel = event.channel ?? 0;
-      if (!channelNotes[channel]) channelNotes[channel] = [];
-      if (isNoteOff) {
-        for (let i = channelNotes[channel].length - 1; i >= 0; i--) {
-          const note = channelNotes[channel][i];
-          if (note.pitch === pitch && note.end === null) {
-            note.end = currentTime;
-            break;
-          }
-        }
-      } else {
+      if (event.noteOn && event.noteOn.velocity > 0) {
+        const pitch = event.noteOn.noteNumber;
+        const velocity = event.noteOn.velocity;
+        const channel = event.channel ?? 0;
+        if (!channelNotes[channel]) channelNotes[channel] = [];
         channelNotes[channel].push({
           pitch,
           velocity,
           start: currentTime,
           end: null
         });
+      } else if (event.noteOff || event.noteOn && event.noteOn.velocity === 0) {
+        const noteOff = event.noteOff || event.noteOn;
+        if (noteOff) {
+          const pitch = noteOff.noteNumber;
+          const channel = event.channel ?? 0;
+          if (channelNotes[channel]) {
+            for (let i = channelNotes[channel].length - 1; i >= 0; i--) {
+              const note = channelNotes[channel][i];
+              if (note.pitch === pitch && note.end === null) {
+                note.end = currentTime;
+                break;
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -2967,33 +2975,36 @@ var extractMidiPlacements = (midi, selectedTrackIndices) => {
   return { placements, bpm };
 };
 var extractMidiPlacementsByTrack = (midi, selectedIndices, trackIds) => {
-  const { track, timeDivision } = midi;
-  const ticksPerBeat = timeDivision;
+  const { tracks, division } = midi;
+  const ticksPerBeat = division;
   const bpm = getMidiBPM(midi);
   const ticksPerStep = ticksPerBeat / STEPS_PER_BEAT;
   const placements = [];
   selectedIndices.forEach((midiIdx, lane) => {
     if (lane >= trackIds.length) return;
-    const trackData = track[midiIdx];
+    const trackData = tracks[midiIdx];
     if (!trackData) return;
     const trackId = trackIds[lane];
     const active = [];
     let currentTime = 0;
-    for (const event of trackData.event) {
-      currentTime += event.deltaTime;
+    for (const event of trackData) {
+      currentTime += event.delta;
       if (event.channel === 9) continue;
-      if (event.type !== 8 && event.type !== 9) continue;
-      const [pitch, velocity] = event.data;
-      const isOff = event.type === 8 || !velocity;
-      if (isOff) {
-        for (let i = active.length - 1; i >= 0; i--) {
-          if (active[i].pitch === pitch && active[i].end === null) {
-            active[i].end = currentTime;
-            break;
+      if (event.noteOn && event.noteOn.velocity > 0) {
+        const pitch = event.noteOn.noteNumber;
+        const velocity = event.noteOn.velocity;
+        active.push({ pitch, velocity, start: currentTime, end: null });
+      } else if (event.noteOff || event.noteOn && event.noteOn.velocity === 0) {
+        const noteOff = event.noteOff || event.noteOn;
+        if (noteOff) {
+          const pitch = noteOff.noteNumber;
+          for (let i = active.length - 1; i >= 0; i--) {
+            if (active[i].pitch === pitch && active[i].end === null) {
+              active[i].end = currentTime;
+              break;
+            }
           }
         }
-      } else {
-        active.push({ pitch, velocity, start: currentTime, end: null });
       }
     }
     for (const note of active) {
@@ -6325,11 +6336,11 @@ var mountDAW = (target, options = {}) => {
         lyricCount.textContent = active.lyricModel && n > 0 ? `${n}\u97F3\u7BC0` : "";
       };
       const syncLyricTerms = () => {
-        const url = active.lyricModel ? KOE_VOICEBANK_TERMS[active.lyricModel] : void 0;
-        if (url) {
+        const url2 = active.lyricModel ? KOE_VOICEBANK_TERMS[active.lyricModel] : void 0;
+        if (url2) {
           const label = lyricModelLabel(active.lyricModel);
           lyricTermsLink.textContent = `${label}UTAU\u97F3\u6E90`;
-          lyricTermsLink.href = url;
+          lyricTermsLink.href = url2;
           lyricTerms.classList.remove("dtm-hidden");
         } else {
           lyricTerms.classList.add("dtm-hidden");
@@ -6667,9 +6678,9 @@ var mountDAW = (target, options = {}) => {
     chordTrack.core.addHistoryOnce();
     redrawAll();
   };
-  const loadMIDI = (bytes) => {
+  const loadMIDI = async (bytes) => {
     if (!options.parseMidi) return;
-    const midi = options.parseMidi(bytes);
+    const midi = await options.parseMidi(bytes);
     const analysis = analyzeMidiTracks(midi);
     const selected = analysis.filter((a) => a.selected).map((a) => a.index);
     applyMidiSelection(midi, selected);
@@ -6833,13 +6844,13 @@ var mountDAW = (target, options = {}) => {
     });
     refs.generateMmlBtn.addEventListener("click", showMML);
     refs.exportMidiBtn.addEventListener("click", () => {
-      const blob = exportMIDI2();
-      const url = URL.createObjectURL(blob);
+      const blob2 = exportMIDI2();
+      const url2 = URL.createObjectURL(blob2);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = url2;
       a.download = "dtm.mid";
       a.click();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(url2);
     });
     const copy = (text, btn) => {
       navigator.clipboard?.writeText(text);
@@ -6906,7 +6917,7 @@ var mountDAW = (target, options = {}) => {
       refs.overlay.hidden = false;
       setLoading(true);
       const buffer = new Uint8Array(await file.arrayBuffer());
-      pendingMidi = options.parseMidi(buffer);
+      pendingMidi = await options.parseMidi(buffer);
       detectedTracks = analyzeMidiTracks(pendingMidi);
       refs.midiTrackSelection.innerHTML = `<span class="dtm-label">\u30C8\u30E9\u30C3\u30AF</span>`;
       detectedTracks.forEach((t, i) => {
@@ -7535,12 +7546,12 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       termsRow.style.gap = "4px";
       termsRow.style.flexWrap = "wrap";
       const label = KOE_VOICEBANK_LABELS[model] ?? model;
-      const url = KOE_VOICEBANK_TERMS[model];
+      const url2 = KOE_VOICEBANK_TERMS[model];
       const span1 = doc.createElement("span");
       span1.textContent = "\u4F7F\u7528\u6642\u306B\u306F";
       const a = doc.createElement("a");
       a.textContent = `${label}UTAU\u97F3\u6E90`;
-      a.href = url;
+      a.href = url2;
       a.target = "_blank";
       a.rel = "noopener";
       a.style.color = "var(--dtm-primary)";
@@ -8009,12 +8020,172 @@ var createPianoRoll = (options, handlers) => {
   };
 };
 
+// node_modules/.pnpm/fast-unique-numbers@9.0.27/node_modules/fast-unique-numbers/build/es2019/factories/add-unique-number.js
+var createAddUniqueNumber = (generateUniqueNumber2) => {
+  return (set) => {
+    const number = generateUniqueNumber2(set);
+    set.add(number);
+    return number;
+  };
+};
+
+// node_modules/.pnpm/fast-unique-numbers@9.0.27/node_modules/fast-unique-numbers/build/es2019/factories/cache.js
+var createCache = (lastNumberWeakMap) => {
+  return (collection, nextNumber) => {
+    lastNumberWeakMap.set(collection, nextNumber);
+    return nextNumber;
+  };
+};
+
+// node_modules/.pnpm/fast-unique-numbers@9.0.27/node_modules/fast-unique-numbers/build/es2019/factories/generate-unique-number.js
+var MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER === void 0 ? 9007199254740991 : Number.MAX_SAFE_INTEGER;
+var TWO_TO_THE_POWER_OF_TWENTY_NINE = 536870912;
+var TWO_TO_THE_POWER_OF_THIRTY = TWO_TO_THE_POWER_OF_TWENTY_NINE * 2;
+var createGenerateUniqueNumber = (cache2, lastNumberWeakMap) => {
+  return (collection) => {
+    const lastNumber = lastNumberWeakMap.get(collection);
+    let nextNumber = lastNumber === void 0 ? collection.size : lastNumber < TWO_TO_THE_POWER_OF_THIRTY ? lastNumber + 1 : 0;
+    if (!collection.has(nextNumber)) {
+      return cache2(collection, nextNumber);
+    }
+    if (collection.size < TWO_TO_THE_POWER_OF_TWENTY_NINE) {
+      while (collection.has(nextNumber)) {
+        nextNumber = Math.floor(Math.random() * TWO_TO_THE_POWER_OF_THIRTY);
+      }
+      return cache2(collection, nextNumber);
+    }
+    if (collection.size > MAX_SAFE_INTEGER) {
+      throw new Error("Congratulations, you created a collection of unique numbers which uses all available integers!");
+    }
+    while (collection.has(nextNumber)) {
+      nextNumber = Math.floor(Math.random() * MAX_SAFE_INTEGER);
+    }
+    return cache2(collection, nextNumber);
+  };
+};
+
+// node_modules/.pnpm/fast-unique-numbers@9.0.27/node_modules/fast-unique-numbers/build/es2019/module.js
+var LAST_NUMBER_WEAK_MAP = /* @__PURE__ */ new WeakMap();
+var cache = createCache(LAST_NUMBER_WEAK_MAP);
+var generateUniqueNumber = createGenerateUniqueNumber(cache, LAST_NUMBER_WEAK_MAP);
+var addUniqueNumber = createAddUniqueNumber(generateUniqueNumber);
+
+// node_modules/.pnpm/broker-factory@3.1.15/node_modules/broker-factory/build/es2019/factories/create-broker.js
+var createBrokerFactory = (createOrGetOngoingRequests, extendBrokerImplementation, generateUniqueNumber2, isMessagePort2) => (brokerImplementation) => {
+  const fullBrokerImplementation = extendBrokerImplementation(brokerImplementation);
+  return (sender) => {
+    const ongoingRequests = createOrGetOngoingRequests(sender);
+    sender.addEventListener("message", (({ data: message }) => {
+      const { id } = message;
+      if (id !== null && ongoingRequests.has(id)) {
+        const { reject, resolve } = ongoingRequests.get(id);
+        ongoingRequests.delete(id);
+        if (message.error === void 0) {
+          resolve(message.result);
+        } else {
+          reject(new Error(message.error.message));
+        }
+      }
+    }));
+    if (isMessagePort2(sender)) {
+      sender.start();
+    }
+    const call = (method, params = null, transferables = []) => {
+      return new Promise((resolve, reject) => {
+        const id = generateUniqueNumber2(ongoingRequests);
+        ongoingRequests.set(id, { reject, resolve });
+        if (params === null) {
+          sender.postMessage({ id, method }, transferables);
+        } else {
+          sender.postMessage({ id, method, params }, transferables);
+        }
+      });
+    };
+    const notify = (method, params, transferables = []) => {
+      sender.postMessage({ id: null, method, params }, transferables);
+    };
+    let functions = {};
+    for (const [key, handler] of Object.entries(fullBrokerImplementation)) {
+      functions = { ...functions, [key]: handler({ call, notify }) };
+    }
+    return { ...functions };
+  };
+};
+
+// node_modules/.pnpm/broker-factory@3.1.15/node_modules/broker-factory/build/es2019/factories/create-or-get-ongoing-requests.js
+var createCreateOrGetOngoingRequests = (ongoingRequestsMap) => (sender) => {
+  if (ongoingRequestsMap.has(sender)) {
+    return ongoingRequestsMap.get(sender);
+  }
+  const ongoingRequests = /* @__PURE__ */ new Map();
+  ongoingRequestsMap.set(sender, ongoingRequests);
+  return ongoingRequests;
+};
+
+// node_modules/.pnpm/broker-factory@3.1.15/node_modules/broker-factory/build/es2019/factories/extend-broker-implementation.js
+var createExtendBrokerImplementation = (portMap) => (partialBrokerImplementation) => ({
+  ...partialBrokerImplementation,
+  connect: ({ call }) => {
+    return async () => {
+      const { port1, port2 } = new MessageChannel();
+      const portId = await call("connect", { port: port1 }, [port1]);
+      portMap.set(port2, portId);
+      return port2;
+    };
+  },
+  disconnect: ({ call }) => {
+    return async (port) => {
+      const portId = portMap.get(port);
+      if (portId === void 0) {
+        throw new Error("The given port is not connected.");
+      }
+      await call("disconnect", { portId });
+    };
+  },
+  isSupported: ({ call }) => {
+    return () => call("isSupported");
+  }
+});
+
+// node_modules/.pnpm/broker-factory@3.1.15/node_modules/broker-factory/build/es2019/guards/message-port.js
+var isMessagePort = (sender) => {
+  return typeof sender.start === "function";
+};
+
+// node_modules/.pnpm/broker-factory@3.1.15/node_modules/broker-factory/build/es2019/module.js
+var createBroker = createBrokerFactory(createCreateOrGetOngoingRequests(/* @__PURE__ */ new WeakMap()), createExtendBrokerImplementation(/* @__PURE__ */ new WeakMap()), generateUniqueNumber, isMessagePort);
+
+// node_modules/.pnpm/midi-json-parser-broker@4.0.132/node_modules/midi-json-parser-broker/build/es2019/module.js
+var wrap = createBroker({
+  parseArrayBuffer: ({ call }) => {
+    return async (arrayBuffer) => {
+      return call("parse", { arrayBuffer }, [arrayBuffer]);
+    };
+  }
+});
+var load = (url2) => {
+  const worker2 = new Worker(url2);
+  return wrap(worker2);
+};
+
+// node_modules/.pnpm/midi-json-parser@8.1.74/node_modules/midi-json-parser/build/es2019/worker/worker.js
+var worker = `(()=>{var e={455(e,t){!function(e){"use strict";var t=function(e){return function(t){var n=e(t);return t.add(n),n}},n=function(e){return function(t,n){return e.set(t,n),n}},r=void 0===Number.MAX_SAFE_INTEGER?9007199254740991:Number.MAX_SAFE_INTEGER,o=536870912,s=2*o,i=function(e,t){return function(n){var i=t.get(n),a=void 0===i?n.size:i<s?i+1:0;if(!n.has(a))return e(n,a);if(n.size<o){for(;n.has(a);)a=Math.floor(Math.random()*s);return e(n,a)}if(n.size>r)throw new Error("Congratulations, you created a collection of unique numbers which uses all available integers!");for(;n.has(a);)a=Math.floor(Math.random()*r);return e(n,a)}},a=new WeakMap,f=n(a),c=i(f,a),u=t(c);e.addUniqueNumber=u,e.generateUniqueNumber=c}(t)}},t={};function n(r){var o=t[r];if(void 0!==o)return o.exports;var s=t[r]={exports:{}};return e[r].call(s.exports,s,s.exports,n),s.exports}(()=>{"use strict";const e=-32603,t=-32602,r=-32601,o=(e,t)=>Object.assign(new Error(e),{status:t}),s=t=>o('The handler of the method called "'.concat(t,'" returned an unexpected result.'),e),i=(t,n)=>async({data:{id:i,method:a,params:f}})=>{const c=n[a];try{if(void 0===c)throw(e=>o('The requested method called "'.concat(e,'" is not supported.'),r))(a);const n=void 0===f?c():c(f);if(void 0===n)throw(t=>o('The handler of the method called "'.concat(t,'" returned no required result.'),e))(a);const u=n instanceof Promise?await n:n;if(null===i){if(void 0!==u.result)throw s(a)}else{if(void 0===u.result)throw s(a);const{result:e,transferables:n=[]}=u;t.postMessage({id:i,result:e},n)}}catch(e){const{message:n,status:r=-32603}=e;t.postMessage({error:{code:r,message:n},id:i})}};var a=n(455);const f=new Map,c=(e,n,r)=>({...n,connect:({port:t})=>{t.start();const r=e(t,n),o=(0,a.generateUniqueNumber)(f);return f.set(o,()=>{r(),t.close(),f.delete(o)}),{result:o}},disconnect:({portId:e})=>{const n=f.get(e);if(void 0===n)throw(e=>o('The specified parameter called "portId" with the given value "'.concat(e,'" does not identify a port connected to this worker.'),t))(e);return n(),{result:null}},isSupported:async()=>{if(await new Promise(e=>{const t=new ArrayBuffer(0),{port1:n,port2:r}=new MessageChannel;n.onmessage=({data:t})=>e(null!==t),r.postMessage(t,[t])})){const e=r();return{result:e instanceof Promise?await e:e}}return{result:!1}}}),u=(e,t,n=()=>!0)=>{const r=c(u,t,n),o=i(e,r);return e.addEventListener("message",o),()=>e.removeEventListener("message",o)},l=e=>void 0!==e.channel,d=e=>e.toString(16).toUpperCase().padStart(2,"0"),g=(e,t=0,n=e.byteLength-(t-e.byteOffset))=>{const r=t+e.byteOffset,o=[],s=new Uint8Array(e.buffer,r,n);for(let e=0;e<n;e+=1)o[e]=d(s[e]);return o.join("")},h=(e,t=0,n=e.byteLength-(t-e.byteOffset))=>{const r=t+e.byteOffset,o=new Uint8Array(e.buffer,r,n);return String.fromCharCode.apply(null,o)},m=e=>{const t=new DataView(e),n=v(t);let r=14;const o=[];for(let e=0,s=n.numberOfTracks;e<s;e+=1){let e;({offset:r,track:e}=b(t,r)),o.push(e)}return{division:n.division,format:n.format,tracks:o}},p=(e,t,n)=>{let r;const{offset:o,value:s}=T(e,t),i=e.getUint8(o);return r=240===i?y(e,o+1):255===i?U(e,o+1):w(i,e,o+1,n),{...r,event:{...r.event,delta:s},eventTypeByte:i}},v=e=>{if(e.byteLength<14)throw new Error("Expected at least 14 bytes instead of ".concat(e.byteLength));if("MThd"!==h(e,0,4))throw new Error('Unexpected characters "'.concat(h(e,0,4),'" found instead of "MThd"'));if(6!==e.getUint32(4))throw new Error("The header has an unexpected length of ".concat(e.getUint32(4)," instead of 6"));const t=e.getUint16(8),n=e.getUint16(10);return{division:e.getUint16(12),format:t,numberOfTracks:n}},U=(e,t)=>{let n;const r=e.getUint8(t),{offset:o,value:s}=T(e,t+1);if(1===r)n={text:h(e,o,s)};else if(2===r)n={copyrightNotice:h(e,o,s)};else if(3===r)n={trackName:h(e,o,s)};else if(4===r)n={instrumentName:h(e,o,s)};else if(5===r)n={lyric:h(e,o,s)};else if(6===r)n={marker:h(e,o,s)};else if(7===r)n={cuePoint:h(e,o,s)};else if(8===r)n={programName:h(e,o,s)};else if(9===r)n={deviceName:h(e,o,s)};else if(10===r||11===r||12===r||13===r||14===r||15===r)n={metaTypeByte:d(r),text:h(e,o,s)};else if(32===r)n={channelPrefix:e.getUint8(o)};else if(33===r)n={midiPort:e.getUint8(o)};else if(47===r)n={endOfTrack:!0};else if(81===r)n={setTempo:{microsecondsPerQuarter:(e.getUint8(o)<<16)+(e.getUint8(o+1)<<8)+e.getUint8(o+2)}};else if(84===r){let t;const r=e.getUint8(o);96&r?32==(96&r)?t=25:64==(96&r)?t=29:96&~r||(t=30):t=24,n={smpteOffset:{frame:e.getUint8(o+3),frameRate:t,hour:31&r,minutes:e.getUint8(o+1),seconds:e.getUint8(o+2),subFrame:e.getUint8(o+4)}}}else if(88===r)n={timeSignature:{denominator:Math.pow(2,e.getUint8(o+1)),metronome:e.getUint8(o+2),numerator:e.getUint8(o),thirtyseconds:e.getUint8(o+3)}};else if(89===r)n={keySignature:{key:e.getInt8(o),scale:e.getInt8(o+1)}};else{if(127!==r)throw new Error('Cannot parse a meta event with a type of "'.concat(d(r),'"'));n={sequencerSpecificData:g(e,o,s)}}return{event:n,offset:o+s}},w=(e,t,n,r)=>{const o=128&e?null:r,s=(null===o?e:o)>>4;let i,a=null===o?n:n-1;if(8===s)i={noteOff:{noteNumber:t.getUint8(a),velocity:t.getUint8(a+1)}},a+=2;else if(9===s){const e=t.getUint8(a),n=t.getUint8(a+1);i=0===n?{noteOff:{noteNumber:e,velocity:n}}:{noteOn:{noteNumber:e,velocity:n}},a+=2}else if(10===s)i={keyPressure:{noteNumber:t.getUint8(a),pressure:t.getUint8(a+1)}},a+=2;else if(11===s)i={controlChange:{type:t.getUint8(a),value:t.getUint8(a+1)}},a+=2;else if(12===s)i={programChange:{programNumber:t.getUint8(a)}},a+=1;else if(13===s)i={channelPressure:{pressure:t.getUint8(a)}},a+=1;else{if(14!==s)throw new Error('Cannot parse a midi event with a type of "'.concat(d(s),'"'));i={pitchBend:t.getUint8(a)|t.getUint8(a+1)<<7},a+=2}return i.channel=15&(null===o?e:o),{event:i,offset:a}},y=(e,t)=>{const{offset:n,value:r}=T(e,t);return{event:{sysex:g(e,n,r)},offset:n+r}},b=(e,t)=>{if("MTrk"!==h(e,t,4))throw new Error('Unexpected characters "'.concat(h(e,t,4),'" found instead of "MTrk"'));const n=[],r=e.getUint32(t+4)+t+8;let o=null,s=t+8;for(;s<r;){const t=p(e,s,o),{event:r,eventTypeByte:i}=t;n.push(r),s=t.offset,l(r)&&(128&i)>0&&(o=i)}return{offset:s,track:n}},T=(e,t)=>{let n=t,r=0;for(;;){const t=e.getUint8(n);if(n+=1,!(t>127))return r+=t,{offset:n,value:r};r+=127&t,r<<=7}};u(self,{parse:({arrayBuffer:e})=>({result:m(e)})})})()})();`;
+
+// node_modules/.pnpm/midi-json-parser@8.1.74/node_modules/midi-json-parser/build/es2019/module.js
+var blob = new Blob([worker], { type: "application/javascript; charset=utf-8" });
+var url = URL.createObjectURL(blob);
+var midiJsonParser = load(url);
+var connect = midiJsonParser.connect;
+var disconnect = midiJsonParser.disconnect;
+var isSupported = midiJsonParser.isSupported;
+var parseArrayBuffer = midiJsonParser.parseArrayBuffer;
+URL.revokeObjectURL(url);
+
 // src/studio.ts
 var DEFAULT_CDN = {
   soundFont: "https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont.mjs",
   soundFontDrum: "https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs",
-  soundFontList: "https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs",
-  midiParser: "https://cdn.jsdelivr.net/npm/midi-parser-js@4.0.4/+esm"
+  soundFontList: "https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs"
 };
 var SOUNDFONT_NAME = "FluidR3_GM_sf2_file";
 var TRACK_ROLES = ["melody", "submelody", "bass", "chord"];
@@ -8025,10 +8196,10 @@ var resolveDefaultVoiceWorkerUrl = () => {
     return void 0;
   }
 };
-var importFrom = async (url, name) => {
+var importFrom = async (url2, name) => {
   const mod = await import(
     /* @vite-ignore */
-    url
+    url2
   );
   return mod[name] ?? mod.default;
 };
@@ -8057,23 +8228,17 @@ var createDtmStudio = async (options = {}) => {
     eng.SoundFont_drum ?? importFrom(cdn.soundFontDrum, "SoundFont_drum"),
     eng.SoundFont_list ?? importFrom(cdn.soundFontList, "SoundFont_list")
   ]);
-  let midiParser = null;
   let parseMidi;
   if (features.midi) {
-    parseMidi = eng.parseMidi;
-    if (!parseMidi) {
-      const midiPromise = importFrom(
-        cdn.midiParser,
-        "default"
-      ).then((m) => {
-        midiParser = m;
-      }).catch((e) => console.warn("[dtm] midi-parser \u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557", e));
-      void midiPromise;
-      parseMidi = (bytes) => {
-        if (!midiParser) throw new Error("midi-parser not ready");
-        return midiParser.parse(bytes);
-      };
-    }
+    parseMidi = eng.parseMidi || ((bytes) => {
+      const buffer = bytes.buffer;
+      if (buffer instanceof ArrayBuffer) {
+        return parseArrayBuffer(
+          buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+        );
+      }
+      throw new Error("SharedArrayBuffer is not supported for MIDI parsing");
+    });
   }
   const voiceWorkerUrl = options.voiceWorkerUrl === null ? void 0 : options.voiceWorkerUrl ?? resolveDefaultVoiceWorkerUrl();
   const singingVoices = createSingingVoices(audioCtx, masterGain, {
@@ -8124,13 +8289,13 @@ var createDtmStudio = async (options = {}) => {
         clamp4(Math.round(wave[i] * 32768), -32768, 32767),
         true
       );
-    const blob = new Blob([view], { type: "audio/wav" });
-    const url = URL.createObjectURL(blob);
+    const blob2 = new Blob([view], { type: "audio/wav" });
+    const url2 = URL.createObjectURL(blob2);
     const a = document.createElement("a");
-    a.href = url;
+    a.href = url2;
     a.download = "record.wav";
     a.click();
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(url2);
   };
   const onToggleRecord = recorder ? () => {
     if (recorder.isRecording()) {
