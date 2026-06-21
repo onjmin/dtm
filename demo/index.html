@@ -354,6 +354,7 @@
         // mountEditor がトラック構成ぶんのSoundFontを自動ロードし、#inst= 名も埋め込む。
         const mountEditor = (mode, mml) => {
             daw = studio.mountEditor(appEl, {
+                mode,
                 tracks: tracksFor(mode),
                 preset: presetSelect.value,
                 initialMML: mml || undefined,

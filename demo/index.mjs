@@ -2787,7 +2787,7 @@ var analyzeMidiTracks = (midi) => {
       currentTime += event.deltaTime;
       const data = event.data;
       if (event.type === 9 && data && data[1]) {
-        notes.push({ pitch: data[0] });
+        notes.push({ pitch: data[0], channel: event.channel ?? 0 });
       } else if (event.type === 8) {
         for (let k = notes.length - 1; k >= 0; k--) {
           if (notes[k].pitch === data[0] && notes[k].end === void 0) {
@@ -2798,11 +2798,13 @@ var analyzeMidiTracks = (midi) => {
       }
     }
     const validNotes = notes.filter((n) => n.end !== void 0);
+    const editableNotes = validNotes.filter((n) => n.channel !== 9);
+    if (validNotes.length > 0 && editableNotes.length === 0) continue;
     result.push({
       index: i,
       name: `Ch${i + 1}`,
-      noteCount: validNotes.length,
-      selected: validNotes.length > 0
+      noteCount: editableNotes.length,
+      selected: editableNotes.length > 0
     });
   }
   return result;
@@ -5444,9 +5446,11 @@ var mountDAW = (target, options = {}) => {
   injectStyles();
   const getAudioTime = options.getAudioTime ?? (() => performance.now() / 1e3);
   const trackConfigs = options.tracks ?? DEFAULT_TRACKS;
+  const mode = options.mode ?? (trackConfigs.length > TRACKS_SIMPLE.length ? "advanced" : "simple");
+  const isAdvanced = mode === "advanced";
   const drumPatterns = options.drumPatterns ?? DRUM_PATTERNS;
   const showMidi = !!options.parseMidi;
-  const showChord = true;
+  const showChord = !isAdvanced;
   const refs = buildUI(target, {
     tracks: trackConfigs,
     drumPatternNames: Object.keys(drumPatterns),
@@ -6231,7 +6235,6 @@ var mountDAW = (target, options = {}) => {
       active.core.setVolume(active.volume);
       volLabel.textContent = String(active.volume);
     });
-    const isAdvanced = trackStates.length > TRACKS_SIMPLE.length;
     if (isAdvanced || active.config.id !== "chord") {
       const lyricDiv = document.createElement("div");
       lyricDiv.className = "dtm-row";
@@ -6439,16 +6442,16 @@ var mountDAW = (target, options = {}) => {
     updateUndoRedo();
     redrawAll();
   };
-  const setToolMode = (mode) => {
-    activeToolMode = mode;
+  const setToolMode = (mode2) => {
+    activeToolMode = mode2;
     for (const [btn, m] of [
       [refs.toolPen, "pen"],
       [refs.toolSelect, "select"],
       [refs.toolEraser, "eraser"]
     ]) {
-      btn.classList.toggle("dtm-segbtn--active", m === mode);
+      btn.classList.toggle("dtm-segbtn--active", m === mode2);
     }
-    if (mode !== "select") {
+    if (mode2 !== "select") {
       selectionRect = null;
       selectedNotes = [];
     }
@@ -6682,7 +6685,6 @@ var mountDAW = (target, options = {}) => {
   const applyMidiSelection = (midi, selectedIndices) => {
     clearAll();
     for (const t of trackStates) t.core.setLoadMode(true);
-    const isAdvanced = trackStates.length > TRACKS_SIMPLE.length;
     const { placements, bpm: parsedBpm } = isAdvanced ? extractMidiPlacementsByTrack(
       midi,
       selectedIndices,
