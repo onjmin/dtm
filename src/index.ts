@@ -24,6 +24,10 @@ export {
 	type PlayMmlOptions,
 	playMML,
 } from "./headless-player";
+export {
+	type PlaySingingMmlOptions,
+	playSingingMML,
+} from "./headless-singing-player";
 export { createSynth, freqFromPitch, type Synth } from "./synth";
 // 補助ロジック（再利用可能）
 export * from "./mml-parser";

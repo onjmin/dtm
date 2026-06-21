@@ -97,8 +97,24 @@ const DEFAULT_CDN = {
 /** SoundFont の楽器名解決に使う SoundFont 名（FluidR3 GM）。 */
 const SOUNDFONT_NAME = "FluidR3_GM_sf2_file";
 
-/** 再生専用ビューの @n（数値）→ 役割キーの対応（simple モードのトラック順）。 */
-const TRACK_ROLES = ["melody", "submelody", "bass", "chord"] as const;
+/** 再生専用ビューの @n（数値）→ 役割キーの対応。0-3はsimpleモード、4以降はadvancedモード対応。 */
+const TRACK_ROLES = [
+	"melody",
+	"submelody",
+	"bass",
+	"chord",
+	"t4",
+	"t5",
+	"t6",
+	"t7",
+	"t8",
+	"t9",
+	"t10",
+	"t11",
+	"t12",
+	"t13",
+	"t14",
+] as const;
 
 /** 同梱ワーカー（dist/voice-worker.js）の既定URLを import.meta 基準で解決する。 */
 const resolveDefaultVoiceWorkerUrl = (): string | undefined => {
@@ -830,17 +846,25 @@ export const createDtmStudio = async (
 	): MmlPlayerInstance => {
 		// MMLの #inst= からこの再生UI専属のプリセットを決め、そのプリセットの楽器を用意する。
 		// 楽器解決もこのプリセットに固定するため、他の再生UI/編集UIと音源を取り合わない。
-		const meta = parseMML(mml, {}).meta ?? {};
+		const parsed = parseMML(mml, {});
+		const meta = parsed.meta ?? {};
 		const playerPreset =
 			meta.instrument && INSTRUMENT_PRESETS[meta.instrument]
 				? meta.instrument
 				: defaultPreset;
-		void loadPreset(playerPreset);
+
+		// MML内の演奏トラックインデックスから、ロード対象の trackId リストを生成
+		const trackIndices = [
+			...new Set(parsed.placements.map((p) => p.trackIndex)),
+		];
+		const trackIds = trackIndices.map((idx) => TRACK_ROLES[idx] ?? `t${idx}`);
+		const loadTrackIds = trackIds.length > 0 ? trackIds : [...TRACK_ROLES];
+
+		void loadPreset(playerPreset, loadTrackIds);
 		// 再生専用ビューの @n（数値トラック）→ 役割 → このプリセットの楽器。
 		// ロード未完了の間は undefined（無音）になるだけで、別楽器で鳴ることはない。
 		const playPlayerNote = (e: PlayNoteEvent): void => {
-			const role = TRACK_ROLES[Number(e.trackId)];
-			if (!role) return;
+			const role = TRACK_ROLES[Number(e.trackId)] ?? `t${e.trackId}`;
 			const sf = resolveSoundFont(playerPreset, role);
 			if (!sf) return;
 			sf.play({
