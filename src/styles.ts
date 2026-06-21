@@ -675,6 +675,13 @@ export const DAW_CSS = `
   font-size: 13px;
   line-height: 1.6;
 }
+.dtm-modal-body a {
+  color: var(--dtm-primary);
+  text-decoration: underline;
+}
+.dtm-modal-body a:hover {
+  color: var(--dtm-accent);
+}
 .dtm-modal-body h4 {
   margin: 12px 0 6px 0;
   color: var(--dtm-primary);
