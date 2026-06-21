@@ -844,10 +844,10 @@ var buildUI = (target, options) => {
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
       <div class="dtm-row">
         <span class="dtm-label">MML</span>
-        <textarea class="dtm-textarea" data-dtm="mml-input" placeholder="MML\u3092\u5165\u529B"></textarea>
+        <textarea class="dtm-textarea dtm-grow" data-dtm="mml-input" placeholder="MML\u3092\u5165\u529B"></textarea>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">\u8AAD\u8FBC</button>
       </div>
       <div class="dtm-row">
-        <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">MML\u8AAD\u8FBC</button>
         <span class="dtm-label">\u5168\u4F53\u30B7\u30D5\u30C8</span>
         <select class="dtm-select" data-dtm="shift-select">
           <option value="-96">-2\u5206</option>
@@ -4136,6 +4136,7 @@ var DAW_CSS = `
 }
 .dtm-input--num { width: 64px; text-align: center; font-size: 16px; }
 .dtm-textarea { width: 100%; min-height: 56px; resize: vertical; line-height: 1.7; }
+.dtm-textarea.dtm-grow { width: 0; }
 .dtm-range { height: var(--dtm-tap); accent-color: var(--dtm-primary); }
 
 /* \u2500\u2500\u2500 \u30C8\u30E9\u30C3\u30AF\u30D4\u30EB\uFF08\u30AD\u30E3\u30E9\u30AF\u30BF\u30FC\u9078\u629E\u30DC\u30BF\u30F3\uFF09 \u2500\u2500\u2500 */
