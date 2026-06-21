@@ -3919,7 +3919,7 @@ var PITCH_MAP2 = {
   b: 11
 };
 var clamp2 = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
-var META_DIRECTIVE = /#(inst|drum|volume)=([\w-]+)/gi;
+var META_DIRECTIVE = /#(inst|drum|volume|mode)=([\w-]+)/gi;
 var parseMmlMeta = (mml) => {
   const meta = {};
   for (const m of mml.matchAll(META_DIRECTIVE)) {
@@ -3929,6 +3929,10 @@ var parseMmlMeta = (mml) => {
     else if (key === "volume") {
       const v = Number.parseInt(m[2], 10);
       if (!Number.isNaN(v)) meta.volume = v;
+    } else if (key === "mode") {
+      if (m[2] === "simple" || m[2] === "advanced") {
+        meta.mode = m[2];
+      }
     }
   }
   return meta;
@@ -3939,6 +3943,7 @@ var formatMmlMeta = (meta) => {
   if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
   if (meta.drum) parts.push(`#drum=${meta.drum}`);
   if (meta.volume !== void 0) parts.push(`#volume=${meta.volume}`);
+  if (meta.mode) parts.push(`#mode=${meta.mode}`);
   return parts.join(" ");
 };
 var parseMML = (mml, options = {}) => {
@@ -3974,7 +3979,8 @@ var parseMML = (mml, options = {}) => {
     const part = rawPart.trim();
     if (part.startsWith("@")) {
       let idx = Number.parseInt(part.substring(1), 10);
-      if (clampTrackCount !== void 0 && idx >= clampTrackCount) idx = 2;
+      if (clampTrackCount !== void 0 && idx >= clampTrackCount)
+        idx = clampTrackCount - 1;
       trackIndex = idx;
       octave = 4;
       currentStep = 0;
@@ -7502,7 +7508,8 @@ var mountDAW = (target, options = {}) => {
     const metaLine = formatMmlMeta({
       instrument: currentInstrument || void 0,
       drum: currentDrumPattern !== "none" ? currentDrumPattern : void 0,
-      volume: masterVolume
+      volume: masterVolume,
+      mode
     });
     if (refs.decomposeChordToggle.checked) {
       const ignoreHeavy = refs.ignoreChordHeavyToggle.checked;
@@ -9047,32 +9054,56 @@ var createDtmStudio = async (options = {}) => {
     return p;
   };
   const defaultPreset = options.defaultPreset ?? "retro_game";
+  const getRoleForTrackIndex = (idx, mode = "simple") => {
+    if (mode === "simple") {
+      if (idx === 0) return "melody";
+      if (idx === 1) return "submelody";
+      if (idx === 2) return "bass";
+      return "chord";
+    } else {
+      return TRACK_ROLES[idx] ?? `t${idx}`;
+    }
+  };
+  const getRoleFromTrackId = (trackId, mode = "simple") => {
+    if (trackId === "melody" || trackId === "submelody" || trackId === "bass" || trackId === "chord") {
+      return trackId;
+    }
+    if (trackId.startsWith("t")) {
+      const idx = Number(trackId.substring(1));
+      if (!isNaN(idx)) {
+        return getRoleForTrackIndex(idx, mode);
+      }
+    }
+    return trackId;
+  };
   const instrumentNameFor = (preset, trackId) => preset[trackId] ?? preset.melody;
-  const resolveSoundFont = (presetKey, trackId) => {
+  const resolveSoundFont = (presetKey, trackId, mode = "simple") => {
     const preset = INSTRUMENT_PRESETS[presetKey];
     if (!preset) return void 0;
-    const key = nameToKey[instrumentNameFor(preset, trackId)];
+    const role = getRoleFromTrackId(trackId, mode);
+    const key = nameToKey[instrumentNameFor(preset, role)];
     return key ? soundFonts.get(key) : void 0;
   };
-  const loadPreset = async (presetKey, trackIds = [...TRACK_ROLES]) => {
+  const loadPreset = async (presetKey, trackIds = [...TRACK_ROLES], mode = "simple") => {
     const preset = INSTRUMENT_PRESETS[presetKey];
     if (!preset) return;
     await listReady;
     const keys = /* @__PURE__ */ new Set();
     for (const trackId of trackIds) {
-      const key = nameToKey[instrumentNameFor(preset, trackId)];
+      const role = getRoleFromTrackId(trackId, mode);
+      const key = nameToKey[instrumentNameFor(preset, role)];
       if (key) keys.add(key);
     }
     await Promise.all([...keys].map((key) => loadInstrument(key)));
   };
-  const applyPreset = async (daw, presetKey, trackIds, loadingTarget) => {
+  const applyPreset = async (daw, presetKey, trackIds, loadingTarget, mode = "simple") => {
     const wasPlaying = daw.getPlaybackState() === "playing";
     if (wasPlaying) daw.pause();
     const overlay = loadingTarget ? showLoadingOverlay(loadingTarget) : null;
     daw.setLoading?.(true);
     try {
       daw.setInstrument(presetKey);
-      await loadPreset(presetKey, trackIds);
+      await loadPreset(presetKey, trackIds, mode);
     } finally {
       overlay?.remove();
       daw.setLoading?.(false);
@@ -9107,8 +9138,10 @@ var createDtmStudio = async (options = {}) => {
       const key = select.value;
       opts.onChange?.(key);
       const trackIds = opts.getTrackIds?.() ?? [...TRACK_ROLES];
+      const isAdvanced = trackIds.includes("t0");
+      const mode = isAdvanced ? "advanced" : "simple";
       try {
-        await applyPreset(daw, key, trackIds, opts.loadingTarget);
+        await applyPreset(daw, key, trackIds, opts.loadingTarget, mode);
       } finally {
         busy = false;
       }
@@ -9154,8 +9187,13 @@ var createDtmStudio = async (options = {}) => {
     const trackIds = tracks.map((t) => t.id);
     const presetKey = preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
     let editorPreset = presetKey;
+    const isAdvancedMode = dawOverrides.mode === "advanced";
     const playNote = (e) => {
-      const sf = resolveSoundFont(editorPreset, e.trackId);
+      const sf = resolveSoundFont(
+        editorPreset,
+        e.trackId,
+        isAdvancedMode ? "advanced" : "simple"
+      );
       if (!sf) return;
       sf.play({
         ctx: audioCtx,
@@ -9198,7 +9236,11 @@ var createDtmStudio = async (options = {}) => {
     }
     daw.setInstrument(presetKey);
     daw.setLoading?.(true);
-    void loadPreset(presetKey, trackIds).finally(() => {
+    void loadPreset(
+      presetKey,
+      trackIds,
+      isAdvancedMode ? "advanced" : "simple"
+    ).finally(() => {
       daw.setLoading?.(false);
     });
     const destroy = () => {
@@ -9299,15 +9341,30 @@ var createDtmStudio = async (options = {}) => {
     const parsed = parseMML(mml, {});
     const meta = parsed.meta ?? {};
     const playerPreset = meta.instrument && INSTRUMENT_PRESETS[meta.instrument] ? meta.instrument : defaultPreset;
+    const isAdvancedMode = meta.mode === "advanced";
     const trackIndices = [
       ...new Set(parsed.placements.map((p) => p.trackIndex))
     ];
-    const trackIds = trackIndices.map((idx) => TRACK_ROLES[idx] ?? `t${idx}`);
+    const trackIds = trackIndices.map(
+      (idx) => getRoleForTrackIndex(idx, isAdvancedMode ? "advanced" : "simple")
+    );
     const loadTrackIds = trackIds.length > 0 ? trackIds : [...TRACK_ROLES];
-    void loadPreset(playerPreset, loadTrackIds);
+    void loadPreset(
+      playerPreset,
+      loadTrackIds,
+      isAdvancedMode ? "advanced" : "simple"
+    );
     const playPlayerNote = (e) => {
-      const role = TRACK_ROLES[Number(e.trackId)] ?? `t${e.trackId}`;
-      const sf = resolveSoundFont(playerPreset, role);
+      const idx = Number(e.trackId);
+      const role = getRoleForTrackIndex(
+        idx,
+        isAdvancedMode ? "advanced" : "simple"
+      );
+      const sf = resolveSoundFont(
+        playerPreset,
+        role,
+        isAdvancedMode ? "advanced" : "simple"
+      );
       if (!sf) return;
       sf.play({
         ctx: audioCtx,
