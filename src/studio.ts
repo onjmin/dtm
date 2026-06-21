@@ -25,6 +25,7 @@ import {
 	mountMmlPlayer,
 } from "./mml-player";
 import { parseMML } from "./mml-parser";
+import { showLoadingOverlay } from "./styles";
 import type {
 	DawInstance,
 	DawOptions,
@@ -514,8 +515,20 @@ export const createDtmStudio = async (
 			editorPresetSelects.set(target, select);
 			select.addEventListener("change", async () => {
 				if (!select) return;
-				daw.setInstrument(select.value);
-				await loadPreset(select.value, trackIds);
+				const wasPlaying = daw.getPlaybackState() === "playing";
+				if (wasPlaying) {
+					daw.pause();
+				}
+				const overlay = showLoadingOverlay(target);
+				try {
+					daw.setInstrument(select.value);
+					await loadPreset(select.value, trackIds);
+				} finally {
+					overlay.remove();
+					if (wasPlaying) {
+						daw.play();
+					}
+				}
 			});
 		}
 
