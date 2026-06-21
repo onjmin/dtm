@@ -6005,13 +6005,19 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     if (activePlayer && activePlayer !== instance) activePlayer.stop();
     activePlayer = instance;
     setPlayingUI(true);
-    void options.onResumeAudio?.();
-    if (useSynth) {
-      const ctx = ensureCtx();
-      if (ctx.state === "suspended") void ctx.resume();
-    }
-    if (voicesAvailable && lyricTracks.size > 0) ensureVoices().reset();
-    void startWhenReady();
+    void (async () => {
+      const resumes = [];
+      const r = options.onResumeAudio?.();
+      if (r) resumes.push(r);
+      if (useSynth) {
+        const ctx = ensureCtx();
+        if (ctx.state === "suspended") resumes.push(ctx.resume());
+      }
+      if (resumes.length > 0) await Promise.all(resumes);
+      if (!playing || activePlayer !== instance) return;
+      if (voicesAvailable && lyricTracks.size > 0) ensureVoices().reset();
+      await startWhenReady();
+    })();
   };
   const stop = () => {
     if (!playing) return;
@@ -7026,8 +7032,8 @@ var mountDAW = (target, options = {}) => {
     stepsPerBar: renderConfig.stepsPerBar
   });
   const play = async () => {
-    options.onResumeAudio?.();
     if (playbackState === "playing") return;
+    await options.onResumeAudio?.();
     const fromStep = playbackState === "paused" ? pausedPlayStep : playStartStep;
     options.singingVoices?.reset();
     const lyricMap = buildLyricsMap();
@@ -8667,7 +8673,8 @@ var createDtmStudio = async (options = {}) => {
   drumGain.gain.value = options.drumVolume ?? 1;
   drumGain.connect(audioCtx.destination);
   const resumeAudio = () => {
-    if (audioCtx.state === "suspended") void audioCtx.resume();
+    if (audioCtx.state === "suspended") return audioCtx.resume();
+    return Promise.resolve();
   };
   const eng = options.engines ?? {};
   const [SoundFont, SoundFont_drum, SoundFont_list] = await Promise.all([
@@ -8771,36 +8778,44 @@ var createDtmStudio = async (options = {}) => {
   })();
   let nameToKey = {};
   const soundFonts = /* @__PURE__ */ new Map();
-  const loadedKeyByTrack = /* @__PURE__ */ new Map();
-  const loadSoundFont = async (instrumentKey, trackId) => {
-    if (loadedKeyByTrack.get(trackId) === instrumentKey) return;
-    try {
-      const fullName = `${instrumentKey}_${SOUNDFONT_NAME}`;
-      soundFonts.set(
-        trackId,
-        await SoundFont.load({
-          ctx: audioCtx,
-          fontName: `_tone_${fullName}`,
-          url: SoundFont.toURL(fullName)
-        })
-      );
-      loadedKeyByTrack.set(trackId, instrumentKey);
-    } catch (e) {
+  const loadingByKey = /* @__PURE__ */ new Map();
+  const loadInstrument = (instrumentKey) => {
+    if (soundFonts.has(instrumentKey)) return Promise.resolve();
+    const inflight = loadingByKey.get(instrumentKey);
+    if (inflight) return inflight;
+    const fullName = `${instrumentKey}_${SOUNDFONT_NAME}`;
+    const p = SoundFont.load({
+      ctx: audioCtx,
+      fontName: `_tone_${fullName}`,
+      url: SoundFont.toURL(fullName)
+    }).then((sf) => {
+      soundFonts.set(instrumentKey, sf);
+    }).catch((e) => {
       console.error(`[dtm] \u697D\u5668 "${instrumentKey}" \u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557`, e);
-    }
+    }).finally(() => {
+      loadingByKey.delete(instrumentKey);
+    });
+    loadingByKey.set(instrumentKey, p);
+    return p;
   };
   const defaultPreset = options.defaultPreset ?? "retro_game";
   const instrumentNameFor = (preset, trackId) => preset[trackId] ?? preset.melody;
+  const resolveSoundFont = (presetKey, trackId) => {
+    const preset = INSTRUMENT_PRESETS[presetKey];
+    if (!preset) return void 0;
+    const key = nameToKey[instrumentNameFor(preset, trackId)];
+    return key ? soundFonts.get(key) : void 0;
+  };
   const loadPreset = async (presetKey, trackIds = [...TRACK_ROLES]) => {
     const preset = INSTRUMENT_PRESETS[presetKey];
     if (!preset) return;
     await listReady;
-    await Promise.all(
-      trackIds.map((trackId) => {
-        const key = nameToKey[instrumentNameFor(preset, trackId)];
-        return key ? loadSoundFont(key, trackId) : Promise.resolve();
-      })
-    );
+    const keys = /* @__PURE__ */ new Set();
+    for (const trackId of trackIds) {
+      const key = nameToKey[instrumentNameFor(preset, trackId)];
+      if (key) keys.add(key);
+    }
+    await Promise.all([...keys].map((key) => loadInstrument(key)));
   };
   const applyPreset = async (daw, presetKey, trackIds, loadingTarget) => {
     const wasPlaying = daw.getPlaybackState() === "playing";
@@ -8870,18 +8885,6 @@ var createDtmStudio = async (options = {}) => {
   await listReady;
   nameToKey = await buildNameToKeyMapping();
   await Promise.all([drumReady, loadPreset(defaultPreset)]);
-  const playNote = (e) => {
-    const sf = soundFonts.get(e.trackId);
-    if (!sf) return;
-    sf.play({
-      ctx: audioCtx,
-      destination: masterGain,
-      pitch: e.pitch,
-      volume: e.volume,
-      when: e.when,
-      duration: e.duration
-    });
-  };
   const playDrum = (e) => {
     if (!SoundFont_drum.font) return;
     SoundFont_drum.play({
@@ -8889,19 +8892,6 @@ var createDtmStudio = async (options = {}) => {
       destination: drumGain,
       pitch: e.pitch,
       volume: e.velocity,
-      when: e.when,
-      duration: e.duration
-    });
-  };
-  const sfForPlayerTrack = (trackId) => soundFonts.get(TRACK_ROLES[Number(trackId)] ?? "") ?? soundFonts.get(`t${trackId}`);
-  const playPlayerNote = (e) => {
-    const sf = sfForPlayerTrack(e.trackId);
-    if (!sf) return;
-    sf.play({
-      ctx: audioCtx,
-      destination: masterGain,
-      pitch: e.pitch,
-      volume: e.volume,
       when: e.when,
       duration: e.duration
     });
@@ -8914,6 +8904,20 @@ var createDtmStudio = async (options = {}) => {
     const { preset, presetUI, ...dawOverrides } = opts;
     const tracks = dawOverrides.tracks ?? TRACKS_SIMPLE;
     const trackIds = tracks.map((t) => t.id);
+    const presetKey = preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
+    let editorPreset = presetKey;
+    const playNote = (e) => {
+      const sf = resolveSoundFont(editorPreset, e.trackId);
+      if (!sf) return;
+      sf.play({
+        ctx: audioCtx,
+        destination: masterGain,
+        pitch: e.pitch,
+        volume: e.volume,
+        when: e.when,
+        duration: e.duration
+      });
+    };
     const base = {
       getAudioTime: () => audioCtx.currentTime,
       onResumeAudio: resumeAudio,
@@ -8926,7 +8930,6 @@ var createDtmStudio = async (options = {}) => {
     };
     const daw = mountDAW(target, base);
     mountedEditors.push(daw);
-    const presetKey = preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
     const wantPresetUI = presetUI ?? features.presetUI;
     let presetSelect = null;
     if (wantPresetUI) {
@@ -8937,7 +8940,11 @@ var createDtmStudio = async (options = {}) => {
         getTrackIds: () => trackIds,
         value: presetKey,
         loadingTarget: rollEl ?? target,
-        position: "prepend"
+        position: "prepend",
+        // 楽器変更時、このエディタの発音解決が使うプリセットも追従させる。
+        onChange: (key) => {
+          editorPreset = key;
+        }
       });
       editorPresetSelects.set(target, presetSelect);
     }
@@ -9042,9 +9049,22 @@ var createDtmStudio = async (options = {}) => {
   };
   const mountPlayer = (target, mml, opts = {}) => {
     const meta = parseMML(mml, {}).meta ?? {};
-    if (meta.instrument && INSTRUMENT_PRESETS[meta.instrument]) {
-      void loadPreset(meta.instrument);
-    }
+    const playerPreset = meta.instrument && INSTRUMENT_PRESETS[meta.instrument] ? meta.instrument : defaultPreset;
+    void loadPreset(playerPreset);
+    const playPlayerNote = (e) => {
+      const role = TRACK_ROLES[Number(e.trackId)];
+      if (!role) return;
+      const sf = resolveSoundFont(playerPreset, role);
+      if (!sf) return;
+      sf.play({
+        ctx: audioCtx,
+        destination: masterGain,
+        pitch: e.pitch,
+        volume: e.volume,
+        when: e.when,
+        duration: e.duration
+      });
+    };
     const player = mountMmlPlayer(target, mml, {
       getAudioTime: () => audioCtx.currentTime,
       onResumeAudio: resumeAudio,
