@@ -310,7 +310,7 @@
             <div class="bg-pico-black p-4 border-t-2 border-pico-black flex flex-col gap-4">
                 <!-- note for devs -->
                 <div class="text-[10px] text-pico-lavend bg-pico-navy/40 p-2 border border-pico-cyan/20 leading-normal">
-                    ※ 本デモは画面を持たない音源再生API <span class="text-pico-cyan">playMML()</span> の動作確認用です。任意の小節や秒数でのBGMループ境界の制御、サビなどの位置を正確に検出するタイムラインイベント（Cues）の発火など、Webゲーム開発向けの高度な機能をシミュレートできます。<br>
+                    ※ 本デモは、npmパッケージ <span class="text-pico-yellow font-bold">@onjmin/dtm</span> が提供する画面非依存の音源再生API <span class="text-pico-cyan">playMML()</span> の動作確認用です。任意の小節や秒数でのBGMループ境界の制御、サビなどの位置を正確に検出するタイムラインイベント（Cues）の発火など、Webゲーム開発向けの高度な機能をシミュレートできます。<br>
                     <span class="text-pico-yellow">※ ロード時間と帯域を節約するため、本デモでの playMML() はSoundFontを使用せず軽量な内蔵矩形波シンセで発音します（ゲームへの組み込み時は、フックを介して任意の音源に差し替え可能です）。</span>
                 </div>
 
@@ -803,52 +803,85 @@
 
     <!-- ════ ヘッドレスBGM解説モーダル ════ -->
     <div id="headless-modal-overlay" class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden">
-        <div class="game-win bg-pico-navy max-w-lg w-full max-h-[85vh] flex flex-col overflow-hidden text-pico-white font-pixel">
+        <div class="game-win bg-pico-navy max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden text-pico-white font-pixel">
             <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
-                <span class="text-pico-yellow text-sm font-bold">playMML() API & デモ解説</span>
+                <span class="text-pico-yellow text-sm font-bold">npm: @onjmin/dtm — playMML() API解説</span>
                 <button id="headless-modal-close" class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none">&times;</button>
             </div>
-            <div class="p-4 overflow-y-auto text-xs leading-relaxed flex flex-col gap-4">
-                <div>
-                    <h4 class="text-pico-cyan text-sm font-bold mb-1">■ 既存の音声再生方式（HTML5 audio等）との違い</h4>
-                    <ul class="list-disc pl-4 mt-1 text-pico-lavend flex flex-col gap-2">
-                        <li>
-                            <strong class="text-pico-white">小節・ステップ精度でのループ制御</strong><br>
-                            一般的なオーディオファイル（MP3/OGG等）を再生するAPIでは、秒数（Time）やサンプル数でループを定義します。一方、<code class="text-pico-cyan">playMML()</code> はMML楽譜情報を内部ステップ単位で解釈し、Web Audio API 上にスケジュールを先読み予約するため、拍のタイミングと同期したシームレスループが可能です。
-                        </li>
-                        <li>
-                            <strong class="text-pico-white">再生位置に応じたコールバック発火 (Cues)</strong><br>
-                            特定の小節（Bar）、ステップ（Step）、秒数（Seconds）を再生ヘッドが通過した瞬間にコールバック（<code class="text-pico-orange">onCue</code>）を実行できます。再生時間を毎フレーム手動監視するロジックを実装することなく、音楽同期のゲーム演出が実装可能です。
-                        </li>
-                        <li>
-                            <strong class="text-pico-white">AudioContext と出力先 (Destination) の注入</strong><br>
-                            すでに効果音（SE）再生用などで利用している <code class="text-pico-cyan">AudioContext</code> や、出力先ノード（ミキサー等）を外部から渡すことができます。これにより、ゲーム全体の再生系統を統一できます。
-                        </li>
-                    </ul>
+            <div class="p-4 overflow-y-auto text-[11px] leading-relaxed flex flex-col gap-4">
+                <div class="bg-black/20 p-2 border border-pico-gray/20 text-pico-lavend leading-normal">
+                    <span class="text-pico-white font-bold">playMML()</span> は、画面を持たない（ヘッドレス）BGM再生用APIです。WebゲームのBGM制御や音楽同期演出に特化しています。
                 </div>
+
+                <!-- 既存方式との違い -->
+                <div>
+                    <h4 class="text-pico-cyan text-xs font-bold mb-1.5">■ 既存方式（HTML5 Audio等）との違い</h4>
+                    <table class="w-full text-left border-collapse text-[10px]">
+                        <thead>
+                            <tr class="bg-black/30 border-b border-pico-gray/30 text-pico-cyan">
+                                <th class="p-1.5 font-bold w-1/4">項目</th>
+                                <th class="p-1.5 font-bold w-2/5">HTML5 Audio等</th>
+                                <th class="p-1.5 font-bold w-2/5">@onjmin/dtm (playMML)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-pico-lavend">
+                            <tr class="border-b border-pico-gray/10">
+                                <td class="p-1.5 font-bold text-pico-white">ループ精度</td>
+                                <td class="p-1.5">再生端で遅延や継ぎ目が発生しやすい</td>
+                                <td class="p-1.5 text-pico-yellow">Web Audio制御でミリ秒精度のシームレスループ</td>
+                            </tr>
+                            <tr class="border-b border-pico-gray/10">
+                                <td class="p-1.5 font-bold text-pico-white">イントロ付きループ</td>
+                                <td class="p-1.5">複数ファイル分割や複雑な再生管理が必要</td>
+                                <td class="p-1.5 text-pico-yellow">1つのMML内でループ開始地点を指定するだけ</td>
+                            </tr>
+                            <tr class="border-b border-pico-gray/10">
+                                <td class="p-1.5 font-bold text-pico-white">ビート同期演出</td>
+                                <td class="p-1.5">毎フレーム時間監視（不正確・負荷大）</td>
+                                <td class="p-1.5 text-pico-yellow">指定小節/ステップ通過時に正確にイベント発火</td>
+                            </tr>
+                            <tr>
+                                <td class="p-1.5 font-bold text-pico-white">ゲーム音響管理</td>
+                                <td class="p-1.5">オーディオタグ単位で管理され統合が困難</td>
+                                <td class="p-1.5 text-pico-yellow">既存の AudioContext や MasterGain を注入可能</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 音色とカスタム音源 -->
                 <div class="border-t border-pico-gray/30 pt-3">
-                    <h4 class="text-pico-cyan text-sm font-bold mb-1">■ 音色の違いについて（簡易シンセサイザーの採用）</h4>
+                    <h4 class="text-pico-cyan text-xs font-bold mb-1">■ 音色の仕組み（デフォルトで矩形波を採用している理由）</h4>
                     <p class="text-pico-lavend">
-                        本エディタ（編集UI）や再生専用UIでは、CDNから大容量の高品質なSoundFont（ピアノやベース等の実音サンプル）をロードして鳴らしていますが、ヘッドレス再生関数 <code class="text-pico-cyan">playMML()</code> はデフォルトで<strong class="text-pico-white">ネットワーク非依存の軽量な簡易矩形波（Square Wave）シンセ</strong>を使用しています。
+                        編集UIでは数MBのSoundFontをロードしますが、<code class="text-pico-cyan">playMML()</code> はデフォルトで**ロード不要の内蔵矩形波シンセ**で発音します。これによりBGMのロード待ちによる起動遅延や通信容量を完全に排除できます。
                     </p>
                     <p class="text-pico-lavend mt-1">
-                        これは、ゲームへの組み込み時に音源ロード待ちによる起動遅延や不要なデータ通信を防ぐためです。開発時には <code class="text-pico-orange">onPlayNote</code> フックを介して、自前のシンセサイザーやロード済みのSoundFontエンジンへ自由に接続し、音色を差し替えることができます。
+                        実機で高品質な音源やSoundFontを鳴らしたい場合は、以下のように <code class="text-pico-orange">onPlayNote</code> / <code class="text-pico-orange">onPlayDrum</code> フックを介して、自前のシンセサイザーやロード済みの音色エンジンを接続して差し替えられます。
                     </p>
+                    <pre class="bg-black/30 p-2 border border-pico-gray/20 text-pico-white font-mono mt-1 text-[9px] overflow-x-auto">
+playMML(mmlString, {
+  audioContext: myGameCtx,
+  loop: { start: { bar: 2 } }, // 2小節目からループ
+  onPlayNote: (e) => {
+    // 自前のSoundFontやシンセで e.pitch を鳴らす
+    mySynth.trigger(e.pitch, e.volume, e.when, e.duration);
+  }
+});</pre>
                 </div>
+
+                <!-- デモでの体験方法 -->
                 <div class="border-t border-pico-gray/30 pt-3">
-                    <h4 class="text-pico-cyan text-sm font-bold mb-1">■ デモでの体験方法</h4>
-                    <ul class="list-disc pl-4 mt-1 text-pico-lavend flex flex-col gap-1.5">
+                    <h4 class="text-pico-cyan text-xs font-bold mb-1">■ 本デモでの体験ステップ</h4>
+                    <ol class="list-decimal pl-4 text-pico-lavend flex flex-col gap-1">
                         <li>
-                            <strong class="text-pico-white">イントロとループの繋ぎ目を聴く</strong><br>
-                            1. 上のDAWエディタで、1小節目に簡単なイントロ、2小節目以降にメインフレーズを書きます。<br>
-                            2. 本セクションの「LOAD FROM DAW」を押し、<code class="text-pico-cyan">START: BAR 2</code>（2小節目からループ）に設定して「PLAY BGM」で再生します。<br>
-                            3. 1周目はイントロから流れますが、2周目以降はイントロを飛ばして2小節目に綺麗に戻るループを体験できます。
+                            <strong class="text-pico-white">シームレスループの体験:</strong><br>
+                            ループ範囲を <code class="text-pico-cyan">START: BAR 2</code> （2小節目）に設定し、「PLAY BGM」を押します。1周目は冒頭（1小節目）のイントロから流れますが、2周目以降はイントロをスキップして2小節目に継ぎ目なく戻ります。
                         </li>
                         <li>
-                            <strong class="text-pico-white">イベント発火をコンソールで見る</strong><br>
-                            Cueリストに登録されたポイント（デフォルトで <code class="text-pico-cyan">chorus_start</code> = <code class="text-pico-cyan">BAR 2</code> 等）を通過した瞬間、CONSOLE OUTPUTにリアルタイムに通知が出力されます。
+                            <strong class="text-pico-white">同期イベント（Cues）の確認:</strong><br>
+                            再生中に右側の「CONSOLE OUTPUT」を監視します。設定したチェックポイント（デフォルトでは <code class="text-pico-cyan">chorus_start</code> 等）を再生ヘッドが通過した瞬間に、イベントが遅延なくログ出力されるのを確認できます。
                         </li>
-                    </ul>
+                    </ol>
                 </div>
             </div>
         </div>
