@@ -121,6 +121,11 @@ export const mountMmlPlayer = (
 	const useSynth = options.synth ?? !options.onPlayNote;
 	const secondsPerStep = 60 / bpm / STEPS_PER_BEAT;
 
+	// placements を trackIndex ごとにまとめ、ノートを持つトラックだけ採用
+	const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
+		(a, b) => a - b,
+	);
+
 	// ── ステップごとのコードネーム事前計算 ──
 	const maxStep = placements.reduce(
 		(max, p) => Math.max(max, p.startStep + p.durationSteps),
@@ -130,6 +135,7 @@ export const mountMmlPlayer = (
 		{ length: maxStep + 1 },
 		() => new Set(),
 	);
+
 	for (const p of placements) {
 		for (let s = p.startStep; s < p.startStep + p.durationSteps; s++) {
 			if (s >= 0 && s <= maxStep) {
@@ -156,11 +162,6 @@ export const mountMmlPlayer = (
 			stepChords.push(chordName);
 		}
 	}
-
-	// placements を trackIndex ごとにまとめ、ノートを持つトラックだけ採用
-	const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
-		(a, b) => a - b,
-	);
 	const seqTracks: SequencerTrack[] = trackIndices.map((index) => {
 		let id = 0;
 		const notes: Note[] = placements
