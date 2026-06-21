@@ -219,7 +219,13 @@ export const TRACKS_SIMPLE: TrackConfig[] = [
 	},
 ];
 
-/** 上級者モード（16トラック）— MIDIトラックを1:1で扱う */
+/**
+ * advancedモード（15トラック）— MIDIトラックを1:1で扱う。
+ * 採番はMML仕様に合わせてフラットな連番（@0〜@14 / TRACK 01〜15、欠番なし）。
+ * MIDIの「ch10=ドラム」の慣習は内部モデルに持ち込まず、MIDI入出力の変換時にだけ扱う:
+ * 出力は打楽器ch（内部 channel 9）を避けて割り当て（TRACK 10以降は ch11〜16 へ）、
+ * 入力は channel 9 のドラムを除外する。ドラム自体は別系統の「ドラム設定」で編集する。
+ */
 export const TRACKS_ADVANCED: TrackConfig[] = [
 	{
 		id: "t0",
@@ -324,13 +330,6 @@ export const TRACKS_ADVANCED: TrackConfig[] = [
 		name: "TRACK 15",
 		color: [100, 255, 160],
 		instrument: 14,
-		volume: 100,
-	},
-	{
-		id: "t15",
-		name: "TRACK 16",
-		color: [255, 150, 200],
-		instrument: 15,
 		volume: 100,
 	},
 ];
