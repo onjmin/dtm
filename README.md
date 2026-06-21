@@ -54,8 +54,7 @@ daw.getMML();   // { full, minified }
 daw.destroy();
 ```
 
-`onPlayNote` / `onPlayDrum` を省略すると無音で編集だけできます。`parseMidi` を渡すと MIDI 読込 UI が、
-`parseChord` / `parseChords` を渡すとコード進行入力 UI が有効になります。
+`onPlayNote` / `onPlayDrum` を省略すると無音で編集だけできます。`parseMidi` を渡すと MIDI 読込 UI が有効になります。また、コード進行入力 UI は標準で有効です（内部的に `@onjmin/chord-parser` を使用しています）。
 再生専用ビューが必要なら `mountMmlPlayer` を使います。
 
 ## 歌声合成（歌詞トラック `@@n`）

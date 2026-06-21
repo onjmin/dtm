@@ -273,7 +273,7 @@ export const mountDAW = (
 	const trackConfigs = options.tracks ?? DEFAULT_TRACKS;
 	const drumPatterns = options.drumPatterns ?? DRUM_PATTERNS;
 	const showMidi = !!options.parseMidi;
-	const showChord = !!(options.parseChord && options.parseChords);
+	const showChord = true;
 
 	const refs = buildUI(target, {
 		tracks: trackConfigs,
@@ -1726,7 +1726,6 @@ export const mountDAW = (
 	};
 
 	const applyChord = (): void => {
-		if (!options.parseChord || !options.parseChords) return;
 		const active = getActive();
 		const chordTrack = trackStates.find((t) => t.config.id === "chord");
 		if (!chordTrack) return;
@@ -1736,8 +1735,6 @@ export const mountDAW = (
 			rootShift: active.savedChordRoot,
 			bpm,
 			stepsPerBar: renderConfig.stepsPerBar,
-			parseChord: options.parseChord,
-			parseChords: options.parseChords,
 		});
 		chordTrack.core.clearNotesWithoutHistory();
 		chordTrack.core.beginBatch();

@@ -6,8 +6,7 @@
 - `parseChords` - コード進行文字列を解析して時刻付きイベントを得る
 
 ```js
-import { parseChord } from 'https://rpgen3.github.io/piano/mjs/parseChord.mjs';
-import { parseChords } from 'https://rpgen3.github.io/piano/mjs/parseChords.mjs';
+import { parseChord, parseChords } from "@onjmin/chord-parser";
 ```
 
 ## parseChord
@@ -16,22 +15,23 @@ import { parseChords } from 'https://rpgen3.github.io/piano/mjs/parseChords.mjs'
 
 ### 返り値
 
-戻り値はオブジェクトで、最も重要なプロパティは `value` です。
+戻り値はオブジェクトで、最も重要なプロパティは `notes` です。
 
-- `value`: ルート音からの絶対セミトーンを表す `Set<number>`
-- `pitch`: ルート音のピッチ値
-- `chord`: ルート相対の音程集合
+- `notes`: ルートを 0 とした絶対半音オフセット（昇順）を表す `number[]`
+- `root`: ルートの pitch class（0=C, 1=C#, ... 11=B）
+- `intervals`: ルートからの相対音程
+- `symbol`: 解析されたコード名文字列
 
 ### 使い方例
 
 ```js
 const parsed = parseChord('Cmaj7');
-console.log(Array.from(parsed.value));
+console.log(parsed.notes);
 // => [0, 4, 7, 11]
 
 const parsed2 = parseChord('Dm7');
-console.log(Array.from(parsed2.value));
-// => [2, 5, 9, 0?]  // D ルートに対する構成音を含む
+console.log(parsed2.notes);
+// => [0, 3, 7, 10]
 ```
 
 ### 対応するコード記号
@@ -49,7 +49,7 @@ console.log(Array.from(parsed2.value));
 
 ```js
 const chord = parseChord('F#m7');
-const offsets = [...chord.value];
+const offsets = [...chord.notes];
 for (const offset of offsets) {
   const midiPitch = 48 + offset; // C3 からの相対
   console.log(midiPitch);
@@ -120,7 +120,7 @@ const lengthSteps = Math.round(chord.duration / secondsPerStep);
 const chordData = parseChords(chordStr, bpm);
 for (const chord of chordData) {
   const parsed = parseChord(`${chord.key}${chord.chord}`);
-  const notes = [...parsed.value];
+  const notes = [...parsed.notes];
   notes.forEach((noteOffset) => {
     const pitch = 48 + noteOffset + rootShift;
     chordTrack.core.addNote(chord.whenStep, pitch, {
@@ -139,7 +139,7 @@ try {
   const chordData = parseChords(chordStr, bpm);
   chordData.forEach(chord => {
     const parsed = parseChord(`${chord.key}${chord.chord}`);
-    const noteOffsets = [...parsed.value];
+    const noteOffsets = [...parsed.notes];
     // noteOffsets を使ってノート生成
   });
 } catch (e) {

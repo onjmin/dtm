@@ -174,15 +174,6 @@ export type PlayDrumEvent = {
 	duration: number;
 };
 
-// 注入されるコード解析関数（rpgen3 parseChord 互換）
-export type ParseChordFn = (str: string) => { value: Iterable<number> };
-
-// 注入されるコード進行解析関数（rpgen3 parseChords 互換）
-export type ParseChordsFn = (
-	str: string,
-	bpm: number,
-) => Array<{ key: string; chord: string; when: number; duration: number }>;
-
 // 注入されるMIDIバイナリ解析関数（midi-parser-js 互換）
 export type ParseMidiFn = (bytes: Uint8Array) => unknown;
 
@@ -226,8 +217,6 @@ export type DawOptions = {
 	onViewStateChange?: (state: DawViewState) => void;
 
 	// --- 注入される外部パーサ（任意） ---
-	parseChord?: ParseChordFn;
-	parseChords?: ParseChordsFn;
 	parseMidi?: ParseMidiFn;
 
 	// --- 設定 ---

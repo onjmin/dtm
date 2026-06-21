@@ -60,6 +60,7 @@
 		"typescript": "5.8.3"
 	},
 	"dependencies": {
+		"@onjmin/chord-parser": "1.0.1",
 		"@onjmin/koe": "1.0.3"
 	}
 }

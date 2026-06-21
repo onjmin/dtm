@@ -81,8 +81,6 @@ export type DtmStudioEngines = {
 	SoundFont?: SoundFontEngine;
 	SoundFont_drum?: SoundFontDrumEngine;
 	SoundFont_list?: SoundFontListEngine;
-	parseChord?: DawOptions["parseChord"];
-	parseChords?: DawOptions["parseChords"];
 	parseMidi?: DawOptions["parseMidi"];
 };
 
@@ -93,8 +91,6 @@ const DEFAULT_CDN = {
 		"https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs",
 	soundFontList:
 		"https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs",
-	parseChord: "https://rpgen3.github.io/piano/mjs/parseChord.mjs",
-	parseChords: "https://rpgen3.github.io/piano/mjs/parseChords.mjs",
 	midiParser: "https://cdn.jsdelivr.net/npm/midi-parser-js@4.0.4/+esm",
 } as const;
 
@@ -227,28 +223,6 @@ export const createDtmStudio = async (
 		eng.SoundFont_list ??
 			importFrom<SoundFontListEngine>(cdn.soundFontList, "SoundFont_list"),
 	]);
-
-	// コード解析（任意）。失敗してもスタジオ自体は動かす。
-	let parseChord = eng.parseChord;
-	let parseChords = eng.parseChords;
-	if (features.chord && (!parseChord || !parseChords)) {
-		try {
-			[parseChord, parseChords] = await Promise.all([
-				parseChord ??
-					importFrom<NonNullable<typeof parseChord>>(
-						cdn.parseChord,
-						"parseChord",
-					),
-				parseChords ??
-					importFrom<NonNullable<typeof parseChords>>(
-						cdn.parseChords,
-						"parseChords",
-					),
-			]);
-		} catch (e) {
-			console.warn("[dtm] コード解析の読み込みに失敗しました", e);
-		}
-	}
 
 	// MIDI解析（任意・遅延）。
 	let midiParser: MidiParserModule | null = null;
@@ -488,8 +462,6 @@ export const createDtmStudio = async (
 			onPlayNote: playNote,
 			onPlayDrum: playDrum,
 			singingVoices,
-			parseChord,
-			parseChords,
 			parseMidi,
 			onToggleRecord,
 			...dawOverrides,

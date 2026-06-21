@@ -6,7 +6,7 @@
  * 実際のノート追加を行わず配置（placement）の配列を返す純関数にした。
  */
 
-import type { ParseChordFn, ParseChordsFn } from "./types";
+import { parseChord, parseChords } from "@onjmin/chord-parser";
 
 export type ChordPatternType =
 	| "block"
@@ -30,8 +30,6 @@ export type ApplyChordOptions = {
 	rootShift: number;
 	bpm: number;
 	stepsPerBar: number;
-	parseChord: ParseChordFn;
-	parseChords: ParseChordsFn;
 };
 
 const C3 = 48;
@@ -42,15 +40,7 @@ const C3 = 48;
 export const buildChordPlacements = (
 	options: ApplyChordOptions,
 ): ChordPlacement[] => {
-	const {
-		chordStr,
-		patternType,
-		rootShift,
-		bpm,
-		stepsPerBar,
-		parseChord,
-		parseChords,
-	} = options;
+	const { chordStr, patternType, rootShift, bpm, stepsPerBar } = options;
 
 	const placements: ChordPlacement[] = [];
 	if (!chordStr.trim()) return placements;
@@ -58,7 +48,7 @@ export const buildChordPlacements = (
 	const offset = rootShift;
 	const chordLength = stepsPerBar;
 
-	let chordData: ReturnType<ParseChordsFn> = [];
+	let chordData: ReturnType<typeof parseChords> = [];
 	try {
 		chordData = parseChords(chordStr, bpm);
 	} catch {
@@ -90,7 +80,7 @@ export const buildChordPlacements = (
 			for (const chord of group) {
 				let notes: number[];
 				try {
-					notes = [...parseChord(`${chord.key}${chord.chord}`).value];
+					notes = [...parseChord(`${chord.key}${chord.chord}`).notes];
 				} catch {
 					continue;
 				}
@@ -181,7 +171,7 @@ export const buildChordPlacements = (
 		chordNames.forEach((chordName, barIndex) => {
 			let notes: number[];
 			try {
-				notes = [...parseChord(chordName).value];
+				notes = [...parseChord(chordName).notes];
 			} catch {
 				return;
 			}
