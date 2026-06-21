@@ -3631,8 +3631,10 @@ var parseMML = (mml, options = {}) => {
           numStr += body[j];
           j++;
         }
-        if (ch === "t" && trackIndex === 0 && numStr) {
-          bpm = clamp2(Number.parseInt(numStr, 10), 1, 255);
+        if (ch === "t" && numStr) {
+          if (bpm === null) {
+            bpm = clamp2(Number.parseInt(numStr, 10), 1, 255);
+          }
         }
         pushTok("ctrl", currentStep, 0, tokStart);
       } else if (ch === "[") {
