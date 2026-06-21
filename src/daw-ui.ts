@@ -201,10 +201,10 @@ export const buildUI = (
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
       <div class="dtm-row">
         <span class="dtm-label">MML</span>
-        <textarea class="dtm-textarea" data-dtm="mml-input" placeholder="MMLを入力"></textarea>
+        <textarea class="dtm-textarea dtm-grow" data-dtm="mml-input" placeholder="MMLを入力"></textarea>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">読込</button>
       </div>
       <div class="dtm-row">
-        <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">MML読込</button>
         <span class="dtm-label">全体シフト</span>
         <select class="dtm-select" data-dtm="shift-select">
           <option value="-96">-2分</option>
