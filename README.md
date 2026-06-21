@@ -109,6 +109,44 @@ daw.destroy();
 `onPlayNote` / `onPlayDrum` を省略すると無音で編集だけできます。`parseMidi` を渡すと MIDI 読込 UI が有効になります。また、コード進行入力 UI は標準で有効です（内部的に `@onjmin/chord-parser` を使用しています）。
 再生専用ビューが必要なら `mountMmlPlayer` を使います。
 
+## ヘッドレス再生（ゲーム BGM 向け `playMML`）
+
+画面を一切持たず、MML 文字列を渡して音だけを鳴らす関数。`mountMmlPlayer` のような
+DOM ビューは作らないので、ゲームの BGM のように「鳴らして・止める」用途に向きます。
+
+```ts
+import { playMML } from "@onjmin/dtm";
+
+// ユーザー操作（クリック等）のコールスタック内で呼ぶ（自動再生ポリシー対策）
+const bgm = playMML("@0 t120 o5 l8 ccggaag4 ffeeddc4 #drum=basic", {
+  loop: true,        // 曲末で止めずシームレスにループ
+  volume: 70,
+});
+
+bgm.setVolume(40);   // 再生中も即時反映
+bgm.stop();          // 停止
+bgm.destroy();       // 停止＋内部 AudioContext を解放
+```
+
+- **発音はオーディオスレッド上**で行われます（未来時刻に予約するため、メインスレッドが
+  重くても音切れしにくい）。スケジューラ自体はメインスレッドの先読み方式です。
+- **タブが非アクティブになると自動で一時停止**し、復帰で再開します（内部生成 ctx のとき既定 ON）。
+- 既存の AudioContext / ミキサーへ繋ぎたい場合は `audioContext` と `destination` を注入します。
+  注入した ctx は SE 等と共有している可能性があるため、非アクティブ時の自動 suspend は
+  既定 OFF になります（代わりに `bgm.suspend()` / `bgm.resume()` を呼び出し側から叩けます）。
+
+```ts
+const bgm = playMML(mml, {
+  audioContext: myCtx,        // ゲーム側の AudioContext を共有
+  destination: myMasterGain,  // 自前のマスターGain/ミキサーへ
+  // 自前シンセを使うなら onPlayNote を渡す（内蔵 square synth は自動で無効）
+  onPlayNote: ({ pitch, volume, when, duration }) => mySynth.play(...),
+});
+```
+
+> 歌声合成（`@@n` 歌詞トラック）はヘッドレス再生では未対応です（楽器・ドラムのみ）。
+> 歌声が必要なら `mountMmlPlayer` / `createDtmStudio` を使ってください。
+
 ## 歌声合成（歌詞トラック `@@n`）
 
 演奏トラック `@n` とは別に歌詞専用行 `@@n` を書くと、そのトラックの Note On に合わせて

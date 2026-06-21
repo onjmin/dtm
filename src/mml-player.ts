@@ -29,6 +29,7 @@ import {
 	type TimedNote,
 } from "@onjmin/chord-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
+import { createSynth, type Synth } from "./synth";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import {
 	DEFAULT_BPM,
@@ -127,8 +128,6 @@ type LaneView = {
 	lane: HTMLDivElement;
 	tokens: LaneToken[];
 };
-
-const freqFromPitch = (pitch: number): number => 440 * 2 ** ((pitch - 69) / 12);
 
 /**
  * MML文字列を再生専用ビューとして target にマウントする。
@@ -242,74 +241,11 @@ export const mountMmlPlayer = (
 		if (!audioCtx) audioCtx = new AudioContext();
 		return audioCtx;
 	};
-	const synthPlay = (e: PlayNoteEvent): void => {
-		const ctx = ensureCtx();
-		const osc = ctx.createOscillator();
-		const gain = ctx.createGain();
-		osc.type = "square";
-		osc.frequency.value = freqFromPitch(e.pitch);
-		const t0 = ctx.currentTime + e.when;
-		const peak = Math.max(0.0001, 0.06 * e.volume * 1.5);
-		gain.gain.setValueAtTime(peak, t0);
-		gain.gain.exponentialRampToValueAtTime(0.001, t0 + e.duration);
-		osc.connect(gain);
-		// ステレオ定位（非対応環境では destination 直結）
-		if (typeof ctx.createStereoPanner === "function" && e.pan) {
-			const panner = ctx.createStereoPanner();
-			panner.pan.value = Math.max(-1, Math.min(1, e.pan));
-			gain.connect(panner);
-			panner.connect(ctx.destination);
-		} else {
-			gain.connect(ctx.destination);
-		}
-		osc.start(t0);
-		osc.stop(t0 + e.duration + 0.02);
-	};
-
-	// 簡易ドラム音（内蔵synth用）。SoundFontを持たないため、キック/スネア/ハイハットを
-	// オシレータ＋ノイズで近似する。pitch は General MIDI 準拠のドラムキー番号。
-	const drumSynth = (e: PlayDrumEvent): void => {
-		const ctx = ensureCtx();
-		const t0 = ctx.currentTime + e.when;
-		const vol = Math.max(0.0001, Math.min(1, e.velocity));
-		const isKick = e.pitch === 35 || e.pitch === 36;
-		const isSnareLike = e.pitch === 38 || e.pitch === 39 || e.pitch === 40;
-		if (isKick) {
-			// キック: 低音サインのピッチダウン
-			const osc = ctx.createOscillator();
-			const g = ctx.createGain();
-			osc.frequency.setValueAtTime(150, t0);
-			osc.frequency.exponentialRampToValueAtTime(50, t0 + 0.12);
-			g.gain.setValueAtTime(vol * 0.9, t0);
-			g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
-			osc.connect(g).connect(ctx.destination);
-			osc.start(t0);
-			osc.stop(t0 + 0.2);
-			osc.onended = () => osc.disconnect();
-			return;
-		}
-		// スネア/ハイハット/その他: ノイズバースト（スネアは帯域広め＋胴鳴り）
-		const dur = isSnareLike ? 0.18 : 0.05;
-		const length = Math.max(1, Math.floor(ctx.sampleRate * dur));
-		const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
-		const data = buffer.getChannelData(0);
-		for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
-		const src = ctx.createBufferSource();
-		src.buffer = buffer;
-		const filter = ctx.createBiquadFilter();
-		filter.type = isSnareLike ? "bandpass" : "highpass";
-		filter.frequency.value = isSnareLike ? 2000 : 8000;
-		const g = ctx.createGain();
-		g.gain.setValueAtTime(vol * (isSnareLike ? 0.7 : 0.4), t0);
-		g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-		src.connect(filter).connect(g).connect(ctx.destination);
-		src.start(t0);
-		src.stop(t0 + dur);
-		src.onended = () => {
-			src.disconnect();
-			filter.disconnect();
-			g.disconnect();
-		};
+	// 発音器は ctx と同様に遅延生成（synth.ts に切り出した共有ロジック）
+	let synthInstance: Synth | null = null;
+	const ensureSynth = (): Synth => {
+		if (!synthInstance) synthInstance = createSynth(ensureCtx());
+		return synthInstance;
 	};
 
 	// 歌詞付きノートを歌うための歌唱合成（klatt + koe音源。遅延生成）
@@ -758,7 +694,7 @@ export const mountMmlPlayer = (
 			// ここでは楽器音も歌声も鳴らさない。
 			if (lyricTracks.has(trackIdx)) return;
 			options.onPlayNote?.(e);
-			if (useSynth) synthPlay(e);
+			if (useSynth) ensureSynth().playNote(e);
 		},
 		onPlayDrum: (e) => {
 			// ドラムは曲全体に効くトップレベル宣言でトラックと1対1ではないため、
@@ -766,7 +702,7 @@ export const mountMmlPlayer = (
 			// 先頭トラックがドラムの度に跳ね続けるバグの原因だった。
 			const velocity = e.velocity * (trackVolume / 100);
 			options.onPlayDrum?.({ ...e, velocity });
-			if (useSynth) drumSynth({ ...e, velocity });
+			if (useSynth) ensureSynth().playDrum({ ...e, velocity });
 		},
 		onTick: (step) => {
 			renderPlayhead(step);

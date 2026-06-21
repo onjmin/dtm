@@ -18,6 +18,13 @@ export * from "./midi-io";
 // Layer 1: ヘッドレスコア & プリミティブ
 // ============================================================
 export * from "./mml-core";
+// ヘッドレス再生（DOM非依存・BGM向け）＋ 内蔵synthプリミティブ
+export {
+	type MmlPlayback,
+	type PlayMmlOptions,
+	playMML,
+} from "./headless-player";
+export { createSynth, freqFromPitch, type Synth } from "./synth";
 // 補助ロジック（再利用可能）
 export * from "./mml-parser";
 export type { MmlPlayerInstance, MmlPlayerOptions } from "./mml-player";

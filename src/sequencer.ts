@@ -31,6 +31,12 @@ export type SequencerOptions = {
 	getDrumPattern: () => DrumPattern | null;
 	/** ソロ対象トラックID（null=ソロ無効） */
 	getSoloTrackId: () => string | null;
+	/**
+	 * ループ再生するか（BGM用途）。true の間は曲末で停止せず、シームレスに先頭から
+	 * 鳴り続ける。先読みスケジューラ上で次周のノートを継ぎ目なく予約するため、
+	 * 周回ごとの無音や「もたつき」は生じない。未指定は false（1回再生）。
+	 */
+	getLoop?: () => boolean;
 	getAudioTime: () => number;
 	onPlayNote: (e: PlayNoteEvent) => void;
 	onPlayDrum: (e: PlayDrumEvent) => void;
@@ -69,6 +75,11 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 	let active = false;
 	let fromStepValue = 0;
 	let trackVolumeMap: Map<string, number> = new Map();
+	// ループ1周の長さ（秒）。最後に鳴り終わるノートの末尾＝曲の実尺。
+	let loopLengthSec = 0;
+	// 現在の周回のオフセット秒。周回するたび loopLengthSec ずつ加算し、
+	// イベントの絶対発音時刻を ev.when + loopBase として継ぎ目なく予約する。
+	let loopBase = 0;
 
 	const secondsPerStep = (): number => 60 / options.getBpm() / STEPS_PER_BEAT;
 
@@ -76,23 +87,28 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		timeline = [];
 		trackVolumeMap = new Map();
 		const sps = secondsPerStep();
+		let maxEnd = 0;
 		for (const track of options.getTracks()) {
 			trackVolumeMap.set(track.id, track.volume);
 			for (const note of track.notes) {
 				const relativeStart = note.startStep - fromStep;
 				if (relativeStart < 0) continue;
 				const velocity = note.velocity ?? DEFAULT_PLAYBACK_VELOCITY;
+				const when = relativeStart * sps;
+				const duration = note.durationSteps * sps;
+				maxEnd = Math.max(maxEnd, when + duration);
 				timeline.push({
 					trackId: track.id,
 					pitch: note.pitch,
 					volume: track.volume / 100,
 					velocity,
-					when: relativeStart * sps,
-					duration: note.durationSteps * sps,
+					when,
+					duration,
 				});
 			}
 		}
 		timeline.sort((a, b) => a.when - b.when);
+		loopLengthSec = maxEnd;
 	};
 
 	const scheduleTick = (): void => {
@@ -106,9 +122,17 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		}
 
 		// メロディックノート
-		while (nowIndex < timeline.length) {
+		const loop = options.getLoop?.() ?? false;
+		while (true) {
+			// 全イベントを消費し切ったら、ループ時は次周へ巻き戻す。
+			// loopLengthSec が 0（実質ノート無し）の周回は無限ループになるので抜ける。
+			if (nowIndex >= timeline.length) {
+				if (!loop || loopLengthSec <= 0) break;
+				nowIndex = 0;
+				loopBase += loopLengthSec;
+			}
 			const ev = timeline[nowIndex];
-			const _when = ev.when - time;
+			const _when = ev.when + loopBase - time;
 			// 先読み地平の外なら一旦止める（ソロ判定より先に評価する）。
 			// ソロ判定を先に置くと、非ソロのイベントを地平の外まで nowIndex++ で
 			// 読み飛ばして恒久消費してしまい、ソロ解除後に発音が戻らなくなる。
@@ -156,13 +180,15 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 			}
 		}
 
-		// 終了判定
-		const last = timeline[timeline.length - 1];
-		const lastWhen = last?.when ?? 0;
-		const lastDuration = last?.duration ?? 0;
-		if (nowIndex >= timeline.length && time > lastWhen + lastDuration + 0.1) {
-			stop();
-			options.onEnd();
+		// 終了判定（ループ時は曲末で止めない）
+		if (!loop) {
+			const last = timeline[timeline.length - 1];
+			const lastWhen = last?.when ?? 0;
+			const lastDuration = last?.duration ?? 0;
+			if (nowIndex >= timeline.length && time > lastWhen + lastDuration + 0.1) {
+				stop();
+				options.onEnd();
+			}
 		}
 	};
 
@@ -196,6 +222,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		active = true;
 		startTime = options.getAudioTime() + START_DELAY;
 		nowIndex = 0;
+		loopBase = 0;
 		intervalId = setInterval(scheduleTick, TICK_INTERVAL_MS);
 		animationId = requestAnimationFrame(animate);
 	};
