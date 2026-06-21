@@ -257,5 +257,6 @@ export type DawInstance = {
 	exportMIDI: () => Blob;
 	setBpm: (bpm: number) => void;
 	getPlaybackState: () => PlaybackState;
+	setLoading?: (loading: boolean) => void;
 	destroy: () => void;
 };

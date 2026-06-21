@@ -809,6 +809,7 @@ export const mountMmlPlayer = (
 				});
 			}
 			return {
+				id: String(index),
 				model: lt.model,
 				volume:
 					vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) *
@@ -837,7 +838,11 @@ export const mountMmlPlayer = (
 			if (!playing || activePlayer !== instance) return;
 		}
 		seq.start(0);
-		if (streaming) ensureVoices().startStream(tracks, seq.getStartTime());
+		if (streaming) {
+			ensureVoices().startStream(tracks, seq.getStartTime(), {
+				isAudible: (t) => !mutedTracks.has(Number(t.id)),
+			});
+		}
 	};
 
 	const play = (): void => {

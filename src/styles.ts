@@ -464,7 +464,7 @@ export const DAW_CSS = `
 
 /* ─── ローディングオーバーレイ ─── */
 .dtm-overlay {
-  position: absolute; inset: 0; z-index: 1000;
+  position: absolute; inset: 0; z-index: 10;
   background: rgba(0,0,0,.92);
   display: flex; align-items: center; justify-content: center;
   flex-direction: column; gap: 14px;
@@ -512,6 +512,22 @@ export const DAW_CSS = `
   color: var(--dtm-primary);
   letter-spacing: .15em;
   min-height: 1em;
+}
+.dtm-topbar-loading {
+  display: none;
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  color: var(--dtm-primary);
+  margin-left: 12px;
+  letter-spacing: .15em;
+  align-self: center;
+}
+.dtm-topbar.is-loading .dtm-topbar-loading {
+  display: inline-block;
+}
+.dtm-topbar.is-loading {
+  pointer-events: none;
+  opacity: 0.7;
 }
 
 @keyframes dtm-blink { 0%,100%{opacity:1} 50%{opacity:0} }

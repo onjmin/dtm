@@ -492,11 +492,13 @@ export const createDtmStudio = async (
 					daw.pause();
 				}
 				const overlay = showLoadingOverlay(target);
+				daw.setLoading?.(true);
 				try {
 					daw.setInstrument(select.value);
 					await loadPreset(select.value, trackIds);
 				} finally {
 					overlay.remove();
+					daw.setLoading?.(false);
 					if (wasPlaying) {
 						daw.play();
 					}
@@ -511,7 +513,10 @@ export const createDtmStudio = async (
 		const presetKey =
 			preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
 		daw.setInstrument(presetKey);
-		void loadPreset(presetKey, trackIds);
+		daw.setLoading?.(true);
+		void loadPreset(presetKey, trackIds).finally(() => {
+			daw.setLoading?.(false);
+		});
 
 		// destroy 時に、注入した select と内部参照も後始末する。
 		const destroy = (): void => {

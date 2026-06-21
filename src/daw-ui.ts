@@ -9,6 +9,8 @@ import type { TrackConfig } from "./types";
 export type DawUIRefs = {
 	root: HTMLElement;
 	// transport
+	topbar: HTMLElement;
+	topbarLoading: HTMLElement;
 	playBtn: HTMLButtonElement;
 	recBtn: HTMLButtonElement;
 	soloCheckbox: HTMLInputElement;
@@ -109,6 +111,7 @@ export const buildUI = (
     <button class="dtm-play" data-dtm="play" disabled>${icon("play")}<span>試聴</span></button>
     <button class="dtm-iconbtn dtm-rec" data-dtm="rec" title="録音">${icon("record")}</button>
     <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>ソロ</span></label>
+    <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
     <span class="dtm-grow"></span>
     <span class="dtm-label">BPM</span>
     <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
@@ -281,6 +284,8 @@ export const buildUI = (
 
 	return {
 		root,
+		topbar: sel("transport"),
+		topbarLoading: sel("topbar-loading"),
 		playBtn: sel("play"),
 		recBtn: sel("rec"),
 		soloCheckbox: sel("solo"),

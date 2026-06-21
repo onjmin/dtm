@@ -1129,6 +1129,7 @@ export const mountDAW = (
 		if (streaming && voices) {
 			// オーバーレイはピアノロール部分だけに被せる（操作パネルまで覆わない）
 			const overlay = showLoadingOverlay(refs.rollContainer);
+			setLoading(true);
 			try {
 				await voices.loadModels(streamTracks.map((t) => t.model));
 				await voices.warm(streamTracks);
@@ -1136,6 +1137,7 @@ export const mountDAW = (
 				console.warn("[dtm] voice preload failed", err);
 			} finally {
 				overlay.remove();
+				setLoading(false);
 			}
 		}
 
@@ -1838,9 +1840,11 @@ export const mountDAW = (
 	// ============================================================
 	const overlayDuring = (fn: () => void): void => {
 		refs.overlay.hidden = false;
+		setLoading(true);
 		setTimeout(() => {
 			fn();
 			refs.overlay.hidden = true;
+			setLoading(false);
 		}, 30);
 	};
 
@@ -2002,6 +2006,7 @@ export const mountDAW = (
 			const file = refs.midiInput.files?.[0];
 			if (!file || !options.parseMidi) return;
 			refs.overlay.hidden = false;
+			setLoading(true);
 			const buffer = new Uint8Array(await file.arrayBuffer());
 			pendingMidi = options.parseMidi(buffer);
 			detectedTracks = analyzeMidiTracks(pendingMidi);
@@ -2022,6 +2027,7 @@ export const mountDAW = (
 			});
 			refs.midiTrackSelection.classList.remove("dtm-hidden");
 			refs.overlay.hidden = true;
+			setLoading(false);
 		});
 		refs.midiLoadBtn.addEventListener("click", () => {
 			if (!pendingMidi) return;
@@ -2108,6 +2114,10 @@ export const mountDAW = (
 	document.addEventListener("pointermove", onPointerMove);
 	document.addEventListener("pointerup", onPointerUp);
 
+	const setLoading = (loading: boolean): void => {
+		refs.topbar.classList.toggle("is-loading", loading);
+	};
+
 	// ============================================================
 	// 公開API
 	// ============================================================
@@ -2149,6 +2159,7 @@ export const mountDAW = (
 		exportMIDI,
 		setBpm,
 		getPlaybackState: () => playbackState,
+		setLoading,
 		destroy: () => {
 			sequencer.stop();
 			resizeObserver.disconnect();
