@@ -1376,59 +1376,49 @@ export const createSingingVoices = (
 	const startStream: SingingVoices["startStream"] = (tracks, anchorTime) => {
 		const session = ++streamSession;
 
-		// 全トラックを平坦化し、直前母音を焼き込んでから startSec 昇順に並べる。
-		type Item = {
-			model: VoiceModel;
-			note: StreamVoiceNote;
-			prevVowel: string;
-			volume: number;
-			pan: number;
-		};
-		const items: Item[] = [];
-		for (const track of tracks) {
+		// 1トラック＝1本の独立した先読み合成ループ。トラックごとに別モデル（＝別ワーカー）
+		// なので、トラックループを同時起動すると合成がトラック数ぶん並列に走る。
+		// （旧実装は全トラックを1列に平坦化して直列 await していたため、ワーカーが
+		//  複数あっても常に1つしか動かず、同時発声でスループットが頭打ちだった。）
+		const runTrack = async (track: StreamVoiceTrack): Promise<void> => {
 			const model = loaded.get(track.model.toLowerCase());
-			if (!model) continue;
-			forEachSungNote(track, (note, prevVowel) => {
-				items.push({
-					model,
-					note,
-					prevVowel,
-					volume: track.volume,
-					pan: track.pan,
-				});
-			});
-		}
-		items.sort((a, b) => a.note.startSec - b.note.startSec);
+			if (!model) return;
 
-		// 先回り合成ループ。出来た音から絶対時刻へ即スケジュールする（スロットル無し）。
-		void (async () => {
-			for (const item of items) {
+			// 直前母音を焼き込んだ発音順のノート列（促音・無声は除外済み）。
+			const items: { note: StreamVoiceNote; prevVowel: string }[] = [];
+			forEachSungNote(track, (note, prevVowel) => {
+				items.push({ note, prevVowel });
+			});
+
+			const peak = Math.max(0.0001, track.volume);
+
+			for (const { note, prevVowel } of items) {
 				if (session !== streamSession) return; // 中断
 				// 先読み上限を超えていれば、再生ヘッドが近づくまで待つ（合成を曲全体へ分散）。
 				// elapsed = ctx.currentTime - anchorTime が現在の再生位置（秒）。
 				while (
-					item.note.startSec - (ctx.currentTime - anchorTime) >
+					note.startSec - (ctx.currentTime - anchorTime) >
 					STREAM_LOOKAHEAD_SEC
 				) {
 					await new Promise((resolve) => setTimeout(resolve, STREAM_POLL_MS));
 					if (session !== streamSession) return;
 				}
-				const t0 = anchorTime + item.note.startSec;
-				const peak = Math.max(0.0001, item.volume);
-				const { model, note } = item;
+				const t0 = anchorTime + note.startSec;
 
 				if (model.renderToCache && model.scheduleCached) {
-					// koe音源: 重い合成を await してからスケジュール
+					// koe音源: 重い合成を await してからスケジュール。await 自体が
+					// ワーカー応答待ちでイベントループへ制御を返すので追加の yield は不要。
 					const key = await model.renderToCache(
 						note.syllable,
-						item.prevVowel,
+						prevVowel,
 						note.pitch,
 						note.durationSec * 1000,
 					);
 					if (session !== streamSession) return;
-					if (key) model.scheduleCached(key, t0, peak, item.pan);
+					if (key) model.scheduleCached(key, t0, peak, track.pan);
 				} else {
-					// klatt等（軽量・状態なし）: 絶対未来時刻へ直接スケジュール
+					// klatt等（軽量・状態なし）: 絶対未来時刻へ直接スケジュール。
+					// await が無く同期で回るため、UI応答性のため1音ごとに制御を返す。
 					const when = t0 - ctx.currentTime;
 					model(note.syllable, {
 						trackId: "",
@@ -1437,13 +1427,15 @@ export const createSingingVoices = (
 						volume: peak,
 						when,
 						duration: note.durationSec,
-						pan: item.pan,
+						pan: track.pan,
 					});
+					await new Promise((resolve) => setTimeout(resolve, 0));
 				}
-				// メインスレッドへ制御を返す（UI応答性）。合成は再生より速いので貯金は育つ。
-				await new Promise((resolve) => setTimeout(resolve, 0));
 			}
-		})();
+		};
+
+		// 全トラックを同時に走らせる（待たない）。各ループが別ワーカーを並列に駆動する。
+		for (const track of tracks) void runTrack(track);
 	};
 
 	const stopStream: SingingVoices["stopStream"] = () => {
