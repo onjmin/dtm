@@ -207,9 +207,16 @@ export const buildUI = (
         <textarea class="dtm-textarea dtm-grow" data-dtm="mml-input" placeholder="MMLを入力"></textarea>
         <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">読込</button>
       </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel">
+    <summary>マクロ</summary>
+    <div class="dtm-panel-body">
       <div class="dtm-row">
         <span class="dtm-label">全体シフト</span>
         <select class="dtm-select" data-dtm="shift-select">
+          <option value="-192">-1小節</option>
           <option value="-96">-2分</option>
           <option value="-48">-4分</option>
           <option value="-24">-8分</option>
@@ -218,15 +225,10 @@ export const buildUI = (
           <option value="24">+8分</option>
           <option value="48">+4分</option>
           <option value="96">+2分</option>
+          <option value="192">+1小節</option>
         </select>
         <button class="dtm-btn dtm-btn--primary" data-dtm="shift-apply">適用</button>
       </div>
-    </div>
-  </details>
-
-  <details class="dtm-panel">
-    <summary>マクロ</summary>
-    <div class="dtm-panel-body">
       <div class="dtm-row">
         <button class="dtm-btn dtm-btn--danger" data-dtm="macro-clear">全消去</button>
         <button class="dtm-btn dtm-btn--accent" data-dtm="macro-random">ランダム配置</button>

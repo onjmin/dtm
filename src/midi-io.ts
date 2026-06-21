@@ -73,7 +73,7 @@ export const analyzeMidiTracks = (midi: unknown): MidiTrackAnalysis[] => {
 		const validNotes = notes.filter((n) => n.end !== undefined);
 		result.push({
 			index: i,
-			name: `Ch${i}`,
+			name: `Ch${i + 1}`,
 			noteCount: validNotes.length,
 			selected: validNotes.length > 0,
 		});

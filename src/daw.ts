@@ -1237,11 +1237,13 @@ export const mountDAW = (
 
 		// 歌詞エディタ（全トラック共通）。歌唱モデルのプルダウン既定「なし」が無効状態を兼ねる。
 		// モデルを選んだときだけ声量・歌詞欄を出す（使わないときは隠す）。@@n model[:声量] lyrics として往復。
-		const lyricDiv = document.createElement("div");
-		lyricDiv.className = "dtm-row";
-		lyricDiv.style.flexDirection = "column";
-		lyricDiv.style.alignItems = "stretch";
-		lyricDiv.innerHTML = `
+		const isAdvanced = trackStates.length > TRACKS_SIMPLE.length;
+		if (isAdvanced || active.config.id !== "chord") {
+			const lyricDiv = document.createElement("div");
+			lyricDiv.className = "dtm-row";
+			lyricDiv.style.flexDirection = "column";
+			lyricDiv.style.alignItems = "stretch";
+			lyricDiv.innerHTML = `
       <div class="dtm-row">
         <span class="dtm-label">♪ 歌詞</span>
         <select class="dtm-select" data-dtm="lyric-model" aria-label="歌唱モデル"></select>
@@ -1273,152 +1275,139 @@ export const mountDAW = (
         </div>
         <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）"></textarea>
       </div>`;
-		refs.trackBody.appendChild(lyricDiv);
-		const lyricModelSel = lyricDiv.querySelector(
-			'[data-dtm="lyric-model"]',
-		) as HTMLSelectElement;
-		const lyricOctaveSel = lyricDiv.querySelector(
-			'[data-dtm="lyric-octave"]',
-		) as HTMLSelectElement;
-		const lyricIcon = lyricDiv.querySelector(
-			'[data-dtm="lyric-icon"]',
-		) as HTMLImageElement;
-		const lyricBody = lyricDiv.querySelector(
-			'[data-dtm="lyric-body"]',
-		) as HTMLElement;
-		const lyricInput = lyricDiv.querySelector(
-			'[data-dtm="lyric-input"]',
-		) as HTMLTextAreaElement;
-		const lyricCount = lyricDiv.querySelector(
-			'[data-dtm="lyric-count"]',
-		) as HTMLElement;
-		const lyricVol = lyricDiv.querySelector(
-			'[data-dtm="lyric-vol"]',
-		) as HTMLInputElement;
-		const lyricVolLabel = lyricDiv.querySelector(
-			'[data-dtm="lyric-vol-label"]',
-		) as HTMLElement;
-		const lyricPan = lyricDiv.querySelector(
-			'[data-dtm="lyric-pan"]',
-		) as HTMLInputElement;
-		const lyricPanLabel = lyricDiv.querySelector(
-			'[data-dtm="lyric-pan-label"]',
-		) as HTMLElement;
-		const lyricTerms = lyricDiv.querySelector(
-			'[data-dtm="lyric-terms"]',
-		) as HTMLElement;
-		const lyricTermsLink = lyricDiv.querySelector(
-			'[data-dtm="lyric-terms-link"]',
-		) as HTMLAnchorElement;
-		// 定位ラベル: 64=C / 左寄りは L<量> / 右寄りは R<量>
-		const fmtPan = (pan: number): string =>
-			pan === 64 ? "C" : pan < 64 ? `L${64 - pan}` : `R${pan - 64}`;
-		// 選択肢: なし(空＝無効、既定) + 既知モデル + 読込MML由来の非標準モデル（往復維持）
-		const addOpt = (value: string, label: string): void => {
-			const o = document.createElement("option");
-			o.value = value;
-			o.textContent = label;
-			lyricModelSel.appendChild(o);
-		};
-		addOpt("", "なし");
-		for (const m of LYRIC_MODELS) addOpt(m, lyricModelLabel(m));
-		if (active.lyricModel && !LYRIC_MODELS.includes(active.lyricModel)) {
-			addOpt(active.lyricModel, lyricModelLabel(active.lyricModel));
-		}
-		lyricModelSel.value = active.lyricModel;
-		lyricOctaveSel.value = String(active.vocalOctave);
-		// 値はプロパティ経由で設定（HTML文字列に混ぜず、</textarea>等の混入を防ぐ）
-		lyricInput.value = active.lyrics;
-		lyricVol.value = String(active.vocalVolume);
-		lyricVolLabel.textContent = String(active.vocalVolume);
-		lyricPan.value = String(active.vocalPan);
-		lyricPanLabel.textContent = fmtPan(active.vocalPan);
-		const updateLyricCount = (): void => {
-			const n = normalizeLyrics(lyricInput.value).length;
-			lyricCount.textContent = active.lyricModel && n > 0 ? `${n}音節` : "";
-		};
-		const syncLyricTerms = (): void => {
-			const url = active.lyricModel
-				? KOE_VOICEBANK_TERMS[active.lyricModel]
-				: undefined;
-			if (url) {
-				const label = lyricModelLabel(active.lyricModel);
-				lyricTermsLink.textContent = `${label}UTAU音源`;
-				lyricTermsLink.href = url;
-				lyricTerms.classList.remove("dtm-hidden");
-			} else {
-				lyricTerms.classList.add("dtm-hidden");
+			refs.trackBody.appendChild(lyricDiv);
+			const lyricModelSel = lyricDiv.querySelector(
+				'[data-dtm="lyric-model"]',
+			) as HTMLSelectElement;
+			const lyricOctaveSel = lyricDiv.querySelector(
+				'[data-dtm="lyric-octave"]',
+			) as HTMLSelectElement;
+			const lyricIcon = lyricDiv.querySelector(
+				'[data-dtm="lyric-icon"]',
+			) as HTMLImageElement;
+			const lyricBody = lyricDiv.querySelector(
+				'[data-dtm="lyric-body"]',
+			) as HTMLElement;
+			const lyricInput = lyricDiv.querySelector(
+				'[data-dtm="lyric-input"]',
+			) as HTMLTextAreaElement;
+			const lyricCount = lyricDiv.querySelector(
+				'[data-dtm="lyric-count"]',
+			) as HTMLElement;
+			const lyricVol = lyricDiv.querySelector(
+				'[data-dtm="lyric-vol"]',
+			) as HTMLInputElement;
+			const lyricVolLabel = lyricDiv.querySelector(
+				'[data-dtm="lyric-vol-label"]',
+			) as HTMLElement;
+			const lyricPan = lyricDiv.querySelector(
+				'[data-dtm="lyric-pan"]',
+			) as HTMLInputElement;
+			const lyricPanLabel = lyricDiv.querySelector(
+				'[data-dtm="lyric-pan-label"]',
+			) as HTMLElement;
+			const lyricTerms = lyricDiv.querySelector(
+				'[data-dtm="lyric-terms"]',
+			) as HTMLElement;
+			const lyricTermsLink = lyricDiv.querySelector(
+				'[data-dtm="lyric-terms-link"]',
+			) as HTMLAnchorElement;
+			// 定位ラベル: 64=C / 左寄りは L<量> / 右寄りは R<量>
+			const fmtPan = (pan: number): string =>
+				pan === 64 ? "C" : pan < 64 ? `L${64 - pan}` : `R${pan - 64}`;
+			// 選択肢: なし(空＝無効、既定) + 既知モデル + 読込MML由来の非標準モデル（往復維持）
+			const addOpt = (value: string, label: string): void => {
+				const o = document.createElement("option");
+				o.value = value;
+				o.textContent = label;
+				lyricModelSel.appendChild(o);
+			};
+			addOpt("", "なし");
+			for (const m of LYRIC_MODELS) addOpt(m, lyricModelLabel(m));
+			if (active.lyricModel && !LYRIC_MODELS.includes(active.lyricModel)) {
+				addOpt(active.lyricModel, lyricModelLabel(active.lyricModel));
 			}
-		};
-		const syncLyricIcon = (): void => {
-			const imgKey = active.lyricModel
-				? VOICE_IMAGE_KEY[active.lyricModel.toLowerCase()]
-				: undefined;
-			const src = imgKey ? VOICE_IMAGES[imgKey] : undefined;
-			if (src) {
-				lyricIcon.src = src;
-				lyricIcon.classList.remove("dtm-hidden");
-			} else {
-				lyricIcon.removeAttribute("src");
-				lyricIcon.classList.add("dtm-hidden");
-			}
-		};
-		const syncLyricVisibility = (): void => {
-			lyricBody.style.display = active.lyricModel ? "" : "none";
-			// オクターブは歌うときだけ意味を持つので、モデル「なし」では隠す
-			lyricOctaveSel.style.display = active.lyricModel ? "" : "none";
-			updateLyricCount();
-			syncLyricTerms();
-			syncLyricIcon();
-		};
-		syncLyricVisibility();
-		lyricModelSel.addEventListener("change", () => {
-			active.lyricModel = lyricModelSel.value;
-			syncLyricVisibility();
-		});
-		lyricOctaveSel.addEventListener("change", () => {
-			active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
-		});
-		lyricInput.addEventListener("input", () => {
-			active.lyrics = lyricInput.value;
-			updateLyricCount();
-		});
-		lyricVol.addEventListener("input", () => {
-			active.vocalVolume = Number.parseInt(lyricVol.value, 10);
-			lyricVolLabel.textContent = lyricVol.value;
-		});
-		lyricPan.addEventListener("input", () => {
-			active.vocalPan = Number.parseInt(lyricPan.value, 10);
+			lyricModelSel.value = active.lyricModel;
+			lyricOctaveSel.value = String(active.vocalOctave);
+			// 値はプロパティ経由で設定（HTML文字列に混ぜず、</textarea>等の混入を防ぐ）
+			lyricInput.value = active.lyrics;
+			lyricVol.value = String(active.vocalVolume);
+			lyricVolLabel.textContent = String(active.vocalVolume);
+			lyricPan.value = String(active.vocalPan);
 			lyricPanLabel.textContent = fmtPan(active.vocalPan);
-		});
-		// モバイルでスライダーをちょうど中央に合わせるのは難しいため、ラベルタップで中央へ戻す
-		lyricPanLabel.style.cursor = "pointer";
-		lyricPanLabel.title = "タップで中央(C)へ";
-		lyricPanLabel.addEventListener("click", () => {
-			active.vocalPan = 64;
-			lyricPan.value = "64";
-			lyricPanLabel.textContent = fmtPan(64);
-		});
+			const updateLyricCount = (): void => {
+				const n = normalizeLyrics(lyricInput.value).length;
+				lyricCount.textContent = active.lyricModel && n > 0 ? `${n}音節` : "";
+			};
+			const syncLyricTerms = (): void => {
+				const url = active.lyricModel
+					? KOE_VOICEBANK_TERMS[active.lyricModel]
+					: undefined;
+				if (url) {
+					const label = lyricModelLabel(active.lyricModel);
+					lyricTermsLink.textContent = `${label}UTAU音源`;
+					lyricTermsLink.href = url;
+					lyricTerms.classList.remove("dtm-hidden");
+				} else {
+					lyricTerms.classList.add("dtm-hidden");
+				}
+			};
+			const syncLyricIcon = (): void => {
+				const imgKey = active.lyricModel
+					? VOICE_IMAGE_KEY[active.lyricModel.toLowerCase()]
+					: undefined;
+				const src = imgKey ? VOICE_IMAGES[imgKey] : undefined;
+				if (src) {
+					lyricIcon.src = src;
+					lyricIcon.classList.remove("dtm-hidden");
+				} else {
+					lyricIcon.removeAttribute("src");
+					lyricIcon.classList.add("dtm-hidden");
+				}
+			};
+			const syncLyricVisibility = (): void => {
+				lyricBody.style.display = active.lyricModel ? "" : "none";
+				// オクターブは歌うときだけ意味を持つので、モデル「なし」では隠す
+				lyricOctaveSel.style.display = active.lyricModel ? "" : "none";
+				updateLyricCount();
+				syncLyricTerms();
+				syncLyricIcon();
+			};
+			syncLyricVisibility();
+			lyricModelSel.addEventListener("change", () => {
+				active.lyricModel = lyricModelSel.value;
+				syncLyricVisibility();
+			});
+			lyricOctaveSel.addEventListener("change", () => {
+				active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
+			});
+			lyricInput.addEventListener("input", () => {
+				active.lyrics = lyricInput.value;
+				updateLyricCount();
+			});
+			lyricVol.addEventListener("input", () => {
+				active.vocalVolume = Number.parseInt(lyricVol.value, 10);
+				lyricVolLabel.textContent = lyricVol.value;
+			});
+			lyricPan.addEventListener("input", () => {
+				active.vocalPan = Number.parseInt(lyricPan.value, 10);
+				lyricPanLabel.textContent = fmtPan(active.vocalPan);
+			});
+			// モバイルでスライダーをちょうど中央に合わせるのは難しいため、ラベルタップで中央へ戻す
+			lyricPanLabel.style.cursor = "pointer";
+			lyricPanLabel.title = "タップで中央(C)へ";
+			lyricPanLabel.addEventListener("click", () => {
+				active.vocalPan = 64;
+				lyricPan.value = "64";
+				lyricPanLabel.textContent = fmtPan(64);
+			});
+		}
 
 		if (active.config.id === "chord" && showChord) {
 			const div = document.createElement("div");
 			div.className = "dtm-row";
 			div.style.flexDirection = "column";
 			div.style.alignItems = "stretch";
-			const roots = [
-				"C",
-				"C#",
-				"D",
-				"D#",
-				"E",
-				"F",
-				"F#",
-				"G",
-				"G#",
-				"A",
-				"A#",
-				"B",
-			];
 			div.innerHTML = `
         <div class="dtm-row">
           <span class="dtm-label">和音</span>
@@ -1430,31 +1419,24 @@ export const mountDAW = (
             <option value="yatsume">ヤツメ穴</option>
             <option value="alternating">交互奏</option>
           </select>
-          <select class="dtm-select" data-dtm="chord-root">
-            ${roots.map((r, i) => `<option value="${i}">${r}</option>`).join("")}
-          </select>
-          <button class="dtm-btn dtm-btn--primary" data-dtm="chord-apply">適用</button>
         </div>
-        <textarea class="dtm-textarea" data-dtm="chord-input" placeholder="例: C|G|Am|Em|F|C|F|G">${active.savedChordInput}</textarea>`;
+        <div class="dtm-row">
+          <textarea class="dtm-textarea dtm-grow" data-dtm="chord-input" placeholder="例: C|G|Am|Em|F|C|F|G">${active.savedChordInput}</textarea>
+          <button class="dtm-btn dtm-btn--primary" data-dtm="chord-apply">適用</button>
+        </div>`;
 			refs.trackBody.appendChild(div);
 			const patternSel = div.querySelector(
 				'[data-dtm="chord-pattern"]',
-			) as HTMLSelectElement;
-			const rootSel = div.querySelector(
-				'[data-dtm="chord-root"]',
 			) as HTMLSelectElement;
 			const input = div.querySelector(
 				'[data-dtm="chord-input"]',
 			) as HTMLTextAreaElement;
 			patternSel.value = active.savedChordPattern;
-			rootSel.value = String(active.savedChordRoot);
 			const save = (): void => {
 				active.savedChordInput = input.value;
 				active.savedChordPattern = patternSel.value as ChordPatternType;
-				active.savedChordRoot = Number.parseInt(rootSel.value, 10);
 			};
 			patternSel.addEventListener("change", save);
-			rootSel.addEventListener("change", save);
 			input.addEventListener("input", save);
 			(
 				div.querySelector('[data-dtm="chord-apply"]') as HTMLButtonElement
