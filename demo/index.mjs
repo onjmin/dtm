@@ -5424,13 +5424,6 @@ var TRACKS_ADVANCED = [
     color: [100, 255, 160],
     instrument: 14,
     volume: 100
-  },
-  {
-    id: "t15",
-    name: "TRACK 16",
-    color: [255, 150, 200],
-    instrument: 15,
-    volume: 100
   }
 ];
 var DEFAULT_TRACKS = TRACKS_SIMPLE;
