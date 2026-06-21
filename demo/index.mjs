@@ -1687,40 +1687,30 @@ var createSingingVoices = (ctx, destination, options = {}) => {
   };
   const startStream = (tracks, anchorTime) => {
     const session = ++streamSession;
-    const items = [];
-    for (const track of tracks) {
+    const runTrack = async (track) => {
       const model = loaded.get(track.model.toLowerCase());
-      if (!model) continue;
+      if (!model) return;
+      const items = [];
       forEachSungNote(track, (note, prevVowel) => {
-        items.push({
-          model,
-          note,
-          prevVowel,
-          volume: track.volume,
-          pan: track.pan
-        });
+        items.push({ note, prevVowel });
       });
-    }
-    items.sort((a, b) => a.note.startSec - b.note.startSec);
-    void (async () => {
-      for (const item of items) {
+      const peak = Math.max(1e-4, track.volume);
+      for (const { note, prevVowel } of items) {
         if (session !== streamSession) return;
-        while (item.note.startSec - (ctx.currentTime - anchorTime) > STREAM_LOOKAHEAD_SEC) {
+        while (note.startSec - (ctx.currentTime - anchorTime) > STREAM_LOOKAHEAD_SEC) {
           await new Promise((resolve) => setTimeout(resolve, STREAM_POLL_MS));
           if (session !== streamSession) return;
         }
-        const t0 = anchorTime + item.note.startSec;
-        const peak = Math.max(1e-4, item.volume);
-        const { model, note } = item;
+        const t0 = anchorTime + note.startSec;
         if (model.renderToCache && model.scheduleCached) {
           const key = await model.renderToCache(
             note.syllable,
-            item.prevVowel,
+            prevVowel,
             note.pitch,
             note.durationSec * 1e3
           );
           if (session !== streamSession) return;
-          if (key) model.scheduleCached(key, t0, peak, item.pan);
+          if (key) model.scheduleCached(key, t0, peak, track.pan);
         } else {
           const when = t0 - ctx.currentTime;
           model(note.syllable, {
@@ -1730,12 +1720,13 @@ var createSingingVoices = (ctx, destination, options = {}) => {
             volume: peak,
             when,
             duration: note.durationSec,
-            pan: item.pan
+            pan: track.pan
           });
+          await new Promise((resolve) => setTimeout(resolve, 0));
         }
-        await new Promise((resolve) => setTimeout(resolve, 0));
       }
-    })();
+    };
+    for (const track of tracks) void runTrack(track);
   };
   const stopStream = () => {
     streamSession++;
