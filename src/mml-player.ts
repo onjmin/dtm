@@ -23,7 +23,11 @@ import {
 } from "./lyrics";
 import { VOICE_IMAGES } from "./voice-images";
 import { parseMML } from "./mml-parser";
-import { detectChord } from "@onjmin/chord-parser";
+import {
+	type ChordSegment,
+	detectProgression,
+	type TimedNote,
+} from "@onjmin/chord-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import {
@@ -126,159 +130,57 @@ export const mountMmlPlayer = (
 		(a, b) => a - b,
 	);
 
-	// ── トラックの役割（ベース・伴奏）の動的判定 ──
-	const trackStats = trackIndices.map((index) => {
-		const trackPlacements = placements.filter((p) => p.trackIndex === index);
-		if (trackPlacements.length === 0) {
-			return { index, isChords: false, avgPitch: 0, noteCount: 0 };
-		}
-
-		const sumPitch = trackPlacements.reduce((sum, p) => sum + p.pitch, 0);
-		const avgPitch = sumPitch / trackPlacements.length;
-
-		const stepCounts = new Map<number, number>();
-		for (const p of trackPlacements) {
-			for (let s = p.startStep; s < p.startStep + p.durationSteps; s++) {
-				stepCounts.set(s, (stepCounts.get(s) ?? 0) + 1);
-			}
-		}
-		const polyphonicSteps = Array.from(stepCounts.values()).filter(
-			(c) => c >= 2,
-		).length;
-		const isChords = polyphonicSteps > 0;
-
-		return {
-			index,
-			isChords,
-			avgPitch,
-			noteCount: trackPlacements.length,
-		};
-	});
-
-	const chordTrackIndices = trackStats
-		.filter((s) => s.isChords)
-		.map((s) => s.index);
-	const nonChordTracks = trackStats.filter(
-		(s) => !s.isChords && s.noteCount > 0,
-	);
-	let bassTrackIndex: number | null = null;
-	if (nonChordTracks.length > 0) {
-		nonChordTracks.sort((a, b) => a.avgPitch - b.avgPitch);
-		bassTrackIndex = nonChordTracks[0].index;
-	}
-
-	const priorityTrackIndices = new Set<number>();
-	for (const idx of chordTrackIndices) {
-		priorityTrackIndices.add(idx);
-	}
-	if (bassTrackIndex !== null) {
-		priorityTrackIndices.add(bassTrackIndex);
-	}
-
-	const hasPriorityTracksInMml = priorityTrackIndices.size > 0;
-
 	// ── ステップごとのコードネーム事前計算 ──
+	//
+	// detectProgression（@onjmin/chord-parser）に全トラックの発音を時刻付きノートで
+	// 渡し、曲全体のコード進行を推定する。旧実装の「和音/ベーストラックだけを見て
+	// 1拍ごとに detectChord する」方式に対し、次の3点を改善している:
+	//
+	//   1. 検出母集団を限定しない …… 和音・ベースに加えメロディ/パッドなど全トラックを
+	//      構成音候補にする。第3音・第7音が内声やパッドにしか無くても拾えるため、
+	//      Am7→A7 / Em7(♭5)→Em / FM7→F のような「質」の取りこぼしが減る。
+	//      経過音などの非和声音は detectProgression の nonChordTonePenalty が吸収する。
+	//   2. ベース＝ルート / キー考慮 …… ノートはオクターブ情報を保持した MIDI 値で渡すため
+	//      最低音がベースとして扱われ、転回形（分数コード）とルートが正しく定まる。
+	//      内部の detectKeyChanges によるキー事前確率で長短・dom7 などの質も補正される。
+	//   3. 和声リズムへの追従 …… bpm の拍グリッド＋DP（changePenalty）で、拍内の経過音に
+	//      よる揺れを抑えつつ和声の変わり目で区間を切る。固定1拍グリッドより自然。
 	const maxStep = placements.reduce(
 		(max, p) => Math.max(max, p.startStep + p.durationSteps),
 		0,
 	);
 
-	// 優先トラックのピッチ
-	const priorityPitches: Set<number>[] = Array.from(
-		{ length: maxStep + 1 },
-		() => new Set(),
-	);
-	// すべてのトラックのピッチ
-	const allPitches: Set<number>[] = Array.from(
-		{ length: maxStep + 1 },
-		() => new Set(),
-	);
-
-	for (const p of placements) {
-		for (let s = p.startStep; s < p.startStep + p.durationSteps; s++) {
-			if (s >= 0 && s <= maxStep) {
-				allPitches[s].add(p.pitch);
-				// 伴奏（和音）またはベース（最も平均ピッチが低い）のトラックを優先とする
-				if (priorityTrackIndices.has(p.trackIndex)) {
-					priorityPitches[s].add(p.pitch);
-				}
-			}
-		}
-	}
+	// オクターブ情報を保持した MIDI ピッチで時刻付きノート化（最低音がベースになる）
+	const timedNotes: TimedNote[] = placements.map((p) => ({
+		pitch: p.pitch,
+		when: p.startStep * secondsPerStep,
+		duration: p.durationSteps * secondsPerStep,
+	}));
 
 	const stepChords: string[] = [];
-	const chordCache = new Map<string, string>();
-	let lastChord = "";
-	let hasPriorityStarted = false;
+	if (timedNotes.length > 0) {
+		let chordSegments: ChordSegment[] = [];
+		try {
+			chordSegments = detectProgression(timedNotes, { bpm }).chords;
+		} catch {
+			chordSegments = [];
+		}
 
-	// 1拍（48ステップ）をグリッドサイズとする
-	const GRID_SIZE = 48;
-	// 経過音などのノイズを除外するための最小累積ステップ数（16分音符=12ステップ）
-	const MIN_DURATION = 12;
-
-	for (let g = 0; g <= Math.ceil(maxStep / GRID_SIZE); g++) {
-		const startS = g * GRID_SIZE;
-		const endS = Math.min(maxStep, (g + 1) * GRID_SIZE - 1);
-		if (startS > maxStep) break;
-
-		// このグリッド区間内で優先トラックが発音されたかを検出
-		for (let s = startS; s <= endS; s++) {
-			const priorityPitchesAtStep = Array.from(priorityPitches[s]);
-			if (priorityPitchesAtStep.length > 0) {
-				hasPriorityStarted = true;
+		// 推定された秒区間（ChordSegment）をステップ配列へ展開する
+		for (const seg of chordSegments) {
+			const startStep = Math.max(0, Math.round(seg.when / secondsPerStep));
+			const endStep = Math.round((seg.when + seg.duration) / secondsPerStep);
+			for (let s = startStep; s < endStep && s <= maxStep; s++) {
+				stepChords[s] = seg.symbol;
 			}
 		}
 
-		// このグリッド区間内でのピッチごとの累積発音ステップ数を集計
-		const pitchDurations = new Map<number, number>();
-
-		for (let s = startS; s <= endS; s++) {
-			// 優先トラックが開始されており、かつ優先トラックがMMLに含まれている場合は優先トラックのみを対象にする。
-			// そうでない（まだ優先トラックが始まっていない、または優先トラック自体が存在しない）場合は全トラックを対象にする。
-			const usePriority = hasPriorityStarted && hasPriorityTracksInMml;
-			const pitches = usePriority
-				? Array.from(priorityPitches[s])
-				: Array.from(allPitches[s]);
-
-			for (const p of pitches) {
-				pitchDurations.set(p, (pitchDurations.get(p) ?? 0) + 1);
-			}
+		// 区間の隙間（無音や未割当のステップ）は直前コードでラッチして連続表示する
+		let lastChord = "";
+		for (let s = 0; s <= maxStep; s++) {
+			if (stepChords[s]) lastChord = stepChords[s];
+			else stepChords[s] = lastChord;
 		}
-
-		// 累積発音ステップ数が MIN_DURATION 以上のピッチを採用
-		let activePitches = Array.from(pitchDurations.entries())
-			.filter(([_, dur]) => dur >= MIN_DURATION)
-			.map(([p, _]) => p);
-
-		// もし全てのピッチが MIN_DURATION 未満だが、音が鳴っている場合は、最も長く鳴っていたピッチを採用する（救済措置）
-		if (activePitches.length === 0 && pitchDurations.size > 0) {
-			const maxDur = Math.max(...pitchDurations.values());
-			activePitches = Array.from(pitchDurations.entries())
-				.filter(([_, dur]) => dur === maxDur)
-				.map(([p, _]) => p);
-		}
-
-		let gridChord = lastChord;
-
-		if (activePitches.length > 0) {
-			const sortedPitches = activePitches.sort((a, b) => a - b);
-			const cacheKey = sortedPitches.join(",");
-			if (chordCache.has(cacheKey)) {
-				const chordName = chordCache.get(cacheKey)!;
-				if (chordName) gridChord = chordName;
-			} else {
-				const candidates = detectChord(sortedPitches);
-				const chordName = candidates[0]?.symbol ?? "";
-				if (chordName) gridChord = chordName;
-				chordCache.set(cacheKey, chordName);
-			}
-		}
-
-		// このグリッド区間の全ステップに検出結果を割り当てる
-		for (let s = startS; s <= endS; s++) {
-			stepChords[s] = gridChord;
-		}
-		lastChord = gridChord;
 	}
 	const seqTracks: SequencerTrack[] = trackIndices.map((index) => {
 		let id = 0;
