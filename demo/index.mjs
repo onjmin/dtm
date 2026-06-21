@@ -6504,6 +6504,9 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
   const useSynth = options.synth ?? !options.onPlayNote;
   const secondsPerStep = 60 / bpm / STEPS_PER_BEAT3;
+  const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
+    (a, b) => a - b
+  );
   const maxStep = placements.reduce(
     (max, p) => Math.max(max, p.startStep + p.durationSteps),
     0
@@ -6538,9 +6541,6 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       stepChords.push(chordName);
     }
   }
-  const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
-    (a, b) => a - b
-  );
   const seqTracks = trackIndices.map((index) => {
     let id = 0;
     const notes = placements.filter((p) => p.trackIndex === index).map((p) => ({
