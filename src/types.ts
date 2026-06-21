@@ -275,3 +275,22 @@ export type DawInstance = {
 	setLoading?: (loading: boolean) => void;
 	destroy: () => void;
 };
+
+// ============================================================
+// BGM ループ/キュー関連の型
+// ============================================================
+
+export type LoopPoint =
+	| { bar: number }
+	| { step: number }
+	| { seconds: number };
+
+export type LoopConfig = {
+	start?: LoopPoint;
+	end?: LoopPoint;
+};
+
+export type PlaybackCue = {
+	id: string;
+	time: LoopPoint;
+};

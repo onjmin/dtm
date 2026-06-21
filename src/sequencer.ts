@@ -8,7 +8,14 @@
 
 import type { DrumPattern } from "./drum-config";
 import { DEFAULT_PLAYBACK_VELOCITY } from "./types";
-import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
+import type {
+	Note,
+	PlayDrumEvent,
+	PlayNoteEvent,
+	LoopConfig,
+	PlaybackCue,
+	LoopPoint,
+} from "./types";
 
 const STEPS_PER_BEAT = 48;
 // 先読み秒。ノートは AudioContext クロックへ最大この秒数だけ先に予約される。
@@ -32,11 +39,14 @@ export type SequencerOptions = {
 	/** ソロ対象トラックID（null=ソロ無効） */
 	getSoloTrackId: () => string | null;
 	/**
-	 * ループ再生するか（BGM用途）。true の間は曲末で停止せず、シームレスに先頭から
-	 * 鳴り続ける。先読みスケジューラ上で次周のノートを継ぎ目なく予約するため、
-	 * 周回ごとの無音や「もたつき」は生じない。未指定は false（1回再生）。
+	 * ループ再生設定（BGM用途）。
+	 * boolean または詳細な LoopConfig を指定可能。
 	 */
-	getLoop?: () => boolean;
+	getLoop?: () => boolean | LoopConfig;
+	/** 再生中にイベントを発火させるタイミング */
+	cues?: PlaybackCue[];
+	/** キューポイント通過時のコールバック */
+	onCue?: (cueId: string) => void;
 	getAudioTime: () => number;
 	onPlayNote: (e: PlayNoteEvent) => void;
 	onPlayDrum: (e: PlayDrumEvent) => void;
@@ -66,6 +76,24 @@ type TimelineEvent = {
 	duration: number; // 秒
 };
 
+const resolveLoopPoint = (
+	point: LoopPoint,
+	bpm: number,
+	stepsPerBar: number,
+	sps: number,
+): number => {
+	if ("step" in point) {
+		return point.step;
+	}
+	if ("bar" in point) {
+		return Math.max(0, point.bar - 1) * stepsPerBar;
+	}
+	if ("seconds" in point) {
+		return point.seconds / sps;
+	}
+	return 0;
+};
+
 export const createSequencer = (options: SequencerOptions): Sequencer => {
 	let timeline: TimelineEvent[] = [];
 	let startTime = 0;
@@ -75,40 +103,93 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 	let active = false;
 	let fromStepValue = 0;
 	let trackVolumeMap: Map<string, number> = new Map();
-	// ループ1周の長さ（秒）。最後に鳴り終わるノートの末尾＝曲の実尺。
-	let loopLengthSec = 0;
-	// 現在の周回のオフセット秒。周回するたび loopLengthSec ずつ加算し、
-	// イベントの絶対発音時刻を ev.when + loopBase として継ぎ目なく予約する。
+
+	// ループ関連の状態
+	let isLooping = false;
+	let loopStartStep = 0;
+	let loopEndStep = 0;
+	let loopStartSec = 0;
+	let loopEndSec = 0;
+	let loopDurationSec = 0;
+	let loopStartIndex = 0;
 	let loopBase = 0;
 
+	// キュー関連の状態
+	let lastPlayStep = 0;
+
 	const secondsPerStep = (): number => 60 / options.getBpm() / STEPS_PER_BEAT;
+
+	const getWrappedPlayStep = (time: number, sps: number): number => {
+		if (!isLooping || loopDurationSec <= 0 || time < loopEndSec) {
+			return fromStepValue + time / sps;
+		}
+		const elapsedInLoop = (time - loopEndSec) % loopDurationSec;
+		return loopStartStep + elapsedInLoop / sps;
+	};
 
 	const buildTimeline = (fromStep: number): void => {
 		timeline = [];
 		trackVolumeMap = new Map();
 		const sps = secondsPerStep();
-		let maxEnd = 0;
+		const bpm = options.getBpm();
+		const stepsPerBar = options.stepsPerBar;
+
+		const loopOption = options.getLoop?.() ?? false;
+		isLooping = !!loopOption;
+
+		if (typeof loopOption === "object") {
+			loopStartStep = loopOption.start
+				? resolveLoopPoint(loopOption.start, bpm, stepsPerBar, sps)
+				: 0;
+			const endVal = loopOption.end
+				? resolveLoopPoint(loopOption.end, bpm, stepsPerBar, sps)
+				: null;
+			loopEndStep = endVal !== null ? endVal : -1;
+		} else {
+			loopStartStep = 0;
+			loopEndStep = -1;
+		}
+
+		const startLimit = isLooping ? Math.min(fromStep, loopStartStep) : fromStep;
+
+		let maxEndStep = 0;
 		for (const track of options.getTracks()) {
 			trackVolumeMap.set(track.id, track.volume);
 			for (const note of track.notes) {
+				if (note.startStep < startLimit) continue;
 				const relativeStart = note.startStep - fromStep;
-				if (relativeStart < 0) continue;
-				const velocity = note.velocity ?? DEFAULT_PLAYBACK_VELOCITY;
 				const when = relativeStart * sps;
 				const duration = note.durationSteps * sps;
-				maxEnd = Math.max(maxEnd, when + duration);
+				maxEndStep = Math.max(maxEndStep, note.startStep + note.durationSteps);
 				timeline.push({
 					trackId: track.id,
 					pitch: note.pitch,
 					volume: track.volume / 100,
-					velocity,
+					velocity: note.velocity ?? DEFAULT_PLAYBACK_VELOCITY,
 					when,
 					duration,
 				});
 			}
 		}
 		timeline.sort((a, b) => a.when - b.when);
-		loopLengthSec = maxEnd;
+
+		if (loopEndStep === -1) {
+			loopEndStep = maxEndStep;
+		}
+
+		loopStartSec = (loopStartStep - fromStep) * sps;
+		loopEndSec = (loopEndStep - fromStep) * sps;
+		loopDurationSec = loopEndSec - loopStartSec;
+
+		// ループ開始位置に対応するタイムラインの開始インデックスを見つける
+		loopStartIndex = 0;
+		while (loopStartIndex < timeline.length) {
+			const noteStartStep = fromStep + timeline[loopStartIndex].when / sps;
+			if (noteStartStep >= loopStartStep - 0.0001) {
+				break;
+			}
+			loopStartIndex++;
+		}
 	};
 
 	const scheduleTick = (): void => {
@@ -122,24 +203,24 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		}
 
 		// メロディックノート
-		const loop = options.getLoop?.() ?? false;
 		while (true) {
-			// 全イベントを消費し切ったら、ループ時は次周へ巻き戻す。
-			// loopLengthSec が 0（実質ノート無し）の周回は無限ループになるので抜ける。
-			if (nowIndex >= timeline.length) {
-				if (!loop || loopLengthSec <= 0) break;
-				nowIndex = 0;
-				loopBase += loopLengthSec;
+			let ev = timeline[nowIndex];
+			if (
+				nowIndex >= timeline.length ||
+				(isLooping && ev && ev.when >= loopEndSec)
+			) {
+				if (!isLooping || loopDurationSec <= 0) break;
+				nowIndex = loopStartIndex;
+				loopBase += loopDurationSec;
+				ev = timeline[nowIndex];
 			}
-			const ev = timeline[nowIndex];
+
+			if (!ev) break;
+
 			const _when = ev.when + loopBase - time;
-			// 先読み地平の外なら一旦止める（ソロ判定より先に評価する）。
-			// ソロ判定を先に置くと、非ソロのイベントを地平の外まで nowIndex++ で
-			// 読み飛ばして恒久消費してしまい、ソロ解除後に発音が戻らなくなる。
 			if (_when > PLAN_TIME) break;
 			nowIndex++;
-			// ソロ中は対象外トラックを「消費するが発音しない」（地平内＝0.5sぶんのみ）。
-			// これでソロをライブに切り替えても、地平の先のノートは残り発音が復帰する。
+
 			if (soloId && ev.trackId !== soloId) continue;
 			const velocityVolume = ev.velocity / 127;
 			const currentVolume =
@@ -158,8 +239,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		const pattern = options.getDrumPattern();
 		if (pattern && pattern.length > 0) {
 			const { stepsPerBar } = options;
-			const currentStep =
-				(fromStepValue * sps + (options.getAudioTime() - startTime)) / sps;
+			const currentStep = getWrappedPlayStep(time, sps);
 			const currentStepInBar = currentStep % stepsPerBar;
 			const nextStep = currentStepInBar + 4;
 			const crossedBar = currentStepInBar < 4;
@@ -180,8 +260,39 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 			}
 		}
 
+		// 再生中のキュー（イベント）監視・発火
+		if (time >= 0) {
+			const currentStep = getWrappedPlayStep(time, sps);
+			if (options.cues && options.cues.length > 0 && options.onCue) {
+				const bpm = options.getBpm();
+				const stepsPerBar = options.stepsPerBar;
+
+				const isCueCrossed = (
+					cueStep: number,
+					prevStep: number,
+					currStep: number,
+				): boolean => {
+					if (currStep >= prevStep) {
+						return cueStep > prevStep && cueStep <= currStep;
+					} else {
+						const reachedEnd = cueStep > prevStep && cueStep <= loopEndStep;
+						const startedNew = cueStep >= loopStartStep && cueStep <= currStep;
+						return reachedEnd || startedNew;
+					}
+				};
+
+				for (const cue of options.cues) {
+					const cueStep = resolveLoopPoint(cue.time, bpm, stepsPerBar, sps);
+					if (isCueCrossed(cueStep, lastPlayStep, currentStep)) {
+						options.onCue(cue.id);
+					}
+				}
+			}
+			lastPlayStep = currentStep;
+		}
+
 		// 終了判定（ループ時は曲末で止めない）
-		if (!loop) {
+		if (!isLooping) {
 			const last = timeline[timeline.length - 1];
 			const lastWhen = last?.when ?? 0;
 			const lastDuration = last?.duration ?? 0;
@@ -196,7 +307,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		if (!active) return;
 		const sps = secondsPerStep();
 		const time = options.getAudioTime() - startTime;
-		options.onTick(fromStepValue + time / sps);
+		options.onTick(getWrappedPlayStep(time, sps));
 		animationId = requestAnimationFrame(animate);
 	};
 
@@ -221,8 +332,19 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		if (timeline.length === 0 && !options.getDrumPattern()?.length) return;
 		active = true;
 		startTime = options.getAudioTime() + START_DELAY;
+
+		const sps = secondsPerStep();
 		nowIndex = 0;
+		while (nowIndex < timeline.length) {
+			const noteStartStep = fromStepValue + timeline[nowIndex].when / sps;
+			if (noteStartStep >= fromStepValue - 0.0001) {
+				break;
+			}
+			nowIndex++;
+		}
+
 		loopBase = 0;
+		lastPlayStep = fromStepValue - 0.0001;
 		intervalId = setInterval(scheduleTick, TICK_INTERVAL_MS);
 		animationId = requestAnimationFrame(animate);
 	};

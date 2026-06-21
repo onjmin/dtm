@@ -24,13 +24,24 @@ import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
 import { createSynth, type Synth } from "./synth";
 import { DEFAULT_BPM } from "./types";
-import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
+import type {
+	Note,
+	PlayDrumEvent,
+	PlayNoteEvent,
+	LoopConfig,
+	PlaybackCue,
+} from "./types";
 
 const STEPS_PER_BAR = 192;
 
 export type PlayMmlOptions = {
-	/** ループ再生する（BGM用）。既定 false（1回再生で終了）。 */
-	loop?: boolean;
+	/** ループ設定（true=全体ループ、LoopConfig=特定範囲ループ、false/省略=ループなし） */
+	loop?: boolean | LoopConfig;
+	/** 再生中にイベントを発火させるタイミング */
+	cues?: PlaybackCue[];
+	/** キューポイント通過時のコールバック */
+	onCue?: (cueId: string) => void;
+
 	/**
 	 * 使用する AudioContext。省略時は内部生成し、destroy()/stop() で閉じる。
 	 * onPlayNote で自前シンセを鳴らす場合は、時計をそろえるため自分の ctx を渡すこと。
@@ -131,6 +142,8 @@ export const playMML = (
 		getDrumPattern: () => drumPattern,
 		getSoloTrackId: () => null,
 		getLoop: () => options.loop ?? false,
+		cues: options.cues,
+		onCue: options.onCue,
 		getAudioTime: () => ctx.currentTime,
 		onPlayNote: (e) => {
 			options.onPlayNote?.(e);

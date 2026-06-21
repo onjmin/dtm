@@ -144,6 +144,34 @@ const bgm = playMML(mml, {
 });
 ```
 
+### 高度なループ設定 & 再生キュー（ゲーム同期）
+
+イントロを1回再生したあとに特定区間をループさせたり、曲の特定位置（サビなど）でゲーム内の演出を切り替えるためのイベントを発火させたりできます。
+
+```ts
+const bgm = playMML(mml, {
+  // 1. イントロ付きループ（例: 4小節目から曲末までをシームレスループ）
+  loop: {
+    start: { bar: 4 }, // または { step: 576 }, { seconds: 12.5 }
+    // end: { bar: 8 } // ループの終わりを曲末以外に制限したい場合に指定
+  },
+
+  // 2. キュー（イベントトリガー）の登録
+  cues: [
+    { id: "intro_end", time: { bar: 4 } },       // 4小節目に入った瞬間
+    { id: "chorus_start", time: { seconds: 45.2 } },  // 45.2秒経過した瞬間
+  ],
+
+  // 3. キュー通過時のコールバック
+  onCue: (cueId) => {
+    console.log(`BGM cue reached: ${cueId}`);
+    if (cueId === "chorus_start") {
+      triggerVisualEffects(); // サビの演出をトリガー
+    }
+  }
+});
+```
+
 > 歌声合成（`@@n` 歌詞トラック）はヘッドレス再生では未対応です（楽器・ドラムのみ）。
 > 歌声が必要なら `mountMmlPlayer` / `createDtmStudio` を使ってください。
 
