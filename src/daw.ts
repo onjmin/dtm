@@ -34,6 +34,7 @@ import {
 } from "./midi-io";
 import { decomposeToMonophonic, isChordHeavyTrack, MMLCore } from "./mml-core";
 import { formatMmlMeta, parseMML } from "./mml-parser";
+import { mountMmlPlayer } from "./mml-player";
 import {
 	drawGrid,
 	drawNotes,
@@ -146,8 +147,60 @@ const MML_INFO_HTML = `
 
   <h4>7. 歌声・歌詞入力</h4>
   <p><code>@@&lt;トラック番号&gt; &lt;音源名&gt; &lt;歌詞&gt;</code> の形式で、音符と同期する歌詞を入力できます。</p>
-  <pre>例: @@0 klatt ちょうちょうなのはにとまれ</pre>
-  <p style="margin-top:4px;"><small>（音源名は <code>klatt</code> や <code>roze</code>, <code>teto</code> などの音声モデルを指定できます）</small></p>
+  <pre>例: @@0 tsukuyomi どんぐりころころどんぐりこ</pre>
+  <p style="margin-top:4px; margin-bottom:16px;"><small>（音源名は <code>tsukuyomi</code> や <code>klatt</code>, <code>roze</code> などの音声モデルを指定できます）</small></p>
+
+  <h4 style="margin-top: 18px; border-top: 1px solid var(--dtm-border2); padding-top: 8px;">サンプル曲（試聴・コピー）</h4>
+  
+  <!-- サンプル1 -->
+  <div class="dtm-modal-sample-box">
+    <div class="dtm-modal-sample-header">
+      <span class="dtm-modal-sample-tag">1. 基本のメロディ</span>
+      <button class="dtm-btn dtm-btn--ghost dtm-btn--xs dtm-modal-sample-copy-btn" data-mml="@0 t120 l8 o5 c d e f g a b > c">📋 コピー</button>
+    </div>
+    <pre style="margin: 0; padding: 6px;">@0 t120 l8 o5 c d e f g a b &gt; c</pre>
+    <div class="dtm-modal-sample-desc">
+      基本的なメロディの書き方（音名・長さ・オクターブとテンポ）。
+    </div>
+    <div style="margin-top: 8px;">
+      <button class="dtm-btn dtm-btn--primary dtm-btn--xs dtm-modal-sample-play-btn" data-mml="@0 t120 l8 o5 c d e f g a b > c">▶ 試聴</button>
+    </div>
+    <div class="dtm-modal-sample-player-container"></div>
+  </div>
+
+  <!-- サンプル2 -->
+  <div class="dtm-modal-sample-box">
+    <div class="dtm-modal-sample-header">
+      <span class="dtm-modal-sample-tag">2. 複数トラックと和音</span>
+      <button class="dtm-btn dtm-btn--ghost dtm-btn--xs dtm-modal-sample-copy-btn" data-mml="@0 t120 o5 c e g2 ; @3 o4 [ceg]2 [ceg]2">📋 コピー</button>
+    </div>
+    <pre style="margin: 0; padding: 6px;">@0 t120 o5 c e g2 ;
+@3 o4 [ceg]2 [ceg]2</pre>
+    <div class="dtm-modal-sample-desc">
+      ; でトラック（上＝メロディ／下＝伴奏）を分け、[ceg] で和音を鳴らします。
+    </div>
+    <div style="margin-top: 8px;">
+      <button class="dtm-btn dtm-btn--primary dtm-btn--xs dtm-modal-sample-play-btn" data-mml="@0 t120 o5 c e g2 ; @3 o4 [ceg]2 [ceg]2">▶ 試聴</button>
+    </div>
+    <div class="dtm-modal-sample-player-container"></div>
+  </div>
+
+  <!-- サンプル3 -->
+  <div class="dtm-modal-sample-box">
+    <div class="dtm-modal-sample-header">
+      <span class="dtm-modal-sample-tag">3. 歌唱付き (どんぐりころころ)</span>
+      <button class="dtm-btn dtm-btn--ghost dtm-btn--xs dtm-modal-sample-copy-btn" data-mml="@0 t120 v100 o4g8 g8 e8 e8 f8 e8 d8 c8 g8 g8 e8 e8 d4.; @@0 tsukuyomi どんぐりころころどんぐりこ;">📋 コピー</button>
+    </div>
+    <pre style="margin: 0; padding: 6px;">@0 t120 v100 o4g8 g8 e8 e8 f8 e8 d8 c8 g8 g8 e8 e8 d4.;
+@@0 tsukuyomi どんぐりころころどんぐりこ;</pre>
+    <div class="dtm-modal-sample-desc">
+      @@0 tsukuyomi 歌詞... でメロディトラックに歌詞を同期させて歌わせます。※独自拡張
+    </div>
+    <div style="margin-top: 8px;">
+      <button class="dtm-btn dtm-btn--primary dtm-btn--xs dtm-modal-sample-play-btn" data-mml="@0 t120 v100 o4g8 g8 e8 e8 f8 e8 d8 c8 g8 g8 e8 e8 d4.; @@0 tsukuyomi どんぐりころころどんぐりこ;">▶ 試聴</button>
+    </div>
+    <div class="dtm-modal-sample-player-container"></div>
+  </div>
 </div>
 `;
 
@@ -2091,17 +2144,133 @@ export const mountDAW = (
 			overlayDuring(() => loadMML(refs.mmlInput.value)),
 		);
 
+		// サンプル再生用状態変数
+		let activeSamplePlayer: import("./mml-player").MmlPlayerInstance | null =
+			null;
+		let activeSampleButton: HTMLButtonElement | null = null;
+
+		const collapseActiveSample = (): void => {
+			if (activeSamplePlayer) {
+				activeSamplePlayer.stop();
+				activeSamplePlayer.destroy();
+				activeSamplePlayer = null;
+			}
+			if (activeSampleButton) {
+				activeSampleButton.textContent = "▶ 試聴";
+				activeSampleButton.classList.remove("dtm-btn--danger");
+				activeSampleButton.classList.add("dtm-btn--primary");
+				const box = activeSampleButton.closest(".dtm-modal-sample-box");
+				const container = box?.querySelector(
+					".dtm-modal-sample-player-container",
+				);
+				if (container) container.innerHTML = "";
+				activeSampleButton = null;
+			}
+		};
+
 		// 解説モーダル初期化とイベントハンドラ
 		showModal = (title: string, bodyHTML: string): void => {
+			collapseActiveSample();
+
 			refs.modalTitle.textContent = title;
 			refs.modalBody.innerHTML = bodyHTML;
 			refs.modalOverlay.removeAttribute("hidden");
+
+			// コピーボタンのイベント接続
+			const copyBtns = refs.modalBody.querySelectorAll(
+				".dtm-modal-sample-copy-btn",
+			);
+			for (const btn of copyBtns) {
+				btn.addEventListener("click", () => {
+					const mml = btn.getAttribute("data-mml") || "";
+					navigator.clipboard.writeText(mml).then(() => {
+						const originalText = btn.textContent;
+						btn.textContent = "✓ コピー完了";
+						btn.classList.add("dtm-btn--success");
+						setTimeout(() => {
+							btn.textContent = originalText;
+							btn.classList.remove("dtm-btn--success");
+						}, 1200);
+					});
+				});
+			}
+
+			// 試聴ボタンのイベント接続
+			const playBtns = refs.modalBody.querySelectorAll(
+				".dtm-modal-sample-play-btn",
+			);
+			for (const btn of playBtns) {
+				const htmlBtn = btn as HTMLButtonElement;
+				htmlBtn.addEventListener("click", () => {
+					const sampleBox = htmlBtn.closest(".dtm-modal-sample-box");
+					const container = sampleBox?.querySelector(
+						".dtm-modal-sample-player-container",
+					) as HTMLElement;
+					const mml = htmlBtn.getAttribute("data-mml") || "";
+
+					if (activeSampleButton === htmlBtn) {
+						if (activeSamplePlayer && activeSamplePlayer.isPlaying()) {
+							activeSamplePlayer.stop();
+						} else {
+							stop(); // メインエディタの再生を停止
+							if (activeSamplePlayer) {
+								activeSamplePlayer.play();
+								htmlBtn.textContent = "■ 停止";
+								htmlBtn.classList.remove("dtm-btn--primary");
+								htmlBtn.classList.add("dtm-btn--danger");
+							}
+						}
+					} else {
+						collapseActiveSample();
+						stop(); // メインエディタの再生を停止
+
+						activeSampleButton = htmlBtn;
+						htmlBtn.textContent = "■ 停止";
+						htmlBtn.classList.remove("dtm-btn--primary");
+						htmlBtn.classList.add("dtm-btn--danger");
+
+						if (container) {
+							container.innerHTML = "";
+							const player = mountMmlPlayer(container, mml, {
+								onPlayNote: (e) => {
+									if (options.onPlayNote) {
+										const trackIndex = Number(e.trackId);
+										const config = trackConfigs[trackIndex];
+										const mappedTrackId = config ? config.id : e.trackId;
+										options.onPlayNote({
+											...e,
+											trackId: mappedTrackId,
+										});
+									}
+								},
+								onPlayDrum: options.onPlayDrum,
+								onResumeAudio: options.onResumeAudio,
+								getAudioTime: options.getAudioTime,
+								singingVoices: options.singingVoices,
+								drumPatterns: options.drumPatterns,
+								volume: masterVolume,
+								onStop: () => {
+									if (activeSampleButton === htmlBtn) {
+										htmlBtn.textContent = "▶ 試聴";
+										htmlBtn.classList.remove("dtm-btn--danger");
+										htmlBtn.classList.add("dtm-btn--primary");
+									}
+								},
+							});
+							activeSamplePlayer = player;
+							player.play();
+						}
+					}
+				});
+			}
 		};
 		refs.modalClose.addEventListener("click", () => {
+			collapseActiveSample();
 			refs.modalOverlay.setAttribute("hidden", "");
 		});
 		refs.modalOverlay.addEventListener("click", (e) => {
 			if (e.target === refs.modalOverlay) {
+				collapseActiveSample();
 				refs.modalOverlay.setAttribute("hidden", "");
 			}
 		});

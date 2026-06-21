@@ -655,6 +655,49 @@ export const DAW_CSS = `
   font-size: 12px;
 }
 
+.dtm-modal-sample-box {
+  background: var(--dtm-deep);
+  border: 1px solid var(--dtm-border2);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+.dtm-modal-sample-box:last-child {
+  margin-bottom: 0;
+}
+.dtm-modal-sample-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.dtm-modal-sample-tag {
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--dtm-accent);
+}
+.dtm-modal-sample-desc {
+  margin: 6px 0 0 0;
+  font-size: 11px;
+  color: var(--dtm-muted);
+}
+.dtm-modal-sample-player-container {
+  margin-top: 8px;
+}
+.dtm-modal-sample-player-container:empty {
+  margin-top: 0;
+}
+.dtm-modal-sample-player-container .dtm-player {
+  border: 1px solid var(--dtm-border2);
+  box-shadow: none;
+  background: rgba(0, 0, 0, 0.3);
+}
+.dtm-modal-sample-player-container .dtm-player-body {
+  max-height: 100px;
+  overflow-y: auto;
+}
+
 .dtm-hidden { display: none !important; }
 .dtm-grow { flex: 1 1 auto; }
 .dtm-lyric-icon {

@@ -410,9 +410,9 @@
         // ════ 再生専用ビュー (mountMmlPlayer) ════
         // @@0 klatt … が歌詞トラック。@0 のメロディに音節を1つずつ同期して歌う。
         // モデル名を koe音源キーワード（roze / teto / tsukuyomi / rino / ruko_female / shiyo）に
-        // 変えると @onjmin/koe のUTAU音源で歌う（例: `@@0 roze ちょうちょう…`）。
+        // 変えると @onjmin/koe のUTAU音源で歌う（例: `@@0 tsukuyomi どんぐりころころ…`）。
         // 楽器・ドラム・歌声・#inst= 解決はすべて studio.mountPlayer が内部で配線する。
-        const SAMPLE_MML = '@0 t135 o5 l8 e d c d e e e4 d d d4 e g g4 r e d c d e e e e d d e d c4 ; @1 o3 l4 c g c g c g c g ; @@0 klatt ちょうちょうちょうちょうなのはにとまれなのはにあいたらさくらにとまれ';
+        const SAMPLE_MML = '@0 t120 v100 o4g8 g8 e8 e8 f8 e8 d8 c8 g8 g8 e8 e8 d4.; @@0 tsukuyomi どんぐりころころどんぐりこ;';
         let player = null;
         const mountPlayer = (mml) => {
             if (player) player.destroy();

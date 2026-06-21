@@ -68,6 +68,8 @@ export type MmlPlayerOptions = {
 	trackColors?: string[];
 	/** 歌唱合成の先読みや制御を行うヘルパ（.koe音源の再生前プリロードに使用） */
 	singingVoices?: SingingVoices;
+	/** 再生終了または手動停止時に呼び出されるコールバック */
+	onStop?: () => void;
 };
 
 export type MmlPlayerInstance = {
@@ -688,6 +690,7 @@ export const mountMmlPlayer = (
 		clearJumpTimers();
 		resetPlayhead();
 		if (activePlayer === instance) activePlayer = null;
+		options.onStop?.();
 	};
 
 	// 歌詞トラックを「絶対時刻ベースのストリーミング用」ノート列へ変換する（再生は常に step0 から）。
