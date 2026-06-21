@@ -390,7 +390,7 @@ export const mountMmlPlayer = (
 					em.textContent = "🥺";
 					scheduleBlink(em);
 				},
-				200 + Math.random() * 150,
+				100 + Math.random() * 50,
 			);
 			blinkTimers.push(t2);
 		}, delay);
