@@ -1557,7 +1557,7 @@ export const mountDAW = (
 		const lyricLines = trackStates
 			.map((t, i) => ({
 				i,
-				text: t.lyrics.trim(),
+				text: t.lyrics.replace(/[\r\n]+/g, " ").trim(),
 				model: t.lyricModel.trim(),
 				vol: t.vocalVolume,
 				gate: t.vocalGate,
