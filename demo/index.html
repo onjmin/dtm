@@ -244,7 +244,9 @@
             <div class="flex flex-wrap items-center gap-3">
                 <div class="flex items-center gap-1.5 shrink-0">
                     <span class="text-pico-yellow text-xs uppercase tracking-widest">► MODE</span>
-                    <button id="mode-info" class="w-5 h-5 flex items-center justify-center border border-pico-gray bg-pico-navy text-pico-lavend cursor-pointer text-[10px] hover:text-pico-cyan hover:border-pico-cyan active:translate-x-[1px] active:translate-y-[1px] shadow-[1px_1px_0_#000] font-pixel" title="モードの違い解説">i</button>
+                    <button id="mode-info"
+                        class="w-5 h-5 flex items-center justify-center border border-pico-gray bg-pico-navy text-pico-lavend cursor-pointer text-[10px] hover:text-pico-cyan hover:border-pico-cyan active:translate-x-[1px] active:translate-y-[1px] shadow-[1px_1px_0_#000] font-pixel"
+                        title="モードの違い解説">i</button>
                 </div>
                 <button id="mode-simple"
                     class="min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-cyan text-pico-black
@@ -283,8 +285,7 @@
                            shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
                     ▶ LOAD FROM DAW
                 </button>
-                <span class="text-pico-lavend text-xs uppercase tracking-widest">READ-ONLY · @@n KLATT 歌詞同期 · BUILT-IN
-                    SYNTH</span>
+                <span class="text-pico-lavend text-xs uppercase tracking-widest">READ-ONLY SYNTH</span>
             </div>
         </div>
         <div id="player-app"></div>
@@ -293,16 +294,21 @@
     <!-- ════ ヘッドレスBGM再生デモ (playMML) ════ -->
     <div class="max-w-4xl mx-auto px-3 pb-8">
         <details class="game-win bg-pico-navy overflow-hidden group">
-            <summary class="flex items-center justify-between px-4 py-3 cursor-pointer select-none focus:outline-none list-none [&::-webkit-details-marker]:hidden">
+            <summary
+                class="flex items-center justify-between px-4 py-3 cursor-pointer select-none focus:outline-none list-none [&::-webkit-details-marker]:hidden">
                 <div class="flex items-center gap-3">
-                    <span class="text-pico-orange text-xs uppercase tracking-widest shrink-0">► HEADLESS BGM PLAYER</span>
+                    <span class="text-pico-orange text-xs uppercase tracking-widest shrink-0">► HEADLESS BGM
+                        PLAYER</span>
                     <span class="text-pico-cyan text-xs font-pixel shrink-0">
                         playMML<span class="text-pico-yellow">()</span>
                     </span>
-                    <span class="text-pico-lavend text-[10px] uppercase tracking-widest border border-pico-orange/40 px-1.5 py-0.5 rounded-sm">
+                    <span
+                        class="text-pico-lavend text-[10px] uppercase tracking-widest border border-pico-orange/40 px-1.5 py-0.5 rounded-sm">
                         ゲーム開発者向け / FOR GAME DEVS
                     </span>
-                    <button id="headless-info-btn" class="w-5 h-5 flex items-center justify-center border border-pico-gray bg-pico-navy text-pico-lavend cursor-pointer text-[10px] hover:text-pico-cyan hover:border-pico-cyan active:translate-x-[1px] active:translate-y-[1px] shadow-[1px_1px_0_#000] font-pixel shrink-0" title="ヘッドレスBGM再生API解説">i</button>
+                    <button id="headless-info-btn"
+                        class="w-5 h-5 flex items-center justify-center border border-pico-gray bg-pico-navy text-pico-lavend cursor-pointer text-[10px] hover:text-pico-cyan hover:border-pico-cyan active:translate-x-[1px] active:translate-y-[1px] shadow-[1px_1px_0_#000] font-pixel shrink-0"
+                        title="ヘッドレスBGM再生API解説">i</button>
                 </div>
                 <span class="text-pico-cyan text-xs font-bold transition-transform group-open:rotate-180">▼</span>
             </summary>
@@ -310,26 +316,34 @@
             <div class="bg-pico-black p-4 border-t-2 border-pico-black flex flex-col gap-4">
                 <!-- note for devs -->
                 <div class="text-[10px] text-pico-lavend bg-pico-navy/40 p-2 border border-pico-cyan/20 leading-normal">
-                    ※ 本デモは、npmパッケージ <span class="text-pico-yellow font-bold">@onjmin/dtm</span> が提供する画面非依存の音源再生API <span class="text-pico-cyan">playMML()</span> の動作確認用です。任意の小節や秒数でのBGMループ境界の制御、サビなどの位置を正確に検出するタイムラインイベント（Cues）の発火など、Webゲーム開発向けの高度な機能をシミュレートできます。<br>
-                    <span class="text-pico-yellow">※ ロード時間と帯域を節約するため、本デモでの playMML() はSoundFontを使用せず軽量な内蔵矩形波シンセで発音します（ゲームへの組み込み時は、フックを介して任意の音源に差し替え可能です）。</span>
+                    🎮 <span class="text-pico-white font-bold">ゲームにシームレスなBGMを組み込よう！</span><br>
+                    このエリアでは、画面を使わずにBGMを裏側で再生するAPI <span class="text-pico-cyan">playMML()</span> の挙動をお試しいただけます。
+                    「イントロ付きループ」や「小節/秒数指定でのループ境界制御」、「サビなど特定の瞬間を検知してゲーム内演出と同期させるイベント（Cues）」など、Webゲーム開発で大活躍する便利な機能を簡単にシミュレートできます。<br>
+                    <span class="text-pico-yellow">💡 ※
+                        読み込み速度を爆速にするため、このデモでは軽量な内蔵シンセ（ピコピコ矩形波）で再生します。ゲーム本番では、好みの音源（SoundFontやWeb
+                        Audio音源など）へ自由に変更できます！</span>
                 </div>
 
                 <!-- MML Input and Load from DAW button -->
                 <div class="flex flex-col gap-2">
                     <div class="flex items-center justify-between">
                         <span class="text-pico-lavend text-xs">MML STRING:</span>
-                        <button id="headless-load-daw" class="px-2 py-1 bg-pico-navy border border-pico-cyan text-pico-cyan text-[10px] uppercase cursor-pointer hover:bg-pico-cyan hover:text-pico-black">
+                        <button id="headless-load-daw"
+                            class="px-2 py-1 bg-pico-navy border border-pico-cyan text-pico-cyan text-[10px] uppercase cursor-pointer hover:bg-pico-cyan hover:text-pico-black">
                             LOAD FROM DAW
                         </button>
                     </div>
-                    <textarea id="headless-mml-input" class="w-full h-24 p-2 bg-pico-navy border-2 border-pico-gray text-pico-white font-mono text-xs focus:outline-none focus:border-pico-cyan"></textarea>
+                    <textarea id="headless-mml-input"
+                        class="w-full h-24 p-2 bg-pico-navy border-2 border-pico-gray text-pico-white font-mono text-xs focus:outline-none focus:border-pico-cyan"></textarea>
                 </div>
 
                 <!-- Loop Config and Cues -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <!-- Loop Settings -->
                     <div class="border border-pico-gray/40 p-3 bg-pico-navy/30">
-                        <div class="text-pico-yellow text-xs uppercase tracking-widest mb-3 border-b border-pico-gray/30 pb-1">Loop Configuration</div>
+                        <div
+                            class="text-pico-yellow text-xs uppercase tracking-widest mb-3 border-b border-pico-gray/30 pb-1">
+                            Loop Configuration</div>
                         <div class="flex flex-col gap-3">
                             <label class="flex items-center gap-2 cursor-pointer text-xs">
                                 <input type="checkbox" id="headless-loop-enable" checked class="accent-pico-cyan">
@@ -338,22 +352,26 @@
                             <div id="headless-loop-range-container" class="flex flex-col gap-2">
                                 <div class="flex items-center gap-2">
                                     <span class="text-pico-lavend text-xs w-20">START:</span>
-                                    <select id="headless-loop-start-type" class="game-win bg-pico-black text-pico-white text-xs px-2 py-1 border-0 focus:outline-none cursor-pointer">
+                                    <select id="headless-loop-start-type"
+                                        class="game-win bg-pico-black text-pico-white text-xs px-2 py-1 border-0 focus:outline-none cursor-pointer">
                                         <option value="bar">BAR</option>
                                         <option value="step">STEP</option>
                                         <option value="seconds">SECONDS</option>
                                     </select>
-                                    <input type="number" id="headless-loop-start-val" value="2" class="w-16 bg-pico-black border border-pico-gray p-1 text-center text-xs text-pico-white">
+                                    <input type="number" id="headless-loop-start-val" value="2"
+                                        class="w-16 bg-pico-black border border-pico-gray p-1 text-center text-xs text-pico-white">
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <span class="text-pico-lavend text-xs w-20">END (OPT):</span>
-                                    <select id="headless-loop-end-type" class="game-win bg-pico-black text-pico-white text-xs px-2 py-1 border-0 focus:outline-none cursor-pointer">
+                                    <select id="headless-loop-end-type"
+                                        class="game-win bg-pico-black text-pico-white text-xs px-2 py-1 border-0 focus:outline-none cursor-pointer">
                                         <option value="none">NONE (SONG END)</option>
                                         <option value="bar">BAR</option>
                                         <option value="step">STEP</option>
                                         <option value="seconds">SECONDS</option>
                                     </select>
-                                    <input type="number" id="headless-loop-end-val" value="4" disabled class="w-16 bg-pico-black border border-pico-gray p-1 text-center text-xs text-pico-white opacity-40">
+                                    <input type="number" id="headless-loop-end-val" value="4" disabled
+                                        class="w-16 bg-pico-black border border-pico-gray p-1 text-center text-xs text-pico-white opacity-40">
                                 </div>
                             </div>
                         </div>
@@ -361,11 +379,14 @@
 
                     <!-- Cues Definition -->
                     <div class="border border-pico-gray/40 p-3 bg-pico-navy/30">
-                        <div class="text-pico-yellow text-xs uppercase tracking-widest mb-3 border-b border-pico-gray/30 pb-1">Cues (Checkpoints)</div>
+                        <div
+                            class="text-pico-yellow text-xs uppercase tracking-widest mb-3 border-b border-pico-gray/30 pb-1">
+                            Cues (Checkpoints)</div>
                         <div class="flex flex-col gap-2 max-h-[160px] overflow-y-auto pr-1" id="headless-cues-list">
                             <!-- Dynamic items -->
                         </div>
-                        <button id="headless-add-cue-btn" class="mt-2 w-full py-1 bg-pico-black border border-pico-gray text-pico-lavend text-xs uppercase cursor-pointer hover:border-pico-cyan hover:text-pico-cyan">
+                        <button id="headless-add-cue-btn"
+                            class="mt-2 w-full py-1 bg-pico-black border border-pico-gray text-pico-lavend text-xs uppercase cursor-pointer hover:border-pico-cyan hover:text-pico-cyan">
                             + ADD CUE POINT
                         </button>
                     </div>
@@ -375,25 +396,31 @@
                 <div class="flex flex-col md:flex-row gap-4 items-stretch">
                     <!-- Action Buttons -->
                     <div class="flex flex-col gap-2 shrink-0 justify-center">
-                        <button id="headless-play-btn" class="min-h-[40px] px-6 border-2 border-pico-orange bg-pico-black text-pico-orange text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+                        <button id="headless-play-btn"
+                            class="min-h-[40px] px-6 border-2 border-pico-orange bg-pico-black text-pico-orange text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
                             ▶ PLAY BGM
                         </button>
-                        <button id="headless-stop-btn" class="min-h-[40px] px-6 border-2 border-pico-red bg-pico-black text-pico-red text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+                        <button id="headless-stop-btn"
+                            class="min-h-[40px] px-6 border-2 border-pico-red bg-pico-black text-pico-red text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
                             ■ STOP
                         </button>
                         <div class="flex items-center gap-2 mt-1">
                             <span class="text-pico-lavend text-[10px]">VOLUME:</span>
-                            <input type="range" id="headless-vol" min="0" max="100" value="50" class="grow accent-pico-orange">
+                            <input type="range" id="headless-vol" min="0" max="100" value="50"
+                                class="grow accent-pico-orange">
                         </div>
                     </div>
 
                     <!-- Event Console -->
-                    <div class="grow flex flex-col border border-pico-gray/40 bg-pico-navy/10 p-3 min-h-[120px] max-h-[160px] overflow-hidden">
+                    <div
+                        class="grow flex flex-col border border-pico-gray/40 bg-pico-navy/10 p-3 min-h-[120px] max-h-[160px] overflow-hidden">
                         <div class="flex justify-between items-center border-b border-pico-gray/30 pb-1 mb-2">
                             <span class="text-pico-green text-xs uppercase tracking-widest">CONSOLE OUTPUT</span>
-                            <button id="headless-console-clear" class="text-pico-lavend hover:text-pico-white text-[10px] cursor-pointer">CLEAR</button>
+                            <button id="headless-console-clear"
+                                class="text-pico-lavend hover:text-pico-white text-[10px] cursor-pointer">CLEAR</button>
                         </div>
-                        <div id="headless-console" class="grow overflow-y-auto font-mono text-[10px] text-pico-silver flex flex-col gap-1 pr-1">
+                        <div id="headless-console"
+                            class="grow overflow-y-auto font-mono text-[10px] text-pico-silver flex flex-col gap-1 pr-1">
                             <div class="text-pico-lavend">Console initialized. Ready to play BGM...</div>
                         </div>
                     </div>
@@ -428,7 +455,7 @@
         const INSTRUMENT_STORAGE_KEY = 'dtm-instrument';
         const DRUM_STORAGE_KEY = 'dtm-drum';
         const readStored = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
-        const writeStored = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
+        const writeStored = (key, value) => { try { localStorage.setItem(key, value); } catch { } };
         const readSavedMode = () => readStored(MODE_STORAGE_KEY) === 'advanced' ? 'advanced' : 'simple';
 
         const loadingEl = document.getElementById('loading');
@@ -770,11 +797,14 @@
     </script>
 
     <!-- ════ モード解説モーダル ════ -->
-    <div id="mode-modal-overlay" class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden">
-        <div class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
+    <div id="mode-modal-overlay"
+        class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden">
+        <div
+            class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
             <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
                 <span class="text-pico-yellow text-sm font-bold">モードの違いについて</span>
-                <button id="mode-modal-close" class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none">&times;</button>
+                <button id="mode-modal-close"
+                    class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none">&times;</button>
             </div>
             <div class="p-4 overflow-y-auto text-xs leading-relaxed flex flex-col gap-3">
                 <div>
@@ -802,48 +832,53 @@
     </div>
 
     <!-- ════ ヘッドレスBGM解説モーダル ════ -->
-    <div id="headless-modal-overlay" class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden">
-        <div class="game-win bg-pico-navy max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden text-pico-white font-pixel">
+    <div id="headless-modal-overlay"
+        class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden">
+        <div
+            class="game-win bg-pico-navy max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden text-pico-white font-pixel">
             <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
                 <span class="text-pico-yellow text-sm font-bold">npm: @onjmin/dtm — playMML() API解説</span>
-                <button id="headless-modal-close" class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none">&times;</button>
+                <button id="headless-modal-close"
+                    class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none">&times;</button>
             </div>
             <div class="p-4 overflow-y-auto text-[11px] leading-relaxed flex flex-col gap-4">
                 <div class="bg-black/20 p-2 border border-pico-gray/20 text-pico-lavend leading-normal">
-                    <span class="text-pico-white font-bold">playMML()</span> は、画面を持たない（ヘッドレス）BGM再生用APIです。WebゲームのBGM制御や音楽同期演出に特化しています。
+                    🚀 <span class="text-pico-white font-bold">playMML()</span>
+                    は、ゲームの裏側でBGMをスマートに鳴らすための「画面なし（ヘッドレス）」再生用APIです！ゲームの進行やインタラクションと音楽をぴったり同期させたいときに威力を発揮します。
                 </div>
 
                 <!-- 既存方式との違い -->
                 <div>
-                    <h4 class="text-pico-cyan text-xs font-bold mb-1.5">■ 既存方式（HTML5 Audio等）との違い</h4>
+                    <h4 class="text-pico-cyan text-xs font-bold mb-1.5">■ なぜこれを使うの？（HTML5 Audio等との比較）</h4>
                     <table class="w-full text-left border-collapse text-[10px]">
                         <thead>
                             <tr class="bg-black/30 border-b border-pico-gray/30 text-pico-cyan">
-                                <th class="p-1.5 font-bold w-1/4">項目</th>
-                                <th class="p-1.5 font-bold w-2/5">HTML5 Audio等</th>
+                                <th class="p-1.5 font-bold w-1/4">やりたいこと</th>
+                                <th class="p-1.5 font-bold w-2/5">通常のAudioタグなど</th>
                                 <th class="p-1.5 font-bold w-2/5">@onjmin/dtm (playMML)</th>
                             </tr>
                         </thead>
                         <tbody class="text-pico-lavend">
                             <tr class="border-b border-pico-gray/10">
-                                <td class="p-1.5 font-bold text-pico-white">ループ精度</td>
-                                <td class="p-1.5">再生端で遅延や継ぎ目が発生しやすい</td>
-                                <td class="p-1.5 text-pico-yellow">Web Audio制御でミリ秒精度のシームレスループ</td>
+                                <td class="p-1.5 font-bold text-pico-white">ズレないループ</td>
+                                <td class="p-1.5">曲の終わりと始まりの間にプチッと遅延や隙間ができがち…</td>
+                                <td class="p-1.5 text-pico-yellow">Web Audio APIのスケジューリングにより、ミリ秒単位で完全にシームレスなループを実現！</td>
                             </tr>
                             <tr class="border-b border-pico-gray/10">
                                 <td class="p-1.5 font-bold text-pico-white">イントロ付きループ</td>
-                                <td class="p-1.5">複数ファイル分割や複雑な再生管理が必要</td>
-                                <td class="p-1.5 text-pico-yellow">1つのMML内でループ開始地点を指定するだけ</td>
+                                <td class="p-1.5">ファイルを分割して、再生完了を監視してつなぐ複雑な処理が必要…</td>
+                                <td class="p-1.5 text-pico-yellow">MML文字列を1本渡して、ループ開始位置（小節など）を指定するだけで自動ループ！</td>
                             </tr>
                             <tr class="border-b border-pico-gray/10">
-                                <td class="p-1.5 font-bold text-pico-white">ビート同期演出</td>
-                                <td class="p-1.5">毎フレーム時間監視（不正確・負荷大）</td>
-                                <td class="p-1.5 text-pico-yellow">指定小節/ステップ通過時に正確にイベント発火</td>
+                                <td class="p-1.5 font-bold text-pico-white">音・ビート同期演出</td>
+                                <td class="p-1.5">毎フレーム再生時間をチェックする（ズレるし、重い）…</td>
+                                <td class="p-1.5 text-pico-yellow">「この小節/ステップを通ったらイベントを呼ぶ」と設定するだけで正確に発火！</td>
                             </tr>
                             <tr>
-                                <td class="p-1.5 font-bold text-pico-white">ゲーム音響管理</td>
-                                <td class="p-1.5">オーディオタグ単位で管理され統合が困難</td>
-                                <td class="p-1.5 text-pico-yellow">既存の AudioContext や MasterGain を注入可能</td>
+                                <td class="p-1.5 font-bold text-pico-white">音量の共通管理</td>
+                                <td class="p-1.5">ゲーム全体の音量コントロールに組み込みにくい…</td>
+                                <td class="p-1.5 text-pico-yellow">ゲーム側の AudioContext や MasterGain
+                                    を渡せるので、SEとBGMの音量バランスもバッチリ！</td>
                             </tr>
                         </tbody>
                     </table>
@@ -851,19 +886,22 @@
 
                 <!-- 音色とカスタム音源 -->
                 <div class="border-t border-pico-gray/30 pt-3">
-                    <h4 class="text-pico-cyan text-xs font-bold mb-1">■ 音色の仕組み（デフォルトで矩形波を採用している理由）</h4>
+                    <h4 class="text-pico-cyan text-xs font-bold mb-1">■ 軽い！ロード時間がゼロのピコピコシンセ内蔵</h4>
                     <p class="text-pico-lavend">
-                        編集UIでは数MBのSoundFontをロードしますが、<code class="text-pico-cyan">playMML()</code> はデフォルトで**ロード不要の内蔵矩形波シンセ**で発音します。これによりBGMのロード待ちによる起動遅延や通信容量を完全に排除できます。
+                        ピアノロール画面（DAW）では音色データ（SoundFont）をロードしますが、<code class="text-pico-cyan">playMML()</code>
+                        はデフォルトで**ロード不要の超軽量シンセ（矩形波など）**で発音します。これにより、「BGMのロード待ちでゲームの起動が遅れる」「通信量がかさむ」といった問題をクリアできます。
                     </p>
                     <p class="text-pico-lavend mt-1">
-                        実機で高品質な音源やSoundFontを鳴らしたい場合は、以下のように <code class="text-pico-orange">onPlayNote</code> / <code class="text-pico-orange">onPlayDrum</code> フックを介して、自前のシンセサイザーやロード済みの音色エンジンを接続して差し替えられます。
+                        「もっと豪華な音で鳴らしたい！」という時は、以下のように <code class="text-pico-orange">onPlayNote</code> や <code
+                            class="text-pico-orange">onPlayDrum</code> フックを使って、自作のシンセやゲーム側のロード済みサウンドエンジンに簡単に差し替えられます。
                     </p>
-                    <pre class="bg-black/30 p-2 border border-pico-gray/20 text-pico-white font-mono mt-1 text-[9px] overflow-x-auto">
+                    <pre
+                        class="bg-black/30 p-2 border border-pico-gray/20 text-pico-white font-mono mt-1 text-[9px] overflow-x-auto">
 playMML(mmlString, {
   audioContext: myGameCtx,
   loop: { start: { bar: 2 } }, // 2小節目からループ
   onPlayNote: (e) => {
-    // 自前のSoundFontやシンセで e.pitch を鳴らす
+    // 鳴らしたい音色エンジンをここに繋ぐだけ！
     mySynth.trigger(e.pitch, e.volume, e.when, e.duration);
   }
 });</pre>
@@ -871,15 +909,18 @@ playMML(mmlString, {
 
                 <!-- デモでの体験方法 -->
                 <div class="border-t border-pico-gray/30 pt-3">
-                    <h4 class="text-pico-cyan text-xs font-bold mb-1">■ 本デモでの体験ステップ</h4>
+                    <h4 class="text-pico-cyan text-xs font-bold mb-1">■ このデモで試してみよう！</h4>
                     <ol class="list-decimal pl-4 text-pico-lavend flex flex-col gap-1">
                         <li>
-                            <strong class="text-pico-white">シームレスループの体験:</strong><br>
-                            ループ範囲を <code class="text-pico-cyan">START: BAR 2</code> （2小節目）に設定し、「PLAY BGM」を押します。1周目は冒頭（1小節目）のイントロから流れますが、2周目以降はイントロをスキップして2小節目に継ぎ目なく戻ります。
+                            <strong class="text-pico-white">シームレスなイントロループ:</strong><br>
+                            ループ設定で <code class="text-pico-cyan">START: BAR 2</code> （2小節目）にして「PLAY
+                            BGM」を押してみてください。最初は1小節目のイントロから流れますが、2周目からは自動的にイントロをスキップして2小節目からきれいにループします。
                         </li>
                         <li>
-                            <strong class="text-pico-white">同期イベント（Cues）の確認:</strong><br>
-                            再生中に右側の「CONSOLE OUTPUT」を監視します。設定したチェックポイント（デフォルトでは <code class="text-pico-cyan">chorus_start</code> 等）を再生ヘッドが通過した瞬間に、イベントが遅延なくログ出力されるのを確認できます。
+                            <strong class="text-pico-white">リアルタイムイベント同期（Cues）:</strong><br>
+                            再生中に右側の「CONSOLE OUTPUT」を見てみてください。曲のチェックポイント（例: <code
+                                class="text-pico-cyan">chorus_start</code>
+                            など）を再生ラインが通る瞬間に、ミリ秒のズレもなくイベントログが流れます。ゲームでの演出（画面フラッシュ、キャラの動き同期など）にそのまま使えます！
                         </li>
                     </ol>
                 </div>
