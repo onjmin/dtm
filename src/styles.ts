@@ -533,6 +533,128 @@ export const DAW_CSS = `
 @keyframes dtm-blink { 0%,100%{opacity:1} 50%{opacity:0} }
 .dtm-blink { animation: dtm-blink 1s steps(1) infinite; }
 
+/* ─── インフォボタン ─── */
+.dtm-infobtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 2px solid var(--dtm-border2);
+  background: var(--dtm-surface);
+  color: var(--dtm-muted);
+  cursor: pointer;
+  box-shadow: 1px 1px 0 var(--c-black);
+  padding: 0;
+  margin: 0;
+}
+.dtm-infobtn:hover {
+  color: var(--dtm-primary);
+  border-color: var(--dtm-primary);
+}
+.dtm-infobtn:active {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+
+/* ─── 解説モーダル ─── */
+.dtm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(2px);
+}
+.dtm-modal-overlay[hidden] {
+  display: none !important;
+}
+.dtm-modal {
+  max-width: 500px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--dtm-surface);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-primary),
+    4px 4px 0 var(--c-black);
+  overflow: hidden;
+}
+.dtm-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--dtm-deep);
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--c-black);
+}
+.dtm-modal-title {
+  font-family: var(--dtm-font);
+  font-size: 14px;
+  color: var(--dtm-gold);
+  font-weight: bold;
+}
+.dtm-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--dtm-text);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.dtm-modal-close:hover {
+  color: var(--dtm-danger);
+}
+.dtm-modal-body {
+  padding: 12px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.dtm-modal-body h4 {
+  margin: 12px 0 6px 0;
+  color: var(--dtm-primary);
+  font-size: 13px;
+}
+.dtm-modal-body h4:first-child {
+  margin-top: 0;
+}
+.dtm-modal-body p {
+  margin: 0 0 8px 0;
+}
+.dtm-modal-body ul {
+  margin: 0 0 8px 0;
+  padding-left: 16px;
+}
+.dtm-modal-body li {
+  margin-bottom: 4px;
+}
+.dtm-modal-body code {
+  background: var(--dtm-deep);
+  color: var(--dtm-accent);
+  padding: 1px 4px;
+  font-family: var(--dtm-font);
+  font-size: 12px;
+}
+.dtm-modal-body pre {
+  background: var(--dtm-deep);
+  color: var(--dtm-success);
+  padding: 8px;
+  border: 1px solid var(--dtm-border2);
+  margin: 6px 0;
+  overflow-x: auto;
+  font-family: var(--dtm-font);
+  font-size: 12px;
+}
+
 .dtm-hidden { display: none !important; }
 .dtm-grow { flex: 1 1 auto; }
 .dtm-lyric-icon {

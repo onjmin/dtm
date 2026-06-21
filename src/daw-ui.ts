@@ -72,6 +72,12 @@ export type DawUIRefs = {
 	copyMiniBtn: HTMLButtonElement;
 	// overlay
 	overlay: HTMLElement;
+	// modal
+	mmlInfoBtn: HTMLButtonElement;
+	modalOverlay: HTMLElement;
+	modalTitle: HTMLElement;
+	modalBody: HTMLElement;
+	modalClose: HTMLButtonElement;
 };
 
 const q = <T extends HTMLElement>(root: HTMLElement, sel: string): T =>
@@ -203,7 +209,10 @@ export const buildUI = (
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
       <div class="dtm-row">
-        <span class="dtm-label">MML</span>
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; min-width: 48px;">
+          <span class="dtm-label" style="line-height: 1;">MML</span>
+          <button class="dtm-infobtn" data-dtm="mml-info" title="MMLの書き方解説">${icon("info", 12)}</button>
+        </div>
         <textarea class="dtm-textarea dtm-grow" data-dtm="mml-input" placeholder="MMLを入力"></textarea>
         <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">読込</button>
       </div>
@@ -278,6 +287,17 @@ export const buildUI = (
       </div>
     </div>
   </details>
+
+  <!-- ════ 解説モーダル ════ -->
+  <div class="dtm-modal-overlay" data-dtm="modal-overlay" hidden>
+    <div class="dtm-win dtm-modal">
+      <div class="dtm-modal-header">
+        <span class="dtm-modal-title" data-dtm="modal-title"></span>
+        <button class="dtm-modal-close" data-dtm="modal-close">&times;</button>
+      </div>
+      <div class="dtm-modal-body" data-dtm="modal-body"></div>
+    </div>
+  </div>
 </div>`;
 
 	const root = q<HTMLElement>(target, '[data-dtm="root"]');
@@ -341,5 +361,10 @@ export const buildUI = (
 		copyFullBtn: sel("copy-full"),
 		copyMiniBtn: sel("copy-mini"),
 		overlay: sel("overlay"),
+		mmlInfoBtn: sel("mml-info"),
+		modalOverlay: sel("modal-overlay"),
+		modalTitle: sel("modal-title"),
+		modalBody: sel("modal-body"),
+		modalClose: sel("modal-close"),
 	};
 };

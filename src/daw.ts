@@ -68,6 +68,87 @@ import type {
 } from "./types";
 import { VOICE_IMAGES } from "./voice-images";
 
+const CHORD_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>1. 基本の書き方</h4>
+  <p>コード名（和音記号）を縦線 <code>|</code>、スペース、またはカンマで区切って入力します。縦線で区切ると1小節ごとの配置になります。</p>
+  <pre>例: C | G | Am | F</pre>
+
+  <h4>2. 1小節に複数コードを入れる</h4>
+  <p>小節の区切り（縦線 <code>|</code>）の中に、スペース区切りでコードを並べます。等間隔に配置されます。</p>
+  <pre>例: C G | Am F</pre>
+  <p style="margin-top:4px;"><small>（1小節目：前半C・後半G、2小節目：前半Am・後半F）</small></p>
+
+  <h4>3. 対応コード名</h4>
+  <ul>
+    <li>メジャー / マイナー: <code>C</code>, <code>Dm</code>, <code>Am</code> など</li>
+    <li>セブンス: <code>C7</code>, <code>Am7</code>, <code>FM7</code> など</li>
+    <li>その他: <code>Csus4</code>, <code>Cdim</code>, <code>Caug</code>, <code>Cadd9</code> など</li>
+  </ul>
+
+  <h4>4. 演奏パターン</h4>
+  <ul>
+    <li><strong>ブロック</strong>: 和音の構成音をすべて同時に伸ばして演奏します。</li>
+    <li><strong>アルペジオ</strong>: 和音の構成音を低い順に分散して演奏します。</li>
+    <li><strong>アルペジオ（ジャラーン）</strong>: 素早くアルペジオを鳴らします。</li>
+    <li><strong>裏打ち</strong>: 各拍の裏（8分裏）のタイミングでコードを刻みます。</li>
+    <li><strong>ヤツメ穴</strong>: リズミカルなピコピコゲーム風の伴奏パターンです。</li>
+    <li><strong>交互奏</strong>: ルート音（低音）とコード構成音（高音）を交互に刻みます。</li>
+  </ul>
+</div>
+`;
+
+const MML_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>1. 音符と休符</h4>
+  <p><code>c</code>(ド) <code>d</code>(レ) <code>e</code>(ミ) <code>f</code>(ファ) <code>g</code>(ソ) <code>a</code>(ラ) <code>b</code>(シ) のアルファベットで表します。</p>
+  <ul>
+    <li>半音上げる: <code>c#</code> または <code>c+</code></li>
+    <li>半音下げる: <code>d-</code></li>
+    <li>休符: <code>r</code></li>
+  </ul>
+
+  <h4>2. 音の長さ</h4>
+  <p>音名や休符の後に数値で指定します（例: <code>4</code> = 4分音符, <code>8</code> = 8分音符, <code>16</code> = 16分音符）。</p>
+  <ul>
+    <li><code>c4</code> : 4分音符のド</li>
+    <li><code>r8</code> : 8分休符</li>
+    <li><code>c4.</code> : 付点4分音符のド（長さを1.5倍に）</li>
+    <li>数値を省略すると、<code>l</code> コマンドで設定されたデフォルト長（通常16分）になります。</li>
+  </ul>
+
+  <h4>3. オクターブ（音の高さ）</h4>
+  <ul>
+    <li><code>o4</code>, <code>o5</code> : 高さを直接指定（ふつうは o4 か o5）</li>
+    <li><code>&gt;</code> : 1オクターブ上げる</li>
+    <li><code>&lt;</code> : 1オクターブ下げる</li>
+  </ul>
+
+  <h4>4. テンポ</h4>
+  <ul>
+    <li><code>t120</code> : 曲の速さをBPM120に指定。※メロディ（@0）のテンポ指定が曲全体に反映されます。</li>
+  </ul>
+
+  <h4>5. 和音</h4>
+  <p>音符を <code>[</code> と <code>]</code> で囲むと同時に発音します。</p>
+  <pre>例: [ceg]4 （ド・ミ・ソを4分音符で同時に発音）</pre>
+
+  <h4>6. トラックの区切り</h4>
+  <p><code>;</code> または <code>@0</code>〜<code>@3</code> でトラックを切り替えます。</p>
+  <ul>
+    <li><code>@0</code>: メロディ</li>
+    <li><code>@1</code>: サブメロ</li>
+    <li><code>@2</code>: ベース</li>
+    <li><code>@3</code>: 伴奏</li>
+  </ul>
+
+  <h4>7. 歌声・歌詞入力</h4>
+  <p><code>@@&lt;トラック番号&gt; &lt;音源名&gt; &lt;歌詞&gt;</code> の形式で、音符と同期する歌詞を入力できます。</p>
+  <pre>例: @@0 klatt ちょうちょうなのはにとまれ</pre>
+  <p style="margin-top:4px;"><small>（音源名は <code>klatt</code> や <code>roze</code>, <code>teto</code> などの音声モデルを指定できます）</small></p>
+</div>
+`;
+
 const BASE_STEP_WIDTH = 0.5;
 const BASE_KEY_HEIGHT = 15;
 
@@ -388,6 +469,8 @@ export const mountDAW = (
 
 	const getActive = (): TrackState =>
 		trackStates.find((t) => t.config.id === activeTrackId) ?? trackStates[0];
+
+	let showModal: (title: string, bodyHTML: string) => void;
 
 	// ============================================================
 	// 描画
@@ -1409,8 +1492,11 @@ export const mountDAW = (
 			div.style.flexDirection = "column";
 			div.style.alignItems = "stretch";
 			div.innerHTML = `
-        <div class="dtm-row">
-          <span class="dtm-label">和音</span>
+        <div class="dtm-row" style="justify-content: space-between; align-items: center;">
+          <div style="display: inline-flex; align-items: center; gap: 6px;">
+            <span class="dtm-label">和音</span>
+            <button class="dtm-infobtn" data-dtm="chord-info" title="コード進行の書き方解説">${icon("info", 12)}</button>
+          </div>
           <select class="dtm-select" data-dtm="chord-pattern">
             <option value="block">ブロック</option>
             <option value="arpeggio">アルペジオ</option>
@@ -1438,6 +1524,11 @@ export const mountDAW = (
 			};
 			patternSel.addEventListener("change", save);
 			input.addEventListener("input", save);
+			(
+				div.querySelector('[data-dtm="chord-info"]') as HTMLButtonElement
+			).addEventListener("click", () => {
+				showModal("コード進行の自動入力解説", CHORD_INFO_HTML);
+			});
 			(
 				div.querySelector('[data-dtm="chord-apply"]') as HTMLButtonElement
 			).addEventListener("click", () => {
@@ -1959,6 +2050,25 @@ export const mountDAW = (
 		refs.mmlLoadBtn.addEventListener("click", () =>
 			overlayDuring(() => loadMML(refs.mmlInput.value)),
 		);
+
+		// 解説モーダル初期化とイベントハンドラ
+		showModal = (title: string, bodyHTML: string): void => {
+			refs.modalTitle.textContent = title;
+			refs.modalBody.innerHTML = bodyHTML;
+			refs.modalOverlay.removeAttribute("hidden");
+		};
+		refs.modalClose.addEventListener("click", () => {
+			refs.modalOverlay.setAttribute("hidden", "");
+		});
+		refs.modalOverlay.addEventListener("click", (e) => {
+			if (e.target === refs.modalOverlay) {
+				refs.modalOverlay.setAttribute("hidden", "");
+			}
+		});
+
+		refs.mmlInfoBtn.addEventListener("click", () => {
+			showModal("MMLの書き方解説", MML_INFO_HTML);
+		});
 		refs.shiftApplyBtn.addEventListener("click", () =>
 			overlayDuring(() => {
 				shiftNotes(

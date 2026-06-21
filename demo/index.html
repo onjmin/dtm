@@ -242,7 +242,10 @@
         <!-- モード切替 -->
         <div class="game-win bg-pico-navy px-4 py-3">
             <div class="flex flex-wrap items-center gap-3">
-                <span class="text-pico-yellow text-xs uppercase tracking-widest shrink-0">► MODE</span>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <span class="text-pico-yellow text-xs uppercase tracking-widest">► MODE</span>
+                    <button id="mode-info" class="w-5 h-5 flex items-center justify-center border border-pico-gray bg-pico-navy text-pico-lavend cursor-pointer text-[10px] hover:text-pico-cyan hover:border-pico-cyan active:translate-x-[1px] active:translate-y-[1px] shadow-[1px_1px_0_#000] font-pixel" title="モードの違い解説">i</button>
+                </div>
                 <button id="mode-simple"
                     class="min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-cyan text-pico-black
                            text-xs uppercase tracking-widest cursor-pointer font-pixel
@@ -421,7 +424,56 @@
             const { full } = daw.getMML();
             mountPlayer(full);
         });
+
+        // ── モード解説モーダル ──
+        const modeInfoBtn = document.getElementById('mode-info');
+        const modeModalOverlay = document.getElementById('mode-modal-overlay');
+        const modeModalClose = document.getElementById('mode-modal-close');
+
+        modeInfoBtn.addEventListener('click', () => {
+            modeModalOverlay.classList.remove('hidden');
+        });
+        modeModalClose.addEventListener('click', () => {
+            modeModalOverlay.classList.add('hidden');
+        });
+        modeModalOverlay.addEventListener('click', (e) => {
+            if (e.target === modeModalOverlay) {
+                modeModalOverlay.classList.add('hidden');
+            }
+        });
     </script>
+
+    <!-- ════ モード解説モーダル ════ -->
+    <div id="mode-modal-overlay" class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden">
+        <div class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
+            <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
+                <span class="text-pico-yellow text-sm font-bold">モードの違いについて</span>
+                <button id="mode-modal-close" class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none">&times;</button>
+            </div>
+            <div class="p-4 overflow-y-auto text-xs leading-relaxed flex flex-col gap-3">
+                <div>
+                    <h4 class="text-pico-cyan text-sm font-bold mb-1">■ SIMPLE (4 TRACKS)</h4>
+                    <p class="text-pico-white">初心者向けの、シンプルな4トラック構成です。役割があらかじめ決まっているので迷いません。</p>
+                    <ul class="list-disc pl-4 mt-1 text-pico-lavend">
+                        <li>メロディー … 曲の主役。一度に1つの音を鳴らします</li>
+                        <li>サブメロ … メロディを支える脇役。ところどころ差し込むフレーズ向け</li>
+                        <li>ベース … 曲の土台になる低い音。一度に1つの音を鳴らします</li>
+                        <li>伴奏 … コード（和音）で伴奏する役。複数の音を同時に鳴らせます</li>
+                    </ul>
+                    <p class="text-pico-lavend mt-1">※MIDIを読み込むと、各トラックの特徴から自動でこの4つの役割に振り分けられます。</p>
+                </div>
+                <div class="border-t border-pico-gray/30 pt-3">
+                    <h4 class="text-pico-cyan text-sm font-bold mb-1">■ ADVANCED (16 TRACKS)</h4>
+                    <p class="text-pico-white">より自由に作り込める、16トラック構成です。</p>
+                    <ul class="list-disc pl-4 mt-1 text-pico-lavend">
+                        <li>最大16本のトラックを、それぞれ個別に編集できます。</li>
+                        <li>役割の制限や自動の振り分けはなく、どこに何の音でも自由に置けます。</li>
+                    </ul>
+                    <p class="text-pico-lavend mt-1">※MIDIを読み込むと、ファイルのトラック構成がそのまま反映されます（1対1）。</p>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>
