@@ -26,6 +26,7 @@ import {
 } from "./mml-player";
 import { parseMML } from "./mml-parser";
 import { showLoadingOverlay } from "./styles";
+import { parseArrayBuffer } from "midi-json-parser";
 import type {
 	DawInstance,
 	DawOptions,
@@ -74,7 +75,6 @@ type SoundFontListEngine = {
 	init: () => void;
 	onload: (cb: () => void) => void;
 };
-type MidiParserModule = { parse: (bytes: unknown) => unknown };
 
 /** 注入で差し替え可能な外部エンジン群（未指定なら CDN から取得）。 */
 export type DtmStudioEngines = {
@@ -91,7 +91,6 @@ const DEFAULT_CDN = {
 		"https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs",
 	soundFontList:
 		"https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs",
-	midiParser: "https://cdn.jsdelivr.net/npm/midi-parser-js@4.0.4/+esm",
 } as const;
 
 /** SoundFont の楽器名解決に使う SoundFont 名（FluidR3 GM）。 */
@@ -224,26 +223,20 @@ export const createDtmStudio = async (
 			importFrom<SoundFontListEngine>(cdn.soundFontList, "SoundFont_list"),
 	]);
 
-	// MIDI解析（任意・遅延）。
-	let midiParser: MidiParserModule | null = null;
+	// MIDI解析。
 	let parseMidi: DawOptions["parseMidi"];
 	if (features.midi) {
-		parseMidi = eng.parseMidi;
-		if (!parseMidi) {
-			const midiPromise = importFrom<MidiParserModule>(
-				cdn.midiParser,
-				"default",
-			)
-				.then((m) => {
-					midiParser = m;
-				})
-				.catch((e) => console.warn("[dtm] midi-parser の読み込みに失敗", e));
-			void midiPromise;
-			parseMidi = (bytes) => {
-				if (!midiParser) throw new Error("midi-parser not ready");
-				return midiParser.parse(bytes);
-			};
-		}
+		parseMidi =
+			eng.parseMidi ||
+			((bytes) => {
+				const buffer = bytes.buffer;
+				if (buffer instanceof ArrayBuffer) {
+					return parseArrayBuffer(
+						buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+					);
+				}
+				throw new Error("SharedArrayBuffer is not supported for MIDI parsing");
+			});
 	}
 
 	// ── 歌声合成（klatt + koe音源。ワーカーは同梱 dist/voice-worker.js を既定に）──

@@ -1871,9 +1871,9 @@ export const mountDAW = (
 		redrawAll();
 	};
 
-	const loadMIDI = (bytes: Uint8Array): void => {
+	const loadMIDI = async (bytes: Uint8Array): Promise<void> => {
 		if (!options.parseMidi) return;
-		const midi = options.parseMidi(bytes);
+		const midi = await options.parseMidi(bytes);
 		const analysis = analyzeMidiTracks(midi);
 		const selected = analysis.filter((a) => a.selected).map((a) => a.index);
 		applyMidiSelection(midi, selected);
@@ -2149,7 +2149,7 @@ export const mountDAW = (
 			refs.overlay.hidden = false;
 			setLoading(true);
 			const buffer = new Uint8Array(await file.arrayBuffer());
-			pendingMidi = options.parseMidi(buffer);
+			pendingMidi = await options.parseMidi(buffer);
 			detectedTracks = analyzeMidiTracks(pendingMidi);
 			refs.midiTrackSelection.innerHTML = `<span class="dtm-label">トラック</span>`;
 			detectedTracks.forEach((t, i) => {

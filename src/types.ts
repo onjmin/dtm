@@ -175,8 +175,8 @@ export type PlayDrumEvent = {
 	duration: number;
 };
 
-// 注入されるMIDIバイナリ解析関数（midi-parser-js 互換）
-export type ParseMidiFn = (bytes: Uint8Array) => unknown;
+// 注入されるMIDIバイナリ解析関数
+export type ParseMidiFn = (bytes: Uint8Array) => unknown | Promise<unknown>;
 
 /**
  * 永続化対象の表示・出力設定。利用側がブラウザ再訪時に復元する用途に使う。
@@ -268,7 +268,7 @@ export type DawInstance = {
 	/** 表示・出力設定を復元する（指定したキーのみ反映。UIにも反映する）。 */
 	setViewState: (state: Partial<DawViewState>) => void;
 	loadMML: (mml: string) => void;
-	loadMIDI: (bytes: Uint8Array) => void;
+	loadMIDI: (bytes: Uint8Array) => void | Promise<void>;
 	exportMIDI: () => Blob;
 	setBpm: (bpm: number) => void;
 	getPlaybackState: () => PlaybackState;

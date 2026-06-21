@@ -16,14 +16,26 @@ import type { Note } from "./types";
 const STEPS_PER_BEAT = 48;
 
 type MidiEvent = {
-	deltaTime: number;
-	type: number;
-	metaType?: number;
+	delta: number;
 	channel?: number;
-	data: number | number[];
+	noteOn?: {
+		noteNumber: number;
+		velocity: number;
+	};
+	noteOff?: {
+		noteNumber: number;
+		velocity: number;
+	};
+	setTempo?: {
+		microsecondsPerQuarter: number;
+	};
+	[key: string]: any;
 };
-type MidiTrack = { event: MidiEvent[] };
-type MidiData = { track: MidiTrack[]; timeDivision: number };
+type MidiData = {
+	division: number;
+	format: number;
+	tracks: MidiEvent[][];
+};
 
 export type MidiTrackAnalysis = {
 	index: number;
@@ -52,22 +64,33 @@ export type MidiExtraction = {
  * ドラム(ch10)だけで構成されたトラックは編集できないため、結果に含めない。
  */
 export const analyzeMidiTracks = (midi: unknown): MidiTrackAnalysis[] => {
-	const { track } = midi as MidiData;
+	const { tracks } = midi as MidiData;
 	const result: MidiTrackAnalysis[] = [];
 
-	for (let i = 0; i < track.length; i++) {
+	for (let i = 0; i < tracks.length; i++) {
 		const notes: { pitch: number; channel: number; end?: number }[] = [];
 		let currentTime = 0;
-		for (const event of track[i].event) {
-			currentTime += event.deltaTime;
-			const data = event.data as number[];
-			if (event.type === 9 && data && data[1]) {
-				notes.push({ pitch: data[0], channel: event.channel ?? 0 });
-			} else if (event.type === 8) {
-				for (let k = notes.length - 1; k >= 0; k--) {
-					if (notes[k].pitch === data[0] && notes[k].end === undefined) {
-						notes[k].end = currentTime;
-						break;
+		for (const event of tracks[i]) {
+			currentTime += event.delta;
+			if (event.noteOn && event.noteOn.velocity > 0) {
+				notes.push({
+					pitch: event.noteOn.noteNumber,
+					channel: event.channel ?? 0,
+				});
+			} else if (
+				event.noteOff ||
+				(event.noteOn && event.noteOn.velocity === 0)
+			) {
+				const noteOff = event.noteOff || event.noteOn;
+				if (noteOff) {
+					for (let k = notes.length - 1; k >= 0; k--) {
+						if (
+							notes[k].pitch === noteOff.noteNumber &&
+							notes[k].end === undefined
+						) {
+							notes[k].end = currentTime;
+							break;
+						}
 					}
 				}
 			}
@@ -90,15 +113,15 @@ export const analyzeMidiTracks = (midi: unknown): MidiTrackAnalysis[] => {
 
 /** MIDIメタイベントからBPMを取得（無ければ120）。 */
 export const getMidiBPM = (midi: unknown): number => {
-	const { track } = midi as MidiData;
-	for (const { event } of track) {
-		for (const { type, metaType, data } of event) {
-			if (type !== 0xff || metaType !== 0x51) continue;
-			if (typeof data === "number") {
-				return 60000000 / data;
+	const { tracks } = midi as MidiData;
+	for (const track of tracks) {
+		for (const event of track) {
+			if (
+				event.setTempo &&
+				typeof event.setTempo.microsecondsPerQuarter === "number"
+			) {
+				return 60000000 / event.setTempo.microsecondsPerQuarter;
 			}
-			const [b1, b2, b3] = data as number[];
-			return 60000000 / ((b1 << 16) | (b2 << 8) | b3);
 		}
 	}
 	return 120;
@@ -112,8 +135,8 @@ export const extractMidiPlacements = (
 	midi: unknown,
 	selectedTrackIndices: number[],
 ): MidiExtraction => {
-	const { track, timeDivision } = midi as MidiData;
-	const ticksPerBeat = timeDivision;
+	const { tracks, division } = midi as MidiData;
+	const ticksPerBeat = division;
 	const bpm = getMidiBPM(midi);
 
 	type RawNote = {
@@ -125,34 +148,44 @@ export const extractMidiPlacements = (
 	const channelNotes: Record<number, RawNote[]> = {};
 
 	for (const trackIdx of selectedTrackIndices) {
-		const trackData = track[trackIdx];
+		const trackData = tracks[trackIdx];
 		if (!trackData) continue;
 		let currentTime = 0;
-		for (const event of trackData.event) {
-			currentTime += event.deltaTime;
-			if (event.channel === 9) continue;
-			if (event.type !== 8 && event.type !== 9) continue;
-			const [pitch, velocity] = event.data as number[];
-			const isNoteOff = event.type === 8 || !velocity;
-			const channel = event.channel ?? 0;
+		for (const event of trackData) {
+			currentTime += event.delta;
+			if (event.channel === 9) continue; // ドラムチャンネルはスキップ
 
-			if (!channelNotes[channel]) channelNotes[channel] = [];
+			if (event.noteOn && event.noteOn.velocity > 0) {
+				const pitch = event.noteOn.noteNumber;
+				const velocity = event.noteOn.velocity;
+				const channel = event.channel ?? 0;
 
-			if (isNoteOff) {
-				for (let i = channelNotes[channel].length - 1; i >= 0; i--) {
-					const note = channelNotes[channel][i];
-					if (note.pitch === pitch && note.end === null) {
-						note.end = currentTime;
-						break;
-					}
-				}
-			} else {
+				if (!channelNotes[channel]) channelNotes[channel] = [];
 				channelNotes[channel].push({
 					pitch,
 					velocity,
 					start: currentTime,
 					end: null,
 				});
+			} else if (
+				event.noteOff ||
+				(event.noteOn && event.noteOn.velocity === 0)
+			) {
+				const noteOff = event.noteOff || event.noteOn;
+				if (noteOff) {
+					const pitch = noteOff.noteNumber;
+					const channel = event.channel ?? 0;
+
+					if (channelNotes[channel]) {
+						for (let i = channelNotes[channel].length - 1; i >= 0; i--) {
+							const note = channelNotes[channel][i];
+							if (note.pitch === pitch && note.end === null) {
+								note.end = currentTime;
+								break;
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -307,8 +340,8 @@ export const extractMidiPlacementsByTrack = (
 	selectedIndices: number[],
 	trackIds: string[],
 ): MidiExtraction => {
-	const { track, timeDivision } = midi as MidiData;
-	const ticksPerBeat = timeDivision;
+	const { tracks, division } = midi as MidiData;
+	const ticksPerBeat = division;
 	const bpm = getMidiBPM(midi);
 	const ticksPerStep = ticksPerBeat / STEPS_PER_BEAT;
 
@@ -316,7 +349,7 @@ export const extractMidiPlacementsByTrack = (
 
 	selectedIndices.forEach((midiIdx, lane) => {
 		if (lane >= trackIds.length) return;
-		const trackData = track[midiIdx];
+		const trackData = tracks[midiIdx];
 		if (!trackData) return;
 		const trackId = trackIds[lane];
 
@@ -329,22 +362,28 @@ export const extractMidiPlacementsByTrack = (
 		const active: RawNote[] = [];
 		let currentTime = 0;
 
-		for (const event of trackData.event) {
-			currentTime += event.deltaTime;
+		for (const event of trackData) {
+			currentTime += event.delta;
 			if (event.channel === 9) continue; // ドラムチャンネルはスキップ
-			if (event.type !== 8 && event.type !== 9) continue;
-			const [pitch, velocity] = event.data as number[];
-			const isOff = event.type === 8 || !velocity;
 
-			if (isOff) {
-				for (let i = active.length - 1; i >= 0; i--) {
-					if (active[i].pitch === pitch && active[i].end === null) {
-						active[i].end = currentTime;
-						break;
+			if (event.noteOn && event.noteOn.velocity > 0) {
+				const pitch = event.noteOn.noteNumber;
+				const velocity = event.noteOn.velocity;
+				active.push({ pitch, velocity, start: currentTime, end: null });
+			} else if (
+				event.noteOff ||
+				(event.noteOn && event.noteOn.velocity === 0)
+			) {
+				const noteOff = event.noteOff || event.noteOn;
+				if (noteOff) {
+					const pitch = noteOff.noteNumber;
+					for (let i = active.length - 1; i >= 0; i--) {
+						if (active[i].pitch === pitch && active[i].end === null) {
+							active[i].end = currentTime;
+							break;
+						}
 					}
 				}
-			} else {
-				active.push({ pitch, velocity, start: currentTime, end: null });
 			}
 		}
 
