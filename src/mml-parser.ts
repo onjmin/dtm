@@ -9,7 +9,7 @@
  */
 
 import { parseLyrics, stripLyrics } from "./lyrics";
-import { DEFAULT_STEPS_PER_BAR } from "./types";
+import { DEFAULT_STEPS_PER_BAR, MML_END_MARKER } from "./types";
 import type { LyricTrack } from "./types";
 
 const PITCH_MAP: Record<string, number> = {
@@ -166,7 +166,10 @@ export const parseMML = (
 	const lyrics = collectLyrics ? parseLyrics(noMeta) : undefined;
 
 	// 歌詞行を取り除いてから改行を畳み込む（@@n を演奏ノートと誤解釈しないため）
+	const endMarkerBase = MML_END_MARKER.replace(/;+$/, "");
+	const endRegex = new RegExp(`(?<![cdafgCDAFG])${endMarkerBase}\\b;?`, "gi");
 	const fullMML = stripLyrics(noMeta)
+		.replace(endRegex, "")
 		.replace(/[\n\r]+/g, " ")
 		.trim();
 

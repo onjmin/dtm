@@ -7,6 +7,7 @@ export const DEFAULT_PAN = 64;
 export const DEFAULT_VELOCITY = 100;
 export const DEFAULT_PLAYBACK_VELOCITY = 127;
 export const DEFAULT_STEPS_PER_BAR = 192;
+export const MML_END_MARKER = "#end;";
 
 // ノートデータ構造
 export type Note = {

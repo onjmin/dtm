@@ -53,6 +53,7 @@ import {
 	DEFAULT_GATE,
 	DEFAULT_PAN,
 	DEFAULT_VOCAL_VOLUME,
+	MML_END_MARKER,
 } from "./types";
 import type {
 	DawInstance,
@@ -1532,10 +1533,10 @@ export const mountDAW = (
 				(notes, i) =>
 					`@${i}${refCore.getMMLFromNotes(notes, bpm, 100).trim().replace(/\s+/g, "")}`,
 			);
-			const full = [metaLine, ...decomposedFull]
+			const full = [metaLine, ...decomposedFull, MML_END_MARKER]
 				.filter((s) => s.length > 0)
 				.join(";\n");
-			const minified = [metaLine, ...decomposedMini]
+			const minified = [metaLine, ...decomposedMini, MML_END_MARKER]
 				.filter((s) => s.length > 0)
 				.join(";");
 			return {
@@ -1586,10 +1587,15 @@ export const mountDAW = (
 				const head = params ? `${x.model} ${params}` : x.model;
 				return `@@${x.i} ${head} ${x.text}`;
 			});
-		const full = [metaLine, ...trackLines, ...lyricLines]
+		const full = [metaLine, ...trackLines, ...lyricLines, MML_END_MARKER]
 			.filter((s) => s.length > 0)
 			.join(";\n");
-		const minified = [metaLine, ...trackLinesMini, ...lyricLines]
+		const minified = [
+			metaLine,
+			...trackLinesMini,
+			...lyricLines,
+			MML_END_MARKER,
+		]
 			.filter((s) => s.length > 0)
 			.join(";");
 		return {
