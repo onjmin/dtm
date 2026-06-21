@@ -504,6 +504,43 @@ export const createDtmStudio = async (
 
 	const defaultPreset = options.defaultPreset ?? "retro_game";
 
+	/** トラックのインデックスから役割キーを取得する。シンプルモードでは3以上（分解された伴奏トラック）はすべて伴奏にマッピングする。 */
+	const getRoleForTrackIndex = (
+		idx: number,
+		mode: DawMode = "simple",
+	): string => {
+		if (mode === "simple") {
+			if (idx === 0) return "melody";
+			if (idx === 1) return "submelody";
+			if (idx === 2) return "bass";
+			return "chord"; // 3以上はすべて伴奏（chord）
+		} else {
+			return TRACK_ROLES[idx] ?? `t${idx}`;
+		}
+	};
+
+	/** トラックID（"melody"や"t0"など）を適切な役割キー（"melody"や"chord"など）へ正規化する。 */
+	const getRoleFromTrackId = (
+		trackId: string,
+		mode: DawMode = "simple",
+	): string => {
+		if (
+			trackId === "melody" ||
+			trackId === "submelody" ||
+			trackId === "bass" ||
+			trackId === "chord"
+		) {
+			return trackId;
+		}
+		if (trackId.startsWith("t")) {
+			const idx = Number(trackId.substring(1));
+			if (!isNaN(idx)) {
+				return getRoleForTrackIndex(idx, mode);
+			}
+		}
+		return trackId;
+	};
+
 	/** トラックの役割から楽器名を引く（役割キー以外は melody を使う＝上級者モード互換）。 */
 	const instrumentNameFor = (
 		preset: (typeof INSTRUMENT_PRESETS)[string],
@@ -514,16 +551,19 @@ export const createDtmStudio = async (
 	const resolveSoundFont = (
 		presetKey: string,
 		trackId: string,
+		mode: DawMode = "simple",
 	): SoundFontInstance | undefined => {
 		const preset = INSTRUMENT_PRESETS[presetKey];
 		if (!preset) return undefined;
-		const key = nameToKey[instrumentNameFor(preset, trackId)];
+		const role = getRoleFromTrackId(trackId, mode);
+		const key = nameToKey[instrumentNameFor(preset, role)];
 		return key ? soundFonts.get(key) : undefined;
 	};
 
 	const loadPreset = async (
 		presetKey: string,
 		trackIds: string[] = [...TRACK_ROLES],
+		mode: DawMode = "simple",
 	): Promise<void> => {
 		const preset = INSTRUMENT_PRESETS[presetKey];
 		if (!preset) return;
@@ -531,7 +571,8 @@ export const createDtmStudio = async (
 		// 役割→楽器名→楽器キーへ畳み、重複を除いた楽器ぶんだけロードする。
 		const keys = new Set<string>();
 		for (const trackId of trackIds) {
-			const key = nameToKey[instrumentNameFor(preset, trackId)];
+			const role = getRoleFromTrackId(trackId, mode);
+			const key = nameToKey[instrumentNameFor(preset, role)];
 			if (key) keys.add(key);
 		}
 		await Promise.all([...keys].map((key) => loadInstrument(key)));
@@ -544,6 +585,7 @@ export const createDtmStudio = async (
 		presetKey: string,
 		trackIds: string[],
 		loadingTarget?: HTMLElement | null,
+		mode: DawMode = "simple",
 	): Promise<void> => {
 		const wasPlaying = daw.getPlaybackState() === "playing";
 		if (wasPlaying) daw.pause();
@@ -551,7 +593,7 @@ export const createDtmStudio = async (
 		daw.setLoading?.(true);
 		try {
 			daw.setInstrument(presetKey);
-			await loadPreset(presetKey, trackIds);
+			await loadPreset(presetKey, trackIds, mode);
 		} finally {
 			overlay?.remove();
 			daw.setLoading?.(false);
@@ -596,8 +638,10 @@ export const createDtmStudio = async (
 			const key = select.value;
 			opts.onChange?.(key);
 			const trackIds = opts.getTrackIds?.() ?? [...TRACK_ROLES];
+			const isAdvanced = trackIds.includes("t0");
+			const mode = isAdvanced ? "advanced" : "simple";
 			try {
-				await applyPreset(daw, key, trackIds, opts.loadingTarget);
+				await applyPreset(daw, key, trackIds, opts.loadingTarget, mode);
 			} finally {
 				busy = false;
 			}
@@ -659,8 +703,13 @@ export const createDtmStudio = async (
 		// このエディタが現在使うプリセット。プリセット選択UIの変更で更新する。
 		// 楽器解決をこのエディタ専属にすることで、他のエディタ/再生UIと音源を取り合わない。
 		let editorPreset = presetKey;
+		const isAdvancedMode = dawOverrides.mode === "advanced";
 		const playNote = (e: PlayNoteEvent): void => {
-			const sf = resolveSoundFont(editorPreset, e.trackId);
+			const sf = resolveSoundFont(
+				editorPreset,
+				e.trackId,
+				isAdvancedMode ? "advanced" : "simple",
+			);
 			if (!sf) return;
 			sf.play({
 				ctx: audioCtx,
@@ -714,7 +763,11 @@ export const createDtmStudio = async (
 		// このエディタのトラック構成ぶんプリセットをロードして名前も埋め込む。
 		daw.setInstrument(presetKey);
 		daw.setLoading?.(true);
-		void loadPreset(presetKey, trackIds).finally(() => {
+		void loadPreset(
+			presetKey,
+			trackIds,
+			isAdvancedMode ? "advanced" : "simple",
+		).finally(() => {
 			daw.setLoading?.(false);
 		});
 
@@ -853,19 +906,35 @@ export const createDtmStudio = async (
 				? meta.instrument
 				: defaultPreset;
 
+		const isAdvancedMode = meta.mode === "advanced";
+
 		// MML内の演奏トラックインデックスから、ロード対象の trackId リストを生成
 		const trackIndices = [
 			...new Set(parsed.placements.map((p) => p.trackIndex)),
 		];
-		const trackIds = trackIndices.map((idx) => TRACK_ROLES[idx] ?? `t${idx}`);
+		const trackIds = trackIndices.map((idx) =>
+			getRoleForTrackIndex(idx, isAdvancedMode ? "advanced" : "simple"),
+		);
 		const loadTrackIds = trackIds.length > 0 ? trackIds : [...TRACK_ROLES];
 
-		void loadPreset(playerPreset, loadTrackIds);
+		void loadPreset(
+			playerPreset,
+			loadTrackIds,
+			isAdvancedMode ? "advanced" : "simple",
+		);
 		// 再生専用ビューの @n（数値トラック）→ 役割 → このプリセットの楽器。
 		// ロード未完了の間は undefined（無音）になるだけで、別楽器で鳴ることはない。
 		const playPlayerNote = (e: PlayNoteEvent): void => {
-			const role = TRACK_ROLES[Number(e.trackId)] ?? `t${e.trackId}`;
-			const sf = resolveSoundFont(playerPreset, role);
+			const idx = Number(e.trackId);
+			const role = getRoleForTrackIndex(
+				idx,
+				isAdvancedMode ? "advanced" : "simple",
+			);
+			const sf = resolveSoundFont(
+				playerPreset,
+				role,
+				isAdvancedMode ? "advanced" : "simple",
+			);
 			if (!sf) return;
 			sf.play({
 				ctx: audioCtx,

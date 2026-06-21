@@ -1676,12 +1676,13 @@ export const mountDAW = (
 				? notes
 				: notes.filter((n) => n.startStep < limitSteps);
 
-		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量）。トラックとは1対1でなく曲全体に効く。
+		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量・モード）。トラックとは1対1でなく曲全体に効く。
 		// 既定/未設定（楽器=空, ドラム="none"）の項目は出力しない。
 		const metaLine = formatMmlMeta({
 			instrument: currentInstrument || undefined,
 			drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
 			volume: masterVolume,
+			mode: mode,
 		});
 
 		if (refs.decomposeChordToggle.checked) {

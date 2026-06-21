@@ -44,10 +44,12 @@ export type MmlMeta = {
 	drum?: string;
 	/** 全体音量（0-100等） */
 	volume?: number;
+	/** DAWの動作モード（simple | advanced） */
+	mode?: "simple" | "advanced";
 };
 
-/** `#inst=...` `#drum=...` `#volume=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
-const META_DIRECTIVE = /#(inst|drum|volume)=([\w-]+)/gi;
+/** `#inst=...` `#drum=...` `#volume=...` `#mode=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
+const META_DIRECTIVE = /#(inst|drum|volume|mode)=([\w-]+)/gi;
 
 /** MMLからトップレベル宣言を抽出する */
 export const parseMmlMeta = (mml: string): MmlMeta => {
@@ -59,6 +61,10 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 		else if (key === "volume") {
 			const v = Number.parseInt(m[2], 10);
 			if (!Number.isNaN(v)) meta.volume = v;
+		} else if (key === "mode") {
+			if (m[2] === "simple" || m[2] === "advanced") {
+				meta.mode = m[2];
+			}
 		}
 	}
 	return meta;
@@ -68,12 +74,13 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 export const stripMmlMeta = (mml: string): string =>
 	mml.replace(META_DIRECTIVE, "");
 
-/** メタ情報を `#inst=… #drum=… #volume=…` のMML宣言文字列へ直列化する（空なら空文字） */
+/** メタ情報を `#inst=… #drum=… #volume=… #mode=…` のMML宣言文字列へ直列化する（空なら空文字） */
 export const formatMmlMeta = (meta: MmlMeta): string => {
 	const parts: string[] = [];
 	if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
 	if (meta.drum) parts.push(`#drum=${meta.drum}`);
 	if (meta.volume !== undefined) parts.push(`#volume=${meta.volume}`);
+	if (meta.mode) parts.push(`#mode=${meta.mode}`);
 	return parts.join(" ");
 };
 
@@ -187,8 +194,9 @@ export const parseMML = (
 		// ヘッダー（@0,@1...）
 		if (part.startsWith("@")) {
 			let idx = Number.parseInt(part.substring(1), 10);
-			// clampTrackCount 指定時のみ、超過チャンネルをベース(2)へ畳み込む
-			if (clampTrackCount !== undefined && idx >= clampTrackCount) idx = 2;
+			// clampTrackCount 指定時のみ、超過チャンネルを伴奏(clampTrackCount-1)へ畳み込む
+			if (clampTrackCount !== undefined && idx >= clampTrackCount)
+				idx = clampTrackCount - 1;
 			trackIndex = idx;
 			octave = 4;
 			currentStep = 0;
