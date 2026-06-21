@@ -1113,6 +1113,7 @@ export const mountDAW = (
 						});
 					}
 					return {
+						id: trackState?.config.id,
 						model: lt.model,
 						volume:
 							vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) *
@@ -1149,9 +1150,12 @@ export const mountDAW = (
 		}
 		playbackState = "playing";
 		sequencer.start(fromStep);
-		// 楽器と同じアンカー（開始時刻）で歌声の先読みストリーミングを開始する
+		// 楽器と同じアンカー（開始時刻）で歌声の先読みストリーミングを開始する。
+		// ソロはライブ判定（楽器側＝シーケンサの getSoloTrackId と同じ基準）で渡す。
 		if (streaming && voices) {
-			voices.startStream(streamTracks, sequencer.getStartTime());
+			voices.startStream(streamTracks, sequencer.getStartTime(), {
+				isAudible: (t) => !isSolo || t.id === activeTrackId,
+			});
 		}
 		updateTransport();
 	};

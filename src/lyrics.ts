@@ -1200,6 +1200,11 @@ export type StreamVoiceNote = {
 
 /** ストリーミング再生する歌詞トラック1本。 */
 export type StreamVoiceTrack = {
+	/**
+	 * 呼び出し側がソロ/ミュート判定に使う識別子（演奏トラックの config.id 等）。
+	 * {@link StreamPlaybackOptions.isAudible} で参照する。省略時は常に可聴。
+	 */
+	id?: string;
 	/** 歌唱モデル名（koe音源キーワード or "klatt"）。 */
 	model: string;
 	/** 最終ゲイン（声量×マスタ等を適用済み。1=等倍）。 */
@@ -1208,6 +1213,18 @@ export type StreamVoiceTrack = {
 	pan: number;
 	/** 発音順（startSec昇順）の歌唱ノート列。 */
 	notes: StreamVoiceNote[];
+};
+
+/** {@link SingingVoices.startStream} の任意オプション。 */
+export type StreamPlaybackOptions = {
+	/**
+	 * そのトラックを今この瞬間に発音してよいか（ソロ/ミュート判定）。
+	 * 各ノートを合成・スケジュールする直前にライブで評価するため、再生中に
+	 * ソロを切り替えると先読み地平（最大 {@link STREAM_LOOKAHEAD_SEC} 秒）以降のノートへ反映される。
+	 * 既にスケジュール済みのノートは鳴り切る（楽器側のミュート挙動と同じ）。
+	 * 省略時は全トラック可聴。
+	 */
+	isAudible?: (track: StreamVoiceTrack) => boolean;
 };
 
 /**
@@ -1236,7 +1253,11 @@ export type SingingVoices = {
 	 * AudioContextクロック秒（＝シーケンサの開始時刻と一致させること）。
 	 * 即座に return し、合成は裏で先回り進行する。
 	 */
-	startStream: (tracks: StreamVoiceTrack[], anchorTime: number) => void;
+	startStream: (
+		tracks: StreamVoiceTrack[],
+		anchorTime: number,
+		opts?: StreamPlaybackOptions,
+	) => void;
 	/** 進行中のストリームを中断し、スケジュール済みの発音をすべて止める（停止・一時停止・シーク）。 */
 	stopStream: () => void;
 	/** ストリーム停止＋各モデルの内部状態を初期化する。 */
@@ -1373,7 +1394,11 @@ export const createSingingVoices = (
 		await Promise.all(promises);
 	};
 
-	const startStream: SingingVoices["startStream"] = (tracks, anchorTime) => {
+	const startStream: SingingVoices["startStream"] = (
+		tracks,
+		anchorTime,
+		opts,
+	) => {
 		const session = ++streamSession;
 
 		// 1トラック＝1本の独立した先読み合成ループ。トラックごとに別モデル（＝別ワーカー）
@@ -1403,6 +1428,8 @@ export const createSingingVoices = (
 					await new Promise((resolve) => setTimeout(resolve, STREAM_POLL_MS));
 					if (session !== streamSession) return;
 				}
+				// ソロ/ミュートをライブ判定。地平到達時点で対象外なら合成もスケジュールもしない。
+				if (opts?.isAudible && !opts.isAudible(track)) continue;
 				const t0 = anchorTime + note.startSec;
 
 				if (model.renderToCache && model.scheduleCached) {

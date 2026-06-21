@@ -108,13 +108,15 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		// メロディックノート
 		while (nowIndex < timeline.length) {
 			const ev = timeline[nowIndex];
-			if (soloId && ev.trackId !== soloId) {
-				nowIndex++;
-				continue;
-			}
 			const _when = ev.when - time;
+			// 先読み地平の外なら一旦止める（ソロ判定より先に評価する）。
+			// ソロ判定を先に置くと、非ソロのイベントを地平の外まで nowIndex++ で
+			// 読み飛ばして恒久消費してしまい、ソロ解除後に発音が戻らなくなる。
 			if (_when > PLAN_TIME) break;
 			nowIndex++;
+			// ソロ中は対象外トラックを「消費するが発音しない」（地平内＝0.5sぶんのみ）。
+			// これでソロをライブに切り替えても、地平の先のノートは残り発音が復帰する。
+			if (soloId && ev.trackId !== soloId) continue;
 			const velocityVolume = ev.velocity / 127;
 			const currentVolume =
 				(trackVolumeMap.get(ev.trackId) ?? ev.volume * 100) / 100;
