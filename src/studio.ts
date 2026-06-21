@@ -674,11 +674,14 @@ export const createDtmStudio = async (
 		let presetSelect: PresetSelectInstance | null = null;
 		if (wantPresetUI) {
 			editorPresetSelects.get(target)?.destroy();
+			// ローディングの暗幕はコンポーネント全体ではなくピアノロールだけに被せる。
+			// buildUI 直後なので roll 要素は存在し、楽器変更では再マウントされない（＝寿命中有効）。
+			const rollEl = target.querySelector<HTMLElement>('[data-dtm="roll"]');
 			presetSelect = mountPresetSelect(target, {
 				getDaw: () => daw,
 				getTrackIds: () => trackIds,
 				value: presetKey,
-				loadingTarget: target,
+				loadingTarget: rollEl ?? target,
 				position: "prepend",
 			});
 			editorPresetSelects.set(target, presetSelect);
