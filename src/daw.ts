@@ -57,6 +57,7 @@ import {
 } from "./types";
 import type {
 	DawInstance,
+	DawMode,
 	DawOptions,
 	DawViewState,
 	LyricTrack,
@@ -387,9 +388,16 @@ export const mountDAW = (
 
 	const getAudioTime = options.getAudioTime ?? (() => performance.now() / 1000);
 	const trackConfigs = options.tracks ?? DEFAULT_TRACKS;
+	// モードは明示指定が最優先。未指定なら後方互換でトラック数から推論する。
+	// 以降の simple/advanced 分岐はすべてこの mode / isAdvanced を経由させ、
+	// 「トラック数」や id "chord" といった暗黙シグナルへの相乗りをなくす。
+	const mode: DawMode =
+		options.mode ??
+		(trackConfigs.length > TRACKS_SIMPLE.length ? "advanced" : "simple");
+	const isAdvanced = mode === "advanced";
 	const drumPatterns = options.drumPatterns ?? DRUM_PATTERNS;
 	const showMidi = !!options.parseMidi;
-	const showChord = true;
+	const showChord = !isAdvanced;
 
 	const refs = buildUI(target, {
 		tracks: trackConfigs,
@@ -1354,7 +1362,7 @@ export const mountDAW = (
 
 		// 歌詞エディタ（全トラック共通）。歌唱モデルのプルダウン既定「なし」が無効状態を兼ねる。
 		// モデルを選んだときだけ声量・歌詞欄を出す（使わないときは隠す）。@@n model[:声量] lyrics として往復。
-		const isAdvanced = trackStates.length > TRACKS_SIMPLE.length;
+		// simpleモードの伴奏(chord)トラックだけは歌詞欄を出さず、下の伴奏UIに置き換える。
 		if (isAdvanced || active.config.id !== "chord") {
 			const lyricDiv = document.createElement("div");
 			lyricDiv.className = "dtm-row";
@@ -1878,8 +1886,7 @@ export const mountDAW = (
 	): void => {
 		clearAll();
 		for (const t of trackStates) t.core.setLoadMode(true);
-		// 上級者モード（5トラック以上）はMIDIトラックインデックスで1:1マッピング
-		const isAdvanced = trackStates.length > TRACKS_SIMPLE.length;
+		// advancedモードはMIDIトラックインデックスで1:1マッピング、simpleは役割別に自動分類
 		const { placements, bpm: parsedBpm } = isAdvanced
 			? extractMidiPlacementsByTrack(
 					midi,

@@ -193,6 +193,14 @@ export type DawViewState = {
 	ignoreChordHeavy: boolean;
 };
 
+/**
+ * DAWの動作モード。
+ * - `simple`: 4トラック（メロディー/サブメロ/ベース/伴奏）。MIDIは役割別に自動分類して取り込み、
+ *   id `chord` のトラックには歌詞欄の代わりに伴奏（コード進行）UIを出す。
+ * - `advanced`: MIDIトラックを1:1でマッピング。全トラックが通常のノートトラックとして振る舞う。
+ */
+export type DawMode = "simple" | "advanced";
+
 // mountDAW のオプション
 export type DawOptions = {
 	// --- 発音フック（ライブラリは音を出さない） ---
@@ -221,6 +229,12 @@ export type DawOptions = {
 	parseMidi?: ParseMidiFn;
 
 	// --- 設定 ---
+	/**
+	 * 動作モード（{@link DawMode}）。
+	 * 未指定のときは後方互換のため `tracks` の本数から推論する（4本以下→simple / 5本以上→advanced）。
+	 * 4トラック構成でも1:1取り込みをしたい等、トラック数と意図がずれる場合は明示指定する。
+	 */
+	mode?: DawMode;
 	/** トラック構成。既定は melody/submelody/bass/chord の4本 */
 	tracks?: TrackConfig[];
 	/** ドラムパターン辞書。既定は DRUM_PATTERNS */

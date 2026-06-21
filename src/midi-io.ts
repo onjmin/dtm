@@ -48,19 +48,21 @@ export type MidiExtraction = {
 
 /**
  * MIDIの各トラックを走査し、ノート数などの概要を返す（トラック選択UI用）。
+ * ノート数はピアノロールで編集可能なノートのみを数える（ドラム ch10 は除外）。
+ * ドラム(ch10)だけで構成されたトラックは編集できないため、結果に含めない。
  */
 export const analyzeMidiTracks = (midi: unknown): MidiTrackAnalysis[] => {
 	const { track } = midi as MidiData;
 	const result: MidiTrackAnalysis[] = [];
 
 	for (let i = 0; i < track.length; i++) {
-		const notes: { pitch: number; end?: number }[] = [];
+		const notes: { pitch: number; channel: number; end?: number }[] = [];
 		let currentTime = 0;
 		for (const event of track[i].event) {
 			currentTime += event.deltaTime;
 			const data = event.data as number[];
 			if (event.type === 9 && data && data[1]) {
-				notes.push({ pitch: data[0] });
+				notes.push({ pitch: data[0], channel: event.channel ?? 0 });
 			} else if (event.type === 8) {
 				for (let k = notes.length - 1; k >= 0; k--) {
 					if (notes[k].pitch === data[0] && notes[k].end === undefined) {
@@ -71,11 +73,15 @@ export const analyzeMidiTracks = (midi: unknown): MidiTrackAnalysis[] => {
 			}
 		}
 		const validNotes = notes.filter((n) => n.end !== undefined);
+		// ピアノロールで編集できるのはノートのみ。MIDIのドラム(ch10 = channel 9)は
+		// 取り込み時にスキップされ編集できないので、ドラムだけのトラックは選択UIに出さない。
+		const editableNotes = validNotes.filter((n) => n.channel !== 9);
+		if (validNotes.length > 0 && editableNotes.length === 0) continue;
 		result.push({
 			index: i,
 			name: `Ch${i + 1}`,
-			noteCount: validNotes.length,
-			selected: validNotes.length > 0,
+			noteCount: editableNotes.length,
+			selected: editableNotes.length > 0,
 		});
 	}
 

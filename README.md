@@ -30,6 +30,38 @@ const daw = studio.mountEditor(document.getElementById("editor"), {
 studio.mountPlayer(document.getElementById("player"), daw.getMML().full);
 ```
 
+## モード（`simple` / `advanced`）
+
+トラック構成と MIDI の取り込み方が異なる 2 つのモードがあります。`mode` オプションで切り替え、
+合わせて `tracks` に対応するトラック構成（`TRACKS_SIMPLE` / `TRACKS_ADVANCED`）を渡します。
+
+| モード | トラック | MIDI 取り込み | 伴奏（コード進行）UI |
+| --- | --- | --- | --- |
+| `simple` | メロディー / サブメロ / ベース / 伴奏 の 4 本 | 各トラックの特徴から役割へ**自動分類** | `chord` トラックに表示（歌詞欄の代わり） |
+| `advanced` | TRACK 01〜16 の 16 本 | MIDI トラックを**1:1 マッピング** | なし（全トラックが通常のノート＋歌詞トラック） |
+
+```ts
+import {
+  createDtmStudio,
+  TRACKS_SIMPLE,
+  TRACKS_ADVANCED,
+} from "@onjmin/dtm";
+
+const studio = await createDtmStudio();
+
+// シンプルモード（既定）
+studio.mountEditor(editorEl, { mode: "simple", tracks: TRACKS_SIMPLE });
+
+// アドバンスモード
+studio.mountEditor(editorEl, { mode: "advanced", tracks: TRACKS_ADVANCED });
+```
+
+- `mode` を省略すると `tracks` の本数から推論します（4 本以下→`simple` / 5 本以上→`advanced`）。
+  4 トラックでも 1:1 で取り込みたい等、意図がトラック数とずれる場合は `mode` を明示してください。
+- `tracks` には任意の独自構成も渡せます（`mode` と組み合わせて挙動を決めます）。
+- MIDI のドラム（ch10）はピアノロールで編集できないため、取り込み時の**トラック選択 UI には出ません**。
+- `mode` / `tracks` は低レベル API の `mountDAW` でも同じく指定できます。
+
 ## 低レベル API（`mountDAW` / 注入式）
 
 本体は音を持たない設計で、`onPlayNote` / `onPlayDrum` に自前のシンセを繋ぐ
