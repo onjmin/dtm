@@ -1544,19 +1544,24 @@ export const mountDAW = (
 				barLimit: barLimitBars,
 			};
 		}
-		const trackLines = trackStates.map(
-			(t, i) =>
-				`@${i} ${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim()}`,
-		);
-		const trackLinesMini = trackStates.map(
-			(t, i) =>
-				`@${i}${t.core.getMMLFromNotes(clipNotes(t.core.getNotes()), bpm, t.volume).trim().replace(/\s+/g, "")}`,
-		);
+		const trackLines: string[] = [];
+		const trackLinesMini: string[] = [];
+
+		trackStates.forEach((t, i) => {
+			const notes = clipNotes(t.core.getNotes());
+			if (notes.length > 0) {
+				const mml = t.core.getMMLFromNotes(notes, bpm, t.volume).trim();
+				trackLines.push(`@${i} ${mml}`);
+				trackLinesMini.push(`@${i}${mml.replace(/\s+/g, "")}`);
+			}
+		});
+
 		// 歌詞行（@@n model [v声量] [qゲート] [p定位] [oオクターブ] lyrics）。スペースは仕様上の区切りなのでminifyでも残す。
 		// 声量・ゲート・定位・オクターブは既定(声量=DEFAULT_VOCAL_VOLUME, ゲート=100, 定位=64, オクターブ=0)でないときだけ v/q/p/o トークンで付与する。
 		const lyricLines = trackStates
 			.map((t, i) => ({
 				i,
+				notes: clipNotes(t.core.getNotes()),
 				text: t.lyrics.replace(/[\r\n]+/g, " ").trim(),
 				model: t.lyricModel.trim(),
 				vol: t.vocalVolume,
@@ -1564,7 +1569,9 @@ export const mountDAW = (
 				pan: t.vocalPan,
 				oct: t.vocalOctave,
 			}))
-			.filter((x) => x.model.length > 0 && x.text.length > 0)
+			.filter(
+				(x) => x.model.length > 0 && x.text.length > 0 && x.notes.length > 0,
+			)
 			.map((x) => {
 				const params = [
 					x.vol === DEFAULT_VOCAL_VOLUME ? "" : `v${x.vol}`,
@@ -1587,7 +1594,7 @@ export const mountDAW = (
 			full,
 			minified,
 			ignoredCount: 0,
-			trackCount: trackStates.length,
+			trackCount: trackLines.length,
 			barLimit: barLimitBars,
 		};
 	};
