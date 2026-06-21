@@ -131,12 +131,9 @@ export const mountMmlPlayer = (
 		() => new Set(),
 	);
 	for (const p of placements) {
-		// ドラムトラック以外のメロディックトラック（trackIndex 0-3）を対象にする
-		if (p.trackIndex >= 0 && p.trackIndex <= 3) {
-			for (let s = p.startStep; s < p.startStep + p.durationSteps; s++) {
-				if (s >= 0 && s <= maxStep) {
-					stepPitches[s].add(p.pitch);
-				}
+		for (let s = p.startStep; s < p.startStep + p.durationSteps; s++) {
+			if (s >= 0 && s <= maxStep) {
+				stepPitches[s].add(p.pitch);
 			}
 		}
 	}
@@ -592,7 +589,15 @@ export const mountMmlPlayer = (
 		for (let i = 0; i < 4; i++)
 			beatDots[i].classList.toggle("dtm-player-beat-dot--on", i === beatIndex);
 		barEl.textContent = String(Math.floor(step / STEPS_PER_BAR) + 1);
-		chordEl.textContent = stepChords[step] ?? "";
+		const chordName = stepChords[step] ?? "";
+		if (chordEl.textContent !== chordName) {
+			chordEl.textContent = chordName;
+			if (chordName) {
+				console.log(
+					`[dtm-player-chord] Active Chord: ${chordName} (step: ${step})`,
+				);
+			}
+		}
 		for (const view of laneViews) {
 			let active: LaneToken | null = null;
 			for (const t of view.tokens) {
