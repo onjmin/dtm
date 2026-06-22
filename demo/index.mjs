@@ -5876,6 +5876,7 @@ var STEPS_PER_BEAT3 = 48;
 var STEPS_PER_BAR = 192;
 var DEFAULT_TRACK_COLORS = ["#00e436", "#29adff", "#ff77a8", "#ffec27"];
 var activePlayer = null;
+var agreedModelsInSession = /* @__PURE__ */ new Set();
 var LYRIC_MODEL_LABELS = {
   klatt: "\u8EFD\u91CF\u30ED\u30DC\u58F0",
   ...KOE_VOICEBANK_LABELS
@@ -6440,6 +6441,76 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     root.appendChild(termsDiv);
   }
   target.appendChild(root);
+  let consentOverlayEl = null;
+  const checkConsentAndShow = () => {
+    try {
+      const unagreed = termsModels.filter((model) => {
+        if (agreedModelsInSession.has(model)) return false;
+        try {
+          if (typeof localStorage === "undefined" || !localStorage) return true;
+          return localStorage.getItem(`dtm_agreed_terms_${model}`) !== "true";
+        } catch (e) {
+          console.warn(
+            "[dtm-player] localStorage access denied in consent check",
+            e
+          );
+          return true;
+        }
+      });
+      if (unagreed.length === 0) return;
+      const consentOverlay = doc.createElement("div");
+      consentOverlay.className = "dtm-consent-overlay";
+      const modal = doc.createElement("div");
+      modal.className = "dtm-win dtm-consent-modal";
+      const header = doc.createElement("div");
+      header.className = "dtm-consent-header";
+      header.textContent = "\u5229\u7528\u898F\u7D04\u306E\u78BA\u8A8D";
+      const body2 = doc.createElement("div");
+      body2.className = "dtm-consent-body";
+      let contentHTML = `<p style="margin-bottom: 12px; font-weight: bold; color: var(--dtm-danger);">\u672C\u30C7\u30FC\u30BF\u306B\u306F UTAU \u6B4C\u58F0\u97F3\u6E90\u304C\u542B\u307E\u308C\u3066\u3044\u307E\u3059\u3002<br>\u3054\u5229\u7528\u306B\u3042\u305F\u3063\u3066\u306F\u3001\u4EE5\u4E0B\u306E\u97F3\u6E90\u5229\u7528\u898F\u7D04\u3078\u306E\u540C\u610F\u304C\u5FC5\u8981\u3067\u3059\u3002</p>`;
+      for (const model of unagreed) {
+        const label = KOE_VOICEBANK_LABELS[model] || model;
+        const url2 = KOE_VOICEBANK_TERMS[model];
+        contentHTML += `
+					<div style="margin-bottom: 12px; padding: 10px; background: var(--dtm-deep); border: 2px solid var(--c-black); box-shadow: 2px 2px 0 var(--c-black);">
+						<div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11px; font-weight: bold; color: var(--dtm-gold);">
+							<span>\u4F7F\u7528\u6642\u306B\u306F</span>
+							<a href="${url2}" target="_blank" rel="noopener noreferrer" style="color: var(--dtm-primary); text-decoration: underline;">${label}UTAU\u97F3\u6E90</a>
+							<span>\u306E\u5229\u7528\u898F\u7D04\u306B\u5F93\u3063\u3066\u304F\u3060\u3055\u3044</span>
+						</div>
+					</div>
+				`;
+      }
+      body2.innerHTML = contentHTML;
+      const footer = doc.createElement("div");
+      footer.className = "dtm-consent-footer";
+      const btn = doc.createElement("button");
+      btn.type = "button";
+      btn.className = "dtm-btn dtm-btn--success";
+      btn.textContent = "\u540C\u610F\u3057\u3066\u5229\u7528\u3059\u308B";
+      btn.onclick = () => {
+        for (const model of unagreed) {
+          try {
+            if (typeof localStorage !== "undefined" && localStorage) {
+              localStorage.setItem(`dtm_agreed_terms_${model}`, "true");
+            }
+          } catch (e) {
+          }
+          agreedModelsInSession.add(model);
+        }
+        consentOverlay.remove();
+        consentOverlayEl = null;
+      };
+      footer.appendChild(btn);
+      modal.append(header, body2, footer);
+      consentOverlay.appendChild(modal);
+      doc.body.appendChild(consentOverlay);
+      consentOverlayEl = consentOverlay;
+    } catch (err2) {
+      console.error("[dtm-player] Error in checkConsentAndShow:", err2);
+    }
+  };
+  checkConsentAndShow();
   const autoScroll = (lane, el) => {
     if (el.offsetWidth === 0 || lane.clientWidth === 0) return;
     const elementCenter = el.offsetLeft + el.offsetWidth / 2;
@@ -6614,6 +6685,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       hideActiveBalloon();
     }
     root.remove();
+    consentOverlayEl?.remove();
   };
   const instance = {
     play,
@@ -6986,7 +7058,7 @@ var mountDAW = (target, options = {}) => {
   let selectedNotes = [];
   let selectionRect = null;
   let copiedNotes = [];
-  const agreedModelsInSession = /* @__PURE__ */ new Set();
+  const agreedModelsInSession2 = /* @__PURE__ */ new Set();
   function checkSingingVoiceConsent() {
     try {
       const requiredModels = /* @__PURE__ */ new Set();
@@ -6996,7 +7068,7 @@ var mountDAW = (target, options = {}) => {
         }
       }
       const unagreed = Array.from(requiredModels).filter((model) => {
-        if (agreedModelsInSession.has(model)) return false;
+        if (agreedModelsInSession2.has(model)) return false;
         try {
           if (typeof localStorage === "undefined" || !localStorage) return true;
           return localStorage.getItem(`dtm_agreed_terms_${model}`) !== "true";
@@ -7039,7 +7111,7 @@ var mountDAW = (target, options = {}) => {
             }
           } catch (e) {
           }
-          agreedModelsInSession.add(model);
+          agreedModelsInSession2.add(model);
         }
         refs.consentOverlay.setAttribute("hidden", "");
       };
