@@ -52,6 +52,7 @@ export type DawUIRefs = {
 	midiPanel: HTMLElement;
 	mmlInput: HTMLTextAreaElement;
 	mmlLoadBtn: HTMLButtonElement;
+	mmlLoadNote: HTMLElement;
 	shiftSelect: HTMLSelectElement;
 	shiftApplyBtn: HTMLButtonElement;
 	// macros
@@ -220,6 +221,7 @@ export const buildUI = (
         <textarea class="dtm-textarea dtm-grow" data-dtm="mml-input" placeholder="MMLを入力"></textarea>
         <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">読込</button>
       </div>
+      <p class="dtm-load-note dtm-hidden" data-dtm="mml-load-note"></p>
     </div>
   </details>
 
@@ -348,6 +350,7 @@ export const buildUI = (
 		midiPanel: sel("midi-panel"),
 		mmlInput: sel("mml-input"),
 		mmlLoadBtn: sel("mml-load"),
+		mmlLoadNote: sel("mml-load-note"),
 		shiftSelect: sel("shift-select"),
 		shiftApplyBtn: sel("shift-apply"),
 		macroClear: sel("macro-clear"),

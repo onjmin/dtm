@@ -762,6 +762,18 @@ export const DAW_CSS = `
 }
 
 .dtm-hidden { display: none !important; }
+/* 読込時の控えめなお知らせ（例: シンプルモードでのトラック合算）。主張しすぎない muted 表示。 */
+.dtm-load-note {
+  margin: 6px 0 0;
+  padding: 0 2px;
+  font-family: var(--dtm-font);
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: .04em;
+  color: var(--dtm-muted);
+  opacity: .85;
+}
+.dtm-load-note::before { content: "ⓘ "; }
 .dtm-grow { flex: 1 1 auto; }
 .dtm-lyric-icon {
   flex: 0 0 auto;

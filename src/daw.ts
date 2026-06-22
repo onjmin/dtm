@@ -1841,6 +1841,7 @@ export const mountDAW = (
 			bpm: parsedBpm,
 			lyrics,
 			meta,
+			mergedTrackCount,
 		} = parseMML(mml, {
 			stepsPerBar: renderConfig.stepsPerBar,
 			collectLyrics: true,
@@ -1902,6 +1903,16 @@ export const mountDAW = (
 		redrawAll();
 		updateTrackPanel(); // 読み込んだ歌詞を編集UIへ反映
 		updateUndoRedo();
+		// シンプルモードでは4トラックを超えるチャンネルが伴奏へ畳み込まれ合算される。
+		// 起きたときだけ控えめにお知らせする（advancedモードは1:1なので出さない）。
+		if (!isAdvanced && mergedTrackCount > 0) {
+			refs.mmlLoadNote.textContent =
+				"シンプルモードのため、一部のトラックを合算して読み込みました";
+			refs.mmlLoadNote.classList.remove("dtm-hidden");
+		} else {
+			refs.mmlLoadNote.textContent = "";
+			refs.mmlLoadNote.classList.add("dtm-hidden");
+		}
 	};
 
 	const applyChord = (): void => {

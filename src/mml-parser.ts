@@ -117,6 +117,12 @@ export type ParsedMML = {
 	 * 演奏トラック（@n）の n と同じIDで対応づく。
 	 */
 	lyrics?: Map<number, LyricTrack>;
+	/**
+	 * 1つの取り込み先トラックへ2系統以上のソースチャンネル（@n）の発音が合算された
+	 * トラック数。`clampTrackCount` による畳み込み等で発生する。0なら合算なし。
+	 * シンプルモードで「複数トラックを合算した」旨を控えめに知らせる用途。
+	 */
+	mergedTrackCount: number;
 	/** トップレベル宣言（楽器プリセット・ドラムパターン）。常に返す（無ければ空オブジェクト） */
 	meta: MmlMeta;
 };
@@ -157,6 +163,7 @@ export const parseMML = (
 			bpm,
 			tokenTracks: collectTokens ? tokenTracks : undefined,
 			lyrics: collectLyrics ? new Map() : undefined,
+			mergedTrackCount: 0,
 			meta: {},
 		};
 	}
@@ -183,10 +190,23 @@ export const parseMML = (
 	// 3. @(\d+) で分割
 	const parts = fullMML.split(/(@\d+)/).filter((p) => p.trim().length > 0);
 
-	let trackIndex = 0; // 既定はmelody
+	let trackIndex = 0; // 既定はmelody（畳み込み後の取り込み先）
+	let sourceTrackIndex = 0; // 畳み込み前のソースチャンネル（@n の n）
 	let octave = 4;
 	let currentStep = 0;
 	let baseLength = 16;
+
+	// 取り込み先トラック → 発音を供給したソースチャンネル集合。
+	// 1トラックに2系統以上集まれば「合算」されたとみなす（clamp畳み込み等）。
+	const contributors = new Map<number, Set<number>>();
+	const recordContributor = (): void => {
+		let set = contributors.get(trackIndex);
+		if (!set) {
+			set = new Set();
+			contributors.set(trackIndex, set);
+		}
+		set.add(sourceTrackIndex);
+	};
 
 	for (const rawPart of parts) {
 		const part = rawPart.trim();
@@ -194,6 +214,7 @@ export const parseMML = (
 		// ヘッダー（@0,@1...）
 		if (part.startsWith("@")) {
 			let idx = Number.parseInt(part.substring(1), 10);
+			sourceTrackIndex = idx;
 			// clampTrackCount 指定時のみ、超過チャンネルを伴奏(clampTrackCount-1)へ畳み込む
 			if (clampTrackCount !== undefined && idx >= clampTrackCount)
 				idx = clampTrackCount - 1;
@@ -338,6 +359,7 @@ export const parseMML = (
 				}
 				if (j < body.length && body[j] === "]") j++;
 				const steps = parseLength();
+				if (chordNotes.length > 0) recordContributor();
 				for (const p of chordNotes) {
 					placements.push({
 						trackIndex,
@@ -362,6 +384,7 @@ export const parseMML = (
 				}
 				const midiPitch = (octave + 1) * 12 + pitch;
 				const steps = parseLength();
+				recordContributor();
 				placements.push({
 					trackIndex,
 					startStep: currentStep,
@@ -376,11 +399,17 @@ export const parseMML = (
 		}
 	}
 
+	let mergedTrackCount = 0;
+	for (const set of contributors.values()) {
+		if (set.size >= 2) mergedTrackCount++;
+	}
+
 	return {
 		placements,
 		bpm,
 		tokenTracks: collectTokens ? tokenTracks : undefined,
 		lyrics,
+		mergedTrackCount,
 		meta,
 	};
 };
