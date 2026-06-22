@@ -1885,6 +1885,15 @@ export const mountDAW = (
 		stop();
 		clearAll();
 		for (const t of trackStates) t.core.setLoadMode(true);
+		// MIDI入力には歌詞情報がないので全トラックの歌詞を初期化する
+		for (const t of trackStates) {
+			t.lyrics = "";
+			t.lyricModel = "";
+			t.vocalVolume = DEFAULT_VOCAL_VOLUME;
+			t.vocalGate = 100;
+			t.vocalPan = 64;
+			t.vocalOctave = 0;
+		}
 		// advancedモードはMIDIトラックインデックスで1:1マッピング、simpleは役割別に自動分類
 		const { placements, bpm: parsedBpm } = isAdvanced
 			? extractMidiPlacementsByTrack(
@@ -1915,6 +1924,7 @@ export const mountDAW = (
 			setDrawOffset(currentOffsetX, currentOffsetY);
 		}
 		redrawAll();
+		updateTrackPanel();
 		updateUndoRedo();
 	};
 
