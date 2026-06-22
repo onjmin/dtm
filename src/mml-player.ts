@@ -16,6 +16,7 @@ import {
 	KOE_VOICEBANK_LABELS,
 	KOE_VOICEBANK_TERMS,
 	panToStereo,
+	PREWARM_NOTES,
 	type SingingVoices,
 	type StreamVoiceTrack,
 	VOICE_IMAGE_KEY,
@@ -1161,8 +1162,8 @@ export const mountMmlPlayer = (
 			const em = emojiByTrack.get(trackIdx);
 			if (em) jumpEmojiAt(em, e.when);
 			// 歌詞トラックの発音は歌声ストリーミング（startStream）が担当するため、
-			// ここでは楽器音も歌声も鳴らさない。
-			if (lyricTracks.has(trackIdx)) return;
+			// ここでは楽器音も歌声も鳴らさない。（ただし音声合成をスキップした場合は鳴らす）
+			if (lyricTracks.has(trackIdx) && !skipSinging) return;
 			options.onPlayNote?.(e);
 			if (useSynth) ensureSynth().playNote(e);
 		},
@@ -1182,6 +1183,7 @@ export const mountMmlPlayer = (
 	});
 
 	let playing = false;
+	let skipSinging = false;
 
 	const setPlayingUI = (on: boolean): void => {
 		playing = on;
@@ -1235,19 +1237,40 @@ export const mountMmlPlayer = (
 		const tracks = streaming ? buildStreamTracks() : [];
 		if (streaming) {
 			const v = ensureVoices();
-			const overlay = showLoadingOverlay(body);
+			const overlay = showLoadingOverlay(body, {
+				skipLabel: "音声合成をスキップ（元のメロディで再生）",
+				onSkip: () => {
+					if (!playing || activePlayer !== instance) return;
+					skipSinging = true;
+					overlay.remove();
+					seq.start(0);
+				},
+			});
 			try {
 				await v.loadModels(tracks.map((t) => t.model));
-				await v.warm(tracks);
+				if (skipSinging) return;
+				const startTime = performance.now();
+				await v.warm(tracks, PREWARM_NOTES, (done, total) => {
+					if (skipSinging) return;
+					if (done === 0) {
+						overlay.setProgress(done, total);
+					} else {
+						const elapsed = (performance.now() - startTime) / 1000;
+						const avg = elapsed / done;
+						const remaining = total - done;
+						const remainingSec = Math.ceil(remaining * avg);
+						overlay.setProgress(done, total, remainingSec);
+					}
+				});
 			} catch (err) {
 				console.warn("[dtm] voice preload failed", err);
 			} finally {
 				overlay.remove();
 			}
-			if (!playing || activePlayer !== instance) return;
+			if (!playing || activePlayer !== instance || skipSinging) return;
 		}
 		seq.start(0);
-		if (streaming) {
+		if (streaming && !skipSinging) {
 			ensureVoices().startStream(tracks, seq.getStartTime(), {
 				isAudible: (t) => !mutedTracks.has(Number(t.id)),
 				onLateSkip: () => {
@@ -1264,6 +1287,7 @@ export const mountMmlPlayer = (
 		if (checkConsentAndShow(() => play())) return;
 		if (activePlayer && activePlayer !== instance) activePlayer.stop();
 		activePlayer = instance;
+		skipSinging = false;
 		setPlayingUI(true);
 		// AudioContext の resume は非同期。suspended のまま（currentTime が凍結した状態で）
 		// スケジュールを始めると、resume 完了の瞬間に先読み予約が過去時刻となり一斉発音され、

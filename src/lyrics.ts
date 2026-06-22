@@ -1265,7 +1265,11 @@ export type SingingVoices = {
 	 * 各トラック先頭の数音を先に合成してキャッシュへ積む（頭出しの貯金）。
 	 * これで再生開始直後の密なフレーズでもアンダーランしにくくなる。count 既定 {@link PREWARM_NOTES}。
 	 */
-	warm: (tracks: StreamVoiceTrack[], count?: number) => Promise<void>;
+	warm: (
+		tracks: StreamVoiceTrack[],
+		count?: number,
+		onProgress?: (done: number, total: number) => void,
+	) => Promise<void>;
 	/**
 	 * 歌声のストリーミング再生を開始する。anchorTime は startSec=0 が鳴るべき
 	 * AudioContextクロック秒（＝シーケンサの開始時刻と一致させること）。
@@ -1390,26 +1394,48 @@ export const createSingingVoices = (
 		}
 	};
 
-	const warm: SingingVoices["warm"] = async (tracks, count = PREWARM_NOTES) => {
-		const promises: Promise<unknown>[] = [];
+	const warm: SingingVoices["warm"] = async (
+		tracks,
+		count = PREWARM_NOTES,
+		onProgress,
+	) => {
+		const tasks: {
+			model: VoiceModel;
+			note: StreamVoiceNote;
+			prevVowel: string;
+		}[] = [];
+
 		for (const track of tracks) {
 			const m = loaded.get(track.model.toLowerCase());
 			if (!m?.renderToCache) continue; // klatt等（軽量）は先合成不要
 			let n = 0;
 			forEachSungNote(track, (note, prevVowel) => {
-				// 個数が count 個未満、または先読み上限秒数（STREAM_LOOKAHEAD_SEC）以内の音符を事前合成対象とする
 				if (n >= count && note.startSec >= STREAM_LOOKAHEAD_SEC) return;
 				n++;
-				promises.push(
-					m.renderToCache?.(
-						note.syllable,
-						prevVowel,
-						note.pitch,
-						note.durationSec * 1000,
-					) ?? Promise.resolve(null),
-				);
+				tasks.push({ model: m, note, prevVowel });
 			});
 		}
+
+		const total = tasks.length;
+		if (total === 0) {
+			onProgress?.(0, 0);
+			return;
+		}
+
+		let done = 0;
+		onProgress?.(done, total);
+
+		const promises = tasks.map(async (task) => {
+			await (task.model.renderToCache?.(
+				task.note.syllable,
+				task.prevVowel,
+				task.note.pitch,
+				task.note.durationSec * 1000,
+			) ?? Promise.resolve(null));
+			done++;
+			onProgress?.(done, total);
+		});
+
 		await Promise.all(promises);
 	};
 

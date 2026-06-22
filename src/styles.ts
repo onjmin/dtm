@@ -593,6 +593,33 @@ export const DAW_CSS = `
   letter-spacing: .15em;
   min-height: 1em;
 }
+.dtm-overlay-skip-btn {
+  margin-top: 12px;
+  min-height: 32px;
+  font-size: 11px;
+  font-family: var(--dtm-font);
+  padding: 0 12px;
+  background: var(--dtm-surface);
+  border: 2px solid var(--dtm-border2);
+  color: var(--dtm-muted);
+  box-shadow: 2px 2px 0 var(--c-black);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.dtm-overlay-skip-btn:hover {
+  color: var(--dtm-text);
+  border-color: var(--dtm-primary);
+}
+.dtm-overlay-skip-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+.dtm-overlay-skip-btn:disabled {
+  opacity: .3;
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+}
 .dtm-topbar-loading {
   display: none;
   font-family: var(--dtm-font);
@@ -1246,9 +1273,17 @@ export const injectStyles = (doc: Document = document): void => {
  */
 export const showLoadingOverlay = (
 	container: HTMLElement,
+	options?: {
+		onSkip?: () => void;
+		skipLabel?: string;
+	},
 ): {
 	remove: () => void;
-	setProgress: (done: number, total: number) => void;
+	setProgress: (
+		done: number,
+		total: number,
+		remainingTimeSec?: number | null,
+	) => void;
 } => {
 	const origPos = container.style.position;
 	const computed = window.getComputedStyle(container).position;
@@ -1271,14 +1306,35 @@ export const showLoadingOverlay = (
 	label.className = "dtm-loading-label";
 	overlay.appendChild(label);
 
+	if (options?.onSkip) {
+		const skipBtn = doc.createElement("button");
+		skipBtn.type = "button";
+		skipBtn.className = "dtm-overlay-skip-btn";
+		skipBtn.textContent = options.skipLabel ?? "音声合成をスキップ";
+		skipBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			skipBtn.disabled = true;
+			options.onSkip?.();
+		});
+		overlay.appendChild(skipBtn);
+	}
+
 	container.appendChild(overlay);
 
-	const setProgress = (done: number, total: number): void => {
+	const setProgress = (
+		done: number,
+		total: number,
+		remainingTimeSec?: number | null,
+	): void => {
 		if (total > 0) {
 			const pct = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
 			spinner.classList.add("dtm-spinner--determinate");
 			fill.style.width = `${pct}%`;
-			label.textContent = `${done} / ${total} (${pct}%)`;
+			if (remainingTimeSec !== undefined && remainingTimeSec !== null) {
+				label.textContent = `${done} / ${total} (${pct}%) - あと約 ${remainingTimeSec} 秒`;
+			} else {
+				label.textContent = `${done} / ${total} (${pct}%)`;
+			}
 		} else {
 			spinner.classList.remove("dtm-spinner--determinate");
 			fill.style.width = "0";
@@ -1288,8 +1344,10 @@ export const showLoadingOverlay = (
 
 	return {
 		remove: () => {
-			overlay.remove();
-			container.style.position = origPos;
+			if (overlay.parentNode) {
+				overlay.remove();
+				container.style.position = origPos;
+			}
 		},
 		setProgress,
 	};
