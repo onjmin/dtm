@@ -1392,7 +1392,8 @@ export const createSingingVoices = (
 			if (!m?.renderToCache) continue; // klatt等（軽量）は先合成不要
 			let n = 0;
 			forEachSungNote(track, (note, prevVowel) => {
-				if (n >= count) return;
+				// 個数が count 個未満、または開始から3秒以内の音符を事前合成対象とする
+				if (n >= count && note.startSec >= 3.0) return;
 				n++;
 				promises.push(
 					m.renderToCache?.(
@@ -1446,16 +1447,21 @@ export const createSingingVoices = (
 				const t0 = anchorTime + note.startSec;
 
 				if (model.renderToCache && model.scheduleCached) {
-					// koe音源: 重い合成を await してからスケジュール。await 自体が
-					// ワーカー応答待ちでイベントループへ制御を返すので追加の yield は不要。
-					const key = await model.renderToCache(
-						note.syllable,
-						prevVowel,
-						note.pitch,
-						note.durationSec * 1000,
-					);
-					if (session !== streamSession) return;
-					if (key) model.scheduleCached(key, t0, peak, track.pan);
+					const renderToCache = model.renderToCache;
+					const scheduleCached = model.scheduleCached;
+					// koe音源: 重い合成を await せずに非同期で走らせる。
+					// これにより、同じ先読み範囲にある後続の音符の合成リクエストも同時に Worker へ送信され、
+					// 特に和音などの同時発音における合成の遅延（スループットの頭打ち）を防ぐ。
+					void (async () => {
+						const key = await renderToCache(
+							note.syllable,
+							prevVowel,
+							note.pitch,
+							note.durationSec * 1000,
+						);
+						if (session !== streamSession) return;
+						if (key) scheduleCached(key, t0, peak, track.pan);
+					})();
 				} else {
 					// klatt等（軽量・状態なし）: 絶対未来時刻へ直接スケジュール。
 					// await が無く同期で回るため、UI応答性のため1音ごとに制御を返す。
