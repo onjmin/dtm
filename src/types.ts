@@ -220,6 +220,11 @@ export type DawOptions = {
 	 */
 	onDrumChange?: (name: string) => void;
 	/**
+	 * 楽器プリセットが変化したときに呼ばれる（ユーザー操作・MML読み込みによる自動入力の両方）。
+	 * 利用側が選択状態を永続化したり、外部音源のロードを行ったりする用途に使う。
+	 */
+	onInstrumentChange?: (name: string) => void;
+	/**
 	 * 表示・出力設定（ズーム / 和音分解モード / 和音伴奏トラック無視）が変化したときに呼ばれる。
 	 * 利用側が選択状態を永続化する用途に使う。
 	 */
@@ -272,6 +277,8 @@ export type DawInstance = {
 	exportMIDI: () => Blob;
 	setBpm: (bpm: number) => void;
 	getPlaybackState: () => PlaybackState;
+	getCurrentPlayStep: () => number;
+	forcePauseAt: (step: number) => void;
 	setLoading?: (loading: boolean) => void;
 	destroy: () => void;
 };

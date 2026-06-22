@@ -24,7 +24,7 @@ import {
 	type MmlPlayerOptions,
 	mountMmlPlayer,
 } from "./mml-player";
-import { parseMML } from "./mml-parser";
+import { parseMML, parseMmlMeta } from "./mml-parser";
 import { showLoadingOverlay } from "./styles";
 import { parseArrayBuffer } from "midi-json-parser";
 import type {
@@ -694,15 +694,23 @@ export const createDtmStudio = async (
 		target: HTMLElement,
 		opts: MountEditorOptions = {},
 	): DawInstance => {
-		const { preset, presetUI, ...dawOverrides } = opts;
+		const { preset, presetUI, onInstrumentChange, ...dawOverrides } = opts;
 		const tracks: TrackConfig[] = dawOverrides.tracks ?? TRACKS_SIMPLE;
 		const trackIds = tracks.map((t) => t.id);
 
 		const presetKey =
 			preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
+
+		// MML内にこのアプリの規定する楽器指定があればそれを初期プリセットにする
+		const meta = opts.initialMML ? parseMmlMeta(opts.initialMML) : {};
+		const initialPreset =
+			meta.instrument && INSTRUMENT_PRESETS[meta.instrument]
+				? meta.instrument
+				: presetKey;
+
 		// このエディタが現在使うプリセット。プリセット選択UIの変更で更新する。
 		// 楽器解決をこのエディタ専属にすることで、他のエディタ/再生UIと音源を取り合わない。
-		let editorPreset = presetKey;
+		let editorPreset = initialPreset;
 		const isAdvancedMode = dawOverrides.mode === "advanced";
 		const playNote = (e: PlayNoteEvent): void => {
 			const sf = resolveSoundFont(
@@ -721,6 +729,16 @@ export const createDtmStudio = async (
 			});
 		};
 
+		// 楽器変更（MML読込時など）に追従する
+		let presetSelect: PresetSelectInstance | null = null;
+		const handleInstrumentChange = (key: string): void => {
+			editorPreset = key;
+			if (presetSelect) {
+				presetSelect.setValue(key);
+			}
+			onInstrumentChange?.(key);
+		};
+
 		const base: DawOptions = {
 			getAudioTime: () => audioCtx.currentTime,
 			onResumeAudio: resumeAudio,
@@ -729,6 +747,7 @@ export const createDtmStudio = async (
 			singingVoices,
 			parseMidi,
 			onToggleRecord,
+			onInstrumentChange: handleInstrumentChange,
 			...dawOverrides,
 		};
 
@@ -740,7 +759,6 @@ export const createDtmStudio = async (
 		// プリセット選択UI（任意）。DAW の先頭へ差し込み、配線は mountPresetSelect に委ねる。
 		// 同じ target への再マウントで重複しないよう、既存分は破棄する。
 		const wantPresetUI = presetUI ?? features.presetUI;
-		let presetSelect: PresetSelectInstance | null = null;
 		if (wantPresetUI) {
 			editorPresetSelects.get(target)?.destroy();
 			// ローディングの暗幕はコンポーネント全体ではなくピアノロールだけに被せる。
@@ -749,7 +767,7 @@ export const createDtmStudio = async (
 			presetSelect = mountPresetSelect(target, {
 				getDaw: () => daw,
 				getTrackIds: () => trackIds,
-				value: presetKey,
+				value: initialPreset,
 				loadingTarget: rollEl ?? target,
 				position: "prepend",
 				// 楽器変更時、このエディタの発音解決が使うプリセットも追従させる。
@@ -761,10 +779,10 @@ export const createDtmStudio = async (
 		}
 
 		// このエディタのトラック構成ぶんプリセットをロードして名前も埋め込む。
-		daw.setInstrument(presetKey);
+		daw.setInstrument(initialPreset);
 		daw.setLoading?.(true);
 		void loadPreset(
-			presetKey,
+			initialPreset,
 			trackIds,
 			isAdvancedMode ? "advanced" : "simple",
 		).finally(() => {
@@ -780,7 +798,17 @@ export const createDtmStudio = async (
 			const i = mountedEditors.indexOf(daw);
 			if (i >= 0) mountedEditors.splice(i, 1);
 		};
-		return { ...daw, destroy };
+		return {
+			...daw,
+			setInstrument: (name: string) => {
+				daw.setInstrument(name);
+				editorPreset = name;
+				if (presetSelect) {
+					presetSelect.setValue(name);
+				}
+			},
+			destroy,
+		};
 	};
 
 	// モード切替UI（SIMPLE/ADVANCED）。編集UIのマウント／再マウントごと面倒を見る。

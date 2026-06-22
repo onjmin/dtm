@@ -124,11 +124,11 @@ export const DAW_CSS = `
 }
 .dtm-btn:active  { transform: translate(3px,3px); box-shadow: none; }
 .dtm-btn:disabled { opacity: .3; cursor: default; box-shadow: none; }
+.dtm-btn--ghost   { background: transparent; border-color: var(--dtm-border2); }
 .dtm-btn--primary { border-color: var(--dtm-primary); background: var(--dtm-primary); color: var(--dtm-pfg); }
 .dtm-btn--success { border-color: var(--dtm-success); background: var(--dtm-success); color: var(--c-black); }
 .dtm-btn--danger  { border-color: var(--dtm-danger);  background: var(--dtm-danger);  color: var(--c-white); }
 .dtm-btn--accent  { border-color: var(--dtm-accent);  background: var(--dtm-accent);  color: var(--c-black); }
-.dtm-btn--ghost   { background: transparent; border-color: var(--dtm-border2); }
 .dtm-btn--icon    { padding: 0; }
 
 /* ─── アイコンボタン ─── */
@@ -873,6 +873,62 @@ export const DAW_CSS = `
   white-space: nowrap;
 }
 .dtm-player-mml-link:hover { color: var(--dtm-primary); }
+.dtm-player-more-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.dtm-player-more-btn {
+  background: transparent;
+  border: none;
+  color: var(--dtm-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  transition: color 0.15s, background-color 0.15s;
+}
+.dtm-player-more-btn:hover,
+.dtm-player-more-btn.is-active {
+  color: var(--dtm-text);
+  background: var(--dtm-border2);
+}
+.dtm-player-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--dtm-deep);
+  border: 2px solid var(--dtm-border2);
+  box-shadow: 4px 4px 0 var(--c-black);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  min-width: 130px;
+  font-family: var(--dtm-font);
+}
+.dtm-player-menu-item {
+  background: transparent;
+  border: none;
+  color: var(--dtm-text);
+  padding: 6px 12px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+  white-space: nowrap;
+  width: 100%;
+  box-sizing: border-box;
+  transition: background-color 0.1s, color 0.1s;
+}
+.dtm-player-menu-item:hover {
+  background: var(--dtm-primary);
+  color: var(--dtm-pfg);
+}
 .dtm-player-emoji {
   position: relative;
   display: inline-flex;

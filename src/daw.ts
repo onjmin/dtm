@@ -9,6 +9,7 @@ import { buildChordPlacements, type ChordPatternType } from "./chords";
 import { buildUI } from "./daw-ui";
 import { DRUM_PATTERNS } from "./drum-config";
 import { icon } from "./icons";
+import { INSTRUMENT_PRESETS } from "./instrument-presets";
 import {
 	KOE_VOICEBANK_LABELS,
 	KOE_VOICEBANK_TERMS,
@@ -1142,6 +1143,10 @@ export const mountDAW = (
 				0,
 				Math.floor(step / snapGridSteps) * snapGridSteps,
 			);
+			if (playbackState === "paused") {
+				playbackState = "stopped";
+				updateTransport();
+			}
 			redrawAll();
 		});
 
@@ -1247,9 +1252,14 @@ export const mountDAW = (
 			}
 			redrawAll();
 		},
-		onEnd: () => {
-			playbackState = "stopped";
-			currentPlayStep = 0;
+		onEnd: (interrupted) => {
+			if (interrupted) {
+				playbackState = "paused";
+				pausedPlayStep = currentPlayStep;
+			} else {
+				playbackState = "stopped";
+				currentPlayStep = 0;
+			}
 			updateTransport();
 			redrawAll();
 		},
@@ -1359,7 +1369,7 @@ export const mountDAW = (
 		redrawAll();
 	};
 	const togglePlay = (): void => {
-		if (playbackState === "playing") stop();
+		if (playbackState === "playing") pause();
 		else play();
 	};
 
@@ -1369,11 +1379,11 @@ export const mountDAW = (
 	const updateTransport = (): void => {
 		const playing = playbackState === "playing";
 		const label = playing
-			? "停止"
+			? "一時停止"
 			: playbackState === "paused"
 				? "再開"
 				: "試聴";
-		refs.playBtn.innerHTML = `${icon(playing ? "stop" : "play")}<span>${label}</span>`;
+		refs.playBtn.innerHTML = `${icon(playing ? "pause" : "play")}<span>${label}</span>`;
 		refs.playBtn.classList.toggle("dtm-play--stop", playing);
 	};
 
@@ -1834,6 +1844,7 @@ export const mountDAW = (
 
 	const loadMML = (mml: string): void => {
 		if (!mml) return;
+		stop();
 		clearAll();
 		for (const t of trackStates) t.core.setLoadMode(true);
 		const {
@@ -1849,7 +1860,10 @@ export const mountDAW = (
 			clampTrackCount: trackStates.length,
 		});
 		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量）を復元する
-		currentInstrument = meta.instrument ?? "";
+		if (meta.instrument && INSTRUMENT_PRESETS[meta.instrument]) {
+			currentInstrument = meta.instrument;
+			options.onInstrumentChange?.(meta.instrument);
+		}
 		if (meta.drum && drumPatterns[meta.drum]) {
 			currentDrumPattern = meta.drum;
 			refs.drumSelect.value = meta.drum;
@@ -1951,6 +1965,7 @@ export const mountDAW = (
 		midi: unknown,
 		selectedIndices: number[],
 	): void => {
+		stop();
 		clearAll();
 		for (const t of trackStates) t.core.setLoadMode(true);
 		// advancedモードはMIDIトラックインデックスで1:1マッピング、simpleは役割別に自動分類
@@ -2443,6 +2458,29 @@ export const mountDAW = (
 		refs.topbar.classList.toggle("is-loading", loading);
 	};
 
+	const getCurrentPlayStep = (): number => {
+		if (playbackState === "playing") return currentPlayStep;
+		if (playbackState === "paused") return pausedPlayStep;
+		return playStartStep;
+	};
+
+	const forcePauseAt = (step: number): void => {
+		playStartStep = step;
+		pausedPlayStep = step;
+		currentPlayStep = step;
+		playbackState = "paused";
+
+		const canvas = getGridCanvas();
+		currentOffsetX = Math.max(
+			0,
+			step * renderConfig.stepWidth - canvas.width * 0.5,
+		);
+		setDrawOffset(currentOffsetX, currentOffsetY);
+
+		updateTransport();
+		redrawAll();
+	};
+
 	// ============================================================
 	// 公開API
 	// ============================================================
@@ -2484,9 +2522,12 @@ export const mountDAW = (
 		exportMIDI,
 		setBpm,
 		getPlaybackState: () => playbackState,
+		getCurrentPlayStep,
+		forcePauseAt,
 		setLoading,
 		destroy: () => {
 			sequencer.stop();
+			options.singingVoices?.stopStream();
 			resizeObserver.disconnect();
 			document.removeEventListener("pointermove", onPointerMove);
 			document.removeEventListener("pointerup", onPointerUp);

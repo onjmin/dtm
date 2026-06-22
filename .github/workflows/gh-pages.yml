@@ -42,6 +42,7 @@ jobs:
         run: |
           mkdir -p docs/demo
           cp demo/index.html docs/demo/index.html
+          cp demo/embed.html docs/demo/embed.html
           cp dist/index.mjs docs/demo/index.mjs
           cp dist/voice-worker.js docs/demo/voice-worker.js
 

@@ -71,6 +71,8 @@ export type MmlPlayerOptions = {
 	singingVoices?: SingingVoices;
 	/** 再生終了または手動停止時に呼び出されるコールバック */
 	onStop?: () => void;
+	/** 埋め込みプレイヤーのベースURL（例: "https://onjmin.github.io/dtm/demo/embed.html"） */
+	embedUrl?: string;
 };
 
 export type MmlPlayerInstance = {
@@ -127,6 +129,57 @@ type LaneToken = {
 type LaneView = {
 	lane: HTMLDivElement;
 	tokens: LaneToken[];
+};
+
+const copyToClipboard = async (
+	doc: Document,
+	text: string,
+): Promise<boolean> => {
+	try {
+		await navigator.clipboard.writeText(text);
+		return true;
+	} catch {
+		try {
+			const textarea = doc.createElement("textarea");
+			textarea.value = text;
+			textarea.style.position = "fixed";
+			textarea.style.opacity = "0";
+			doc.body.appendChild(textarea);
+			textarea.select();
+			const ok = doc.execCommand("copy");
+			doc.body.removeChild(textarea);
+			return ok;
+		} catch {
+			return false;
+		}
+	}
+};
+
+const toBase64Url = (bytes: Uint8Array): string => {
+	let bin = "";
+	for (let i = 0; i < bytes.length; i++) {
+		bin += String.fromCharCode(bytes[i]);
+	}
+	return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+
+const encodeMml = async (mml: string): Promise<string> => {
+	try {
+		if (typeof CompressionStream !== "undefined") {
+			const cs = new CompressionStream("gzip");
+			const w = cs.writable.getWriter();
+			w.write(new TextEncoder().encode(mml));
+			w.close();
+			const buf = await new Response(cs.readable).arrayBuffer();
+			return `g.${toBase64Url(new Uint8Array(buf))}`;
+		}
+	} catch (e) {
+		console.warn(
+			"[dtm] CompressionStream failed, fallback to encodeURIComponent",
+			e,
+		);
+	}
+	return `u.${encodeURIComponent(mml)}`;
 };
 
 /**
@@ -337,7 +390,105 @@ export const mountMmlPlayer = (
 		emojiByTrack.set(index, em);
 	}
 
-	// 歌声トラックは初期表示からキャラクター画像に差し替える（ロード待ち不要）
+	// ── Context Menu (MML Copy & Embed) ──
+	const menuContainer = doc.createElement("div");
+	menuContainer.className = "dtm-player-more-container";
+
+	const moreBtn = doc.createElement("button");
+	moreBtn.type = "button";
+	moreBtn.className = "dtm-player-more-btn";
+	moreBtn.innerHTML = icon("more", 14);
+	moreBtn.title = "メニュー";
+	menuContainer.appendChild(moreBtn);
+
+	const menuDropdown = doc.createElement("div");
+	menuDropdown.className = "dtm-player-menu";
+	menuDropdown.style.display = "none";
+
+	const copyMmlItem = doc.createElement("button");
+	copyMmlItem.type = "button";
+	copyMmlItem.className = "dtm-player-menu-item";
+	copyMmlItem.textContent = "MMLコピー";
+
+	const embedItem = doc.createElement("button");
+	embedItem.type = "button";
+	embedItem.className = "dtm-player-menu-item";
+	embedItem.textContent = "埋め込む";
+
+	menuDropdown.appendChild(copyMmlItem);
+	menuDropdown.appendChild(embedItem);
+	menuContainer.appendChild(menuDropdown);
+
+	mmlHeader.appendChild(menuContainer);
+
+	// Context menu handlers
+	const toggleMenu = (show?: boolean): void => {
+		const visible =
+			show !== undefined ? show : menuDropdown.style.display === "none";
+		menuDropdown.style.display = visible ? "flex" : "none";
+		if (visible) {
+			moreBtn.classList.add("is-active");
+			doc.addEventListener("click", handleOutsideClick);
+		} else {
+			moreBtn.classList.remove("is-active");
+			doc.removeEventListener("click", handleOutsideClick);
+		}
+	};
+
+	const handleOutsideClick = (e: MouseEvent): void => {
+		if (!menuContainer.contains(e.target as Node)) {
+			toggleMenu(false);
+		}
+	};
+
+	moreBtn.addEventListener("click", (e) => {
+		e.stopPropagation();
+		toggleMenu();
+	});
+
+	copyMmlItem.addEventListener("click", async (e) => {
+		e.stopPropagation();
+		const success = await copyToClipboard(doc, mml);
+		if (success) {
+			copyMmlItem.textContent = "コピーしました！";
+		} else {
+			copyMmlItem.textContent = "コピー失敗";
+		}
+		setTimeout(() => {
+			copyMmlItem.textContent = "MMLコピー";
+		}, 2000);
+	});
+
+	embedItem.addEventListener("click", async (e) => {
+		e.stopPropagation();
+		embedItem.textContent = "生成中...";
+		try {
+			const hostname = typeof location !== "undefined" ? location.hostname : "";
+			const href = typeof location !== "undefined" ? location.href : "";
+			const embedBase =
+				options.embedUrl ??
+				(hostname === "localhost"
+					? new URL("embed.html", href).href
+					: "https://onjmin.github.io/dtm/demo/embed.html");
+			const payload = await encodeMml(mml);
+			const url = `${embedBase}#${payload}`;
+			const snippet = `<iframe src="${url}" width="100%" height="260" frameborder="0" loading="lazy" title="@onjmin/dtm player"></iframe>`;
+			const success = await copyToClipboard(doc, snippet);
+			if (success) {
+				embedItem.textContent = "コピーしました！";
+			} else {
+				embedItem.textContent = "コピー失敗";
+			}
+		} catch (err) {
+			console.error("[dtm] failed to generate embed snippet", err);
+			embedItem.textContent = "生成失敗";
+		}
+		setTimeout(() => {
+			embedItem.textContent = "埋め込む";
+		}, 2000);
+	});
+
+	// 歌声トラックは初期表示からキャラクター画像に差し替える（ロード待ち必要）
 	const promotedToImage = new Set<HTMLSpanElement>();
 	for (const [index, lt] of lyricTracks) {
 		const em = emojiByTrack.get(index);
@@ -707,7 +858,7 @@ export const mountMmlPlayer = (
 		onTick: (step) => {
 			renderPlayhead(step);
 		},
-		onEnd: () => finish(),
+		onEnd: (interrupted) => finish(),
 		stepsPerBar: STEPS_PER_BAR,
 	});
 
@@ -821,6 +972,7 @@ export const mountMmlPlayer = (
 	});
 
 	const destroy = (): void => {
+		doc.removeEventListener("click", handleOutsideClick);
 		seq.stop();
 		peekVoices()?.stopStream();
 		if (activePlayer === instance) activePlayer = null;

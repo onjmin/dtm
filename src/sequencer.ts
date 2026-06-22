@@ -52,7 +52,7 @@ export type SequencerOptions = {
 	onPlayDrum: (e: PlayDrumEvent) => void;
 	/** 毎フレーム currentPlayStep を通知（プレイヘッド/オートスクロール用） */
 	onTick: (currentPlayStep: number) => void;
-	onEnd: () => void;
+	onEnd: (interrupted?: boolean) => void;
 	stepsPerBar: number;
 };
 
@@ -103,6 +103,9 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 	let active = false;
 	let fromStepValue = 0;
 	let trackVolumeMap: Map<string, number> = new Map();
+
+	let lastRealTime = -1;
+	let lastAudioTime = -1;
 
 	// ループ関連の状態
 	let isLooping = false;
@@ -196,6 +199,23 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		const sps = secondsPerStep();
 		const time = options.getAudioTime() - startTime;
 		const soloId = options.getSoloTrackId();
+
+		// 割り込み・大幅な遅延の検知
+		const nowReal = performance.now() / 1000;
+		if (lastRealTime > 0 && lastAudioTime >= 0) {
+			const realDelta = nowReal - lastRealTime;
+			const audioDelta = time - lastAudioTime;
+			if (realDelta > 0.5 || audioDelta > 0.5) {
+				console.warn(
+					`[sequencer] Interruption detected (realDelta: ${realDelta.toFixed(3)}s, audioDelta: ${audioDelta.toFixed(3)}s). Stopping playback.`,
+				);
+				stop();
+				options.onEnd(true);
+				return;
+			}
+		}
+		lastRealTime = nowReal;
+		lastAudioTime = time;
 
 		// トラック音量をリアルタイムで更新
 		for (const track of options.getTracks()) {
@@ -298,7 +318,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 			const lastDuration = last?.duration ?? 0;
 			if (nowIndex >= timeline.length && time > lastWhen + lastDuration + 0.1) {
 				stop();
-				options.onEnd();
+				options.onEnd(false);
 			}
 		}
 	};
@@ -345,6 +365,8 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 
 		loopBase = 0;
 		lastPlayStep = fromStepValue - 0.0001;
+		lastRealTime = -1;
+		lastAudioTime = -1;
 		intervalId = setInterval(scheduleTick, TICK_INTERVAL_MS);
 		animationId = requestAnimationFrame(animate);
 	};

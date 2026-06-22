@@ -155,7 +155,7 @@ export const playMML = (
 			synth?.playDrum({ ...e, velocity });
 		},
 		onTick: () => {},
-		onEnd: () => finish(),
+		onEnd: (interrupted) => finish(),
 		stepsPerBar: STEPS_PER_BAR,
 	});
 

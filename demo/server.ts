@@ -7,6 +7,12 @@ const app = new Hono();
 // ルートで demo/index.html を配信
 app.get("/", serveStatic({ root: "./demo" }));
 
+// 埋め込み専用プレイヤー（YouTube の /embed 相当）
+app.get("/embed.html", serveStatic({ path: "./demo/embed.html" }));
+
+// ヘッドレスBGM再生デモページ
+app.get("/bgm.html", serveStatic({ path: "./demo/bgm.html" }));
+
 // dist 配信
 app.get("/dist/*", serveStatic({ root: "./" }));
 

@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="icon" href="https://avatars.githubusercontent.com/u/88383494" />
+    <title>DTM BGM Playground</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @font-face {
+            font-family: 'k8x12';
+            src: url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff2') format('woff2'),
+                url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff') format('woff'),
+                url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.ttf') format('truetype');
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --c-black: #000000;
+            --c-navy: #1d2b53;
+            --c-green: #00e436;
+            --c-cyan: #29adff;
+            --c-yellow: #ffec27;
+            --c-pink: #ff77a8;
+            --c-gray: #5f574f;
+            --c-text: #fff1e8;
+            --c-muted: #83769c;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background: var(--c-black);
+            color: var(--c-text);
+            font-family: 'k8x12', ui-monospace, monospace;
+            font-size: 14px;
+            -webkit-font-smoothing: none;
+            -moz-osx-font-smoothing: unset;
+            font-smooth: never;
+            min-height: 100vh;
+        }
+
+        body {
+            background-color: #000;
+            background-image:
+                radial-gradient(circle, #1a1c2c 1px, transparent 1px);
+            background-size: 8px 8px;
+        }
+
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(0deg, transparent 0px, transparent 2px,
+                    rgba(0, 0, 0, .22) 2px, rgba(0, 0, 0, .22) 3px);
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        .game-win {
+            border: 2px solid #000;
+            box-shadow:
+                inset 0 0 0 2px #000,
+                0 0 0 2px var(--c-cyan),
+                4px 4px 0 #000;
+        }
+
+        .title-banner {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            background: var(--c-navy);
+        }
+
+        .title-banner::before {
+            content: '█▓▒░';
+            color: var(--c-cyan);
+            font-size: 12px;
+            letter-spacing: .04em;
+        }
+
+        .title-banner::after {
+            content: '░▒▓█';
+            color: var(--c-cyan);
+            font-size: 12px;
+            letter-spacing: .04em;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1 }
+            50% { opacity: 0 }
+        }
+
+        .blink {
+            animation: blink 1s steps(1) infinite;
+        }
+
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M0 0l6 8 6-8z' fill='%2329adff'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 28px !important;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { pixel: ['k8x12', 'ui-monospace', 'monospace'] },
+                    colors: {
+                        pico: {
+                            black: '#000000', navy: '#1d2b53', purple: '#7e2553',
+                            dkgrn: '#008751', brown: '#ab5236', gray: '#5f574f',
+                            silver: '#c2c3c7', white: '#fff1e8', red: '#ff004d',
+                            orange: '#ffa300', yellow: '#ffec27', green: '#00e436',
+                            cyan: '#29adff', lavend: '#83769c', pink: '#ff77a8',
+                            peach: '#ffccaa',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="font-pixel">
+    <!-- Header -->
+    <header class="border-b-4 border-pico-black" style="box-shadow: 0 4px 0 var(--c-cyan);">
+        <div class="title-banner">
+            <div>
+                <div class="text-pico-cyan text-base tracking-widest uppercase">
+                    @onjmin/dtm
+                </div>
+                <div class="text-pico-lavend text-xs tracking-widest mt-0.5">
+                    BGM PLAYGROUND (HEADLESS PLAYER)
+                </div>
+            </div>
+            <div class="ml-auto text-right">
+                <div class="text-pico-green text-xs tracking-widest">
+                    ♪ <span class="blink">█</span>
+                </div>
+                <div class="text-pico-lavend text-xs mt-0.5">READY</div>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-4 px-3 py-1.5 bg-pico-black text-xs text-pico-lavend tracking-widest uppercase border-t-2 border-pico-gray">
+            <span class="text-pico-green">● BGM MODE</span>
+            <span>|</span>
+            <span>HEADLESS BGM PLAYER</span>
+            <span>|</span>
+            <span class="text-pico-cyan">playMML()</span>
+            <span class="ml-auto">
+                <a href="index.html" class="text-pico-yellow hover:text-pico-white font-bold">◀ BACK TO DAW</a>
+            </span>
+        </div>
+    </header>
+
+    <div class="max-w-4xl mx-auto px-3 py-6 flex flex-col gap-4">
+        <!-- API Info -->
+        <div class="game-win bg-pico-navy px-4 py-3 flex flex-col gap-3">
+            <div class="flex items-center gap-3">
+                <span class="text-pico-orange text-xs uppercase tracking-widest shrink-0">► HEADLESS BGM PLAYER API</span>
+                <span class="text-pico-cyan text-xs font-pixel">playMML()</span>
+            </div>
+
+            <div class="text-[10px] text-pico-lavend bg-pico-black/40 p-2 border border-pico-cyan/20 leading-normal">
+                🎮 <span class="text-pico-white font-bold">ゲームにシームレスなBGMを組み込よう！</span><br>
+                このエリアでは、画面を使わずにBGMを裏側で再生するAPI <span class="text-pico-cyan">playMML()</span> の挙動をお試しいただけます。
+                「イントロ付きループ」や「小節/秒数指定でのループ境界制御」、「サビなど特定の瞬間を検知してゲーム内演出と同期させるイベント（Cues）」など、Webゲーム開発で大活躍する便利な機能を簡単にシミュレートできます。<br>
+                <span class="text-pico-yellow">💡 ※ 読み込み速度を爆速にするため、このデモでは軽量な内蔵シンセ（ピコピコ矩形波）で再生します。ゲーム本番では、好みの音源（SoundFontやWeb Audio音源など）へ自由に変更できます！</span>
+            </div>
+        </div>
+
+        <!-- Player Interface -->
+        <div class="game-win bg-pico-navy p-4 flex flex-col gap-4">
+            <!-- MML Input -->
+            <div class="flex flex-col gap-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-pico-lavend text-xs">MML STRING:</span>
+                </div>
+                <textarea id="headless-mml-input"
+                    class="w-full h-24 p-2 bg-pico-black border-2 border-pico-gray text-pico-white font-mono text-xs focus:outline-none focus:border-pico-cyan"></textarea>
+            </div>
+
+            <!-- Loop Config and Cues -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Loop Settings -->
+                <div class="border border-pico-gray/40 p-3 bg-pico-black/30">
+                    <div class="text-pico-yellow text-xs uppercase tracking-widest mb-3 border-b border-pico-gray/30 pb-1">
+                        Loop Configuration</div>
+                    <div class="flex flex-col gap-3">
+                        <label class="flex items-center gap-2 cursor-pointer text-xs">
+                            <input type="checkbox" id="headless-loop-enable" checked class="accent-pico-cyan">
+                            <span>ENABLE LOOP</span>
+                        </label>
+                        <div id="headless-loop-range-container" class="flex flex-col gap-2">
+                            <div class="flex items-center gap-2">
+                                <span class="text-pico-lavend text-xs w-20">START:</span>
+                                <select id="headless-loop-start-type"
+                                    class="game-win bg-pico-black text-pico-white text-xs px-2 py-1 border-0 focus:outline-none cursor-pointer">
+                                    <option value="bar">BAR</option>
+                                    <option value="step">STEP</option>
+                                    <option value="seconds">SECONDS</option>
+                                </select>
+                                <input type="number" id="headless-loop-start-val" value="2"
+                                    class="w-16 bg-pico-black border border-pico-gray p-1 text-center text-xs text-pico-white">
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-pico-lavend text-xs w-20">END (OPT):</span>
+                                <select id="headless-loop-end-type"
+                                    class="game-win bg-pico-black text-pico-white text-xs px-2 py-1 border-0 focus:outline-none cursor-pointer">
+                                    <option value="none">NONE (SONG END)</option>
+                                    <option value="bar">BAR</option>
+                                    <option value="step">STEP</option>
+                                    <option value="seconds">SECONDS</option>
+                                </select>
+                                <input type="number" id="headless-loop-end-val" value="4" disabled
+                                    class="w-16 bg-pico-black border border-pico-gray p-1 text-center text-xs text-pico-white opacity-40">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cues Definition -->
+                <div class="border border-pico-gray/40 p-3 bg-pico-black/30">
+                    <div class="text-pico-yellow text-xs uppercase tracking-widest mb-3 border-b border-pico-gray/30 pb-1">
+                        Cues (Checkpoints)</div>
+                    <div class="flex flex-col gap-2 max-h-[160px] overflow-y-auto pr-1" id="headless-cues-list">
+                        <!-- Dynamic items -->
+                    </div>
+                    <button id="headless-add-cue-btn"
+                        class="mt-2 w-full py-1 bg-pico-black border border-pico-gray text-pico-lavend text-xs uppercase cursor-pointer hover:border-pico-cyan hover:text-pico-cyan">
+                        + ADD CUE POINT
+                    </button>
+                </div>
+            </div>
+
+            <!-- Controls and Event Log -->
+            <div class="flex flex-col md:flex-row gap-4 items-stretch">
+                <!-- Action Buttons -->
+                <div class="flex flex-col gap-2 shrink-0 justify-center">
+                    <button id="headless-play-btn"
+                        class="min-h-[40px] px-6 border-2 border-pico-orange bg-pico-black text-pico-orange text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+                        ▶ PLAY BGM
+                    </button>
+                    <button id="headless-stop-btn"
+                        class="min-h-[40px] px-6 border-2 border-pico-red bg-pico-black text-pico-red text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+                        ■ STOP
+                    </button>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span class="text-pico-lavend text-[10px]">VOLUME:</span>
+                        <input type="range" id="headless-vol" min="0" max="100" value="50"
+                            class="grow accent-pico-orange">
+                    </div>
+                </div>
+
+                <!-- Event Console -->
+                <div class="grow flex flex-col border border-pico-gray/40 bg-pico-black/30 p-3 min-h-[120px] max-h-[160px] overflow-hidden">
+                    <div class="flex justify-between items-center border-b border-pico-gray/30 pb-1 mb-2">
+                        <span class="text-pico-green text-xs uppercase tracking-widest">CONSOLE OUTPUT</span>
+                        <button id="headless-console-clear"
+                            class="text-pico-lavend hover:text-pico-white text-[10px] cursor-pointer">CLEAR</button>
+                    </div>
+                    <div id="headless-console"
+                        class="grow overflow-y-auto font-mono text-[10px] text-pico-silver flex flex-col gap-1 pr-1">
+                        <div class="text-pico-lavend">Console initialized. Ready to play BGM...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Documentation details -->
+        <div class="game-win bg-pico-navy p-4 text-[11px] leading-relaxed flex flex-col gap-4">
+            <h3 class="text-pico-yellow text-sm font-bold border-b border-pico-gray/30 pb-1">playMML() API & Usage Guide</h3>
+            <div class="bg-black/20 p-2 border border-pico-gray/20 text-pico-lavend leading-normal">
+                🚀 <span class="text-pico-white font-bold">playMML()</span>
+                は、ゲームの裏側でBGMをスマートに鳴らすための「画面なし（ヘッドレス）」再生用APIです！ゲームの進行やインタラクションと音楽をぴったり同期させたいときに威力を発揮します。
+            </div>
+
+            <div>
+                <h4 class="text-pico-cyan text-xs font-bold mb-1.5">■ なぜこれを使うの？（HTML5 Audio等との比較）</h4>
+                <table class="w-full text-left border-collapse text-[10px]">
+                    <thead>
+                        <tr class="bg-black/30 border-b border-pico-gray/30 text-pico-cyan">
+                            <th class="p-1.5 font-bold w-1/4">やりたいこと</th>
+                            <th class="p-1.5 font-bold w-2/5">通常のAudioタグなど</th>
+                            <th class="p-1.5 font-bold w-2/5">@onjmin/dtm (playMML)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-pico-lavend">
+                        <tr class="border-b border-pico-gray/10">
+                            <td class="p-1.5 font-bold text-pico-white">ズレないループ</td>
+                            <td class="p-1.5">曲の終わりと始まりの間にプチッと遅延や隙間ができがち…</td>
+                            <td class="p-1.5 text-pico-yellow">Web Audio APIのスケジューリングにより、ミリ秒単位で完全にシームレスなループを実現！</td>
+                        </tr>
+                        <tr class="border-b border-pico-gray/10">
+                            <td class="p-1.5 font-bold text-pico-white">イントロ付きループ</td>
+                            <td class="p-1.5">ファイルを分割して、再生完了を監視してつなぐ複雑な処理が必要…</td>
+                            <td class="p-1.5 text-pico-yellow">MML文字列を1本渡して、ループ開始位置（小節など）を指定するだけで自動ループ！</td>
+                        </tr>
+                        <tr class="border-b border-pico-gray/10">
+                            <td class="p-1.5 font-bold text-pico-white">音・ビート同期演出</td>
+                            <td class="p-1.5">毎フレーム再生時間をチェックする（ズレるし、重い）…</td>
+                            <td class="p-1.5 text-pico-yellow">「この小節/ステップを通ったらイベントを呼ぶ」と設定するだけで正確に発火！</td>
+                        </tr>
+                        <tr>
+                            <td class="p-1.5 font-bold text-pico-white">音量の共通管理</td>
+                            <td class="p-1.5">ゲーム全体の音量コントロールに組み込みにくい…</td>
+                            <td class="p-1.5 text-pico-yellow">ゲーム側の AudioContext や MasterGain
+                                を渡せるので、SEとBGMの音量バランスもバッチリ！</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="border-t border-pico-gray/30 pt-3">
+                <h4 class="text-pico-cyan text-xs font-bold mb-1">■ 軽い！ロード時間がゼロのピコピコシンセ内蔵</h4>
+                <p class="text-pico-lavend">
+                    ピアノロール画面（DAW）では音色データ（SoundFont）をロードしますが、<code class="text-pico-cyan">playMML()</code>
+                    はデフォルトで**ロード不要の超軽量シンセ（矩形波など）**で発音します。これにより、「BGMのロード待ちでゲームの起動が遅れる」「通信量がかさむ」といった問題をクリアできます。
+                </p>
+                <p class="text-pico-lavend mt-1">
+                    「もっと豪華な音で鳴らしたい！」という時は、以下のように <code class="text-pico-orange">onPlayNote</code> や <code
+                        class="text-pico-orange">onPlayDrum</code> フックを使って、自作のシンセやゲーム側のロード済みサウンドエンジンに簡単に差し替えられます。
+                </p>
+                <pre class="bg-black/30 p-2 border border-pico-gray/20 text-pico-white font-mono mt-1 text-[9px] overflow-x-auto">
+playMML(mmlString, {
+  audioContext: myGameCtx,
+  loop: { start: { bar: 2 } }, // 2小節目からループ
+  onPlayNote: (e) => {
+    // 鳴らしたい音色エンジンをここに繋ぐだけ！
+    mySynth.trigger(e.pitch, e.volume, e.when, e.duration);
+  }
+});</pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="max-w-4xl mx-auto px-3 pb-8 text-pico-gray text-xs uppercase tracking-widest">
+        <div class="flex gap-4 flex-wrap">
+            <span>© 2025 <span class="text-pico-cyan">@onjmin</span></span>
+            <span>|</span>
+            <a href="https://github.com/onjmin/dtm" class="text-pico-cyan hover:text-pico-yellow">GITHUB</a>
+            <span>|</span>
+            <a href="https://www.npmjs.com/package/@onjmin/dtm" class="text-pico-pink hover:text-pico-yellow">NPM</a>
+            <span>|</span>
+            <span class="text-pico-lavend">MIT LICENSE</span>
+        </div>
+    </footer>
+
+    <script type="module">
+        const isLocal = location.hostname === 'localhost';
+        const DTM = await import(isLocal
+            ? 'http://localhost:40298/dist/index.mjs'
+            : './index.mjs');
+
+        const { createDtmStudio, playMML } = DTM;
+
+        const studio = await createDtmStudio();
+        window.studio = studio;
+
+        const HEADLESS_SAMPLE_MML = `#drum=dance #volume=50;\n@0 t135 v100 o4e8 r8 e8 e8 g+8 r8 f+8 r8 c8 b8 b8 b8 g+8 r8 e8 g+8 >e8 r4 e8 e8 r8 d+8 c+8 <b8 >c+8 <b8 a8 g+8 r8 d8 r8 e8 e8 e8 e8 c+8 c+8 a8 f+8 g+8 f+8 e8 g+8 f+8 c8 g+8 f+8 e8 r8 e8 e8 c+8 r8 f+8 r8 g+8 f+8 e8 g+8 e8 r8 c+8 d+8;\n@1 t135 v100 o6e8 r1 r1 r1 r4 e8 b8 a24 b24 a24 g+8 f+8 g+8 r1 r1 r1 e8 f+8 g8 g+8 f+24 g+24 f+24 e8 g+8 e8;\n@2 t135 v100 o2f+8 >f+8 <f+8 >f+8 <f+8 >f+8 <f+8 >f+8 <g+8 >g+8 <g+8 >g+8 <g+8 >g+8 r16 <g+16 >g+8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <f+8 >f+8 <f+8 >f+8 <f+8 >f+8 <f+8 >f+8 <g+8 >g+8 <g+8 >g+8 <g+8 >g+8 <g+8 >g+8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <a8 >a8 <a8 >a8 <a8 >a8 <a8 >a8;\n@3 t135 v100 [o3f+o3ao4c+o4e]2 r2 [o3g+o4co4d+o4f+o5e]2 r2 [o3c+o3eo3g+o3b]2 r2 [o3eo3g+o3bo4d]2 r2 [o3f+o3ao4c+o4e]2 r2 [o3g+o4co4d+o4f+o5e]2 r2 [o3c+o3eo3g+o3b]2 r2 [o3f+o3ao4g+o4c+]2 [o4eo3ao3f+]2;\n#end;`;
+        let activeHeadlessPlayback = null;
+        let cueList = [
+            { id: "intro_end", type: "step", val: 96 },
+            { id: "chorus_start", type: "bar", val: 5 },
+            { id: "bridge", type: "seconds", val: 12 }
+        ];
+
+        const consoleLog = (msg, className = "") => {
+            const consoleEl = document.getElementById("headless-console");
+            const div = document.createElement("div");
+            if (className) div.className = className;
+            const time = new Date().toLocaleTimeString();
+            div.textContent = `[${time}] ${msg}`;
+            consoleEl.appendChild(div);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        };
+
+        const renderCuesList = () => {
+            const container = document.getElementById("headless-cues-list");
+            container.innerHTML = "";
+            cueList.forEach((c, idx) => {
+                const item = document.createElement("div");
+                item.className = "flex items-center gap-2 border border-pico-gray/20 p-1.5 bg-black/40 text-[10px]";
+                item.innerHTML = `
+                    <input type="text" value="${c.id}" data-idx="${idx}" class="cue-id-input w-20 bg-pico-black text-pico-white px-1">
+                    <select data-idx="${idx}" class="cue-type-select bg-pico-black text-pico-cyan border-0 focus:outline-none">
+                        <option value="bar" ${c.type === 'bar' ? 'selected' : ''}>BAR</option>
+                        <option value="step" ${c.type === 'step' ? 'selected' : ''}>STEP</option>
+                        <option value="seconds" ${c.type === 'seconds' ? 'selected' : ''}>SEC</option>
+                    </select>
+                    <input type="number" value="${c.val}" data-idx="${idx}" class="cue-val-input w-10 bg-pico-black text-pico-white text-center">
+                    <button class="cue-del-btn text-pico-red ml-auto hover:text-pico-white" data-idx="${idx}">✕</button>
+                `;
+                container.appendChild(item);
+            });
+
+            // Bind events
+            container.querySelectorAll(".cue-id-input").forEach(input => {
+                input.addEventListener("input", (e) => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    cueList[idx].id = e.target.value;
+                });
+            });
+            container.querySelectorAll(".cue-type-select").forEach(sel => {
+                sel.addEventListener("change", (e) => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    cueList[idx].type = e.target.value;
+                });
+            });
+            container.querySelectorAll(".cue-val-input").forEach(input => {
+                input.addEventListener("input", (e) => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    cueList[idx].val = parseFloat(e.target.value) || 0;
+                });
+            });
+            container.querySelectorAll(".cue-del-btn").forEach(btn => {
+                btn.addEventListener("click", (e) => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    cueList.splice(idx, 1);
+                    renderCuesList();
+                });
+            });
+        };
+
+        document.getElementById("headless-add-cue-btn").addEventListener("click", () => {
+            cueList.push({ id: `cue_${cueList.length + 1}`, type: "bar", val: 1 });
+            renderCuesList();
+        });
+
+        document.getElementById("headless-console-clear").addEventListener("click", () => {
+            document.getElementById("headless-console").innerHTML = "";
+        });
+
+        document.getElementById("headless-loop-enable").addEventListener("change", (e) => {
+            const container = document.getElementById("headless-loop-range-container");
+            container.style.opacity = e.target.checked ? "1" : "0.4";
+            container.querySelectorAll("input, select").forEach(el => {
+                if (el.id !== "headless-loop-end-val" || document.getElementById("headless-loop-end-type").value !== "none") {
+                    el.disabled = !e.target.checked;
+                }
+            });
+        });
+
+        document.getElementById("headless-loop-end-type").addEventListener("change", (e) => {
+            const input = document.getElementById("headless-loop-end-val");
+            const enabled = e.target.value !== "none" && document.getElementById("headless-loop-enable").checked;
+            input.disabled = !enabled;
+            input.style.opacity = enabled ? "1" : "0.4";
+        });
+
+        document.getElementById("headless-play-btn").addEventListener("click", async () => {
+            if (activeHeadlessPlayback) {
+                activeHeadlessPlayback.destroy();
+                activeHeadlessPlayback = null;
+            }
+
+            const mml = document.getElementById("headless-mml-input").value || HEADLESS_SAMPLE_MML;
+            const vol = parseInt(document.getElementById("headless-vol").value);
+
+            // Resolve LoopConfig
+            const loopEnabled = document.getElementById("headless-loop-enable").checked;
+            let loopOption = false;
+            if (loopEnabled) {
+                const startType = document.getElementById("headless-loop-start-type").value;
+                const startVal = parseFloat(document.getElementById("headless-loop-start-val").value) || 0;
+                const endType = document.getElementById("headless-loop-end-type").value;
+                const endVal = parseFloat(document.getElementById("headless-loop-end-val").value) || 0;
+
+                const startConfig = {};
+                startConfig[startType] = startVal;
+
+                let endConfig = null;
+                if (endType !== "none") {
+                    endConfig = {};
+                    endConfig[endType] = endVal;
+                }
+
+                loopOption = {
+                    start: startConfig,
+                    ...(endConfig ? { end: endConfig } : {})
+                };
+            }
+
+            // Resolve cues
+            const resolvedCues = cueList.filter(c => c.id.trim() !== "").map(c => {
+                const timeConfig = {};
+                timeConfig[c.type] = c.val;
+                return {
+                    id: c.id,
+                    time: timeConfig
+                };
+            });
+
+            consoleLog(`Starting playMML(). Loop: ${JSON.stringify(loopOption)}, Cues: ${resolvedCues.length} registered`, "text-pico-yellow");
+
+            try {
+                const audioContext = studio.audioContext;
+                if (audioContext.state === "suspended") {
+                    await audioContext.resume();
+                }
+                activeHeadlessPlayback = playMML(mml, {
+                    audioContext,
+                    volume: vol,
+                    loop: loopOption,
+                    cues: resolvedCues,
+                    onCue: (cueId) => {
+                        consoleLog(`CUE ACTIVATED: ${cueId}`, "text-pico-green font-bold");
+                    },
+                    onStop: () => {
+                        consoleLog("BGM playback stopped.", "text-pico-red");
+                    }
+                });
+            } catch (err) {
+                consoleLog(`Error playing BGM: ${err.message}`, "text-pico-red");
+            }
+        });
+
+        document.getElementById("headless-stop-btn").addEventListener("click", () => {
+            if (activeHeadlessPlayback) {
+                activeHeadlessPlayback.destroy();
+                activeHeadlessPlayback = null;
+                consoleLog("Stopped playMML() and cleaned context.");
+            } else {
+                consoleLog("No active BGM playing.");
+            }
+        });
+
+        document.getElementById("headless-vol").addEventListener("input", (e) => {
+            const vol = parseInt(e.target.value);
+            if (activeHeadlessPlayback) {
+                activeHeadlessPlayback.setVolume(vol);
+            }
+        });
+
+        // Initialize Headless demo
+        document.getElementById("headless-mml-input").value = HEADLESS_SAMPLE_MML;
+        renderCuesList();
+    </script>
+</body>
+
+</html>
