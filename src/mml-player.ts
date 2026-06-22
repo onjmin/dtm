@@ -85,6 +85,8 @@ export type MmlPlayerInstance = {
 /** 同時に鳴るのは1プレイヤーのみ。再生開始時に他を止める（旧 AudioFocus 相当） */
 let activePlayer: MmlPlayerInstance | null = null;
 
+const agreedModelsInSession = new Set<string>();
+
 const LYRIC_MODEL_LABELS: Record<string, string> = {
 	klatt: "軽量ロボ声",
 	...KOE_VOICEBANK_LABELS,
@@ -804,6 +806,88 @@ export const mountMmlPlayer = (
 
 	target.appendChild(root);
 
+	let consentOverlayEl: HTMLElement | null = null;
+	const checkConsentAndShow = (): void => {
+		try {
+			const unagreed = termsModels.filter((model) => {
+				if (agreedModelsInSession.has(model)) return false;
+				try {
+					if (typeof localStorage === "undefined" || !localStorage) return true;
+					return localStorage.getItem(`dtm_agreed_terms_${model}`) !== "true";
+				} catch (e) {
+					console.warn(
+						"[dtm-player] localStorage access denied in consent check",
+						e,
+					);
+					return true;
+				}
+			});
+
+			if (unagreed.length === 0) return;
+
+			const consentOverlay = doc.createElement("div");
+			consentOverlay.className = "dtm-consent-overlay";
+
+			const modal = doc.createElement("div");
+			modal.className = "dtm-win dtm-consent-modal";
+
+			const header = doc.createElement("div");
+			header.className = "dtm-consent-header";
+			header.textContent = "利用規約の確認";
+
+			const body = doc.createElement("div");
+			body.className = "dtm-consent-body";
+
+			let contentHTML = `<p style="margin-bottom: 12px; font-weight: bold; color: var(--dtm-danger);">本データには UTAU 歌声音源が含まれています。<br>ご利用にあたっては、以下の音源利用規約への同意が必要です。</p>`;
+
+			for (const model of unagreed) {
+				const label = KOE_VOICEBANK_LABELS[model] || model;
+				const url = KOE_VOICEBANK_TERMS[model];
+				contentHTML += `
+					<div style="margin-bottom: 12px; padding: 10px; background: var(--dtm-deep); border: 2px solid var(--c-black); box-shadow: 2px 2px 0 var(--c-black);">
+						<div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11px; font-weight: bold; color: var(--dtm-gold);">
+							<span>使用時には</span>
+							<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: var(--dtm-primary); text-decoration: underline;">${label}UTAU音源</a>
+							<span>の利用規約に従ってください</span>
+						</div>
+					</div>
+				`;
+			}
+			body.innerHTML = contentHTML;
+
+			const footer = doc.createElement("div");
+			footer.className = "dtm-consent-footer";
+
+			const btn = doc.createElement("button");
+			btn.type = "button";
+			btn.className = "dtm-btn dtm-btn--success";
+			btn.textContent = "同意して利用する";
+			btn.onclick = () => {
+				for (const model of unagreed) {
+					try {
+						if (typeof localStorage !== "undefined" && localStorage) {
+							localStorage.setItem(`dtm_agreed_terms_${model}`, "true");
+						}
+					} catch (e) {
+						// sandbox対応
+					}
+					agreedModelsInSession.add(model);
+				}
+				consentOverlay.remove();
+				consentOverlayEl = null;
+			};
+
+			footer.appendChild(btn);
+			modal.append(header, body, footer);
+			consentOverlay.appendChild(modal);
+			doc.body.appendChild(consentOverlay);
+			consentOverlayEl = consentOverlay;
+		} catch (err) {
+			console.error("[dtm-player] Error in checkConsentAndShow:", err);
+		}
+	};
+	checkConsentAndShow();
+
 	// ── 再生位置の描画 ──
 	const autoScroll = (lane: HTMLDivElement, el: HTMLElement): void => {
 		if (el.offsetWidth === 0 || lane.clientWidth === 0) return;
@@ -1007,6 +1091,7 @@ export const mountMmlPlayer = (
 			hideActiveBalloon();
 		}
 		root.remove();
+		consentOverlayEl?.remove();
 	};
 
 	const instance: MmlPlayerInstance = {
