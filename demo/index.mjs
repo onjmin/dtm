@@ -2055,7 +2055,7 @@ var normalizeLyricLines = (lines) => {
   }
   return { syllables, lineBreaks };
 };
-var LYRIC_LINE = /^@@(\d+)\s+(.*)$/;
+var LYRIC_LINE = /^@@(\d+)\s*(.*)$/;
 var isLyricContinuation = (seg) => !/^[@#]/.test(seg);
 var splitSegments = (mml) => mml.split(/[;\n\r]+/).map((s) => s.trim()).filter((s) => s.length > 0);
 var clamp = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
@@ -2073,38 +2073,56 @@ var parseLyrics = (mml) => {
     const m = segments[i].match(LYRIC_LINE);
     if (!m) continue;
     const trackId = Number.parseInt(m[1], 10);
-    const tokens = m[2].trim().split(/\s+/);
-    const modelToken = tokens.shift() ?? "";
+    let rest = m[2].trim();
     let volume = DEFAULT_VOCAL_VOLUME;
     let gate = 100;
     let pan = 64;
     let octave = 0;
-    const colon = modelToken.indexOf(":");
-    const model = (colon === -1 ? modelToken : modelToken.slice(0, colon)).toLowerCase();
-    if (colon !== -1) {
-      const v = Number.parseInt(modelToken.slice(colon + 1), 10);
-      if (Number.isFinite(v)) volume = clamp(v, 0, MAX_VOCAL_VOLUME);
-    }
-    const metaTokens = [modelToken];
-    while (tokens.length > 0) {
-      const v = /^v(\d+)$/.exec(tokens[0]);
-      const q2 = /^q(\d+)$/.exec(tokens[0]);
-      const p = /^p(\d+)$/.exec(tokens[0]);
-      const o = /^o(-?\d+)$/.exec(tokens[0]);
-      if (v) {
-        volume = clamp(Number.parseInt(v[1], 10), 0, MAX_VOCAL_VOLUME);
-      } else if (q2) {
-        gate = clamp(Number.parseInt(q2[1], 10), 0, 100);
-      } else if (p) {
-        pan = clamp(Number.parseInt(p[1], 10), 0, 127);
-      } else if (o) {
-        octave = clamp(Number.parseInt(o[1], 10), -2, 2);
-      } else {
-        break;
+    const modelMatch = rest.match(
+      /^([a-z_]+?)(?=(?:[vqpo]-?\d)|[^a-z_]|$)(?::(\d+))?/i
+    );
+    let model = "";
+    const metaTokens = [];
+    if (modelMatch) {
+      model = modelMatch[1].toLowerCase();
+      if (modelMatch[2]) {
+        volume = clamp(Number.parseInt(modelMatch[2], 10), 0, MAX_VOCAL_VOLUME);
       }
-      metaTokens.push(tokens.shift());
+      metaTokens.push(modelMatch[0]);
+      rest = rest.substring(modelMatch[0].length).trim();
     }
-    const lyricLines = [tokens.join(" ")];
+    while (true) {
+      const vMatch = rest.match(/^v(\d+)/i);
+      if (vMatch) {
+        volume = clamp(Number.parseInt(vMatch[1], 10), 0, MAX_VOCAL_VOLUME);
+        metaTokens.push(vMatch[0]);
+        rest = rest.substring(vMatch[0].length).trim();
+        continue;
+      }
+      const qMatch = rest.match(/^q(\d+)/i);
+      if (qMatch) {
+        gate = clamp(Number.parseInt(qMatch[1], 10), 0, 100);
+        metaTokens.push(qMatch[0]);
+        rest = rest.substring(qMatch[0].length).trim();
+        continue;
+      }
+      const pMatch = rest.match(/^p(\d+)/i);
+      if (pMatch) {
+        pan = clamp(Number.parseInt(pMatch[1], 10), 0, 127);
+        metaTokens.push(pMatch[0]);
+        rest = rest.substring(pMatch[0].length).trim();
+        continue;
+      }
+      const oMatch = rest.match(/^o(-?\d+)/i);
+      if (oMatch) {
+        octave = clamp(Number.parseInt(oMatch[1], 10), -2, 2);
+        metaTokens.push(oMatch[0]);
+        rest = rest.substring(oMatch[0].length).trim();
+        continue;
+      }
+      break;
+    }
+    const lyricLines = [rest];
     while (i + 1 < segments.length && isLyricContinuation(segments[i + 1])) {
       lyricLines.push(segments[++i]);
     }
@@ -4168,7 +4186,7 @@ var parseMmlMeta = (mml) => {
   return meta;
 };
 var stripMmlMeta = (mml) => mml.replace(META_DIRECTIVE, "");
-var formatMmlMeta = (meta) => {
+var formatMmlMeta = (meta, space = "") => {
   const parts = [];
   if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
   if (meta.drum) parts.push(`#drum=${meta.drum}`);
@@ -4176,7 +4194,7 @@ var formatMmlMeta = (meta) => {
   if (meta.drumVolume !== void 0)
     parts.push(`#drumvolume=${meta.drumVolume}`);
   if (meta.mode) parts.push(`#mode=${meta.mode}`);
-  return parts.join(" ");
+  return parts.join(space);
 };
 var parseMML = (mml, options = {}) => {
   const stepsPerBar = options.stepsPerBar ?? DEFAULT_STEPS_PER_BAR;
@@ -6128,6 +6146,9 @@ var customEncode = (str) => {
   const bytes = [];
   for (let i = 0; i < str.length; i++) {
     const code = str.charCodeAt(i);
+    if (code === 32) {
+      continue;
+    }
     if (code <= 127) {
       bytes.push(code);
     } else if (code === PROLONGED_MARK) {
@@ -6158,6 +6179,82 @@ var encodeMml = async (mml) => {
     );
   }
   return `u.${encodeURIComponent(mml)}`;
+};
+var fromBase64Url = (s) => {
+  let normalized = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (normalized.length % 4 !== 0) {
+    normalized += "=";
+  }
+  const bin = atob(normalized);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) {
+    bytes[i] = bin.charCodeAt(i);
+  }
+  return bytes;
+};
+var customDecode = (bytes) => {
+  let str = "";
+  let i = 0;
+  while (i < bytes.length) {
+    const byte = bytes[i];
+    if (byte <= 127) {
+      str += String.fromCharCode(byte);
+      i++;
+    } else if (byte === VALUE_PROLONGED) {
+      str += String.fromCharCode(PROLONGED_MARK);
+      i++;
+    } else if (byte >= 128 && byte <= 222) {
+      str += String.fromCharCode(HIRAGANA_START + (byte - 128));
+      i++;
+    } else if (byte === SHIFT_KATAKANA) {
+      if (i + 1 < bytes.length) {
+        const nextByte = bytes[i + 1];
+        if (nextByte >= 128 && nextByte <= 222) {
+          str += String.fromCharCode(HIRAGANA_START + 96 + (nextByte - 128));
+        }
+        i += 2;
+      } else {
+        i++;
+      }
+    } else {
+      i++;
+    }
+  }
+  return str;
+};
+var gunzipCustom = async (bytes) => {
+  const ds = new DecompressionStream("gzip");
+  const writer = ds.writable.getWriter();
+  writer.write(bytes);
+  writer.close();
+  const buf = await new Response(ds.readable).arrayBuffer();
+  return customDecode(new Uint8Array(buf));
+};
+var gunzip = async (bytes) => {
+  const ds = new DecompressionStream("gzip");
+  const writer = ds.writable.getWriter();
+  writer.write(bytes);
+  writer.close();
+  const buf = await new Response(ds.readable).arrayBuffer();
+  return new TextDecoder().decode(buf);
+};
+var decodeMml = async (payload) => {
+  if (!payload) return "";
+  try {
+    if (payload.startsWith("z.")) {
+      return await gunzipCustom(fromBase64Url(payload.slice(2)));
+    }
+    if (payload.startsWith("g.")) {
+      return await gunzip(fromBase64Url(payload.slice(2)));
+    }
+    if (payload.startsWith("u.")) {
+      return decodeURIComponent(payload.slice(2));
+    }
+    return decodeURIComponent(payload);
+  } catch (e) {
+    console.error("[dtm] failed to decode MML payload", e);
+    return "";
+  }
 };
 var mountMmlPlayer = (target, mml, options = {}) => {
   injectStyles(target.ownerDocument ?? document);
@@ -8326,13 +8423,26 @@ var mountDAW = (target, options = {}) => {
     const barLimitBars = Number(refs.barLimitSelect.value);
     const limitSteps = barLimitBars > 0 ? barLimitBars * renderConfig.stepsPerBar : Infinity;
     const clipNotes = (notes) => limitSteps === Infinity ? notes : notes.filter((n) => n.startStep < limitSteps);
-    const metaLine = formatMmlMeta({
-      instrument: currentInstrument || void 0,
-      drum: currentDrumPattern !== "none" ? currentDrumPattern : void 0,
-      volume: masterVolume,
-      drumVolume,
-      mode
-    });
+    const metaLineFull = formatMmlMeta(
+      {
+        instrument: currentInstrument || void 0,
+        drum: currentDrumPattern !== "none" ? currentDrumPattern : void 0,
+        volume: masterVolume,
+        drumVolume,
+        mode
+      },
+      " "
+    );
+    const metaLineMini = formatMmlMeta(
+      {
+        instrument: currentInstrument || void 0,
+        drum: currentDrumPattern !== "none" ? currentDrumPattern : void 0,
+        volume: masterVolume,
+        drumVolume,
+        mode
+      },
+      ""
+    );
     if (refs.decomposeChordToggle.checked) {
       const ignoreHeavy = refs.ignoreChordHeavyToggle.checked;
       const targetStates = ignoreHeavy ? trackStates.filter((t) => !isChordHeavyTrack(t.core.getNotes())) : trackStates;
@@ -8348,8 +8458,8 @@ var mountDAW = (target, options = {}) => {
       const decomposedMini = monoTracks.map(
         (notes, i) => `@${i}${refCore.getMMLFromNotes(notes, bpm, 100).trim().replace(/\s+/g, "")}`
       );
-      const full2 = [metaLine, ...decomposedFull, MML_END_MARKER].filter((s) => s.length > 0).join(";\n");
-      const minified2 = [metaLine, ...decomposedMini, MML_END_MARKER].filter((s) => s.length > 0).join(";");
+      const full2 = [metaLineFull, ...decomposedFull, MML_END_MARKER].filter((s) => s.length > 0).join(";\n");
+      const minified2 = [metaLineMini, ...decomposedMini, MML_END_MARKER].filter((s) => s.length > 0).join(";");
       return {
         full: full2,
         minified: minified2,
@@ -8389,9 +8499,9 @@ var mountDAW = (target, options = {}) => {
       const head = params ? `${x.model} ${params}` : x.model;
       return `@@${x.i} ${head} ${x.text}`;
     });
-    const full = [metaLine, ...trackLines, ...lyricLines, MML_END_MARKER].filter((s) => s.length > 0).join(";\n");
+    const full = [metaLineFull, ...trackLines, ...lyricLines, MML_END_MARKER].filter((s) => s.length > 0).join(";\n");
     const minified = [
-      metaLine,
+      metaLineMini,
       ...trackLinesMini,
       ...lyricLines,
       MML_END_MARKER
@@ -10175,6 +10285,7 @@ export {
   PREWARM_NOTES,
   TRACKS_ADVANCED,
   TRACKS_SIMPLE,
+  VOICE_IMAGES,
   VOICE_IMAGE_KEY,
   analyzeMidiTracks,
   applyHarmonicFilter,
@@ -10192,6 +10303,7 @@ export {
   createSingingVoices,
   createSynth,
   createVoiceRegistry,
+  decodeMml,
   decomposeToMonophonic,
   drawGrid,
   drawHeader,
@@ -10199,6 +10311,7 @@ export {
   drawNotes,
   drawSelectedNotes,
   drawSelectionRect,
+  encodeMml,
   exportMIDI,
   extractMidiPlacements,
   extractMidiPlacementsByTrack,

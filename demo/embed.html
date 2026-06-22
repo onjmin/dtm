@@ -105,8 +105,11 @@
         // ── URLペイロードの復号（demo/index.html のエンコードと対） ──
         // 形式: "g.<gzip+base64url>"（既定） / "u.<encodeURIComponent>"（フォールバック）
         const fromBase64Url = (s) => {
-            s = s.replace(/-/g, '+').replace(/_/g, '/');
-            const bin = atob(s);
+            let normalized = s.replace(/-/g, '+').replace(/_/g, '/');
+            while (normalized.length % 4 !== 0) {
+                normalized += '=';
+            }
+            const bin = atob(normalized);
             const bytes = new Uint8Array(bin.length);
             for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
             return bytes;

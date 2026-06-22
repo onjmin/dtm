@@ -271,6 +271,29 @@
     <!-- ════ DAW マウント ════ -->
     <div id="app" class="max-w-4xl mx-auto px-3 pb-8 pt-3"></div>
 
+    <!-- ════ 共有リンク (Share Link) ════ -->
+    <div class="max-w-4xl mx-auto px-3 pb-8 flex flex-col gap-2">
+        <div class="game-win bg-pico-navy px-4 py-3">
+            <div class="flex flex-wrap items-center gap-3">
+                <span class="text-pico-pink text-xs uppercase tracking-widest shrink-0">► SHARE</span>
+                <button id="share-link-copy"
+                    class="min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-black text-pico-cyan
+                           text-xs uppercase tracking-widest cursor-pointer font-pixel
+                           shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
+                    🔗 COPY SHARE LINK
+                </button>
+                <button id="show-history-btn"
+                    class="min-h-[40px] px-4 border-2 border-pico-yellow bg-pico-black text-pico-yellow
+                           text-xs uppercase tracking-widest cursor-pointer font-pixel
+                           shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
+                    📜 WORK HISTORY
+                </button>
+                <span id="share-status" class="text-pico-lavend text-xs uppercase tracking-widest"></span>
+                <span id="grace-period-status" class="text-pico-orange text-xs uppercase tracking-widest"></span>
+            </div>
+        </div>
+    </div>
+
     <!-- ════ 再生専用ビュー (mountMmlPlayer) ════ -->
     <div class="max-w-4xl mx-auto px-3 pb-8 flex flex-col gap-2">
         <div class="game-win bg-pico-navy px-4 py-3">
@@ -314,7 +337,7 @@
             ? 'http://localhost:40298/dist/index.mjs'
             : './index.mjs');
 
-        const { createDtmStudio, INSTRUMENT_PRESETS, TRACKS_SIMPLE, TRACKS_ADVANCED } = DTM;
+        const { createDtmStudio, INSTRUMENT_PRESETS, TRACKS_SIMPLE, TRACKS_ADVANCED, encodeMml, decodeMml, parseMML, VOICE_IMAGE_KEY, VOICE_IMAGES } = DTM;
 
         // ── 永続化（モード / 楽器 / ドラム）。MML読込で #inst= / #drum= が自動入力され得るため値も保存する ──
         const MODE_STORAGE_KEY = 'dtm-mode';
@@ -350,6 +373,26 @@
         let currentMode = readSavedMode();
         let daw = null;
 
+        // ── 楽器プリセット変更（再生中なら一旦停止→ロード→同じ位置から再開）──
+        const selectInstrumentPreset = async (v) => {
+            if (presetSelect.value !== v) {
+                presetSelect.value = v;
+            }
+            writeStored(INSTRUMENT_STORAGE_KEY, v);
+            if (daw) {
+                daw.setInstrument(v); // MML出力の先頭に #inst= を埋め込む（再生専用ビューが音源解決に使う）
+            }
+            const wasPlaying = daw ? (daw.getPlaybackState() === 'playing') : false;
+            if (wasPlaying && daw) daw.pause();
+            loadingEl.style.display = '';
+            try { await studio.loadPreset(v, trackIdsFor(currentMode)); }
+            finally { loadingEl.style.display = 'none'; if (wasPlaying && daw) daw.play(); }
+        };
+
+        presetSelect.addEventListener('change', () => {
+            selectInstrumentPreset(presetSelect.value).catch(console.error);
+        });
+
         // 保存済みドラムパターンを（再）マウント後のDAWへ復元する（"なし"はMMLに乗らないため明示復元）。
         const restoreDrum = () => {
             const saved = readStored(DRUM_STORAGE_KEY);
@@ -373,7 +416,70 @@
             window.daw = daw;
             restoreDrum();
         };
-        mountEditor(currentMode, '');
+
+        // 猶予時間（グレースピリオド）の管理
+        let gracePeriodActive = false;
+        let gracePeriodTimeout = null;
+        let gracePeriodInterval = null;
+
+        const activateGracePeriod = (minutes = 10) => {
+            if (gracePeriodTimeout) clearTimeout(gracePeriodTimeout);
+            if (gracePeriodInterval) clearInterval(gracePeriodInterval);
+
+            gracePeriodActive = true;
+            const startTime = Date.now();
+            const durationMs = minutes * 60 * 1000;
+            const statusEl = document.getElementById('grace-period-status');
+
+            const updateStatus = () => {
+                const remaining = Math.max(0, durationMs - (Date.now() - startTime));
+                if (remaining === 0) {
+                    gracePeriodActive = false;
+                    clearInterval(gracePeriodInterval);
+                    if (statusEl) statusEl.textContent = '';
+                    console.log('[dtm] Grace period expired. Snapshots resumed.');
+                    return;
+                }
+                const min = Math.floor(remaining / 60000);
+                const sec = Math.floor((remaining % 60000) / 1000);
+                const minStr = String(min).padStart(2, '0');
+                const secStr = String(sec).padStart(2, '0');
+                if (statusEl) {
+                    statusEl.textContent = `⏳ GRACE PERIOD: ${minStr}:${secStr} (NO AUTOSAVE)`;
+                }
+            };
+
+            updateStatus();
+            gracePeriodInterval = setInterval(updateStatus, 1000);
+
+            gracePeriodTimeout = setTimeout(() => {
+                gracePeriodActive = false;
+                if (gracePeriodInterval) clearInterval(gracePeriodInterval);
+                if (statusEl) statusEl.textContent = '';
+                console.log('[dtm] Grace period expired. Snapshots resumed.');
+            }, durationMs);
+        };
+
+        // ── 共有リンクからの自動入力処理 ──
+        let initialMml = '';
+        const hash = location.hash.slice(1);
+        if (hash) {
+            try {
+                initialMml = await decodeMml(hash);
+                activateGracePeriod(10);
+
+                // MML内に #mode=simple や #mode=advanced が定義されている場合、そのモードを反映する
+                const parsed = parseMML(initialMml);
+                if (parsed && parsed.meta && parsed.meta.mode) {
+                    currentMode = parsed.meta.mode;
+                    writeStored(MODE_STORAGE_KEY, currentMode);
+                }
+            } catch (e) {
+                console.error('Failed to decode initial MML from URL hash', e);
+            }
+        }
+
+        mountEditor(currentMode, initialMml);
 
         // ── モード切替（simple / advanced）はブラウザを閉じても維持する ──
         const BTN_ACTIVE = 'min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-cyan text-pico-black text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none';
@@ -403,28 +509,6 @@
 
         document.getElementById('mode-simple').addEventListener('click', () => remountDAW('simple'));
         document.getElementById('mode-advanced').addEventListener('click', () => remountDAW('advanced'));
-
-        // ── 楽器プリセット変更（再生中なら一旦停止→ロード→同じ位置から再開）──
-        // ── 楽器プリセット変更（再生中なら一旦停止→ロード→同じ位置から再開）──
-        const selectInstrumentPreset = async (v) => {
-            if (presetSelect.value !== v) {
-                presetSelect.value = v;
-            }
-            writeStored(INSTRUMENT_STORAGE_KEY, v);
-            if (daw) {
-                daw.setInstrument(v); // MML出力の先頭に #inst= を埋め込む（再生専用ビューが音源解決に使う）
-            }
-            const wasPlaying = daw ? (daw.getPlaybackState() === 'playing') : false;
-            if (wasPlaying && daw) daw.pause();
-            loadingEl.style.display = '';
-            try { await studio.loadPreset(v, trackIdsFor(currentMode)); }
-            finally { loadingEl.style.display = 'none'; if (wasPlaying && daw) daw.play(); }
-        };
-
-        presetSelect.addEventListener('change', () => {
-            selectInstrumentPreset(presetSelect.value).catch(console.error);
-        });
-
         // ════ 再生専用ビュー (mountMmlPlayer) ════
         // @@0 klatt … が歌詞トラック。@0 のメロディに音節を1つずつ同期して歌う。
         // モデル名を koe音源キーワード（roze / teto / tsukuyomi / rino / ruko_female / shiyo）に
@@ -438,7 +522,7 @@
             player = studio.mountPlayer(document.getElementById('player-app'), mml || SAMPLE_MML, { volume: 50, skipConsent: true });
             window.player = player;
         };
-        mountPlayer(SAMPLE_MML);
+        mountPlayer(initialMml || SAMPLE_MML);
         document.getElementById('player-load-daw').addEventListener('click', () => {
             const { full } = daw.getMML();
             mountPlayer(full);
@@ -465,6 +549,252 @@
             }
         });
 
+        // ── 共有リンクコピー機能 ──
+        const shareBtn = document.getElementById('share-link-copy');
+        const shareStatus = document.getElementById('share-status');
+
+        shareBtn.addEventListener('click', async () => {
+            if (!daw) return;
+            const { full } = daw.getMML();
+            try {
+                const payload = await encodeMml(full);
+                const shareUrl = `${location.href.split('#')[0]}#${payload}`;
+                await navigator.clipboard.writeText(shareUrl);
+                shareStatus.textContent = 'このページの共有リンクをコピーしました！';
+                shareStatus.className = 'text-pico-green text-xs uppercase tracking-widest';
+            } catch (err) {
+                console.error(err);
+                shareStatus.textContent = 'コピーに失敗しました';
+                shareStatus.className = 'text-pico-red text-xs uppercase tracking-widest';
+            }
+            setTimeout(() => {
+                shareStatus.textContent = '';
+            }, 2000);
+        });
+
+        // ── 作業履歴（スナップショット）機能 ──
+        const HISTORY_STORAGE_KEY = 'dtm-work-history';
+        const MAX_HISTORY_ITEMS = 50;
+        const SNAPSHOT_INTERVAL_MS = 60000; // 1分ごとに変更を検知して保存
+        let lastSavedMml = initialMml; // 初期MMLをセットして二重保存を防ぐ
+
+        const saveSnapshot = () => {
+            if (!daw) return;
+            if (gracePeriodActive) return;
+            const { full } = daw.getMML();
+            if (!full || full === lastSavedMml) return;
+
+            try {
+                let history = [];
+                const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+                if (raw) {
+                    history = JSON.parse(raw);
+                }
+                // 同一MMLが連続して保存されるのを防ぐ
+                if (history.length > 0 && history[0].mml === full) return;
+
+                history.unshift({
+                    timestamp: Date.now(),
+                    mode: currentMode,
+                    mml: full
+                });
+                if (history.length > MAX_HISTORY_ITEMS) {
+                    history = history.slice(0, MAX_HISTORY_ITEMS);
+                }
+                localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+                lastSavedMml = full;
+                console.log('[dtm] snapshot saved at', new Date().toLocaleTimeString());
+            } catch (e) {
+                console.error('Failed to save snapshot', e);
+            }
+        };
+
+        // 定期的にスナップショットを実行
+        setInterval(saveSnapshot, SNAPSHOT_INTERVAL_MS);
+
+        // モーダルのDOM要素
+        const historyBtn = document.getElementById('show-history-btn');
+        const historyModalOverlay = document.getElementById('history-modal-overlay');
+        const historyModalClose = document.getElementById('history-modal-close');
+        const historyClearAll = document.getElementById('history-clear-all');
+        const historyList = document.getElementById('history-list');
+
+        // ── アクティブなプレビューの停止処理 ──
+        const stopAllPreviews = () => {
+            document.querySelectorAll('[data-preview-active="true"]').forEach(el => {
+                el.click();
+            });
+        };
+
+        const updateHistoryList = async () => {
+            historyList.innerHTML = '';
+            let history = [];
+            try {
+                const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+                if (raw) history = JSON.parse(raw);
+            } catch (e) {
+                console.error(e);
+            }
+
+            if (history.length === 0) {
+                const p = document.createElement('p');
+                p.textContent = '履歴はありません。';
+                p.className = 'text-pico-gray text-xs';
+                historyList.appendChild(p);
+                return;
+            }
+
+            for (const item of history) {
+                const div = document.createElement('div');
+                div.className = 'flex flex-col gap-1.5 p-3 border border-pico-gray/30 bg-black/20 rounded';
+
+                const payload = await encodeMml(item.mml);
+                const directUrl = `${location.href.split('#')[0]}#${payload}`;
+
+                const meta = document.createElement('div');
+                meta.className = 'flex items-center justify-between text-[10px] text-pico-lavend';
+                const timeStr = new Date(item.timestamp).toLocaleString();
+                const modeStr = item.mode.toUpperCase();
+
+                const parsed = parseMML(item.mml, { collectLyrics: true });
+                const bpmVal = parsed.bpm || 120;
+
+                const leftContainer = document.createElement('div');
+                leftContainer.className = 'flex items-center gap-2';
+
+                const leftSpan = document.createElement('span');
+                leftSpan.textContent = `${timeStr} | MODE: ${modeStr} | BPM: ${bpmVal}`;
+                leftContainer.appendChild(leftSpan);
+
+                const iconContainer = document.createElement('div');
+                iconContainer.className = 'flex items-center gap-1';
+
+                if (parsed.lyrics) {
+                    for (const lt of parsed.lyrics.values()) {
+                        const modelKey = lt.model.toLowerCase();
+                        const imgKey = VOICE_IMAGE_KEY[modelKey];
+                        const src = imgKey ? VOICE_IMAGES[imgKey] : undefined;
+                        if (src) {
+                            const img = document.createElement('img');
+                            img.src = src;
+                            img.width = 16;
+                            img.height = 16;
+                            img.className = 'rounded-full object-cover border border-pico-gray/50';
+                            img.title = lt.model;
+                            iconContainer.appendChild(img);
+                        }
+                    }
+                }
+                leftContainer.appendChild(iconContainer);
+
+                const rightSpan = document.createElement('span');
+                rightSpan.textContent = `${item.mml.length}文字 (圧縮後: ${payload.length}B)`;
+                rightSpan.className = 'text-pico-gray';
+
+                meta.appendChild(leftContainer);
+                meta.appendChild(rightSpan);
+                div.appendChild(meta);
+
+                // プレビュー表示用コンテナ
+                const playerContainer = document.createElement('div');
+                playerContainer.className = 'mt-2 border-t border-pico-gray/20 pt-2 hidden';
+                const playerAppDiv = document.createElement('div');
+                playerContainer.appendChild(playerAppDiv);
+
+                let previewPlayer = null;
+
+                // プレビュー再生用ボタン
+                const playBtn = document.createElement('button');
+                playBtn.textContent = '▶ PLAY PREVIEW';
+                playBtn.className = 'px-3 py-1.5 border-2 border-pico-green bg-pico-black text-pico-green text-[10px] uppercase font-pixel tracking-wide shadow-[2px_2px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none cursor-pointer';
+
+                playBtn.addEventListener('click', () => {
+                    if (previewPlayer) {
+                        previewPlayer.destroy();
+                        previewPlayer = null;
+                        playBtn.textContent = '▶ PLAY PREVIEW';
+                        playBtn.className = 'px-3 py-1.5 border-2 border-pico-green bg-pico-black text-pico-green text-[10px] uppercase font-pixel tracking-wide shadow-[2px_2px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none cursor-pointer';
+                        playBtn.removeAttribute('data-preview-active');
+                        playerContainer.classList.add('hidden');
+                    } else {
+                        stopAllPreviews();
+
+                        playBtn.setAttribute('data-preview-active', 'true');
+                        playerContainer.classList.remove('hidden');
+
+                        previewPlayer = studio.mountPlayer(playerAppDiv, item.mml, { volume: 50, skipConsent: true });
+                        previewPlayer.play();
+
+                        playBtn.textContent = '■ STOP PREVIEW';
+                        playBtn.className = 'px-3 py-1.5 border-2 border-pico-red bg-pico-black text-pico-red text-[10px] uppercase font-pixel tracking-wide shadow-[2px_2px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none cursor-pointer';
+                    }
+                });
+
+                const linkContainer = document.createElement('div');
+                linkContainer.className = 'flex items-center justify-between mt-2 gap-3';
+
+                const leftActions = document.createElement('div');
+                leftActions.className = 'flex items-center gap-3';
+
+                const a = document.createElement('a');
+                a.href = directUrl;
+                a.textContent = '🔗 OPEN THIS SNAPSHOT';
+                a.className = 'text-pico-cyan hover:text-pico-yellow text-xs uppercase tracking-wide decoration-solid underline cursor-pointer';
+                a.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (confirm('現在の編集内容が破棄されます。この履歴を読み込みますか？')) {
+                        stopAllPreviews();
+                        location.hash = payload;
+                        const carriedMode = item.mode;
+                        if (carriedMode !== currentMode) {
+                            currentMode = carriedMode;
+                            updateModeButtons(carriedMode);
+                            writeStored(MODE_STORAGE_KEY, carriedMode);
+                        }
+                        daw.destroy();
+                        mountEditor(currentMode, item.mml);
+                        mountPlayer(item.mml);
+                        lastSavedMml = item.mml;
+                        historyModalOverlay.classList.add('hidden');
+                        activateGracePeriod(10);
+                    }
+                });
+
+                leftActions.appendChild(a);
+                leftActions.appendChild(playBtn);
+                linkContainer.appendChild(leftActions);
+
+                div.appendChild(linkContainer);
+                div.appendChild(playerContainer);
+                historyList.appendChild(div);
+            }
+        };
+
+        // イベントリスナーの配線
+        historyBtn.addEventListener('click', async () => {
+            await updateHistoryList();
+            historyModalOverlay.classList.remove('hidden');
+        });
+
+        historyModalClose.addEventListener('click', () => {
+            stopAllPreviews();
+            historyModalOverlay.classList.add('hidden');
+        });
+
+        historyModalOverlay.addEventListener('click', (e) => {
+            if (e.target === historyModalOverlay) {
+                stopAllPreviews();
+                historyModalOverlay.classList.add('hidden');
+            }
+        });
+
+        historyClearAll.addEventListener('click', () => {
+            if (confirm('すべての作業履歴を削除しますか？')) {
+                stopAllPreviews();
+                localStorage.removeItem(HISTORY_STORAGE_KEY);
+                updateHistoryList();
+            }
+        });
 
     </script>
 
@@ -499,6 +829,25 @@
                     </ul>
                     <p class="text-pico-lavend mt-1">※MIDIを読み込むと、ファイルのトラック構成がそのまま反映されます（1対1）。</p>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════ 作業履歴モーダル ════ -->
+    <div id="history-modal-overlay"
+        class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden">
+        <div
+            class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
+            <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
+                <span class="text-pico-yellow text-sm font-bold">作業履歴 (スナップショット)</span>
+                <div class="flex items-center gap-3">
+                    <button id="history-clear-all" class="text-pico-red hover:text-pico-pink text-xs uppercase cursor-pointer">CLEAR ALL</button>
+                    <button id="history-modal-close"
+                        class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none">&times;</button>
+                </div>
+            </div>
+            <div class="p-4 overflow-y-auto text-xs leading-relaxed flex flex-col gap-3" id="history-list">
+                <!-- 履歴項目がここに動的に生成されます -->
             </div>
         </div>
     </div>
