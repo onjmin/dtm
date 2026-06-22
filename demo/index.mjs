@@ -4865,7 +4865,7 @@ var DAW_CSS = `
   top: 0;
   z-index: 20;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--dtm-gap);
   padding: 6px;
@@ -4875,6 +4875,17 @@ var DAW_CSS = `
     inset 0 0 0 2px var(--c-black),
     0 0 0 2px var(--dtm-success),
     4px 4px 0 var(--c-black);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.dtm-topbar::-webkit-scrollbar {
+  display: none;
+}
+.dtm-topbar > * {
+  flex-shrink: 0;
+}
+.dtm-topbar > .dtm-grow {
+  flex-shrink: 1;
 }
 
 /* PLAY\u30DC\u30BF\u30F3 \u2014 \u30B2\u30FC\u30E0\u306E\u300C\u6C7A\u5B9A\u30DC\u30BF\u30F3\u300D\u7684\u5B58\u5728\u611F */
