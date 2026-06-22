@@ -364,6 +364,7 @@
                 preset: presetSelect.value,
                 initialMML: mml || undefined,
                 defaultBpm: 120,
+                skipConsent: true,
                 onDrumChange: (name) => writeStored(DRUM_STORAGE_KEY, name),
                 onInstrumentChange: (name) => {
                     selectInstrumentPreset(name).catch(console.error);
@@ -434,7 +435,7 @@
         const mountPlayer = (mml) => {
             if (player) player.destroy();
             // volume:50 はDAWの既定マスタ音量に合わせる係数（再生専用だけ音が倍近く大きくなるのを防ぐ）
-            player = studio.mountPlayer(document.getElementById('player-app'), mml || SAMPLE_MML, { volume: 50 });
+            player = studio.mountPlayer(document.getElementById('player-app'), mml || SAMPLE_MML, { volume: 50, skipConsent: true });
             window.player = player;
         };
         mountPlayer(SAMPLE_MML);

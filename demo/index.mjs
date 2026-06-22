@@ -5276,12 +5276,12 @@ var DAW_CSS = `
   position: fixed;
   inset: 0;
   z-index: 10100;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 16px;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(2px);
 }
 .dtm-consent-overlay[hidden] {
   display: none !important;
@@ -5298,7 +5298,7 @@ var DAW_CSS = `
     inset 0 0 0 2px var(--c-black),
     0 0 0 2px var(--dtm-primary),
     4px 4px 0 var(--c-black);
-  overflow: hidden;
+  overflow-y: auto;
 }
 .dtm-consent-header {
   background: var(--dtm-deep);
@@ -5311,7 +5311,6 @@ var DAW_CSS = `
 }
 .dtm-consent-body {
   padding: 16px;
-  overflow-y: auto;
   font-size: 13px;
   line-height: 1.6;
 }
@@ -6444,6 +6443,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   let consentOverlayEl = null;
   const checkConsentAndShow = () => {
     try {
+      if (options.skipConsent) return;
       const unagreed = termsModels.filter((model) => {
         if (agreedModelsInSession.has(model)) return false;
         try {
@@ -7061,6 +7061,7 @@ var mountDAW = (target, options = {}) => {
   const agreedModelsInSession2 = /* @__PURE__ */ new Set();
   function checkSingingVoiceConsent() {
     try {
+      if (options.skipConsent) return;
       const requiredModels = /* @__PURE__ */ new Set();
       for (const t of trackStates) {
         if (t.lyricModel && KOE_VOICEBANK_TERMS[t.lyricModel]) {
