@@ -2718,13 +2718,44 @@ var createSingingVoices = (ctx, destination, options = {}) => {
         if (model.renderToCache && model.scheduleCached) {
           const renderToCache = model.renderToCache;
           const scheduleCached = model.scheduleCached;
+          const threshold = opts?.fallbackThresholdSec ?? 0.15;
           void (async () => {
-            const key = await renderToCache(
+            let isTimeout = false;
+            let timeoutId;
+            const renderPromise = renderToCache(
               note.syllable,
               prevVowel,
               note.pitch,
               note.durationSec * 1e3
+            ).then((key2) => {
+              if (timeoutId) clearTimeout(timeoutId);
+              return { key: key2, type: "success" };
+            });
+            const timeoutLimitTime = t0 - threshold;
+            const timeoutDelayMs = (timeoutLimitTime - ctx.currentTime) * 1e3;
+            const timeoutPromise = new Promise(
+              (resolve) => {
+                if (timeoutDelayMs <= 0) {
+                  isTimeout = true;
+                  resolve({ key: null, type: "timeout" });
+                } else {
+                  timeoutId = setTimeout(() => {
+                    isTimeout = true;
+                    resolve({ key: null, type: "timeout" });
+                  }, timeoutDelayMs);
+                }
+              }
             );
+            const result = await Promise.race([renderPromise, timeoutPromise]);
+            if (session !== streamSession) return;
+            if (result.type === "timeout") {
+              console.warn(
+                `[dtm] Synthesizer expected late skip: ${note.syllable.kana} at ${note.startSec}s. Fallback to instrument.`
+              );
+              opts?.onFallbackPlayNote?.(track, note, t0);
+              return;
+            }
+            const key = result.key;
             if (session !== streamSession) return;
             if (key) {
               const delay = ctx.currentTime - t0;
@@ -2732,9 +2763,10 @@ var createSingingVoices = (ctx, destination, options = {}) => {
                 scheduleCached(key, t0, peak, track.pan);
               } else {
                 console.warn(
-                  `[dtm] Synthesizer late skip: ${note.syllable.kana} at ${note.startSec}s (delayed by ${delay.toFixed(3)}s)`
+                  `[dtm] Synthesizer late skip (safety): ${note.syllable.kana} at ${note.startSec}s (delayed by ${delay.toFixed(3)}s)`
                 );
                 opts?.onLateSkip?.(note, delay);
+                opts?.onFallbackPlayNote?.(track, note, t0);
               }
             }
           })();
@@ -7022,10 +7054,31 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     if (streaming && !skipSinging) {
       ensureVoices().startStream(tracks, seq.getStartTime(), {
         isAudible: (t) => !mutedTracks.has(Number(t.id)),
-        onLateSkip: () => {
+        onFallbackPlayNote: (track, note, t0) => {
           showPlayerMessage(
             "\u97F3\u58F0\u5408\u6210\u304C\u9593\u306B\u5408\u308F\u306A\u3044\u305F\u3081\u3001\u4E00\u90E8\u306E\u767A\u97F3\u3092\u30B9\u30AD\u30C3\u30D7\u3057\u307E\u3057\u305F"
           );
+          const trackIdx = Number(track.id);
+          if (mutedTracks.has(trackIdx)) return;
+          const lt = lyricTracks.get(trackIdx);
+          if (!lt) return;
+          const relativeWhen = t0 - ensureCtx().currentTime;
+          if (relativeWhen > 0) {
+            const vol = (lt.volume ?? DEFAULT_VOCAL_VOLUME) / 100 * (trackVolume / 100);
+            const e = {
+              trackId: track.id ?? "",
+              pitch: note.pitch,
+              velocity: 100,
+              volume: vol,
+              when: relativeWhen,
+              duration: note.durationSec,
+              pan: track.pan
+            };
+            options.onPlayNote?.(e);
+            if (useSynth) ensureSynth().playNote(e);
+          }
+        },
+        onLateSkip: () => {
         }
       });
     }
@@ -8035,7 +8088,27 @@ var mountDAW = (target, options = {}) => {
     sequencer.start(fromStep);
     if (streaming && voices) {
       voices.startStream(streamTracks, sequencer.getStartTime(), {
-        isAudible: (t) => !isSolo || t.id === activeTrackId
+        isAudible: (t) => !isSolo || t.id === activeTrackId,
+        onFallbackPlayNote: (track, note, t0) => {
+          if (isSolo && track.id !== activeTrackId) return;
+          const relativeWhen = t0 - getAudioTime();
+          if (relativeWhen > 0) {
+            const trackState = trackStates.find(
+              (t) => t.config.id === track.id
+            );
+            const trackVol = trackState ? trackState.volume : 80;
+            const volume = trackVol / 100 * (masterVolume / 100);
+            options.onPlayNote?.({
+              trackId: track.id ?? "",
+              pitch: note.pitch,
+              velocity: 100,
+              volume,
+              when: relativeWhen,
+              duration: note.durationSec,
+              pan: track.pan
+            });
+          }
+        }
       });
     }
     updateTransport();
