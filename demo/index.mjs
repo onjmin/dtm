@@ -7,34 +7,6 @@ function createAudioContext() {
   drumGainNode.connect(audioCtx.destination);
   return { audioCtx, gainNode, drumGainNode };
 }
-function setupRecorder(audioCtx, gainNode, drumGainNode) {
-  let isRecording = false;
-  let recordedData = [[], []];
-  const recorderProcessor = audioCtx.createScriptProcessor(4096, 2, 2);
-  recorderProcessor.onaudioprocess = (e) => {
-    if (!isRecording) return;
-    const left = e.inputBuffer.getChannelData(0);
-    const right = e.inputBuffer.getChannelData(1);
-    recordedData[0].push(left.slice());
-    recordedData[1].push(right.slice());
-  };
-  gainNode.connect(recorderProcessor);
-  drumGainNode.connect(recorderProcessor);
-  recorderProcessor.connect(audioCtx.destination);
-  return {
-    startRecording: () => {
-      isRecording = true;
-    },
-    stopRecording: () => {
-      isRecording = false;
-    },
-    getRecordedData: () => recordedData,
-    isRecording: () => isRecording,
-    clearRecordedData: () => {
-      recordedData = [[], []];
-    }
-  };
-}
 async function fetchSoundFontList(ttl) {
   const res = await fetch(`https://rpgen3.github.io/soundfont/list/${ttl}.txt`);
   const str = await res.text();
@@ -1131,8 +1103,9 @@ var buildUI = (target, options) => {
   target.innerHTML = `
 <div class="dtm-daw" data-dtm="root">
   <div class="dtm-topbar" data-dtm="transport">
+    <button class="dtm-iconbtn" data-dtm="prev-bar" title="1\u5C0F\u7BC0\u524D">${icon("chevronLeft")}</button>
     <button class="dtm-play" data-dtm="play" disabled>${icon("play")}<span>\u8A66\u8074</span></button>
-    <button class="dtm-iconbtn dtm-rec" data-dtm="rec" title="\u9332\u97F3">${icon("record")}</button>
+    <button class="dtm-iconbtn" data-dtm="next-bar" title="1\u5C0F\u7BC0\u5F8C">${icon("chevronRight")}</button>
     <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>\u30BD\u30ED</span></label>
     <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
     <span class="dtm-grow"></span>
@@ -1328,7 +1301,8 @@ var buildUI = (target, options) => {
     topbar: sel("transport"),
     topbarLoading: sel("topbar-loading"),
     playBtn: sel("play"),
-    recBtn: sel("rec"),
+    prevBarBtn: sel("prev-bar"),
+    nextBarBtn: sel("next-bar"),
     soloCheckbox: sel("solo"),
     toolPen: sel("tool-pen"),
     toolSelect: sel("tool-select"),
@@ -7940,7 +7914,7 @@ var mountDAW = (target, options = {}) => {
   };
   const updateTransport = () => {
     const playing = playbackState === "playing";
-    const label = playing ? "\u4E00\u6642\u505C\u6B62" : playbackState === "paused" ? "\u518D\u958B" : "\u8A66\u8074";
+    const label = playing ? "\u505C\u6B62" : playbackState === "paused" ? "\u518D\u958B" : "\u8A66\u8074";
     refs.playBtn.innerHTML = `${icon(playing ? "pause" : "play")}<span>${label}</span>`;
     refs.playBtn.classList.toggle("dtm-play--stop", playing);
   };
@@ -8512,8 +8486,17 @@ var mountDAW = (target, options = {}) => {
   const wireEvents = () => {
     refs.playBtn.addEventListener("click", togglePlay);
     refs.playBtn.disabled = false;
-    refs.recBtn.addEventListener("click", () => options.onToggleRecord?.());
-    refs.recBtn.style.display = options.onToggleRecord ? "" : "none";
+    refs.prevBarBtn.addEventListener("click", () => {
+      const targetStep = Math.max(
+        0,
+        Math.floor((getCurrentPlayStep() - 1) / renderConfig.stepsPerBar) * renderConfig.stepsPerBar
+      );
+      jumpTo(targetStep);
+    });
+    refs.nextBarBtn.addEventListener("click", () => {
+      const targetStep = Math.floor(getCurrentPlayStep() / renderConfig.stepsPerBar + 1) * renderConfig.stepsPerBar;
+      jumpTo(targetStep);
+    });
     refs.soloCheckbox.addEventListener("change", () => {
       isSolo = refs.soloCheckbox.checked;
     });
@@ -8875,6 +8858,20 @@ var mountDAW = (target, options = {}) => {
     if (playbackState === "playing") return currentPlayStep;
     if (playbackState === "paused") return pausedPlayStep;
     return playStartStep;
+  };
+  const jumpTo = async (step) => {
+    const wasPlaying = playbackState === "playing";
+    if (wasPlaying) {
+      sequencer.stop();
+      options.singingVoices?.stopStream();
+      playStartStep = step;
+      pausedPlayStep = step;
+      currentPlayStep = step;
+      playbackState = "paused";
+      await play();
+    } else {
+      forcePauseAt(step);
+    }
   };
   const forcePauseAt = (step) => {
     playStartStep = step;
@@ -9544,7 +9541,6 @@ var importFrom = async (url2, name) => {
 var createDtmStudio = async (options = {}) => {
   const cdn = { ...DEFAULT_CDN, ...options.cdn };
   const features = {
-    recorder: true,
     midi: true,
     chord: true,
     presetUI: true,
@@ -9583,68 +9579,6 @@ var createDtmStudio = async (options = {}) => {
   const singingVoices = createSingingVoices(audioCtx, masterGain, {
     voiceWorkerUrl
   });
-  const recorder = features.recorder ? setupRecorder(audioCtx, masterGain, drumGain) : null;
-  const downloadWav = () => {
-    if (!recorder) return;
-    const recordedData = recorder.getRecordedData();
-    const ch = recordedData.length;
-    const len = recordedData[0].length;
-    if (len === 0) return;
-    const bufSize = recordedData[0][0].length;
-    const wave = new Float32Array(ch * len * bufSize);
-    let idx = 0;
-    for (let i = 0; i < len; i++)
-      for (let j = 0; j < bufSize; j++)
-        for (let k = 0; k < ch; k++) wave[idx++] = recordedData[k][i][j];
-    const sampleRate = audioCtx.sampleRate;
-    const channels = 2;
-    const bitRate = 16;
-    const step = bitRate / 8;
-    const blockSize = channels * step;
-    const byteLen = wave.length * step;
-    const view = new DataView(new ArrayBuffer(44 + byteLen));
-    const ws = (off2, s) => {
-      for (let i = 0; i < s.length; i++)
-        view.setUint8(off2 + i, s.charCodeAt(i));
-    };
-    ws(0, "RIFF");
-    view.setUint32(4, 32 + byteLen, true);
-    ws(8, "WAVE");
-    ws(12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, channels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * blockSize, true);
-    view.setUint16(32, blockSize, true);
-    view.setUint16(34, bitRate, true);
-    ws(36, "data");
-    view.setUint32(40, byteLen, true);
-    const clamp4 = (n, a2, b) => Math.max(a2, Math.min(b, n));
-    let off = 44;
-    for (let i = 0; i < wave.length; i++, off += step)
-      view.setInt16(
-        off,
-        clamp4(Math.round(wave[i] * 32768), -32768, 32767),
-        true
-      );
-    const blob2 = new Blob([view], { type: "audio/wav" });
-    const url2 = URL.createObjectURL(blob2);
-    const a = document.createElement("a");
-    a.href = url2;
-    a.download = "record.wav";
-    a.click();
-    URL.revokeObjectURL(url2);
-  };
-  const onToggleRecord = recorder ? () => {
-    if (recorder.isRecording()) {
-      recorder.stopRecording();
-      downloadWav();
-    } else {
-      recorder.clearRecordedData();
-      recorder.startRecording();
-    }
-  } : void 0;
   const listReady = new Promise((resolve) => {
     SoundFont_list.init();
     SoundFont_list.onload(() => resolve());
@@ -9851,7 +9785,6 @@ var createDtmStudio = async (options = {}) => {
       onPlayDrum: playDrum,
       singingVoices,
       parseMidi,
-      onToggleRecord,
       onInstrumentChange: handleInstrumentChange,
       ...dawOverrides
     };
@@ -10142,7 +10075,6 @@ export {
   playMML,
   playSingingMML,
   setDrawOffset,
-  setupRecorder,
   shiftNotes,
   stripLyrics,
   stripMmlMeta,
