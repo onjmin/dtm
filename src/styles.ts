@@ -629,6 +629,66 @@ export const DAW_CSS = `
 .dtm-modal-overlay[hidden] {
   display: none !important;
 }
+
+/* ─── 利用規約同意カバー ─── */
+.dtm-consent-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10100;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+}
+.dtm-consent-overlay[hidden] {
+  display: none !important;
+}
+.dtm-consent-modal {
+  max-width: 450px;
+  width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--dtm-surface);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-primary),
+    4px 4px 0 var(--c-black);
+  overflow: hidden;
+}
+.dtm-consent-header {
+  background: var(--dtm-deep);
+  color: var(--dtm-text);
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--c-black);
+  font-weight: bold;
+  text-align: center;
+  font-size: 14px;
+}
+.dtm-consent-body {
+  padding: 16px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.dtm-consent-body a {
+  color: var(--dtm-primary);
+  text-decoration: underline;
+}
+.dtm-consent-body a:hover {
+  color: var(--dtm-accent);
+}
+.dtm-consent-footer {
+  padding: 12px;
+  border-top: 2px solid var(--c-black);
+  background: var(--dtm-deep);
+  display: flex;
+  justify-content: center;
+}
+
 .dtm-modal {
   max-width: 500px;
   width: 100%;
@@ -762,18 +822,19 @@ export const DAW_CSS = `
 }
 
 .dtm-hidden { display: none !important; }
-/* 読込時の控えめなお知らせ（例: シンプルモードでのトラック合算）。主張しすぎない muted 表示。 */
+/* 読込時の警告お知らせ（例: シンプルモードでのトラック合算）。 */
 .dtm-load-note {
   margin: 6px 0 0;
   padding: 0 2px;
   font-family: var(--dtm-font);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
   letter-spacing: .04em;
-  color: var(--dtm-muted);
-  opacity: .85;
+  color: var(--dtm-warn); /* 警告色（オレンジ） */
+  font-weight: bold;
+  opacity: 1.0;
 }
-.dtm-load-note::before { content: "ⓘ "; }
+.dtm-load-note::before { content: "⚠ "; }
 .dtm-grow { flex: 1 1 auto; }
 .dtm-lyric-icon {
   flex: 0 0 auto;

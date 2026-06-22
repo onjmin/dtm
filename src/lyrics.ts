@@ -1027,9 +1027,22 @@ export const createKoeVoice = async (
 	options: KoeVoiceOptions,
 ): Promise<VoiceModel> => {
 	// 重い合成のバックエンド。voiceWorkerUrl があれば別スレッド、無ければメインスレッド。
-	const backend = options.voiceWorkerUrl
-		? await createWorkerBackend(options.voiceWorkerUrl, options)
-		: await createLocalBackend(options);
+	// ただし、セキュリティ制限（Sandbox化されたiframeやfile://など）により Worker の起動に失敗した場合は
+	// 自動的にメインスレッド（createLocalBackend）へフォールバックする。
+	let backend: RenderBackend;
+	if (options.voiceWorkerUrl) {
+		try {
+			backend = await createWorkerBackend(options.voiceWorkerUrl, options);
+		} catch (err) {
+			console.warn(
+				"[dtm] Failed to spawn voice worker. Falling back to local backend.",
+				err,
+			);
+			backend = await createLocalBackend(options);
+		}
+	} else {
+		backend = await createLocalBackend(options);
+	}
 
 	// 合成済み AudioBuffer のキャッシュ（同じ音素・ピッチ・音価の再演を高速化）。
 	const renderCache = new Map<string, RenderedNote | null>();

@@ -80,6 +80,9 @@ export type DawUIRefs = {
 	modalTitle: HTMLElement;
 	modalBody: HTMLElement;
 	modalClose: HTMLButtonElement;
+	consentOverlay: HTMLElement;
+	consentBody: HTMLElement;
+	consentBtn: HTMLButtonElement;
 };
 
 const q = <T extends HTMLElement>(root: HTMLElement, sel: string): T =>
@@ -304,6 +307,17 @@ export const buildUI = (
       <div class="dtm-modal-body" data-dtm="modal-body"></div>
     </div>
   </div>
+
+  <!-- ════ 利用規約同意カバー ════ -->
+  <div class="dtm-consent-overlay" data-dtm="consent-overlay" hidden>
+    <div class="dtm-win dtm-consent-modal">
+      <div class="dtm-consent-header">利用規約の確認</div>
+      <div class="dtm-consent-body" data-dtm="consent-body"></div>
+      <div class="dtm-consent-footer">
+        <button class="dtm-btn dtm-btn--success" data-dtm="consent-btn">同意して利用する</button>
+      </div>
+    </div>
+  </div>
 </div>`;
 
 	const root = q<HTMLElement>(target, '[data-dtm="root"]');
@@ -374,5 +388,8 @@ export const buildUI = (
 		modalTitle: sel("modal-title"),
 		modalBody: sel("modal-body"),
 		modalClose: sel("modal-close"),
+		consentOverlay: sel("consent-overlay"),
+		consentBody: sel("consent-body"),
+		consentBtn: sel("consent-btn"),
 	};
 };
