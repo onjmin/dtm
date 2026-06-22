@@ -2673,7 +2673,7 @@ var createSingingVoices = (ctx, destination, options = {}) => {
       if (!m?.renderToCache) continue;
       let n = 0;
       forEachSungNote(track, (note, prevVowel) => {
-        if (n >= count) return;
+        if (n >= count && note.startSec >= 3) return;
         n++;
         promises.push(
           m.renderToCache?.(
@@ -2706,14 +2706,18 @@ var createSingingVoices = (ctx, destination, options = {}) => {
         if (opts?.isAudible && !opts.isAudible(track)) continue;
         const t0 = anchorTime + note.startSec;
         if (model.renderToCache && model.scheduleCached) {
-          const key = await model.renderToCache(
-            note.syllable,
-            prevVowel,
-            note.pitch,
-            note.durationSec * 1e3
-          );
-          if (session !== streamSession) return;
-          if (key) model.scheduleCached(key, t0, peak, track.pan);
+          const renderToCache = model.renderToCache;
+          const scheduleCached = model.scheduleCached;
+          void (async () => {
+            const key = await renderToCache(
+              note.syllable,
+              prevVowel,
+              note.pitch,
+              note.durationSec * 1e3
+            );
+            if (session !== streamSession) return;
+            if (key) scheduleCached(key, t0, peak, track.pan);
+          })();
         } else {
           const when = t0 - ctx.currentTime;
           model(note.syllable, {
