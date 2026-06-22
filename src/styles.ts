@@ -662,14 +662,14 @@ export const DAW_CSS = `
 .dtm-consent-header {
   background: var(--dtm-deep);
   color: var(--dtm-text);
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-bottom: 2px solid var(--c-black);
   font-weight: bold;
   text-align: center;
   font-size: 14px;
 }
 .dtm-consent-body {
-  padding: 16px;
+  padding: 12px 16px;
   font-size: 13px;
   line-height: 1.6;
 }
@@ -681,7 +681,7 @@ export const DAW_CSS = `
   color: var(--dtm-accent);
 }
 .dtm-consent-footer {
-  padding: 12px;
+  padding: 8px;
   border-top: 2px solid var(--c-black);
   background: var(--dtm-deep);
   display: flex;

@@ -511,80 +511,6 @@ export const mountDAW = (
 	} | null = null;
 	let copiedNotes: Note[] = [];
 
-	// 利用規約同意状態管理
-	const agreedModelsInSession = new Set<string>();
-
-	function checkSingingVoiceConsent(): void {
-		try {
-			if (options.skipConsent) return;
-			const requiredModels = new Set<string>();
-			for (const t of trackStates) {
-				if (t.lyricModel && KOE_VOICEBANK_TERMS[t.lyricModel]) {
-					requiredModels.add(t.lyricModel);
-				}
-			}
-
-			// 同意していないモデルのみフィルタリング（未同意のリストを取得する）
-			const unagreed = Array.from(requiredModels).filter((model) => {
-				if (agreedModelsInSession.has(model)) return false;
-				try {
-					if (typeof localStorage === "undefined" || !localStorage) return true;
-					return localStorage.getItem(`dtm_agreed_terms_${model}`) !== "true";
-				} catch (e) {
-					console.warn("[dtm] localStorage access denied in consent check", e);
-					return true;
-				}
-			});
-
-			if (unagreed.length > 0) {
-				showConsentOverlay(unagreed);
-			}
-		} catch (err) {
-			console.error("[dtm] Error in checkSingingVoiceConsent:", err);
-		}
-	}
-
-	function showConsentOverlay(models: string[]): void {
-		try {
-			stop();
-
-			let contentHTML = `<p style="margin-bottom: 12px; font-weight: bold; color: var(--dtm-danger);">本データには UTAU 歌声音源が含まれています。<br>ご利用にあたっては、以下の音源利用規約への同意が必要です。</p>`;
-
-			for (const model of models) {
-				const label = KOE_VOICEBANK_LABELS[model] || model;
-				const url = KOE_VOICEBANK_TERMS[model];
-				contentHTML += `
-					<div style="margin-bottom: 12px; padding: 10px; background: var(--dtm-deep); border: 2px solid var(--c-black); box-shadow: 2px 2px 0 var(--c-black);">
-						<div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11px; font-weight: bold; color: var(--dtm-gold);">
-							<span>使用時には</span>
-							<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: var(--dtm-primary); text-decoration: underline;">${label}UTAU音源</a>
-							<span>の利用規約に従ってください</span>
-						</div>
-					</div>
-				`;
-			}
-
-			refs.consentBody.innerHTML = contentHTML;
-			refs.consentOverlay.removeAttribute("hidden");
-
-			refs.consentBtn.onclick = () => {
-				for (const model of models) {
-					try {
-						if (typeof localStorage !== "undefined" && localStorage) {
-							localStorage.setItem(`dtm_agreed_terms_${model}`, "true");
-						}
-					} catch (e) {
-						// sandboxやプライベートブラウズ対応
-					}
-					agreedModelsInSession.add(model);
-				}
-				refs.consentOverlay.setAttribute("hidden", "");
-			};
-		} catch (err) {
-			console.error("[dtm] Error in showConsentOverlay:", err);
-		}
-	}
-
 	// MMLCore は renderer.init() による g_config 設定後に生成する（generateMML が依存）。
 	let trackStates: TrackState[] = [];
 	const createTrackStates = (): void => {
@@ -1641,7 +1567,6 @@ export const mountDAW = (
 			lyricModelSel.addEventListener("change", () => {
 				active.lyricModel = lyricModelSel.value;
 				syncLyricVisibility();
-				checkSingingVoiceConsent();
 			});
 			lyricOctaveSel.addEventListener("change", () => {
 				active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
@@ -1992,7 +1917,6 @@ export const mountDAW = (
 		redrawAll();
 		updateTrackPanel(); // 読み込んだ歌詞を編集UIへ反映
 		updateUndoRedo();
-		checkSingingVoiceConsent();
 		// シンプルモードでは4トラックを超えるチャンネルが伴奏へ畳み込まれ合算される。
 		// 起きたときだけ控えめにお知らせする（advancedモードは1:1なので出さない）。
 		if (!isAdvanced && mergedTrackCount > 0) {
@@ -2517,7 +2441,6 @@ export const mountDAW = (
 	updateUndoRedo();
 	redrawAll();
 	if (options.initialMML) loadMML(options.initialMML);
-	checkSingingVoiceConsent();
 
 	// リサイズ対応（Canvas再構築）
 	let resizeTimer: ReturnType<typeof setTimeout> | null = null;

@@ -841,13 +841,13 @@ export const mountMmlPlayer = (
 			const body = doc.createElement("div");
 			body.className = "dtm-consent-body";
 
-			let contentHTML = `<p style="margin-bottom: 12px; font-weight: bold; color: var(--dtm-danger);">本データには UTAU 歌声音源が含まれています。<br>ご利用にあたっては、以下の音源利用規約への同意が必要です。</p>`;
+			let contentHTML = `<p style="margin: 0 0 8px 0; line-height: 1.4; font-weight: bold; color: var(--dtm-danger);">本データには UTAU 歌声音源が含まれています。<br>ご利用にあたっては、以下の音源利用規約への同意が必要です。</p>`;
 
 			for (const model of unagreed) {
 				const label = KOE_VOICEBANK_LABELS[model] || model;
 				const url = KOE_VOICEBANK_TERMS[model];
 				contentHTML += `
-					<div style="margin-bottom: 12px; padding: 10px; background: var(--dtm-deep); border: 2px solid var(--c-black); box-shadow: 2px 2px 0 var(--c-black);">
+					<div style="margin-bottom: 8px; padding: 6px 10px; background: var(--dtm-deep); border: 2px solid var(--c-black); box-shadow: 2px 2px 0 var(--c-black);">
 						<div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11px; font-weight: bold; color: var(--dtm-gold);">
 							<span>使用時には</span>
 							<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: var(--dtm-primary); text-decoration: underline;">${label}UTAU音源</a>
