@@ -8680,6 +8680,14 @@ var mountDAW = (target, options = {}) => {
     stop();
     clearAll();
     for (const t of trackStates) t.core.setLoadMode(true);
+    for (const t of trackStates) {
+      t.lyrics = "";
+      t.lyricModel = "";
+      t.vocalVolume = DEFAULT_VOCAL_VOLUME;
+      t.vocalGate = 100;
+      t.vocalPan = 64;
+      t.vocalOctave = 0;
+    }
     const { placements, bpm: parsedBpm } = isAdvanced ? extractMidiPlacementsByTrack(
       midi,
       selectedIndices,
@@ -8707,6 +8715,7 @@ var mountDAW = (target, options = {}) => {
       setDrawOffset(currentOffsetX, currentOffsetY);
     }
     redrawAll();
+    updateTrackPanel();
     updateUndoRedo();
   };
   const exportMIDI2 = () => exportMIDI({
