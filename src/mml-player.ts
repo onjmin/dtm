@@ -844,21 +844,27 @@ export const mountMmlPlayer = (
 	chordEl.textContent = "";
 	beatRow.appendChild(chordEl);
 
-	// トップレベル宣言チップ（#inst / #drum / #volume）
-	const chips: HTMLSpanElement[] = [];
-	const makeChip = (label: string): HTMLSpanElement => {
-		const chip = doc.createElement("span");
-		chip.className = "dtm-player-chip";
-		chip.textContent = label;
-		chips.push(chip);
-		return chip;
-	};
-	if (meta.instrument) makeChip(`♪ ${meta.instrument}`);
-	if (meta.drum) makeChip(`🥁 ${meta.drum}${drumPattern ? "" : " (?)"}`);
-	if (meta.volume !== undefined) makeChip(`🔊 ${meta.volume}%`);
-
-	head.append(playBtn, beatRow, ...chips, dots, mmlHeader);
+	head.append(playBtn, beatRow, dots, mmlHeader);
 	root.appendChild(head);
+
+	// 遅延通知メッセージ領域
+	const msgArea = doc.createElement("div");
+	msgArea.className = "dtm-player-message";
+	msgArea.style.display = "none";
+	root.appendChild(msgArea);
+
+	// ── メッセージ表示制御 ──
+	let msgTimer: ReturnType<typeof setTimeout> | null = null;
+	const showPlayerMessage = (text: string): void => {
+		msgArea.textContent = text;
+		msgArea.style.display = "";
+		if (msgTimer) clearTimeout(msgTimer);
+		msgTimer = setTimeout(() => {
+			msgArea.style.display = "none";
+			msgArea.textContent = "";
+			msgTimer = null;
+		}, 3000);
+	};
 
 	// ── トラック帯 ──
 	// レーン群をまとめる本体。ローディングオーバーレイはこの領域だけに被せ、
@@ -1238,6 +1244,11 @@ export const mountMmlPlayer = (
 		if (streaming) {
 			ensureVoices().startStream(tracks, seq.getStartTime(), {
 				isAudible: (t) => !mutedTracks.has(Number(t.id)),
+				onLateSkip: () => {
+					showPlayerMessage(
+						"音声合成が間に合わないため、一部の発音をスキップしました",
+					);
+				},
 			});
 		}
 	};

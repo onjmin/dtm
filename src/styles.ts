@@ -892,6 +892,18 @@ export const DAW_CSS = `
   border: 2px solid var(--dtm-border2);
   box-shadow: 4px 4px 0 var(--c-black);
 }
+.dtm-player-message {
+  padding: 4px 8px;
+  background: var(--c-purple);
+  color: var(--c-yellow);
+  font-size: 11px;
+  border: 2px solid var(--c-black);
+  box-shadow: inset 0 -2px 0 rgba(0,0,0,0.2);
+  font-family: var(--dtm-font);
+  text-align: center;
+  width: 100%;
+  box-sizing: border-box;
+}
 .dtm-player-head {
   display: flex;
   align-items: center;

@@ -1238,6 +1238,11 @@ export type StreamPlaybackOptions = {
 	 * 省略時は全トラック可聴。
 	 */
 	isAudible?: (track: StreamVoiceTrack) => boolean;
+	/**
+	 * 合成が間に合わず発音をスキップ（ミュート）した際のコールバック。
+	 * 引数には遅れたノート情報と遅延秒数が渡されます。
+	 */
+	onLateSkip?: (note: StreamVoiceNote, delay: number) => void;
 };
 
 /**
@@ -1286,7 +1291,7 @@ export const PREWARM_NOTES = 3;
  * メインスレッドを長時間占有する（→ 楽器スケジューラが枯渇してもたつく）のを防ぎ、
  * 合成負荷を曲全体へ平準化する。小さすぎると密なフレーズでアンダーランしやすくなる。
  */
-const STREAM_LOOKAHEAD_SEC = 6.0;
+const STREAM_LOOKAHEAD_SEC = 1.5;
 
 /** 先読み上限に達したときの再ポーリング間隔（ミリ秒）。 */
 const STREAM_POLL_MS = 100;
@@ -1460,7 +1465,18 @@ export const createSingingVoices = (
 							note.durationSec * 1000,
 						);
 						if (session !== streamSession) return;
-						if (key) scheduleCached(key, t0, peak, track.pan);
+						if (key) {
+							// 予定時刻より50ms以上遅れて合成完了した場合は発音をスキップ（ミュート）して音ズレを防ぐ
+							const delay = ctx.currentTime - t0;
+							if (delay < 0.05) {
+								scheduleCached(key, t0, peak, track.pan);
+							} else {
+								console.warn(
+									`[dtm] Synthesizer late skip: ${note.syllable.kana} at ${note.startSec}s (delayed by ${delay.toFixed(3)}s)`,
+								);
+								opts?.onLateSkip?.(note, delay);
+							}
+						}
 					})();
 				} else {
 					// klatt等（軽量・状態なし）: 絶対未来時刻へ直接スケジュール。
