@@ -1270,10 +1270,12 @@ var buildUI = (target, options) => {
       </div>
       <div class="dtm-output dtm-hidden" data-dtm="output-container">
         <p class="dtm-label" data-dtm="output-status"></p>
+        <div class="dtm-output-label">\u6539\u884C\u3042\u308A\u7248</div>
         <div class="dtm-output-row">
           <pre><code data-dtm="output-full"></code></pre>
           <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="copy-full" title="\u30B3\u30D4\u30FC">${icon("copy")}</button>
         </div>
+        <div class="dtm-output-label">\uFF11\u884C\u7248</div>
         <div class="dtm-output-row">
           <pre><code data-dtm="output-mini"></code></pre>
           <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="copy-mini" title="\u30B3\u30D4\u30FC">${icon("copy")}</button>
@@ -4120,7 +4122,7 @@ var PITCH_MAP2 = {
   b: 11
 };
 var clamp2 = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
-var META_DIRECTIVE = /#(inst|drum|volume|mode)=([\w-]+)/gi;
+var META_DIRECTIVE = /#(inst|drum|volume|drumvolume|mode)=([\w-]+)/gi;
 var parseMmlMeta = (mml) => {
   const meta = {};
   for (const m of mml.matchAll(META_DIRECTIVE)) {
@@ -4130,6 +4132,9 @@ var parseMmlMeta = (mml) => {
     else if (key === "volume") {
       const v = Number.parseInt(m[2], 10);
       if (!Number.isNaN(v)) meta.volume = v;
+    } else if (key === "drumvolume") {
+      const dv = Number.parseInt(m[2], 10);
+      if (!Number.isNaN(dv)) meta.drumVolume = dv;
     } else if (key === "mode") {
       if (m[2] === "simple" || m[2] === "advanced") {
         meta.mode = m[2];
@@ -4144,6 +4149,8 @@ var formatMmlMeta = (meta) => {
   if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
   if (meta.drum) parts.push(`#drum=${meta.drum}`);
   if (meta.volume !== void 0) parts.push(`#volume=${meta.volume}`);
+  if (meta.drumVolume !== void 0)
+    parts.push(`#drumvolume=${meta.drumVolume}`);
   if (meta.mode) parts.push(`#mode=${meta.mode}`);
   return parts.join(" ");
 };
@@ -5236,6 +5243,15 @@ var DAW_CSS = `
   line-height: 1.8;
   color: var(--dtm-success);
 }
+.dtm-output-label {
+  font-size: 11px;
+  color: var(--dtm-muted);
+  font-family: var(--dtm-font);
+  margin-top: 10px;
+}
+.dtm-output-label:first-of-type {
+  margin-top: 0;
+}
 .dtm-output-row { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; }
 .dtm-output-row pre { flex: 1; }
 
@@ -6079,6 +6095,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
   const drumPattern = meta.drum ? drumPatternDict[meta.drum] ?? null : null;
   const trackVolume = meta.volume ?? options.volume ?? 100;
+  const drumVolume = meta.drumVolume ?? 80;
   const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
   const useSynth = options.synth ?? !options.onPlayNote;
   const secondsPerStep = 60 / bpm / STEPS_PER_BEAT3;
@@ -6823,7 +6840,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       if (useSynth) ensureSynth().playNote(e);
     },
     onPlayDrum: (e) => {
-      const velocity = e.velocity * (trackVolume / 100);
+      const velocity = e.velocity * (drumVolume / 100) * (trackVolume / 100);
       options.onPlayDrum?.({ ...e, velocity });
       if (useSynth) ensureSynth().playDrum({ ...e, velocity });
     },
@@ -8193,6 +8210,7 @@ var mountDAW = (target, options = {}) => {
       instrument: currentInstrument || void 0,
       drum: currentDrumPattern !== "none" ? currentDrumPattern : void 0,
       volume: masterVolume,
+      drumVolume,
       mode
     });
     if (refs.decomposeChordToggle.checked) {
@@ -8343,6 +8361,11 @@ var mountDAW = (target, options = {}) => {
       masterVolume = meta.volume;
       refs.masterVolume.value = String(meta.volume);
       refs.masterVolumeLabel.textContent = `${meta.volume}%`;
+    }
+    if (meta.drumVolume !== void 0) {
+      drumVolume = meta.drumVolume;
+      refs.drumVolume.value = String(meta.drumVolume);
+      refs.drumVolumeLabel.textContent = `${meta.drumVolume}%`;
     }
     for (const t of trackStates) {
       t.lyrics = "";
@@ -8958,6 +8981,7 @@ var playMML = (mml, options = {}) => {
   const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
   const drumPattern = meta.drum ? drumPatternDict[meta.drum] ?? null : null;
   let masterVolume = meta.volume ?? options.volume ?? 100;
+  let drumVolume = meta.drumVolume ?? 80;
   const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
     (a, b) => a - b
   );
@@ -8994,7 +9018,7 @@ var playMML = (mml, options = {}) => {
       synth?.playNote(e);
     },
     onPlayDrum: (e) => {
-      const velocity = e.velocity * (masterVolume / 100);
+      const velocity = e.velocity * (drumVolume / 100) * (masterVolume / 100);
       options.onPlayDrum?.({ ...e, velocity });
       synth?.playDrum({ ...e, velocity });
     },
