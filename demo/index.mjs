@@ -2666,25 +2666,35 @@ var createSingingVoices = (ctx, destination, options = {}) => {
       if (syl.vowel && syl.vowel !== "N") prevVowel = syl.vowel;
     }
   };
-  const warm = async (tracks, count = PREWARM_NOTES) => {
-    const promises = [];
+  const warm = async (tracks, count = PREWARM_NOTES, onProgress) => {
+    const tasks = [];
     for (const track of tracks) {
       const m = loaded.get(track.model.toLowerCase());
       if (!m?.renderToCache) continue;
       let n = 0;
       forEachSungNote(track, (note, prevVowel) => {
-        if (n >= count && note.startSec >= 3) return;
+        if (n >= count && note.startSec >= STREAM_LOOKAHEAD_SEC) return;
         n++;
-        promises.push(
-          m.renderToCache?.(
-            note.syllable,
-            prevVowel,
-            note.pitch,
-            note.durationSec * 1e3
-          ) ?? Promise.resolve(null)
-        );
+        tasks.push({ model: m, note, prevVowel });
       });
     }
+    const total = tasks.length;
+    if (total === 0) {
+      onProgress?.(0, 0);
+      return;
+    }
+    let done = 0;
+    onProgress?.(done, total);
+    const promises = tasks.map(async (task) => {
+      await (task.model.renderToCache?.(
+        task.note.syllable,
+        task.prevVowel,
+        task.note.pitch,
+        task.note.durationSec * 1e3
+      ) ?? Promise.resolve(null));
+      done++;
+      onProgress?.(done, total);
+    });
     await Promise.all(promises);
   };
   const startStream = (tracks, anchorTime, opts) => {
@@ -2716,7 +2726,17 @@ var createSingingVoices = (ctx, destination, options = {}) => {
               note.durationSec * 1e3
             );
             if (session !== streamSession) return;
-            if (key) scheduleCached(key, t0, peak, track.pan);
+            if (key) {
+              const delay = ctx.currentTime - t0;
+              if (delay < 0.05) {
+                scheduleCached(key, t0, peak, track.pan);
+              } else {
+                console.warn(
+                  `[dtm] Synthesizer late skip: ${note.syllable.kana} at ${note.startSec}s (delayed by ${delay.toFixed(3)}s)`
+                );
+                opts?.onLateSkip?.(note, delay);
+              }
+            }
           })();
         } else {
           const when = t0 - ctx.currentTime;
@@ -5310,6 +5330,33 @@ var DAW_CSS = `
   letter-spacing: .15em;
   min-height: 1em;
 }
+.dtm-overlay-skip-btn {
+  margin-top: 12px;
+  min-height: 32px;
+  font-size: 11px;
+  font-family: var(--dtm-font);
+  padding: 0 12px;
+  background: var(--dtm-surface);
+  border: 2px solid var(--dtm-border2);
+  color: var(--dtm-muted);
+  box-shadow: 2px 2px 0 var(--c-black);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.dtm-overlay-skip-btn:hover {
+  color: var(--dtm-text);
+  border-color: var(--dtm-primary);
+}
+.dtm-overlay-skip-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+.dtm-overlay-skip-btn:disabled {
+  opacity: .3;
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+}
 .dtm-topbar-loading {
   display: none;
   font-family: var(--dtm-font);
@@ -5608,6 +5655,18 @@ var DAW_CSS = `
   background: var(--dtm-deep);
   border: 2px solid var(--dtm-border2);
   box-shadow: 4px 4px 0 var(--c-black);
+}
+.dtm-player-message {
+  padding: 4px 8px;
+  background: var(--c-purple);
+  color: var(--c-yellow);
+  font-size: 11px;
+  border: 2px solid var(--c-black);
+  box-shadow: inset 0 -2px 0 rgba(0,0,0,0.2);
+  font-family: var(--dtm-font);
+  text-align: center;
+  width: 100%;
+  box-sizing: border-box;
 }
 .dtm-player-head {
   display: flex;
@@ -5937,7 +5996,7 @@ var injectStyles = (doc = document) => {
   style.textContent = DAW_CSS;
   doc.head.appendChild(style);
 };
-var showLoadingOverlay = (container) => {
+var showLoadingOverlay = (container, options) => {
   const origPos = container.style.position;
   const computed = window.getComputedStyle(container).position;
   if (computed === "static") {
@@ -5955,13 +6014,29 @@ var showLoadingOverlay = (container) => {
   const label = doc.createElement("div");
   label.className = "dtm-loading-label";
   overlay.appendChild(label);
+  if (options?.onSkip) {
+    const skipBtn = doc.createElement("button");
+    skipBtn.type = "button";
+    skipBtn.className = "dtm-overlay-skip-btn";
+    skipBtn.textContent = options.skipLabel ?? "\u97F3\u58F0\u5408\u6210\u3092\u30B9\u30AD\u30C3\u30D7";
+    skipBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      skipBtn.disabled = true;
+      options.onSkip?.();
+    });
+    overlay.appendChild(skipBtn);
+  }
   container.appendChild(overlay);
-  const setProgress = (done, total) => {
+  const setProgress = (done, total, remainingTimeSec) => {
     if (total > 0) {
       const pct = Math.max(0, Math.min(100, Math.round(done / total * 100)));
       spinner.classList.add("dtm-spinner--determinate");
       fill.style.width = `${pct}%`;
-      label.textContent = `${done} / ${total} (${pct}%)`;
+      if (remainingTimeSec !== void 0 && remainingTimeSec !== null) {
+        label.textContent = `${done} / ${total} (${pct}%) - \u3042\u3068\u7D04 ${remainingTimeSec} \u79D2`;
+      } else {
+        label.textContent = `${done} / ${total} (${pct}%)`;
+      }
     } else {
       spinner.classList.remove("dtm-spinner--determinate");
       fill.style.width = "0";
@@ -5970,8 +6045,10 @@ var showLoadingOverlay = (container) => {
   };
   return {
     remove: () => {
-      overlay.remove();
-      container.style.position = origPos;
+      if (overlay.parentNode) {
+        overlay.remove();
+        container.style.position = origPos;
+      }
     },
     setProgress
   };
@@ -6585,19 +6662,27 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   chordEl.className = "dtm-player-chord";
   chordEl.textContent = "";
   beatRow.appendChild(chordEl);
-  const chips = [];
-  const makeChip = (label) => {
-    const chip = doc.createElement("span");
-    chip.className = "dtm-player-chip";
-    chip.textContent = label;
-    chips.push(chip);
-    return chip;
-  };
-  if (meta.instrument) makeChip(`\u266A ${meta.instrument}`);
-  if (meta.drum) makeChip(`\u{1F941} ${meta.drum}${drumPattern ? "" : " (?)"}`);
-  if (meta.volume !== void 0) makeChip(`\u{1F50A} ${meta.volume}%`);
-  head.append(playBtn, beatRow, ...chips, dots, mmlHeader);
+  head.append(playBtn, beatRow, dots, mmlHeader);
   root.appendChild(head);
+  const msgArea = doc.createElement("div");
+  msgArea.className = "dtm-player-message";
+  msgArea.style.display = "none";
+  root.appendChild(msgArea);
+  let msgTimer = null;
+  let lastMsgAt = 0;
+  const showPlayerMessage = (text) => {
+    const now = performance.now();
+    if (now - lastMsgAt < 1500) return;
+    lastMsgAt = now;
+    msgArea.textContent = text;
+    msgArea.style.display = "";
+    if (msgTimer) clearTimeout(msgTimer);
+    msgTimer = setTimeout(() => {
+      msgArea.style.display = "none";
+      msgArea.textContent = "";
+      msgTimer = null;
+    }, 3e3);
+  };
   const body = doc.createElement("div");
   body.className = "dtm-player-body";
   root.appendChild(body);
@@ -6716,9 +6801,9 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   }
   target.appendChild(root);
   let consentOverlayEl = null;
-  const checkConsentAndShow = () => {
+  const checkConsentAndShow = (onAgree) => {
     try {
-      if (options.skipConsent) return;
+      if (options.skipConsent) return false;
       const unagreed = termsModels.filter((model) => {
         if (agreedModelsInSession.has(model)) return false;
         try {
@@ -6732,7 +6817,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
           return true;
         }
       });
-      if (unagreed.length === 0) return;
+      if (unagreed.length === 0) return false;
       const consentOverlay = doc.createElement("div");
       consentOverlay.className = "dtm-consent-overlay";
       const modal = doc.createElement("div");
@@ -6775,17 +6860,19 @@ var mountMmlPlayer = (target, mml, options = {}) => {
         }
         consentOverlay.remove();
         consentOverlayEl = null;
+        if (onAgree) onAgree();
       };
       footer.appendChild(btn);
       modal.append(header, body2, footer);
       consentOverlay.appendChild(modal);
       doc.body.appendChild(consentOverlay);
       consentOverlayEl = consentOverlay;
+      return true;
     } catch (err2) {
       console.error("[dtm-player] Error in checkConsentAndShow:", err2);
+      return false;
     }
   };
-  checkConsentAndShow();
   const autoScroll = (lane, el) => {
     if (el.offsetWidth === 0 || lane.clientWidth === 0) return;
     const elementCenter = el.offsetLeft + el.offsetWidth / 2;
@@ -6839,7 +6926,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       if (mutedTracks.has(trackIdx)) return;
       const em = emojiByTrack.get(trackIdx);
       if (em) jumpEmojiAt(em, e.when);
-      if (lyricTracks.has(trackIdx)) return;
+      if (lyricTracks.has(trackIdx) && !skipSinging) return;
       options.onPlayNote?.(e);
       if (useSynth) ensureSynth().playNote(e);
     },
@@ -6855,6 +6942,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     stepsPerBar: STEPS_PER_BAR
   });
   let playing = false;
+  let skipSinging = false;
   const setPlayingUI = (on) => {
     playing = on;
     playBtn.innerHTML = icon(on ? "stop" : "play", 12);
@@ -6898,28 +6986,56 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     const tracks = streaming ? buildStreamTracks() : [];
     if (streaming) {
       const v = ensureVoices();
-      const overlay = showLoadingOverlay(body);
+      const overlay = showLoadingOverlay(body, {
+        skipLabel: "\u97F3\u58F0\u5408\u6210\u3092\u30B9\u30AD\u30C3\u30D7\uFF08\u5143\u306E\u30E1\u30ED\u30C7\u30A3\u3067\u518D\u751F\uFF09",
+        onSkip: () => {
+          if (!playing || activePlayer !== instance) return;
+          skipSinging = true;
+          overlay.remove();
+          seq.start(0);
+        }
+      });
       try {
         await v.loadModels(tracks.map((t) => t.model));
-        await v.warm(tracks);
+        if (skipSinging) return;
+        const startTime = performance.now();
+        await v.warm(tracks, PREWARM_NOTES, (done, total) => {
+          if (skipSinging) return;
+          if (done === 0) {
+            overlay.setProgress(done, total);
+          } else {
+            const elapsed = (performance.now() - startTime) / 1e3;
+            const avg = elapsed / done;
+            const remaining = total - done;
+            const remainingSec = Math.ceil(remaining * avg);
+            overlay.setProgress(done, total, remainingSec);
+          }
+        });
       } catch (err2) {
         console.warn("[dtm] voice preload failed", err2);
       } finally {
         overlay.remove();
       }
-      if (!playing || activePlayer !== instance) return;
+      if (!playing || activePlayer !== instance || skipSinging) return;
     }
     seq.start(0);
-    if (streaming) {
+    if (streaming && !skipSinging) {
       ensureVoices().startStream(tracks, seq.getStartTime(), {
-        isAudible: (t) => !mutedTracks.has(Number(t.id))
+        isAudible: (t) => !mutedTracks.has(Number(t.id)),
+        onLateSkip: () => {
+          showPlayerMessage(
+            "\u97F3\u58F0\u5408\u6210\u304C\u9593\u306B\u5408\u308F\u306A\u3044\u305F\u3081\u3001\u4E00\u90E8\u306E\u767A\u97F3\u3092\u30B9\u30AD\u30C3\u30D7\u3057\u307E\u3057\u305F"
+          );
+        }
       });
     }
   };
   const play = () => {
     if (playing || trackIndices.length === 0) return;
+    if (checkConsentAndShow(() => play())) return;
     if (activePlayer && activePlayer !== instance) activePlayer.stop();
     activePlayer = instance;
+    skipSinging = false;
     setPlayingUI(true);
     void (async () => {
       const resumes = [];
