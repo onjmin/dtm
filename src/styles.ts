@@ -159,7 +159,7 @@ export const DAW_CSS = `
   top: 0;
   z-index: 20;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--dtm-gap);
   padding: 6px;
@@ -169,6 +169,17 @@ export const DAW_CSS = `
     inset 0 0 0 2px var(--c-black),
     0 0 0 2px var(--dtm-success),
     4px 4px 0 var(--c-black);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.dtm-topbar::-webkit-scrollbar {
+  display: none;
+}
+.dtm-topbar > * {
+  flex-shrink: 0;
+}
+.dtm-topbar > .dtm-grow {
+  flex-shrink: 1;
 }
 
 /* PLAYボタン — ゲームの「決定ボタン」的存在感 */
