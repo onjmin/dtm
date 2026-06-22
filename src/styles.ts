@@ -25,9 +25,13 @@ export const DAW_CSS = `
 /* デザイントークンは編集UI本体（.dtm-daw）に加え、その外側に差し込まれる
    コントロールバー（.dtm-controlbar）にも供給する。mountPresetSelect /
    mountModeSwitch のUIは .dtm-daw の兄弟として置かれるため、ここで配らないと
-   var(--dtm-*) が解決できず無装飾（白地・既定フォント）になってしまう。 */
+   var(--dtm-*) が解決できず無装飾（白地・既定フォント）になってしまう。
+   再生専用ビューのモーダル／利用規約カバーは document.body 直下へ重ねるため、
+   .dtm-daw の外に出る。これらも同様にトークンを供給しないと黒地・白文字になる。 */
 .dtm-daw,
-.dtm-controlbar {
+.dtm-controlbar,
+.dtm-modal-overlay,
+.dtm-consent-overlay {
   /* PICO-8 16色パレットより */
   --c-black:   #000000;
   --c-navy:    #1d2b53;
@@ -625,6 +629,10 @@ export const DAW_CSS = `
   justify-content: center;
   padding: 16px;
   backdrop-filter: blur(2px);
+  /* body直下に重ねた場合（再生専用ビュー）でも文字色・フォントが
+     .dtm-daw から継承できないため、ここで明示する。 */
+  color: var(--dtm-text);
+  font-family: var(--dtm-font);
 }
 .dtm-modal-overlay[hidden] {
   display: none !important;
@@ -641,6 +649,9 @@ export const DAW_CSS = `
   justify-content: center;
   padding: 16px;
   backdrop-filter: blur(2px);
+  /* body直下に重ねるため .dtm-daw から継承できない文字色・フォントを明示。 */
+  color: var(--dtm-text);
+  font-family: var(--dtm-font);
 }
 .dtm-consent-overlay[hidden] {
   display: none !important;

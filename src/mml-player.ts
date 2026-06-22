@@ -22,6 +22,7 @@ import {
 	vocalVolumeToGain,
 } from "./lyrics";
 import { VOICE_IMAGES } from "./voice-images";
+import { MML_INFO_HTML } from "./mml-info";
 import { parseMML } from "./mml-parser";
 import {
 	type ChordSegment,
@@ -420,7 +421,7 @@ export const mountMmlPlayer = (
 		emojiByTrack.set(index, em);
 	}
 
-	// ── Context Menu (MML Copy & Embed) ──
+	// ── Context Menu (MMLを表示 / MML書式とは / 埋め込む / MMLコピー) ──
 	const menuContainer = doc.createElement("div");
 	menuContainer.className = "dtm-player-more-container";
 
@@ -435,18 +436,23 @@ export const mountMmlPlayer = (
 	menuDropdown.className = "dtm-player-menu";
 	menuDropdown.style.display = "none";
 
-	const copyMmlItem = doc.createElement("button");
-	copyMmlItem.type = "button";
-	copyMmlItem.className = "dtm-player-menu-item";
-	copyMmlItem.textContent = "MMLコピー";
+	const makeMenuItem = (label: string): HTMLButtonElement => {
+		const item = doc.createElement("button");
+		item.type = "button";
+		item.className = "dtm-player-menu-item";
+		item.textContent = label;
+		return item;
+	};
 
-	const embedItem = doc.createElement("button");
-	embedItem.type = "button";
-	embedItem.className = "dtm-player-menu-item";
-	embedItem.textContent = "埋め込む";
+	const showMmlItem = makeMenuItem("MMLを表示");
+	const mmlInfoItem = makeMenuItem("MML書式とは");
+	const embedItem = makeMenuItem("埋め込む");
+	const copyMmlItem = makeMenuItem("MMLコピー");
 
-	menuDropdown.appendChild(copyMmlItem);
+	menuDropdown.appendChild(showMmlItem);
+	menuDropdown.appendChild(mmlInfoItem);
 	menuDropdown.appendChild(embedItem);
+	menuDropdown.appendChild(copyMmlItem);
 	menuContainer.appendChild(menuDropdown);
 
 	mmlHeader.appendChild(menuContainer);
@@ -476,6 +482,220 @@ export const mountMmlPlayer = (
 		toggleMenu();
 	});
 
+	// ── 共通モーダル（MMLを表示 / MML書式とは / 埋め込む で使う） ──
+	// dtm-modal-* スタイルは injectStyles で注入済み。doc.body 直下に重ねる。
+	let infoModalEl: HTMLElement | null = null;
+	let modalSamplePlayer: MmlPlayerInstance | null = null;
+
+	const closeInfoModal = (): void => {
+		if (modalSamplePlayer) {
+			modalSamplePlayer.stop();
+			modalSamplePlayer.destroy();
+			modalSamplePlayer = null;
+		}
+		infoModalEl?.remove();
+		infoModalEl = null;
+	};
+
+	/** タイトル付きのモーダルを開き、中身を書き込む body 要素を返す。 */
+	const openInfoModal = (title: string): HTMLElement => {
+		closeInfoModal();
+
+		const overlay = doc.createElement("div");
+		overlay.className = "dtm-modal-overlay";
+
+		const modal = doc.createElement("div");
+		modal.className = "dtm-win dtm-modal";
+
+		const header = doc.createElement("div");
+		header.className = "dtm-modal-header";
+		const titleEl = doc.createElement("span");
+		titleEl.className = "dtm-modal-title";
+		titleEl.textContent = title;
+		const closeBtn = doc.createElement("button");
+		closeBtn.type = "button";
+		closeBtn.className = "dtm-modal-close";
+		closeBtn.innerHTML = "&times;";
+		closeBtn.title = "閉じる";
+		header.append(titleEl, closeBtn);
+
+		const modalBody = doc.createElement("div");
+		modalBody.className = "dtm-modal-body";
+
+		modal.append(header, modalBody);
+		overlay.appendChild(modal);
+
+		closeBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			closeInfoModal();
+		});
+		overlay.addEventListener("click", (e) => {
+			if (e.target === overlay) closeInfoModal();
+		});
+
+		doc.body.appendChild(overlay);
+		infoModalEl = overlay;
+		return modalBody;
+	};
+
+	/** モーダル内に「コピー」ボタンを差し込むヘルパ。 */
+	const appendCopyButton = (parent: HTMLElement, text: string): void => {
+		const actions = doc.createElement("div");
+		actions.style.marginTop = "8px";
+		const copyBtn = doc.createElement("button");
+		copyBtn.type = "button";
+		copyBtn.className = "dtm-btn dtm-btn--primary dtm-btn--xs";
+		copyBtn.textContent = "📋 コピー";
+		copyBtn.addEventListener("click", async (e) => {
+			e.stopPropagation();
+			const ok = await copyToClipboard(doc, text);
+			copyBtn.textContent = ok ? "✓ コピー完了" : "コピー失敗";
+			if (ok) copyBtn.classList.add("dtm-btn--success");
+			setTimeout(() => {
+				copyBtn.textContent = "📋 コピー";
+				copyBtn.classList.remove("dtm-btn--success");
+			}, 1200);
+		});
+		actions.appendChild(copyBtn);
+		parent.appendChild(actions);
+	};
+
+	// MML書式とは: サンプル曲ボックスの試聴・コピーボタンを接続する。
+	const wireSampleButtons = (modalBody: HTMLElement): void => {
+		const copyBtns = modalBody.querySelectorAll(".dtm-modal-sample-copy-btn");
+		for (const btn of copyBtns) {
+			const el = btn as HTMLButtonElement;
+			el.addEventListener("click", async (e) => {
+				e.stopPropagation();
+				const sampleMml = el.getAttribute("data-mml") ?? "";
+				const original = el.textContent;
+				const ok = await copyToClipboard(doc, sampleMml);
+				el.textContent = ok ? "✓ コピー完了" : "コピー失敗";
+				if (ok) el.classList.add("dtm-btn--success");
+				setTimeout(() => {
+					el.textContent = original;
+					el.classList.remove("dtm-btn--success");
+				}, 1200);
+			});
+		}
+
+		let activeSampleBtn: HTMLButtonElement | null = null;
+		const resetSampleBtn = (b: HTMLButtonElement | null): void => {
+			if (!b) return;
+			b.textContent = "▶ 試聴";
+			b.classList.remove("dtm-btn--danger");
+			b.classList.add("dtm-btn--primary");
+		};
+		const markPlaying = (b: HTMLButtonElement): void => {
+			b.textContent = "■ 停止";
+			b.classList.remove("dtm-btn--primary");
+			b.classList.add("dtm-btn--danger");
+		};
+
+		const playBtns = modalBody.querySelectorAll(".dtm-modal-sample-play-btn");
+		for (const btn of playBtns) {
+			const el = btn as HTMLButtonElement;
+			el.addEventListener("click", (e) => {
+				e.stopPropagation();
+				const sampleMml = el.getAttribute("data-mml") ?? "";
+
+				// 同じサンプルの再押下: 再生／停止のトグル。
+				if (activeSampleBtn === el && modalSamplePlayer) {
+					if (modalSamplePlayer.isPlaying()) {
+						modalSamplePlayer.stop();
+					} else {
+						modalSamplePlayer.play();
+						markPlaying(el);
+					}
+					return;
+				}
+
+				// 別のサンプル: 既存プレイヤーを破棄して作り直す。
+				if (modalSamplePlayer) {
+					modalSamplePlayer.stop();
+					modalSamplePlayer.destroy();
+					modalSamplePlayer = null;
+				}
+				resetSampleBtn(activeSampleBtn);
+				activeSampleBtn = el;
+
+				const sampleBox = el.closest(".dtm-modal-sample-box");
+				const container = sampleBox?.querySelector(
+					".dtm-modal-sample-player-container",
+				) as HTMLElement | null;
+				if (!container) return;
+				container.innerHTML = "";
+				modalSamplePlayer = mountMmlPlayer(container, sampleMml, {
+					onPlayNote: options.onPlayNote,
+					onPlayDrum: options.onPlayDrum,
+					onResumeAudio: options.onResumeAudio,
+					getAudioTime: options.getAudioTime,
+					singingVoices: options.singingVoices,
+					drumPatterns: options.drumPatterns,
+					volume: trackVolume,
+					// 解説モーダル内の試聴サンプルは規約同意を要求しない。
+					skipConsent: true,
+					onStop: () => {
+						if (activeSampleBtn === el) resetSampleBtn(el);
+					},
+				});
+				markPlaying(el);
+				modalSamplePlayer.play();
+			});
+		}
+	};
+
+	showMmlItem.addEventListener("click", (e) => {
+		e.stopPropagation();
+		toggleMenu(false);
+		const modalBody = openInfoModal("MML");
+		const pre = doc.createElement("pre");
+		pre.textContent = mml;
+		pre.style.whiteSpace = "pre-wrap";
+		pre.style.wordBreak = "break-all";
+		modalBody.appendChild(pre);
+		appendCopyButton(modalBody, mml);
+	});
+
+	mmlInfoItem.addEventListener("click", (e) => {
+		e.stopPropagation();
+		toggleMenu(false);
+		const modalBody = openInfoModal("MMLの書き方解説");
+		modalBody.innerHTML = MML_INFO_HTML;
+		wireSampleButtons(modalBody);
+	});
+
+	embedItem.addEventListener("click", async (e) => {
+		e.stopPropagation();
+		toggleMenu(false);
+		const modalBody = openInfoModal("埋め込み");
+		const loading = doc.createElement("p");
+		loading.textContent = "生成中...";
+		modalBody.appendChild(loading);
+		try {
+			const embedBase =
+				options.embedUrl ?? "https://onjmin.github.io/dtm/demo/embed.html";
+			const payload = await encodeMml(mml);
+			const url = `${embedBase}#${payload}`;
+			const snippet = `<iframe src="${url}" width="100%" height="260" frameborder="0" loading="lazy" title="@onjmin/dtm player"></iframe>`;
+			// 生成待ちの間にモーダルが閉じられていたら何もしない。
+			if (!modalBody.isConnected) return;
+			loading.remove();
+			const desc = doc.createElement("p");
+			desc.textContent =
+				"このHTMLをブログやサイトに貼り付けると、プレイヤーをそのまま埋め込めます。";
+			const pre = doc.createElement("pre");
+			pre.textContent = snippet;
+			pre.style.whiteSpace = "pre-wrap";
+			pre.style.wordBreak = "break-all";
+			modalBody.append(desc, pre);
+			appendCopyButton(modalBody, snippet);
+		} catch (err) {
+			console.error("[dtm] failed to generate embed snippet", err);
+			if (modalBody.isConnected) loading.textContent = "生成に失敗しました";
+		}
+	});
+
 	copyMmlItem.addEventListener("click", async (e) => {
 		e.stopPropagation();
 		const success = await copyToClipboard(doc, mml);
@@ -486,30 +706,6 @@ export const mountMmlPlayer = (
 		}
 		setTimeout(() => {
 			copyMmlItem.textContent = "MMLコピー";
-		}, 2000);
-	});
-
-	embedItem.addEventListener("click", async (e) => {
-		e.stopPropagation();
-		embedItem.textContent = "生成中...";
-		try {
-			const embedBase =
-				options.embedUrl ?? "https://onjmin.github.io/dtm/demo/embed.html";
-			const payload = await encodeMml(mml);
-			const url = `${embedBase}#${payload}`;
-			const snippet = `<iframe src="${url}" width="100%" height="260" frameborder="0" loading="lazy" title="@onjmin/dtm player"></iframe>`;
-			const success = await copyToClipboard(doc, snippet);
-			if (success) {
-				embedItem.textContent = "コピーしました！";
-			} else {
-				embedItem.textContent = "コピー失敗";
-			}
-		} catch (err) {
-			console.error("[dtm] failed to generate embed snippet", err);
-			embedItem.textContent = "生成失敗";
-		}
-		setTimeout(() => {
-			embedItem.textContent = "埋め込む";
 		}, 2000);
 	});
 
@@ -1095,6 +1291,7 @@ export const mountMmlPlayer = (
 		}
 		root.remove();
 		consentOverlayEl?.remove();
+		closeInfoModal();
 	};
 
 	const instance: MmlPlayerInstance = {
