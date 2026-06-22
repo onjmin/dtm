@@ -111,6 +111,51 @@
             for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
             return bytes;
         };
+        const HIRAGANA_START = 0x3041;
+        const PROLONGED_MARK = 0x30fc;
+        const SHIFT_KATAKANA = 255;
+        const VALUE_PROLONGED = 223;
+
+        const customDecode = (bytes) => {
+            let str = "";
+            let i = 0;
+            while (i < bytes.length) {
+                const byte = bytes[i];
+                if (byte <= 127) {
+                    str += String.fromCharCode(byte);
+                    i++;
+                } else if (byte === VALUE_PROLONGED) {
+                    str += String.fromCharCode(PROLONGED_MARK);
+                    i++;
+                } else if (byte >= 128 && byte <= 222) {
+                    str += String.fromCharCode(HIRAGANA_START + (byte - 128));
+                    i++;
+                } else if (byte === SHIFT_KATAKANA) {
+                    if (i + 1 < bytes.length) {
+                        const nextByte = bytes[i + 1];
+                        if (nextByte >= 128 && nextByte <= 222) {
+                            str += String.fromCharCode(HIRAGANA_START + 0x60 + (nextByte - 128));
+                        }
+                        i += 2;
+                    } else {
+                        i++;
+                    }
+                } else {
+                    i++;
+                }
+            }
+            return str;
+        };
+
+        const gunzipCustom = async (bytes) => {
+            const ds = new DecompressionStream('gzip');
+            const writer = ds.writable.getWriter();
+            writer.write(bytes);
+            writer.close();
+            const buf = await new Response(ds.readable).arrayBuffer();
+            return customDecode(new Uint8Array(buf));
+        };
+
         const gunzip = async (bytes) => {
             const ds = new DecompressionStream('gzip');
             const writer = ds.writable.getWriter();
@@ -119,13 +164,17 @@
             const buf = await new Response(ds.readable).arrayBuffer();
             return new TextDecoder().decode(buf);
         };
+
+
         const decodeMml = async (payload) => {
             if (!payload) return '';
+            if (payload.startsWith('z.')) return await gunzipCustom(fromBase64Url(payload.slice(2)));
             if (payload.startsWith('g.')) return await gunzip(fromBase64Url(payload.slice(2)));
             if (payload.startsWith('u.')) return decodeURIComponent(payload.slice(2));
             // 旧形式（プレフィックス無し）は encodeURIComponent とみなす
             return decodeURIComponent(payload);
         };
+
 
         const bootEl = document.getElementById('boot');
         const errEl = document.getElementById('err');

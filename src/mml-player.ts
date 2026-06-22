@@ -163,15 +163,41 @@ const toBase64Url = (bytes: Uint8Array): string => {
 	return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 };
 
+const HIRAGANA_START = 0x3041; // 'ぁ'
+const HIRAGANA_END = 0x309f; // 'ゟ'
+const KATAKANA_START = 0x30a1; // 'ァ'
+const KATAKANA_END = 0x30ff; // 'ヿ'
+const PROLONGED_MARK = 0x30fc; // 'ー'
+const SHIFT_KATAKANA = 255;
+const VALUE_PROLONGED = 223;
+
+const customEncode = (str: string): Uint8Array => {
+	const bytes: number[] = [];
+	for (let i = 0; i < str.length; i++) {
+		const code = str.charCodeAt(i);
+		if (code <= 127) {
+			bytes.push(code);
+		} else if (code === PROLONGED_MARK) {
+			bytes.push(VALUE_PROLONGED);
+		} else if (code >= HIRAGANA_START && code <= HIRAGANA_END) {
+			bytes.push(128 + (code - HIRAGANA_START));
+		} else if (code >= KATAKANA_START && code <= KATAKANA_END) {
+			bytes.push(SHIFT_KATAKANA);
+			bytes.push(128 + (code - 0x60 - HIRAGANA_START));
+		}
+	}
+	return new Uint8Array(bytes);
+};
+
 const encodeMml = async (mml: string): Promise<string> => {
 	try {
 		if (typeof CompressionStream !== "undefined") {
 			const cs = new CompressionStream("gzip");
 			const w = cs.writable.getWriter();
-			w.write(new TextEncoder().encode(mml));
+			w.write(customEncode(mml) as Uint8Array<ArrayBuffer>);
 			w.close();
 			const buf = await new Response(cs.readable).arrayBuffer();
-			return `g.${toBase64Url(new Uint8Array(buf))}`;
+			return `z.${toBase64Url(new Uint8Array(buf))}`;
 		}
 	} catch (e) {
 		console.warn(
@@ -463,13 +489,8 @@ export const mountMmlPlayer = (
 		e.stopPropagation();
 		embedItem.textContent = "生成中...";
 		try {
-			const hostname = typeof location !== "undefined" ? location.hostname : "";
-			const href = typeof location !== "undefined" ? location.href : "";
 			const embedBase =
-				options.embedUrl ??
-				(hostname === "localhost"
-					? new URL("embed.html", href).href
-					: "https://onjmin.github.io/dtm/demo/embed.html");
+				options.embedUrl ?? "https://onjmin.github.io/dtm/demo/embed.html";
 			const payload = await encodeMml(mml);
 			const url = `${embedBase}#${payload}`;
 			const snippet = `<iframe src="${url}" width="100%" height="260" frameborder="0" loading="lazy" title="@onjmin/dtm player"></iframe>`;
