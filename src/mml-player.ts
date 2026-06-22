@@ -1006,9 +1006,9 @@ export const mountMmlPlayer = (
 	target.appendChild(root);
 
 	let consentOverlayEl: HTMLElement | null = null;
-	const checkConsentAndShow = (): void => {
+	const checkConsentAndShow = (onAgree?: () => void): boolean => {
 		try {
-			if (options.skipConsent) return;
+			if (options.skipConsent) return false;
 			const unagreed = termsModels.filter((model) => {
 				if (agreedModelsInSession.has(model)) return false;
 				try {
@@ -1023,7 +1023,7 @@ export const mountMmlPlayer = (
 				}
 			});
 
-			if (unagreed.length === 0) return;
+			if (unagreed.length === 0) return false;
 
 			const consentOverlay = doc.createElement("div");
 			consentOverlay.className = "dtm-consent-overlay";
@@ -1075,6 +1075,7 @@ export const mountMmlPlayer = (
 				}
 				consentOverlay.remove();
 				consentOverlayEl = null;
+				if (onAgree) onAgree();
 			};
 
 			footer.appendChild(btn);
@@ -1082,11 +1083,12 @@ export const mountMmlPlayer = (
 			consentOverlay.appendChild(modal);
 			doc.body.appendChild(consentOverlay);
 			consentOverlayEl = consentOverlay;
+			return true;
 		} catch (err) {
 			console.error("[dtm-player] Error in checkConsentAndShow:", err);
+			return false;
 		}
 	};
-	checkConsentAndShow();
 
 	// ── 再生位置の描画 ──
 	const autoScroll = (lane: HTMLDivElement, el: HTMLElement): void => {
@@ -1242,6 +1244,7 @@ export const mountMmlPlayer = (
 
 	const play = (): void => {
 		if (playing || trackIndices.length === 0) return;
+		if (checkConsentAndShow(() => play())) return;
 		if (activePlayer && activePlayer !== instance) activePlayer.stop();
 		activePlayer = instance;
 		setPlayingUI(true);
