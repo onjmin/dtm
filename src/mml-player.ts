@@ -855,7 +855,13 @@ export const mountMmlPlayer = (
 
 	// ── メッセージ表示制御 ──
 	let msgTimer: ReturnType<typeof setTimeout> | null = null;
+	let lastMsgAt = 0;
 	const showPlayerMessage = (text: string): void => {
+		const now = performance.now();
+		// 同時・連続した大量の警告によるチカチカ（チャタリング）を防ぐため、1.5秒のスロットリングを適用
+		if (now - lastMsgAt < 1500) return;
+		lastMsgAt = now;
+
 		msgArea.textContent = text;
 		msgArea.style.display = "";
 		if (msgTimer) clearTimeout(msgTimer);
