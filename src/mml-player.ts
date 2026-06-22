@@ -1273,35 +1273,10 @@ export const mountMmlPlayer = (
 		if (streaming && !skipSinging) {
 			ensureVoices().startStream(tracks, seq.getStartTime(), {
 				isAudible: (t) => !mutedTracks.has(Number(t.id)),
-				onFallbackPlayNote: (track, note, t0) => {
+				onLateSkip: () => {
 					showPlayerMessage(
 						"音声合成が間に合わないため、一部の発音をスキップしました",
 					);
-					const trackIdx = Number(track.id);
-					if (mutedTracks.has(trackIdx)) return;
-
-					const lt = lyricTracks.get(trackIdx);
-					if (!lt) return;
-
-					const relativeWhen = t0 - ensureCtx().currentTime;
-					if (relativeWhen > 0) {
-						const vol =
-							((lt.volume ?? DEFAULT_VOCAL_VOLUME) / 100) * (trackVolume / 100);
-						const e: PlayNoteEvent = {
-							trackId: track.id ?? "",
-							pitch: note.pitch,
-							velocity: 100,
-							volume: vol,
-							when: relativeWhen,
-							duration: note.durationSec,
-							pan: track.pan,
-						};
-						options.onPlayNote?.(e);
-						if (useSynth) ensureSynth().playNote(e);
-					}
-				},
-				onLateSkip: () => {
-					// showPlayerMessage は onFallbackPlayNote で行うため、ここでは何もしない
 				},
 			});
 		}

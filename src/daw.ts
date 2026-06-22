@@ -1246,28 +1246,6 @@ export const mountDAW = (
 		if (streaming && voices) {
 			voices.startStream(streamTracks, sequencer.getStartTime(), {
 				isAudible: (t) => !isSolo || t.id === activeTrackId,
-				onFallbackPlayNote: (track, note, t0) => {
-					if (isSolo && track.id !== activeTrackId) return;
-
-					const relativeWhen = t0 - getAudioTime();
-					if (relativeWhen > 0) {
-						const trackState = trackStates.find(
-							(t) => t.config.id === track.id,
-						);
-						const trackVol = trackState ? trackState.volume : 80;
-						const volume = (trackVol / 100) * (masterVolume / 100);
-
-						options.onPlayNote?.({
-							trackId: track.id ?? "",
-							pitch: note.pitch,
-							velocity: 100,
-							volume: volume,
-							when: relativeWhen,
-							duration: note.durationSec,
-							pan: track.pan,
-						});
-					}
-				},
 			});
 		}
 		updateTransport();

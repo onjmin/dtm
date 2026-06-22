@@ -1243,21 +1243,6 @@ export type StreamPlaybackOptions = {
 	 * 引数には遅れたノート情報と遅延秒数が渡されます。
 	 */
 	onLateSkip?: (note: StreamVoiceNote, delay: number) => void;
-	/**
-	 * 合成が間に合わず、代替メロディ（楽器）を鳴らす際のコールバック。
-	 * 引数には対象トラック、ノート情報、および発音すべき絶対時刻（AudioContextクロック秒）が渡されます。
-	 */
-	onFallbackPlayNote?: (
-		track: StreamVoiceTrack,
-		note: StreamVoiceNote,
-		t0: number,
-	) => void;
-	/**
-	 * 遅延判定の閾値（秒）。発音予定時刻よりこの秒数前に合成完了していない場合、
-	 * 遅延するとみなし代替メロディに切り替えます。
-	 * 省略時は 0.15 秒（150ms）です。
-	 */
-	fallbackThresholdSec?: number;
 };
 
 /**
@@ -1495,55 +1480,16 @@ export const createSingingVoices = (
 				if (model.renderToCache && model.scheduleCached) {
 					const renderToCache = model.renderToCache;
 					const scheduleCached = model.scheduleCached;
-
-					const threshold = opts?.fallbackThresholdSec ?? 0.15;
-
 					// koe音源: 重い合成を await せずに非同期で走らせる。
 					// これにより、同じ先読み範囲にある後続の音符の合成リクエストも同時に Worker へ送信され、
 					// 特に和音などの同時発音における合成の遅延（スループットの頭打ち）を防ぐ。
 					void (async () => {
-						let isTimeout = false;
-						let timeoutId: any;
-
-						const renderPromise = renderToCache(
+						const key = await renderToCache(
 							note.syllable,
 							prevVowel,
 							note.pitch,
 							note.durationSec * 1000,
-						).then((key) => {
-							if (timeoutId) clearTimeout(timeoutId);
-							return { key, type: "success" as const };
-						});
-
-						const timeoutLimitTime = t0 - threshold;
-						const timeoutDelayMs = (timeoutLimitTime - ctx.currentTime) * 1000;
-
-						const timeoutPromise = new Promise<{ key: null; type: "timeout" }>(
-							(resolve) => {
-								if (timeoutDelayMs <= 0) {
-									isTimeout = true;
-									resolve({ key: null, type: "timeout" });
-								} else {
-									timeoutId = setTimeout(() => {
-										isTimeout = true;
-										resolve({ key: null, type: "timeout" });
-									}, timeoutDelayMs);
-								}
-							},
 						);
-
-						const result = await Promise.race([renderPromise, timeoutPromise]);
-						if (session !== streamSession) return;
-
-						if (result.type === "timeout") {
-							console.warn(
-								`[dtm] Synthesizer expected late skip: ${note.syllable.kana} at ${note.startSec}s. Fallback to instrument.`,
-							);
-							opts?.onFallbackPlayNote?.(track, note, t0);
-							return;
-						}
-
-						const key = result.key;
 						if (session !== streamSession) return;
 						if (key) {
 							// 予定時刻より50ms以上遅れて合成完了した場合は発音をスキップ（ミュート）して音ズレを防ぐ
@@ -1552,10 +1498,9 @@ export const createSingingVoices = (
 								scheduleCached(key, t0, peak, track.pan);
 							} else {
 								console.warn(
-									`[dtm] Synthesizer late skip (safety): ${note.syllable.kana} at ${note.startSec}s (delayed by ${delay.toFixed(3)}s)`,
+									`[dtm] Synthesizer late skip: ${note.syllable.kana} at ${note.startSec}s (delayed by ${delay.toFixed(3)}s)`,
 								);
 								opts?.onLateSkip?.(note, delay);
-								opts?.onFallbackPlayNote?.(track, note, t0);
 							}
 						}
 					})();
