@@ -530,6 +530,15 @@ export const DAW_CSS = `
   line-height: 1.8;
   color: var(--dtm-success);
 }
+.dtm-output-label {
+  font-size: 11px;
+  color: var(--dtm-muted);
+  font-family: var(--dtm-font);
+  margin-top: 10px;
+}
+.dtm-output-label:first-of-type {
+  margin-top: 0;
+}
 .dtm-output-row { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; }
 .dtm-output-row pre { flex: 1; }
 

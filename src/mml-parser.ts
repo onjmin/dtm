@@ -44,12 +44,14 @@ export type MmlMeta = {
 	drum?: string;
 	/** 全体音量（0-100等） */
 	volume?: number;
+	/** ドラム音量（0-100等） */
+	drumVolume?: number;
 	/** DAWの動作モード（simple | advanced） */
 	mode?: "simple" | "advanced";
 };
 
-/** `#inst=...` `#drum=...` `#volume=...` `#mode=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
-const META_DIRECTIVE = /#(inst|drum|volume|mode)=([\w-]+)/gi;
+/** `#inst=...` `#drum=...` `#volume=...` `#drumvolume=...` `#mode=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
+const META_DIRECTIVE = /#(inst|drum|volume|drumvolume|mode)=([\w-]+)/gi;
 
 /** MMLからトップレベル宣言を抽出する */
 export const parseMmlMeta = (mml: string): MmlMeta => {
@@ -61,6 +63,9 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 		else if (key === "volume") {
 			const v = Number.parseInt(m[2], 10);
 			if (!Number.isNaN(v)) meta.volume = v;
+		} else if (key === "drumvolume") {
+			const dv = Number.parseInt(m[2], 10);
+			if (!Number.isNaN(dv)) meta.drumVolume = dv;
 		} else if (key === "mode") {
 			if (m[2] === "simple" || m[2] === "advanced") {
 				meta.mode = m[2];
@@ -80,6 +85,8 @@ export const formatMmlMeta = (meta: MmlMeta): string => {
 	if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
 	if (meta.drum) parts.push(`#drum=${meta.drum}`);
 	if (meta.volume !== undefined) parts.push(`#volume=${meta.volume}`);
+	if (meta.drumVolume !== undefined)
+		parts.push(`#drumvolume=${meta.drumVolume}`);
 	if (meta.mode) parts.push(`#mode=${meta.mode}`);
 	return parts.join(" ");
 };

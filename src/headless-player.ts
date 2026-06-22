@@ -104,6 +104,7 @@ export const playMML = (
 		: null;
 
 	let masterVolume = meta.volume ?? options.volume ?? 100;
+	let drumVolume = meta.drumVolume ?? 80;
 
 	// placements を trackIndex ごとに単音列へまとめる
 	const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
@@ -150,7 +151,7 @@ export const playMML = (
 			synth?.playNote(e);
 		},
 		onPlayDrum: (e) => {
-			const velocity = e.velocity * (masterVolume / 100);
+			const velocity = e.velocity * (drumVolume / 100) * (masterVolume / 100);
 			options.onPlayDrum?.({ ...e, velocity });
 			synth?.playDrum({ ...e, velocity });
 		},

@@ -1590,6 +1590,7 @@ export const mountDAW = (
 			instrument: currentInstrument || undefined,
 			drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
 			volume: masterVolume,
+			drumVolume: drumVolume,
 			mode: mode,
 		});
 
@@ -1771,6 +1772,11 @@ export const mountDAW = (
 			masterVolume = meta.volume;
 			refs.masterVolume.value = String(meta.volume);
 			refs.masterVolumeLabel.textContent = `${meta.volume}%`;
+		}
+		if (meta.drumVolume !== undefined) {
+			drumVolume = meta.drumVolume;
+			refs.drumVolume.value = String(meta.drumVolume);
+			refs.drumVolumeLabel.textContent = `${meta.drumVolume}%`;
 		}
 		// 歌詞トラック（@@n）を各トラックの歌詞入力へ復元する（編集UIに反映）。
 		// 表示用かなは正規化済み音節を結合したもの（長音は母音かなに展開済み）。

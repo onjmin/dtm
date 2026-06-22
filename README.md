@@ -1,8 +1,7 @@
-# @onjmin/dtm
 MML を中間言語に用いた、モバイルファーストな DAW / ピアノロール打ち込みコンポーネント。
 楽器・ドラムに加え、UTAU 音源（[@onjmin/koe](https://www.npmjs.com/package/@onjmin/koe)）による歌声合成にも対応。
 
-- [DEMO](https://onjmin.github.io/dtm/)
+- [DEMO](https://onjmin.github.io/dtm/demo)
 - [npm](https://www.npmjs.com/package/@onjmin/dtm)
 
 ## インストール

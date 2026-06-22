@@ -284,10 +284,12 @@ export const buildUI = (
       </div>
       <div class="dtm-output dtm-hidden" data-dtm="output-container">
         <p class="dtm-label" data-dtm="output-status"></p>
+        <div class="dtm-output-label">改行あり版</div>
         <div class="dtm-output-row">
           <pre><code data-dtm="output-full"></code></pre>
           <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="copy-full" title="コピー">${icon("copy")}</button>
         </div>
+        <div class="dtm-output-label">１行版</div>
         <div class="dtm-output-row">
           <pre><code data-dtm="output-mini"></code></pre>
           <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="copy-mini" title="コピー">${icon("copy")}</button>

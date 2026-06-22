@@ -241,6 +241,7 @@ export const mountMmlPlayer = (
 		? (drumPatternDict[meta.drum] ?? null)
 		: null;
 	const trackVolume = meta.volume ?? options.volume ?? 100;
+	const drumVolume = meta.drumVolume ?? 80;
 	const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
 	const useSynth = options.synth ?? !options.onPlayNote;
 	const secondsPerStep = 60 / bpm / STEPS_PER_BEAT;
@@ -1155,7 +1156,7 @@ export const mountMmlPlayer = (
 			// ドラムは曲全体に効くトップレベル宣言でトラックと1対1ではないため、
 			// 特定トラックの絵文字（旧実装は先頭を流用）を跳ねさせない。
 			// 先頭トラックがドラムの度に跳ね続けるバグの原因だった。
-			const velocity = e.velocity * (trackVolume / 100);
+			const velocity = e.velocity * (drumVolume / 100) * (trackVolume / 100);
 			options.onPlayDrum?.({ ...e, velocity });
 			if (useSynth) ensureSynth().playDrum({ ...e, velocity });
 		},
