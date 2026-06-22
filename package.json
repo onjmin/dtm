@@ -2,7 +2,7 @@
 	"author": "onjmin",
 	"license": "MIT",
 	"name": "@onjmin/dtm",
-	"version": "0.1.30",
+	"version": "0.1.31",
 	"description": "MMLを中間言語に用いた、モバイルファーストなDAW / ピアノロール打ち込みコンポーネント",
 	"homepage": "https://onjmin.github.io/dtm",
 	"repository": {
