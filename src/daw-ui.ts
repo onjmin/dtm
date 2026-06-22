@@ -12,7 +12,8 @@ export type DawUIRefs = {
 	topbar: HTMLElement;
 	topbarLoading: HTMLElement;
 	playBtn: HTMLButtonElement;
-	recBtn: HTMLButtonElement;
+	prevBarBtn: HTMLButtonElement;
+	nextBarBtn: HTMLButtonElement;
 	soloCheckbox: HTMLInputElement;
 	// tools
 	toolPen: HTMLButtonElement;
@@ -116,8 +117,9 @@ export const buildUI = (
 	target.innerHTML = `
 <div class="dtm-daw" data-dtm="root">
   <div class="dtm-topbar" data-dtm="transport">
+    <button class="dtm-iconbtn" data-dtm="prev-bar" title="1小節前">${icon("chevronLeft")}</button>
     <button class="dtm-play" data-dtm="play" disabled>${icon("play")}<span>試聴</span></button>
-    <button class="dtm-iconbtn dtm-rec" data-dtm="rec" title="録音">${icon("record")}</button>
+    <button class="dtm-iconbtn" data-dtm="next-bar" title="1小節後">${icon("chevronRight")}</button>
     <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>ソロ</span></label>
     <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
     <span class="dtm-grow"></span>
@@ -316,7 +318,8 @@ export const buildUI = (
 		topbar: sel("transport"),
 		topbarLoading: sel("topbar-loading"),
 		playBtn: sel("play"),
-		recBtn: sel("rec"),
+		prevBarBtn: sel("prev-bar"),
+		nextBarBtn: sel("next-bar"),
 		soloCheckbox: sel("solo"),
 		toolPen: sel("tool-pen"),
 		toolSelect: sel("tool-select"),

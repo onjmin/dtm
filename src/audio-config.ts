@@ -20,45 +20,6 @@ export function createAudioContext() {
 }
 
 /**
- * オーディオレコーダーのセットアップ
- */
-export function setupRecorder(
-	audioCtx: AudioContext,
-	gainNode: GainNode,
-	drumGainNode: GainNode,
-) {
-	let isRecording = false;
-	let recordedData: [Float32Array[], Float32Array[]] = [[], []];
-
-	const recorderProcessor = audioCtx.createScriptProcessor(4096, 2, 2);
-	recorderProcessor.onaudioprocess = (e) => {
-		if (!isRecording) return;
-		const left = e.inputBuffer.getChannelData(0);
-		const right = e.inputBuffer.getChannelData(1);
-		recordedData[0].push(left.slice());
-		recordedData[1].push(right.slice());
-	};
-
-	gainNode.connect(recorderProcessor);
-	drumGainNode.connect(recorderProcessor);
-	recorderProcessor.connect(audioCtx.destination);
-
-	return {
-		startRecording: () => {
-			isRecording = true;
-		},
-		stopRecording: () => {
-			isRecording = false;
-		},
-		getRecordedData: () => recordedData,
-		isRecording: () => isRecording,
-		clearRecordedData: () => {
-			recordedData = [[], []];
-		},
-	};
-}
-
-/**
  * SoundFontリストの取得
  */
 export async function fetchSoundFontList(ttl: string): Promise<string[]> {

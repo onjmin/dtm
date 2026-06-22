@@ -212,8 +212,6 @@ export type DawOptions = {
 	onResumeAudio?: () => void | Promise<void>;
 	/** 再生の基準クロック秒。既定 performance.now()/1000。利用側は audioCtx.currentTime を返す */
 	getAudioTime?: () => number;
-	/** 録音ボタン押下（利用側のオーディオグラフに依存するため任意） */
-	onToggleRecord?: () => void;
 	/**
 	 * ドラムパターンが変化したときに呼ばれる（ユーザー操作・MML読み込みによる自動入力の両方）。
 	 * 利用側が選択状態を永続化する用途に使う。

@@ -14,7 +14,7 @@
  * パッケージ同梱の dist/voice-worker.js を用いる。エンジンやURLは options で差し替え可能。
  */
 
-import { buildNameToKeyMapping, setupRecorder } from "./audio-config";
+import { buildNameToKeyMapping } from "./audio-config";
 import { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 import { DRUM_FONT, DRUM_KEYS } from "./drum-config";
 import { INSTRUMENT_PRESETS } from "./instrument-presets";
@@ -151,8 +151,6 @@ export type DtmStudioOptions = {
 	cdn?: Partial<typeof DEFAULT_CDN>;
 	/** 有効化する機能。既定はすべて true。 */
 	features?: {
-		/** 録音→WAVダウンロード（編集UIの録音ボタン）。 */
-		recorder?: boolean;
 		/** MIDIファイル読み込み。 */
 		midi?: boolean;
 		/** コード入力（和音）。 */
@@ -323,7 +321,6 @@ export const createDtmStudio = async (
 ): Promise<DtmStudio> => {
 	const cdn = { ...DEFAULT_CDN, ...options.cdn };
 	const features = {
-		recorder: true,
 		midi: true,
 		chord: true,
 		presetUI: true,
@@ -378,77 +375,6 @@ export const createDtmStudio = async (
 	const singingVoices = createSingingVoices(audioCtx, masterGain, {
 		voiceWorkerUrl,
 	});
-
-	// ── 録音 ──
-	const recorder = features.recorder
-		? setupRecorder(audioCtx, masterGain, drumGain)
-		: null;
-
-	const downloadWav = (): void => {
-		if (!recorder) return;
-		const recordedData = recorder.getRecordedData();
-		const ch = recordedData.length;
-		const len = recordedData[0].length;
-		if (len === 0) return;
-		const bufSize = recordedData[0][0].length;
-		const wave = new Float32Array(ch * len * bufSize);
-		let idx = 0;
-		for (let i = 0; i < len; i++)
-			for (let j = 0; j < bufSize; j++)
-				for (let k = 0; k < ch; k++) wave[idx++] = recordedData[k][i][j];
-		const sampleRate = audioCtx.sampleRate;
-		const channels = 2;
-		const bitRate = 16;
-		const step = bitRate / 8;
-		const blockSize = channels * step;
-		const byteLen = wave.length * step;
-		const view = new DataView(new ArrayBuffer(44 + byteLen));
-		const ws = (off: number, s: string): void => {
-			for (let i = 0; i < s.length; i++)
-				view.setUint8(off + i, s.charCodeAt(i));
-		};
-		ws(0, "RIFF");
-		view.setUint32(4, 32 + byteLen, true);
-		ws(8, "WAVE");
-		ws(12, "fmt ");
-		view.setUint32(16, 16, true);
-		view.setUint16(20, 1, true);
-		view.setUint16(22, channels, true);
-		view.setUint32(24, sampleRate, true);
-		view.setUint32(28, sampleRate * blockSize, true);
-		view.setUint16(32, blockSize, true);
-		view.setUint16(34, bitRate, true);
-		ws(36, "data");
-		view.setUint32(40, byteLen, true);
-		const clamp = (n: number, a: number, b: number): number =>
-			Math.max(a, Math.min(b, n));
-		let off = 44;
-		for (let i = 0; i < wave.length; i++, off += step)
-			view.setInt16(
-				off,
-				clamp(Math.round(wave[i] * 0x8000), -0x8000, 0x7fff),
-				true,
-			);
-		const blob = new Blob([view], { type: "audio/wav" });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement("a");
-		a.href = url;
-		a.download = "record.wav";
-		a.click();
-		URL.revokeObjectURL(url);
-	};
-
-	const onToggleRecord = recorder
-		? (): void => {
-				if (recorder.isRecording()) {
-					recorder.stopRecording();
-					downloadWav();
-				} else {
-					recorder.clearRecordedData();
-					recorder.startRecording();
-				}
-			}
-		: undefined;
 
 	// ── SoundFont（楽器）ロード ──
 	// SoundFont.toURL は SoundFont_list の初期化完了後に有効になる。
@@ -746,7 +672,6 @@ export const createDtmStudio = async (
 			onPlayDrum: playDrum,
 			singingVoices,
 			parseMidi,
-			onToggleRecord,
 			onInstrumentChange: handleInstrumentChange,
 			...dawOverrides,
 		};

@@ -51,13 +51,6 @@ import {
 } from "./renderer";
 import { createSequencer, type Sequencer } from "./sequencer";
 import { injectStyles, showLoadingOverlay } from "./styles";
-import {
-	DEFAULT_BPM,
-	DEFAULT_GATE,
-	DEFAULT_PAN,
-	DEFAULT_VOCAL_VOLUME,
-	MML_END_MARKER,
-} from "./types";
 import type {
 	DawInstance,
 	DawMode,
@@ -69,6 +62,13 @@ import type {
 	RenderConfig,
 	ToolMode,
 	TrackConfig,
+} from "./types";
+import {
+	DEFAULT_BPM,
+	DEFAULT_GATE,
+	DEFAULT_PAN,
+	DEFAULT_VOCAL_VOLUME,
+	MML_END_MARKER,
 } from "./types";
 import { VOICE_IMAGES } from "./voice-images";
 
@@ -1277,7 +1277,7 @@ export const mountDAW = (
 	const updateTransport = (): void => {
 		const playing = playbackState === "playing";
 		const label = playing
-			? "一時停止"
+			? "停止"
 			: playbackState === "paused"
 				? "再開"
 				: "試聴";
@@ -1951,8 +1951,21 @@ export const mountDAW = (
 	const wireEvents = (): void => {
 		refs.playBtn.addEventListener("click", togglePlay);
 		refs.playBtn.disabled = false;
-		refs.recBtn.addEventListener("click", () => options.onToggleRecord?.());
-		refs.recBtn.style.display = options.onToggleRecord ? "" : "none";
+		refs.prevBarBtn.addEventListener("click", () => {
+			const targetStep = Math.max(
+				0,
+				Math.floor((getCurrentPlayStep() - 1) / renderConfig.stepsPerBar) *
+					renderConfig.stepsPerBar,
+			);
+			jumpTo(targetStep);
+		});
+		refs.nextBarBtn.addEventListener("click", () => {
+			const targetStep =
+				Math.floor(getCurrentPlayStep() / renderConfig.stepsPerBar + 1) *
+				renderConfig.stepsPerBar;
+			jumpTo(targetStep);
+		});
+
 		refs.soloCheckbox.addEventListener("change", () => {
 			isSolo = refs.soloCheckbox.checked;
 		});
@@ -2360,6 +2373,21 @@ export const mountDAW = (
 		if (playbackState === "playing") return currentPlayStep;
 		if (playbackState === "paused") return pausedPlayStep;
 		return playStartStep;
+	};
+
+	const jumpTo = async (step: number): Promise<void> => {
+		const wasPlaying = playbackState === "playing";
+		if (wasPlaying) {
+			sequencer.stop();
+			options.singingVoices?.stopStream();
+			playStartStep = step;
+			pausedPlayStep = step;
+			currentPlayStep = step;
+			playbackState = "paused";
+			await play();
+		} else {
+			forcePauseAt(step);
+		}
 	};
 
 	const forcePauseAt = (step: number): void => {
