@@ -1319,6 +1319,17 @@ var buildUI = (target, options) => {
       <div class="dtm-modal-body" data-dtm="modal-body"></div>
     </div>
   </div>
+
+  <!-- \u2550\u2550\u2550\u2550 \u5229\u7528\u898F\u7D04\u540C\u610F\u30AB\u30D0\u30FC \u2550\u2550\u2550\u2550 -->
+  <div class="dtm-consent-overlay" data-dtm="consent-overlay" hidden>
+    <div class="dtm-win dtm-consent-modal">
+      <div class="dtm-consent-header">\u5229\u7528\u898F\u7D04\u306E\u78BA\u8A8D</div>
+      <div class="dtm-consent-body" data-dtm="consent-body"></div>
+      <div class="dtm-consent-footer">
+        <button class="dtm-btn dtm-btn--success" data-dtm="consent-btn">\u540C\u610F\u3057\u3066\u5229\u7528\u3059\u308B</button>
+      </div>
+    </div>
+  </div>
 </div>`;
   const root = q(target, '[data-dtm="root"]');
   const sel = (name) => q(root, `[data-dtm="${name}"]`);
@@ -1385,7 +1396,10 @@ var buildUI = (target, options) => {
     modalOverlay: sel("modal-overlay"),
     modalTitle: sel("modal-title"),
     modalBody: sel("modal-body"),
-    modalClose: sel("modal-close")
+    modalClose: sel("modal-close"),
+    consentOverlay: sel("consent-overlay"),
+    consentBody: sel("consent-body"),
+    consentBtn: sel("consent-btn")
   };
 };
 
@@ -2502,7 +2516,20 @@ var createWorkerBackend = async (workerUrl, options) => {
   };
 };
 var createKoeVoice = async (ctx, destination, options) => {
-  const backend = options.voiceWorkerUrl ? await createWorkerBackend(options.voiceWorkerUrl, options) : await createLocalBackend(options);
+  let backend;
+  if (options.voiceWorkerUrl) {
+    try {
+      backend = await createWorkerBackend(options.voiceWorkerUrl, options);
+    } catch (err2) {
+      console.warn(
+        "[dtm] Failed to spawn voice worker. Falling back to local backend.",
+        err2
+      );
+      backend = await createLocalBackend(options);
+    }
+  } else {
+    backend = await createLocalBackend(options);
+  }
   const renderCache = /* @__PURE__ */ new Map();
   const inflight = /* @__PURE__ */ new Map();
   const active = /* @__PURE__ */ new Set();
@@ -5243,6 +5270,66 @@ var DAW_CSS = `
 .dtm-modal-overlay[hidden] {
   display: none !important;
 }
+
+/* \u2500\u2500\u2500 \u5229\u7528\u898F\u7D04\u540C\u610F\u30AB\u30D0\u30FC \u2500\u2500\u2500 */
+.dtm-consent-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10100;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+}
+.dtm-consent-overlay[hidden] {
+  display: none !important;
+}
+.dtm-consent-modal {
+  max-width: 450px;
+  width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--dtm-surface);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-primary),
+    4px 4px 0 var(--c-black);
+  overflow: hidden;
+}
+.dtm-consent-header {
+  background: var(--dtm-deep);
+  color: var(--dtm-text);
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--c-black);
+  font-weight: bold;
+  text-align: center;
+  font-size: 14px;
+}
+.dtm-consent-body {
+  padding: 16px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.dtm-consent-body a {
+  color: var(--dtm-primary);
+  text-decoration: underline;
+}
+.dtm-consent-body a:hover {
+  color: var(--dtm-accent);
+}
+.dtm-consent-footer {
+  padding: 12px;
+  border-top: 2px solid var(--c-black);
+  background: var(--dtm-deep);
+  display: flex;
+  justify-content: center;
+}
+
 .dtm-modal {
   max-width: 500px;
   width: 100%;
@@ -5376,18 +5463,19 @@ var DAW_CSS = `
 }
 
 .dtm-hidden { display: none !important; }
-/* \u8AAD\u8FBC\u6642\u306E\u63A7\u3048\u3081\u306A\u304A\u77E5\u3089\u305B\uFF08\u4F8B: \u30B7\u30F3\u30D7\u30EB\u30E2\u30FC\u30C9\u3067\u306E\u30C8\u30E9\u30C3\u30AF\u5408\u7B97\uFF09\u3002\u4E3B\u5F35\u3057\u3059\u304E\u306A\u3044 muted \u8868\u793A\u3002 */
+/* \u8AAD\u8FBC\u6642\u306E\u8B66\u544A\u304A\u77E5\u3089\u305B\uFF08\u4F8B: \u30B7\u30F3\u30D7\u30EB\u30E2\u30FC\u30C9\u3067\u306E\u30C8\u30E9\u30C3\u30AF\u5408\u7B97\uFF09\u3002 */
 .dtm-load-note {
   margin: 6px 0 0;
   padding: 0 2px;
   font-family: var(--dtm-font);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
   letter-spacing: .04em;
-  color: var(--dtm-muted);
-  opacity: .85;
+  color: var(--dtm-warn); /* \u8B66\u544A\u8272\uFF08\u30AA\u30EC\u30F3\u30B8\uFF09 */
+  font-weight: bold;
+  opacity: 1.0;
 }
-.dtm-load-note::before { content: "\u24D8 "; }
+.dtm-load-note::before { content: "\u26A0 "; }
 .dtm-grow { flex: 1 1 auto; }
 .dtm-lyric-icon {
   flex: 0 0 auto;
@@ -6898,6 +6986,67 @@ var mountDAW = (target, options = {}) => {
   let selectedNotes = [];
   let selectionRect = null;
   let copiedNotes = [];
+  const agreedModelsInSession = /* @__PURE__ */ new Set();
+  function checkSingingVoiceConsent() {
+    try {
+      const requiredModels = /* @__PURE__ */ new Set();
+      for (const t of trackStates) {
+        if (t.lyricModel && KOE_VOICEBANK_TERMS[t.lyricModel]) {
+          requiredModels.add(t.lyricModel);
+        }
+      }
+      const unagreed = Array.from(requiredModels).filter((model) => {
+        if (agreedModelsInSession.has(model)) return false;
+        try {
+          if (typeof localStorage === "undefined" || !localStorage) return true;
+          return localStorage.getItem(`dtm_agreed_terms_${model}`) !== "true";
+        } catch (e) {
+          console.warn("[dtm] localStorage access denied in consent check", e);
+          return true;
+        }
+      });
+      if (unagreed.length > 0) {
+        showConsentOverlay(unagreed);
+      }
+    } catch (err2) {
+      console.error("[dtm] Error in checkSingingVoiceConsent:", err2);
+    }
+  }
+  function showConsentOverlay(models) {
+    try {
+      stop();
+      let contentHTML = `<p style="margin-bottom: 12px; font-weight: bold; color: var(--dtm-danger);">\u672C\u30C7\u30FC\u30BF\u306B\u306F UTAU \u6B4C\u58F0\u97F3\u6E90\u304C\u542B\u307E\u308C\u3066\u3044\u307E\u3059\u3002<br>\u3054\u5229\u7528\u306B\u3042\u305F\u3063\u3066\u306F\u3001\u4EE5\u4E0B\u306E\u97F3\u6E90\u5229\u7528\u898F\u7D04\u3078\u306E\u540C\u610F\u304C\u5FC5\u8981\u3067\u3059\u3002</p>`;
+      for (const model of models) {
+        const label = KOE_VOICEBANK_LABELS[model] || model;
+        const url2 = KOE_VOICEBANK_TERMS[model];
+        contentHTML += `
+					<div style="margin-bottom: 12px; padding: 10px; background: var(--dtm-deep); border: 2px solid var(--c-black); box-shadow: 2px 2px 0 var(--c-black);">
+						<div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11px; font-weight: bold; color: var(--dtm-gold);">
+							<span>\u4F7F\u7528\u6642\u306B\u306F</span>
+							<a href="${url2}" target="_blank" rel="noopener noreferrer" style="color: var(--dtm-primary); text-decoration: underline;">${label}UTAU\u97F3\u6E90</a>
+							<span>\u306E\u5229\u7528\u898F\u7D04\u306B\u5F93\u3063\u3066\u304F\u3060\u3055\u3044</span>
+						</div>
+					</div>
+				`;
+      }
+      refs.consentBody.innerHTML = contentHTML;
+      refs.consentOverlay.removeAttribute("hidden");
+      refs.consentBtn.onclick = () => {
+        for (const model of models) {
+          try {
+            if (typeof localStorage !== "undefined" && localStorage) {
+              localStorage.setItem(`dtm_agreed_terms_${model}`, "true");
+            }
+          } catch (e) {
+          }
+          agreedModelsInSession.add(model);
+        }
+        refs.consentOverlay.setAttribute("hidden", "");
+      };
+    } catch (err2) {
+      console.error("[dtm] Error in showConsentOverlay:", err2);
+    }
+  }
   let trackStates = [];
   const createTrackStates = () => {
     trackStates = trackConfigs.map((config) => ({
@@ -7780,6 +7929,7 @@ var mountDAW = (target, options = {}) => {
       lyricModelSel.addEventListener("change", () => {
         active.lyricModel = lyricModelSel.value;
         syncLyricVisibility();
+        checkSingingVoiceConsent();
       });
       lyricOctaveSel.addEventListener("change", () => {
         active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
@@ -8039,8 +8189,8 @@ var mountDAW = (target, options = {}) => {
       t.vocalPan = 64;
       t.vocalOctave = 0;
     }
-    lyrics?.forEach((lt, idx) => {
-      const t = trackStates[idx];
+    lyrics?.forEach((lt) => {
+      const t = trackStates[lt.trackId];
       if (!t) return;
       t.lyrics = lt.syllables.map((s) => s.kana).join("");
       t.lyricModel = lt.model;
@@ -8072,6 +8222,7 @@ var mountDAW = (target, options = {}) => {
     redrawAll();
     updateTrackPanel();
     updateUndoRedo();
+    checkSingingVoiceConsent();
     if (!isAdvanced && mergedTrackCount > 0) {
       refs.mmlLoadNote.textContent = "\u30B7\u30F3\u30D7\u30EB\u30E2\u30FC\u30C9\u306E\u305F\u3081\u3001\u4E00\u90E8\u306E\u30C8\u30E9\u30C3\u30AF\u3092\u5408\u7B97\u3057\u3066\u8AAD\u307F\u8FBC\u307F\u307E\u3057\u305F";
       refs.mmlLoadNote.classList.remove("dtm-hidden");
@@ -8532,6 +8683,7 @@ var mountDAW = (target, options = {}) => {
   updateUndoRedo();
   redrawAll();
   if (options.initialMML) loadMML(options.initialMML);
+  checkSingingVoiceConsent();
   let resizeTimer = null;
   const resizeObserver = new ResizeObserver(() => {
     if (resizeTimer) clearTimeout(resizeTimer);
