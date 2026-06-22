@@ -4031,6 +4031,110 @@ var isChordHeavyTrack = (notes, threshold = 0.6) => {
   return chordNotes / notes.length >= threshold;
 };
 
+// src/mml-info.ts
+var MML_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>1. \u97F3\u7B26\u3068\u4F11\u7B26</h4>
+  <p><code>c</code>(\u30C9) <code>d</code>(\u30EC) <code>e</code>(\u30DF) <code>f</code>(\u30D5\u30A1) <code>g</code>(\u30BD) <code>a</code>(\u30E9) <code>b</code>(\u30B7) \u306E\u30A2\u30EB\u30D5\u30A1\u30D9\u30C3\u30C8\u3067\u8868\u3057\u307E\u3059\u3002</p>
+  <ul>
+    <li>\u534A\u97F3\u4E0A\u3052\u308B: <code>c#</code> \u307E\u305F\u306F <code>c+</code></li>
+    <li>\u534A\u97F3\u4E0B\u3052\u308B: <code>d-</code></li>
+    <li>\u4F11\u7B26: <code>r</code></li>
+  </ul>
+
+  <h4>2. \u97F3\u306E\u9577\u3055</h4>
+  <p>\u97F3\u540D\u3084\u4F11\u7B26\u306E\u5F8C\u306B\u6570\u5024\u3067\u6307\u5B9A\u3057\u307E\u3059\uFF08\u4F8B: <code>4</code> = 4\u5206\u97F3\u7B26, <code>8</code> = 8\u5206\u97F3\u7B26, <code>16</code> = 16\u5206\u97F3\u7B26\uFF09\u3002</p>
+  <ul>
+    <li><code>c4</code> : 4\u5206\u97F3\u7B26\u306E\u30C9</li>
+    <li><code>r8</code> : 8\u5206\u4F11\u7B26</li>
+    <li><code>c4.</code> : \u4ED8\u70B94\u5206\u97F3\u7B26\u306E\u30C9\uFF08\u9577\u3055\u30921.5\u500D\u306B\uFF09</li>
+    <li>\u6570\u5024\u3092\u7701\u7565\u3059\u308B\u3068\u3001<code>l</code> \u30B3\u30DE\u30F3\u30C9\u3067\u8A2D\u5B9A\u3055\u308C\u305F\u30C7\u30D5\u30A9\u30EB\u30C8\u9577\uFF08\u901A\u5E3816\u5206\uFF09\u306B\u306A\u308A\u307E\u3059\u3002</li>
+  </ul>
+
+  <h4>3. \u30AA\u30AF\u30BF\u30FC\u30D6\uFF08\u97F3\u306E\u9AD8\u3055\uFF09</h4>
+  <ul>
+    <li><code>o4</code>, <code>o5</code> : \u9AD8\u3055\u3092\u76F4\u63A5\u6307\u5B9A\uFF08\u3075\u3064\u3046\u306F o4 \u304B o5\uFF09</li>
+    <li><code>&gt;</code> : 1\u30AA\u30AF\u30BF\u30FC\u30D6\u4E0A\u3052\u308B</li>
+    <li><code>&lt;</code> : 1\u30AA\u30AF\u30BF\u30FC\u30D6\u4E0B\u3052\u308B</li>
+  </ul>
+
+  <h4>4. \u30C6\u30F3\u30DD</h4>
+  <ul>
+    <li><code>t120</code> : \u66F2\u306E\u901F\u3055\u3092BPM120\u306B\u6307\u5B9A\u3002\u203B\u30E1\u30ED\u30C7\u30A3\uFF08@0\uFF09\u306E\u30C6\u30F3\u30DD\u6307\u5B9A\u304C\u66F2\u5168\u4F53\u306B\u53CD\u6620\u3055\u308C\u307E\u3059\u3002</li>
+  </ul>
+
+  <h4>5. \u548C\u97F3</h4>
+  <p>\u97F3\u7B26\u3092 <code>[</code> \u3068 <code>]</code> \u3067\u56F2\u3080\u3068\u540C\u6642\u306B\u767A\u97F3\u3057\u307E\u3059\u3002</p>
+  <pre>\u4F8B: [ceg]4 \uFF08\u30C9\u30FB\u30DF\u30FB\u30BD\u30924\u5206\u97F3\u7B26\u3067\u540C\u6642\u306B\u767A\u97F3\uFF09</pre>
+
+  <h4>6. \u30C8\u30E9\u30C3\u30AF\u306E\u533A\u5207\u308A</h4>
+  <p><code>;</code> \u307E\u305F\u306F <code>@0</code>\u301C<code>@3</code> \u3067\u30C8\u30E9\u30C3\u30AF\u3092\u5207\u308A\u66FF\u3048\u307E\u3059\u3002</p>
+  <ul>
+    <li><code>@0</code>: \u30E1\u30ED\u30C7\u30A3</li>
+    <li><code>@1</code>: \u30B5\u30D6\u30E1\u30ED</li>
+    <li><code>@2</code>: \u30D9\u30FC\u30B9</li>
+    <li><code>@3</code>: \u4F34\u594F</li>
+  </ul>
+
+  <h4>7. \u6B4C\u58F0\u30FB\u6B4C\u8A5E\u5165\u529B</h4>
+  <p><code>@@&lt;\u30C8\u30E9\u30C3\u30AF\u756A\u53F7&gt; &lt;\u97F3\u6E90\u540D&gt; &lt;\u6B4C\u8A5E&gt;</code> \u306E\u5F62\u5F0F\u3067\u3001\u97F3\u7B26\u3068\u540C\u671F\u3059\u308B\u6B4C\u8A5E\u3092\u5165\u529B\u3067\u304D\u307E\u3059\u3002</p>
+  <pre>\u4F8B: @@0 tsukuyomi \u3069\u3093\u3050\u308A\u3053\u308D\u3053\u308D\u3069\u3093\u3050\u308A\u3053</pre>
+  <p style="margin-top:4px; margin-bottom:16px;"><small>\uFF08\u97F3\u6E90\u540D\u306F <code>tsukuyomi</code> \u3084 <code>klatt</code>, <code>roze</code> \u306A\u3069\u306E\u97F3\u58F0\u30E2\u30C7\u30EB\u3092\u6307\u5B9A\u3067\u304D\u307E\u3059\uFF09</small></p>
+
+  <h4 style="margin-top: 18px; border-top: 1px solid var(--dtm-border2); padding-top: 8px;">\u30B5\u30F3\u30D7\u30EB\u66F2\uFF08\u8A66\u8074\u30FB\u30B3\u30D4\u30FC\uFF09</h4>
+
+  <!-- \u30B5\u30F3\u30D7\u30EB1 -->
+  <div class="dtm-modal-sample-box">
+    <div class="dtm-modal-sample-header">
+      <span class="dtm-modal-sample-tag">1. \u57FA\u672C\u306E\u30E1\u30ED\u30C7\u30A3</span>
+      <button class="dtm-btn dtm-btn--ghost dtm-btn--xs dtm-modal-sample-copy-btn" data-mml="@0 t120 l8 o5 c d e f g a b > c">\u{1F4CB} \u30B3\u30D4\u30FC</button>
+    </div>
+    <pre style="margin: 0; padding: 6px;">@0 t120 l8 o5 c d e f g a b &gt; c</pre>
+    <div class="dtm-modal-sample-desc">
+      \u57FA\u672C\u7684\u306A\u30E1\u30ED\u30C7\u30A3\u306E\u66F8\u304D\u65B9\uFF08\u97F3\u540D\u30FB\u9577\u3055\u30FB\u30AA\u30AF\u30BF\u30FC\u30D6\u3068\u30C6\u30F3\u30DD\uFF09\u3002
+    </div>
+    <div style="margin-top: 8px;">
+      <button class="dtm-btn dtm-btn--primary dtm-btn--xs dtm-modal-sample-play-btn" data-mml="@0 t120 l8 o5 c d e f g a b > c">\u25B6 \u8A66\u8074</button>
+    </div>
+    <div class="dtm-modal-sample-player-container"></div>
+  </div>
+
+  <!-- \u30B5\u30F3\u30D7\u30EB2 -->
+  <div class="dtm-modal-sample-box">
+    <div class="dtm-modal-sample-header">
+      <span class="dtm-modal-sample-tag">2. \u8907\u6570\u30C8\u30E9\u30C3\u30AF\u3068\u548C\u97F3</span>
+      <button class="dtm-btn dtm-btn--ghost dtm-btn--xs dtm-modal-sample-copy-btn" data-mml="@0 t120 o5 c e g2 ; @3 o4 [ceg]2 [ceg]2">\u{1F4CB} \u30B3\u30D4\u30FC</button>
+    </div>
+    <pre style="margin: 0; padding: 6px;">@0 t120 o5 c e g2 ;
+@3 o4 [ceg]2 [ceg]2</pre>
+    <div class="dtm-modal-sample-desc">
+      ; \u3067\u30C8\u30E9\u30C3\u30AF\uFF08\u4E0A\uFF1D\u30E1\u30ED\u30C7\u30A3\uFF0F\u4E0B\uFF1D\u4F34\u594F\uFF09\u3092\u5206\u3051\u3001[ceg] \u3067\u548C\u97F3\u3092\u9CF4\u3089\u3057\u307E\u3059\u3002
+    </div>
+    <div style="margin-top: 8px;">
+      <button class="dtm-btn dtm-btn--primary dtm-btn--xs dtm-modal-sample-play-btn" data-mml="@0 t120 o5 c e g2 ; @3 o4 [ceg]2 [ceg]2">\u25B6 \u8A66\u8074</button>
+    </div>
+    <div class="dtm-modal-sample-player-container"></div>
+  </div>
+
+  <!-- \u30B5\u30F3\u30D7\u30EB3 -->
+  <div class="dtm-modal-sample-box">
+    <div class="dtm-modal-sample-header">
+      <span class="dtm-modal-sample-tag">3. \u6B4C\u5531\u4ED8\u304D (\u3069\u3093\u3050\u308A\u3053\u308D\u3053\u308D)</span>
+      <button class="dtm-btn dtm-btn--ghost dtm-btn--xs dtm-modal-sample-copy-btn" data-mml="@0 t120 v100 o4g8 g8 e8 e8 f8 e8 d8 c8 g8 g8 e8 e8 d4.; @@0 tsukuyomi \u3069\u3093\u3050\u308A\u3053\u308D\u3053\u308D\u3069\u3093\u3050\u308A\u3053;">\u{1F4CB} \u30B3\u30D4\u30FC</button>
+    </div>
+    <pre style="margin: 0; padding: 6px;">@0 t120 v100 o4g8 g8 e8 e8 f8 e8 d8 c8 g8 g8 e8 e8 d4.;
+@@0 tsukuyomi \u3069\u3093\u3050\u308A\u3053\u308D\u3053\u308D\u3069\u3093\u3050\u308A\u3053;</pre>
+    <div class="dtm-modal-sample-desc">
+      @@0 tsukuyomi \u6B4C\u8A5E... \u3067\u30E1\u30ED\u30C7\u30A3\u30C8\u30E9\u30C3\u30AF\u306B\u6B4C\u8A5E\u3092\u540C\u671F\u3055\u305B\u3066\u6B4C\u308F\u305B\u307E\u3059\u3002\u203B\u72EC\u81EA\u62E1\u5F35
+    </div>
+    <div style="margin-top: 8px;">
+      <button class="dtm-btn dtm-btn--primary dtm-btn--xs dtm-modal-sample-play-btn" data-mml="@0 t120 v100 o4g8 g8 e8 e8 f8 e8 d8 c8 g8 g8 e8 e8 d4.; @@0 tsukuyomi \u3069\u3093\u3050\u308A\u3053\u308D\u3053\u308D\u3069\u3093\u3050\u308A\u3053;">\u25B6 \u8A66\u8074</button>
+    </div>
+    <div class="dtm-modal-sample-player-container"></div>
+  </div>
+</div>
+`;
+
 // src/mml-parser.ts
 var PITCH_MAP2 = {
   c: 0,
@@ -4653,9 +4757,13 @@ var DAW_CSS = `
 /* \u30C7\u30B6\u30A4\u30F3\u30C8\u30FC\u30AF\u30F3\u306F\u7DE8\u96C6UI\u672C\u4F53\uFF08.dtm-daw\uFF09\u306B\u52A0\u3048\u3001\u305D\u306E\u5916\u5074\u306B\u5DEE\u3057\u8FBC\u307E\u308C\u308B
    \u30B3\u30F3\u30C8\u30ED\u30FC\u30EB\u30D0\u30FC\uFF08.dtm-controlbar\uFF09\u306B\u3082\u4F9B\u7D66\u3059\u308B\u3002mountPresetSelect /
    mountModeSwitch \u306EUI\u306F .dtm-daw \u306E\u5144\u5F1F\u3068\u3057\u3066\u7F6E\u304B\u308C\u308B\u305F\u3081\u3001\u3053\u3053\u3067\u914D\u3089\u306A\u3044\u3068
-   var(--dtm-*) \u304C\u89E3\u6C7A\u3067\u304D\u305A\u7121\u88C5\u98FE\uFF08\u767D\u5730\u30FB\u65E2\u5B9A\u30D5\u30A9\u30F3\u30C8\uFF09\u306B\u306A\u3063\u3066\u3057\u307E\u3046\u3002 */
+   var(--dtm-*) \u304C\u89E3\u6C7A\u3067\u304D\u305A\u7121\u88C5\u98FE\uFF08\u767D\u5730\u30FB\u65E2\u5B9A\u30D5\u30A9\u30F3\u30C8\uFF09\u306B\u306A\u3063\u3066\u3057\u307E\u3046\u3002
+   \u518D\u751F\u5C02\u7528\u30D3\u30E5\u30FC\u306E\u30E2\u30FC\u30C0\u30EB\uFF0F\u5229\u7528\u898F\u7D04\u30AB\u30D0\u30FC\u306F document.body \u76F4\u4E0B\u3078\u91CD\u306D\u308B\u305F\u3081\u3001
+   .dtm-daw \u306E\u5916\u306B\u51FA\u308B\u3002\u3053\u308C\u3089\u3082\u540C\u69D8\u306B\u30C8\u30FC\u30AF\u30F3\u3092\u4F9B\u7D66\u3057\u306A\u3044\u3068\u9ED2\u5730\u30FB\u767D\u6587\u5B57\u306B\u306A\u308B\u3002 */
 .dtm-daw,
-.dtm-controlbar {
+.dtm-controlbar,
+.dtm-modal-overlay,
+.dtm-consent-overlay {
   /* PICO-8 16\u8272\u30D1\u30EC\u30C3\u30C8\u3088\u308A */
   --c-black:   #000000;
   --c-navy:    #1d2b53;
@@ -5253,6 +5361,10 @@ var DAW_CSS = `
   justify-content: center;
   padding: 16px;
   backdrop-filter: blur(2px);
+  /* body\u76F4\u4E0B\u306B\u91CD\u306D\u305F\u5834\u5408\uFF08\u518D\u751F\u5C02\u7528\u30D3\u30E5\u30FC\uFF09\u3067\u3082\u6587\u5B57\u8272\u30FB\u30D5\u30A9\u30F3\u30C8\u304C
+     .dtm-daw \u304B\u3089\u7D99\u627F\u3067\u304D\u306A\u3044\u305F\u3081\u3001\u3053\u3053\u3067\u660E\u793A\u3059\u308B\u3002 */
+  color: var(--dtm-text);
+  font-family: var(--dtm-font);
 }
 .dtm-modal-overlay[hidden] {
   display: none !important;
@@ -5269,6 +5381,9 @@ var DAW_CSS = `
   justify-content: center;
   padding: 16px;
   backdrop-filter: blur(2px);
+  /* body\u76F4\u4E0B\u306B\u91CD\u306D\u308B\u305F\u3081 .dtm-daw \u304B\u3089\u7D99\u627F\u3067\u304D\u306A\u3044\u6587\u5B57\u8272\u30FB\u30D5\u30A9\u30F3\u30C8\u3092\u660E\u793A\u3002 */
+  color: var(--dtm-text);
+  font-family: var(--dtm-font);
 }
 .dtm-consent-overlay[hidden] {
   display: none !important;
@@ -6118,16 +6233,21 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const menuDropdown = doc.createElement("div");
   menuDropdown.className = "dtm-player-menu";
   menuDropdown.style.display = "none";
-  const copyMmlItem = doc.createElement("button");
-  copyMmlItem.type = "button";
-  copyMmlItem.className = "dtm-player-menu-item";
-  copyMmlItem.textContent = "MML\u30B3\u30D4\u30FC";
-  const embedItem = doc.createElement("button");
-  embedItem.type = "button";
-  embedItem.className = "dtm-player-menu-item";
-  embedItem.textContent = "\u57CB\u3081\u8FBC\u3080";
-  menuDropdown.appendChild(copyMmlItem);
+  const makeMenuItem = (label) => {
+    const item = doc.createElement("button");
+    item.type = "button";
+    item.className = "dtm-player-menu-item";
+    item.textContent = label;
+    return item;
+  };
+  const showMmlItem = makeMenuItem("MML\u3092\u8868\u793A");
+  const mmlInfoItem = makeMenuItem("MML\u66F8\u5F0F\u3068\u306F");
+  const embedItem = makeMenuItem("\u57CB\u3081\u8FBC\u3080");
+  const copyMmlItem = makeMenuItem("MML\u30B3\u30D4\u30FC");
+  menuDropdown.appendChild(showMmlItem);
+  menuDropdown.appendChild(mmlInfoItem);
   menuDropdown.appendChild(embedItem);
+  menuDropdown.appendChild(copyMmlItem);
   menuContainer.appendChild(menuDropdown);
   mmlHeader.appendChild(menuContainer);
   const toggleMenu = (show) => {
@@ -6150,6 +6270,190 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     e.stopPropagation();
     toggleMenu();
   });
+  let infoModalEl = null;
+  let modalSamplePlayer = null;
+  const closeInfoModal = () => {
+    if (modalSamplePlayer) {
+      modalSamplePlayer.stop();
+      modalSamplePlayer.destroy();
+      modalSamplePlayer = null;
+    }
+    infoModalEl?.remove();
+    infoModalEl = null;
+  };
+  const openInfoModal = (title) => {
+    closeInfoModal();
+    const overlay = doc.createElement("div");
+    overlay.className = "dtm-modal-overlay";
+    const modal = doc.createElement("div");
+    modal.className = "dtm-win dtm-modal";
+    const header = doc.createElement("div");
+    header.className = "dtm-modal-header";
+    const titleEl = doc.createElement("span");
+    titleEl.className = "dtm-modal-title";
+    titleEl.textContent = title;
+    const closeBtn = doc.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "dtm-modal-close";
+    closeBtn.innerHTML = "&times;";
+    closeBtn.title = "\u9589\u3058\u308B";
+    header.append(titleEl, closeBtn);
+    const modalBody = doc.createElement("div");
+    modalBody.className = "dtm-modal-body";
+    modal.append(header, modalBody);
+    overlay.appendChild(modal);
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeInfoModal();
+    });
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closeInfoModal();
+    });
+    doc.body.appendChild(overlay);
+    infoModalEl = overlay;
+    return modalBody;
+  };
+  const appendCopyButton = (parent, text) => {
+    const actions = doc.createElement("div");
+    actions.style.marginTop = "8px";
+    const copyBtn = doc.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "dtm-btn dtm-btn--primary dtm-btn--xs";
+    copyBtn.textContent = "\u{1F4CB} \u30B3\u30D4\u30FC";
+    copyBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const ok = await copyToClipboard(doc, text);
+      copyBtn.textContent = ok ? "\u2713 \u30B3\u30D4\u30FC\u5B8C\u4E86" : "\u30B3\u30D4\u30FC\u5931\u6557";
+      if (ok) copyBtn.classList.add("dtm-btn--success");
+      setTimeout(() => {
+        copyBtn.textContent = "\u{1F4CB} \u30B3\u30D4\u30FC";
+        copyBtn.classList.remove("dtm-btn--success");
+      }, 1200);
+    });
+    actions.appendChild(copyBtn);
+    parent.appendChild(actions);
+  };
+  const wireSampleButtons = (modalBody) => {
+    const copyBtns = modalBody.querySelectorAll(".dtm-modal-sample-copy-btn");
+    for (const btn of copyBtns) {
+      const el = btn;
+      el.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const sampleMml = el.getAttribute("data-mml") ?? "";
+        const original = el.textContent;
+        const ok = await copyToClipboard(doc, sampleMml);
+        el.textContent = ok ? "\u2713 \u30B3\u30D4\u30FC\u5B8C\u4E86" : "\u30B3\u30D4\u30FC\u5931\u6557";
+        if (ok) el.classList.add("dtm-btn--success");
+        setTimeout(() => {
+          el.textContent = original;
+          el.classList.remove("dtm-btn--success");
+        }, 1200);
+      });
+    }
+    let activeSampleBtn = null;
+    const resetSampleBtn = (b) => {
+      if (!b) return;
+      b.textContent = "\u25B6 \u8A66\u8074";
+      b.classList.remove("dtm-btn--danger");
+      b.classList.add("dtm-btn--primary");
+    };
+    const markPlaying = (b) => {
+      b.textContent = "\u25A0 \u505C\u6B62";
+      b.classList.remove("dtm-btn--primary");
+      b.classList.add("dtm-btn--danger");
+    };
+    const playBtns = modalBody.querySelectorAll(".dtm-modal-sample-play-btn");
+    for (const btn of playBtns) {
+      const el = btn;
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const sampleMml = el.getAttribute("data-mml") ?? "";
+        if (activeSampleBtn === el && modalSamplePlayer) {
+          if (modalSamplePlayer.isPlaying()) {
+            modalSamplePlayer.stop();
+          } else {
+            modalSamplePlayer.play();
+            markPlaying(el);
+          }
+          return;
+        }
+        if (modalSamplePlayer) {
+          modalSamplePlayer.stop();
+          modalSamplePlayer.destroy();
+          modalSamplePlayer = null;
+        }
+        resetSampleBtn(activeSampleBtn);
+        activeSampleBtn = el;
+        const sampleBox = el.closest(".dtm-modal-sample-box");
+        const container = sampleBox?.querySelector(
+          ".dtm-modal-sample-player-container"
+        );
+        if (!container) return;
+        container.innerHTML = "";
+        modalSamplePlayer = mountMmlPlayer(container, sampleMml, {
+          onPlayNote: options.onPlayNote,
+          onPlayDrum: options.onPlayDrum,
+          onResumeAudio: options.onResumeAudio,
+          getAudioTime: options.getAudioTime,
+          singingVoices: options.singingVoices,
+          drumPatterns: options.drumPatterns,
+          volume: trackVolume,
+          // 解説モーダル内の試聴サンプルは規約同意を要求しない。
+          skipConsent: true,
+          onStop: () => {
+            if (activeSampleBtn === el) resetSampleBtn(el);
+          }
+        });
+        markPlaying(el);
+        modalSamplePlayer.play();
+      });
+    }
+  };
+  showMmlItem.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleMenu(false);
+    const modalBody = openInfoModal("MML");
+    const pre = doc.createElement("pre");
+    pre.textContent = mml;
+    pre.style.whiteSpace = "pre-wrap";
+    pre.style.wordBreak = "break-all";
+    modalBody.appendChild(pre);
+    appendCopyButton(modalBody, mml);
+  });
+  mmlInfoItem.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleMenu(false);
+    const modalBody = openInfoModal("MML\u306E\u66F8\u304D\u65B9\u89E3\u8AAC");
+    modalBody.innerHTML = MML_INFO_HTML;
+    wireSampleButtons(modalBody);
+  });
+  embedItem.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    toggleMenu(false);
+    const modalBody = openInfoModal("\u57CB\u3081\u8FBC\u307F");
+    const loading = doc.createElement("p");
+    loading.textContent = "\u751F\u6210\u4E2D...";
+    modalBody.appendChild(loading);
+    try {
+      const embedBase = options.embedUrl ?? "https://onjmin.github.io/dtm/demo/embed.html";
+      const payload = await encodeMml(mml);
+      const url2 = `${embedBase}#${payload}`;
+      const snippet = `<iframe src="${url2}" width="100%" height="260" frameborder="0" loading="lazy" title="@onjmin/dtm player"></iframe>`;
+      if (!modalBody.isConnected) return;
+      loading.remove();
+      const desc = doc.createElement("p");
+      desc.textContent = "\u3053\u306EHTML\u3092\u30D6\u30ED\u30B0\u3084\u30B5\u30A4\u30C8\u306B\u8CBC\u308A\u4ED8\u3051\u308B\u3068\u3001\u30D7\u30EC\u30A4\u30E4\u30FC\u3092\u305D\u306E\u307E\u307E\u57CB\u3081\u8FBC\u3081\u307E\u3059\u3002";
+      const pre = doc.createElement("pre");
+      pre.textContent = snippet;
+      pre.style.whiteSpace = "pre-wrap";
+      pre.style.wordBreak = "break-all";
+      modalBody.append(desc, pre);
+      appendCopyButton(modalBody, snippet);
+    } catch (err2) {
+      console.error("[dtm] failed to generate embed snippet", err2);
+      if (modalBody.isConnected) loading.textContent = "\u751F\u6210\u306B\u5931\u6557\u3057\u307E\u3057\u305F";
+    }
+  });
   copyMmlItem.addEventListener("click", async (e) => {
     e.stopPropagation();
     const success = await copyToClipboard(doc, mml);
@@ -6160,28 +6464,6 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     }
     setTimeout(() => {
       copyMmlItem.textContent = "MML\u30B3\u30D4\u30FC";
-    }, 2e3);
-  });
-  embedItem.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    embedItem.textContent = "\u751F\u6210\u4E2D...";
-    try {
-      const embedBase = options.embedUrl ?? "https://onjmin.github.io/dtm/demo/embed.html";
-      const payload = await encodeMml(mml);
-      const url2 = `${embedBase}#${payload}`;
-      const snippet = `<iframe src="${url2}" width="100%" height="260" frameborder="0" loading="lazy" title="@onjmin/dtm player"></iframe>`;
-      const success = await copyToClipboard(doc, snippet);
-      if (success) {
-        embedItem.textContent = "\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F\uFF01";
-      } else {
-        embedItem.textContent = "\u30B3\u30D4\u30FC\u5931\u6557";
-      }
-    } catch (err2) {
-      console.error("[dtm] failed to generate embed snippet", err2);
-      embedItem.textContent = "\u751F\u6210\u5931\u6557";
-    }
-    setTimeout(() => {
-      embedItem.textContent = "\u57CB\u3081\u8FBC\u3080";
     }, 2e3);
   });
   const promotedToImage = /* @__PURE__ */ new Set();
@@ -6673,6 +6955,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     }
     root.remove();
     consentOverlayEl?.remove();
+    closeInfoModal();
   };
   const instance = {
     play,
@@ -6712,108 +6995,6 @@ var CHORD_INFO_HTML = `
     <li><strong>\u30E4\u30C4\u30E1\u7A74</strong>: \u30EA\u30BA\u30DF\u30AB\u30EB\u306A\u30D4\u30B3\u30D4\u30B3\u30B2\u30FC\u30E0\u98A8\u306E\u4F34\u594F\u30D1\u30BF\u30FC\u30F3\u3067\u3059\u3002</li>
     <li><strong>\u4EA4\u4E92\u594F</strong>: \u30EB\u30FC\u30C8\u97F3\uFF08\u4F4E\u97F3\uFF09\u3068\u30B3\u30FC\u30C9\u69CB\u6210\u97F3\uFF08\u9AD8\u97F3\uFF09\u3092\u4EA4\u4E92\u306B\u523B\u307F\u307E\u3059\u3002</li>
   </ul>
-</div>
-`;
-var MML_INFO_HTML = `
-<div class="dtm-modal-body-content">
-  <h4>1. \u97F3\u7B26\u3068\u4F11\u7B26</h4>
-  <p><code>c</code>(\u30C9) <code>d</code>(\u30EC) <code>e</code>(\u30DF) <code>f</code>(\u30D5\u30A1) <code>g</code>(\u30BD) <code>a</code>(\u30E9) <code>b</code>(\u30B7) \u306E\u30A2\u30EB\u30D5\u30A1\u30D9\u30C3\u30C8\u3067\u8868\u3057\u307E\u3059\u3002</p>
-  <ul>
-    <li>\u534A\u97F3\u4E0A\u3052\u308B: <code>c#</code> \u307E\u305F\u306F <code>c+</code></li>
-    <li>\u534A\u97F3\u4E0B\u3052\u308B: <code>d-</code></li>
-    <li>\u4F11\u7B26: <code>r</code></li>
-  </ul>
-
-  <h4>2. \u97F3\u306E\u9577\u3055</h4>
-  <p>\u97F3\u540D\u3084\u4F11\u7B26\u306E\u5F8C\u306B\u6570\u5024\u3067\u6307\u5B9A\u3057\u307E\u3059\uFF08\u4F8B: <code>4</code> = 4\u5206\u97F3\u7B26, <code>8</code> = 8\u5206\u97F3\u7B26, <code>16</code> = 16\u5206\u97F3\u7B26\uFF09\u3002</p>
-  <ul>
-    <li><code>c4</code> : 4\u5206\u97F3\u7B26\u306E\u30C9</li>
-    <li><code>r8</code> : 8\u5206\u4F11\u7B26</li>
-    <li><code>c4.</code> : \u4ED8\u70B94\u5206\u97F3\u7B26\u306E\u30C9\uFF08\u9577\u3055\u30921.5\u500D\u306B\uFF09</li>
-    <li>\u6570\u5024\u3092\u7701\u7565\u3059\u308B\u3068\u3001<code>l</code> \u30B3\u30DE\u30F3\u30C9\u3067\u8A2D\u5B9A\u3055\u308C\u305F\u30C7\u30D5\u30A9\u30EB\u30C8\u9577\uFF08\u901A\u5E3816\u5206\uFF09\u306B\u306A\u308A\u307E\u3059\u3002</li>
-  </ul>
-
-  <h4>3. \u30AA\u30AF\u30BF\u30FC\u30D6\uFF08\u97F3\u306E\u9AD8\u3055\uFF09</h4>
-  <ul>
-    <li><code>o4</code>, <code>o5</code> : \u9AD8\u3055\u3092\u76F4\u63A5\u6307\u5B9A\uFF08\u3075\u3064\u3046\u306F o4 \u304B o5\uFF09</li>
-    <li><code>&gt;</code> : 1\u30AA\u30AF\u30BF\u30FC\u30D6\u4E0A\u3052\u308B</li>
-    <li><code>&lt;</code> : 1\u30AA\u30AF\u30BF\u30FC\u30D6\u4E0B\u3052\u308B</li>
-  </ul>
-
-  <h4>4. \u30C6\u30F3\u30DD</h4>
-  <ul>
-    <li><code>t120</code> : \u66F2\u306E\u901F\u3055\u3092BPM120\u306B\u6307\u5B9A\u3002\u203B\u30E1\u30ED\u30C7\u30A3\uFF08@0\uFF09\u306E\u30C6\u30F3\u30DD\u6307\u5B9A\u304C\u66F2\u5168\u4F53\u306B\u53CD\u6620\u3055\u308C\u307E\u3059\u3002</li>
-  </ul>
-
-  <h4>5. \u548C\u97F3</h4>
-  <p>\u97F3\u7B26\u3092 <code>[</code> \u3068 <code>]</code> \u3067\u56F2\u3080\u3068\u540C\u6642\u306B\u767A\u97F3\u3057\u307E\u3059\u3002</p>
-  <pre>\u4F8B: [ceg]4 \uFF08\u30C9\u30FB\u30DF\u30FB\u30BD\u30924\u5206\u97F3\u7B26\u3067\u540C\u6642\u306B\u767A\u97F3\uFF09</pre>
-
-  <h4>6. \u30C8\u30E9\u30C3\u30AF\u306E\u533A\u5207\u308A</h4>
-  <p><code>;</code> \u307E\u305F\u306F <code>@0</code>\u301C<code>@3</code> \u3067\u30C8\u30E9\u30C3\u30AF\u3092\u5207\u308A\u66FF\u3048\u307E\u3059\u3002</p>
-  <ul>
-    <li><code>@0</code>: \u30E1\u30ED\u30C7\u30A3</li>
-    <li><code>@1</code>: \u30B5\u30D6\u30E1\u30ED</li>
-    <li><code>@2</code>: \u30D9\u30FC\u30B9</li>
-    <li><code>@3</code>: \u4F34\u594F</li>
-  </ul>
-
-  <h4>7. \u6B4C\u58F0\u30FB\u6B4C\u8A5E\u5165\u529B</h4>
-  <p><code>@@&lt;\u30C8\u30E9\u30C3\u30AF\u756A\u53F7&gt; &lt;\u97F3\u6E90\u540D&gt; &lt;\u6B4C\u8A5E&gt;</code> \u306E\u5F62\u5F0F\u3067\u3001\u97F3\u7B26\u3068\u540C\u671F\u3059\u308B\u6B4C\u8A5E\u3092\u5165\u529B\u3067\u304D\u307E\u3059\u3002</p>
-  <pre>\u4F8B: @@0 tsukuyomi \u3069\u3093\u3050\u308A\u3053\u308D\u3053\u308D\u3069\u3093\u3050\u308A\u3053</pre>
-  <p style="margin-top:4px; margin-bottom:16px;"><small>\uFF08\u97F3\u6E90\u540D\u306F <code>tsukuyomi</code> \u3084 <code>klatt</code>, <code>roze</code> \u306A\u3069\u306E\u97F3\u58F0\u30E2\u30C7\u30EB\u3092\u6307\u5B9A\u3067\u304D\u307E\u3059\uFF09</small></p>
-
-  <h4 style="margin-top: 18px; border-top: 1px solid var(--dtm-border2); padding-top: 8px;">\u30B5\u30F3\u30D7\u30EB\u66F2\uFF08\u8A66\u8074\u30FB\u30B3\u30D4\u30FC\uFF09</h4>
-  
-  <!-- \u30B5\u30F3\u30D7\u30EB1 -->
-  <div class="dtm-modal-sample-box">
-    <div class="dtm-modal-sample-header">
-      <span class="dtm-modal-sample-tag">1. \u57FA\u672C\u306E\u30E1\u30ED\u30C7\u30A3</span>
-      <button class="dtm-btn dtm-btn--ghost dtm-btn--xs dtm-modal-sample-copy-btn" data-mml="@0 t120 l8 o5 c d e f g a b > c">\u{1F4CB} \u30B3\u30D4\u30FC</button>
-    </div>
-    <pre style="margin: 0; padding: 6px;">@0 t120 l8 o5 c d e f g a b &gt; c</pre>
-    <div class="dtm-modal-sample-desc">
-      \u57FA\u672C\u7684\u306A\u30E1\u30ED\u30C7\u30A3\u306E\u66F8\u304D\u65B9\uFF08\u97F3\u540D\u30FB\u9577\u3055\u30FB\u30AA\u30AF\u30BF\u30FC\u30D6\u3068\u30C6\u30F3\u30DD\uFF09\u3002
-    </div>
-    <div style="margin-top: 8px;">
-      <button class="dtm-btn dtm-btn--primary dtm-btn--xs dtm-modal-sample-play-btn" data-mml="@0 t120 l8 o5 c d e f g a b > c">\u25B6 \u8A66\u8074</button>
-    </div>
-    <div class="dtm-modal-sample-player-container"></div>
-  </div>
-
-  <!-- \u30B5\u30F3\u30D7\u30EB2 -->
-  <div class="dtm-modal-sample-box">
-    <div class="dtm-modal-sample-header">
-      <span class="dtm-modal-sample-tag">2. \u8907\u6570\u30C8\u30E9\u30C3\u30AF\u3068\u548C\u97F3</span>
-      <button class="dtm-btn dtm-btn--ghost dtm-btn--xs dtm-modal-sample-copy-btn" data-mml="@0 t120 o5 c e g2 ; @3 o4 [ceg]2 [ceg]2">\u{1F4CB} \u30B3\u30D4\u30FC</button>
-    </div>
-    <pre style="margin: 0; padding: 6px;">@0 t120 o5 c e g2 ;
-@3 o4 [ceg]2 [ceg]2</pre>
-    <div class="dtm-modal-sample-desc">
-      ; \u3067\u30C8\u30E9\u30C3\u30AF\uFF08\u4E0A\uFF1D\u30E1\u30ED\u30C7\u30A3\uFF0F\u4E0B\uFF1D\u4F34\u594F\uFF09\u3092\u5206\u3051\u3001[ceg] \u3067\u548C\u97F3\u3092\u9CF4\u3089\u3057\u307E\u3059\u3002
-    </div>
-    <div style="margin-top: 8px;">
-      <button class="dtm-btn dtm-btn--primary dtm-btn--xs dtm-modal-sample-play-btn" data-mml="@0 t120 o5 c e g2 ; @3 o4 [ceg]2 [ceg]2">\u25B6 \u8A66\u8074</button>
-    </div>
-    <div class="dtm-modal-sample-player-container"></div>
-  </div>
-
-  <!-- \u30B5\u30F3\u30D7\u30EB3 -->
-  <div class="dtm-modal-sample-box">
-    <div class="dtm-modal-sample-header">
-      <span class="dtm-modal-sample-tag">3. \u6B4C\u5531\u4ED8\u304D (\u3069\u3093\u3050\u308A\u3053\u308D\u3053\u308D)</span>
-      <button class="dtm-btn dtm-btn--ghost dtm-btn--xs dtm-modal-sample-copy-btn" data-mml="@0 t120 v100 o4g8 g8 e8 e8 f8 e8 d8 c8 g8 g8 e8 e8 d4.; @@0 tsukuyomi \u3069\u3093\u3050\u308A\u3053\u308D\u3053\u308D\u3069\u3093\u3050\u308A\u3053;">\u{1F4CB} \u30B3\u30D4\u30FC</button>
-    </div>
-    <pre style="margin: 0; padding: 6px;">@0 t120 v100 o4g8 g8 e8 e8 f8 e8 d8 c8 g8 g8 e8 e8 d4.;
-@@0 tsukuyomi \u3069\u3093\u3050\u308A\u3053\u308D\u3053\u308D\u3069\u3093\u3050\u308A\u3053;</pre>
-    <div class="dtm-modal-sample-desc">
-      @@0 tsukuyomi \u6B4C\u8A5E... \u3067\u30E1\u30ED\u30C7\u30A3\u30C8\u30E9\u30C3\u30AF\u306B\u6B4C\u8A5E\u3092\u540C\u671F\u3055\u305B\u3066\u6B4C\u308F\u305B\u307E\u3059\u3002\u203B\u72EC\u81EA\u62E1\u5F35
-    </div>
-    <div style="margin-top: 8px;">
-      <button class="dtm-btn dtm-btn--primary dtm-btn--xs dtm-modal-sample-play-btn" data-mml="@0 t120 v100 o4g8 g8 e8 e8 f8 e8 d8 c8 g8 g8 e8 e8 d4.; @@0 tsukuyomi \u3069\u3093\u3050\u308A\u3053\u308D\u3053\u308D\u3069\u3093\u3050\u308A\u3053;">\u25B6 \u8A66\u8074</button>
-    </div>
-    <div class="dtm-modal-sample-player-container"></div>
-  </div>
 </div>
 `;
 var MIDI_INFO_HTML = `
