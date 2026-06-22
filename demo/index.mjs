@@ -1107,6 +1107,9 @@ var ICONS = {
   },
   info: {
     d: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
+  },
+  more: {
+    d: "M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
   }
 };
 var icon = (name, size = 20) => {
@@ -1233,6 +1236,7 @@ var buildUI = (target, options) => {
         <textarea class="dtm-textarea dtm-grow" data-dtm="mml-input" placeholder="MML\u3092\u5165\u529B"></textarea>
         <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">\u8AAD\u8FBC</button>
       </div>
+      <p class="dtm-load-note dtm-hidden" data-dtm="mml-load-note"></p>
     </div>
   </details>
 
@@ -1358,6 +1362,7 @@ var buildUI = (target, options) => {
     midiPanel: sel("midi-panel"),
     mmlInput: sel("mml-input"),
     mmlLoadBtn: sel("mml-load"),
+    mmlLoadNote: sel("mml-load-note"),
     shiftSelect: sel("shift-select"),
     shiftApplyBtn: sel("shift-apply"),
     macroClear: sel("macro-clear"),
@@ -1509,6 +1514,110 @@ var DRUM_PATTERNS = {
     { step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
     { step: 168, pitch: DRUM_KEYS.tambourine, velocity: 0.8 }
   ]
+};
+
+// src/instrument-presets.ts
+var INSTRUMENT_PRESETS = {
+  // --- STANDARD: 汎用性と完成度重視 ---
+  piano: {
+    displayName: "\u30B0\u30E9\u30F3\u30C9\u30D4\u30A2\u30CE",
+    description: "\u6700\u3082\u7834\u7DBB\u3057\u306B\u304F\u3044\u69CB\u6210\u3002\u697D\u66F2\u5236\u4F5C\u306E\u30B9\u30B1\u30C3\u30C1\u306B\u3082\u6700\u9069\u3002",
+    melody: "Acoustic Grand Piano",
+    submelody: "Vibraphone",
+    bass: "Electric Bass (finger)",
+    chord: "Pad 2 (warm)"
+  },
+  acoustic: {
+    displayName: "\u30A2\u30B3\u30FC\u30B9\u30C6\u30A3\u30C3\u30AF",
+    description: "\u751F\u697D\u5668\u306E\u6E29\u304B\u307F\u3092\u91CD\u8996\u3002\u30D5\u30A9\u30FC\u30AF\u3084\u30DD\u30C3\u30D7\u30B9\u306B\u3002",
+    melody: "Acoustic Guitar (steel)",
+    submelody: "Harmonica",
+    bass: "Acoustic Bass",
+    chord: "Acoustic Guitar (nylon)"
+  },
+  jazz_night: {
+    displayName: "\u30B8\u30E3\u30BA\u30FB\u30CA\u30A4\u30C8",
+    description: "Rhodes\u98A8\u306EEP\u3068\u30A6\u30C3\u30C9\u30D9\u30FC\u30B9\u306B\u3088\u308B\u3001\u5927\u4EBA\u3073\u305F\u30A2\u30F3\u30B5\u30F3\u30D6\u30EB\u3002",
+    melody: "Electric Piano 1",
+    submelody: "Flute",
+    bass: "Acoustic Bass",
+    chord: "Electric Guitar (jazz)"
+  },
+  // --- MODERN & VIBE: エッジの効いた現代的な響き ---
+  synth_pop: {
+    displayName: "\u30B7\u30F3\u30BB\u30DD\u30C3\u30D7",
+    description: "80s\u301C\u73FE\u4EE3\u307E\u3067\u3002\u629C\u3051\u308B\u30EA\u30FC\u30C9\u3068\u592A\u3044\u30D9\u30FC\u30B9\u306E\u738B\u9053\u3002",
+    melody: "Lead 2 (sawtooth)",
+    submelody: "Lead 4 (chiff)",
+    bass: "Synth Bass 2",
+    chord: "Pad 3 (polysynth)"
+  },
+  cyber_punk: {
+    displayName: "\u30B5\u30A4\u30D0\u30FC\u30D1\u30F3\u30AF",
+    description: "\u30C7\u30B8\u30BF\u30EB\u306A\u51B7\u305F\u3055\u3068\u6B6A\u307F\u304C\u6DF7\u3056\u308A\u5408\u3046\u3001\u672A\u6765\u7684\u306A\u97FF\u304D\u3002",
+    melody: "Lead 8 (bass + lead)",
+    submelody: "Lead 5 (charang)",
+    bass: "Synth Bass 2",
+    chord: "Pad 8 (sweep)"
+  },
+  rock: {
+    displayName: "\u30CF\u30FC\u30C9\u30ED\u30C3\u30AF",
+    description: "\u6B6A\u307F\u30AE\u30BF\u30FC\u3068\u91CD\u539A\u306A\u30D9\u30FC\u30B9\u3067\u3001\u30D1\u30EF\u30FC\u3092\u524D\u9762\u306B\u3002",
+    melody: "Distortion Guitar",
+    submelody: "Rock Organ",
+    bass: "Electric Bass (pick)",
+    chord: "Overdriven Guitar"
+  },
+  // --- WORLD & CLASSIC: 特定のジャンル・地域 ---
+  orchestra: {
+    displayName: "\u30AA\u30FC\u30B1\u30B9\u30C8\u30E9",
+    description: "\u58EE\u5927\u306A\u7269\u8A9E\u3092\u4E88\u611F\u3055\u305B\u308B\u3001\u7BA1\u5F26\u697D\u5668\u306E\u91CD\u539A\u306A\u97FF\u304D\u3002",
+    melody: "French Horn",
+    submelody: "Pizzicato Strings",
+    bass: "Cello",
+    chord: "Tremolo Strings"
+  },
+  japanese_wa: {
+    displayName: "\u548C\u98A8\u30FB\u96C5",
+    description: "\u7434\u3068\u4E09\u5473\u7DDA\u306E\u7E4A\u7D30\u306A\u8ABF\u3079\u306B\u3001\u5C3A\u516B\u306E\u60C5\u7DD2\u3092\u6DFB\u3048\u3066\u3002",
+    melody: "Koto",
+    submelody: "Shamisen",
+    bass: "Taiko Drum",
+    chord: "Shakuhachi"
+  },
+  arabic_exotic: {
+    displayName: "\u30A8\u30AD\u30BE\u30C1\u30C3\u30AF",
+    description: "\u30B7\u30BF\u30FC\u30EB\u3084\u30D0\u30B0\u30D1\u30A4\u30D7\u306B\u3088\u308B\u3001\u7570\u56FD\u60C5\u7DD2\u6EA2\u308C\u308B\u30B5\u30A6\u30F3\u30C9\u3002",
+    melody: "Sitar",
+    submelody: "Bagpipe",
+    bass: "Fretless Bass",
+    chord: "Kalimba"
+  },
+  // --- FANTASY & ATMOSPHERE: 雰囲気と余韻 ---
+  fantasy_rpg: {
+    displayName: "\u30D5\u30A1\u30F3\u30BF\u30B8\u30FCRPG",
+    description: "\u30AA\u30AB\u30EA\u30CA\u3068\u30CF\u30FC\u30D7\u304C\u7D21\u3050\u3001\u5192\u967A\u3068\u9B54\u6CD5\u306E\u4E16\u754C\u89B3\u3002",
+    melody: "Ocarina",
+    submelody: "Celesta",
+    bass: "Timpani",
+    chord: "Orchestral Harp"
+  },
+  ambient_cloud: {
+    displayName: "\u30A2\u30F3\u30D3\u30A8\u30F3\u30C8",
+    description: "\u8F2A\u90ED\u3092\u307C\u304B\u3057\u305F\u97F3\u8272\u3067\u3001\u6DF1\u3044\u6CA1\u5165\u611F\u3068\u4F59\u97FB\u3092\u6F14\u51FA\u3002",
+    melody: "Lead 6 (voice)",
+    submelody: "Music Box",
+    bass: "Synth Bass 1",
+    chord: "Pad 7 (halo)"
+  },
+  retro_game: {
+    displayName: "8-bit \u30EC\u30C8\u30ED",
+    description: "\u77E9\u5F62\u6CE2\u3092\u60F3\u8D77\u3055\u305B\u308B\u3001\u521D\u671F\u30B2\u30FC\u30E0\u6A5F\u306E\u3088\u3046\u306A\u61D0\u304B\u3057\u3044\u97FF\u304D\u3002",
+    melody: "Lead 1 (square)",
+    submelody: "Lead 2 (sawtooth)",
+    bass: "Synth Bass 1",
+    chord: "Clavinet"
+  }
 };
 
 // node_modules/.pnpm/@onjmin+koe@1.0.3/node_modules/@onjmin/koe/dist/index.js
@@ -3960,6 +4069,7 @@ var parseMML = (mml, options = {}) => {
       bpm,
       tokenTracks: collectTokens ? tokenTracks : void 0,
       lyrics: collectLyrics ? /* @__PURE__ */ new Map() : void 0,
+      mergedTrackCount: 0,
       meta: {}
     };
   }
@@ -3972,13 +4082,24 @@ var parseMML = (mml, options = {}) => {
   const fullMML = stripLyrics(noMeta).replace(endRegex, "").replace(/[\n\r]+/g, " ").trim();
   const parts = fullMML.split(/(@\d+)/).filter((p) => p.trim().length > 0);
   let trackIndex = 0;
+  let sourceTrackIndex = 0;
   let octave = 4;
   let currentStep = 0;
   let baseLength = 16;
+  const contributors = /* @__PURE__ */ new Map();
+  const recordContributor = () => {
+    let set = contributors.get(trackIndex);
+    if (!set) {
+      set = /* @__PURE__ */ new Set();
+      contributors.set(trackIndex, set);
+    }
+    set.add(sourceTrackIndex);
+  };
   for (const rawPart of parts) {
     const part = rawPart.trim();
     if (part.startsWith("@")) {
       let idx = Number.parseInt(part.substring(1), 10);
+      sourceTrackIndex = idx;
       if (clampTrackCount !== void 0 && idx >= clampTrackCount)
         idx = clampTrackCount - 1;
       trackIndex = idx;
@@ -4102,6 +4223,7 @@ var parseMML = (mml, options = {}) => {
         }
         if (j < body.length && body[j] === "]") j++;
         const steps = parseLength();
+        if (chordNotes.length > 0) recordContributor();
         for (const p of chordNotes) {
           placements.push({
             trackIndex,
@@ -4125,6 +4247,7 @@ var parseMML = (mml, options = {}) => {
         }
         const midiPitch = (octave + 1) * 12 + pitch;
         const steps = parseLength();
+        recordContributor();
         placements.push({
           trackIndex,
           startStep: currentStep,
@@ -4138,11 +4261,16 @@ var parseMML = (mml, options = {}) => {
       }
     }
   }
+  let mergedTrackCount = 0;
+  for (const set of contributors.values()) {
+    if (set.size >= 2) mergedTrackCount++;
+  }
   return {
     placements,
     bpm,
     tokenTracks: collectTokens ? tokenTracks : void 0,
     lyrics,
+    mergedTrackCount,
     meta
   };
 };
@@ -4204,6 +4332,8 @@ var createSequencer = (options) => {
   let active = false;
   let fromStepValue = 0;
   let trackVolumeMap = /* @__PURE__ */ new Map();
+  let lastRealTime = -1;
+  let lastAudioTime = -1;
   let isLooping = false;
   let loopStartStep = 0;
   let loopEndStep = 0;
@@ -4277,6 +4407,21 @@ var createSequencer = (options) => {
     const sps = secondsPerStep();
     const time = options.getAudioTime() - startTime;
     const soloId = options.getSoloTrackId();
+    const nowReal = performance.now() / 1e3;
+    if (lastRealTime > 0 && lastAudioTime >= 0) {
+      const realDelta = nowReal - lastRealTime;
+      const audioDelta = time - lastAudioTime;
+      if (realDelta > 0.5 || audioDelta > 0.5) {
+        console.warn(
+          `[sequencer] Interruption detected (realDelta: ${realDelta.toFixed(3)}s, audioDelta: ${audioDelta.toFixed(3)}s). Stopping playback.`
+        );
+        stop();
+        options.onEnd(true);
+        return;
+      }
+    }
+    lastRealTime = nowReal;
+    lastAudioTime = time;
     for (const track of options.getTracks()) {
       trackVolumeMap.set(track.id, track.volume);
     }
@@ -4353,7 +4498,7 @@ var createSequencer = (options) => {
       const lastDuration = last?.duration ?? 0;
       if (nowIndex >= timeline.length && time > lastWhen + lastDuration + 0.1) {
         stop();
-        options.onEnd();
+        options.onEnd(false);
       }
     }
   };
@@ -4394,6 +4539,8 @@ var createSequencer = (options) => {
     }
     loopBase = 0;
     lastPlayStep = fromStepValue - 1e-4;
+    lastRealTime = -1;
+    lastAudioTime = -1;
     intervalId = setInterval(scheduleTick, TICK_INTERVAL_MS);
     animationId = requestAnimationFrame(animate);
   };
@@ -4591,11 +4738,11 @@ var DAW_CSS = `
 }
 .dtm-btn:active  { transform: translate(3px,3px); box-shadow: none; }
 .dtm-btn:disabled { opacity: .3; cursor: default; box-shadow: none; }
+.dtm-btn--ghost   { background: transparent; border-color: var(--dtm-border2); }
 .dtm-btn--primary { border-color: var(--dtm-primary); background: var(--dtm-primary); color: var(--dtm-pfg); }
 .dtm-btn--success { border-color: var(--dtm-success); background: var(--dtm-success); color: var(--c-black); }
 .dtm-btn--danger  { border-color: var(--dtm-danger);  background: var(--dtm-danger);  color: var(--c-white); }
 .dtm-btn--accent  { border-color: var(--dtm-accent);  background: var(--dtm-accent);  color: var(--c-black); }
-.dtm-btn--ghost   { background: transparent; border-color: var(--dtm-border2); }
 .dtm-btn--icon    { padding: 0; }
 
 /* \u2500\u2500\u2500 \u30A2\u30A4\u30B3\u30F3\u30DC\u30BF\u30F3 \u2500\u2500\u2500 */
@@ -5229,6 +5376,18 @@ var DAW_CSS = `
 }
 
 .dtm-hidden { display: none !important; }
+/* \u8AAD\u8FBC\u6642\u306E\u63A7\u3048\u3081\u306A\u304A\u77E5\u3089\u305B\uFF08\u4F8B: \u30B7\u30F3\u30D7\u30EB\u30E2\u30FC\u30C9\u3067\u306E\u30C8\u30E9\u30C3\u30AF\u5408\u7B97\uFF09\u3002\u4E3B\u5F35\u3057\u3059\u304E\u306A\u3044 muted \u8868\u793A\u3002 */
+.dtm-load-note {
+  margin: 6px 0 0;
+  padding: 0 2px;
+  font-family: var(--dtm-font);
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: .04em;
+  color: var(--dtm-muted);
+  opacity: .85;
+}
+.dtm-load-note::before { content: "\u24D8 "; }
 .dtm-grow { flex: 1 1 auto; }
 .dtm-lyric-icon {
   flex: 0 0 auto;
@@ -5328,6 +5487,62 @@ var DAW_CSS = `
   white-space: nowrap;
 }
 .dtm-player-mml-link:hover { color: var(--dtm-primary); }
+.dtm-player-more-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.dtm-player-more-btn {
+  background: transparent;
+  border: none;
+  color: var(--dtm-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  transition: color 0.15s, background-color 0.15s;
+}
+.dtm-player-more-btn:hover,
+.dtm-player-more-btn.is-active {
+  color: var(--dtm-text);
+  background: var(--dtm-border2);
+}
+.dtm-player-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--dtm-deep);
+  border: 2px solid var(--dtm-border2);
+  box-shadow: 4px 4px 0 var(--c-black);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  min-width: 130px;
+  font-family: var(--dtm-font);
+}
+.dtm-player-menu-item {
+  background: transparent;
+  border: none;
+  color: var(--dtm-text);
+  padding: 6px 12px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+  white-space: nowrap;
+  width: 100%;
+  box-sizing: border-box;
+  transition: background-color 0.1s, color 0.1s;
+}
+.dtm-player-menu-item:hover {
+  background: var(--dtm-primary);
+  color: var(--dtm-pfg);
+}
 .dtm-player-emoji {
   position: relative;
   display: inline-flex;
@@ -5603,6 +5818,75 @@ var showBalloon = (balloonEl) => {
     hideActiveBalloon();
   }, 3e3);
 };
+var copyToClipboard = async (doc, text) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const textarea = doc.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      doc.body.appendChild(textarea);
+      textarea.select();
+      const ok = doc.execCommand("copy");
+      doc.body.removeChild(textarea);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+};
+var toBase64Url = (bytes) => {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) {
+    bin += String.fromCharCode(bytes[i]);
+  }
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+var HIRAGANA_START = 12353;
+var HIRAGANA_END = 12447;
+var KATAKANA_START = 12449;
+var KATAKANA_END = 12543;
+var PROLONGED_MARK = 12540;
+var SHIFT_KATAKANA = 255;
+var VALUE_PROLONGED = 223;
+var customEncode = (str) => {
+  const bytes = [];
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    if (code <= 127) {
+      bytes.push(code);
+    } else if (code === PROLONGED_MARK) {
+      bytes.push(VALUE_PROLONGED);
+    } else if (code >= HIRAGANA_START && code <= HIRAGANA_END) {
+      bytes.push(128 + (code - HIRAGANA_START));
+    } else if (code >= KATAKANA_START && code <= KATAKANA_END) {
+      bytes.push(SHIFT_KATAKANA);
+      bytes.push(128 + (code - 96 - HIRAGANA_START));
+    }
+  }
+  return new Uint8Array(bytes);
+};
+var encodeMml = async (mml) => {
+  try {
+    if (typeof CompressionStream !== "undefined") {
+      const cs = new CompressionStream("gzip");
+      const w = cs.writable.getWriter();
+      w.write(customEncode(mml));
+      w.close();
+      const buf = await new Response(cs.readable).arrayBuffer();
+      return `z.${toBase64Url(new Uint8Array(buf))}`;
+    }
+  } catch (e) {
+    console.warn(
+      "[dtm] CompressionStream failed, fallback to encodeURIComponent",
+      e
+    );
+  }
+  return `u.${encodeURIComponent(mml)}`;
+};
 var mountMmlPlayer = (target, mml, options = {}) => {
   injectStyles(target.ownerDocument ?? document);
   const {
@@ -5748,6 +6032,83 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     emojiEls.push(em);
     emojiByTrack.set(index, em);
   }
+  const menuContainer = doc.createElement("div");
+  menuContainer.className = "dtm-player-more-container";
+  const moreBtn = doc.createElement("button");
+  moreBtn.type = "button";
+  moreBtn.className = "dtm-player-more-btn";
+  moreBtn.innerHTML = icon("more", 14);
+  moreBtn.title = "\u30E1\u30CB\u30E5\u30FC";
+  menuContainer.appendChild(moreBtn);
+  const menuDropdown = doc.createElement("div");
+  menuDropdown.className = "dtm-player-menu";
+  menuDropdown.style.display = "none";
+  const copyMmlItem = doc.createElement("button");
+  copyMmlItem.type = "button";
+  copyMmlItem.className = "dtm-player-menu-item";
+  copyMmlItem.textContent = "MML\u30B3\u30D4\u30FC";
+  const embedItem = doc.createElement("button");
+  embedItem.type = "button";
+  embedItem.className = "dtm-player-menu-item";
+  embedItem.textContent = "\u57CB\u3081\u8FBC\u3080";
+  menuDropdown.appendChild(copyMmlItem);
+  menuDropdown.appendChild(embedItem);
+  menuContainer.appendChild(menuDropdown);
+  mmlHeader.appendChild(menuContainer);
+  const toggleMenu = (show) => {
+    const visible = show !== void 0 ? show : menuDropdown.style.display === "none";
+    menuDropdown.style.display = visible ? "flex" : "none";
+    if (visible) {
+      moreBtn.classList.add("is-active");
+      doc.addEventListener("click", handleOutsideClick);
+    } else {
+      moreBtn.classList.remove("is-active");
+      doc.removeEventListener("click", handleOutsideClick);
+    }
+  };
+  const handleOutsideClick = (e) => {
+    if (!menuContainer.contains(e.target)) {
+      toggleMenu(false);
+    }
+  };
+  moreBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleMenu();
+  });
+  copyMmlItem.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const success = await copyToClipboard(doc, mml);
+    if (success) {
+      copyMmlItem.textContent = "\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F\uFF01";
+    } else {
+      copyMmlItem.textContent = "\u30B3\u30D4\u30FC\u5931\u6557";
+    }
+    setTimeout(() => {
+      copyMmlItem.textContent = "MML\u30B3\u30D4\u30FC";
+    }, 2e3);
+  });
+  embedItem.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    embedItem.textContent = "\u751F\u6210\u4E2D...";
+    try {
+      const embedBase = options.embedUrl ?? "https://onjmin.github.io/dtm/demo/embed.html";
+      const payload = await encodeMml(mml);
+      const url2 = `${embedBase}#${payload}`;
+      const snippet = `<iframe src="${url2}" width="100%" height="260" frameborder="0" loading="lazy" title="@onjmin/dtm player"></iframe>`;
+      const success = await copyToClipboard(doc, snippet);
+      if (success) {
+        embedItem.textContent = "\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F\uFF01";
+      } else {
+        embedItem.textContent = "\u30B3\u30D4\u30FC\u5931\u6557";
+      }
+    } catch (err2) {
+      console.error("[dtm] failed to generate embed snippet", err2);
+      embedItem.textContent = "\u751F\u6210\u5931\u6557";
+    }
+    setTimeout(() => {
+      embedItem.textContent = "\u57CB\u3081\u8FBC\u3080";
+    }, 2e3);
+  });
   const promotedToImage = /* @__PURE__ */ new Set();
   for (const [index, lt] of lyricTracks) {
     const em = emojiByTrack.get(index);
@@ -6056,7 +6417,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     onTick: (step) => {
       renderPlayhead(step);
     },
-    onEnd: () => finish(),
+    onEnd: (interrupted) => finish(),
     stepsPerBar: STEPS_PER_BAR
   });
   let playing = false;
@@ -6151,6 +6512,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     else play();
   });
   const destroy = () => {
+    doc.removeEventListener("click", handleOutsideClick);
     seq.stop();
     peekVoices()?.stopStream();
     if (activePlayer === instance) activePlayer = null;
@@ -7069,6 +7431,10 @@ var mountDAW = (target, options = {}) => {
         0,
         Math.floor(step / snapGridSteps) * snapGridSteps
       );
+      if (playbackState === "paused") {
+        playbackState = "stopped";
+        updateTransport();
+      }
       redrawAll();
     });
     setDrawOffset(currentOffsetX, currentOffsetY);
@@ -7144,9 +7510,14 @@ var mountDAW = (target, options = {}) => {
       }
       redrawAll();
     },
-    onEnd: () => {
-      playbackState = "stopped";
-      currentPlayStep = 0;
+    onEnd: (interrupted) => {
+      if (interrupted) {
+        playbackState = "paused";
+        pausedPlayStep = currentPlayStep;
+      } else {
+        playbackState = "stopped";
+        currentPlayStep = 0;
+      }
       updateTransport();
       redrawAll();
     },
@@ -7236,13 +7607,13 @@ var mountDAW = (target, options = {}) => {
     redrawAll();
   };
   const togglePlay = () => {
-    if (playbackState === "playing") stop();
+    if (playbackState === "playing") pause();
     else play();
   };
   const updateTransport = () => {
     const playing = playbackState === "playing";
-    const label = playing ? "\u505C\u6B62" : playbackState === "paused" ? "\u518D\u958B" : "\u8A66\u8074";
-    refs.playBtn.innerHTML = `${icon(playing ? "stop" : "play")}<span>${label}</span>`;
+    const label = playing ? "\u4E00\u6642\u505C\u6B62" : playbackState === "paused" ? "\u518D\u958B" : "\u8A66\u8074";
+    refs.playBtn.innerHTML = `${icon(playing ? "pause" : "play")}<span>${label}</span>`;
     refs.playBtn.classList.toggle("dtm-play--stop", playing);
   };
   const updateUndoRedo = () => {
@@ -7631,20 +8002,25 @@ var mountDAW = (target, options = {}) => {
   };
   const loadMML = (mml) => {
     if (!mml) return;
+    stop();
     clearAll();
     for (const t of trackStates) t.core.setLoadMode(true);
     const {
       placements,
       bpm: parsedBpm,
       lyrics,
-      meta
+      meta,
+      mergedTrackCount
     } = parseMML(mml, {
       stepsPerBar: renderConfig.stepsPerBar,
       collectLyrics: true,
       // このDAWのトラック数を超えるチャンネルはベースへ畳み込む（従来挙動）
       clampTrackCount: trackStates.length
     });
-    currentInstrument = meta.instrument ?? "";
+    if (meta.instrument && INSTRUMENT_PRESETS[meta.instrument]) {
+      currentInstrument = meta.instrument;
+      options.onInstrumentChange?.(meta.instrument);
+    }
     if (meta.drum && drumPatterns[meta.drum]) {
       currentDrumPattern = meta.drum;
       refs.drumSelect.value = meta.drum;
@@ -7696,6 +8072,13 @@ var mountDAW = (target, options = {}) => {
     redrawAll();
     updateTrackPanel();
     updateUndoRedo();
+    if (!isAdvanced && mergedTrackCount > 0) {
+      refs.mmlLoadNote.textContent = "\u30B7\u30F3\u30D7\u30EB\u30E2\u30FC\u30C9\u306E\u305F\u3081\u3001\u4E00\u90E8\u306E\u30C8\u30E9\u30C3\u30AF\u3092\u5408\u7B97\u3057\u3066\u8AAD\u307F\u8FBC\u307F\u307E\u3057\u305F";
+      refs.mmlLoadNote.classList.remove("dtm-hidden");
+    } else {
+      refs.mmlLoadNote.textContent = "";
+      refs.mmlLoadNote.classList.add("dtm-hidden");
+    }
   };
   const applyChord = () => {
     const active = getActive();
@@ -7728,6 +8111,7 @@ var mountDAW = (target, options = {}) => {
     applyMidiSelection(midi, selected);
   };
   const applyMidiSelection = (midi, selectedIndices) => {
+    stop();
     clearAll();
     for (const t of trackStates) t.core.setLoadMode(true);
     const { placements, bpm: parsedBpm } = isAdvanced ? extractMidiPlacementsByTrack(
@@ -8159,6 +8543,25 @@ var mountDAW = (target, options = {}) => {
   const setLoading = (loading) => {
     refs.topbar.classList.toggle("is-loading", loading);
   };
+  const getCurrentPlayStep = () => {
+    if (playbackState === "playing") return currentPlayStep;
+    if (playbackState === "paused") return pausedPlayStep;
+    return playStartStep;
+  };
+  const forcePauseAt = (step) => {
+    playStartStep = step;
+    pausedPlayStep = step;
+    currentPlayStep = step;
+    playbackState = "paused";
+    const canvas = getGridCanvas();
+    currentOffsetX = Math.max(
+      0,
+      step * renderConfig.stepWidth - canvas.width * 0.5
+    );
+    setDrawOffset(currentOffsetX, currentOffsetY);
+    updateTransport();
+    redrawAll();
+  };
   return {
     play,
     pause,
@@ -8196,9 +8599,12 @@ var mountDAW = (target, options = {}) => {
     exportMIDI: exportMIDI2,
     setBpm,
     getPlaybackState: () => playbackState,
+    getCurrentPlayStep,
+    forcePauseAt,
     setLoading,
     destroy: () => {
       sequencer.stop();
+      options.singingVoices?.stopStream();
       resizeObserver.disconnect();
       document.removeEventListener("pointermove", onPointerMove);
       document.removeEventListener("pointerup", onPointerUp);
@@ -8206,110 +8612,6 @@ var mountDAW = (target, options = {}) => {
       target.innerHTML = "";
     }
   };
-};
-
-// src/instrument-presets.ts
-var INSTRUMENT_PRESETS = {
-  // --- STANDARD: 汎用性と完成度重視 ---
-  piano: {
-    displayName: "\u30B0\u30E9\u30F3\u30C9\u30D4\u30A2\u30CE",
-    description: "\u6700\u3082\u7834\u7DBB\u3057\u306B\u304F\u3044\u69CB\u6210\u3002\u697D\u66F2\u5236\u4F5C\u306E\u30B9\u30B1\u30C3\u30C1\u306B\u3082\u6700\u9069\u3002",
-    melody: "Acoustic Grand Piano",
-    submelody: "Vibraphone",
-    bass: "Electric Bass (finger)",
-    chord: "Pad 2 (warm)"
-  },
-  acoustic: {
-    displayName: "\u30A2\u30B3\u30FC\u30B9\u30C6\u30A3\u30C3\u30AF",
-    description: "\u751F\u697D\u5668\u306E\u6E29\u304B\u307F\u3092\u91CD\u8996\u3002\u30D5\u30A9\u30FC\u30AF\u3084\u30DD\u30C3\u30D7\u30B9\u306B\u3002",
-    melody: "Acoustic Guitar (steel)",
-    submelody: "Harmonica",
-    bass: "Acoustic Bass",
-    chord: "Acoustic Guitar (nylon)"
-  },
-  jazz_night: {
-    displayName: "\u30B8\u30E3\u30BA\u30FB\u30CA\u30A4\u30C8",
-    description: "Rhodes\u98A8\u306EEP\u3068\u30A6\u30C3\u30C9\u30D9\u30FC\u30B9\u306B\u3088\u308B\u3001\u5927\u4EBA\u3073\u305F\u30A2\u30F3\u30B5\u30F3\u30D6\u30EB\u3002",
-    melody: "Electric Piano 1",
-    submelody: "Flute",
-    bass: "Acoustic Bass",
-    chord: "Electric Guitar (jazz)"
-  },
-  // --- MODERN & VIBE: エッジの効いた現代的な響き ---
-  synth_pop: {
-    displayName: "\u30B7\u30F3\u30BB\u30DD\u30C3\u30D7",
-    description: "80s\u301C\u73FE\u4EE3\u307E\u3067\u3002\u629C\u3051\u308B\u30EA\u30FC\u30C9\u3068\u592A\u3044\u30D9\u30FC\u30B9\u306E\u738B\u9053\u3002",
-    melody: "Lead 2 (sawtooth)",
-    submelody: "Lead 4 (chiff)",
-    bass: "Synth Bass 2",
-    chord: "Pad 3 (polysynth)"
-  },
-  cyber_punk: {
-    displayName: "\u30B5\u30A4\u30D0\u30FC\u30D1\u30F3\u30AF",
-    description: "\u30C7\u30B8\u30BF\u30EB\u306A\u51B7\u305F\u3055\u3068\u6B6A\u307F\u304C\u6DF7\u3056\u308A\u5408\u3046\u3001\u672A\u6765\u7684\u306A\u97FF\u304D\u3002",
-    melody: "Lead 8 (bass + lead)",
-    submelody: "Lead 5 (charang)",
-    bass: "Synth Bass 2",
-    chord: "Pad 8 (sweep)"
-  },
-  rock: {
-    displayName: "\u30CF\u30FC\u30C9\u30ED\u30C3\u30AF",
-    description: "\u6B6A\u307F\u30AE\u30BF\u30FC\u3068\u91CD\u539A\u306A\u30D9\u30FC\u30B9\u3067\u3001\u30D1\u30EF\u30FC\u3092\u524D\u9762\u306B\u3002",
-    melody: "Distortion Guitar",
-    submelody: "Rock Organ",
-    bass: "Electric Bass (pick)",
-    chord: "Overdriven Guitar"
-  },
-  // --- WORLD & CLASSIC: 特定のジャンル・地域 ---
-  orchestra: {
-    displayName: "\u30AA\u30FC\u30B1\u30B9\u30C8\u30E9",
-    description: "\u58EE\u5927\u306A\u7269\u8A9E\u3092\u4E88\u611F\u3055\u305B\u308B\u3001\u7BA1\u5F26\u697D\u5668\u306E\u91CD\u539A\u306A\u97FF\u304D\u3002",
-    melody: "French Horn",
-    submelody: "Pizzicato Strings",
-    bass: "Cello",
-    chord: "Tremolo Strings"
-  },
-  japanese_wa: {
-    displayName: "\u548C\u98A8\u30FB\u96C5",
-    description: "\u7434\u3068\u4E09\u5473\u7DDA\u306E\u7E4A\u7D30\u306A\u8ABF\u3079\u306B\u3001\u5C3A\u516B\u306E\u60C5\u7DD2\u3092\u6DFB\u3048\u3066\u3002",
-    melody: "Koto",
-    submelody: "Shamisen",
-    bass: "Taiko Drum",
-    chord: "Shakuhachi"
-  },
-  arabic_exotic: {
-    displayName: "\u30A8\u30AD\u30BE\u30C1\u30C3\u30AF",
-    description: "\u30B7\u30BF\u30FC\u30EB\u3084\u30D0\u30B0\u30D1\u30A4\u30D7\u306B\u3088\u308B\u3001\u7570\u56FD\u60C5\u7DD2\u6EA2\u308C\u308B\u30B5\u30A6\u30F3\u30C9\u3002",
-    melody: "Sitar",
-    submelody: "Bagpipe",
-    bass: "Fretless Bass",
-    chord: "Kalimba"
-  },
-  // --- FANTASY & ATMOSPHERE: 雰囲気と余韻 ---
-  fantasy_rpg: {
-    displayName: "\u30D5\u30A1\u30F3\u30BF\u30B8\u30FCRPG",
-    description: "\u30AA\u30AB\u30EA\u30CA\u3068\u30CF\u30FC\u30D7\u304C\u7D21\u3050\u3001\u5192\u967A\u3068\u9B54\u6CD5\u306E\u4E16\u754C\u89B3\u3002",
-    melody: "Ocarina",
-    submelody: "Celesta",
-    bass: "Timpani",
-    chord: "Orchestral Harp"
-  },
-  ambient_cloud: {
-    displayName: "\u30A2\u30F3\u30D3\u30A8\u30F3\u30C8",
-    description: "\u8F2A\u90ED\u3092\u307C\u304B\u3057\u305F\u97F3\u8272\u3067\u3001\u6DF1\u3044\u6CA1\u5165\u611F\u3068\u4F59\u97FB\u3092\u6F14\u51FA\u3002",
-    melody: "Lead 6 (voice)",
-    submelody: "Music Box",
-    bass: "Synth Bass 1",
-    chord: "Pad 7 (halo)"
-  },
-  retro_game: {
-    displayName: "8-bit \u30EC\u30C8\u30ED",
-    description: "\u77E9\u5F62\u6CE2\u3092\u60F3\u8D77\u3055\u305B\u308B\u3001\u521D\u671F\u30B2\u30FC\u30E0\u6A5F\u306E\u3088\u3046\u306A\u61D0\u304B\u3057\u3044\u97FF\u304D\u3002",
-    melody: "Lead 1 (square)",
-    submelody: "Lead 2 (sawtooth)",
-    bass: "Synth Bass 1",
-    chord: "Clavinet"
-  }
 };
 
 // src/headless-player.ts
@@ -8362,7 +8664,7 @@ var playMML = (mml, options = {}) => {
     },
     onTick: () => {
     },
-    onEnd: () => finish(),
+    onEnd: (interrupted) => finish(),
     stepsPerBar: STEPS_PER_BAR2
   });
   const finish = () => {
@@ -9182,11 +9484,13 @@ var createDtmStudio = async (options = {}) => {
   const mountedPlayers = [];
   const mountedModeSwitches = [];
   const mountEditor = (target, opts = {}) => {
-    const { preset, presetUI, ...dawOverrides } = opts;
+    const { preset, presetUI, onInstrumentChange, ...dawOverrides } = opts;
     const tracks = dawOverrides.tracks ?? TRACKS_SIMPLE;
     const trackIds = tracks.map((t) => t.id);
     const presetKey = preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
-    let editorPreset = presetKey;
+    const meta = opts.initialMML ? parseMmlMeta(opts.initialMML) : {};
+    const initialPreset = meta.instrument && INSTRUMENT_PRESETS[meta.instrument] ? meta.instrument : presetKey;
+    let editorPreset = initialPreset;
     const isAdvancedMode = dawOverrides.mode === "advanced";
     const playNote = (e) => {
       const sf = resolveSoundFont(
@@ -9204,6 +9508,14 @@ var createDtmStudio = async (options = {}) => {
         duration: e.duration
       });
     };
+    let presetSelect = null;
+    const handleInstrumentChange = (key) => {
+      editorPreset = key;
+      if (presetSelect) {
+        presetSelect.setValue(key);
+      }
+      onInstrumentChange?.(key);
+    };
     const base = {
       getAudioTime: () => audioCtx.currentTime,
       onResumeAudio: resumeAudio,
@@ -9212,19 +9524,19 @@ var createDtmStudio = async (options = {}) => {
       singingVoices,
       parseMidi,
       onToggleRecord,
+      onInstrumentChange: handleInstrumentChange,
       ...dawOverrides
     };
     const daw = mountDAW(target, base);
     mountedEditors.push(daw);
     const wantPresetUI = presetUI ?? features.presetUI;
-    let presetSelect = null;
     if (wantPresetUI) {
       editorPresetSelects.get(target)?.destroy();
       const rollEl = target.querySelector('[data-dtm="roll"]');
       presetSelect = mountPresetSelect(target, {
         getDaw: () => daw,
         getTrackIds: () => trackIds,
-        value: presetKey,
+        value: initialPreset,
         loadingTarget: rollEl ?? target,
         position: "prepend",
         // 楽器変更時、このエディタの発音解決が使うプリセットも追従させる。
@@ -9234,10 +9546,10 @@ var createDtmStudio = async (options = {}) => {
       });
       editorPresetSelects.set(target, presetSelect);
     }
-    daw.setInstrument(presetKey);
+    daw.setInstrument(initialPreset);
     daw.setLoading?.(true);
     void loadPreset(
-      presetKey,
+      initialPreset,
       trackIds,
       isAdvancedMode ? "advanced" : "simple"
     ).finally(() => {
@@ -9251,7 +9563,17 @@ var createDtmStudio = async (options = {}) => {
       const i = mountedEditors.indexOf(daw);
       if (i >= 0) mountedEditors.splice(i, 1);
     };
-    return { ...daw, destroy };
+    return {
+      ...daw,
+      setInstrument: (name) => {
+        daw.setInstrument(name);
+        editorPreset = name;
+        if (presetSelect) {
+          presetSelect.setValue(name);
+        }
+      },
+      destroy
+    };
   };
   const mountModeSwitch = (target, opts) => {
     const doc = target.ownerDocument;
