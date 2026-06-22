@@ -73,6 +73,8 @@ export type MmlPlayerOptions = {
 	onStop?: () => void;
 	/** 埋め込みプレイヤーのベースURL（例: "https://onjmin.github.io/dtm/demo/embed.html"） */
 	embedUrl?: string;
+	/** 利用規約への同意画面の表示をスキップするかどうか */
+	skipConsent?: boolean;
 };
 
 export type MmlPlayerInstance = {
@@ -809,6 +811,7 @@ export const mountMmlPlayer = (
 	let consentOverlayEl: HTMLElement | null = null;
 	const checkConsentAndShow = (): void => {
 		try {
+			if (options.skipConsent) return;
 			const unagreed = termsModels.filter((model) => {
 				if (agreedModelsInSession.has(model)) return false;
 				try {

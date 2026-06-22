@@ -516,6 +516,7 @@ export const mountDAW = (
 
 	function checkSingingVoiceConsent(): void {
 		try {
+			if (options.skipConsent) return;
 			const requiredModels = new Set<string>();
 			for (const t of trackStates) {
 				if (t.lyricModel && KOE_VOICEBANK_TERMS[t.lyricModel]) {

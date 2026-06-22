@@ -248,6 +248,8 @@ export type DawOptions = {
 	singingVoices?: SingingVoices;
 	defaultBpm?: number;
 	initialMML?: string;
+	/** 利用規約への同意画面の表示をスキップするかどうか */
+	skipConsent?: boolean;
 };
 
 // 再生状態
