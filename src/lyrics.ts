@@ -1286,7 +1286,7 @@ export const PREWARM_NOTES = 3;
  * メインスレッドを長時間占有する（→ 楽器スケジューラが枯渇してもたつく）のを防ぎ、
  * 合成負荷を曲全体へ平準化する。小さすぎると密なフレーズでアンダーランしやすくなる。
  */
-const STREAM_LOOKAHEAD_SEC = 1.5;
+const STREAM_LOOKAHEAD_SEC = 6.0;
 
 /** 先読み上限に達したときの再ポーリング間隔（ミリ秒）。 */
 const STREAM_POLL_MS = 100;
@@ -1392,8 +1392,8 @@ export const createSingingVoices = (
 			if (!m?.renderToCache) continue; // klatt等（軽量）は先合成不要
 			let n = 0;
 			forEachSungNote(track, (note, prevVowel) => {
-				// 個数が count 個未満、または開始から3秒以内の音符を事前合成対象とする
-				if (n >= count && note.startSec >= 3.0) return;
+				// 個数が count 個未満、または先読み上限秒数（STREAM_LOOKAHEAD_SEC）以内の音符を事前合成対象とする
+				if (n >= count && note.startSec >= STREAM_LOOKAHEAD_SEC) return;
 				n++;
 				promises.push(
 					m.renderToCache?.(
