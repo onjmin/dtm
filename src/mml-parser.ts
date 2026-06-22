@@ -80,7 +80,7 @@ export const stripMmlMeta = (mml: string): string =>
 	mml.replace(META_DIRECTIVE, "");
 
 /** メタ情報を `#inst=… #drum=… #volume=… #mode=…` のMML宣言文字列へ直列化する（空なら空文字） */
-export const formatMmlMeta = (meta: MmlMeta): string => {
+export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	const parts: string[] = [];
 	if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
 	if (meta.drum) parts.push(`#drum=${meta.drum}`);
@@ -88,7 +88,7 @@ export const formatMmlMeta = (meta: MmlMeta): string => {
 	if (meta.drumVolume !== undefined)
 		parts.push(`#drumvolume=${meta.drumVolume}`);
 	if (meta.mode) parts.push(`#mode=${meta.mode}`);
-	return parts.join(" ");
+	return parts.join(space);
 };
 
 export type MMLNotePlacement = {

@@ -181,6 +181,9 @@ const customEncode = (str: string): Uint8Array => {
 	const bytes: number[] = [];
 	for (let i = 0; i < str.length; i++) {
 		const code = str.charCodeAt(i);
+		if (code === 32) {
+			continue;
+		}
 		if (code <= 127) {
 			bytes.push(code);
 		} else if (code === PROLONGED_MARK) {
@@ -195,7 +198,7 @@ const customEncode = (str: string): Uint8Array => {
 	return new Uint8Array(bytes);
 };
 
-const encodeMml = async (mml: string): Promise<string> => {
+export const encodeMml = async (mml: string): Promise<string> => {
 	try {
 		if (typeof CompressionStream !== "undefined") {
 			const cs = new CompressionStream("gzip");
@@ -212,6 +215,87 @@ const encodeMml = async (mml: string): Promise<string> => {
 		);
 	}
 	return `u.${encodeURIComponent(mml)}`;
+};
+
+const fromBase64Url = (s: string): Uint8Array => {
+	let normalized = s.replace(/-/g, "+").replace(/_/g, "/");
+	while (normalized.length % 4 !== 0) {
+		normalized += "=";
+	}
+	const bin = atob(normalized);
+	const bytes = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) {
+		bytes[i] = bin.charCodeAt(i);
+	}
+	return bytes;
+};
+
+const customDecode = (bytes: Uint8Array): string => {
+	let str = "";
+	let i = 0;
+	while (i < bytes.length) {
+		const byte = bytes[i];
+		if (byte <= 127) {
+			str += String.fromCharCode(byte);
+			i++;
+		} else if (byte === VALUE_PROLONGED) {
+			str += String.fromCharCode(PROLONGED_MARK);
+			i++;
+		} else if (byte >= 128 && byte <= 222) {
+			str += String.fromCharCode(HIRAGANA_START + (byte - 128));
+			i++;
+		} else if (byte === SHIFT_KATAKANA) {
+			if (i + 1 < bytes.length) {
+				const nextByte = bytes[i + 1];
+				if (nextByte >= 128 && nextByte <= 222) {
+					str += String.fromCharCode(HIRAGANA_START + 0x60 + (nextByte - 128));
+				}
+				i += 2;
+			} else {
+				i++;
+			}
+		} else {
+			i++;
+		}
+	}
+	return str;
+};
+
+const gunzipCustom = async (bytes: Uint8Array): Promise<string> => {
+	const ds = new DecompressionStream("gzip");
+	const writer = ds.writable.getWriter();
+	writer.write(bytes as Uint8Array<ArrayBuffer>);
+	writer.close();
+	const buf = await new Response(ds.readable).arrayBuffer();
+	return customDecode(new Uint8Array(buf));
+};
+
+const gunzip = async (bytes: Uint8Array): Promise<string> => {
+	const ds = new DecompressionStream("gzip");
+	const writer = ds.writable.getWriter();
+	writer.write(bytes as Uint8Array<ArrayBuffer>);
+	writer.close();
+	const buf = await new Response(ds.readable).arrayBuffer();
+	return new TextDecoder().decode(buf);
+};
+
+export const decodeMml = async (payload: string): Promise<string> => {
+	if (!payload) return "";
+	try {
+		if (payload.startsWith("z.")) {
+			return await gunzipCustom(fromBase64Url(payload.slice(2)));
+		}
+		if (payload.startsWith("g.")) {
+			return await gunzip(fromBase64Url(payload.slice(2)));
+		}
+		if (payload.startsWith("u.")) {
+			return decodeURIComponent(payload.slice(2));
+		}
+		return decodeURIComponent(payload);
+	} catch (e) {
+		console.error("[dtm] failed to decode MML payload", e);
+		return "";
+	}
 };
 
 /**

@@ -33,7 +33,7 @@ export { createSynth, freqFromPitch, type Synth } from "./synth";
 export * from "./mml-parser";
 export type { MmlPlayerInstance, MmlPlayerOptions } from "./mml-player";
 // 再生専用ビュー（mountDAW と対）
-export { mountMmlPlayer } from "./mml-player";
+export { decodeMml, encodeMml, mountMmlPlayer } from "./mml-player";
 export * from "./piano-roll";
 export * from "./renderer";
 export * from "./sequencer";
@@ -55,4 +55,5 @@ export {
 
 // UIユーティリティ
 export { DAW_CSS, injectStyles } from "./styles";
+export { VOICE_IMAGES } from "./voice-images";
 export * from "./types";

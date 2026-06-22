@@ -223,7 +223,7 @@ const normalizeLyricLines = (
 };
 
 /** 歌詞専用行か判定する（@@<数字> で始まる行） */
-const LYRIC_LINE = /^@@(\d+)\s+(.*)$/;
+const LYRIC_LINE = /^@@(\d+)\s*(.*)$/;
 
 /**
  * 歌詞の継続行か判定する。@@n 歌詞行のあとに改行で続くセグメントのうち、
@@ -289,52 +289,63 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		const m = segments[i].match(LYRIC_LINE);
 		if (!m) continue;
 		const trackId = Number.parseInt(m[1], 10);
-		// 空白区切りトークンへ分解（歌詞内の空白は sanitize で破棄されるので後で結合する）
-		const tokens = m[2].trim().split(/\s+/);
-		const modelToken = tokens.shift() ?? "";
+		let rest = m[2].trim();
 
 		let volume = DEFAULT_VOCAL_VOLUME; // 省略時の声量
 		let gate = 100; // 省略時のゲート（レガート）
 		let pan = 64; // 省略時の定位（中央）
 		let octave = 0; // 省略時のオクターブシフト（演奏ノートのピッチそのまま）
 
-		// 後方互換: "klatt:80" のコロン区切り声量
-		const colon = modelToken.indexOf(":");
-		const model = (
-			colon === -1 ? modelToken : modelToken.slice(0, colon)
-		).toLowerCase();
-		if (colon !== -1) {
-			const v = Number.parseInt(modelToken.slice(colon + 1), 10);
-			if (Number.isFinite(v)) volume = clamp(v, 0, MAX_VOCAL_VOLUME);
+		const modelMatch = rest.match(
+			/^([a-z_]+?)(?=(?:[vqpo]-?\d)|[^a-z_]|$)(?::(\d+))?/i,
+		);
+		let model = "";
+		const metaTokens: string[] = [];
+
+		if (modelMatch) {
+			model = modelMatch[1].toLowerCase();
+			if (modelMatch[2]) {
+				volume = clamp(Number.parseInt(modelMatch[2], 10), 0, MAX_VOCAL_VOLUME);
+			}
+			metaTokens.push(modelMatch[0]);
+			rest = rest.substring(modelMatch[0].length).trim();
 		}
 
-		// メタ部分（モデル名＋オプション）の原文。再生専用UIがグレーアウト表示に使う。
-		const metaTokens = [modelToken];
-
-		// モデル名直後の v<n>/q<n>/p<n>/o<±n> トークンを声量・ゲート・定位・オクターブとして消費する。
-		// 歌詞はかな（非ASCII）なので v/q/p/o と衝突しない。
-		while (tokens.length > 0) {
-			const v = /^v(\d+)$/.exec(tokens[0]);
-			const q = /^q(\d+)$/.exec(tokens[0]);
-			const p = /^p(\d+)$/.exec(tokens[0]);
-			const o = /^o(-?\d+)$/.exec(tokens[0]);
-			if (v) {
-				volume = clamp(Number.parseInt(v[1], 10), 0, MAX_VOCAL_VOLUME);
-			} else if (q) {
-				gate = clamp(Number.parseInt(q[1], 10), 0, 100);
-			} else if (p) {
-				pan = clamp(Number.parseInt(p[1], 10), 0, 127);
-			} else if (o) {
-				octave = clamp(Number.parseInt(o[1], 10), -2, 2);
-			} else {
-				break;
+		while (true) {
+			const vMatch = rest.match(/^v(\d+)/i);
+			if (vMatch) {
+				volume = clamp(Number.parseInt(vMatch[1], 10), 0, MAX_VOCAL_VOLUME);
+				metaTokens.push(vMatch[0]);
+				rest = rest.substring(vMatch[0].length).trim();
+				continue;
 			}
-			metaTokens.push(tokens.shift() as string);
+			const qMatch = rest.match(/^q(\d+)/i);
+			if (qMatch) {
+				gate = clamp(Number.parseInt(qMatch[1], 10), 0, 100);
+				metaTokens.push(qMatch[0]);
+				rest = rest.substring(qMatch[0].length).trim();
+				continue;
+			}
+			const pMatch = rest.match(/^p(\d+)/i);
+			if (pMatch) {
+				pan = clamp(Number.parseInt(pMatch[1], 10), 0, 127);
+				metaTokens.push(pMatch[0]);
+				rest = rest.substring(pMatch[0].length).trim();
+				continue;
+			}
+			const oMatch = rest.match(/^o(-?\d+)/i);
+			if (oMatch) {
+				octave = clamp(Number.parseInt(oMatch[1], 10), -2, 2);
+				metaTokens.push(oMatch[0]);
+				rest = rest.substring(oMatch[0].length).trim();
+				continue;
+			}
+			break;
 		}
 
 		// 先頭行の残り＋改行で続く継続行を1つの歌詞として扱う。
 		// 継続行は新しい文（@… / #…）が現れるか、空行で途切れるまで歌詞の続きとみなす。
-		const lyricLines = [tokens.join(" ")];
+		const lyricLines = [rest];
 		while (i + 1 < segments.length && isLyricContinuation(segments[i + 1])) {
 			lyricLines.push(segments[++i]);
 		}

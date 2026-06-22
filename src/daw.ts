@@ -1586,13 +1586,26 @@ export const mountDAW = (
 
 		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量・モード）。トラックとは1対1でなく曲全体に効く。
 		// 既定/未設定（楽器=空, ドラム="none"）の項目は出力しない。
-		const metaLine = formatMmlMeta({
-			instrument: currentInstrument || undefined,
-			drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
-			volume: masterVolume,
-			drumVolume: drumVolume,
-			mode: mode,
-		});
+		const metaLineFull = formatMmlMeta(
+			{
+				instrument: currentInstrument || undefined,
+				drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
+				volume: masterVolume,
+				drumVolume: drumVolume,
+				mode: mode,
+			},
+			" ",
+		);
+		const metaLineMini = formatMmlMeta(
+			{
+				instrument: currentInstrument || undefined,
+				drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
+				volume: masterVolume,
+				drumVolume: drumVolume,
+				mode: mode,
+			},
+			"",
+		);
 
 		if (refs.decomposeChordToggle.checked) {
 			const ignoreHeavy = refs.ignoreChordHeavyToggle.checked;
@@ -1613,10 +1626,10 @@ export const mountDAW = (
 				(notes, i) =>
 					`@${i}${refCore.getMMLFromNotes(notes, bpm, 100).trim().replace(/\s+/g, "")}`,
 			);
-			const full = [metaLine, ...decomposedFull, MML_END_MARKER]
+			const full = [metaLineFull, ...decomposedFull, MML_END_MARKER]
 				.filter((s) => s.length > 0)
 				.join(";\n");
-			const minified = [metaLine, ...decomposedMini, MML_END_MARKER]
+			const minified = [metaLineMini, ...decomposedMini, MML_END_MARKER]
 				.filter((s) => s.length > 0)
 				.join(";");
 			return {
@@ -1667,11 +1680,11 @@ export const mountDAW = (
 				const head = params ? `${x.model} ${params}` : x.model;
 				return `@@${x.i} ${head} ${x.text}`;
 			});
-		const full = [metaLine, ...trackLines, ...lyricLines, MML_END_MARKER]
+		const full = [metaLineFull, ...trackLines, ...lyricLines, MML_END_MARKER]
 			.filter((s) => s.length > 0)
 			.join(";\n");
 		const minified = [
-			metaLine,
+			metaLineMini,
 			...trackLinesMini,
 			...lyricLines,
 			MML_END_MARKER,
