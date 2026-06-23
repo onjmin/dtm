@@ -1267,7 +1267,7 @@ export const mountDAW = (
 		redrawAll();
 	};
 	const togglePlay = (): void => {
-		if (playbackState === "playing") pause();
+		if (playbackState === "playing") stop();
 		else play();
 	};
 
