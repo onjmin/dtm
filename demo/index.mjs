@@ -9014,13 +9014,13 @@ var mountDAW = (target, options = {}) => {
     );
     if (showMidi) wireMidi();
     document.addEventListener("keydown", onKeyDown);
-    for (const ta of refs.root.querySelectorAll("textarea, input")) {
-      ta.addEventListener("keydown", (e) => {
-        const ke = e;
-        if ((ke.ctrlKey || ke.metaKey) && ["KeyZ", "KeyY", "KeyV", "KeyC", "KeyX"].includes(ke.code))
-          e.stopPropagation();
-      });
-    }
+    refs.root.addEventListener("keydown", (e) => {
+      const t = e.target;
+      if (t.tagName !== "TEXTAREA" && t.tagName !== "INPUT") return;
+      const ke = e;
+      if ((ke.ctrlKey || ke.metaKey) && ["KeyZ", "KeyY", "KeyV", "KeyC", "KeyX"].includes(ke.code))
+        e.stopPropagation();
+    });
   };
   let pendingMidi = null;
   let detectedTracks = [];
