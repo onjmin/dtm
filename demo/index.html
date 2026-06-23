@@ -575,8 +575,11 @@
         // ── 作業履歴（スナップショット）機能 ──
         const HISTORY_STORAGE_KEY = 'dtm-work-history';
         const MAX_HISTORY_ITEMS = 50;
-        const SNAPSHOT_INTERVAL_MS = 60000; // 1分ごとに変更を検知して保存
-        let lastSavedMml = initialMml; // 初期MMLをセットして二重保存を防ぐ
+        const SNAPSHOT_INTERVAL_MS = 1800000; // 30分ごとに変更を検知して保存
+        // ページリロード後も最新スナップショットと比較できるよう localStorage から初期化
+        const _initRaw = localStorage.getItem(HISTORY_STORAGE_KEY);
+        const _initHistory = _initRaw ? JSON.parse(_initRaw) : [];
+        let lastSavedMml = _initHistory.length > 0 ? _initHistory[0].mml : initialMml;
 
         const saveSnapshot = () => {
             if (!daw) return;
@@ -626,7 +629,10 @@
             });
         };
 
-        const updateHistoryList = async () => {
+        const HISTORY_PAGE_SIZE = 10;
+        let historyCurrentPage = 0;
+
+        const updateHistoryList = async (page = 0) => {
             historyList.innerHTML = '';
             let history = [];
             try {
@@ -644,7 +650,11 @@
                 return;
             }
 
-            for (const item of history) {
+            historyCurrentPage = page;
+            const totalPages = Math.ceil(history.length / HISTORY_PAGE_SIZE);
+            const pageItems = history.slice(page * HISTORY_PAGE_SIZE, (page + 1) * HISTORY_PAGE_SIZE);
+
+            for (const item of pageItems) {
                 const div = document.createElement('div');
                 div.className = 'flex flex-col gap-1.5 p-3 border border-pico-gray/30 bg-black/20 rounded';
 
@@ -767,6 +777,32 @@
                 div.appendChild(linkContainer);
                 div.appendChild(playerContainer);
                 historyList.appendChild(div);
+            }
+
+            if (totalPages > 1) {
+                const pager = document.createElement('div');
+                pager.className = 'flex items-center justify-between mt-2 pt-2 border-t border-pico-gray/30';
+
+                const prevBtn = document.createElement('button');
+                prevBtn.textContent = '◀ PREV';
+                prevBtn.disabled = page === 0;
+                prevBtn.className = `px-3 py-1 text-[10px] font-pixel uppercase border-2 cursor-pointer ${page === 0 ? 'border-pico-gray text-pico-gray cursor-not-allowed' : 'border-pico-cyan text-pico-cyan shadow-[2px_2px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none'}`;
+                prevBtn.addEventListener('click', () => { stopAllPreviews(); updateHistoryList(page - 1); });
+
+                const pageInfo = document.createElement('span');
+                pageInfo.textContent = `${page + 1} / ${totalPages}`;
+                pageInfo.className = 'text-[10px] text-pico-lavend font-pixel';
+
+                const nextBtn = document.createElement('button');
+                nextBtn.textContent = 'NEXT ▶';
+                nextBtn.disabled = page >= totalPages - 1;
+                nextBtn.className = `px-3 py-1 text-[10px] font-pixel uppercase border-2 cursor-pointer ${page >= totalPages - 1 ? 'border-pico-gray text-pico-gray cursor-not-allowed' : 'border-pico-cyan text-pico-cyan shadow-[2px_2px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none'}`;
+                nextBtn.addEventListener('click', () => { stopAllPreviews(); updateHistoryList(page + 1); });
+
+                pager.appendChild(prevBtn);
+                pager.appendChild(pageInfo);
+                pager.appendChild(nextBtn);
+                historyList.appendChild(pager);
             }
         };
 
