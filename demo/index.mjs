@@ -8154,7 +8154,7 @@ var mountDAW = (target, options = {}) => {
     redrawAll();
   };
   const togglePlay = () => {
-    if (playbackState === "playing") pause();
+    if (playbackState === "playing") stop();
     else play();
   };
   const updateTransport = () => {
