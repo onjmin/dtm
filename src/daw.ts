@@ -2266,17 +2266,17 @@ export const mountDAW = (
 		// キーボードショートカット
 		document.addEventListener("keydown", onKeyDown);
 
-		// 入力欄のキー伝搬抑制
-		for (const ta of refs.root.querySelectorAll("textarea, input")) {
-			ta.addEventListener("keydown", (e) => {
-				const ke = e as KeyboardEvent;
-				if (
-					(ke.ctrlKey || ke.metaKey) &&
-					["KeyZ", "KeyY", "KeyV", "KeyC", "KeyX"].includes(ke.code)
-				)
-					e.stopPropagation();
-			});
-		}
+		// 入力欄のキー伝搬抑制（動的追加要素にも対応するため委譲）
+		refs.root.addEventListener("keydown", (e) => {
+			const t = e.target as Element;
+			if (t.tagName !== "TEXTAREA" && t.tagName !== "INPUT") return;
+			const ke = e as KeyboardEvent;
+			if (
+				(ke.ctrlKey || ke.metaKey) &&
+				["KeyZ", "KeyY", "KeyV", "KeyC", "KeyX"].includes(ke.code)
+			)
+				e.stopPropagation();
+		});
 	};
 
 	let pendingMidi: unknown = null;
