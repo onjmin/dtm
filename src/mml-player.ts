@@ -743,7 +743,8 @@ export const mountMmlPlayer = (
 		toggleMenu(false);
 		const modalBody = openInfoModal("MMLを表示");
 		const desc = doc.createElement("p");
-		desc.textContent = "このMMLをコピーして、他のプレイヤーや共有URLに貼り付けて使用できます。";
+		desc.textContent =
+			"このMMLをコピーして、他のプレイヤーや共有URLに貼り付けて使用できます。";
 		desc.style.marginBottom = "8px";
 		modalBody.appendChild(desc);
 		const sourceMml = options.getMml?.() ?? mml;
