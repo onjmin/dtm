@@ -77,6 +77,13 @@ export type MmlPlayerOptions = {
 	embedUrl?: string;
 	/** 利用規約への同意画面の表示をスキップするかどうか */
 	skipConsent?: boolean;
+	/**
+	 * 「MMLを表示」「MMLコピー」押下時に呼ばれる MML 取得コールバック。
+	 * 省略時は mountMmlPlayer に渡した mml をそのまま使う。
+	 * DAW と連携する場合は `() => daw.getMML().full` を渡すと
+	 * 常に最新の full フォーマット（メタ行・#end; 込み）を返せる。
+	 */
+	getMml?: () => string;
 };
 
 export type MmlPlayerInstance = {
@@ -734,13 +741,31 @@ export const mountMmlPlayer = (
 	showMmlItem.addEventListener("click", (e) => {
 		e.stopPropagation();
 		toggleMenu(false);
-		const modalBody = openInfoModal("MML");
+		const modalBody = openInfoModal("MMLを表示");
+		const desc = doc.createElement("p");
+		desc.textContent = "このMMLをコピーして、他のプレイヤーや共有URLに貼り付けて使用できます。";
+		desc.style.marginBottom = "8px";
+		modalBody.appendChild(desc);
+		const sourceMml = options.getMml?.() ?? mml;
+		const displayMml = sourceMml
+			.split(";")
+			.map((s) => s.trim())
+			.filter((s) => s.length > 0)
+			.join(";\n");
 		const pre = doc.createElement("pre");
-		pre.textContent = mml;
+		pre.textContent = displayMml;
 		pre.style.whiteSpace = "pre-wrap";
 		pre.style.wordBreak = "break-all";
+		pre.style.cursor = "text";
+		pre.addEventListener("click", () => {
+			const range = doc.createRange();
+			range.selectNodeContents(pre);
+			const sel = doc.defaultView?.getSelection();
+			sel?.removeAllRanges();
+			sel?.addRange(range);
+		});
 		modalBody.appendChild(pre);
-		appendCopyButton(modalBody, mml);
+		appendCopyButton(modalBody, sourceMml);
 	});
 
 	mmlInfoItem.addEventListener("click", (e) => {
@@ -784,7 +809,7 @@ export const mountMmlPlayer = (
 
 	copyMmlItem.addEventListener("click", async (e) => {
 		e.stopPropagation();
-		const success = await copyToClipboard(doc, mml);
+		const success = await copyToClipboard(doc, options.getMml?.() ?? mml);
 		if (success) {
 			copyMmlItem.textContent = "コピーしました！";
 		} else {

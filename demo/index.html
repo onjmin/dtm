@@ -517,16 +517,18 @@
         // 楽器・ドラム・歌声・#inst= 解決はすべて studio.mountPlayer が内部で配線する。
         const SAMPLE_MML = '@0 t120 v100 o4g8 g8 e8 e8 f8 e8 d8 c8 g8 g8 e8 e8 d4.; @@0 tsukuyomi どんぐりころころどんぐりこ;';
         let player = null;
-        const mountPlayer = (mml) => {
+        const mountPlayer = (mml, fromDaw = false) => {
             if (player) player.destroy();
             // volume:50 はDAWの既定マスタ音量に合わせる係数（再生専用だけ音が倍近く大きくなるのを防ぐ）
-            player = studio.mountPlayer(document.getElementById('player-app'), mml || SAMPLE_MML, { volume: 50, skipConsent: true });
+            const opts = { volume: 50, skipConsent: true };
+            if (fromDaw) opts.getMml = () => daw.getMML().full;
+            player = studio.mountPlayer(document.getElementById('player-app'), mml || SAMPLE_MML, opts);
             window.player = player;
         };
         mountPlayer(initialMml || SAMPLE_MML);
         document.getElementById('player-load-daw').addEventListener('click', () => {
             const { full } = daw.getMML();
-            mountPlayer(full);
+            mountPlayer(full, true);
         });
 
 
