@@ -6592,13 +6592,27 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   showMmlItem.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleMenu(false);
-    const modalBody = openInfoModal("MML");
+    const modalBody = openInfoModal("MML\u3092\u8868\u793A");
+    const desc = doc.createElement("p");
+    desc.textContent = "\u3053\u306EMML\u3092\u30B3\u30D4\u30FC\u3057\u3066\u3001\u4ED6\u306E\u30D7\u30EC\u30A4\u30E4\u30FC\u3084\u5171\u6709URL\u306B\u8CBC\u308A\u4ED8\u3051\u3066\u4F7F\u7528\u3067\u304D\u307E\u3059\u3002";
+    desc.style.marginBottom = "8px";
+    modalBody.appendChild(desc);
+    const sourceMml = options.getMml?.() ?? mml;
+    const displayMml = sourceMml.split(";").map((s) => s.trim()).filter((s) => s.length > 0).join(";\n");
     const pre = doc.createElement("pre");
-    pre.textContent = mml;
+    pre.textContent = displayMml;
     pre.style.whiteSpace = "pre-wrap";
     pre.style.wordBreak = "break-all";
+    pre.style.cursor = "text";
+    pre.addEventListener("click", () => {
+      const range = doc.createRange();
+      range.selectNodeContents(pre);
+      const sel = doc.defaultView?.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    });
     modalBody.appendChild(pre);
-    appendCopyButton(modalBody, mml);
+    appendCopyButton(modalBody, sourceMml);
   });
   mmlInfoItem.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -6636,7 +6650,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   });
   copyMmlItem.addEventListener("click", async (e) => {
     e.stopPropagation();
-    const success = await copyToClipboard(doc, mml);
+    const success = await copyToClipboard(doc, options.getMml?.() ?? mml);
     if (success) {
       copyMmlItem.textContent = "\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F\uFF01";
     } else {
