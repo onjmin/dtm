@@ -647,14 +647,36 @@ export const createDtmStudio = async (
 		// 楽器解決をこのエディタ専属にすることで、他のエディタ/再生UIと音源を取り合わない。
 		let editorPreset = initialPreset;
 		const isAdvancedMode = dawOverrides.mode === "advanced";
+
+		// トラック個別楽器オーバーライド（trackIndex → GM楽器キー）。空文字はプリセット適用。
+		const trackInstOverrides = new Map<number, string>();
+
+		// MMLに埋め込まれた初期 per-track 楽器があれば反映
+		if (meta.trackInstruments) {
+			for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
+				const idx = Number(idxStr);
+				const key = nameToKey[name];
+				if (key) trackInstOverrides.set(idx, key);
+			}
+		}
+
 		const playNote = (e: PlayNoteEvent): void => {
-			const sf = resolveSoundFont(
-				editorPreset,
-				e.trackId,
-				isAdvancedMode ? "advanced" : "simple",
-			);
-			if (!sf) return;
-			sf.play({
+			// トラックインデックスを trackId から逆引き（"melody"→0, "t2"→2 等）
+			const trackIdx = tracks.findIndex((t) => t.id === e.trackId);
+			const overrideKey =
+				trackIdx >= 0 ? trackInstOverrides.get(trackIdx) : undefined;
+			let sfInst: SoundFontInstance | undefined;
+			if (overrideKey) {
+				sfInst = soundFonts.get(overrideKey);
+			} else {
+				sfInst = resolveSoundFont(
+					editorPreset,
+					e.trackId,
+					isAdvancedMode ? "advanced" : "simple",
+				);
+			}
+			if (!sfInst) return;
+			sfInst.play({
 				ctx: audioCtx,
 				destination: masterGain,
 				pitch: e.pitch,
@@ -674,6 +696,22 @@ export const createDtmStudio = async (
 			onInstrumentChange?.(key);
 		};
 
+		// トラック個別楽器変更
+		const handleTrackInstrumentChange = async (
+			trackIndex: number,
+			instrumentName: string,
+		): Promise<void> => {
+			if (!instrumentName) {
+				trackInstOverrides.delete(trackIndex);
+				return;
+			}
+			await listReady;
+			const key = nameToKey[instrumentName];
+			if (!key) return;
+			trackInstOverrides.set(trackIndex, key);
+			await loadInstrument(key);
+		};
+
 		const base: DawOptions = {
 			getAudioTime: () => audioCtx.currentTime,
 			onResumeAudio: resumeAudio,
@@ -682,6 +720,9 @@ export const createDtmStudio = async (
 			singingVoices,
 			parseMidi,
 			onInstrumentChange: handleInstrumentChange,
+			onTrackInstrumentChange: (idx, name) => {
+				void handleTrackInstrumentChange(idx, name);
+			},
 			...dawOverrides,
 		};
 
@@ -879,26 +920,50 @@ export const createDtmStudio = async (
 		);
 		const loadTrackIds = trackIds.length > 0 ? trackIds : [...TRACK_ROLES];
 
-		void loadPreset(
-			playerPreset,
-			loadTrackIds,
-			isAdvancedMode ? "advanced" : "simple",
-		);
+		// per-track 楽器オーバーライド（trackIndex → SF key）を構築・ロードする
+		const playerTrackInstKeys = new Map<number, string>();
+		const loadPlayerTrackInstruments = async (): Promise<void> => {
+			if (!meta.trackInstruments) return;
+			await listReady;
+			for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
+				const key = nameToKey[name];
+				if (!key) continue;
+				playerTrackInstKeys.set(Number(idxStr), key);
+				await loadInstrument(key);
+			}
+		};
+
+		void Promise.all([
+			loadPreset(
+				playerPreset,
+				loadTrackIds,
+				isAdvancedMode ? "advanced" : "simple",
+			),
+			loadPlayerTrackInstruments(),
+		]);
+
 		// 再生専用ビューの @n（数値トラック）→ 役割 → このプリセットの楽器。
+		// per-track オーバーライドがあればそちらを優先する。
 		// ロード未完了の間は undefined（無音）になるだけで、別楽器で鳴ることはない。
 		const playPlayerNote = (e: PlayNoteEvent): void => {
 			const idx = Number(e.trackId);
-			const role = getRoleForTrackIndex(
-				idx,
-				isAdvancedMode ? "advanced" : "simple",
-			);
-			const sf = resolveSoundFont(
-				playerPreset,
-				role,
-				isAdvancedMode ? "advanced" : "simple",
-			);
-			if (!sf) return;
-			sf.play({
+			const overrideKey = playerTrackInstKeys.get(idx);
+			let sfInst: SoundFontInstance | undefined;
+			if (overrideKey) {
+				sfInst = soundFonts.get(overrideKey);
+			} else {
+				const role = getRoleForTrackIndex(
+					idx,
+					isAdvancedMode ? "advanced" : "simple",
+				);
+				sfInst = resolveSoundFont(
+					playerPreset,
+					role,
+					isAdvancedMode ? "advanced" : "simple",
+				);
+			}
+			if (!sfInst) return;
+			sfInst.play({
 				ctx: audioCtx,
 				destination: masterGain,
 				pitch: e.pitch,

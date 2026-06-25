@@ -8,6 +8,7 @@
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import { buildUI } from "./daw-ui";
 import { DRUM_PATTERNS } from "./drum-config";
+import { GM_INSTRUMENT_NAMES } from "./audio-config";
 import { icon } from "./icons";
 import { INSTRUMENT_PRESETS } from "./instrument-presets";
 import {
@@ -326,6 +327,8 @@ type TrackState = {
 	vocalPan: number;
 	/** 歌唱のオクターブシフト -2〜+2（音源の得意音域に合わせてピッチを上下）。既定0 */
 	vocalOctave: number;
+	/** トラック個別の楽器名（GM楽器名）。空文字でプリセット適用 */
+	trackInstrument: string;
 };
 
 /**
@@ -387,9 +390,10 @@ export const mountDAW = (
 	const gridLineSteps = 48;
 	let currentOffsetX = 0;
 	const _initPitch = options.initialScrollPitch;
-	let currentOffsetY = _initPitch !== undefined
-		? (renderConfig.keyCount - 1 - _initPitch) * renderConfig.keyHeight - 215
-		: (104 - 1 - 60) * renderConfig.keyHeight - 215;
+	let currentOffsetY =
+		_initPitch !== undefined
+			? (renderConfig.keyCount - 1 - _initPitch) * renderConfig.keyHeight - 215
+			: (104 - 1 - 60) * renderConfig.keyHeight - 215;
 	let playStartStep = 0;
 	let isSolo = false;
 	// loadMML で取り込んだ歌詞トラック（@@n）の同期コンダクタ。歌詞が無ければ空
@@ -490,6 +494,7 @@ export const mountDAW = (
 				vocalGate: 100,
 				vocalPan: 64,
 				vocalOctave: 0,
+				trackInstrument: "",
 			};
 		});
 	};
@@ -1389,6 +1394,65 @@ export const mountDAW = (
 			volLabel.textContent = String(active.volume);
 		});
 
+		// 楽器個別選択（デフォルト＝プリセット or GM楽器名指定）
+		const instRow = document.createElement("div");
+		instRow.className = "dtm-row";
+		instRow.innerHTML = `<span class="dtm-label">楽器</span>`;
+		const instSel = document.createElement("select");
+		instSel.className = "dtm-select dtm-grow";
+		const defaultOpt = document.createElement("option");
+		defaultOpt.value = "";
+		defaultOpt.textContent = "デフォルト（プリセット）";
+		instSel.appendChild(defaultOpt);
+		// GM楽器は8音色ごと16カテゴリに分類される
+		const GM_GROUPS = [
+			"ピアノ",
+			"クロマティックパーカッション",
+			"オルガン",
+			"ギター",
+			"ベース",
+			"ストリングス",
+			"アンサンブル",
+			"ブラス",
+			"リード（木管）",
+			"パイプ",
+			"シンセリード",
+			"シンセパッド",
+			"シンセエフェクト",
+			"エスニック",
+			"パーカッシブ",
+			"サウンドエフェクト",
+		];
+		GM_GROUPS.forEach((groupName, gi) => {
+			const grp = document.createElement("optgroup");
+			grp.label = groupName;
+			for (let j = 0; j < 8; j++) {
+				const name = GM_INSTRUMENT_NAMES[gi * 8 + j];
+				if (!name) break;
+				const o = document.createElement("option");
+				o.value = name;
+				o.textContent = name;
+				grp.appendChild(o);
+			}
+			instSel.appendChild(grp);
+		});
+		instSel.value = active.trackInstrument;
+		// 歌詞モデルが設定されているトラックは歌声が楽器音を置き換えるため、個別楽器を無効化する
+		const syncInstDisabled = (): void => {
+			instSel.disabled = !!active.lyricModel;
+			instSel.title = active.lyricModel
+				? "歌詞モードのときは楽器を個別指定できません"
+				: "";
+		};
+		syncInstDisabled();
+		instSel.addEventListener("change", () => {
+			active.trackInstrument = instSel.value;
+			const trackIndex = trackStates.indexOf(active);
+			options.onTrackInstrumentChange?.(trackIndex, active.trackInstrument);
+		});
+		instRow.appendChild(instSel);
+		refs.trackBody.appendChild(instRow);
+
 		// 歌詞エディタ（全トラック共通）。歌唱モデルのプルダウン既定「なし」が無効状態を兼ねる。
 		// モデルを選んだときだけ声量・歌詞欄を出す（使わないときは隠す）。@@n model[:声量] lyrics として往復。
 		// simpleモードの伴奏(chord)トラックだけは歌詞欄を出さず、下の伴奏UIに置き換える。
@@ -1399,7 +1463,7 @@ export const mountDAW = (
 			lyricDiv.style.alignItems = "stretch";
 			lyricDiv.innerHTML = `
       <div class="dtm-row">
-        <span class="dtm-label">♪ 歌詞</span>
+        <span class="dtm-label">♪ UTAU</span>
         <select class="dtm-select" data-dtm="lyric-model" aria-label="歌唱モデル"></select>
         <img class="dtm-lyric-icon dtm-hidden" data-dtm="lyric-icon" width="20" height="20" alt="" draggable="false">
         <select class="dtm-select" data-dtm="lyric-octave" aria-label="オクターブ（音源の得意音域に合わせる）" title="オクターブ">
@@ -1476,7 +1540,7 @@ export const mountDAW = (
 				o.textContent = label;
 				lyricModelSel.appendChild(o);
 			};
-			addOpt("", "なし");
+			addOpt("", "ボーカルなし");
 			for (const m of LYRIC_MODELS) addOpt(m, lyricModelLabel(m));
 			if (active.lyricModel && !LYRIC_MODELS.includes(active.lyricModel)) {
 				addOpt(active.lyricModel, lyricModelLabel(active.lyricModel));
@@ -1531,6 +1595,7 @@ export const mountDAW = (
 			lyricModelSel.addEventListener("change", () => {
 				active.lyricModel = lyricModelSel.value;
 				syncLyricVisibility();
+				syncInstDisabled();
 				fireLyricsChange(active);
 			});
 			lyricOctaveSel.addEventListener("change", () => {
@@ -1656,6 +1721,16 @@ export const mountDAW = (
 				? notes
 				: notes.filter((n) => n.startStep < limitSteps);
 
+		// トラック個別楽器（空＝デフォルト/プリセットは出力しない）
+		const trackInstrumentsForMeta: Record<number, string> = {};
+		trackStates.forEach((t, i) => {
+			if (t.trackInstrument) trackInstrumentsForMeta[i] = t.trackInstrument;
+		});
+		const trackInstMeta =
+			Object.keys(trackInstrumentsForMeta).length > 0
+				? trackInstrumentsForMeta
+				: undefined;
+
 		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量・モード）。トラックとは1対1でなく曲全体に効く。
 		// 既定/未設定（楽器=空, ドラム="none"）の項目は出力しない。
 		const metaLineFull = formatMmlMeta(
@@ -1665,6 +1740,7 @@ export const mountDAW = (
 				volume: masterVolume,
 				drumVolume: drumVolume,
 				mode: mode,
+				trackInstruments: trackInstMeta,
 			},
 			" ",
 		);
@@ -1675,6 +1751,7 @@ export const mountDAW = (
 				volume: masterVolume,
 				drumVolume: drumVolume,
 				mode: mode,
+				trackInstruments: trackInstMeta,
 			},
 			"",
 		);
@@ -1863,6 +1940,15 @@ export const mountDAW = (
 			refs.drumVolume.value = String(meta.drumVolume);
 			refs.drumVolumeLabel.textContent = `${meta.drumVolume}%`;
 		}
+		// トラック個別楽器を復元する
+		trackStates.forEach((t, i) => {
+			const name = meta.trackInstruments?.[i] ?? "";
+			if (t.trackInstrument !== name) {
+				t.trackInstrument = name;
+				options.onTrackInstrumentChange?.(i, name);
+			}
+		});
+
 		// 歌詞トラック（@@n）を各トラックの歌詞入力へ復元する（編集UIに反映）。
 		// 表示用かなは正規化済み音節を結合したもの（長音は母音かなに展開済み）。
 		for (const t of trackStates) {

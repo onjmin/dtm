@@ -247,6 +247,14 @@ export type DawOptions = {
 	 */
 	onInstrumentChange?: (name: string) => void;
 	/**
+	 * トラックごとの個別楽器が変化したときに呼ばれる。
+	 * `trackIndex` は @n の n と同じトラック番号。`instrumentName` は GM楽器名（空文字はデフォルト＝プリセット）。
+	 */
+	onTrackInstrumentChange?: (
+		trackIndex: number,
+		instrumentName: string,
+	) => void;
+	/**
 	 * 表示・出力設定（ズーム / 和音分解モード / 和音伴奏トラック無視）が変化したときに呼ばれる。
 	 * 利用側が選択状態を永続化する用途に使う。
 	 */
@@ -353,7 +361,10 @@ export type DawInstance = {
 	 * 画面外の場合は onScreen=false と方角 side を返す。
 	 * 協力DAWでのカーソル表示に使う。
 	 */
-	noteToCanvas: (step: number, pitch: number) => {
+	noteToCanvas: (
+		step: number,
+		pitch: number,
+	) => {
 		x: number;
 		y: number;
 		onScreen: boolean;

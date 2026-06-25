@@ -48,10 +48,18 @@ export type MmlMeta = {
 	drumVolume?: number;
 	/** DAWの動作モード（simple | advanced） */
 	mode?: "simple" | "advanced";
+	/**
+	 * トラックごとの個別楽器名（GM楽器名）。`#t<n>inst=<名前>` で埋め込む。
+	 * 省略されたトラックはプリセットが適用される。
+	 */
+	trackInstruments?: Record<number, string>;
 };
 
 /** `#inst=...` `#drum=...` `#volume=...` `#drumvolume=...` `#mode=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
 const META_DIRECTIVE = /#(inst|drum|volume|drumvolume|mode)=([\w-]+)/gi;
+
+/** `#t<n>inst=<GM楽器名>` にマッチする（値は`;` `#` 改行以外の任意文字） */
+const TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
 
 /** MMLからトップレベル宣言を抽出する */
 export const parseMmlMeta = (mml: string): MmlMeta => {
@@ -72,12 +80,20 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 			}
 		}
 	}
+	for (const m of mml.matchAll(TRACK_INST_DIRECTIVE)) {
+		const idx = Number.parseInt(m[1], 10);
+		const name = m[2].trim();
+		if (!Number.isNaN(idx) && name) {
+			meta.trackInstruments ??= {};
+			meta.trackInstruments[idx] = name;
+		}
+	}
 	return meta;
 };
 
 /** MMLからトップレベル宣言を取り除く（ノート解析が誤解釈しないように） */
 export const stripMmlMeta = (mml: string): string =>
-	mml.replace(META_DIRECTIVE, "");
+	mml.replace(META_DIRECTIVE, "").replace(TRACK_INST_DIRECTIVE, "");
 
 /** メタ情報を `#inst=… #drum=… #volume=… #mode=…` のMML宣言文字列へ直列化する（空なら空文字） */
 export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
@@ -88,6 +104,11 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	if (meta.drumVolume !== undefined)
 		parts.push(`#drumvolume=${meta.drumVolume}`);
 	if (meta.mode) parts.push(`#mode=${meta.mode}`);
+	if (meta.trackInstruments) {
+		for (const [idx, name] of Object.entries(meta.trackInstruments)) {
+			if (name) parts.push(`#t${idx}inst=${name}`);
+		}
+	}
 	return parts.join(space);
 };
 

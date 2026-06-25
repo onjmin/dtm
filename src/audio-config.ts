@@ -166,3 +166,8 @@ export async function buildNameToKeyMapping(): Promise<Record<string, string>> {
 	}
 	return nameToKey;
 }
+
+/** GM楽器名一覧（128音色）。トラック個別楽器のプルダウン選択肢に使う。 */
+export const GM_INSTRUMENT_NAMES: string[] = FONT_NAME_SURIKOV.trim()
+	.split("\n")
+	.map((line) => line.slice(line.indexOf(" ") + 1));
