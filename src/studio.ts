@@ -638,7 +638,13 @@ export const createDtmStudio = async (
 		target: HTMLElement,
 		opts: MountEditorOptions = {},
 	): DawInstance => {
-		const { preset, presetUI, onInstrumentChange, ...dawOverrides } = opts;
+		const {
+			preset,
+			presetUI,
+			onInstrumentChange,
+			onTrackInstrumentChange: externalOnTrackInstrumentChange,
+			...dawOverrides
+		} = opts;
 		const tracks: TrackConfig[] = dawOverrides.tracks ?? TRACKS_SIMPLE;
 		const trackIds = tracks.map((t) => t.id);
 
@@ -731,6 +737,7 @@ export const createDtmStudio = async (
 			onInstrumentChange: handleInstrumentChange,
 			onTrackInstrumentChange: (idx, name) => {
 				void handleTrackInstrumentChange(idx, name);
+				externalOnTrackInstrumentChange?.(idx, name);
 			},
 			...dawOverrides,
 		};

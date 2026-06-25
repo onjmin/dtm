@@ -88,6 +88,8 @@ const remoteCursors = new Map();
 const players = new Map();
 // trackIndex → { audioMuted: bool, visualMuted: bool }
 const muteState = new Map();
+// trackIndex → instrumentName（DAW再マウント時に復元する）
+const trackInstrumentOverrides = new Map();
 
 // ─── UI ヘルパ ────────────────────────────────────────────────
 const setDiscordStatus = (state, msg) => {
@@ -110,43 +112,29 @@ const renderPlayers = () => {
     for (const [uid, p] of sorted) {
         const isMe = p.trackIndex === myTrackIndex;
         const mute = muteState.get(p.trackIndex) ?? { audioMuted: false, visualMuted: false };
-        const card = document.createElement('div');
+        const card = document.createElement('span');
         card.className = 'player-card' + (isMe ? ' is-me' : '');
-        card.dataset.track = String(p.trackIndex);
 
-        const emojiEl = document.createElement('span');
-        emojiEl.style.cssText = 'font-size:16px;line-height:1;flex-shrink:0';
-        emojiEl.textContent = TRACK_EMOJIS[p.trackIndex] ?? '🎵';
+        const idEl = document.createElement('span');
+        idEl.className = 'player-id';
+        idEl.textContent = (TRACK_EMOJIS[p.trackIndex] ?? '🎵') + ' @' + (p.trackIndex + 1);
 
-        const name = document.createElement('span');
-        name.className = 'player-name';
-        name.textContent = p.username;
+        card.appendChild(idEl);
 
-        const you = document.createElement('span');
-        you.className = 'player-you';
-        you.textContent = isMe ? 'YOU' : TRACK_NAMES[p.trackIndex] ?? `T${p.trackIndex}`;
+        const audioBtn = document.createElement('button');
+        audioBtn.className = 'mute-btn' + (mute.audioMuted ? ' muted' : '');
+        audioBtn.title = mute.audioMuted ? '音ミュート中' : '音あり';
+        audioBtn.textContent = mute.audioMuted ? '🔇' : '🔊';
+        audioBtn.addEventListener('click', () => toggleAudioMute(p.trackIndex));
 
-        card.appendChild(emojiEl);
-        card.appendChild(name);
-        card.appendChild(you);
+        const visualBtn = document.createElement('button');
+        visualBtn.className = 'mute-btn' + (mute.visualMuted ? ' muted' : '');
+        visualBtn.title = mute.visualMuted ? '非表示中' : '表示中';
+        visualBtn.textContent = mute.visualMuted ? '🙈' : '👁️';
+        visualBtn.addEventListener('click', () => toggleVisualMute(p.trackIndex));
 
-        // 自分のトラックにはミュートボタンを出さない（自分の音は常に聞く）
-        if (!isMe) {
-            const audioBtn = document.createElement('button');
-            audioBtn.className = 'mute-btn' + (mute.audioMuted ? ' muted' : '');
-            audioBtn.title = mute.audioMuted ? '音ミュート中' : '音あり';
-            audioBtn.textContent = mute.audioMuted ? '🔇' : '🔊';
-            audioBtn.addEventListener('click', () => toggleAudioMute(p.trackIndex));
-
-            const visualBtn = document.createElement('button');
-            visualBtn.className = 'mute-btn' + (mute.visualMuted ? ' muted' : '');
-            visualBtn.title = mute.visualMuted ? '非表示中' : '表示中';
-            visualBtn.textContent = mute.visualMuted ? '🙈' : '👁️';
-            visualBtn.addEventListener('click', () => toggleVisualMute(p.trackIndex));
-
-            card.appendChild(audioBtn);
-            card.appendChild(visualBtn);
-        }
+        card.appendChild(audioBtn);
+        card.appendChild(visualBtn);
 
         playersList.appendChild(card);
     }
@@ -293,6 +281,14 @@ const applyPendingNotes = () => {
     pendingAllTracks = [];
 };
 
+// 全プレイヤーにトラック楽器オーバーライドを再送信（再接続時）
+const rebroadcastInstrumentOverrides = () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    for (const [trackIndex, instrumentName] of trackInstrumentOverrides) {
+        ws.send(JSON.stringify({ type: 'track-instrument', trackIndex, instrumentName }));
+    }
+};
+
 // ─── 画面外編集インジケーター ─────────────────────────────────
 const offscreenTimers = new Map();
 const showOffscreenArrow = (trackIndex, side) => {
@@ -374,7 +370,9 @@ const handleRelayMessage = (msg) => {
                 dawInstance.destroy();
                 dawInstance = null;
                 document.getElementById('players-label').textContent = '► PLAYERS';
-                initDAW(false).catch(console.error);
+                initDAW(false).then(() => {
+                    rebroadcastInstrumentOverrides();
+                }).catch(console.error);
             }
             break;
         }
@@ -386,6 +384,8 @@ const handleRelayMessage = (msg) => {
             pendingAllTracks = msg.tracks ?? [];
             if (dawInstance) applyPendingNotes();
             renderPlayers();
+            // 再接続時に全プレイヤーへトラック楽器を再通知
+            rebroadcastInstrumentOverrides();
             break;
         }
         case 'user-join': {
@@ -409,8 +409,11 @@ const handleRelayMessage = (msg) => {
             break;
         }
         case 'track-instrument': {
-            if (dawInstance && msg.trackIndex != null) {
-                dawInstance.applyTrackInstrument(msg.trackIndex, msg.instrumentName ?? '');
+            if (msg.trackIndex != null) {
+                trackInstrumentOverrides.set(msg.trackIndex, msg.instrumentName ?? '');
+                if (dawInstance) {
+                    dawInstance.applyTrackInstrument(msg.trackIndex, msg.instrumentName ?? '');
+                }
             }
             break;
         }
@@ -485,6 +488,7 @@ const initDAW = async (spectator = false) => {
             }
         },
         onTrackInstrumentChange: spectator ? undefined : (trackIndex, instrumentName) => {
+            trackInstrumentOverrides.set(trackIndex, instrumentName);
             if (ws?.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'track-instrument', trackIndex, instrumentName }));
             }
@@ -493,6 +497,10 @@ const initDAW = async (spectator = false) => {
 
     renderPlayers();
     applyPendingNotes();
+    // トラック楽器オーバーライドを復元（再接続／昇格時のDAW再マウント対応）
+    for (const [trackIndex, instrumentName] of trackInstrumentOverrides) {
+        dawInstance.applyTrackInstrument(trackIndex, instrumentName);
+    }
     startCursorOverlay();
 };
 
