@@ -44,7 +44,7 @@ const CLIENT_ID = '__DISCORD_CLIENT_ID__';
  * Koyebデプロイ後にここを書き換える。
  * ローカルでは ws://localhost:3001 を自動使用。
  */
-const RELAY_URL_PROD = 'wss://YOUR-APP.koyeb.app';
+const RELAY_URL_PROD = 'wss://detailed-donkey-onjmin-fceb78f2.koyeb.app';
 
 // TRACKS_SIMPLEと同じ4色（track index 0〜3）
 const TRACK_COLORS = ['#29adff', '#ffec27', '#00e436', '#ff77a8', '#ab5236', '#7e2553', '#5f574f', '#83769c'];
