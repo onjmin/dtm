@@ -406,6 +406,15 @@ export const createDtmStudio = async (
 	})();
 
 	let nameToKey: Record<string, string> = {};
+	// URLエンコーダがスペースを除去した楽器名を正規の GM 名へ逆引きする
+	const resolveNameToKey = (name: string): string | undefined => {
+		if (nameToKey[name]) return nameToKey[name];
+		const stripped = name.replace(/\s+/g, "").toLowerCase();
+		const canonical = Object.keys(nameToKey).find(
+			(k) => k.replace(/\s+/g, "").toLowerCase() === stripped,
+		);
+		return canonical ? nameToKey[canonical] : undefined;
+	};
 	// 楽器音源は「役割」ではなく「実際の楽器キー」で1つだけ持ち、編集UI・全再生UIで
 	// 安全に共有する。役割キー（melody等）で持つと、別プリセットを読むたびに同じ役割キーを
 	// 上書きし合い、再生UIの楽器が指定と別物になる（最後に解決したロードが勝つ）。
@@ -651,11 +660,11 @@ export const createDtmStudio = async (
 		// トラック個別楽器オーバーライド（trackIndex → GM楽器キー）。空文字はプリセット適用。
 		const trackInstOverrides = new Map<number, string>();
 
-		// MMLに埋め込まれた初期 per-track 楽器があれば反映
+		// MMLに埋め込まれた初期 per-track 楽器があれば反映（スペース除去済み名も正規化して解決）
 		if (meta.trackInstruments) {
 			for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
 				const idx = Number(idxStr);
-				const key = nameToKey[name];
+				const key = resolveNameToKey(name);
 				if (key) trackInstOverrides.set(idx, key);
 			}
 		}
@@ -706,7 +715,7 @@ export const createDtmStudio = async (
 				return;
 			}
 			await listReady;
-			const key = nameToKey[instrumentName];
+			const key = resolveNameToKey(instrumentName);
 			if (!key) return;
 			trackInstOverrides.set(trackIndex, key);
 			await loadInstrument(key);
@@ -926,7 +935,7 @@ export const createDtmStudio = async (
 			if (!meta.trackInstruments) return;
 			await listReady;
 			for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
-				const key = nameToKey[name];
+				const key = resolveNameToKey(name);
 				if (!key) continue;
 				playerTrackInstKeys.set(Number(idxStr), key);
 				await loadInstrument(key);

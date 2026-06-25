@@ -308,6 +308,21 @@ const lyricModelLabel = (model: string): string =>
 const clamp = (v: number, min: number, max: number): number =>
 	Math.min(Math.max(v, min), max);
 
+/**
+ * 楽器名を GM_INSTRUMENT_NAMES の正規名に正規化する。
+ * URLエンコーダ（customEncode）がスペースを除去するため、
+ * "AcousticGrandPiano" → "Acoustic Grand Piano" のように逆引きして補正する。
+ */
+const normalizeInstrumentName = (name: string): string => {
+	if (!name) return "";
+	const stripped = name.replace(/\s+/g, "").toLowerCase();
+	return (
+		GM_INSTRUMENT_NAMES.find(
+			(n) => n.replace(/\s+/g, "").toLowerCase() === stripped,
+		) ?? name
+	);
+};
+
 type TrackState = {
 	config: TrackConfig;
 	core: MMLCore;
@@ -1436,7 +1451,7 @@ export const mountDAW = (
 			}
 			instSel.appendChild(grp);
 		});
-		instSel.value = active.trackInstrument;
+		instSel.value = normalizeInstrumentName(active.trackInstrument);
 		// 歌詞モデルが設定されているトラックは歌声が楽器音を置き換えるため、個別楽器を無効化する
 		const syncInstDisabled = (): void => {
 			instSel.disabled = !!active.lyricModel;
@@ -1940,9 +1955,9 @@ export const mountDAW = (
 			refs.drumVolume.value = String(meta.drumVolume);
 			refs.drumVolumeLabel.textContent = `${meta.drumVolume}%`;
 		}
-		// トラック個別楽器を復元する
+		// トラック個別楽器を復元する（URLエンコーダがスペースを除去するため正規化して復元）
 		trackStates.forEach((t, i) => {
-			const name = meta.trackInstruments?.[i] ?? "";
+			const name = normalizeInstrumentName(meta.trackInstruments?.[i] ?? "");
 			if (t.trackInstrument !== name) {
 				t.trackInstrument = name;
 				options.onTrackInstrumentChange?.(i, name);
