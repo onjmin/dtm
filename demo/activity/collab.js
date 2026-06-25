@@ -312,6 +312,7 @@ const main = async () => {
             { prefix: '/.proxy/sf',      target: 'rpgen3.github.io' },
             { prefix: '/.proxy/surikov', target: 'surikov.github.io' },
             { prefix: '/.proxy/koe',     target: 'pub-12482a6b5cbc4c9e906b2e1904cabae5.r2.dev' },
+            { prefix: '/.proxy/relay',   target: 'detailed-donkey-onjmin-fceb78f2.koyeb.app' },
         ]);
     } catch (_) {}
 
