@@ -53,7 +53,7 @@ export class SoundFont {
 		if (!fonts.has(fontName)) {
 			const zones = new Map<number, Zone>();
 			let ch = -1;
-			const win = window as Record<string, { zones: Zone[] }>;
+			const win = window as unknown as Record<string, { zones: Zone[] }>;
 			for (const [pitch, v] of await findZone(
 				ctx,
 				win[fontName].zones,
@@ -79,13 +79,22 @@ export class SoundFont {
 	) {}
 
 	play({
-		ctx = new AudioContext(),
-		destination = ctx.destination,
+		ctx,
+		destination,
 		pitch = 60,
 		volume = 1.0,
 		when = 0.0,
 		duration = 1.0,
+	}: {
+		ctx?: AudioContext;
+		destination?: AudioNode;
+		pitch?: number;
+		volume?: number;
+		when?: number;
+		duration?: number;
 	} = {}): void {
+		ctx ??= new AudioContext();
+		destination ??= ctx.destination;
 		const { zones, isDrum } = this;
 		if (!zones.has(pitch)) return;
 		const zone = zones.get(pitch);

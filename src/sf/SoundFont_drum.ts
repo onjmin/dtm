@@ -25,7 +25,11 @@ export const SoundFont_drum = new (class {
 		id: string;
 		keys: number[];
 	}): Promise<void> {
-		const map = touch(touch(this.fonts, font, Map), id, Map);
+		const map = touch(
+			touch(this.fonts, font, Map) as Map<string, Map<number, SoundFont>>,
+			id,
+			Map,
+		) as Map<number, SoundFont>;
 		if (!map.size) {
 			for (const [pitch, sf] of await Promise.all(
 				[...keys].map(async (key) => {
