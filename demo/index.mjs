@@ -10619,7 +10619,13 @@ var createDtmStudio = async (options = {}) => {
   const mountedPlayers = [];
   const mountedModeSwitches = [];
   const mountEditor = (target, opts = {}) => {
-    const { preset, presetUI, onInstrumentChange, ...dawOverrides } = opts;
+    const {
+      preset,
+      presetUI,
+      onInstrumentChange,
+      onTrackInstrumentChange: externalOnTrackInstrumentChange,
+      ...dawOverrides
+    } = opts;
     const tracks = dawOverrides.tracks ?? TRACKS_SIMPLE;
     const trackIds = tracks.map((t) => t.id);
     const presetKey = preset && INSTRUMENT_PRESETS[preset] ? preset : defaultPreset;
@@ -10687,6 +10693,7 @@ var createDtmStudio = async (options = {}) => {
       onInstrumentChange: handleInstrumentChange,
       onTrackInstrumentChange: (idx, name) => {
         void handleTrackInstrumentChange(idx, name);
+        externalOnTrackInstrumentChange?.(idx, name);
       },
       ...dawOverrides
     };
