@@ -7487,9 +7487,7 @@ var mountDAW = (target, options = {}) => {
                   durationSteps: n.durationSteps,
                   velocity: n.velocity
                 }));
-                const removed = prevNotes.filter(
-                  (n) => !currByKey.has(`${n.startStep}_${n.pitch}`)
-                ).map((n) => ({ startStep: n.startStep, pitch: n.pitch }));
+                const removed = prevNotes.filter((n) => !currByKey.has(`${n.startStep}_${n.pitch}`)).map((n) => ({ startStep: n.startStep, pitch: n.pitch }));
                 if (added.length > 0 || removed.length > 0) {
                   options.onNotesPatch(config.id, added, removed);
                 }
@@ -10092,11 +10090,9 @@ var SoundFont_list = new class {
         const a = s.slice(3).split("_");
         const [key, id] = a;
         const font = a.slice(2).join("_").slice(0, -3);
-        touch2(
-          touch2(drum, font, Map),
-          id,
-          Set
-        ).add(key);
+        touch2(touch2(drum, font, Map), id, Set).add(
+          key
+        );
       } else {
         const a = s.split("_");
         const [id] = a;
