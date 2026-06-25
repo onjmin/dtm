@@ -53,6 +53,8 @@ import { DiscordSDK, patchUrlMappings } from './discord-sdk.js';
     }
     Node.prototype.appendChild  = interceptInsert(Node.prototype.appendChild);
     Node.prototype.insertBefore = interceptInsert(Node.prototype.insertBefore);
+    // rpgen3/mylib の getScript は document.head.append() を使うため追加で patch
+    Element.prototype.append    = interceptInsert(Element.prototype.append);
 })();
 
 // ─── DOM要素 ───────────────────────────────────────────────
@@ -165,7 +167,7 @@ const mountPlayer = async (mml) => {
         const isLocal = location.hostname === 'localhost';
         const DTM = await import(isLocal
             ? 'http://localhost:40298/dist/index.mjs'
-            : '/.proxy/dtm/demo/index.mjs?v=4b1b207e');
+            : '/.proxy/dtm/demo/index.mjs?v=15166450');
 
         const { createDtmStudio } = DTM;
 
