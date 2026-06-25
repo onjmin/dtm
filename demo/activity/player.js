@@ -53,6 +53,8 @@ import { DiscordSDK, patchUrlMappings } from './discord-sdk.js';
     }
     Node.prototype.appendChild  = interceptInsert(Node.prototype.appendChild);
     Node.prototype.insertBefore = interceptInsert(Node.prototype.insertBefore);
+    // rpgen3/mylib の getScript は document.head.append() を使うため追加で patch
+    Element.prototype.append    = interceptInsert(Element.prototype.append);
 })();
 
 // ─── DOM要素 ───────────────────────────────────────────────
