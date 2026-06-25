@@ -196,9 +196,10 @@ const initDiscord = async () => {
     //   コード側の patchUrlMappings では /.proxy/ を付けて指定する（SDKの仕様）。
     try {
         patchUrlMappings([
-            { prefix: '/.proxy/fonts', target: 'db.onlinewebfonts.com' },
-            { prefix: '/.proxy/dtm',   target: 'onjmin.github.io/dtm' },
-            { prefix: '/.proxy/sf',    target: 'rpgen3.github.io' },
+            { prefix: '/.proxy/fonts',   target: 'db.onlinewebfonts.com' },
+            { prefix: '/.proxy/dtm',     target: 'onjmin.github.io/dtm' },
+            { prefix: '/.proxy/sf',      target: 'rpgen3.github.io' },
+            { prefix: '/.proxy/surikov', target: 'surikov.github.io' },
         ]);
     } catch (_) {
         // patchUrlMappings はDiscord外では何もしないので無視
