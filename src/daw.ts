@@ -386,7 +386,10 @@ export const mountDAW = (
 	let snapGridSteps = 12;
 	const gridLineSteps = 48;
 	let currentOffsetX = 0;
-	let currentOffsetY = (104 - 1 - 60) * renderConfig.keyHeight - 215;
+	const _initPitch = options.initialScrollPitch;
+	let currentOffsetY = _initPitch !== undefined
+		? (renderConfig.keyCount - 1 - _initPitch) * renderConfig.keyHeight - 215
+		: (104 - 1 - 60) * renderConfig.keyHeight - 215;
 	let playStartStep = 0;
 	let isSolo = false;
 	// loadMML で取り込んだ歌詞トラック（@@n）の同期コンダクタ。歌詞が無ければ空

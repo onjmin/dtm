@@ -259,6 +259,8 @@ export type DawOptions = {
 	lockedTracks?: string[];
 	/** 初期アクティブトラックID（未指定なら最初のトラック）。協力DAWで自分のトラックを初期選択するために使う。 */
 	initialActiveTrack?: string;
+	/** 初期スクロールで中央に表示するMIDIピッチ番号（0–127）。未指定なら既定位置。 */
+	initialScrollPitch?: number;
 
 	// --- 注入される外部パーサ（任意） ---
 	parseMidi?: ParseMidiFn;
