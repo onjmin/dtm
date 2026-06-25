@@ -52,6 +52,9 @@ jobs:
           cp demo/activity/index.html docs/demo/activity/index.html
           cp demo/activity/player.js docs/demo/activity/player.js
           cp demo/activity/discord-sdk.js docs/demo/activity/discord-sdk.js
+          VER="${GITHUB_SHA:0:8}"
+          sed -i "s/__CI_HASH__/${VER}/g" docs/demo/activity/index.html
+          sed -i "s/__CI_HASH__/${VER}/g" docs/demo/activity/player.js
 
       - name: Add .nojekyll
         run: touch ./docs/.nojekyll

@@ -190,7 +190,7 @@ const mountPlayer = async (mml) => {
         const isLocal = location.hostname === 'localhost';
         const DTM = await import(isLocal
             ? 'http://localhost:40298/dist/index.mjs'
-            : '/.proxy/dtm/demo/index.mjs');
+            : '/.proxy/dtm/demo/index.mjs?v=__CI_HASH__');
 
         const { createDtmStudio } = DTM;
 
