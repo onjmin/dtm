@@ -18,7 +18,12 @@ import { buildNameToKeyMapping } from "./audio-config";
 import { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 import { DRUM_FONT, DRUM_KEYS } from "./drum-config";
 import { INSTRUMENT_PRESETS } from "./instrument-presets";
-import { createSingingVoices, type SingingVoices } from "./lyrics";
+import {
+	createSingingVoices,
+	KOE_VOICEBANKS,
+	koeUrl,
+	type SingingVoices,
+} from "./lyrics";
 import {
 	type MmlPlayerInstance,
 	type MmlPlayerOptions,
@@ -149,6 +154,12 @@ export type DtmStudioOptions = {
 	engines?: DtmStudioEngines;
 	/** CDN URL の上書き。 */
 	cdn?: Partial<typeof DEFAULT_CDN>;
+	/**
+	 * koe音源（.koe）のベースURL。
+	 * Discord Activity など CSP 制限下で `/.proxy/koe` を渡すと
+	 * worker 内の fetch も同オリジン経由になり CSP を通過できる。
+	 */
+	koeBaseUrl?: string;
 	/** 有効化する機能。既定はすべて true。 */
 	features?: {
 		/** MIDIファイル読み込み。 */
@@ -372,8 +383,17 @@ export const createDtmStudio = async (
 		options.voiceWorkerUrl === null
 			? undefined
 			: (options.voiceWorkerUrl ?? resolveDefaultVoiceWorkerUrl());
+	const voicebanks = options.koeBaseUrl
+		? Object.fromEntries(
+				Object.entries(KOE_VOICEBANKS).map(([k, file]) => [
+					k,
+					koeUrl(file, options.koeBaseUrl),
+				]),
+			)
+		: undefined;
 	const singingVoices = createSingingVoices(audioCtx, masterGain, {
 		voiceWorkerUrl,
+		voicebanks,
 	});
 
 	// ── SoundFont（楽器）ロード ──
