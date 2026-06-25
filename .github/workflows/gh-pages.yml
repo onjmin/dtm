@@ -46,9 +46,6 @@ jobs:
           cp dist/index.mjs docs/demo/index.mjs
           cp dist/voice-worker.js docs/demo/voice-worker.js
 
-      - name: Build Discord Activity SDK bundle
-        run: node_modules/.bin/esbuild node_modules/@discord/embedded-app-sdk/output/index.mjs --bundle --format=esm --outfile=demo/activity/discord-sdk.js --minify
-
       - name: Copy Discord Activity files
         run: |
           mkdir -p docs/demo/activity

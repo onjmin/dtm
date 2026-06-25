@@ -189,14 +189,16 @@ const initDiscord = async () => {
     // ─── Discord の URL Mapping（CSP制限対策）────────────────────
     // Developer Portal > Activities > URL Mappings に以下を追加:
     //   Prefix: /fonts   Target: db.onlinewebfonts.com
-    //   Prefix: /github  Target: onjmin.github.io
+    //   Prefix: /dtm     Target: onjmin.github.io/dtm
+    //   Prefix: /sf      Target: rpgen3.github.io
     //
     // ※ Portal側のPrefixに「.proxy」は不要。
     //   コード側の patchUrlMappings では /.proxy/ を付けて指定する（SDKの仕様）。
     try {
         patchUrlMappings([
-            { prefix: '/.proxy/fonts',  target: 'db.onlinewebfonts.com' },
-            { prefix: '/.proxy/github', target: 'onjmin.github.io' },
+            { prefix: '/.proxy/fonts', target: 'db.onlinewebfonts.com' },
+            { prefix: '/.proxy/dtm',   target: 'onjmin.github.io/dtm' },
+            { prefix: '/.proxy/sf',    target: 'rpgen3.github.io' },
         ]);
     } catch (_) {
         // patchUrlMappings はDiscord外では何もしないので無視
