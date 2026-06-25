@@ -160,6 +160,12 @@ export type DtmStudioOptions = {
 	 * worker 内の fetch も同オリジン経由になり CSP を通過できる。
 	 */
 	koeBaseUrl?: string;
+	/**
+	 * worldline.js（WORLDボコーダ）のURL。
+	 * Discord Activity など CSP 制限下で `/.proxy/koe-lib/demo/world/worldline.js`
+	 * を渡すと worker 内の importScripts も同オリジン経由になり CSP を通過できる。
+	 */
+	worldlineScriptUrl?: string;
 	/** 有効化する機能。既定はすべて true。 */
 	features?: {
 		/** MIDIファイル読み込み。 */
@@ -394,6 +400,7 @@ export const createDtmStudio = async (
 	const singingVoices = createSingingVoices(audioCtx, masterGain, {
 		voiceWorkerUrl,
 		voicebanks,
+		worldlineScriptUrl: options.worldlineScriptUrl,
 	});
 
 	// ── SoundFont（楽器）ロード ──

@@ -201,7 +201,10 @@ const mountPlayer = async (mml) => {
         }
 
         playerArea.innerHTML = '';
-        const studio = await createDtmStudio({ koeBaseUrl: '/.proxy/koe' });
+        const studio = await createDtmStudio({
+            koeBaseUrl: '/.proxy/koe',
+            worldlineScriptUrl: '/.proxy/koe-lib/demo/world/worldline.js',
+        });
         playerInstance = studio.mountPlayer(playerArea, mml, { volume: 50 });
     } catch (e) {
         playerArea.innerHTML = '';
