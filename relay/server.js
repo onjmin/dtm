@@ -16,10 +16,17 @@
  *     { type: "patch",      userId, trackIndex, added, removed }
  */
 
+import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
-const wss = new WebSocketServer({ port: PORT });
+
+const server = createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('DTM Collab Relay OK\n');
+});
+
+const wss = new WebSocketServer({ server });
 
 /**
  * rooms: Map<roomId, Map<userId, UserState>>
@@ -132,4 +139,6 @@ wss.on('connection', (ws) => {
     });
 });
 
-console.log(`[relay] Listening on port ${PORT}`);
+server.listen(PORT, () => {
+    console.log(`[relay] Listening on port ${PORT}`);
+});
