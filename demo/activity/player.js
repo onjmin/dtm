@@ -6,12 +6,12 @@
 
 import { DiscordSDK, patchUrlMappings } from './discord-sdk.js';
 
-// ─── Discord CSP対策: <script>タグ動的注入をblob:URLに変換 ──────────────
-// Discord の script-src は blob: を許可しているが外部ドメインは不可。
-// SoundFont ライブラリが <script src="https://surikov..."> を注入するため、
-// appendChild/insertBefore をインターセプトして fetch→blob に差し替える。
-// ※ document.createElement は一切触らない（PLAY回帰の原因になるため）
-(function patchScriptInjectionForDiscordCSP() {
+// ─── Discord CSP対策: <script src="外部URL"> を fetch+eval に差し替え ──────
+// rpgen3/getScript は append(el) 後に el.src を設定するため、
+// appendChild インターセプトでは手遅れ。createElement 時に src setter を
+// 上書きし、外部URLが渡された瞬間に fetch → eval(code) → load発火 に切り替える。
+// 'unsafe-eval' は Discord Activity の script-src で許可されている。
+(function patchScriptSrcForDiscordCSP() {
     const URL_REMAP = [
         ['https://surikov.github.io/', '/.proxy/surikov/'],
         ['https://rpgen3.github.io/',  '/.proxy/sf/'],
@@ -24,37 +24,35 @@ import { DiscordSDK, patchUrlMappings } from './discord-sdk.js';
         return null;
     }
 
+    const origCreate = Document.prototype.createElement;
     const srcDesc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
 
-    function interceptInsert(origFn) {
-        return function(node, ...rest) {
-            if (node instanceof HTMLScriptElement) {
-                // getAttribute で生の属性値を読む（JSプロパティは絶対URL化されるため）
-                const rawSrc = node.getAttribute('src');
-                const proxied = remap(rawSrc);
-                if (proxied) {
-                    const parent = this;
-                    node.removeAttribute('src');
-                    fetch(proxied)
-                        .then(r => r.text())
-                        .then(code => {
-                            const blobUrl = URL.createObjectURL(
-                                new Blob([code], { type: 'application/javascript' })
-                            );
-                            srcDesc.set.call(node, blobUrl);
-                            origFn.call(parent, node, ...rest);
-                        })
-                        .catch(() => node.dispatchEvent(new Event('error')));
-                    return node;
-                }
-            }
-            return origFn.call(this, node, ...rest);
-        };
-    }
-    Node.prototype.appendChild  = interceptInsert(Node.prototype.appendChild);
-    Node.prototype.insertBefore = interceptInsert(Node.prototype.insertBefore);
-    // rpgen3/mylib の getScript は document.head.append() を使うため追加で patch
-    Element.prototype.append    = interceptInsert(Element.prototype.append);
+    Document.prototype.createElement = function(tag, opts) {
+        const el = origCreate.call(this, tag, opts);
+        if (typeof tag === 'string' && tag.toLowerCase() === 'script') {
+            Object.defineProperty(el, 'src', {
+                get() { return srcDesc.get.call(el); },
+                set(url) {
+                    const proxied = remap(url);
+                    if (proxied) {
+                        // 外部スクリプト: fetch して eval、load/error を手動発火
+                        fetch(proxied)
+                            .then(r => r.text())
+                            .then(code => {
+                                // eslint-disable-next-line no-eval
+                                (0, eval)(code);
+                                el.dispatchEvent(new Event('load'));
+                            })
+                            .catch(() => el.dispatchEvent(new Event('error')));
+                    } else {
+                        srcDesc.set.call(el, url);
+                    }
+                },
+                configurable: true,
+            });
+        }
+        return el;
+    };
 })();
 
 // ─── DOM要素 ───────────────────────────────────────────────
@@ -167,7 +165,7 @@ const mountPlayer = async (mml) => {
         const isLocal = location.hostname === 'localhost';
         const DTM = await import(isLocal
             ? 'http://localhost:40298/dist/index.mjs'
-            : '/.proxy/dtm/demo/index.mjs?v=1e260a3d');
+            : '/.proxy/dtm/demo/index.mjs?v=6af92fd9');
 
         const { createDtmStudio } = DTM;
 

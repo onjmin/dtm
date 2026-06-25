@@ -281,20 +281,20 @@
                     class="min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-black text-pico-cyan
                            text-xs uppercase tracking-widest cursor-pointer font-pixel
                            shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
-                    🔗 COPY SHARE LINK
+                    リンクをコピー
                 </button>
                 <button id="discord-share-btn"
                     class="min-h-[40px] px-4 border-2 border-pico-lavend bg-pico-black text-pico-lavend
                            text-xs uppercase tracking-widest cursor-pointer font-pixel
                            shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none"
                     title="Discord Activityで再生するためのコードをコピー">
-                    🎮 DISCORD
+                    Discord
                 </button>
                 <button id="show-history-btn"
                     class="min-h-[40px] px-4 border-2 border-pico-yellow bg-pico-black text-pico-yellow
                            text-xs uppercase tracking-widest cursor-pointer font-pixel
                            shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
-                    📜 WORK HISTORY
+                    作業履歴
                 </button>
                 <span id="share-status" class="text-pico-lavend text-xs uppercase tracking-widest"></span>
                 <span id="grace-period-status" class="text-pico-orange text-xs uppercase tracking-widest"></span>
@@ -638,7 +638,7 @@
                 openShareModal(
                     'discord-share-modal-overlay',
                     payload,
-                    '🎮 Discord用コードをコピーしました！ Activityに貼り付けてください。',
+                    'Discord用コードをコピーしました！ Activityに貼り付けてください。',
                     'text-pico-lavend text-xs uppercase tracking-widest'
                 );
             } catch (err) {
@@ -789,14 +789,14 @@
 
                 // プレビュー再生用ボタン
                 const playBtn = document.createElement('button');
-                playBtn.textContent = '▶ PLAY PREVIEW';
+                playBtn.textContent = '試聴';
                 playBtn.className = 'px-3 py-1.5 border-2 border-pico-green bg-pico-black text-pico-green text-[10px] uppercase font-pixel tracking-wide shadow-[2px_2px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none cursor-pointer';
 
                 playBtn.addEventListener('click', () => {
                     if (previewPlayer) {
                         previewPlayer.destroy();
                         previewPlayer = null;
-                        playBtn.textContent = '▶ PLAY PREVIEW';
+                        playBtn.textContent = '試聴';
                         playBtn.className = 'px-3 py-1.5 border-2 border-pico-green bg-pico-black text-pico-green text-[10px] uppercase font-pixel tracking-wide shadow-[2px_2px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none cursor-pointer';
                         playBtn.removeAttribute('data-preview-active');
                         playerContainer.classList.add('hidden');
@@ -809,7 +809,7 @@
                         previewPlayer = studio.mountPlayer(playerAppDiv, item.mml, { volume: 50, skipConsent: true });
                         previewPlayer.play();
 
-                        playBtn.textContent = '■ STOP PREVIEW';
+                        playBtn.textContent = '停止';
                         playBtn.className = 'px-3 py-1.5 border-2 border-pico-red bg-pico-black text-pico-red text-[10px] uppercase font-pixel tracking-wide shadow-[2px_2px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none cursor-pointer';
                     }
                 });
@@ -822,7 +822,7 @@
 
                 const a = document.createElement('a');
                 a.href = directUrl;
-                a.textContent = '🔗 OPEN THIS SNAPSHOT';
+                a.textContent = 'この履歴を読み込む';
                 a.className = 'text-pico-cyan hover:text-pico-yellow text-xs uppercase tracking-wide decoration-solid underline cursor-pointer';
                 a.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -914,7 +914,7 @@
         onclick="if(event.target===this)this.classList.add('hidden')">
         <div class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
             <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
-                <span class="text-pico-yellow text-sm font-bold">🔗 共有リンク</span>
+                <span class="text-pico-yellow text-sm font-bold">共有リンク</span>
                 <button class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none"
                     onclick="document.getElementById('share-link-modal-overlay').classList.add('hidden')">&times;</button>
             </div>
@@ -941,7 +941,7 @@
         onclick="if(event.target===this)this.classList.add('hidden')">
         <div class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
             <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
-                <span class="text-pico-yellow text-sm font-bold">🎮 Discord Activity コード</span>
+                <span class="text-pico-yellow text-sm font-bold">Discord Activity コード</span>
                 <button class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none"
                     onclick="document.getElementById('discord-share-modal-overlay').classList.add('hidden')">&times;</button>
             </div>
