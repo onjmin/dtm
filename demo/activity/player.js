@@ -6,6 +6,80 @@
 
 import { DiscordSDK, patchUrlMappings } from './discord-sdk.js';
 
+// ─── Discord CSP対策: <script>タグ動的注入をblob:URLに変換 ──────────────
+// Discord の script-src は blob: を許可しているが外部ドメインは不可。
+// SoundFont ライブラリが <script src="https://surikov..."> を注入するため、
+// createElement/appendChild をインターセプトして fetch→blob に差し替える。
+(function patchScriptInjectionForDiscordCSP() {
+    const URL_REMAP = [
+        ['https://surikov.github.io/', '/.proxy/surikov/'],
+        ['https://rpgen3.github.io/',  '/.proxy/sf/'],
+    ];
+    function remap(url) {
+        if (!url) return null;
+        // resolve relative URLs against current origin
+        let abs;
+        try { abs = new URL(url, location.href).href; } catch { return null; }
+        for (const [from, to] of URL_REMAP) {
+            if (abs.startsWith(from)) return to + abs.slice(from.length);
+        }
+        return null;
+    }
+
+    // Override createElement to intercept src assignment
+    const _origCreate = Document.prototype.createElement;
+    Document.prototype.createElement = function(tag, opts) {
+        const el = _origCreate.call(this, tag, opts);
+        if (typeof tag === 'string' && tag.toLowerCase() === 'script') {
+            el._dtmPendingSrc = null;
+            const srcDesc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
+            Object.defineProperty(el, 'src', {
+                get() { return el._dtmOrigSrc ?? srcDesc.get.call(el); },
+                set(val) {
+                    const proxied = remap(val);
+                    if (proxied) {
+                        el._dtmOrigSrc = val;
+                        el._dtmPendingSrc = proxied;
+                    } else {
+                        el._dtmOrigSrc = val;
+                        srcDesc.set.call(el, val);
+                    }
+                },
+                configurable: true,
+            });
+        }
+        return el;
+    };
+
+    // Intercept appendChild/insertBefore to defer insertion until blob URL is ready
+    function interceptInsert(origFn) {
+        return function(node, ...rest) {
+            if (node instanceof HTMLScriptElement && node._dtmPendingSrc) {
+                const pending = node._dtmPendingSrc;
+                const parent = this;
+                node._dtmPendingSrc = null;
+                fetch(pending)
+                    .then(r => r.text())
+                    .then(code => {
+                        const blobUrl = URL.createObjectURL(
+                            new Blob([code], { type: 'application/javascript' })
+                        );
+                        // Remove own src property so prototype setter is used
+                        delete node.src;
+                        Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src')
+                            .set.call(node, blobUrl);
+                        origFn.call(parent, node, ...rest);
+                    })
+                    .catch(() => node.dispatchEvent(new Event('error')));
+                return node;
+            }
+            return origFn.call(this, node, ...rest);
+        };
+    }
+    Node.prototype.appendChild   = interceptInsert(Node.prototype.appendChild);
+    Node.prototype.insertBefore  = interceptInsert(Node.prototype.insertBefore);
+})();
+
 // ─── DOM要素 ───────────────────────────────────────────────
 const discordDot   = document.getElementById('discord-dot');
 const statusText   = document.getElementById('status-text');
@@ -126,7 +200,7 @@ const mountPlayer = async (mml) => {
         }
 
         playerArea.innerHTML = '';
-        const studio = await createDtmStudio();
+        const studio = await createDtmStudio({ koeBaseUrl: '/.proxy/koe' });
         playerInstance = studio.mountPlayer(playerArea, mml, { volume: 50 });
     } catch (e) {
         playerArea.innerHTML = '';
@@ -200,6 +274,7 @@ const initDiscord = async () => {
             { prefix: '/.proxy/dtm',     target: 'onjmin.github.io/dtm' },
             { prefix: '/.proxy/sf',      target: 'rpgen3.github.io' },
             { prefix: '/.proxy/surikov', target: 'surikov.github.io' },
+            { prefix: '/.proxy/koe',     target: 'pub-12482a6b5cbc4c9e906b2e1904cabae5.r2.dev' },
         ]);
     } catch (_) {
         // patchUrlMappings はDiscord外では何もしないので無視

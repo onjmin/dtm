@@ -9864,8 +9864,15 @@ var createDtmStudio = async (options = {}) => {
     });
   }
   const voiceWorkerUrl = options.voiceWorkerUrl === null ? void 0 : options.voiceWorkerUrl ?? resolveDefaultVoiceWorkerUrl();
+  const voicebanks = options.koeBaseUrl ? Object.fromEntries(
+    Object.entries(KOE_VOICEBANKS).map(([k, file]) => [
+      k,
+      koeUrl(file, options.koeBaseUrl)
+    ])
+  ) : void 0;
   const singingVoices = createSingingVoices(audioCtx, masterGain, {
-    voiceWorkerUrl
+    voiceWorkerUrl,
+    voicebanks
   });
   const listReady = new Promise((resolve) => {
     SoundFont_list.init();
