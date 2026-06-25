@@ -309,8 +309,20 @@
 
     </div>
 
+    <!--
+      Import Map: rpgen3.github.io への動的 import() を Discord プロキシ経由にリダイレクト
+      Developer Portal の URL Mappings: /sf → rpgen3.github.io が必要
+    -->
+    <script type="importmap">
+    {
+      "imports": {
+        "https://rpgen3.github.io/": "/.proxy/sf/"
+      }
+    }
+    </script>
+
     <!-- External module script (CSP compliant: no inline JS) -->
-    <script type="module" src="./player.js?v=2"></script>
+    <script type="module" src="./player.js?v=3"></script>
 </body>
 
 </html>
