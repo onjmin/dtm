@@ -257,6 +257,8 @@ export type DawOptions = {
 	 * 協力DAWで他人のトラックを誤編集しないために使う。
 	 */
 	lockedTracks?: string[];
+	/** 初期アクティブトラックID（未指定なら最初のトラック）。協力DAWで自分のトラックを初期選択するために使う。 */
+	initialActiveTrack?: string;
 
 	// --- 注入される外部パーサ（任意） ---
 	parseMidi?: ParseMidiFn;

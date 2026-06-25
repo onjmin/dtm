@@ -380,7 +380,7 @@ export const mountDAW = (
 	let currentDrumPattern = refs.drumSelect.value;
 	// MML出力の先頭に埋め込む楽器プリセット名（トップレベル宣言。空なら宣言なし）
 	let currentInstrument = "";
-	let activeTrackId = trackConfigs[0].id;
+	let activeTrackId = options.initialActiveTrack ?? trackConfigs[0].id;
 	let activeToolMode: ToolMode = "pen";
 	let currentInsertLength = 48;
 	let snapGridSteps = 12;

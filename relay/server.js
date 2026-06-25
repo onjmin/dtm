@@ -68,10 +68,17 @@ wss.on('connection', (ws) => {
                 room.delete(userId);
             }
 
-            // トラックインデックスを最小の未使用番号で割り当て
-            const usedIndices = new Set([...room.values()].map((u) => u.trackIndex));
-            let trackIndex = 0;
-            while (usedIndices.has(trackIndex)) trackIndex++;
+            // トラックインデックスを最小の未使用番号で割り当て（上限15）
+            // -1 = 閲覧専用（スペクテーター）
+            const MAX_TRACKS = 15;
+            const usedIndices = new Set(
+                [...room.values()].map((u) => u.trackIndex).filter((i) => i >= 0),
+            );
+            let trackIndex = -1;
+            if (usedIndices.size < MAX_TRACKS) {
+                trackIndex = 0;
+                while (usedIndices.has(trackIndex)) trackIndex++;
+            }
 
             room.set(userId, { ws, username, trackIndex, notes: [] });
 

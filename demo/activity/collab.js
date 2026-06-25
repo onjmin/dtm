@@ -192,6 +192,7 @@ const connectRelay = (roomId) => {
     setRelayStatus('', 'CONNECTING TO RELAY…');
     const url = `${getRelayUrl()}?room=${encodeURIComponent(roomId)}`;
     ws = new WebSocket(url);
+    ws._roomId = roomId;
 
     ws.addEventListener('open', () => {
         setRelayStatus('connected', 'RELAY CONNECTED');
@@ -218,10 +219,17 @@ const connectRelay = (roomId) => {
 const handleRelayMessage = (msg) => {
     switch (msg.type) {
         case 'joined': {
+            const wasSpectator = myTrackIndex === -1;
             myTrackIndex = msg.yourTrackIndex;
-            // 自分のトラック以外をロック（DawOptionsのlockedTracksは初期化時のみ設定可能なため、
-            // DAWが起動済みならここでは参考情報のみ。DAW起動前なら initDAW で使う）
+            players.set(myUserId, { username: myUsername, trackIndex: myTrackIndex });
             renderPlayers();
+            // スペクテーターから昇格した場合は DAW を再マウント
+            if (wasSpectator && myTrackIndex >= 0 && dawInstance) {
+                dawInstance.destroy();
+                dawInstance = null;
+                document.getElementById('players-label').textContent = '► PLAYERS';
+                initDAW(false).catch(console.error);
+            }
             break;
         }
         case 'full-state': {
@@ -244,6 +252,10 @@ const handleRelayMessage = (msg) => {
         case 'user-leave': {
             players.delete(msg.userId);
             renderPlayers();
+            // スペクテーターは先客が抜けたら再join して昇格を試みる
+            if (myTrackIndex === -1 && ws?.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'join', roomId: ws._roomId, userId: myUserId, username: myUsername }));
+            }
             break;
         }
         case 'patch': {
@@ -271,7 +283,7 @@ const sendPatch = (trackId, added, removed) => {
 };
 
 // ─── DAW 起動 ────────────────────────────────────────────────
-const initDAW = async () => {
+const initDAW = async (spectator = false) => {
     bootMsg.style.display = 'none';
 
     const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
@@ -286,13 +298,19 @@ const initDAW = async () => {
         worldlineScriptUrl: '/.proxy/koe-lib/demo/world/worldline.js',
     });
 
-    // lockedTracks = 自分のトラック以外すべて
-    const myTrackId  = TRACK_IDS[myTrackIndex] ?? 'melody';
-    const lockedTracks = TRACK_IDS.filter((_, i) => i !== myTrackIndex && i < (TRACKS_SIMPLE?.length ?? 4));
+    const trackCount = TRACKS_SIMPLE?.length ?? 4;
+    const myTrackId = TRACK_IDS[myTrackIndex] ?? 'melody';
+
+    // スペクテーターは全トラックロック、通常は自分以外ロック
+    const lockedTracks = spectator
+        ? TRACK_IDS.slice(0, trackCount)
+        : TRACK_IDS.filter((_, i) => i !== myTrackIndex && i < trackCount);
 
     dawInstance = studio.mountEditor(dawArea, {
         lockedTracks,
-        onNotesPatch: (trackId, added, removed) => {
+        initialActiveTrack: spectator ? TRACK_IDS[0] : myTrackId,
+        features: { midi: false },
+        onNotesPatch: spectator ? undefined : (trackId, added, removed) => {
             sendPatch(trackId, added, removed);
         },
     });
@@ -348,17 +366,29 @@ const main = async () => {
     // joined を受け取ったら DAW 起動（最大5秒待機）
     await new Promise((resolve) => {
         const check = setInterval(() => {
-            if (myTrackIndex >= 0) { clearInterval(check); resolve(); }
+            if (myTrackIndex !== -1) { clearInterval(check); resolve(); }
         }, 100);
         setTimeout(() => { clearInterval(check); resolve(); }, 5000);
     });
 
     // 自分のエントリを trackIndex で更新
-    players.set(myUserId, { username: myUsername, trackIndex: myTrackIndex >= 0 ? myTrackIndex : 0 });
-    if (myTrackIndex < 0) myTrackIndex = 0;
+    players.set(myUserId, { username: myUsername, trackIndex: myTrackIndex });
+
+    if (myTrackIndex === -1) {
+        // スペクテーターモード：全トラックを読み取り専用で表示
+        bootMsg.style.display = 'none';
+        document.getElementById('players-label').textContent = '► PLAYERS  （満員 — 閲覧専用）';
+        try {
+            await initDAW(true);
+        } catch (e) {
+            showError('DAW初期化に失敗しました: ' + (e?.message ?? e));
+            console.error(e);
+        }
+        return;
+    }
 
     try {
-        await initDAW();
+        await initDAW(false);
     } catch (e) {
         showError('DAW初期化に失敗しました: ' + (e?.message ?? e));
         console.error(e);
