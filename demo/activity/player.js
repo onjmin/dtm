@@ -9,76 +9,50 @@ import { DiscordSDK, patchUrlMappings } from './discord-sdk.js';
 // ─── Discord CSP対策: <script>タグ動的注入をblob:URLに変換 ──────────────
 // Discord の script-src は blob: を許可しているが外部ドメインは不可。
 // SoundFont ライブラリが <script src="https://surikov..."> を注入するため、
-// createElement/appendChild をインターセプトして fetch→blob に差し替える。
-// TODO: IIFE無効化中（PLAY回帰の切り分け用）
-if (false) (function patchScriptInjectionForDiscordCSP() {
+// appendChild/insertBefore をインターセプトして fetch→blob に差し替える。
+// ※ document.createElement は一切触らない（PLAY回帰の原因になるため）
+(function patchScriptInjectionForDiscordCSP() {
     const URL_REMAP = [
         ['https://surikov.github.io/', '/.proxy/surikov/'],
         ['https://rpgen3.github.io/',  '/.proxy/sf/'],
     ];
     function remap(url) {
         if (!url) return null;
-        // resolve relative URLs against current origin
-        let abs;
-        try { abs = new URL(url, location.href).href; } catch { return null; }
         for (const [from, to] of URL_REMAP) {
-            if (abs.startsWith(from)) return to + abs.slice(from.length);
+            if (url.startsWith(from)) return to + url.slice(from.length);
         }
         return null;
     }
 
-    // Override createElement to intercept src assignment
-    const _origCreate = Document.prototype.createElement;
-    Document.prototype.createElement = function(tag, opts) {
-        const el = _origCreate.call(this, tag, opts);
-        if (typeof tag === 'string' && tag.toLowerCase() === 'script') {
-            el._dtmPendingSrc = null;
-            const srcDesc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
-            Object.defineProperty(el, 'src', {
-                get() { return el._dtmOrigSrc ?? srcDesc.get.call(el); },
-                set(val) {
-                    const proxied = remap(val);
-                    if (proxied) {
-                        el._dtmOrigSrc = val;
-                        el._dtmPendingSrc = proxied;
-                    } else {
-                        el._dtmOrigSrc = val;
-                        srcDesc.set.call(el, val);
-                    }
-                },
-                configurable: true,
-            });
-        }
-        return el;
-    };
+    const srcDesc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
 
-    // Intercept appendChild/insertBefore to defer insertion until blob URL is ready
     function interceptInsert(origFn) {
         return function(node, ...rest) {
-            if (node instanceof HTMLScriptElement && node._dtmPendingSrc) {
-                const pending = node._dtmPendingSrc;
-                const parent = this;
-                node._dtmPendingSrc = null;
-                fetch(pending)
-                    .then(r => r.text())
-                    .then(code => {
-                        const blobUrl = URL.createObjectURL(
-                            new Blob([code], { type: 'application/javascript' })
-                        );
-                        // Remove own src property so prototype setter is used
-                        delete node.src;
-                        Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src')
-                            .set.call(node, blobUrl);
-                        origFn.call(parent, node, ...rest);
-                    })
-                    .catch(() => node.dispatchEvent(new Event('error')));
-                return node;
+            if (node instanceof HTMLScriptElement) {
+                // getAttribute で生の属性値を読む（JSプロパティは絶対URL化されるため）
+                const rawSrc = node.getAttribute('src');
+                const proxied = remap(rawSrc);
+                if (proxied) {
+                    const parent = this;
+                    node.removeAttribute('src');
+                    fetch(proxied)
+                        .then(r => r.text())
+                        .then(code => {
+                            const blobUrl = URL.createObjectURL(
+                                new Blob([code], { type: 'application/javascript' })
+                            );
+                            srcDesc.set.call(node, blobUrl);
+                            origFn.call(parent, node, ...rest);
+                        })
+                        .catch(() => node.dispatchEvent(new Event('error')));
+                    return node;
+                }
             }
             return origFn.call(this, node, ...rest);
         };
     }
-    Node.prototype.appendChild   = interceptInsert(Node.prototype.appendChild);
-    Node.prototype.insertBefore  = interceptInsert(Node.prototype.insertBefore);
+    Node.prototype.appendChild  = interceptInsert(Node.prototype.appendChild);
+    Node.prototype.insertBefore = interceptInsert(Node.prototype.insertBefore);
 })();
 
 // ─── DOM要素 ───────────────────────────────────────────────
@@ -191,7 +165,7 @@ const mountPlayer = async (mml) => {
         const isLocal = location.hostname === 'localhost';
         const DTM = await import(isLocal
             ? 'http://localhost:40298/dist/index.mjs'
-            : '/.proxy/dtm/demo/index.mjs?v=df71a965');
+            : '/.proxy/dtm/demo/index.mjs?v=4b1b207e');
 
         const { createDtmStudio } = DTM;
 
