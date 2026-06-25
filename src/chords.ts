@@ -1,7 +1,7 @@
 /**
  * コード進行文字列を伴奏トラックのノート配置へ展開する。
  *
- * parseChord / parseChords は外部（rpgen3）実装を注入する想定。
+ * parseChord / parseChords は外部実装を注入する想定。
  * 旧 demo/index.html の applyChordProgression を移植・整理し、
  * 実際のノート追加を行わず配置（placement）の配列を返す純関数にした。
  */

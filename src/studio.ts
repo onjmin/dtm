@@ -2,7 +2,7 @@
  * createDtmStudio — 「import して関数1つ」で鳴る、全部入りスタジオ（Layer 3）。
  *
  * @onjmin/dtm 本体（mountDAW / mountMmlPlayer）は発音を持たない注入式設計で、
- * 楽器・ドラムの実音は外部 SoundFont（rpgen3）に委ねる。デモ index.html では
+ * 楽器・ドラムの実音は同梱の SoundFont エンジン（surikov / webaudiofont）に委ねる。デモ index.html では
  * その配線（AudioContext・SoundFontロード・歌声ワーカー・録音・MIDI/コード解析）を
  * 手書きしていたが、本モジュールはそれを丸ごと内包する。
  *
@@ -10,7 +10,7 @@
  *   studio.mountEditor(editorEl, { initialMML });  // 編集UI（音・歌声込み）
  *   studio.mountPlayer(playerEl, mml);             // 再生専用UI（音・歌声込み）
  *
- * 何も渡さなければ rpgen3 SoundFont を実行時にCDNから動的importし、歌声合成ワーカーは
+ * 何も渡さなければ同梱の SoundFont エンジンを使い、歌声合成ワーカーは
  * パッケージ同梱の dist/voice-worker.js を用いる。エンジンやURLは options で差し替え可能。
  */
 
@@ -44,7 +44,7 @@ import type {
 	TrackConfig,
 } from "./types";
 
-// ── 外部エンジンの最小型（rpgen3 SoundFont / midi-parser）──
+// ── 外部エンジンの最小型（SoundFont / midi-parser）──
 type SoundFontInstance = {
 	play: (o: {
 		ctx: AudioContext;
