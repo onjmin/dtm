@@ -10,7 +10,8 @@ import { DiscordSDK, patchUrlMappings } from './discord-sdk.js';
 // Discord の script-src は blob: を許可しているが外部ドメインは不可。
 // SoundFont ライブラリが <script src="https://surikov..."> を注入するため、
 // createElement/appendChild をインターセプトして fetch→blob に差し替える。
-(function patchScriptInjectionForDiscordCSP() {
+// TODO: IIFE無効化中（PLAY回帰の切り分け用）
+if (false) (function patchScriptInjectionForDiscordCSP() {
     const URL_REMAP = [
         ['https://surikov.github.io/', '/.proxy/surikov/'],
         ['https://rpgen3.github.io/',  '/.proxy/sf/'],
