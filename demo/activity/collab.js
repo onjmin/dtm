@@ -408,6 +408,12 @@ const handleRelayMessage = (msg) => {
             }
             break;
         }
+        case 'track-instrument': {
+            if (dawInstance && msg.trackIndex != null) {
+                dawInstance.applyTrackInstrument(msg.trackIndex, msg.instrumentName ?? '');
+            }
+            break;
+        }
         case 'cursor': {
             remoteCursors.set(msg.userId, { step: msg.step, pitch: msg.pitch, trackIndex: msg.trackIndex });
             break;
@@ -446,7 +452,7 @@ const initDAW = async (spectator = false) => {
     const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     const DTM = await import(isLocal
         ? 'http://localhost:40298/dist/index.mjs'
-        : '/.proxy/dtm/demo/index.mjs?v=7a4e9e7b');
+        : '/.proxy/dtm/demo/index.mjs?v=373c3757');
 
     const { createDtmStudio, TRACKS_ADVANCED } = DTM;
 
@@ -476,6 +482,11 @@ const initDAW = async (spectator = false) => {
         onLyricsChange: spectator ? undefined : (trackId, data) => {
             if (ws?.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'lyrics', trackId, data }));
+            }
+        },
+        onTrackInstrumentChange: spectator ? undefined : (trackIndex, instrumentName) => {
+            if (ws?.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'track-instrument', trackIndex, instrumentName }));
             }
         },
     });

@@ -9522,6 +9522,13 @@ var mountDAW = (target, options = {}) => {
       t.vocalPan = data.vocalPan;
       t.vocalOctave = data.vocalOctave;
     },
+    applyTrackInstrument: (trackIndex, instrumentName) => {
+      const t = trackStates[trackIndex];
+      if (!t) return;
+      const name = normalizeInstrumentName(instrumentName);
+      t.trackInstrument = name;
+      if (t.config.id === activeTrackId) updateTrackPanel();
+    },
     noteToCanvas: (step, pitch) => {
       const canvas = getGridCanvas();
       const x = step * renderConfig.stepWidth - currentOffsetX;
@@ -10727,6 +10734,10 @@ var createDtmStudio = async (options = {}) => {
         if (presetSelect) {
           presetSelect.setValue(name);
         }
+      },
+      applyTrackInstrument: (trackIndex, instrumentName) => {
+        daw.applyTrackInstrument(trackIndex, instrumentName);
+        void handleTrackInstrumentChange(trackIndex, instrumentName);
       },
       destroy
     };
