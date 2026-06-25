@@ -7442,7 +7442,7 @@ var mountDAW = (target, options = {}) => {
   let drumVolume = 80;
   let currentDrumPattern = refs.drumSelect.value;
   let currentInstrument = "";
-  let activeTrackId = trackConfigs[0].id;
+  let activeTrackId = options.initialActiveTrack ?? trackConfigs[0].id;
   let activeToolMode = "pen";
   let currentInsertLength = 48;
   let snapGridSteps = 12;
