@@ -164,6 +164,12 @@
         /* ─── DAW area ─── */
         #daw-area { min-height: 400px; }
 
+        /* マクロは非表示 */
+        [data-dtm="macro-clear"],
+        [data-dtm="macro-random"],
+        [data-dtm="macro-harmonic"],
+        [data-dtm="macro-mono"] { display: none !important; }
+
         /* ─── Boot / error ─── */
         #boot-msg {
             display: flex; align-items: center; gap: 8px;

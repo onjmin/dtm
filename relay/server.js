@@ -147,6 +147,21 @@ wss.on('connection', (ws) => {
             return;
         }
 
+        // ── lyrics ────────────────────────────────────────────
+        if (msg.type === 'lyrics') {
+            if (!roomId || !userId) return;
+            const room = rooms.get(roomId);
+            if (!room) return;
+            const user = room.users.get(userId);
+            if (!user || user.trackIndex < 0) return;
+            broadcast(room, {
+                type: 'lyrics',
+                trackId: msg.trackId,
+                data: msg.data,
+            }, userId);
+            return;
+        }
+
         // ── cursor ────────────────────────────────────────────
         if (msg.type === 'cursor') {
             if (!roomId || !userId) return;

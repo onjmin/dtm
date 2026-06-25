@@ -43,6 +43,16 @@ export type AddNoteOptions = {
 	velocity?: number;
 };
 
+/** 歌詞・UTAU設定の同期データ。 */
+export type LyricSyncData = {
+	lyrics: string;
+	model: string;
+	vocalVolume: number;
+	vocalGate: number;
+	vocalPan: number;
+	vocalOctave: number;
+};
+
 /** パッチ送受信用ノートデータ（ローカルIDを持たない）。 */
 export type NoteData = {
 	startStep: number;
@@ -251,6 +261,8 @@ export type DawOptions = {
 		added: NoteData[],
 		removed: NoteRemove[],
 	) => void;
+	/** 歌詞・UTAUデータが変更されたときに呼ばれる（300msデバウンス済み）。 */
+	onLyricsChange?: (trackId: string, data: LyricSyncData) => void;
 	/**
 	 * 編集をロックするトラックIDの配列。
 	 * 指定されたトラックへのユーザー操作（音符追加・削除）は無視される。
@@ -324,6 +336,8 @@ export type DawInstance = {
 		added: NoteData[],
 		removed: NoteRemove[],
 	) => void;
+	/** リモートから受信した歌詞・UTAU設定を適用する。 */
+	applyLyrics: (trackId: string, data: LyricSyncData) => void;
 	/**
 	 * 指定トラックの音符をキャンバス上で表示・非表示にする（目ミュート）。
 	 * 非表示にしても内部データは保持される。

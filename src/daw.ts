@@ -416,6 +416,26 @@ export const mountDAW = (
 	let trackStates: TrackState[] = [];
 	// applyPatch 実行中は onNotesPatch を発火しない（エコーループ防止）。
 	let suppressPatch = false;
+	// onLyricsChange デバウンス用タイマー。
+	let lyricsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const fireLyricsChange = (t: TrackState): void => {
+		if (!options.onLyricsChange) return;
+		const trackId = t.config.id;
+		const data: import("./types").LyricSyncData = {
+			lyrics: t.lyrics,
+			model: t.lyricModel,
+			vocalVolume: t.vocalVolume,
+			vocalGate: t.vocalGate,
+			vocalPan: t.vocalPan,
+			vocalOctave: t.vocalOctave,
+		};
+		if (lyricsDebounceTimer) clearTimeout(lyricsDebounceTimer);
+		lyricsDebounceTimer = setTimeout(() => {
+			options.onLyricsChange!(trackId, data);
+			lyricsDebounceTimer = null;
+		}, 300);
+	};
 	// 目ミュート中のトラックID集合。
 	const hiddenTracks = new Set<string>();
 	// 音ミュート中のトラックID集合。
@@ -1511,21 +1531,26 @@ export const mountDAW = (
 			lyricModelSel.addEventListener("change", () => {
 				active.lyricModel = lyricModelSel.value;
 				syncLyricVisibility();
+				fireLyricsChange(active);
 			});
 			lyricOctaveSel.addEventListener("change", () => {
 				active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
+				fireLyricsChange(active);
 			});
 			lyricInput.addEventListener("input", () => {
 				active.lyrics = lyricInput.value;
 				updateLyricCount();
+				fireLyricsChange(active);
 			});
 			lyricVol.addEventListener("input", () => {
 				active.vocalVolume = Number.parseInt(lyricVol.value, 10);
 				lyricVolLabel.textContent = lyricVol.value;
+				fireLyricsChange(active);
 			});
 			lyricPan.addEventListener("input", () => {
 				active.vocalPan = Number.parseInt(lyricPan.value, 10);
 				lyricPanLabel.textContent = fmtPan(active.vocalPan);
+				fireLyricsChange(active);
 			});
 			// モバイルでスライダーをちょうど中央に合わせるのは難しいため、ラベルタップで中央へ戻す
 			lyricPanLabel.style.cursor = "pointer";
@@ -1534,6 +1559,7 @@ export const mountDAW = (
 				active.vocalPan = 64;
 				lyricPan.value = "64";
 				lyricPanLabel.textContent = fmtPan(64);
+				fireLyricsChange(active);
 			});
 		}
 
@@ -2562,6 +2588,19 @@ export const mountDAW = (
 		setTrackAudible: (trackId: string, audible: boolean): void => {
 			if (audible) audioMutedTracks.delete(trackId);
 			else audioMutedTracks.add(trackId);
+		},
+		applyLyrics: (
+			trackId: string,
+			data: import("./types").LyricSyncData,
+		): void => {
+			const t = trackStates.find((s) => s.config.id === trackId);
+			if (!t) return;
+			t.lyrics = data.lyrics;
+			t.lyricModel = data.model;
+			t.vocalVolume = data.vocalVolume;
+			t.vocalGate = data.vocalGate;
+			t.vocalPan = data.vocalPan;
+			t.vocalOctave = data.vocalOctave;
 		},
 		noteToCanvas: (step: number, pitch: number) => {
 			const canvas = getGridCanvas();
