@@ -6,6 +6,43 @@
 
 import { DiscordSDK, patchUrlMappings } from './discord-sdk.js';
 
+// ─── Discord CSP対策: surikov 楽器データの <script> 注入を blob: に変換 ───
+// SoundFont ライブラリ（src/sf/SoundFont.ts）の getScript は
+// src を append より先に設定するため、append 時点で src を読んで差し替えられる。
+(function patchScriptAppendForDiscordCSP() {
+    const SURIKOV = 'https://surikov.github.io/';
+    const PROXY   = '/.proxy/surikov/';
+    const srcDesc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
+
+    function interceptInsert(origFn) {
+        return function(node, ...rest) {
+            if (node instanceof HTMLScriptElement) {
+                const rawSrc = node.getAttribute('src');
+                if (rawSrc && rawSrc.startsWith(SURIKOV)) {
+                    const proxied = PROXY + rawSrc.slice(SURIKOV.length);
+                    const parent = this;
+                    node.removeAttribute('src');
+                    fetch(proxied)
+                        .then(r => r.text())
+                        .then(code => {
+                            const blobUrl = URL.createObjectURL(
+                                new Blob([code], { type: 'application/javascript' })
+                            );
+                            srcDesc.set.call(node, blobUrl);
+                            origFn.call(parent, node, ...rest);
+                        })
+                        .catch(() => node.dispatchEvent(new Event('error')));
+                    return node;
+                }
+            }
+            return origFn.call(this, node, ...rest);
+        };
+    }
+    Node.prototype.appendChild  = interceptInsert(Node.prototype.appendChild);
+    Node.prototype.insertBefore = interceptInsert(Node.prototype.insertBefore);
+    Element.prototype.append    = interceptInsert(Element.prototype.append);
+})();
+
 
 // ─── DOM要素 ───────────────────────────────────────────────
 const discordDot   = document.getElementById('discord-dot');
@@ -117,7 +154,7 @@ const mountPlayer = async (mml) => {
         const isLocal = location.hostname === 'localhost';
         const DTM = await import(isLocal
             ? 'http://localhost:40298/dist/index.mjs'
-            : '/.proxy/dtm/demo/index.mjs?v=4d310192');
+            : '/.proxy/dtm/demo/index.mjs?v=eea794f3');
 
         const { createDtmStudio } = DTM;
 
