@@ -559,10 +559,55 @@
             }
         });
 
+        // ── 共有モーダル共通ヘルパー ──
+        /**
+         * タイトルと内容テキストを受け取り、既存のモーダルパターンで表示する。
+         * textarea をクリックすると全選択、コピーボタンでクリップボードへ転送。
+         * @param {string} overlayId  - モーダルオーバーレイ要素のID
+         * @param {string} text       - テキストエリアに表示するテキスト
+         * @param {string} statusMsg  - コピー成功時のステータスメッセージ
+         * @param {string} statusCls  - コピー成功時のステータスクラス
+         */
+        const openShareModal = (overlayId, text, statusMsg, statusCls) => {
+            const overlay = document.getElementById(overlayId);
+            const textarea = overlay.querySelector('textarea');
+            const copyBtn = overlay.querySelector('.share-modal-copy-btn');
+            const copyStatus = overlay.querySelector('.share-modal-status');
+
+            // テキストエリアに内容をセット
+            textarea.value = text;
+
+            // コピーボタンの初期化（前回のハンドラを置き換えるためcloneで再セット）
+            const newCopyBtn = copyBtn.cloneNode(true);
+            copyBtn.parentNode.replaceChild(newCopyBtn, copyBtn);
+            copyStatus.textContent = '';
+            newCopyBtn.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    copyStatus.textContent = 'コピーしました';
+                    copyStatus.className = 'share-modal-status text-pico-green text-xs uppercase tracking-widest';
+                    newCopyBtn.textContent = 'コピー完了';
+                    newCopyBtn.style.borderColor = '#00e436';
+                    newCopyBtn.style.color = '#00e436';
+                } catch (err) {
+                    console.error(err);
+                    copyStatus.textContent = 'コピーに失敗しました';
+                    copyStatus.className = 'share-modal-status text-pico-red text-xs uppercase tracking-widest';
+                }
+                setTimeout(() => {
+                    copyStatus.textContent = '';
+                    newCopyBtn.textContent = 'コピー';
+                    newCopyBtn.style.borderColor = '';
+                    newCopyBtn.style.color = '';
+                }, 2000);
+            });
+
+            overlay.classList.remove('hidden');
+        };
+
         // ── 共有リンクコピー機能 ──
         const shareBtn = document.getElementById('share-link-copy');
         const discordShareBtn = document.getElementById('discord-share-btn');
-        const shareStatus = document.getElementById('share-status');
 
         shareBtn.addEventListener('click', async () => {
             if (!daw) return;
@@ -570,15 +615,15 @@
             try {
                 const payload = await encodeMml(full);
                 const shareUrl = `${location.href.split('#')[0]}#${payload}`;
-                await navigator.clipboard.writeText(shareUrl);
-                shareStatus.textContent = 'このページの共有リンクをコピーしました！';
-                shareStatus.className = 'text-pico-green text-xs uppercase tracking-widest';
+                openShareModal(
+                    'share-link-modal-overlay',
+                    shareUrl,
+                    'このページの共有リンクをコピーしました！',
+                    'text-pico-green text-xs uppercase tracking-widest'
+                );
             } catch (err) {
                 console.error(err);
-                shareStatus.textContent = 'コピーに失敗しました';
-                shareStatus.className = 'text-pico-red text-xs uppercase tracking-widest';
             }
-            setTimeout(() => { shareStatus.textContent = ''; }, 2000);
         });
 
         // ── Discord Activity 共有コードコピー機能 ──
@@ -590,22 +635,15 @@
             try {
                 const payload = await encodeMml(full);
                 // Discord Activity で貼り付けるコード（ペイロード部分のみ）
-                await navigator.clipboard.writeText(payload);
-                shareStatus.textContent = '🎮 Discord用コードをコピーしました！ Activityに貼り付けてください。';
-                shareStatus.className = 'text-pico-lavend text-xs uppercase tracking-widest';
-                // ボタンを一時的に色変え
-                discordShareBtn.style.borderColor = '#00e436';
-                discordShareBtn.style.color = '#00e436';
-                setTimeout(() => {
-                    discordShareBtn.style.borderColor = '';
-                    discordShareBtn.style.color = '';
-                }, 1500);
+                openShareModal(
+                    'discord-share-modal-overlay',
+                    payload,
+                    '🎮 Discord用コードをコピーしました！ Activityに貼り付けてください。',
+                    'text-pico-lavend text-xs uppercase tracking-widest'
+                );
             } catch (err) {
                 console.error(err);
-                shareStatus.textContent = 'コピーに失敗しました';
-                shareStatus.className = 'text-pico-red text-xs uppercase tracking-widest';
             }
-            setTimeout(() => { shareStatus.textContent = ''; }, 3000);
         });
 
         // ── 作業履歴（スナップショット）機能 ──
@@ -869,6 +907,60 @@
         });
 
     </script>
+
+    <!-- ════ 共有リンクモーダル ════ -->
+    <div id="share-link-modal-overlay"
+        class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden"
+        onclick="if(event.target===this)this.classList.add('hidden')">
+        <div class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
+            <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
+                <span class="text-pico-yellow text-sm font-bold">🔗 共有リンク</span>
+                <button class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none"
+                    onclick="document.getElementById('share-link-modal-overlay').classList.add('hidden')">&times;</button>
+            </div>
+            <div class="p-4 flex flex-col gap-3 text-xs">
+                <p class="text-pico-lavend leading-relaxed">このURLをコピーして共有すると、同じ曲を他の人が開けます。</p>
+                <textarea readonly
+                    class="w-full bg-pico-black border-2 border-pico-cyan text-pico-cyan font-pixel text-xs p-2 resize-none leading-relaxed cursor-pointer"
+                    rows="4"
+                    onclick="this.select()"
+                    style="word-break:break-all"></textarea>
+                <div class="flex items-center gap-3">
+                    <button class="share-modal-copy-btn min-h-[36px] px-4 border-2 border-pico-cyan bg-pico-black text-pico-cyan
+                                   text-xs uppercase tracking-widest cursor-pointer font-pixel
+                                   shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">コピー</button>
+                    <span class="share-modal-status text-xs uppercase tracking-widest"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════ Discord 共有モーダル ════ -->
+    <div id="discord-share-modal-overlay"
+        class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden"
+        onclick="if(event.target===this)this.classList.add('hidden')">
+        <div class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
+            <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
+                <span class="text-pico-yellow text-sm font-bold">🎮 Discord Activity コード</span>
+                <button class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none"
+                    onclick="document.getElementById('discord-share-modal-overlay').classList.add('hidden')">&times;</button>
+            </div>
+            <div class="p-4 flex flex-col gap-3 text-xs">
+                <p class="text-pico-lavend leading-relaxed">Discord Activity を起動して、このコードを貼り付けると再生できます。</p>
+                <textarea readonly
+                    class="w-full bg-pico-black border-2 border-pico-lavend text-pico-lavend font-pixel text-xs p-2 resize-none leading-relaxed cursor-pointer"
+                    rows="4"
+                    onclick="this.select()"
+                    style="word-break:break-all"></textarea>
+                <div class="flex items-center gap-3">
+                    <button class="share-modal-copy-btn min-h-[36px] px-4 border-2 border-pico-lavend bg-pico-black text-pico-lavend
+                                   text-xs uppercase tracking-widest cursor-pointer font-pixel
+                                   shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">コピー</button>
+                    <span class="share-modal-status text-xs uppercase tracking-widest"></span>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- ════ モード解説モーダル ════ -->
     <div id="mode-modal-overlay"
