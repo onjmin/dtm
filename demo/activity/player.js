@@ -239,7 +239,6 @@ const initDiscord = async () => {
         patchUrlMappings([
             { prefix: '/.proxy/fonts',   target: 'db.onlinewebfonts.com' },
             { prefix: '/.proxy/dtm',     target: 'onjmin.github.io/dtm' },
-            { prefix: '/.proxy/sf',      target: 'rpgen3.github.io' },
             { prefix: '/.proxy/surikov', target: 'surikov.github.io' },
             { prefix: '/.proxy/koe',     target: 'pub-12482a6b5cbc4c9e906b2e1904cabae5.r2.dev' },
         ]);
