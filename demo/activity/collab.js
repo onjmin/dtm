@@ -408,6 +408,12 @@ const handleRelayMessage = (msg) => {
             }
             break;
         }
+        case 'track-instrument': {
+            if (dawInstance && msg.trackIndex != null) {
+                dawInstance.applyTrackInstrument(msg.trackIndex, msg.instrumentName ?? '');
+            }
+            break;
+        }
         case 'cursor': {
             remoteCursors.set(msg.userId, { step: msg.step, pitch: msg.pitch, trackIndex: msg.trackIndex });
             break;
@@ -476,6 +482,11 @@ const initDAW = async (spectator = false) => {
         onLyricsChange: spectator ? undefined : (trackId, data) => {
             if (ws?.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'lyrics', trackId, data }));
+            }
+        },
+        onTrackInstrumentChange: spectator ? undefined : (trackIndex, instrumentName) => {
+            if (ws?.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'track-instrument', trackIndex, instrumentName }));
             }
         },
     });

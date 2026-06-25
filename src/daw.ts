@@ -2703,6 +2703,17 @@ export const mountDAW = (
 			t.vocalPan = data.vocalPan;
 			t.vocalOctave = data.vocalOctave;
 		},
+		applyTrackInstrument: (
+			trackIndex: number,
+			instrumentName: string,
+		): void => {
+			const t = trackStates[trackIndex];
+			if (!t) return;
+			const name = normalizeInstrumentName(instrumentName);
+			t.trackInstrument = name;
+			// アクティブトラックのパネルが表示中なら楽器プルダウンを更新
+			if (t.config.id === activeTrackId) updateTrackPanel();
+		},
 		noteToCanvas: (step: number, pitch: number) => {
 			const canvas = getGridCanvas();
 			const x = step * renderConfig.stepWidth - currentOffsetX;

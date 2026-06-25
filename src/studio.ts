@@ -791,6 +791,14 @@ export const createDtmStudio = async (
 					presetSelect.setValue(name);
 				}
 			},
+			applyTrackInstrument: (
+				trackIndex: number,
+				instrumentName: string,
+			): void => {
+				daw.applyTrackInstrument(trackIndex, instrumentName);
+				// SF2 解決用のオーバーライドも更新する
+				void handleTrackInstrumentChange(trackIndex, instrumentName);
+			},
 			destroy,
 		};
 	};

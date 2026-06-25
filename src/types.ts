@@ -346,6 +346,8 @@ export type DawInstance = {
 	) => void;
 	/** リモートから受信した歌詞・UTAU設定を適用する。 */
 	applyLyrics: (trackId: string, data: LyricSyncData) => void;
+	/** リモートから受信したトラック個別楽器を適用する（`onTrackInstrumentChange` は発火しない）。 */
+	applyTrackInstrument: (trackIndex: number, instrumentName: string) => void;
 	/**
 	 * 指定トラックの音符をキャンバス上で表示・非表示にする（目ミュート）。
 	 * 非表示にしても内部データは保持される。
