@@ -7582,6 +7582,24 @@ var mountDAW = (target, options = {}) => {
   let copiedNotes = [];
   let trackStates = [];
   let suppressPatch = false;
+  let lyricsDebounceTimer = null;
+  const fireLyricsChange = (t) => {
+    if (!options.onLyricsChange) return;
+    const trackId = t.config.id;
+    const data = {
+      lyrics: t.lyrics,
+      model: t.lyricModel,
+      vocalVolume: t.vocalVolume,
+      vocalGate: t.vocalGate,
+      vocalPan: t.vocalPan,
+      vocalOctave: t.vocalOctave
+    };
+    if (lyricsDebounceTimer) clearTimeout(lyricsDebounceTimer);
+    lyricsDebounceTimer = setTimeout(() => {
+      options.onLyricsChange(trackId, data);
+      lyricsDebounceTimer = null;
+    }, 300);
+  };
   const hiddenTracks = /* @__PURE__ */ new Set();
   const audioMutedTracks = /* @__PURE__ */ new Set();
   const createTrackStates = () => {
@@ -8493,21 +8511,26 @@ var mountDAW = (target, options = {}) => {
       lyricModelSel.addEventListener("change", () => {
         active.lyricModel = lyricModelSel.value;
         syncLyricVisibility();
+        fireLyricsChange(active);
       });
       lyricOctaveSel.addEventListener("change", () => {
         active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
+        fireLyricsChange(active);
       });
       lyricInput.addEventListener("input", () => {
         active.lyrics = lyricInput.value;
         updateLyricCount();
+        fireLyricsChange(active);
       });
       lyricVol.addEventListener("input", () => {
         active.vocalVolume = Number.parseInt(lyricVol.value, 10);
         lyricVolLabel.textContent = lyricVol.value;
+        fireLyricsChange(active);
       });
       lyricPan.addEventListener("input", () => {
         active.vocalPan = Number.parseInt(lyricPan.value, 10);
         lyricPanLabel.textContent = fmtPan(active.vocalPan);
+        fireLyricsChange(active);
       });
       lyricPanLabel.style.cursor = "pointer";
       lyricPanLabel.title = "\u30BF\u30C3\u30D7\u3067\u4E2D\u592E(C)\u3078";
@@ -8515,6 +8538,7 @@ var mountDAW = (target, options = {}) => {
         active.vocalPan = 64;
         lyricPan.value = "64";
         lyricPanLabel.textContent = fmtPan(64);
+        fireLyricsChange(active);
       });
     }
     if (active.config.id === "chord" && showChord) {
@@ -9396,6 +9420,16 @@ var mountDAW = (target, options = {}) => {
     setTrackAudible: (trackId, audible) => {
       if (audible) audioMutedTracks.delete(trackId);
       else audioMutedTracks.add(trackId);
+    },
+    applyLyrics: (trackId, data) => {
+      const t = trackStates.find((s) => s.config.id === trackId);
+      if (!t) return;
+      t.lyrics = data.lyrics;
+      t.lyricModel = data.model;
+      t.vocalVolume = data.vocalVolume;
+      t.vocalGate = data.vocalGate;
+      t.vocalPan = data.vocalPan;
+      t.vocalOctave = data.vocalOctave;
     },
     noteToCanvas: (step, pitch) => {
       const canvas = getGridCanvas();

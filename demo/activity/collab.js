@@ -216,9 +216,15 @@ const startCursorOverlay = () => {
 
     const rafLoop = () => {
         if (!dawInstance) { requestAnimationFrame(rafLoop); return; }
-        const canvas = overlay.parentElement?.querySelector('canvas');
-        const cw = canvas?.offsetWidth ?? overlay.offsetWidth;
-        const ch = canvas?.offsetHeight ?? overlay.offsetHeight;
+        // グリッドキャンバス（ノート描画用）= wrapper 内の最後の canvas
+        const wrapper = rollEl.querySelector('[data-dtm="wrapper"]');
+        const canvases = wrapper ? wrapper.querySelectorAll('canvas') : rollEl.querySelectorAll('canvas');
+        const gridCanvas = canvases[canvases.length - 1]; // header + grid の順なので最後がグリッド
+        const cw = gridCanvas?.offsetWidth  ?? overlay.offsetWidth;
+        const ch = gridCanvas?.offsetHeight ?? overlay.offsetHeight;
+        // rollEl 基準でのグリッドキャンバス左上オフセット
+        const canvasOffsetX = gridCanvas ? (gridCanvas.getBoundingClientRect().left - rollEl.getBoundingClientRect().left) : 0;
+        const canvasOffsetY = gridCanvas ? (gridCanvas.getBoundingClientRect().top  - rollEl.getBoundingClientRect().top)  : 0;
 
         const toRemove = new Set(markerEls.keys());
 
@@ -230,27 +236,27 @@ const startCursorOverlay = () => {
             const color = TRACK_COLORS[cursor.trackIndex] ?? '#fff';
             const trackLabel = TRACK_NAMES[cursor.trackIndex] ?? `T${cursor.trackIndex}`;
             const emoji = TRACK_EMOJIS[cursor.trackIndex] ?? '🎵';
-            const label = `${emoji} ${trackLabel}`;
+            const shortId = (players.get(uid)?.username ?? '').replace(/^Player-/, '');
+            const label = `${emoji} ${shortId} @${cursor.trackIndex + 1}`;
             const { dot, edge } = getOrCreateMarker(uid, color, label);
             const pos = dawInstance.noteToCanvas(cursor.step, cursor.pitch);
 
             if (pos.onScreen) {
                 dot.style.display = 'block';
-                dot.style.left = `${pos.x}px`;
-                dot.style.top  = `${pos.y}px`;
+                dot.style.left = `${pos.x + 2 + canvasOffsetX}px`;
+                dot.style.top  = `${pos.y + 2 + canvasOffsetY}px`;
                 edge.style.display = 'none';
             } else {
                 dot.style.display = 'none';
                 // 画面端にナビ表示
                 const margin = 4;
                 let ex = 0, ey = 0, arrow = '';
-                const cx = Math.max(margin, Math.min(cw - margin, pos.x));
-                const cy = Math.max(margin, Math.min(ch - margin, pos.y));
-                if (pos.side === 'left')  { ex = margin; ey = cy; arrow = `◀ ${label}`; }
-                if (pos.side === 'right') { ex = cw - margin; ey = cy; arrow = `${label} ▶`; edge.style.transform = 'translateX(-100%)'; }
-                if (pos.side === 'top')   { ex = cx; ey = margin; arrow = `▲ ${label}`; edge.style.transform = 'translateX(-50%)'; }
-                if (pos.side === 'bottom'){ ex = cx; ey = ch - margin; arrow = `${label} ▼`; edge.style.transform = `translate(-50%,-100%)`; }
-                if (pos.side === 'left' || pos.side === 'right') edge.style.transform = pos.side === 'right' ? 'translateX(-100%) translateY(-50%)' : 'translateY(-50%)';
+                const cx = canvasOffsetX + Math.max(margin, Math.min(cw - margin, pos.x));
+                const cy = canvasOffsetY + Math.max(margin, Math.min(ch - margin, pos.y));
+                if (pos.side === 'left')  { ex = canvasOffsetX + margin; ey = cy; arrow = `◀ ${label}`; edge.style.transform = 'translateY(-50%)'; }
+                if (pos.side === 'right') { ex = canvasOffsetX + cw - margin; ey = cy; arrow = `${label} ▶`; edge.style.transform = 'translateX(-100%) translateY(-50%)'; }
+                if (pos.side === 'top')   { ex = cx; ey = canvasOffsetY + margin; arrow = `▲ ${label}`; edge.style.transform = 'translateX(-50%)'; }
+                if (pos.side === 'bottom'){ ex = cx; ey = canvasOffsetY + ch - margin; arrow = `${label} ▼`; edge.style.transform = 'translate(-50%,-100%)'; }
                 edge.style.left = `${ex}px`;
                 edge.style.top  = `${ey}px`;
                 edge.textContent = arrow;
@@ -396,6 +402,12 @@ const handleRelayMessage = (msg) => {
             }
             break;
         }
+        case 'lyrics': {
+            if (dawInstance && msg.trackId && msg.data) {
+                dawInstance.applyLyrics(msg.trackId, msg.data);
+            }
+            break;
+        }
         case 'cursor': {
             remoteCursors.set(msg.userId, { step: msg.step, pitch: msg.pitch, trackIndex: msg.trackIndex });
             break;
@@ -434,7 +446,7 @@ const initDAW = async (spectator = false) => {
     const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     const DTM = await import(isLocal
         ? 'http://localhost:40298/dist/index.mjs'
-        : '/.proxy/dtm/demo/index.mjs?v=1559aaa5');
+        : '/.proxy/dtm/demo/index.mjs?v=7cd610f8');
 
     const { createDtmStudio, TRACKS_ADVANCED } = DTM;
 
@@ -460,6 +472,11 @@ const initDAW = async (spectator = false) => {
         initialScrollPitch: 60,
         onNotesPatch: spectator ? undefined : (trackId, added, removed) => {
             sendPatch(trackId, added, removed);
+        },
+        onLyricsChange: spectator ? undefined : (trackId, data) => {
+            if (ws?.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'lyrics', trackId, data }));
+            }
         },
     });
 
