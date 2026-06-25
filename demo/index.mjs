@@ -9872,7 +9872,8 @@ var createDtmStudio = async (options = {}) => {
   ) : void 0;
   const singingVoices = createSingingVoices(audioCtx, masterGain, {
     voiceWorkerUrl,
-    voicebanks
+    voicebanks,
+    worldlineScriptUrl: options.worldlineScriptUrl
   });
   const listReady = new Promise((resolve) => {
     SoundFont_list.init();

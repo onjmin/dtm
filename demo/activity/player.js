@@ -191,7 +191,7 @@ const mountPlayer = async (mml) => {
         const isLocal = location.hostname === 'localhost';
         const DTM = await import(isLocal
             ? 'http://localhost:40298/dist/index.mjs'
-            : '/.proxy/dtm/demo/index.mjs?v=0cabd23a');
+            : '/.proxy/dtm/demo/index.mjs?v=df71a965');
 
         const { createDtmStudio } = DTM;
 
@@ -201,7 +201,10 @@ const mountPlayer = async (mml) => {
         }
 
         playerArea.innerHTML = '';
-        const studio = await createDtmStudio({ koeBaseUrl: '/.proxy/koe' });
+        const studio = await createDtmStudio({
+            koeBaseUrl: '/.proxy/koe',
+            worldlineScriptUrl: '/.proxy/koe-lib/demo/world/worldline.js',
+        });
         playerInstance = studio.mountPlayer(playerArea, mml, { volume: 50 });
     } catch (e) {
         playerArea.innerHTML = '';
