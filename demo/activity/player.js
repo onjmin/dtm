@@ -111,12 +111,12 @@ const mountPlayer = async (mml) => {
     try {
         // embed.html と同じロジックで DTM ライブラリをロード
         // Developer Portal の Proxy Mapping:
-        //   Prefix: /dtm  →  Target: onjmin.github.io/dtm/demo
-        // → /.proxy/dtm/index.mjs = onjmin.github.io/dtm/demo/index.mjs
+        //   Prefix: /dtm  →  Target: onjmin.github.io/dtm
+        // → /.proxy/dtm/demo/index.mjs = onjmin.github.io/dtm/demo/index.mjs
         const isLocal = location.hostname === 'localhost';
         const DTM = await import(isLocal
             ? 'http://localhost:40298/dist/index.mjs'
-            : '/.proxy/dtm/index.mjs');
+            : '/.proxy/dtm/demo/index.mjs');
 
         const { createDtmStudio } = DTM;
 
