@@ -54,5 +54,6 @@ export {
 // UIユーティリティ
 export { DAW_CSS, injectStyles } from "./styles";
 export { createSynth, freqFromPitch, type Synth } from "./synth";
+export type { NoteData, NoteRemove } from "./types";
 export * from "./types";
 export { VOICE_IMAGES } from "./voice-images";

@@ -411,31 +411,66 @@ export const mountDAW = (
 
 	// MMLCore は renderer.init() による g_config 設定後に生成する（generateMML が依存）。
 	let trackStates: TrackState[] = [];
+	// applyPatch 実行中は onNotesPatch を発火しない（エコーループ防止）。
+	let suppressPatch = false;
+	// 目ミュート中のトラックID集合。
+	const hiddenTracks = new Set<string>();
+	// 音ミュート中のトラックID集合。
+	const audioMutedTracks = new Set<string>();
+
 	const createTrackStates = (): void => {
-		trackStates = trackConfigs.map((config) => ({
-			config,
-			core: new MMLCore(
-				{
-					onMMLGenerated: () => {},
-					onNotesChanged: () => {
-						if (!ready) return;
-						redrawAll();
-						updateUndoRedo();
+		trackStates = trackConfigs.map((config) => {
+			let prevNotes: import("./types").Note[] = [];
+			return {
+				config,
+				core: new MMLCore(
+					{
+						onMMLGenerated: () => {},
+						onNotesChanged: (notes) => {
+							if (!ready) return;
+							if (!suppressPatch && options.onNotesPatch) {
+								const prevByKey = new Map(
+									prevNotes.map((n) => [`${n.startStep}_${n.pitch}`, n]),
+								);
+								const currByKey = new Map(
+									notes.map((n) => [`${n.startStep}_${n.pitch}`, n]),
+								);
+								const added = notes
+									.filter((n) => !prevByKey.has(`${n.startStep}_${n.pitch}`))
+									.map((n) => ({
+										startStep: n.startStep,
+										pitch: n.pitch,
+										durationSteps: n.durationSteps,
+										velocity: n.velocity,
+									}));
+								const removed = prevNotes
+									.filter(
+										(n) => !currByKey.has(`${n.startStep}_${n.pitch}`),
+									)
+									.map((n) => ({ startStep: n.startStep, pitch: n.pitch }));
+								if (added.length > 0 || removed.length > 0) {
+									options.onNotesPatch(config.id, added, removed);
+								}
+							}
+							prevNotes = [...notes];
+							redrawAll();
+							updateUndoRedo();
+						},
 					},
-				},
-				config.volume,
-			),
-			volume: config.volume,
-			savedChordInput: "",
-			savedChordPattern: "block",
-			savedChordRoot: 0,
-			lyrics: "",
-			lyricModel: "", // 既定は「なし」（歌わない）
-			vocalVolume: DEFAULT_VOCAL_VOLUME,
-			vocalGate: 100,
-			vocalPan: 64,
-			vocalOctave: 0,
-		}));
+					config.volume,
+				),
+				volume: config.volume,
+				savedChordInput: "",
+				savedChordPattern: "block",
+				savedChordRoot: 0,
+				lyrics: "",
+				lyricModel: "", // 既定は「なし」（歌わない）
+				vocalVolume: DEFAULT_VOCAL_VOLUME,
+				vocalGate: 100,
+				vocalPan: 64,
+				vocalOctave: 0,
+			};
+		});
 	};
 
 	// 各トラックの歌詞入力から歌詞トラック辞書を構築する（@@n の n = トラックの並び順）
@@ -520,6 +555,7 @@ export const mountDAW = (
 	const redrawAll = (): void => {
 		drawGrid(gridLineSteps);
 		for (const t of trackStates) {
+			if (hiddenTracks.has(t.config.id)) continue;
 			const [r, g, b] = t.config.color;
 			const a = t.config.id === activeTrackId ? 1 : 0.3;
 			drawNotes(t.core.getNotes(), [r, g, b, a]);
@@ -738,6 +774,9 @@ export const mountDAW = (
 			snapGridSteps,
 		);
 
+	const isActiveLocked = (): boolean =>
+		options.lockedTracks?.includes(getActive().config.id) ?? false;
+
 	const onGridPointerDown = (event: PointerEvent): void => {
 		event.preventDefault();
 		options.onResumeAudio?.();
@@ -745,6 +784,7 @@ export const mountDAW = (
 		const active = getActive();
 
 		if (activeToolMode === "eraser") {
+			if (isActiveLocked()) return;
 			const note = findActiveNoteAt(x, y);
 			if (note) active.core.deleteNoteById(note.id);
 			return;
@@ -826,6 +866,8 @@ export const mountDAW = (
 			suppressClick = true;
 			return;
 		}
+
+		if (isActiveLocked()) return;
 
 		const snappedStep =
 			Math.floor(step / currentInsertLength) * currentInsertLength;
@@ -997,6 +1039,7 @@ export const mountDAW = (
 		gridCanvas.addEventListener("pointerdown", onGridPointerDown);
 		gridCanvas.addEventListener("dblclick", (event) => {
 			event.preventDefault();
+			if (isActiveLocked()) return;
 			const { step, pitch } = getGridPosition(event);
 			const active = getActive();
 			const note = active.core
@@ -1124,6 +1167,8 @@ export const mountDAW = (
 		getSoloTrackId: () => (isSolo ? activeTrackId : null),
 		getAudioTime,
 		onPlayNote: (e) => {
+			// 音ミュート中のトラックはスキップ。
+			if (audioMutedTracks.has(e.trackId)) return;
 			// 歌詞トラックの発音は歌声ストリーミング（startStream）が担当するため、
 			// 楽器音は鳴らさない。@@n の n は trackStates の並び順（@n）に対応づく。
 			const idx = trackStates.findIndex((t) => t.config.id === e.trackId);
@@ -2335,14 +2380,17 @@ export const mountDAW = (
 			copiedNotes = [...selectedNotes];
 		} else if (e.code === "KeyX" && selectedNotes.length > 0) {
 			e.preventDefault();
-			copiedNotes = [...selectedNotes];
-			const core = getActive().core;
-			core.beginBatch();
-			for (const n of selectedNotes) core.deleteNoteById(n.id);
-			core.endBatch();
-			selectedNotes = [];
+			if (!isActiveLocked()) {
+				copiedNotes = [...selectedNotes];
+				const core = getActive().core;
+				core.beginBatch();
+				for (const n of selectedNotes) core.deleteNoteById(n.id);
+				core.endBatch();
+				selectedNotes = [];
+			}
 		} else if (e.code === "KeyV" && copiedNotes.length > 0) {
 			e.preventDefault();
+			if (isActiveLocked()) return;
 			const core = getActive().core;
 			const notes = core.getNotes();
 			const minStart = Math.min(...copiedNotes.map((n) => n.startStep));
@@ -2480,6 +2528,40 @@ export const mountDAW = (
 		getCurrentPlayStep,
 		forcePauseAt,
 		setLoading,
+		applyPatch: (
+			trackId: string,
+			added: import("./types").NoteData[],
+			removed: import("./types").NoteRemove[],
+		): void => {
+			const track = trackStates.find((t) => t.config.id === trackId);
+			if (!track) return;
+			suppressPatch = true;
+			track.core.beginBatch();
+			for (const n of added) {
+				track.core.addNote(n.startStep, n.pitch, {
+					noteLengthSteps: n.durationSteps,
+					velocity: n.velocity,
+				});
+			}
+			for (const r of removed) {
+				const note = track.core
+					.getNotes()
+					.find((n) => n.startStep === r.startStep && n.pitch === r.pitch);
+				if (note) track.core.deleteNoteById(note.id);
+			}
+			track.core.endBatch();
+			suppressPatch = false;
+			redrawAll();
+		},
+		setTrackVisible: (trackId: string, visible: boolean): void => {
+			if (visible) hiddenTracks.delete(trackId);
+			else hiddenTracks.add(trackId);
+			redrawAll();
+		},
+		setTrackAudible: (trackId: string, audible: boolean): void => {
+			if (audible) audioMutedTracks.delete(trackId);
+			else audioMutedTracks.add(trackId);
+		},
 		destroy: () => {
 			sequencer.stop();
 			options.singingVoices?.stopStream();

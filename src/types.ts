@@ -43,6 +43,20 @@ export type AddNoteOptions = {
 	velocity?: number;
 };
 
+/** パッチ送受信用ノートデータ（ローカルIDを持たない）。 */
+export type NoteData = {
+	startStep: number;
+	pitch: number;
+	durationSteps: number;
+	velocity?: number;
+};
+
+/** パッチ削除指定（startStep + pitch で音符を特定）。 */
+export type NoteRemove = {
+	startStep: number;
+	pitch: number;
+};
+
 // ピアノロール作成時のオプション
 export type PianoRollOptions = {
 	mountTarget: HTMLElement;
@@ -227,6 +241,22 @@ export type DawOptions = {
 	 * 利用側が選択状態を永続化する用途に使う。
 	 */
 	onViewStateChange?: (state: DawViewState) => void;
+	/**
+	 * ユーザー操作によってノートが追加・削除されたときに呼ばれる（差分パッチ）。
+	 * リアルタイム同期のための送信フックとして使う。
+	 * `applyPatch` による適用時には呼ばれない（エコーループ防止）。
+	 */
+	onNotesPatch?: (
+		trackId: string,
+		added: NoteData[],
+		removed: NoteRemove[],
+	) => void;
+	/**
+	 * 編集をロックするトラックIDの配列。
+	 * 指定されたトラックへのユーザー操作（音符追加・削除）は無視される。
+	 * 協力DAWで他人のトラックを誤編集しないために使う。
+	 */
+	lockedTracks?: string[];
 
 	// --- 注入される外部パーサ（任意） ---
 	parseMidi?: ParseMidiFn;
@@ -280,6 +310,26 @@ export type DawInstance = {
 	getCurrentPlayStep: () => number;
 	forcePauseAt: (step: number) => void;
 	setLoading?: (loading: boolean) => void;
+	/**
+	 * リモートから受信したパッチをローカルに適用する。
+	 * `onNotesPatch` は発火しない（エコーループ防止）。
+	 * 音符の識別は (startStep, pitch) ペアで行う（ローカルIDに依存しない）。
+	 */
+	applyPatch: (
+		trackId: string,
+		added: NoteData[],
+		removed: NoteRemove[],
+	) => void;
+	/**
+	 * 指定トラックの音符をキャンバス上で表示・非表示にする（目ミュート）。
+	 * 非表示にしても内部データは保持される。
+	 */
+	setTrackVisible: (trackId: string, visible: boolean) => void;
+	/**
+	 * 指定トラックの発音を有効・無効にする（音ミュート）。
+	 * false にすると onPlayNote が呼ばれなくなる。
+	 */
+	setTrackAudible: (trackId: string, audible: boolean) => void;
 	destroy: () => void;
 };
 

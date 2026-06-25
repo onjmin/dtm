@@ -50,11 +50,12 @@ jobs:
         run: |
           mkdir -p docs/demo/activity
           cp demo/activity/index.html docs/demo/activity/index.html
-          cp demo/activity/player.js docs/demo/activity/player.js
+          cp demo/activity/collab.js docs/demo/activity/collab.js
           cp demo/activity/discord-sdk.js docs/demo/activity/discord-sdk.js
           VER="${GITHUB_SHA:0:8}"
           sed -i "s/__CI_HASH__/${VER}/g" docs/demo/activity/index.html
-          sed -i "s/__CI_HASH__/${VER}/g" docs/demo/activity/player.js
+          sed -i "s/__CI_HASH__/${VER}/g" docs/demo/activity/collab.js
+          sed -i "s/__DISCORD_CLIENT_ID__/${{ secrets.DISCORD_CLIENT_ID }}/g" docs/demo/activity/collab.js
 
       - name: Add .nojekyll
         run: touch ./docs/.nojekyll

@@ -212,7 +212,7 @@ hashInput.addEventListener('input', () => {
 });
 
 // ─── Discord SDK 初期化 ────────────────────────────────────
-const CLIENT_ID = '1396565902383906961';
+const CLIENT_ID = '__DISCORD_CLIENT_ID__';
 
 const setStatus = (state, msg) => {
     statusText.textContent = msg;

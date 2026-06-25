@@ -1,0 +1,16 @@
+{
+  "name": "dtm-collab-relay",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "WebSocket relay server for @onjmin/dtm collaborative DAW activity",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
