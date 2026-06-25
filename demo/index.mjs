@@ -7544,6 +7544,13 @@ var LYRIC_MODEL_LABELS2 = {
 };
 var lyricModelLabel = (model) => LYRIC_MODEL_LABELS2[model] ?? model;
 var clamp3 = (v, min, max) => Math.min(Math.max(v, min), max);
+var normalizeInstrumentName = (name) => {
+  if (!name) return "";
+  const stripped = name.replace(/\s+/g, "").toLowerCase();
+  return GM_INSTRUMENT_NAMES.find(
+    (n) => n.replace(/\s+/g, "").toLowerCase() === stripped
+  ) ?? name;
+};
 var mountDAW = (target, options = {}) => {
   injectStyles();
   const getAudioTime = options.getAudioTime ?? (() => performance.now() / 1e3);
@@ -8437,7 +8444,7 @@ var mountDAW = (target, options = {}) => {
       }
       instSel.appendChild(grp);
     });
-    instSel.value = active.trackInstrument;
+    instSel.value = normalizeInstrumentName(active.trackInstrument);
     const syncInstDisabled = () => {
       instSel.disabled = !!active.lyricModel;
       instSel.title = active.lyricModel ? "\u6B4C\u8A5E\u30E2\u30FC\u30C9\u306E\u3068\u304D\u306F\u697D\u5668\u3092\u500B\u5225\u6307\u5B9A\u3067\u304D\u307E\u305B\u3093" : "";
@@ -8865,7 +8872,7 @@ var mountDAW = (target, options = {}) => {
       refs.drumVolumeLabel.textContent = `${meta.drumVolume}%`;
     }
     trackStates.forEach((t, i) => {
-      const name = meta.trackInstruments?.[i] ?? "";
+      const name = normalizeInstrumentName(meta.trackInstruments?.[i] ?? "");
       if (t.trackInstrument !== name) {
         t.trackInstrument = name;
         options.onTrackInstrumentChange?.(i, name);
@@ -10447,6 +10454,14 @@ var createDtmStudio = async (options = {}) => {
     }
   })();
   let nameToKey = {};
+  const resolveNameToKey = (name) => {
+    if (nameToKey[name]) return nameToKey[name];
+    const stripped = name.replace(/\s+/g, "").toLowerCase();
+    const canonical = Object.keys(nameToKey).find(
+      (k) => k.replace(/\s+/g, "").toLowerCase() === stripped
+    );
+    return canonical ? nameToKey[canonical] : void 0;
+  };
   const soundFonts = /* @__PURE__ */ new Map();
   const loadingByKey = /* @__PURE__ */ new Map();
   const loadInstrument = (instrumentKey) => {
@@ -10609,7 +10624,7 @@ var createDtmStudio = async (options = {}) => {
     if (meta.trackInstruments) {
       for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
         const idx = Number(idxStr);
-        const key = nameToKey[name];
+        const key = resolveNameToKey(name);
         if (key) trackInstOverrides.set(idx, key);
       }
     }
@@ -10650,7 +10665,7 @@ var createDtmStudio = async (options = {}) => {
         return;
       }
       await listReady;
-      const key = nameToKey[instrumentName];
+      const key = resolveNameToKey(instrumentName);
       if (!key) return;
       trackInstOverrides.set(trackIndex, key);
       await loadInstrument(key);
@@ -10817,7 +10832,7 @@ var createDtmStudio = async (options = {}) => {
       if (!meta.trackInstruments) return;
       await listReady;
       for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
-        const key = nameToKey[name];
+        const key = resolveNameToKey(name);
         if (!key) continue;
         playerTrackInstKeys.set(Number(idxStr), key);
         await loadInstrument(key);
