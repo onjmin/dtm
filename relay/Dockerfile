@@ -1,7 +1,7 @@
 FROM node:22-alpine
 WORKDIR /app
-COPY package.json .
+COPY relay/package.json .
 RUN npm install --omit=dev
-COPY server.js .
+COPY relay/server.js .
 EXPOSE 3001
 CMD ["node", "server.js"]
