@@ -46,11 +46,20 @@ const CLIENT_ID = '1519696988495548547';
  */
 const RELAY_URL_PROD = 'wss://detailed-donkey-onjmin-fceb78f2.koyeb.app';
 
-// TRACKS_SIMPLEと同じ4色（track index 0〜3）
-const TRACK_COLORS = ['#29adff', '#ffec27', '#00e436', '#ff77a8', '#ab5236', '#7e2553', '#5f574f', '#83769c'];
-const TRACK_NAMES  = ['MELODY', 'SUBMELODY', 'BASS', 'CHORD', 'T4', 'T5', 'T6', 'T7'];
-// TRACKS_SIMPLEと同じトラックID順（studio.mountEditor → DawOptions.tracks）
-const TRACK_IDS    = ['melody', 'submelody', 'bass', 'chord', 't4', 't5', 't6', 't7'];
+// TRACKS_ADVANCED と同じ順（t0〜t14、15トラック）
+const TRACK_COLORS = [
+    '#29adff','#00e436','#ff77a8','#ffa300',
+    '#ffec27','#83769c','#ff004d','#ffcca8',
+    '#c2c3c7','#008751','#ab5236','#7e2553',
+    '#fff1e8','#78c8ff','#64ffa0',
+];
+const TRACK_NAMES = [
+    'TRACK 01','TRACK 02','TRACK 03','TRACK 04','TRACK 05',
+    'TRACK 06','TRACK 07','TRACK 08','TRACK 09','TRACK 10',
+    'TRACK 11','TRACK 12','TRACK 13','TRACK 14','TRACK 15',
+];
+// TRACKS_ADVANCED のトラックID順（t0〜t14）
+const TRACK_IDS = ['t0','t1','t2','t3','t4','t5','t6','t7','t8','t9','t10','t11','t12','t13','t14'];
 
 // ─── DOM ─────────────────────────────────────────────────────
 const discordDot    = document.getElementById('discord-dot');
@@ -177,7 +186,15 @@ const showOffscreenArrow = (trackIndex, side) => {
 
 // ─── WebSocket リレー ─────────────────────────────────────────
 let ws = null;
-let myUserId = null;
+// ページセッション固有のUUID（instanceIdは全員共通なので使わない）
+const myUserId = (() => {
+    const key = 'dtm-collab-uid';
+    const stored = sessionStorage.getItem(key);
+    if (stored) return stored;
+    const id = crypto.randomUUID();
+    sessionStorage.setItem(key, id);
+    return id;
+})();
 let myUsername = 'Player';
 
 const getRelayUrl = () => {
@@ -289,17 +306,18 @@ const initDAW = async (spectator = false) => {
     const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     const DTM = await import(isLocal
         ? 'http://localhost:40298/dist/index.mjs'
-        : '/.proxy/dtm/demo/index.mjs?v=6dc2b1a8');
+        : '/.proxy/dtm/demo/index.mjs?v=73ceea09');
 
-    const { createDtmStudio, TRACKS_SIMPLE } = DTM;
+    const { createDtmStudio, TRACKS_ADVANCED } = DTM;
 
     const studio = await createDtmStudio({
         koeBaseUrl: '/.proxy/koe',
         worldlineScriptUrl: '/.proxy/koe-lib/demo/world/worldline.js',
+        features: { midi: false },
     });
 
-    const trackCount = TRACKS_SIMPLE?.length ?? 4;
-    const myTrackId = TRACK_IDS[myTrackIndex] ?? 'melody';
+    const trackCount = TRACKS_ADVANCED?.length ?? 15;
+    const myTrackId = TRACK_IDS[myTrackIndex] ?? TRACK_IDS[0];
 
     // スペクテーターは全トラックロック、通常は自分以外ロック
     const lockedTracks = spectator
@@ -307,9 +325,11 @@ const initDAW = async (spectator = false) => {
         : TRACK_IDS.filter((_, i) => i !== myTrackIndex && i < trackCount);
 
     dawInstance = studio.mountEditor(dawArea, {
+        mode: 'advanced',
+        tracks: TRACKS_ADVANCED,
         lockedTracks,
         initialActiveTrack: spectator ? TRACK_IDS[0] : myTrackId,
-        features: { midi: false },
+        initialScrollPitch: 60,
         onNotesPatch: spectator ? undefined : (trackId, added, removed) => {
             sendPatch(trackId, added, removed);
         },
@@ -345,16 +365,10 @@ const main = async () => {
         setDiscordStatus('connected', 'DISCORD CONNECTED');
         roomId = `${sdk.guildId ?? 'guild'}:${sdk.channelId ?? 'channel'}`;
 
-        // Discord ユーザー情報取得（SDK v2: instanceId をベースに疑似ID）
-        myUserId   = sdk.instanceId ?? Math.random().toString(36).slice(2);
-        myUsername = `Player`;
-
-        // 参加者リストに自分を仮登録（joined メッセージで trackIndex が確定する前）
     } catch (e) {
         const isTimeout = e?.message === 'timeout';
         setDiscordStatus('error', isTimeout ? 'STANDALONE MODE' : 'DISCORD ERROR');
-        myUserId = Math.random().toString(36).slice(2);
-        roomId   = 'local-' + myUserId.slice(0, 6);
+        roomId = 'local-' + myUserId.slice(0, 6);
     }
 
     // リレーに接続（joined を受け取ってから DAW を起動）

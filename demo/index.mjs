@@ -7568,7 +7568,8 @@ var mountDAW = (target, options = {}) => {
   let snapGridSteps = 12;
   const gridLineSteps = 48;
   let currentOffsetX = 0;
-  let currentOffsetY = (104 - 1 - 60) * renderConfig.keyHeight - 215;
+  const _initPitch = options.initialScrollPitch;
+  let currentOffsetY = _initPitch !== void 0 ? (renderConfig.keyCount - 1 - _initPitch) * renderConfig.keyHeight - 215 : (104 - 1 - 60) * renderConfig.keyHeight - 215;
   let playStartStep = 0;
   let isSolo = false;
   let lyricTrackIndices = /* @__PURE__ */ new Set();
