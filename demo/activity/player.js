@@ -6,54 +6,6 @@
 
 import { DiscordSDK, patchUrlMappings } from './discord-sdk.js';
 
-// ─── Discord CSP対策: <script src="外部URL"> を fetch+eval に差し替え ──────
-// rpgen3/getScript は append(el) 後に el.src を設定するため、
-// appendChild インターセプトでは手遅れ。createElement 時に src setter を
-// 上書きし、外部URLが渡された瞬間に fetch → eval(code) → load発火 に切り替える。
-// 'unsafe-eval' は Discord Activity の script-src で許可されている。
-(function patchScriptSrcForDiscordCSP() {
-    const URL_REMAP = [
-        ['https://surikov.github.io/', '/.proxy/surikov/'],
-        ['https://rpgen3.github.io/',  '/.proxy/sf/'],
-    ];
-    function remap(url) {
-        if (!url) return null;
-        for (const [from, to] of URL_REMAP) {
-            if (url.startsWith(from)) return to + url.slice(from.length);
-        }
-        return null;
-    }
-
-    const origCreate = Document.prototype.createElement;
-    const srcDesc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
-
-    Document.prototype.createElement = function(tag, opts) {
-        const el = origCreate.call(this, tag, opts);
-        if (typeof tag === 'string' && tag.toLowerCase() === 'script') {
-            Object.defineProperty(el, 'src', {
-                get() { return srcDesc.get.call(el); },
-                set(url) {
-                    const proxied = remap(url);
-                    if (proxied) {
-                        // 外部スクリプト: fetch して eval、load/error を手動発火
-                        fetch(proxied)
-                            .then(r => r.text())
-                            .then(code => {
-                                // eslint-disable-next-line no-eval
-                                (0, eval)(code);
-                                el.dispatchEvent(new Event('load'));
-                            })
-                            .catch(() => el.dispatchEvent(new Event('error')));
-                    } else {
-                        srcDesc.set.call(el, url);
-                    }
-                },
-                configurable: true,
-            });
-        }
-        return el;
-    };
-})();
 
 // ─── DOM要素 ───────────────────────────────────────────────
 const discordDot   = document.getElementById('discord-dot');
@@ -165,7 +117,7 @@ const mountPlayer = async (mml) => {
         const isLocal = location.hostname === 'localhost';
         const DTM = await import(isLocal
             ? 'http://localhost:40298/dist/index.mjs'
-            : '/.proxy/dtm/demo/index.mjs?v=6af92fd9');
+            : '/.proxy/dtm/demo/index.mjs?v=4d310192');
 
         const { createDtmStudio } = DTM;
 
