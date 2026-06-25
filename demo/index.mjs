@@ -146,6 +146,7 @@ async function buildNameToKeyMapping() {
   }
   return nameToKey;
 }
+var GM_INSTRUMENT_NAMES = FONT_NAME_SURIKOV.trim().split("\n").map((line) => line.slice(line.indexOf(" ") + 1));
 
 // node_modules/.pnpm/@onjmin+chord-parser@1.0.2/node_modules/@onjmin/chord-parser/dist/index.mjs
 var SHARP_NAMES = [
@@ -4285,6 +4286,7 @@ var PITCH_MAP2 = {
 };
 var clamp2 = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
 var META_DIRECTIVE = /#(inst|drum|volume|drumvolume|mode)=([\w-]+)/gi;
+var TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
 var parseMmlMeta = (mml) => {
   const meta = {};
   for (const m of mml.matchAll(META_DIRECTIVE)) {
@@ -4303,9 +4305,17 @@ var parseMmlMeta = (mml) => {
       }
     }
   }
+  for (const m of mml.matchAll(TRACK_INST_DIRECTIVE)) {
+    const idx = Number.parseInt(m[1], 10);
+    const name = m[2].trim();
+    if (!Number.isNaN(idx) && name) {
+      meta.trackInstruments ??= {};
+      meta.trackInstruments[idx] = name;
+    }
+  }
   return meta;
 };
-var stripMmlMeta = (mml) => mml.replace(META_DIRECTIVE, "");
+var stripMmlMeta = (mml) => mml.replace(META_DIRECTIVE, "").replace(TRACK_INST_DIRECTIVE, "");
 var formatMmlMeta = (meta, space = "") => {
   const parts = [];
   if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
@@ -4314,6 +4324,11 @@ var formatMmlMeta = (meta, space = "") => {
   if (meta.drumVolume !== void 0)
     parts.push(`#drumvolume=${meta.drumVolume}`);
   if (meta.mode) parts.push(`#mode=${meta.mode}`);
+  if (meta.trackInstruments) {
+    for (const [idx, name] of Object.entries(meta.trackInstruments)) {
+      if (name) parts.push(`#t${idx}inst=${name}`);
+    }
+  }
   return parts.join(space);
 };
 var parseMML = (mml, options = {}) => {
@@ -7648,7 +7663,8 @@ var mountDAW = (target, options = {}) => {
         vocalVolume: DEFAULT_VOCAL_VOLUME,
         vocalGate: 100,
         vocalPan: 64,
-        vocalOctave: 0
+        vocalOctave: 0,
+        trackInstrument: ""
       };
     });
   };
@@ -8381,6 +8397,59 @@ var mountDAW = (target, options = {}) => {
       active.core.setVolume(active.volume);
       volLabel.textContent = String(active.volume);
     });
+    const instRow = document.createElement("div");
+    instRow.className = "dtm-row";
+    instRow.innerHTML = `<span class="dtm-label">\u697D\u5668</span>`;
+    const instSel = document.createElement("select");
+    instSel.className = "dtm-select dtm-grow";
+    const defaultOpt = document.createElement("option");
+    defaultOpt.value = "";
+    defaultOpt.textContent = "\u30C7\u30D5\u30A9\u30EB\u30C8\uFF08\u30D7\u30EA\u30BB\u30C3\u30C8\uFF09";
+    instSel.appendChild(defaultOpt);
+    const GM_GROUPS = [
+      "\u30D4\u30A2\u30CE",
+      "\u30AF\u30ED\u30DE\u30C6\u30A3\u30C3\u30AF\u30D1\u30FC\u30AB\u30C3\u30B7\u30E7\u30F3",
+      "\u30AA\u30EB\u30AC\u30F3",
+      "\u30AE\u30BF\u30FC",
+      "\u30D9\u30FC\u30B9",
+      "\u30B9\u30C8\u30EA\u30F3\u30B0\u30B9",
+      "\u30A2\u30F3\u30B5\u30F3\u30D6\u30EB",
+      "\u30D6\u30E9\u30B9",
+      "\u30EA\u30FC\u30C9\uFF08\u6728\u7BA1\uFF09",
+      "\u30D1\u30A4\u30D7",
+      "\u30B7\u30F3\u30BB\u30EA\u30FC\u30C9",
+      "\u30B7\u30F3\u30BB\u30D1\u30C3\u30C9",
+      "\u30B7\u30F3\u30BB\u30A8\u30D5\u30A7\u30AF\u30C8",
+      "\u30A8\u30B9\u30CB\u30C3\u30AF",
+      "\u30D1\u30FC\u30AB\u30C3\u30B7\u30D6",
+      "\u30B5\u30A6\u30F3\u30C9\u30A8\u30D5\u30A7\u30AF\u30C8"
+    ];
+    GM_GROUPS.forEach((groupName, gi) => {
+      const grp = document.createElement("optgroup");
+      grp.label = groupName;
+      for (let j = 0; j < 8; j++) {
+        const name = GM_INSTRUMENT_NAMES[gi * 8 + j];
+        if (!name) break;
+        const o = document.createElement("option");
+        o.value = name;
+        o.textContent = name;
+        grp.appendChild(o);
+      }
+      instSel.appendChild(grp);
+    });
+    instSel.value = active.trackInstrument;
+    const syncInstDisabled = () => {
+      instSel.disabled = !!active.lyricModel;
+      instSel.title = active.lyricModel ? "\u6B4C\u8A5E\u30E2\u30FC\u30C9\u306E\u3068\u304D\u306F\u697D\u5668\u3092\u500B\u5225\u6307\u5B9A\u3067\u304D\u307E\u305B\u3093" : "";
+    };
+    syncInstDisabled();
+    instSel.addEventListener("change", () => {
+      active.trackInstrument = instSel.value;
+      const trackIndex = trackStates.indexOf(active);
+      options.onTrackInstrumentChange?.(trackIndex, active.trackInstrument);
+    });
+    instRow.appendChild(instSel);
+    refs.trackBody.appendChild(instRow);
     if (isAdvanced || active.config.id !== "chord") {
       const lyricDiv = document.createElement("div");
       lyricDiv.className = "dtm-row";
@@ -8388,7 +8457,7 @@ var mountDAW = (target, options = {}) => {
       lyricDiv.style.alignItems = "stretch";
       lyricDiv.innerHTML = `
       <div class="dtm-row">
-        <span class="dtm-label">\u266A \u6B4C\u8A5E</span>
+        <span class="dtm-label">\u266A UTAU</span>
         <select class="dtm-select" data-dtm="lyric-model" aria-label="\u6B4C\u5531\u30E2\u30C7\u30EB"></select>
         <img class="dtm-lyric-icon dtm-hidden" data-dtm="lyric-icon" width="20" height="20" alt="" draggable="false">
         <select class="dtm-select" data-dtm="lyric-octave" aria-label="\u30AA\u30AF\u30BF\u30FC\u30D6\uFF08\u97F3\u6E90\u306E\u5F97\u610F\u97F3\u57DF\u306B\u5408\u308F\u305B\u308B\uFF09" title="\u30AA\u30AF\u30BF\u30FC\u30D6">
@@ -8462,7 +8531,7 @@ var mountDAW = (target, options = {}) => {
         o.textContent = label;
         lyricModelSel.appendChild(o);
       };
-      addOpt("", "\u306A\u3057");
+      addOpt("", "\u30DC\u30FC\u30AB\u30EB\u306A\u3057");
       for (const m of LYRIC_MODELS) addOpt(m, lyricModelLabel(m));
       if (active.lyricModel && !LYRIC_MODELS.includes(active.lyricModel)) {
         addOpt(active.lyricModel, lyricModelLabel(active.lyricModel));
@@ -8511,6 +8580,7 @@ var mountDAW = (target, options = {}) => {
       lyricModelSel.addEventListener("change", () => {
         active.lyricModel = lyricModelSel.value;
         syncLyricVisibility();
+        syncInstDisabled();
         fireLyricsChange(active);
       });
       lyricOctaveSel.addEventListener("change", () => {
@@ -8613,13 +8683,19 @@ var mountDAW = (target, options = {}) => {
     const barLimitBars = Number(refs.barLimitSelect.value);
     const limitSteps = barLimitBars > 0 ? barLimitBars * renderConfig.stepsPerBar : Infinity;
     const clipNotes = (notes) => limitSteps === Infinity ? notes : notes.filter((n) => n.startStep < limitSteps);
+    const trackInstrumentsForMeta = {};
+    trackStates.forEach((t, i) => {
+      if (t.trackInstrument) trackInstrumentsForMeta[i] = t.trackInstrument;
+    });
+    const trackInstMeta = Object.keys(trackInstrumentsForMeta).length > 0 ? trackInstrumentsForMeta : void 0;
     const metaLineFull = formatMmlMeta(
       {
         instrument: currentInstrument || void 0,
         drum: currentDrumPattern !== "none" ? currentDrumPattern : void 0,
         volume: masterVolume,
         drumVolume,
-        mode
+        mode,
+        trackInstruments: trackInstMeta
       },
       " "
     );
@@ -8629,7 +8705,8 @@ var mountDAW = (target, options = {}) => {
         drum: currentDrumPattern !== "none" ? currentDrumPattern : void 0,
         volume: masterVolume,
         drumVolume,
-        mode
+        mode,
+        trackInstruments: trackInstMeta
       },
       ""
     );
@@ -8787,6 +8864,13 @@ var mountDAW = (target, options = {}) => {
       refs.drumVolume.value = String(meta.drumVolume);
       refs.drumVolumeLabel.textContent = `${meta.drumVolume}%`;
     }
+    trackStates.forEach((t, i) => {
+      const name = meta.trackInstruments?.[i] ?? "";
+      if (t.trackInstrument !== name) {
+        t.trackInstrument = name;
+        options.onTrackInstrumentChange?.(i, name);
+      }
+    });
     for (const t of trackStates) {
       t.lyrics = "";
       t.lyricModel = "";
@@ -10521,14 +10605,29 @@ var createDtmStudio = async (options = {}) => {
     const initialPreset = meta.instrument && INSTRUMENT_PRESETS[meta.instrument] ? meta.instrument : presetKey;
     let editorPreset = initialPreset;
     const isAdvancedMode = dawOverrides.mode === "advanced";
+    const trackInstOverrides = /* @__PURE__ */ new Map();
+    if (meta.trackInstruments) {
+      for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
+        const idx = Number(idxStr);
+        const key = nameToKey[name];
+        if (key) trackInstOverrides.set(idx, key);
+      }
+    }
     const playNote = (e) => {
-      const sf2 = resolveSoundFont(
-        editorPreset,
-        e.trackId,
-        isAdvancedMode ? "advanced" : "simple"
-      );
-      if (!sf2) return;
-      sf2.play({
+      const trackIdx = tracks.findIndex((t) => t.id === e.trackId);
+      const overrideKey = trackIdx >= 0 ? trackInstOverrides.get(trackIdx) : void 0;
+      let sfInst;
+      if (overrideKey) {
+        sfInst = soundFonts.get(overrideKey);
+      } else {
+        sfInst = resolveSoundFont(
+          editorPreset,
+          e.trackId,
+          isAdvancedMode ? "advanced" : "simple"
+        );
+      }
+      if (!sfInst) return;
+      sfInst.play({
         ctx: audioCtx,
         destination: masterGain,
         pitch: e.pitch,
@@ -10545,6 +10644,17 @@ var createDtmStudio = async (options = {}) => {
       }
       onInstrumentChange?.(key);
     };
+    const handleTrackInstrumentChange = async (trackIndex, instrumentName) => {
+      if (!instrumentName) {
+        trackInstOverrides.delete(trackIndex);
+        return;
+      }
+      await listReady;
+      const key = nameToKey[instrumentName];
+      if (!key) return;
+      trackInstOverrides.set(trackIndex, key);
+      await loadInstrument(key);
+    };
     const base = {
       getAudioTime: () => audioCtx.currentTime,
       onResumeAudio: resumeAudio,
@@ -10553,6 +10663,9 @@ var createDtmStudio = async (options = {}) => {
       singingVoices,
       parseMidi,
       onInstrumentChange: handleInstrumentChange,
+      onTrackInstrumentChange: (idx, name) => {
+        void handleTrackInstrumentChange(idx, name);
+      },
       ...dawOverrides
     };
     const daw = mountDAW(target, base);
@@ -10699,24 +10812,44 @@ var createDtmStudio = async (options = {}) => {
       (idx) => getRoleForTrackIndex(idx, isAdvancedMode ? "advanced" : "simple")
     );
     const loadTrackIds = trackIds.length > 0 ? trackIds : [...TRACK_ROLES];
-    void loadPreset(
-      playerPreset,
-      loadTrackIds,
-      isAdvancedMode ? "advanced" : "simple"
-    );
+    const playerTrackInstKeys = /* @__PURE__ */ new Map();
+    const loadPlayerTrackInstruments = async () => {
+      if (!meta.trackInstruments) return;
+      await listReady;
+      for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
+        const key = nameToKey[name];
+        if (!key) continue;
+        playerTrackInstKeys.set(Number(idxStr), key);
+        await loadInstrument(key);
+      }
+    };
+    void Promise.all([
+      loadPreset(
+        playerPreset,
+        loadTrackIds,
+        isAdvancedMode ? "advanced" : "simple"
+      ),
+      loadPlayerTrackInstruments()
+    ]);
     const playPlayerNote = (e) => {
       const idx = Number(e.trackId);
-      const role = getRoleForTrackIndex(
-        idx,
-        isAdvancedMode ? "advanced" : "simple"
-      );
-      const sf2 = resolveSoundFont(
-        playerPreset,
-        role,
-        isAdvancedMode ? "advanced" : "simple"
-      );
-      if (!sf2) return;
-      sf2.play({
+      const overrideKey = playerTrackInstKeys.get(idx);
+      let sfInst;
+      if (overrideKey) {
+        sfInst = soundFonts.get(overrideKey);
+      } else {
+        const role = getRoleForTrackIndex(
+          idx,
+          isAdvancedMode ? "advanced" : "simple"
+        );
+        sfInst = resolveSoundFont(
+          playerPreset,
+          role,
+          isAdvancedMode ? "advanced" : "simple"
+        );
+      }
+      if (!sfInst) return;
+      sfInst.play({
         ctx: audioCtx,
         destination: masterGain,
         pitch: e.pitch,
@@ -10774,6 +10907,7 @@ export {
   DRUM_FONT,
   DRUM_KEYS,
   DRUM_PATTERNS,
+  GM_INSTRUMENT_NAMES,
   INSTRUMENT_PRESETS,
   KOE_BASE_URL,
   KOE_VOICEBANKS,
