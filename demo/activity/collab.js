@@ -46,6 +46,10 @@ const CLIENT_ID = '__DISCORD_CLIENT_ID__';
  */
 const RELAY_URL_PROD = 'wss://detailed-donkey-onjmin-fceb78f2.koyeb.app';
 
+// トラックインデックス 0〜14 に対応する動物絵文字
+// 十二支 + 猫・狐・狸
+const TRACK_EMOJIS = ['🐀','🐄','🐅','🐇','🐉','🐍','🐎','🐑','🐒','🐓','🐕','🐗','🐈','🦊','🦝'];
+
 // TRACKS_ADVANCED と同じ順（t0〜t14、15トラック）
 const TRACK_COLORS = [
     '#29adff','#00e436','#ff77a8','#ffa300',
@@ -76,6 +80,10 @@ const arrowRight    = document.getElementById('arrow-right');
 // ─── 状態 ─────────────────────────────────────────────────────
 let myTrackIndex = -1;
 let dawInstance  = null;
+let pendingOwnNotes = [];
+let pendingAllTracks = [];
+// userId → { step, pitch } リモートカーソル
+const remoteCursors = new Map();
 // userId → { username, trackIndex }
 const players = new Map();
 // trackIndex → { audioMuted: bool, visualMuted: bool }
@@ -106,8 +114,9 @@ const renderPlayers = () => {
         card.className = 'player-card' + (isMe ? ' is-me' : '');
         card.dataset.track = String(p.trackIndex);
 
-        const dot = document.createElement('div');
-        dot.className = 'player-track-dot';
+        const emojiEl = document.createElement('span');
+        emojiEl.style.cssText = 'font-size:16px;line-height:1;flex-shrink:0';
+        emojiEl.textContent = TRACK_EMOJIS[p.trackIndex] ?? '🎵';
 
         const name = document.createElement('span');
         name.className = 'player-name';
@@ -117,7 +126,7 @@ const renderPlayers = () => {
         you.className = 'player-you';
         you.textContent = isMe ? 'YOU' : TRACK_NAMES[p.trackIndex] ?? `T${p.trackIndex}`;
 
-        card.appendChild(dot);
+        card.appendChild(emojiEl);
         card.appendChild(name);
         card.appendChild(you);
 
@@ -164,6 +173,118 @@ const toggleVisualMute = (trackIndex) => {
         if (trackId) dawInstance.setTrackVisible(trackId, !next);
     }
     renderPlayers();
+};
+
+// ─── カーソルオーバーレイ ──────────────────────────────────────
+const startCursorOverlay = () => {
+    const rollEl = document.querySelector('[data-dtm="roll"]');
+    if (!rollEl) return;
+
+    // ピアノロール内に絶対配置のオーバーレイを挿入
+    const overlay = document.createElement('div');
+    overlay.id = 'cursor-overlay';
+    overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:10';
+    rollEl.style.position = 'relative';
+    rollEl.appendChild(overlay);
+
+    // userId → { dot, edge } DOM要素
+    const markerEls = new Map();
+
+    const getOrCreateMarker = (userId, color, label) => {
+        if (markerEls.has(userId)) return markerEls.get(userId);
+
+        const dot = document.createElement('div');
+        dot.style.cssText = `position:absolute;width:10px;height:10px;border-radius:50%;background:${color};
+            box-shadow:0 0 0 2px #000;transform:translate(-50%,-50%);transition:left .1s,top .1s`;
+
+        const tag = document.createElement('div');
+        tag.style.cssText = `position:absolute;font-size:9px;letter-spacing:.06em;color:#fff;
+            background:#000a;padding:1px 4px;white-space:nowrap;transform:translate(-50%,-140%);
+            pointer-events:none`;
+        tag.textContent = label;
+        dot.appendChild(tag);
+
+        const edge = document.createElement('div');
+        edge.style.cssText = `position:absolute;font-size:9px;letter-spacing:.06em;padding:2px 6px;
+            border:2px solid ${color};color:${color};background:#000c;white-space:nowrap;display:none`;
+
+        overlay.appendChild(dot);
+        overlay.appendChild(edge);
+        markerEls.set(userId, { dot, edge });
+        return { dot, edge };
+    };
+
+    const rafLoop = () => {
+        if (!dawInstance) { requestAnimationFrame(rafLoop); return; }
+        const canvas = overlay.parentElement?.querySelector('canvas');
+        const cw = canvas?.offsetWidth ?? overlay.offsetWidth;
+        const ch = canvas?.offsetHeight ?? overlay.offsetHeight;
+
+        const toRemove = new Set(markerEls.keys());
+
+        for (const [uid, cursor] of remoteCursors) {
+            const player = players.get(uid);
+            if (!player || player.trackIndex < 0) continue;
+            toRemove.delete(uid);
+
+            const color = TRACK_COLORS[cursor.trackIndex] ?? '#fff';
+            const trackLabel = TRACK_NAMES[cursor.trackIndex] ?? `T${cursor.trackIndex}`;
+            const emoji = TRACK_EMOJIS[cursor.trackIndex] ?? '🎵';
+            const label = `${emoji} ${trackLabel}`;
+            const { dot, edge } = getOrCreateMarker(uid, color, label);
+            const pos = dawInstance.noteToCanvas(cursor.step, cursor.pitch);
+
+            if (pos.onScreen) {
+                dot.style.display = 'block';
+                dot.style.left = `${pos.x}px`;
+                dot.style.top  = `${pos.y}px`;
+                edge.style.display = 'none';
+            } else {
+                dot.style.display = 'none';
+                // 画面端にナビ表示
+                const margin = 4;
+                let ex = 0, ey = 0, arrow = '';
+                const cx = Math.max(margin, Math.min(cw - margin, pos.x));
+                const cy = Math.max(margin, Math.min(ch - margin, pos.y));
+                if (pos.side === 'left')  { ex = margin; ey = cy; arrow = `◀ ${label}`; }
+                if (pos.side === 'right') { ex = cw - margin; ey = cy; arrow = `${label} ▶`; edge.style.transform = 'translateX(-100%)'; }
+                if (pos.side === 'top')   { ex = cx; ey = margin; arrow = `▲ ${label}`; edge.style.transform = 'translateX(-50%)'; }
+                if (pos.side === 'bottom'){ ex = cx; ey = ch - margin; arrow = `${label} ▼`; edge.style.transform = `translate(-50%,-100%)`; }
+                if (pos.side === 'left' || pos.side === 'right') edge.style.transform = pos.side === 'right' ? 'translateX(-100%) translateY(-50%)' : 'translateY(-50%)';
+                edge.style.left = `${ex}px`;
+                edge.style.top  = `${ey}px`;
+                edge.textContent = arrow;
+                edge.style.display = 'block';
+            }
+        }
+
+        // 接続が切れたユーザーのマーカーを削除
+        for (const uid of toRemove) {
+            const els = markerEls.get(uid);
+            if (els) { els.dot.remove(); els.edge.remove(); }
+            markerEls.delete(uid);
+            remoteCursors.delete(uid);
+        }
+
+        requestAnimationFrame(rafLoop);
+    };
+    requestAnimationFrame(rafLoop);
+};
+
+// ─── 保留ノートの適用 ────────────────────────────────────────
+const applyPendingNotes = () => {
+    if (!dawInstance) return;
+    if (pendingOwnNotes.length > 0 && myTrackIndex >= 0) {
+        const trackId = TRACK_IDS[myTrackIndex];
+        if (trackId) dawInstance.applyPatch(trackId, pendingOwnNotes, []);
+        pendingOwnNotes = [];
+    }
+    for (const t of pendingAllTracks) {
+        if (!t.notes?.length) continue;
+        const trackId = TRACK_IDS[t.trackIndex];
+        if (trackId) dawInstance.applyPatch(trackId, t.notes, []);
+    }
+    pendingAllTracks = [];
 };
 
 // ─── 画面外編集インジケーター ─────────────────────────────────
@@ -240,6 +361,8 @@ const handleRelayMessage = (msg) => {
             myTrackIndex = msg.yourTrackIndex;
             players.set(myUserId, { username: myUsername, trackIndex: myTrackIndex });
             renderPlayers();
+            // 自分の保存済みノートを保留（DAW起動後に適用）
+            if (msg.yourNotes?.length > 0) pendingOwnNotes = msg.yourNotes;
             // スペクテーターから昇格した場合は DAW を再マウント
             if (wasSpectator && myTrackIndex >= 0 && dawInstance) {
                 dawInstance.destroy();
@@ -250,14 +373,12 @@ const handleRelayMessage = (msg) => {
             break;
         }
         case 'full-state': {
-            for (const u of (msg.users ?? [])) {
-                players.set(u.userId, { username: u.username, trackIndex: u.trackIndex });
-                // 既存ノートを適用
-                if (dawInstance && u.notes?.length > 0) {
-                    const trackId = TRACK_IDS[u.trackIndex];
-                    if (trackId) dawInstance.applyPatch(trackId, u.notes, []);
-                }
+            for (const t of (msg.tracks ?? [])) {
+                if (t.userId) players.set(t.userId, { username: t.username, trackIndex: t.trackIndex });
             }
+            // DAW起動後に適用するため保留
+            pendingAllTracks = msg.tracks ?? [];
+            if (dawInstance) applyPendingNotes();
             renderPlayers();
             break;
         }
@@ -273,6 +394,10 @@ const handleRelayMessage = (msg) => {
             if (myTrackIndex === -1 && ws?.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'join', roomId: ws._roomId, userId: myUserId, username: myUsername }));
             }
+            break;
+        }
+        case 'cursor': {
+            remoteCursors.set(msg.userId, { step: msg.step, pitch: msg.pitch, trackIndex: msg.trackIndex });
             break;
         }
         case 'patch': {
@@ -297,6 +422,9 @@ const handleRelayMessage = (msg) => {
 const sendPatch = (trackId, added, removed) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'patch', added, removed }));
+    // カーソル位置を操作したノートから取得して送信
+    const ref = added[0] ?? removed[0];
+    if (ref) ws.send(JSON.stringify({ type: 'cursor', step: ref.startStep, pitch: ref.pitch }));
 };
 
 // ─── DAW 起動 ────────────────────────────────────────────────
@@ -335,10 +463,9 @@ const initDAW = async (spectator = false) => {
         },
     });
 
-    // 自分のトラックをアクティブにする
-    // （DAWのトラック切り替えAPIが公開されていないため、初期activeTrackIdはDAW内部で決定）
-
     renderPlayers();
+    applyPendingNotes();
+    startCursorOverlay();
 };
 
 // ─── エントリポイント ─────────────────────────────────────────

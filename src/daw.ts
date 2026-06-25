@@ -2563,6 +2563,23 @@ export const mountDAW = (
 			if (audible) audioMutedTracks.delete(trackId);
 			else audioMutedTracks.add(trackId);
 		},
+		noteToCanvas: (step: number, pitch: number) => {
+			const canvas = getGridCanvas();
+			const x = step * renderConfig.stepWidth - currentOffsetX;
+			const y =
+				(renderConfig.keyCount - 1 - pitch) * renderConfig.keyHeight -
+				currentOffsetY;
+			const onScreen =
+				x >= 0 && x <= canvas.width && y >= 0 && y <= canvas.height;
+			let side: "left" | "right" | "top" | "bottom" | null = null;
+			if (!onScreen) {
+				if (x < 0) side = "left";
+				else if (x > canvas.width) side = "right";
+				else if (y < 0) side = "top";
+				else side = "bottom";
+			}
+			return { x, y, onScreen, side };
+		},
 		destroy: () => {
 			sequencer.stop();
 			options.singingVoices?.stopStream();

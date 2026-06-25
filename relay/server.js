@@ -1,16 +1,13 @@
 /**
  * DTM Collab Relay Server
  *
- * WebSocket relay for the collaborative DAW Discord Activity.
- * Deploy to Koyeb: set PORT env var (Koyeb injects it automatically).
- *
  * Protocol (JSON):
  *   Client → Server:
  *     { type: "join",  roomId, userId, username }
  *     { type: "patch", added: NoteData[], removed: NoteRemove[] }
  *   Server → Client:
- *     { type: "joined",     yourTrackIndex }
- *     { type: "full-state", users: [{ userId, username, trackIndex, notes }] }
+ *     { type: "joined",     yourTrackIndex, yourNotes: NoteData[] }
+ *     { type: "full-state", tracks: [{ userId, username, trackIndex, notes, online }] }
  *     { type: "user-join",  userId, username, trackIndex }
  *     { type: "user-leave", userId, trackIndex }
  *     { type: "patch",      userId, trackIndex, added, removed }
@@ -29,8 +26,10 @@ const server = createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 
 /**
- * rooms: Map<roomId, Map<userId, UserState>>
- * UserState: { ws, username, trackIndex, notes: NoteData[] }
+ * rooms: Map<roomId, Room>
+ *
+ * Room.users:       Map<userId, { ws, username, trackIndex }>  現在接続中
+ * Room.trackNotes:  Map<trackIndex, { notes, lastUserId, lastUsername }>  切断後も保持
  */
 const rooms = new Map();
 
@@ -38,11 +37,27 @@ const keyOf = (n) => `${n.startStep}_${n.pitch}`;
 
 const broadcast = (room, message, exceptUserId = null) => {
     const data = JSON.stringify(message);
-    for (const [uid, user] of room) {
-        if (uid !== exceptUserId && user.ws.readyState === 1 /* OPEN */) {
+    for (const [uid, user] of room.users) {
+        if (uid !== exceptUserId && user.ws.readyState === 1) {
             user.ws.send(data);
         }
     }
+};
+
+const getOrCreateRoom = (id) => {
+    if (!rooms.has(id)) rooms.set(id, { users: new Map(), trackNotes: new Map() });
+    return rooms.get(id);
+};
+
+const applyPatchToNotes = (notes, added, removed) => {
+    const removeSet = new Set(removed.map(keyOf));
+    const result = notes.filter((n) => !removeSet.has(keyOf(n)));
+    for (const n of added) {
+        if (!result.some((e) => keyOf(e) === keyOf(n))) {
+            result.push({ startStep: n.startStep, pitch: n.pitch, durationSteps: n.durationSteps, velocity: n.velocity });
+        }
+    }
+    return result;
 };
 
 wss.on('connection', (ws) => {
@@ -56,46 +71,96 @@ wss.on('connection', (ws) => {
         // ── join ──────────────────────────────────────────────
         if (msg.type === 'join') {
             roomId = String(msg.roomId ?? 'default');
-            userId = String(msg.userId ?? Math.random().toString(36).slice(2));
+            userId = String(msg.userId ?? crypto.randomUUID());
             const username = String(msg.username ?? 'Player');
 
-            if (!rooms.has(roomId)) rooms.set(roomId, new Map());
-            const room = rooms.get(roomId);
+            const room = getOrCreateRoom(roomId);
 
-            // 再接続時は古いセッションを上書き
-            if (room.has(userId)) {
-                broadcast(room, { type: 'user-leave', userId, trackIndex: room.get(userId).trackIndex }, userId);
-                room.delete(userId);
+            // 再接続時は旧セッションを退出扱い
+            if (room.users.has(userId)) {
+                const old = room.users.get(userId);
+                broadcast(room, { type: 'user-leave', userId, trackIndex: old.trackIndex }, userId);
+                room.users.delete(userId);
             }
 
-            // トラックインデックスを最小の未使用番号で割り当て（上限15）
-            // -1 = 閲覧専用（スペクテーター）
+            // トラックインデックス割り当て
+            // 同じ userId が前回使ったトラックがあれば優先して再利用
             const MAX_TRACKS = 15;
-            const usedIndices = new Set(
-                [...room.values()].map((u) => u.trackIndex).filter((i) => i >= 0),
+            const savedTrack = room.trackNotes.get('__owner__' + userId); // 前回のtrackIndex記録
+            const usedByOthers = new Set(
+                [...room.users.values()].map((u) => u.trackIndex).filter((i) => i >= 0),
             );
+
             let trackIndex = -1;
-            if (usedIndices.size < MAX_TRACKS) {
+            if (savedTrack !== undefined && !usedByOthers.has(savedTrack)) {
+                // 前回のトラックが空いていれば再利用
+                trackIndex = savedTrack;
+            } else if (usedByOthers.size < MAX_TRACKS) {
                 trackIndex = 0;
-                while (usedIndices.has(trackIndex)) trackIndex++;
+                while (usedByOthers.has(trackIndex)) trackIndex++;
             }
 
-            room.set(userId, { ws, username, trackIndex, notes: [] });
+            room.users.set(userId, { ws, username, trackIndex });
+            if (trackIndex >= 0) {
+                room.trackNotes.set('__owner__' + userId, trackIndex);
+                // trackNotes に既存エントリがなければ初期化
+                if (!room.trackNotes.has(trackIndex)) {
+                    room.trackNotes.set(trackIndex, { notes: [], lastUserId: userId, lastUsername: username });
+                } else {
+                    // オーナー情報を更新
+                    room.trackNotes.get(trackIndex).lastUserId = userId;
+                    room.trackNotes.get(trackIndex).lastUsername = username;
+                }
+            }
 
-            // 参加確認 + 他ユーザーの現在状態を送信
-            ws.send(JSON.stringify({ type: 'joined', yourTrackIndex: trackIndex }));
-            const fullState = [...room.entries()]
-                .filter(([uid]) => uid !== userId)
-                .map(([uid, u]) => ({
-                    userId: uid,
-                    username: u.username,
-                    trackIndex: u.trackIndex,
-                    notes: u.notes,
-                }));
-            ws.send(JSON.stringify({ type: 'full-state', users: fullState }));
+            // 自分のトラックの保存済みノートを返す
+            const yourNotes = trackIndex >= 0 ? (room.trackNotes.get(trackIndex)?.notes ?? []) : [];
+            ws.send(JSON.stringify({ type: 'joined', yourTrackIndex: trackIndex, yourNotes }));
+
+            // 全トラックの状態を送信（接続中 + オフラインのトラック両方）
+            const tracks = [];
+            for (const [key, entry] of room.trackNotes) {
+                if (typeof key !== 'number') continue; // __owner__ エントリをスキップ
+                if (key === trackIndex) continue;       // 自分のトラックはスキップ（yourNotes で渡した）
+                const onlineUser = [...room.users.entries()].find(([, u]) => u.trackIndex === key);
+                tracks.push({
+                    userId: onlineUser ? onlineUser[0] : entry.lastUserId,
+                    username: onlineUser ? onlineUser[1].username : entry.lastUsername,
+                    trackIndex: key,
+                    notes: entry.notes,
+                    online: !!onlineUser,
+                });
+            }
+            // trackNotes にないが接続中のユーザー（ノートゼロ）
+            for (const [uid, u] of room.users) {
+                if (uid === userId) continue;
+                if (!room.trackNotes.has(u.trackIndex)) {
+                    tracks.push({ userId: uid, username: u.username, trackIndex: u.trackIndex, notes: [], online: true });
+                }
+            }
+            ws.send(JSON.stringify({ type: 'full-state', tracks }));
 
             // 既存ユーザーに新メンバー通知
-            broadcast(room, { type: 'user-join', userId, username, trackIndex }, userId);
+            if (trackIndex >= 0) {
+                broadcast(room, { type: 'user-join', userId, username, trackIndex }, userId);
+            }
+            return;
+        }
+
+        // ── cursor ────────────────────────────────────────────
+        if (msg.type === 'cursor') {
+            if (!roomId || !userId) return;
+            const room = rooms.get(roomId);
+            if (!room) return;
+            const user = room.users.get(userId);
+            if (!user || user.trackIndex < 0) return;
+            broadcast(room, {
+                type: 'cursor',
+                userId,
+                trackIndex: user.trackIndex,
+                step: msg.step,
+                pitch: msg.pitch,
+            }, userId);
             return;
         }
 
@@ -104,25 +169,15 @@ wss.on('connection', (ws) => {
             if (!roomId || !userId) return;
             const room = rooms.get(roomId);
             if (!room) return;
-            const user = room.get(userId);
-            if (!user) return;
+            const user = room.users.get(userId);
+            if (!user || user.trackIndex < 0) return;
 
-            const added = Array.isArray(msg.added) ? msg.added : [];
+            const added   = Array.isArray(msg.added)   ? msg.added   : [];
             const removed = Array.isArray(msg.removed) ? msg.removed : [];
 
-            // サーバー側のノート状態を更新
-            const removeSet = new Set(removed.map((r) => keyOf(r)));
-            user.notes = user.notes.filter((n) => !removeSet.has(keyOf(n)));
-            for (const n of added) {
-                if (!user.notes.some((e) => keyOf(e) === keyOf(n))) {
-                    user.notes.push({
-                        startStep: n.startStep,
-                        pitch: n.pitch,
-                        durationSteps: n.durationSteps,
-                        velocity: n.velocity,
-                    });
-                }
-            }
+            // trackNotes を更新
+            const entry = room.trackNotes.get(user.trackIndex);
+            if (entry) entry.notes = applyPatchToNotes(entry.notes, added, removed);
 
             broadcast(room, { type: 'patch', userId, trackIndex: user.trackIndex, added, removed }, userId);
             return;
@@ -133,12 +188,14 @@ wss.on('connection', (ws) => {
         if (!roomId || !userId) return;
         const room = rooms.get(roomId);
         if (!room) return;
-        const user = room.get(userId);
+        const user = room.users.get(userId);
         if (user) {
             broadcast(room, { type: 'user-leave', userId, trackIndex: user.trackIndex });
         }
-        room.delete(userId);
-        if (room.size === 0) rooms.delete(roomId);
+        room.users.delete(userId);
+        // trackNotes は削除しない（再参加・新規参加のために保持）
+        // 全員抜けたら部屋ごと削除
+        if (room.users.size === 0) rooms.delete(roomId);
     });
 
     ws.on('error', (err) => {

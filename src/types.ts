@@ -334,6 +334,17 @@ export type DawInstance = {
 	 * false にすると onPlayNote が呼ばれなくなる。
 	 */
 	setTrackAudible: (trackId: string, audible: boolean) => void;
+	/**
+	 * 指定ノート位置（step, pitch）のキャンバス上のピクセル座標を返す。
+	 * 画面外の場合は onScreen=false と方角 side を返す。
+	 * 協力DAWでのカーソル表示に使う。
+	 */
+	noteToCanvas: (step: number, pitch: number) => {
+		x: number;
+		y: number;
+		onScreen: boolean;
+		side: "left" | "right" | "top" | "bottom" | null;
+	};
 	destroy: () => void;
 };
 
