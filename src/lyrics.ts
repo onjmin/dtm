@@ -16,8 +16,8 @@
  */
 
 import { leadInFromEntry, VoiceBank, Worldline } from "@onjmin/koe";
-import { DEFAULT_GATE, DEFAULT_PAN, DEFAULT_VOCAL_VOLUME } from "./types";
 import type { LyricSyllable, LyricTrack, PlayNoteEvent } from "./types";
+import { DEFAULT_GATE, DEFAULT_PAN, DEFAULT_VOCAL_VOLUME } from "./types";
 import type {
 	VoiceWorkerInit,
 	VoiceWorkerOutbound,

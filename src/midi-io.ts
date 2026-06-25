@@ -10,8 +10,8 @@
  */
 
 import type { DrumPattern } from "./drum-config";
-import { DEFAULT_VELOCITY } from "./types";
 import type { Note } from "./types";
+import { DEFAULT_VELOCITY } from "./types";
 
 const STEPS_PER_BEAT = 48;
 
@@ -29,7 +29,7 @@ type MidiEvent = {
 	setTempo?: {
 		microsecondsPerQuarter: number;
 	};
-	[key: string]: any;
+	[key: string]: unknown;
 };
 type MidiData = {
 	division: number;

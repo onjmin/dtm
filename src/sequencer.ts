@@ -7,15 +7,15 @@
  */
 
 import type { DrumPattern } from "./drum-config";
-import { DEFAULT_PLAYBACK_VELOCITY } from "./types";
 import type {
+	LoopConfig,
+	LoopPoint,
 	Note,
+	PlaybackCue,
 	PlayDrumEvent,
 	PlayNoteEvent,
-	LoopConfig,
-	PlaybackCue,
-	LoopPoint,
 } from "./types";
+import { DEFAULT_PLAYBACK_VELOCITY } from "./types";
 
 const STEPS_PER_BEAT = 48;
 // 先読み秒。ノートは AudioContext クロックへ最大この秒数だけ先に予約される。
@@ -78,7 +78,7 @@ type TimelineEvent = {
 
 const resolveLoopPoint = (
 	point: LoopPoint,
-	bpm: number,
+	_bpm: number,
 	stepsPerBar: number,
 	sps: number,
 ): number => {

@@ -9,37 +9,37 @@
  * オプトインの簡易square-wave synth（`synth`）も同梱する。onPlayNote 未指定なら既定で有効。
  */
 
+import {
+	type ChordSegment,
+	detectProgression,
+	type TimedNote,
+} from "@onjmin/chord-parser";
 import { DRUM_PATTERNS, type DrumPattern } from "./drum-config";
 import { icon } from "./icons";
 import {
 	createSingingVoices,
 	KOE_VOICEBANK_LABELS,
 	KOE_VOICEBANK_TERMS,
-	panToStereo,
 	PREWARM_NOTES,
+	panToStereo,
 	type SingingVoices,
 	type StreamVoiceTrack,
 	VOICE_IMAGE_KEY,
 	vocalVolumeToGain,
 } from "./lyrics";
-import { VOICE_IMAGES } from "./voice-images";
 import { MML_INFO_HTML } from "./mml-info";
 import { parseMML } from "./mml-parser";
-import {
-	type ChordSegment,
-	detectProgression,
-	type TimedNote,
-} from "@onjmin/chord-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
-import { createSynth, type Synth } from "./synth";
 import { injectStyles, showLoadingOverlay } from "./styles";
+import { createSynth, type Synth } from "./synth";
+import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 import {
 	DEFAULT_BPM,
 	DEFAULT_GATE,
 	DEFAULT_PAN,
 	DEFAULT_VOCAL_VOLUME,
 } from "./types";
-import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
+import { VOICE_IMAGES } from "./voice-images";
 
 const STEPS_PER_BEAT = 48;
 const STEPS_PER_BAR = 192;
@@ -1191,7 +1191,7 @@ export const mountMmlPlayer = (
 						if (typeof localStorage !== "undefined" && localStorage) {
 							localStorage.setItem(`dtm_agreed_terms_${model}`, "true");
 						}
-					} catch (e) {
+					} catch (_e) {
 						// sandbox対応
 					}
 					agreedModelsInSession.add(model);
@@ -1288,7 +1288,7 @@ export const mountMmlPlayer = (
 		onTick: (step) => {
 			renderPlayhead(step);
 		},
-		onEnd: (interrupted) => finish(),
+		onEnd: (_interrupted) => finish(),
 		stepsPerBar: STEPS_PER_BAR,
 	});
 

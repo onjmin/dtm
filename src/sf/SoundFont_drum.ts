@@ -5,7 +5,9 @@ import { SoundFont } from "./SoundFont";
 
 const touch = <K, V>(map: Map<K, V>, key: K, ctor: new () => V): V => {
 	if (!map.has(key)) map.set(key, new ctor());
-	return map.get(key)!;
+	const val = map.get(key);
+	if (val === undefined) throw new Error("touch: unexpected undefined");
+	return val;
 };
 
 export const SoundFont_drum = new (class {
@@ -49,6 +51,6 @@ export const SoundFont_drum = new (class {
 		const { font } = this;
 		if (!font) return;
 		const pitch = v?.pitch ?? 60;
-		if (font.has(pitch)) font.get(pitch)!.play(v);
+		if (font.has(pitch)) font.get(pitch)?.play(v);
 	}
 })();

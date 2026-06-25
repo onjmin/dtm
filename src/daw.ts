@@ -2179,7 +2179,7 @@ export const mountDAW = (
 					const mml = htmlBtn.getAttribute("data-mml") || "";
 
 					if (activeSampleButton === htmlBtn) {
-						if (activeSamplePlayer && activeSamplePlayer.isPlaying()) {
+						if (activeSamplePlayer?.isPlaying()) {
 							activeSamplePlayer.stop();
 						} else {
 							stop(); // メインエディタの再生を停止

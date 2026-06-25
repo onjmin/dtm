@@ -9,7 +9,10 @@ export const importAll = (arr: string[]) =>
 
 export const importAllSettled = (arr: string[]) =>
 	Promise.allSettled(arr.map((v) => import(v))).then((v) =>
-		Object.assign({}, ...v.flatMap(({ value }: any) => value ?? {})),
+		Object.assign(
+			{},
+			...v.flatMap((r) => (r.status === "fulfilled" ? r.value : {})),
+		),
 	);
 
 export const getScript = (url: string): Promise<HTMLScriptElement> =>

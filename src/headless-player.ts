@@ -23,14 +23,14 @@ import { DRUM_PATTERNS, type DrumPattern } from "./drum-config";
 import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
 import { createSynth, type Synth } from "./synth";
-import { DEFAULT_BPM } from "./types";
 import type {
+	LoopConfig,
 	Note,
+	PlaybackCue,
 	PlayDrumEvent,
 	PlayNoteEvent,
-	LoopConfig,
-	PlaybackCue,
 } from "./types";
+import { DEFAULT_BPM } from "./types";
 
 const STEPS_PER_BAR = 192;
 
@@ -104,7 +104,7 @@ export const playMML = (
 		: null;
 
 	let masterVolume = meta.volume ?? options.volume ?? 100;
-	let drumVolume = meta.drumVolume ?? 80;
+	const drumVolume = meta.drumVolume ?? 80;
 
 	// placements を trackIndex ごとに単音列へまとめる
 	const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
@@ -156,7 +156,7 @@ export const playMML = (
 			synth?.playDrum({ ...e, velocity });
 		},
 		onTick: () => {},
-		onEnd: (interrupted) => finish(),
+		onEnd: (_interrupted) => finish(),
 		stepsPerBar: STEPS_PER_BAR,
 	});
 

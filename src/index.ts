@@ -7,6 +7,16 @@ export * from "./audio-config";
 export * from "./chords";
 export { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 export * from "./drum-config";
+// ヘッドレス再生（DOM非依存・BGM向け）＋ 内蔵synthプリミティブ
+export {
+	type MmlPlayback,
+	type PlayMmlOptions,
+	playMML,
+} from "./headless-player";
+export {
+	type PlaySingingMmlOptions,
+	playSingingMML,
+} from "./headless-singing-player";
 export { icon } from "./icons";
 export * from "./instrument-presets";
 export * from "./linked-list";
@@ -18,17 +28,6 @@ export * from "./midi-io";
 // Layer 1: ヘッドレスコア & プリミティブ
 // ============================================================
 export * from "./mml-core";
-// ヘッドレス再生（DOM非依存・BGM向け）＋ 内蔵synthプリミティブ
-export {
-	type MmlPlayback,
-	type PlayMmlOptions,
-	playMML,
-} from "./headless-player";
-export {
-	type PlaySingingMmlOptions,
-	playSingingMML,
-} from "./headless-singing-player";
-export { createSynth, freqFromPitch, type Synth } from "./synth";
 // 補助ロジック（再利用可能）
 export * from "./mml-parser";
 export type { MmlPlayerInstance, MmlPlayerOptions } from "./mml-player";
@@ -52,8 +51,8 @@ export {
 	type PresetSelectInstance,
 	type PresetSelectOptions,
 } from "./studio";
-
 // UIユーティリティ
 export { DAW_CSS, injectStyles } from "./styles";
-export { VOICE_IMAGES } from "./voice-images";
+export { createSynth, freqFromPitch, type Synth } from "./synth";
 export * from "./types";
+export { VOICE_IMAGES } from "./voice-images";

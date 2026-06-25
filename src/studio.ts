@@ -14,6 +14,7 @@
  * パッケージ同梱の dist/voice-worker.js を用いる。エンジンやURLは options で差し替え可能。
  */
 
+import { parseArrayBuffer } from "midi-json-parser";
 import { buildNameToKeyMapping } from "./audio-config";
 import { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 import { DRUM_FONT, DRUM_KEYS } from "./drum-config";
@@ -24,17 +25,16 @@ import {
 	koeUrl,
 	type SingingVoices,
 } from "./lyrics";
-import { SoundFont } from "./sf/SoundFont";
-import { SoundFont_drum } from "./sf/SoundFont_drum";
-import { SoundFont_list } from "./sf/SoundFont_list";
+import { parseMML, parseMmlMeta } from "./mml-parser";
 import {
 	type MmlPlayerInstance,
 	type MmlPlayerOptions,
 	mountMmlPlayer,
 } from "./mml-player";
-import { parseMML, parseMmlMeta } from "./mml-parser";
+import { SoundFont } from "./sf/SoundFont";
+import { SoundFont_drum } from "./sf/SoundFont_drum";
+import { SoundFont_list } from "./sf/SoundFont_list";
 import { showLoadingOverlay } from "./styles";
-import { parseArrayBuffer } from "midi-json-parser";
 import type {
 	DawInstance,
 	DawMode,
@@ -122,7 +122,7 @@ const resolveDefaultVoiceWorkerUrl = (): string | undefined => {
 		// 解決する。Vite等のバンドラはこの new URL(...) パターンを資産として拾う。
 		// NodeNext は本ファイルをCJS扱いし import.meta を禁ずるが、実体のビルドは
 		// tsup(esbuild) が行い両フォーマットで import.meta.url を供給するため無視する。
-		// @ts-ignore TS1470: import.meta は ESM ビルド出力でのみ評価される
+		// @ts-expect-error TS1470: import.meta は ESM ビルド出力でのみ評価される
 		return new URL("./voice-worker.js", import.meta.url).href;
 	} catch {
 		return undefined;
@@ -469,7 +469,7 @@ export const createDtmStudio = async (
 		}
 		if (trackId.startsWith("t")) {
 			const idx = Number(trackId.substring(1));
-			if (!isNaN(idx)) {
+			if (!Number.isNaN(idx)) {
 				return getRoleForTrackIndex(idx, mode);
 			}
 		}

@@ -1,7 +1,7 @@
 import { LinkedList } from "./linked-list";
 import { getRenderConfig } from "./renderer";
-import { DEFAULT_VELOCITY } from "./types";
 import type { AddNoteOptions, CoreEventHandlers, Note } from "./types";
+import { DEFAULT_VELOCITY } from "./types";
 
 export const PITCH_MAP = [
 	"c",

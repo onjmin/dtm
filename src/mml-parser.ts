@@ -9,8 +9,8 @@
  */
 
 import { parseLyrics, stripLyrics } from "./lyrics";
-import { DEFAULT_STEPS_PER_BAR, MML_END_MARKER } from "./types";
 import type { LyricTrack } from "./types";
+import { DEFAULT_STEPS_PER_BAR, MML_END_MARKER } from "./types";
 
 const PITCH_MAP: Record<string, number> = {
 	c: 0,

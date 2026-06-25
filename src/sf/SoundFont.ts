@@ -49,29 +49,33 @@ export class SoundFont {
 	}): Promise<SoundFont> {
 		if (!(fontName in window)) await getScript(url);
 		if (!(fontName in window)) throw new Error("SoundFont is not found.");
-		const { fonts } = this;
+		const { fonts } = SoundFont;
 		if (!fonts.has(fontName)) {
 			const zones = new Map<number, Zone>();
 			let ch = -1;
+			const win = window as Record<string, { zones: Zone[] }>;
 			for (const [pitch, v] of await findZone(
 				ctx,
-				(window as any)[fontName].zones,
+				win[fontName].zones,
 				pitchs,
 			)) {
-				const { numberOfChannels } = v.buffer!;
+				if (!v.buffer) continue;
+				const { numberOfChannels } = v.buffer;
 				if (ch < numberOfChannels) ch = numberOfChannels;
 				zones.set(Number(pitch), v);
 			}
-			if (this.ch < ch) this.ch = ch;
-			fonts.set(fontName, new this(zones, ch, isDrum));
+			if (SoundFont.ch < ch) SoundFont.ch = ch;
+			fonts.set(fontName, new SoundFont(zones, ch, isDrum));
 		}
-		return fonts.get(fontName)!;
+		const result = fonts.get(fontName);
+		if (!result) throw new Error("SoundFont load failed.");
+		return result;
 	}
 
 	constructor(
 		private zones: Map<number, Zone>,
 		public ch: number,
-		private isDrum: boolean,
+		public isDrum: boolean,
 	) {}
 
 	play({
@@ -84,23 +88,25 @@ export class SoundFont {
 	} = {}): void {
 		const { zones, isDrum } = this;
 		if (!zones.has(pitch)) return;
-		const zone = zones.get(pitch)!;
+		const zone = zones.get(pitch);
+		if (!zone) return;
 		const src = ctx.createBufferSource();
 		const g = ctx.createGain();
 		const _when = when + ctx.currentTime;
 		const { buffer, _param } = zone;
-		src.buffer = buffer!;
+		if (!buffer || !_param) return;
+		src.buffer = buffer;
 		g.gain.value = volume;
-		src.playbackRate.setValueAtTime(_param!.playbackRate, 0);
-		Object.assign(src, _param!.src);
+		src.playbackRate.setValueAtTime(_param.playbackRate, 0);
+		Object.assign(src, _param.src);
 		const _duration = duration + SoundFont.afterTime;
 		const end =
 			_when +
 			(isDrum
-				? buffer!.duration
+				? buffer.duration
 				: src.loop
 					? _duration
-					: Math.min(_duration, _param!.max));
+					: Math.min(_duration, _param.max));
 		if (!isDrum) g.gain.linearRampToValueAtTime(0, end);
 		src.connect(g).connect(destination);
 		src.start(_when);
@@ -167,7 +173,7 @@ const adjustZone = async (ctx: AudioContext, zone: Zone): Promise<void> => {
 		["sampleRate", 44100],
 		["sustain", 0],
 	] as [keyof Zone, number][]) {
-		if (Number.isNaN(Number(zone[k]))) (zone as any)[k] = v;
+		if (Number.isNaN(Number(zone[k]))) (zone[k] as number) = v;
 	}
 };
 
@@ -183,8 +189,8 @@ const addParam = (zone: Zone, pitch: number): void => {
 		buffer,
 	} = zone;
 	const baseDetune = originalPitch - 100 * coarseTune - fineTune;
-	const playbackRate = Math.pow(2, (100 * pitch - baseDetune) / 1200);
-	const max = buffer!.duration / playbackRate;
+	const playbackRate = 2 ** ((100 * pitch - baseDetune) / 1200);
+	const max = (buffer?.duration ?? 0) / playbackRate;
 	const src: { loop: boolean; loopStart?: number; loopEnd?: number } = {
 		loop: loopStart >= 1 && loopStart < loopEnd,
 	};
