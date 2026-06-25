@@ -276,7 +276,7 @@ const initDAW = async () => {
     const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     const DTM = await import(isLocal
         ? 'http://localhost:40298/dist/index.mjs'
-        : '/.proxy/dtm/demo/index.mjs?v=80b855a5');
+        : '/.proxy/dtm/demo/index.mjs?v=cb133843');
 
     const { createDtmStudio, TRACKS_SIMPLE } = DTM;
 
@@ -312,6 +312,7 @@ const main = async () => {
             { prefix: '/.proxy/sf',      target: 'rpgen3.github.io' },
             { prefix: '/.proxy/surikov', target: 'surikov.github.io' },
             { prefix: '/.proxy/koe',     target: 'pub-12482a6b5cbc4c9e906b2e1904cabae5.r2.dev' },
+            { prefix: '/.proxy/relay',   target: 'detailed-donkey-onjmin-fceb78f2.koyeb.app' },
         ]);
     } catch (_) {}
 
