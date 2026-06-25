@@ -29,11 +29,9 @@ export const SoundFont_list = new (class {
 				const a = s.slice(3).split("_");
 				const [key, id] = a;
 				const font = a.slice(2).join("_").slice(0, -3);
-				touch(
-					touch(drum, font, Map) as Map<string, Set<string>>,
-					id,
-					Set,
-				).add(key);
+				touch(touch(drum, font, Map) as Map<string, Set<string>>, id, Set).add(
+					key,
+				);
 			} else {
 				const a = s.split("_");
 				const [id] = a;

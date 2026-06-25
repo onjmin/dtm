@@ -444,9 +444,7 @@ export const mountDAW = (
 										velocity: n.velocity,
 									}));
 								const removed = prevNotes
-									.filter(
-										(n) => !currByKey.has(`${n.startStep}_${n.pitch}`),
-									)
+									.filter((n) => !currByKey.has(`${n.startStep}_${n.pitch}`))
 									.map((n) => ({ startStep: n.startStep, pitch: n.pitch }));
 								if (added.length > 0 || removed.length > 0) {
 									options.onNotesPatch(config.id, added, removed);
