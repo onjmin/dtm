@@ -7460,33 +7460,60 @@ var mountDAW = (target, options = {}) => {
   let selectionRect = null;
   let copiedNotes = [];
   let trackStates = [];
+  let suppressPatch = false;
+  const hiddenTracks = /* @__PURE__ */ new Set();
+  const audioMutedTracks = /* @__PURE__ */ new Set();
   const createTrackStates = () => {
-    trackStates = trackConfigs.map((config) => ({
-      config,
-      core: new MMLCore(
-        {
-          onMMLGenerated: () => {
+    trackStates = trackConfigs.map((config) => {
+      let prevNotes = [];
+      return {
+        config,
+        core: new MMLCore(
+          {
+            onMMLGenerated: () => {
+            },
+            onNotesChanged: (notes) => {
+              if (!ready) return;
+              if (!suppressPatch && options.onNotesPatch) {
+                const prevByKey = new Map(
+                  prevNotes.map((n) => [`${n.startStep}_${n.pitch}`, n])
+                );
+                const currByKey = new Map(
+                  notes.map((n) => [`${n.startStep}_${n.pitch}`, n])
+                );
+                const added = notes.filter((n) => !prevByKey.has(`${n.startStep}_${n.pitch}`)).map((n) => ({
+                  startStep: n.startStep,
+                  pitch: n.pitch,
+                  durationSteps: n.durationSteps,
+                  velocity: n.velocity
+                }));
+                const removed = prevNotes.filter(
+                  (n) => !currByKey.has(`${n.startStep}_${n.pitch}`)
+                ).map((n) => ({ startStep: n.startStep, pitch: n.pitch }));
+                if (added.length > 0 || removed.length > 0) {
+                  options.onNotesPatch(config.id, added, removed);
+                }
+              }
+              prevNotes = [...notes];
+              redrawAll();
+              updateUndoRedo();
+            }
           },
-          onNotesChanged: () => {
-            if (!ready) return;
-            redrawAll();
-            updateUndoRedo();
-          }
-        },
-        config.volume
-      ),
-      volume: config.volume,
-      savedChordInput: "",
-      savedChordPattern: "block",
-      savedChordRoot: 0,
-      lyrics: "",
-      lyricModel: "",
-      // 既定は「なし」（歌わない）
-      vocalVolume: DEFAULT_VOCAL_VOLUME,
-      vocalGate: 100,
-      vocalPan: 64,
-      vocalOctave: 0
-    }));
+          config.volume
+        ),
+        volume: config.volume,
+        savedChordInput: "",
+        savedChordPattern: "block",
+        savedChordRoot: 0,
+        lyrics: "",
+        lyricModel: "",
+        // 既定は「なし」（歌わない）
+        vocalVolume: DEFAULT_VOCAL_VOLUME,
+        vocalGate: 100,
+        vocalPan: 64,
+        vocalOctave: 0
+      };
+    });
   };
   const buildLyricsMap = () => {
     const map = /* @__PURE__ */ new Map();
@@ -7558,6 +7585,7 @@ var mountDAW = (target, options = {}) => {
   const redrawAll = () => {
     drawGrid(gridLineSteps);
     for (const t of trackStates) {
+      if (hiddenTracks.has(t.config.id)) continue;
       const [r, g, b] = t.config.color;
       const a = t.config.id === activeTrackId ? 1 : 0.3;
       drawNotes(t.core.getNotes(), [r, g, b, a]);
@@ -7730,12 +7758,14 @@ var mountDAW = (target, options = {}) => {
     Math.round(duration / snapGridSteps) * snapGridSteps,
     snapGridSteps
   );
+  const isActiveLocked = () => options.lockedTracks?.includes(getActive().config.id) ?? false;
   const onGridPointerDown = (event) => {
     event.preventDefault();
     options.onResumeAudio?.();
     const { x, y, step, pitch } = getGridPosition(event);
     const active = getActive();
     if (activeToolMode === "eraser") {
+      if (isActiveLocked()) return;
       const note = findActiveNoteAt(x, y);
       if (note) active.core.deleteNoteById(note.id);
       return;
@@ -7813,6 +7843,7 @@ var mountDAW = (target, options = {}) => {
       suppressClick = true;
       return;
     }
+    if (isActiveLocked()) return;
     const snappedStep = Math.floor(step / currentInsertLength) * currentInsertLength;
     const newStart = snappedStep;
     const newEnd = newStart + currentInsertLength;
@@ -7955,6 +7986,7 @@ var mountDAW = (target, options = {}) => {
     gridCanvas.addEventListener("pointerdown", onGridPointerDown);
     gridCanvas.addEventListener("dblclick", (event) => {
       event.preventDefault();
+      if (isActiveLocked()) return;
       const { step, pitch } = getGridPosition(event);
       const active = getActive();
       const note = active.core.getNotes().find(
@@ -8049,6 +8081,7 @@ var mountDAW = (target, options = {}) => {
     getSoloTrackId: () => isSolo ? activeTrackId : null,
     getAudioTime,
     onPlayNote: (e) => {
+      if (audioMutedTracks.has(e.trackId)) return;
       const idx = trackStates.findIndex((t) => t.config.id === e.trackId);
       if (idx >= 0 && lyricTrackIndices.has(idx) && options.singingVoices) {
         return;
@@ -9091,14 +9124,17 @@ var mountDAW = (target, options = {}) => {
       copiedNotes = [...selectedNotes];
     } else if (e.code === "KeyX" && selectedNotes.length > 0) {
       e.preventDefault();
-      copiedNotes = [...selectedNotes];
-      const core = getActive().core;
-      core.beginBatch();
-      for (const n of selectedNotes) core.deleteNoteById(n.id);
-      core.endBatch();
-      selectedNotes = [];
+      if (!isActiveLocked()) {
+        copiedNotes = [...selectedNotes];
+        const core = getActive().core;
+        core.beginBatch();
+        for (const n of selectedNotes) core.deleteNoteById(n.id);
+        core.endBatch();
+        selectedNotes = [];
+      }
     } else if (e.code === "KeyV" && copiedNotes.length > 0) {
       e.preventDefault();
+      if (isActiveLocked()) return;
       const core = getActive().core;
       const notes = core.getNotes();
       const minStart = Math.min(...copiedNotes.map((n) => n.startStep));
@@ -9214,6 +9250,34 @@ var mountDAW = (target, options = {}) => {
     getCurrentPlayStep,
     forcePauseAt,
     setLoading,
+    applyPatch: (trackId, added, removed) => {
+      const track = trackStates.find((t) => t.config.id === trackId);
+      if (!track) return;
+      suppressPatch = true;
+      track.core.beginBatch();
+      for (const n of added) {
+        track.core.addNote(n.startStep, n.pitch, {
+          noteLengthSteps: n.durationSteps,
+          velocity: n.velocity
+        });
+      }
+      for (const r of removed) {
+        const note = track.core.getNotes().find((n) => n.startStep === r.startStep && n.pitch === r.pitch);
+        if (note) track.core.deleteNoteById(note.id);
+      }
+      track.core.endBatch();
+      suppressPatch = false;
+      redrawAll();
+    },
+    setTrackVisible: (trackId, visible) => {
+      if (visible) hiddenTracks.delete(trackId);
+      else hiddenTracks.add(trackId);
+      redrawAll();
+    },
+    setTrackAudible: (trackId, audible) => {
+      if (audible) audioMutedTracks.delete(trackId);
+      else audioMutedTracks.add(trackId);
+    },
     destroy: () => {
       sequencer.stop();
       options.singingVoices?.stopStream();

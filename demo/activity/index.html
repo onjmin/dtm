@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <link rel="icon" href="https://avatars.githubusercontent.com/u/88383494" />
-    <title>DTM Player - Discord Activity</title>
+    <title>DTM Collab - Discord Activity</title>
     <style>
         @font-face {
             font-family: 'k8x12';
@@ -14,11 +14,7 @@
                 url('/.proxy/fonts/t/777630d46640dc5a928ea833c2fcb875.ttf') format('truetype');
         }
 
-        *,
-        *::before,
-        *::after {
-            box-sizing: border-box;
-        }
+        *, *::before, *::after { box-sizing: border-box; }
 
         :root {
             --c-black: #000000;
@@ -33,10 +29,8 @@
             --c-text: #fff1e8;
         }
 
-        html,
-        body {
-            margin: 0;
-            padding: 0;
+        html, body {
+            margin: 0; padding: 0;
             background: var(--c-black);
             color: var(--c-text);
             font-family: 'k8x12', ui-monospace, monospace;
@@ -54,22 +48,21 @@
 
         body::after {
             content: '';
-            position: fixed;
-            inset: 0;
+            position: fixed; inset: 0;
             background: repeating-linear-gradient(0deg, transparent 0px, transparent 2px,
-                    rgba(0, 0, 0, .22) 2px, rgba(0, 0, 0, .22) 3px);
+                rgba(0,0,0,.22) 2px, rgba(0,0,0,.22) 3px);
             pointer-events: none;
             z-index: 9999;
         }
 
         /* ─── Layout ─── */
         #app-wrapper {
-            max-width: 640px;
+            max-width: 720px;
             margin: 0 auto;
-            padding: 16px 12px 32px;
+            padding: 10px 8px 24px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 8px;
         }
 
         /* ─── Header ─── */
@@ -77,177 +70,118 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 8px 12px;
+            padding: 6px 12px;
             background: var(--c-navy);
             border: 2px solid #000;
             box-shadow: inset 0 0 0 2px #000, 0 0 0 2px var(--c-cyan), 4px 4px 0 #000;
         }
-
         #header::before { content: '█▓▒░'; color: var(--c-cyan); font-size: 11px; }
         #header::after  { content: '░▒▓█'; color: var(--c-cyan); font-size: 11px; margin-left: auto; }
-
-        #header-title {
-            color: var(--c-cyan);
-            font-size: 13px;
-            letter-spacing: .12em;
-            text-transform: uppercase;
-        }
-
-        #header-sub {
-            color: var(--c-muted);
-            font-size: 10px;
-            letter-spacing: .08em;
-        }
+        #header-title { color: var(--c-cyan); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
+        #header-sub   { color: var(--c-muted); font-size: 10px; letter-spacing: .08em; }
 
         /* ─── Status bar ─── */
         #status-bar {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 10px;
+            display: flex; align-items: center; gap: 8px;
+            padding: 5px 10px;
             background: #0a0a14;
             border: 2px solid #000;
             box-shadow: 0 0 0 2px var(--c-gray), 4px 4px 0 #000;
-            font-size: 10px;
-            letter-spacing: .1em;
-            text-transform: uppercase;
-            color: var(--c-muted);
+            font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--c-muted);
         }
-
         #discord-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--c-gray);
-            flex-shrink: 0;
-            transition: background .3s;
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--c-gray); flex-shrink: 0; transition: background .3s;
         }
-
         #discord-dot.connected { background: var(--c-green); box-shadow: 0 0 6px var(--c-green); }
         #discord-dot.error     { background: var(--c-red);   box-shadow: 0 0 6px var(--c-red);   }
+        #relay-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--c-gray); flex-shrink: 0; transition: background .3s;
+        }
+        #relay-dot.connected { background: var(--c-green); box-shadow: 0 0 6px var(--c-green); }
+        #relay-dot.error     { background: var(--c-red);   box-shadow: 0 0 6px var(--c-red);   }
 
-        /* ─── Panel ─── */
-        .panel {
-            padding: 14px 16px;
+        /* ─── Players panel ─── */
+        #players-panel {
+            display: flex; flex-wrap: wrap; gap: 6px;
+            padding: 8px 10px;
             background: var(--c-navy);
             border: 2px solid #000;
             box-shadow: inset 0 0 0 2px #000, 0 0 0 2px var(--c-cyan), 4px 4px 0 #000;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
         }
-
-        .panel-label {
-            color: var(--c-pink);
-            font-size: 10px;
-            letter-spacing: .14em;
-            text-transform: uppercase;
-        }
-
-        /* ─── Input ─── */
-        #hash-input {
+        #players-label {
             width: 100%;
+            color: var(--c-pink);
+            font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+            margin-bottom: 2px;
+        }
+        .player-card {
+            display: flex; align-items: center; gap: 6px;
+            padding: 5px 8px;
             background: #000;
             border: 2px solid var(--c-gray);
-            color: var(--c-text);
-            font-family: 'k8x12', ui-monospace, monospace;
-            font-size: 11px;
-            padding: 8px 10px;
-            letter-spacing: .04em;
-            outline: none;
-            resize: vertical;
-            min-height: 60px;
-            transition: border-color .15s;
+            font-size: 10px; letter-spacing: .08em;
+            transition: border-color .2s;
         }
+        .player-card.is-me { border-color: var(--c-cyan); }
+        .player-card[data-track="0"] .player-track-dot { background: #29adff; }
+        .player-card[data-track="1"] .player-track-dot { background: #ffec27; }
+        .player-card[data-track="2"] .player-track-dot { background: #00e436; }
+        .player-card[data-track="3"] .player-track-dot { background: #ff77a8; }
+        .player-card[data-track="4"] .player-track-dot { background: #ab5236; }
+        .player-card[data-track="5"] .player-track-dot { background: #7e2553; }
+        .player-card[data-track="6"] .player-track-dot { background: #5f574f; }
+        .player-card[data-track="7"] .player-track-dot { background: #83769c; }
+        .player-track-dot {
+            width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+            background: var(--c-gray);
+        }
+        .player-name { color: var(--c-text); min-width: 60px; }
+        .player-you  { color: var(--c-cyan); font-size: 9px; margin-left: 2px; }
+        .mute-btn {
+            background: none; border: none; cursor: pointer;
+            color: var(--c-text); font-size: 13px; padding: 0 2px;
+            line-height: 1; transition: opacity .15s;
+        }
+        .mute-btn.muted { opacity: .4; }
 
-        #hash-input:focus { border-color: var(--c-cyan); }
-        #hash-input::placeholder { color: var(--c-muted); }
-
-        /* ─── Button ─── */
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 36px;
-            padding: 0 16px;
-            border: 2px solid var(--c-cyan);
-            background: #000;
-            color: var(--c-cyan);
-            font-family: 'k8x12', ui-monospace, monospace;
-            font-size: 11px;
-            letter-spacing: .12em;
-            text-transform: uppercase;
+        /* ─── Off-screen indicator ─── */
+        .offscreen-arrow {
+            position: fixed; z-index: 100;
+            background: rgba(0,0,0,.8);
+            border: 2px solid;
+            color: #fff;
+            font-size: 10px; letter-spacing: .06em;
+            padding: 3px 7px;
+            pointer-events: all;
             cursor: pointer;
-            box-shadow: 3px 3px 0 #000;
-            transition: transform .08s, box-shadow .08s;
-        }
-
-        .btn:active {
-            transform: translate(3px, 3px);
-            box-shadow: none;
-        }
-
-        .btn:disabled {
-            border-color: var(--c-gray);
-            color: var(--c-gray);
-            cursor: not-allowed;
-        }
-
-        /* ─── Hint text ─── */
-        .hint {
-            font-size: 10px;
-            color: var(--c-muted);
-            letter-spacing: .06em;
-            line-height: 1.6;
-        }
-
-        .hint code {
-            background: #000;
-            padding: 1px 4px;
-            color: var(--c-yellow);
-            font-family: 'k8x12', ui-monospace, monospace;
-        }
-
-        /* ─── Load animation ─── */
-        #boot-msg {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: var(--c-muted);
-            font-size: 11px;
-            letter-spacing: .1em;
-            text-transform: uppercase;
-        }
-
-        .spin {
-            color: var(--c-cyan);
-            animation: blink 1s steps(1) infinite;
-        }
-
-        @keyframes blink { 0%, 100% { opacity: 1 } 50% { opacity: 0 } }
-
-        /* ─── Error ─── */
-        #load-error {
             display: none;
-            color: var(--c-red);
-            font-size: 11px;
-            letter-spacing: .06em;
-            line-height: 1.6;
         }
+        .offscreen-arrow.left  { left: 4px; top: 50%; transform: translateY(-50%); }
+        .offscreen-arrow.right { right: 4px; top: 50%; transform: translateY(-50%); }
 
-        /* ─── Player area ─── */
-        #player-area { padding: 0; }
+        /* ─── DAW area ─── */
+        #daw-area { min-height: 400px; }
+
+        /* ─── Boot / error ─── */
+        #boot-msg {
+            display: flex; align-items: center; gap: 8px;
+            color: var(--c-muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+            padding: 32px 16px;
+        }
+        .spin { color: var(--c-cyan); animation: blink 1s steps(1) infinite; }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+        #load-error {
+            display: none; color: var(--c-red);
+            font-size: 11px; letter-spacing: .06em; line-height: 1.6; padding: 8px 16px;
+        }
 
         /* ─── Credit ─── */
         #credit {
-            text-align: right;
-            font-size: 10px;
-            letter-spacing: .08em;
-            color: var(--c-gray);
-            text-transform: uppercase;
-            padding: 4px 0;
+            text-align: right; font-size: 10px; letter-spacing: .08em;
+            color: var(--c-gray); text-transform: uppercase; padding: 2px 0;
         }
-
         #credit a { color: var(--c-gray); text-decoration: none; }
         #credit a:hover { color: var(--c-cyan); }
     </style>
@@ -259,48 +193,39 @@
         <!-- Header -->
         <div id="header">
             <div>
-                <div id="header-title">DTM Player</div>
-                <div id="header-sub">Discord Activity · @onjmin/dtm</div>
+                <div id="header-title">DTM Collab</div>
+                <div id="header-sub">協力DAW · Discord Activity · @onjmin/dtm</div>
             </div>
         </div>
 
-        <!-- Discord Status Bar -->
+        <!-- Status bar -->
         <div id="status-bar">
             <div id="discord-dot"></div>
-            <span id="status-text">CONNECTING TO DISCORD…</span>
+            <span id="discord-status">CONNECTING TO DISCORD…</span>
+            <span style="margin:0 4px;color:#333">|</span>
+            <div id="relay-dot"></div>
+            <span id="relay-status">RELAY DISCONNECTED</span>
         </div>
 
-        <!-- Paste input panel -->
-        <div class="panel" id="input-panel">
-            <div class="panel-label">► LOAD SONG</div>
-
-            <div id="boot-msg">
-                <span class="spin">█</span>
-                <span>INITIALIZING PLAYER…</span>
-            </div>
-
-            <div id="load-error"></div>
-
-            <textarea
-                id="hash-input"
-                placeholder="DTMエディタの「Discordで共有」でコピーしたコードをここに貼り付けてください…"
-                autocomplete="off"
-                spellcheck="false"
-                style="display:none"
-            ></textarea>
-
-            <button id="load-btn" class="btn" style="display:none" disabled>
-                ▶ PLAY
-            </button>
-
-            <div class="hint" id="hint-text" style="display:none">
-                DTMエディタ（<code>demo/index.html</code>）の
-                <code>🎮 DISCORD</code> ボタンを押してコードをコピーし、上の欄に貼り付けてください。
-            </div>
+        <!-- Players panel -->
+        <div id="players-panel">
+            <div id="players-label">► PLAYERS</div>
+            <div id="players-list"><!-- JS で動的生成 --></div>
         </div>
 
-        <!-- Player mount point -->
-        <div id="player-area"></div>
+        <!-- Off-screen edit indicators -->
+        <div class="offscreen-arrow left"  id="arrow-left"></div>
+        <div class="offscreen-arrow right" id="arrow-right"></div>
+
+        <!-- Boot / error -->
+        <div id="boot-msg">
+            <span class="spin">█</span>
+            <span>INITIALIZING…</span>
+        </div>
+        <div id="load-error"></div>
+
+        <!-- DAW mount point -->
+        <div id="daw-area"></div>
 
         <!-- Credit -->
         <div id="credit">
@@ -309,10 +234,6 @@
 
     </div>
 
-    <!--
-      Import Map: rpgen3.github.io への動的 import() を Discord プロキシ経由にリダイレクト
-      Developer Portal の URL Mappings: /sf → rpgen3.github.io が必要
-    -->
     <script type="importmap">
     {
       "imports": {
@@ -322,8 +243,7 @@
     }
     </script>
 
-    <!-- External module script (CSP compliant: no inline JS) -->
-    <script type="module" src="./player.js?v=eea794f3"></script>
+    <script type="module" src="./collab.js?v=b3cbb9aa"></script>
 </body>
 
 </html>
