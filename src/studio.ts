@@ -24,6 +24,9 @@ import {
 	koeUrl,
 	type SingingVoices,
 } from "./lyrics";
+import { SoundFont } from "./sf/SoundFont";
+import { SoundFont_drum } from "./sf/SoundFont_drum";
+import { SoundFont_list } from "./sf/SoundFont_list";
 import {
 	type MmlPlayerInstance,
 	type MmlPlayerOptions,
@@ -90,15 +93,6 @@ export type DtmStudioEngines = {
 	parseMidi?: DawOptions["parseMidi"];
 };
 
-/** 既定の取得元URL（rpgen3 / jsDelivr）。options.cdn で個別に上書きできる。 */
-const DEFAULT_CDN = {
-	soundFont: "https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont.mjs",
-	soundFontDrum:
-		"https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs",
-	soundFontList:
-		"https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_list.mjs",
-} as const;
-
 /** SoundFont の楽器名解決に使う SoundFont 名（FluidR3 GM）。 */
 const SOUNDFONT_NAME = "FluidR3_GM_sf2_file";
 
@@ -150,10 +144,8 @@ export type DtmStudioOptions = {
 	voiceWorkerUrl?: string | null;
 	/** 初期の楽器プリセットキー（INSTRUMENT_PRESETS）。既定 "retro_game"。 */
 	defaultPreset?: string;
-	/** 外部エンジンの注入（指定したものは CDN 取得をスキップ）。 */
+	/** 外部エンジンの注入（指定したものは組み込み実装をスキップ）。 */
 	engines?: DtmStudioEngines;
-	/** CDN URL の上書き。 */
-	cdn?: Partial<typeof DEFAULT_CDN>;
 	/**
 	 * koe音源（.koe）のベースURL。
 	 * Discord Activity など CSP 制限下で `/.proxy/koe` を渡すと
@@ -323,12 +315,6 @@ export type DtmStudio = {
 	dispose: () => void;
 };
 
-/** CDN から名前付きエクスポートを動的importする（バンドラには委ねない）。 */
-const importFrom = async <T>(url: string, name: string): Promise<T> => {
-	const mod = (await import(/* @vite-ignore */ url)) as Record<string, unknown>;
-	return (mod[name] ?? mod.default) as T;
-};
-
 /**
  * 全部入りスタジオを生成する。SoundFontエンジン・ドラム音源・楽器プリセットの
  * 初期ロードまで待ってから解決するため、await して使う。
@@ -336,7 +322,6 @@ const importFrom = async <T>(url: string, name: string): Promise<T> => {
 export const createDtmStudio = async (
 	options: DtmStudioOptions = {},
 ): Promise<DtmStudio> => {
-	const cdn = { ...DEFAULT_CDN, ...options.cdn };
 	const features = {
 		midi: true,
 		chord: true,
@@ -358,15 +343,11 @@ export const createDtmStudio = async (
 		return Promise.resolve();
 	};
 
-	// ── 外部エンジン（注入優先、無ければ CDN）──
+	// ── エンジン（注入優先、無ければ組み込み SoundFont）──
 	const eng = options.engines ?? {};
-	const [SoundFont, SoundFont_drum, SoundFont_list] = await Promise.all([
-		eng.SoundFont ?? importFrom<SoundFontEngine>(cdn.soundFont, "SoundFont"),
-		eng.SoundFont_drum ??
-			importFrom<SoundFontDrumEngine>(cdn.soundFontDrum, "SoundFont_drum"),
-		eng.SoundFont_list ??
-			importFrom<SoundFontListEngine>(cdn.soundFontList, "SoundFont_list"),
-	]);
+	const sf = eng.SoundFont ?? SoundFont;
+	const sfDrum = eng.SoundFont_drum ?? SoundFont_drum;
+	const sfList = eng.SoundFont_list ?? SoundFont_list;
 
 	// MIDI解析。
 	let parseMidi: DawOptions["parseMidi"];
@@ -406,14 +387,14 @@ export const createDtmStudio = async (
 	// ── SoundFont（楽器）ロード ──
 	// SoundFont.toURL は SoundFont_list の初期化完了後に有効になる。
 	const listReady = new Promise<void>((resolve) => {
-		SoundFont_list.init();
-		SoundFont_list.onload(() => resolve());
+		sfList.init();
+		sfList.onload(() => resolve());
 	});
 
 	// ドラム音源ロード（GMキー一式）。
 	const drumReady = (async () => {
 		try {
-			await SoundFont_drum.load({
+			await sfDrum.load({
 				ctx: audioCtx,
 				font: DRUM_FONT,
 				id: "0",
@@ -437,11 +418,12 @@ export const createDtmStudio = async (
 		const inflight = loadingByKey.get(instrumentKey);
 		if (inflight) return inflight;
 		const fullName = `${instrumentKey}_${SOUNDFONT_NAME}`;
-		const p = SoundFont.load({
-			ctx: audioCtx,
-			fontName: `_tone_${fullName}`,
-			url: SoundFont.toURL(fullName),
-		})
+		const p = sf
+			.load({
+				ctx: audioCtx,
+				fontName: `_tone_${fullName}`,
+				url: sf.toURL(fullName),
+			})
 			.then((sf) => {
 				soundFonts.set(instrumentKey, sf);
 			})
@@ -626,8 +608,8 @@ export const createDtmStudio = async (
 
 	// ── 発音ハンドラ（ドラムは曲全体共通。楽器音は編集UI/再生UIごとにプリセットを解決） ──
 	const playDrum = (e: PlayDrumEvent): void => {
-		if (!SoundFont_drum.font) return;
-		SoundFont_drum.play({
+		if (!sfDrum.font) return;
+		sfDrum.play({
 			ctx: audioCtx,
 			destination: drumGain,
 			pitch: e.pitch,
