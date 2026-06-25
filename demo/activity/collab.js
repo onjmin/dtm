@@ -184,7 +184,8 @@ const getRelayUrl = () => {
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
         return 'ws://localhost:3001';
     }
-    return RELAY_URL_PROD;
+    // Discord Activity 内では /.proxy/ 経由でないと CSP でブロックされる
+    return `wss://${location.host}/.proxy/relay`;
 };
 
 const connectRelay = (roomId) => {
@@ -309,7 +310,6 @@ const main = async () => {
         patchUrlMappings([
             { prefix: '/.proxy/fonts',   target: 'db.onlinewebfonts.com' },
             { prefix: '/.proxy/dtm',     target: 'onjmin.github.io/dtm' },
-            { prefix: '/.proxy/sf',      target: 'rpgen3.github.io' },
             { prefix: '/.proxy/surikov', target: 'surikov.github.io' },
             { prefix: '/.proxy/koe',     target: 'pub-12482a6b5cbc4c9e906b2e1904cabae5.r2.dev' },
             { prefix: '/.proxy/relay',   target: 'detailed-donkey-onjmin-fceb78f2.koyeb.app' },
