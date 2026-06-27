@@ -116,7 +116,10 @@ export class SoundFont {
 				: src.loop
 					? _duration
 					: Math.min(_duration, _param.max));
-		if (!isDrum) g.gain.linearRampToValueAtTime(0, end);
+		if (!isDrum) {
+			if (src.loop) g.gain.setValueAtTime(volume, end - SoundFont.afterTime);
+			g.gain.linearRampToValueAtTime(0, end);
+		}
 		src.connect(g).connect(destination);
 		src.start(_when);
 		src.stop(end);
