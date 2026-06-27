@@ -7588,7 +7588,6 @@ var mountDAW = (target, options = {}) => {
     stepWidth: BASE_STEP_WIDTH * 2
     // zoom100% 相当
   };
-  const leftPaddingSteps = renderConfig.stepsPerBar * 16;
   let zoomX = 100;
   let zoomY = 100;
   let bpm = options.defaultBpm ?? DEFAULT_BPM;
@@ -7602,8 +7601,8 @@ var mountDAW = (target, options = {}) => {
   let snapGridSteps = 12;
   const gridLineSteps = 48;
   let currentOffsetX = 0;
-  const _initPitch = options.initialScrollPitch;
-  let currentOffsetY = _initPitch !== void 0 ? (renderConfig.keyCount - 1 - _initPitch) * renderConfig.keyHeight - 215 : (104 - 1 - 60) * renderConfig.keyHeight - 215;
+  const _initPitch = options.initialScrollPitch ?? 48;
+  let currentOffsetY = (renderConfig.keyCount - 1 - _initPitch) * renderConfig.keyHeight - 215;
   let playStartStep = 0;
   let isSolo = false;
   let lyricTrackIndices = /* @__PURE__ */ new Set();
@@ -7611,6 +7610,7 @@ var mountDAW = (target, options = {}) => {
   let pausedPlayStep = 0;
   let currentPlayStep = 0;
   let ready = false;
+  let isLoading = false;
   let selectedNotes = [];
   let selectionRect = null;
   let copiedNotes = [];
@@ -7630,7 +7630,7 @@ var mountDAW = (target, options = {}) => {
     };
     if (lyricsDebounceTimer) clearTimeout(lyricsDebounceTimer);
     lyricsDebounceTimer = setTimeout(() => {
-      options.onLyricsChange(trackId, data);
+      options.onLyricsChange?.(trackId, data);
       lyricsDebounceTimer = null;
     }, 300);
   };
@@ -7710,14 +7710,28 @@ var mountDAW = (target, options = {}) => {
   const getActive = () => trackStates.find((t) => t.config.id === activeTrackId) ?? trackStates[0];
   let showModal;
   const getMaxNoteStep = () => {
-    let maxStep = renderConfig.stepsPerBar * 4;
+    let maxEndStep = 0;
     for (const t of trackStates) {
       for (const n of t.core.getNotes()) {
         const end = n.startStep + n.durationSteps;
-        if (end > maxStep) maxStep = end;
+        if (end > maxEndStep) {
+          maxEndStep = end;
+        }
       }
     }
-    return maxStep;
+    if (maxEndStep === 0) {
+      return renderConfig.stepsPerBar * 4;
+    }
+    const lastNoteMeasure = Math.floor(
+      (maxEndStep - 1) / renderConfig.stepsPerBar
+    );
+    return (lastNoteMeasure + 2) * renderConfig.stepsPerBar;
+  };
+  const getMaxOffsetX = () => {
+    const canvas = getGridCanvas();
+    const maxNoteStep = getMaxNoteStep();
+    const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
+    return Math.max(0, totalContentWidth - canvas.width);
   };
   const getMaxOffsetY = () => {
     const totalHeight = renderConfig.keyCount * renderConfig.keyHeight;
@@ -7797,19 +7811,14 @@ var mountDAW = (target, options = {}) => {
   };
   const updateScrollbars = () => {
     const canvas = getGridCanvas();
-    const maxNoteStep = getMaxNoteStep();
-    const leftPaddingWidth = leftPaddingSteps * renderConfig.stepWidth;
-    const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
-    const maxOffsetX = totalContentWidth - canvas.width + leftPaddingWidth;
+    const maxOffsetX = getMaxOffsetX();
     const sbW = refs.hScroll.clientWidth;
     if (maxOffsetX <= 0) {
       refs.hScrollThumb.style.width = "100%";
       refs.hScrollThumb.style.left = "0";
     } else {
-      const thumbW = Math.max(
-        40,
-        canvas.width / (totalContentWidth + leftPaddingWidth) * sbW
-      );
+      const totalContentWidth = getMaxNoteStep() * renderConfig.stepWidth;
+      const thumbW = Math.max(40, canvas.width / totalContentWidth * sbW);
       const ratio = currentOffsetX / maxOffsetX;
       refs.hScrollThumb.style.width = `${thumbW}px`;
       refs.hScrollThumb.style.left = `${clamp3(ratio * (sbW - thumbW), 0, sbW - thumbW)}px`;
@@ -7863,11 +7872,7 @@ var mountDAW = (target, options = {}) => {
       draggingV = false;
     });
     const moveH = (clientX) => {
-      const canvas = getGridCanvas();
-      const maxNoteStep = getMaxNoteStep();
-      const leftPaddingWidth = leftPaddingSteps * renderConfig.stepWidth;
-      const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
-      const maxOffsetX = totalContentWidth - canvas.width + leftPaddingWidth;
+      const maxOffsetX = getMaxOffsetX();
       if (maxOffsetX <= 0) return;
       const rect = refs.hScroll.getBoundingClientRect();
       const thumbW = Number.parseFloat(refs.hScrollThumb.style.width) || 40;
@@ -7900,9 +7905,10 @@ var mountDAW = (target, options = {}) => {
   let selectedOriginal = [];
   let lastMultiPreviewPitch = null;
   const playPreview = (pitch) => {
+    if (isLoading) return;
     options.onResumeAudio?.();
     const active = getActive();
-    dispatchNote(active.config.id, pitch, active.volume, 100, 0, 0.1);
+    dispatchNote(active.config.id, pitch, active.volume, 100, 0, 0.5);
   };
   const findActiveNoteAt = (x, y, margin = 0) => {
     const active = getActive();
@@ -8175,7 +8181,11 @@ var mountDAW = (target, options = {}) => {
           0,
           getMaxOffsetY()
         );
-        currentOffsetX = Math.max(0, currentOffsetX + event.deltaX);
+        currentOffsetX = clamp3(
+          currentOffsetX + event.deltaX,
+          0,
+          getMaxOffsetX()
+        );
         setDrawOffset(currentOffsetX, currentOffsetY);
         redrawAll();
       },
@@ -8210,9 +8220,10 @@ var mountDAW = (target, options = {}) => {
     const centerStep = (currentOffsetX + canvas.width / 2) / renderConfig.stepWidth;
     renderConfig.stepWidth = BASE_STEP_WIDTH * (zoomX * 2) / 100;
     refs.zoomXLabel.textContent = `${zoomX}%`;
-    currentOffsetX = Math.max(
+    currentOffsetX = clamp3(
+      centerStep * renderConfig.stepWidth - canvas.width / 2,
       0,
-      centerStep * renderConfig.stepWidth - canvas.width / 2
+      getMaxOffsetX()
     );
     setDrawOffset(currentOffsetX, currentOffsetY);
     redrawAll();
@@ -8271,7 +8282,11 @@ var mountDAW = (target, options = {}) => {
       const threshold = currentOffsetX / renderConfig.stepWidth + visibleSteps - 4;
       if (currentPlayStep > threshold) {
         const visibleBars = Math.round(visibleSteps / renderConfig.stepsPerBar);
-        currentOffsetX += visibleBars * renderConfig.stepsPerBar * renderConfig.stepWidth;
+        currentOffsetX = clamp3(
+          currentOffsetX + visibleBars * renderConfig.stepsPerBar * renderConfig.stepWidth,
+          0,
+          getMaxOffsetX()
+        );
         setDrawOffset(currentOffsetX, currentOffsetY);
       }
       redrawAll();
@@ -8341,9 +8356,10 @@ var mountDAW = (target, options = {}) => {
     }
     if (playbackState !== "paused") {
       const canvas = getGridCanvas();
-      currentOffsetX = Math.max(
+      currentOffsetX = clamp3(
+        playStartStep * renderConfig.stepWidth - canvas.width * 0.5,
         0,
-        playStartStep * renderConfig.stepWidth - canvas.width * 0.5
+        getMaxOffsetX()
       );
       setDrawOffset(currentOffsetX, currentOffsetY);
     }
@@ -8926,7 +8942,7 @@ var mountDAW = (target, options = {}) => {
     if (firstPitch !== null) {
       centerPitch(firstPitch);
     } else {
-      setDrawOffset(currentOffsetX, currentOffsetY);
+      centerPitch(48);
     }
     redrawAll();
     updateTrackPanel();
@@ -9005,7 +9021,7 @@ var mountDAW = (target, options = {}) => {
     if (firstPitch !== null) {
       centerPitch(firstPitch);
     } else {
-      setDrawOffset(currentOffsetX, currentOffsetY);
+      centerPitch(48);
     }
     redrawAll();
     updateTrackPanel();
@@ -9475,6 +9491,7 @@ var mountDAW = (target, options = {}) => {
   document.addEventListener("pointermove", onPointerMove);
   document.addEventListener("pointerup", onPointerUp);
   const setLoading = (loading) => {
+    isLoading = loading;
     refs.topbar.classList.toggle("is-loading", loading);
   };
   const getCurrentPlayStep = () => {
@@ -9502,9 +9519,10 @@ var mountDAW = (target, options = {}) => {
     currentPlayStep = step;
     playbackState = "paused";
     const canvas = getGridCanvas();
-    currentOffsetX = Math.max(
+    currentOffsetX = clamp3(
+      step * renderConfig.stepWidth - canvas.width * 0.5,
       0,
-      step * renderConfig.stepWidth - canvas.width * 0.5
+      getMaxOffsetX()
     );
     setDrawOffset(currentOffsetX, currentOffsetY);
     updateTransport();
@@ -10262,11 +10280,11 @@ var SoundFont = class _SoundFont {
     const { buffer, _param } = zone;
     if (!buffer || !_param) return;
     src.buffer = buffer;
-    g.gain.setValueAtTime(volume, ctx.currentTime);
     src.playbackRate.setValueAtTime(_param.playbackRate, 0);
     Object.assign(src, _param.src);
     const _duration = duration + _SoundFont.afterTime;
     const end = _when + (isDrum ? buffer.duration : src.loop ? _duration : Math.min(_duration, _param.max));
+    g.gain.setValueAtTime(volume, ctx.currentTime);
     if (!isDrum) g.gain.linearRampToValueAtTime(0, end);
     src.connect(g).connect(destination);
     src.start(_when);
@@ -10313,14 +10331,99 @@ var adjustZone = async (ctx, zone) => {
       a[i] = n / 65536;
     }
   } else if (zone.file) {
-    const buf = Uint8Array.from(atob(zone.file), (c) => c.charCodeAt(0)).buffer;
+    const bytes = Uint8Array.from(atob(zone.file), (c) => c.charCodeAt(0));
+    const buf = bytes.buffer;
     if (ctx.state === "interrupted") {
       try {
         await ctx.resume();
       } catch {
       }
     }
-    zone.buffer = await ctx.decodeAudioData(buf);
+    try {
+      zone.buffer = await ctx.decodeAudioData(buf);
+    } catch (e) {
+      console.error(
+        `[zone.file format] keyRange: ${zone.keyRangeLow}-${zone.keyRangeHigh} - Decode failed:`,
+        e
+      );
+      throw e;
+    }
+  }
+  if (zone.buffer && zone.loopStart >= 1 && zone.loopStart < zone.loopEnd) {
+    const loopLenSeconds = (zone.loopEnd - zone.loopStart) / zone.sampleRate;
+    if (loopLenSeconds < 0.03) {
+      const oldBuf = zone.buffer;
+      const sampleRate = oldBuf.sampleRate;
+      const rateRatio = sampleRate / zone.sampleRate;
+      const loopStartFrame = Math.round(zone.loopStart * rateRatio);
+      const loopEndFrame = Math.round(zone.loopEnd * rateRatio);
+      const loopLengthFrame = loopEndFrame - loopStartFrame;
+      if (loopLengthFrame > 0) {
+        const minLoopLenFrame = Math.round(0.2 * sampleRate);
+        const repeatCount = Math.ceil(minLoopLenFrame / loopLengthFrame);
+        const attackLength = Math.min(loopStartFrame, oldBuf.length);
+        const releaseLength = Math.max(0, oldBuf.length - loopEndFrame);
+        const newLength = attackLength + loopLengthFrame * repeatCount + releaseLength;
+        let totalPeak = 0;
+        let loopPeak = 0;
+        if (oldBuf.numberOfChannels > 0) {
+          const ch0 = oldBuf.getChannelData(0);
+          for (let i = 0; i < ch0.length; i++) {
+            const abs = Math.abs(ch0[i]);
+            if (abs > totalPeak) totalPeak = abs;
+            if (i >= loopStartFrame && i < loopEndFrame) {
+              if (abs > loopPeak) loopPeak = abs;
+            }
+          }
+        }
+        let gainMultiplier = 1;
+        if (loopPeak > 0 && totalPeak > 0 && loopPeak < totalPeak * 0.8) {
+          gainMultiplier = totalPeak * 0.75 / loopPeak;
+          if (gainMultiplier > 20) gainMultiplier = 20;
+        }
+        try {
+          const newBuf = ctx.createBuffer(
+            oldBuf.numberOfChannels,
+            newLength,
+            sampleRate
+          );
+          for (let ch = 0; ch < oldBuf.numberOfChannels; ch++) {
+            const oldData = oldBuf.getChannelData(ch);
+            const newData = newBuf.getChannelData(ch);
+            newData.set(oldData.subarray(0, attackLength), 0);
+            let offset = attackLength;
+            const loopData = oldData.subarray(loopStartFrame, loopEndFrame);
+            const normalizedLoopData = new Float32Array(loopLengthFrame);
+            for (let i = 0; i < loopLengthFrame; i++) {
+              normalizedLoopData[i] = loopData[i] * gainMultiplier;
+            }
+            for (let r = 0; r < repeatCount; r++) {
+              newData.set(normalizedLoopData, offset);
+              offset += loopLengthFrame;
+            }
+            if (releaseLength > 0 && loopEndFrame < oldBuf.length) {
+              const releaseData = oldData.subarray(loopEndFrame);
+              if (gainMultiplier !== 1) {
+                const normalizedRelease = new Float32Array(releaseLength);
+                for (let i = 0; i < releaseLength; i++) {
+                  normalizedRelease[i] = releaseData[i] * gainMultiplier;
+                }
+                newData.set(normalizedRelease, offset);
+              } else {
+                newData.set(releaseData, offset);
+              }
+            }
+          }
+          zone.buffer = newBuf;
+          zone.loopEnd = zone.loopStart + (zone.loopEnd - zone.loopStart) * repeatCount;
+        } catch (e) {
+          console.warn(
+            "[SoundFont.loopExtension] Failed to extend loop buffer:",
+            e
+          );
+        }
+      }
+    }
   }
   for (const [k, v] of [
     ["loopStart", 0],
@@ -10480,7 +10583,7 @@ var createDtmStudio = async (options = {}) => {
     presetUI: true,
     ...options.features
   };
-  const audioCtx = options.audioContext ?? new AudioContext();
+  const audioCtx = options.audioContext ?? new AudioContext({ sampleRate: 44100 });
   const masterGain = audioCtx.createGain();
   masterGain.gain.value = options.masterVolume ?? 1;
   masterGain.connect(audioCtx.destination);
