@@ -302,6 +302,16 @@ export type DawOptions = {
 	initialMML?: string;
 	/** 利用規約への同意画面の表示をスキップするかどうか */
 	skipConsent?: boolean;
+	/**
+	 * シンプルモードでトラック数超過コンテンツを読み込もうとしたとき、上級者モードへの切替を要求するコールバック。
+	 * `mountModeSwitch` が自動的に接続する。未接続なら確認モーダルは表示しない。
+	 * - MML読み込み時: `pendingMml` にMML文字列が渡され、`applyMidi` は undefined。
+	 * - MIDI読み込み時: `pendingMml` は undefined、`applyMidi` に新DAWへ適用する関数が渡される。
+	 */
+	onRequestAdvancedMode?: (
+		pendingMml?: string,
+		applyMidi?: (daw: DawInstance) => void,
+	) => void;
 };
 
 // 再生状態
@@ -372,6 +382,8 @@ export type DawInstance = {
 		onScreen: boolean;
 		side: "left" | "right" | "top" | "bottom" | null;
 	};
+	/** パース済みMIDIオブジェクトと選択トラックインデックスを直接適用する（上級者モード切替後の再ロード用）。 */
+	applyMidiParsed?: (midi: unknown, selectedIndices: number[]) => void;
 	destroy: () => void;
 };
 

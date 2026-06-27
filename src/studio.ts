@@ -557,7 +557,7 @@ export const createDtmStudio = async (
 		if (opts.label !== null) {
 			const lab = doc.createElement("span");
 			lab.className = "dtm-controlbar-label";
-			lab.textContent = opts.label ?? "INSTRUMENT";
+			lab.textContent = opts.label ?? "楽器プリセット";
 			wrapper.appendChild(lab);
 		}
 
@@ -820,8 +820,8 @@ export const createDtmStudio = async (
 			opts.tracksFor ??
 			((m: DawMode) => (m === "advanced" ? TRACKS_ADVANCED : TRACKS_SIMPLE));
 		const labels: Record<DawMode, string> = {
-			simple: opts.labels?.simple ?? "シンプル",
-			advanced: opts.labels?.advanced ?? "アドバンス",
+			simple: opts.labels?.simple ?? "初心者",
+			advanced: opts.labels?.advanced ?? "上級者",
 		};
 		const editorOptionsFor = (mode: DawMode): MountEditorOptions =>
 			typeof opts.editorOptions === "function"
@@ -837,7 +837,7 @@ export const createDtmStudio = async (
 		if (opts.label !== null) {
 			const lab = doc.createElement("span");
 			lab.className = "dtm-controlbar-label";
-			lab.textContent = opts.label ?? "MODE";
+			lab.textContent = opts.label ?? "モード";
 			wrapper.appendChild(lab);
 		}
 		const seg = doc.createElement("div");
@@ -875,6 +875,14 @@ export const createDtmStudio = async (
 				mode,
 				tracks: tracksFor(mode),
 				initialMML: mml ?? editorOpts.initialMML,
+				onRequestAdvancedMode: (pendingMml, applyMidi) => {
+					doUnmount();
+					currentMode = "advanced";
+					updateButtons();
+					opts.onChange?.("advanced");
+					doMount("advanced", pendingMml);
+					if (applyMidi && daw) applyMidi(daw);
+				},
 			});
 			// buildUI による wipe の後に貼り直す（同一要素共有でも mode UI が残る）。
 			attachWrapper();

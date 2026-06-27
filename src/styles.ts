@@ -553,7 +553,7 @@ export const DAW_CSS = `
 }
 .dtm-overlay[hidden] { display: none; }
 .dtm-overlay::before {
-  content: 'NOW LOADING';
+  content: 'ロード中';
   font-family: var(--dtm-font);
   font-size: 13px;
   color: var(--dtm-primary);
@@ -744,6 +744,15 @@ export const DAW_CSS = `
   background: var(--dtm-deep);
   display: flex;
   justify-content: center;
+}
+
+.dtm-confirm-footer {
+  padding: 8px 12px;
+  border-top: 2px solid var(--c-black);
+  background: var(--dtm-deep);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .dtm-modal {

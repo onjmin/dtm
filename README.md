@@ -81,6 +81,49 @@ studio.mountEditor(editorEl, { mode: "advanced", tracks: TRACKS_ADVANCED });
 > 永続化される MML に欠番が残る等）ため、**内部は MML 仕様に寄せ、ch10=ドラムの面倒は変換層に閉じ込める**
 > 方針に決めました。
 
+### 上級者モード切替の確認ダイアログ（`onRequestAdvancedMode`）
+
+初心者モードで「音が崩れるコンテンツ」を読み込もうとしたとき、自動的に確認ダイアログを表示します。
+
+**対象となるケース**
+- 5 トラック以上（ドラムトラック除く）の MML を初心者モードで読み込む
+- 5 トラック以上（ドラムトラック除く）の MIDI を初心者モードで読み込む
+
+ダイアログで「はい」を選ぶと上級者モードに切り替わり、コンテンツをそのまま引き継ぎます。
+「いいえ」を選ぶと初心者モードのまま読み込みます（トラックは合算されます）。
+
+**`mountModeSwitch` 経由の場合（自動）**
+
+`mountModeSwitch` を使っている場合は何も追加設定せずに動作します。
+
+**`mountDAW` 直接利用の場合（手動接続）**
+
+`mountDAW` を直接使う場合は `onRequestAdvancedMode` コールバックを自前で接続してください。
+
+```ts
+let currentMode: DawMode = "simple";
+let daw: DawInstance | null = null;
+
+function mountWithMode(mode: DawMode, mml?: string) {
+  daw?.destroy();
+  daw = mountDAW(target, {
+    mode,
+    tracks: mode === "advanced" ? TRACKS_ADVANCED : TRACKS_SIMPLE,
+    initialMML: mml,
+    onRequestAdvancedMode: (pendingMml, applyMidi) => {
+      // 確認はライブラリ内で完了済み。ここではモードを切り替えるだけ
+      currentMode = "advanced";
+      mountWithMode("advanced", pendingMml);
+      if (applyMidi && daw) applyMidi(daw); // MIDI 読み込みの場合のみ渡される
+    },
+  });
+}
+```
+
+- `onRequestAdvancedMode` を渡さない場合、確認ダイアログは表示されず既存の動作（合算して読み込み）になります。
+- MML 読み込みの場合は `pendingMml` にその MML 文字列が渡されます。`initialMML` に渡すか `daw.loadMML(pendingMml)` を呼ぶことで上級者モードのDAWに適用できます。
+- MIDI 読み込みの場合は `applyMidi` 関数が渡されます。新しいDAWインスタンスを生成した直後に `applyMidi(newDaw)` を呼ぶと MIDI が適用されます。
+
 ## 低レベル API（`mountDAW` / 注入式）
 
 本体は音を持たない設計で、`onPlayNote` / `onPlayDrum` に自前のシンセを繋ぐ

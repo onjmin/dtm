@@ -105,7 +105,7 @@ export class SoundFont {
 		const { buffer, _param } = zone;
 		if (!buffer || !_param) return;
 		src.buffer = buffer;
-		g.gain.value = volume;
+		g.gain.setValueAtTime(volume, _when);
 		src.playbackRate.setValueAtTime(_param.playbackRate, 0);
 		Object.assign(src, _param.src);
 		const _duration = duration + SoundFont.afterTime;

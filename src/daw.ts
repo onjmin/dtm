@@ -118,8 +118,8 @@ const MIDI_INFO_HTML = `
 
   <h4>3. モードによる取り込み方の違い</h4>
   <ul>
-    <li><strong>SIMPLE</strong>: 各トラックの特徴から、メロディー・サブメロ・ベース・伴奏の4つの役割に自動で振り分けられます。</li>
-    <li><strong>ADVANCED</strong>: MIDIのトラック構成がそのまま反映されます（1対1）。</li>
+    <li><strong>初心者モード</strong>: 各トラックの特徴から、メロディー・サブメロ・ベース・伴奏の4つの役割に自動で振り分けられます。</li>
+    <li><strong>上級者モード</strong>: MIDIのトラック構成がそのまま反映されます（1対1）。</li>
   </ul>
 
   <h4>4. MIDIファイルを手に入れる</h4>
@@ -182,105 +182,105 @@ export const TRACKS_SIMPLE: TrackConfig[] = [
 export const TRACKS_ADVANCED: TrackConfig[] = [
 	{
 		id: "t0",
-		name: "TRACK 01",
+		name: "トラック1",
 		color: [41, 173, 255],
 		instrument: 0,
 		volume: 100,
 	},
 	{
 		id: "t1",
-		name: "TRACK 02",
+		name: "トラック2",
 		color: [0, 228, 54],
 		instrument: 1,
 		volume: 100,
 	},
 	{
 		id: "t2",
-		name: "TRACK 03",
+		name: "トラック3",
 		color: [255, 119, 168],
 		instrument: 2,
 		volume: 100,
 	},
 	{
 		id: "t3",
-		name: "TRACK 04",
+		name: "トラック4",
 		color: [255, 163, 0],
 		instrument: 3,
 		volume: 100,
 	},
 	{
 		id: "t4",
-		name: "TRACK 05",
+		name: "トラック5",
 		color: [255, 236, 39],
 		instrument: 4,
 		volume: 100,
 	},
 	{
 		id: "t5",
-		name: "TRACK 06",
+		name: "トラック6",
 		color: [131, 118, 156],
 		instrument: 5,
 		volume: 100,
 	},
 	{
 		id: "t6",
-		name: "TRACK 07",
+		name: "トラック7",
 		color: [255, 0, 77],
 		instrument: 6,
 		volume: 100,
 	},
 	{
 		id: "t7",
-		name: "TRACK 08",
+		name: "トラック8",
 		color: [255, 204, 170],
 		instrument: 7,
 		volume: 100,
 	},
 	{
 		id: "t8",
-		name: "TRACK 09",
+		name: "トラック9",
 		color: [194, 195, 199],
 		instrument: 8,
 		volume: 100,
 	},
 	{
 		id: "t9",
-		name: "TRACK 10",
+		name: "トラック10",
 		color: [0, 135, 81],
 		instrument: 9,
 		volume: 100,
 	},
 	{
 		id: "t10",
-		name: "TRACK 11",
+		name: "トラック11",
 		color: [171, 82, 54],
 		instrument: 10,
 		volume: 100,
 	},
 	{
 		id: "t11",
-		name: "TRACK 12",
+		name: "トラック12",
 		color: [126, 37, 83],
 		instrument: 11,
 		volume: 100,
 	},
 	{
 		id: "t12",
-		name: "TRACK 13",
+		name: "トラック13",
 		color: [255, 241, 232],
 		instrument: 12,
 		volume: 100,
 	},
 	{
 		id: "t13",
-		name: "TRACK 14",
+		name: "トラック14",
 		color: [120, 200, 255],
 		instrument: 13,
 		volume: 100,
 	},
 	{
 		id: "t14",
-		name: "TRACK 15",
+		name: "トラック15",
 		color: [100, 255, 160],
 		instrument: 14,
 		volume: 100,
@@ -1393,7 +1393,7 @@ export const mountDAW = (
 		const active = getActive();
 		refs.trackBody.innerHTML = `
       <div class="dtm-row">
-        <span class="dtm-label">velocity</span>
+        <span class="dtm-label">ベロシティ</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="track-vol" min="0" max="127" value="${active.volume}">
         <span class="dtm-label" data-dtm="track-vol-label">${active.volume}</span>
       </div>`;
@@ -2150,6 +2150,32 @@ export const mountDAW = (
 		}, 30);
 	};
 
+	// Promise で yes/no を返す確認ダイアログ（wireEvents/wireMidi の両方から使う）
+	const showConfirmModal = (message: string): Promise<boolean> =>
+		new Promise((resolve) => {
+			const overlay = document.createElement("div");
+			overlay.className = "dtm-modal-overlay";
+			overlay.innerHTML = `
+				<div class="dtm-modal">
+					<div class="dtm-modal-header">
+						<span class="dtm-modal-title">モードの確認</span>
+					</div>
+					<div class="dtm-modal-body"><p>${message}</p></div>
+					<div class="dtm-confirm-footer">
+						<button class="dtm-btn dtm-btn--ghost dtm-confirm-no">いいえ（このまま読み込む）</button>
+						<button class="dtm-btn dtm-btn--primary dtm-confirm-yes">はい（上級者モードに切り替える）</button>
+					</div>
+				</div>`;
+			const close = (result: boolean): void => {
+				overlay.remove();
+				resolve(result);
+			};
+			(overlay.querySelector(".dtm-confirm-yes") as HTMLElement).addEventListener("click", () => close(true));
+			(overlay.querySelector(".dtm-confirm-no") as HTMLElement).addEventListener("click", () => close(false));
+			overlay.addEventListener("click", (e) => { if (e.target === overlay) close(false); });
+			document.body.appendChild(overlay);
+		});
+
 	const wireEvents = (): void => {
 		refs.playBtn.addEventListener("click", togglePlay);
 		refs.playBtn.disabled = false;
@@ -2283,9 +2309,25 @@ export const mountDAW = (
 		);
 
 		// MML/MIDI入力
-		refs.mmlLoadBtn.addEventListener("click", () =>
-			overlayDuring(() => loadMML(refs.mmlInput.value)),
-		);
+		refs.mmlLoadBtn.addEventListener("click", async () => {
+			const mml = refs.mmlInput.value;
+			if (!isAdvanced && options.onRequestAdvancedMode) {
+				const { mergedTrackCount } = parseMML(mml, {
+					stepsPerBar: renderConfig.stepsPerBar,
+					clampTrackCount: trackStates.length,
+				});
+				if (mergedTrackCount > 0) {
+					const confirmed = await showConfirmModal(
+						"初心者モードで読み込むと、音が崩れる可能性があります。<br>上級者モードに切り替えますか？",
+					);
+					if (confirmed) {
+						options.onRequestAdvancedMode(mml);
+						return;
+					}
+				}
+			}
+			overlayDuring(() => loadMML(mml));
+		});
 
 		// サンプル再生用状態変数
 		let activeSamplePlayer: import("./mml-player").MmlPlayerInstance | null =
@@ -2483,7 +2525,7 @@ export const mountDAW = (
 			refs.overlay.hidden = true;
 			setLoading(false);
 		});
-		refs.midiLoadBtn.addEventListener("click", () => {
+		refs.midiLoadBtn.addEventListener("click", async () => {
 			if (!pendingMidi) return;
 			const selected: number[] = [];
 			const btns = refs.midiTrackSelection.querySelectorAll("button");
@@ -2492,6 +2534,19 @@ export const mountDAW = (
 					selected.push(detectedTracks[i].index);
 			});
 			if (selected.length === 0) return;
+			if (!isAdvanced && options.onRequestAdvancedMode && selected.length > trackStates.length) {
+				const confirmed = await showConfirmModal(
+					"初心者モードで読み込むと、音が崩れる可能性があります。<br>上級者モードに切り替えますか？",
+				);
+				if (confirmed) {
+					const midi = pendingMidi;
+					const sel = selected.slice();
+					options.onRequestAdvancedMode(undefined, (newDaw) => {
+						newDaw.applyMidiParsed?.(midi, sel);
+					});
+					return;
+				}
+			}
 			overlayDuring(() => applyMidiSelection(pendingMidi, selected));
 		});
 	};
@@ -2651,6 +2706,9 @@ export const mountDAW = (
 		},
 		loadMML,
 		loadMIDI,
+		applyMidiParsed: (midi: unknown, selectedIndices: number[]): void => {
+			overlayDuring(() => applyMidiSelection(midi, selectedIndices));
+		},
 		exportMIDI,
 		setBpm,
 		getPlaybackState: () => playbackState,
