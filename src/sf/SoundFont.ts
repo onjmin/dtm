@@ -171,6 +171,14 @@ const adjustZone = async (ctx: AudioContext, zone: Zone): Promise<void> => {
 		}
 	} else if (zone.file) {
 		const buf = Uint8Array.from(atob(zone.file), (c) => c.charCodeAt(0)).buffer;
+		// macOS Safari はスリープ復帰後に AudioContext を "interrupted" 状態にする。
+		// その状態で decodeAudioData を呼ぶと "null is not an object" エラーになるため、
+		// running でなければ resume してから decode する。
+		if ((ctx.state as string) !== "running") {
+			try {
+				await ctx.resume();
+			} catch {}
+		}
 		zone.buffer = await ctx.decodeAudioData(buf);
 	}
 	for (const [k, v] of [
