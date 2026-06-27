@@ -2392,6 +2392,7 @@ export const mountDAW = (
 								singingVoices: options.singingVoices,
 								drumPatterns: options.drumPatterns,
 								volume: masterVolume,
+								_skipInfoModals: true,
 								onStop: () => {
 									if (activeSampleButton === htmlBtn) {
 										htmlBtn.textContent = "▶ 試聴";

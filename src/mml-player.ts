@@ -78,6 +78,11 @@ export type MmlPlayerOptions = {
 	/** 利用規約への同意画面の表示をスキップするかどうか */
 	skipConsent?: boolean;
 	/**
+	 * @internal モーダル（MMLを表示/MML書式とは/埋め込む）のメニュー項目を省略する。
+	 * 再帰的な mountMmlPlayer 呼び出しの無限ネストを防ぐために使う。
+	 */
+	_skipInfoModals?: boolean;
+	/**
 	 * 「MMLを表示」「MMLコピー」押下時に呼ばれる MML 取得コールバック。
 	 * 省略時は mountMmlPlayer に渡した mml をそのまま使う。
 	 * DAW と連携する場合は `() => daw.getMML().full` を渡すと
@@ -542,9 +547,11 @@ export const mountMmlPlayer = (
 	const embedItem = makeMenuItem("埋め込む");
 	const copyMmlItem = makeMenuItem("MMLコピー");
 
-	menuDropdown.appendChild(showMmlItem);
-	menuDropdown.appendChild(mmlInfoItem);
-	menuDropdown.appendChild(embedItem);
+	if (!options._skipInfoModals) {
+		menuDropdown.appendChild(showMmlItem);
+		menuDropdown.appendChild(mmlInfoItem);
+		menuDropdown.appendChild(embedItem);
+	}
 	menuDropdown.appendChild(copyMmlItem);
 	menuContainer.appendChild(menuDropdown);
 
@@ -728,6 +735,8 @@ export const mountMmlPlayer = (
 					volume: trackVolume,
 					// 解説モーダル内の試聴サンプルは規約同意を要求しない。
 					skipConsent: true,
+					// 再帰的なモーダル生成を防ぐ。
+					_skipInfoModals: true,
 					onStop: () => {
 						if (activeSampleBtn === el) resetSampleBtn(el);
 					},
@@ -738,75 +747,77 @@ export const mountMmlPlayer = (
 		}
 	};
 
-	showMmlItem.addEventListener("click", (e) => {
-		e.stopPropagation();
-		toggleMenu(false);
-		const modalBody = openInfoModal("MMLを表示");
-		const desc = doc.createElement("p");
-		desc.textContent =
-			"このMMLをコピーして、他のプレイヤーや共有URLに貼り付けて使用できます。";
-		desc.style.marginBottom = "8px";
-		modalBody.appendChild(desc);
-		const sourceMml = options.getMml?.() ?? mml;
-		const displayMml = sourceMml
-			.split(";")
-			.map((s) => s.trim())
-			.filter((s) => s.length > 0)
-			.join(";\n");
-		const pre = doc.createElement("pre");
-		pre.textContent = displayMml;
-		pre.style.whiteSpace = "pre-wrap";
-		pre.style.wordBreak = "break-all";
-		pre.style.cursor = "text";
-		pre.addEventListener("click", () => {
-			const range = doc.createRange();
-			range.selectNodeContents(pre);
-			const sel = doc.defaultView?.getSelection();
-			sel?.removeAllRanges();
-			sel?.addRange(range);
-		});
-		modalBody.appendChild(pre);
-		appendCopyButton(modalBody, sourceMml);
-	});
-
-	mmlInfoItem.addEventListener("click", (e) => {
-		e.stopPropagation();
-		toggleMenu(false);
-		const modalBody = openInfoModal("MMLの書き方解説");
-		modalBody.innerHTML = MML_INFO_HTML;
-		wireSampleButtons(modalBody);
-	});
-
-	embedItem.addEventListener("click", async (e) => {
-		e.stopPropagation();
-		toggleMenu(false);
-		const modalBody = openInfoModal("埋め込み");
-		const loading = doc.createElement("p");
-		loading.textContent = "生成中...";
-		modalBody.appendChild(loading);
-		try {
-			const embedBase =
-				options.embedUrl ?? "https://onjmin.github.io/dtm/demo/embed.html";
-			const payload = await encodeMml(mml);
-			const url = `${embedBase}#${payload}`;
-			const snippet = `<iframe src="${url}" width="100%" height="260" frameborder="0" loading="lazy" title="@onjmin/dtm player"></iframe>`;
-			// 生成待ちの間にモーダルが閉じられていたら何もしない。
-			if (!modalBody.isConnected) return;
-			loading.remove();
+	if (!options._skipInfoModals) {
+		showMmlItem.addEventListener("click", (e) => {
+			e.stopPropagation();
+			toggleMenu(false);
+			const modalBody = openInfoModal("MMLを表示");
 			const desc = doc.createElement("p");
 			desc.textContent =
-				"このHTMLをブログやサイトに貼り付けると、プレイヤーをそのまま埋め込めます。";
+				"このMMLをコピーして、他のプレイヤーや共有URLに貼り付けて使用できます。";
+			desc.style.marginBottom = "8px";
+			modalBody.appendChild(desc);
+			const sourceMml = options.getMml?.() ?? mml;
+			const displayMml = sourceMml
+				.split(";")
+				.map((s) => s.trim())
+				.filter((s) => s.length > 0)
+				.join(";\n");
 			const pre = doc.createElement("pre");
-			pre.textContent = snippet;
+			pre.textContent = displayMml;
 			pre.style.whiteSpace = "pre-wrap";
 			pre.style.wordBreak = "break-all";
-			modalBody.append(desc, pre);
-			appendCopyButton(modalBody, snippet);
-		} catch (err) {
-			console.error("[dtm] failed to generate embed snippet", err);
-			if (modalBody.isConnected) loading.textContent = "生成に失敗しました";
-		}
-	});
+			pre.style.cursor = "text";
+			pre.addEventListener("click", () => {
+				const range = doc.createRange();
+				range.selectNodeContents(pre);
+				const sel = doc.defaultView?.getSelection();
+				sel?.removeAllRanges();
+				sel?.addRange(range);
+			});
+			modalBody.appendChild(pre);
+			appendCopyButton(modalBody, sourceMml);
+		});
+
+		mmlInfoItem.addEventListener("click", (e) => {
+			e.stopPropagation();
+			toggleMenu(false);
+			const modalBody = openInfoModal("MMLの書き方解説");
+			modalBody.innerHTML = MML_INFO_HTML;
+			wireSampleButtons(modalBody);
+		});
+
+		embedItem.addEventListener("click", async (e) => {
+			e.stopPropagation();
+			toggleMenu(false);
+			const modalBody = openInfoModal("埋め込み");
+			const loading = doc.createElement("p");
+			loading.textContent = "生成中...";
+			modalBody.appendChild(loading);
+			try {
+				const embedBase =
+					options.embedUrl ?? "https://onjmin.github.io/dtm/demo/embed.html";
+				const payload = await encodeMml(mml);
+				const url = `${embedBase}#${payload}`;
+				const snippet = `<iframe src="${url}" width="100%" height="260" frameborder="0" loading="lazy" title="@onjmin/dtm player"></iframe>`;
+				// 生成待ちの間にモーダルが閉じられていたら何もしない。
+				if (!modalBody.isConnected) return;
+				loading.remove();
+				const desc = doc.createElement("p");
+				desc.textContent =
+					"このHTMLをブログやサイトに貼り付けると、プレイヤーをそのまま埋め込めます。";
+				const pre = doc.createElement("pre");
+				pre.textContent = snippet;
+				pre.style.whiteSpace = "pre-wrap";
+				pre.style.wordBreak = "break-all";
+				modalBody.append(desc, pre);
+				appendCopyButton(modalBody, snippet);
+			} catch (err) {
+				console.error("[dtm] failed to generate embed snippet", err);
+				if (modalBody.isConnected) loading.textContent = "生成に失敗しました";
+			}
+		});
+	}
 
 	copyMmlItem.addEventListener("click", async (e) => {
 		e.stopPropagation();
