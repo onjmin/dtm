@@ -29,6 +29,10 @@ MML中間言語を使用したピアノロール打ち込みモジュール（We
 - **操作**: クリックでノート追加、ドラッグで移動/リサイズ
 - **音量設定**: 0〜100
 
+## 既知のバグ / 注意点
+
+- **初心者モード → 上級者モード切替モーダル**: `demo/index.html` の `mountEditor` に `onRequestAdvancedMode` を渡す必要あり（2026-06-27 追加）
+
 ## サウンド関連
 - MML生成は`mml-core.ts`の`generateMML()`メソッドで担当
 - 実際の再生には外部ライブラリ`@kazuprog/mml-player`が必要
