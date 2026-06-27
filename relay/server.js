@@ -115,7 +115,7 @@ wss.on('connection', (ws) => {
 
             // 自分のトラックの保存済みノートを返す
             const yourNotes = trackIndex >= 0 ? (room.trackNotes.get(trackIndex)?.notes ?? []) : [];
-            ws.send(JSON.stringify({ type: 'joined', yourTrackIndex: trackIndex, yourNotes }));
+            ws.send(JSON.stringify({ type: 'joined', yourTrackIndex: trackIndex, yourNotes, nextReset: getNextHourTimestamp() }));
 
             // 全トラックの状態を送信（接続中 + オフラインのトラック両方）
             const tracks = [];
@@ -138,7 +138,7 @@ wss.on('connection', (ws) => {
                     tracks.push({ userId: uid, username: u.username, trackIndex: u.trackIndex, notes: [], online: true });
                 }
             }
-            ws.send(JSON.stringify({ type: 'full-state', tracks }));
+            ws.send(JSON.stringify({ type: 'full-state', tracks, nextReset: getNextHourTimestamp() }));
 
             // 既存ユーザーに新メンバー通知
             if (trackIndex >= 0) {
@@ -217,6 +217,38 @@ wss.on('connection', (ws) => {
         console.error('[relay] ws error:', err.message);
     });
 });
+
+// ─── 毎時0分リセット ─────────────────────────────────────────
+const getNextHourTimestamp = () => {
+    const now = new Date();
+    const next = new Date(now);
+    next.setMinutes(0, 0, 0);
+    next.setHours(next.getHours() + 1);
+    return next.getTime();
+};
+
+const doHourlyReset = () => {
+    const nextReset = getNextHourTimestamp();
+    for (const [, room] of rooms) {
+        // 全トラックのノートをクリア
+        for (const [key, entry] of room.trackNotes) {
+            if (typeof key === 'number') entry.notes = [];
+        }
+        broadcast(room, { type: 'reset', nextReset });
+    }
+    console.log(`[relay] Hourly reset performed. Next reset: ${new Date(nextReset).toISOString()}`);
+};
+
+const scheduleNextReset = () => {
+    const delay = getNextHourTimestamp() - Date.now();
+    setTimeout(() => {
+        doHourlyReset();
+        scheduleNextReset();
+    }, delay);
+    console.log(`[relay] Next reset scheduled in ${Math.round(delay / 1000)}s`);
+};
+
+scheduleNextReset();
 
 server.listen(PORT, () => {
     console.log(`[relay] Listening on port ${PORT}`);
