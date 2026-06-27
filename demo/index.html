@@ -289,13 +289,6 @@
                            shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
                     リンクをコピー
                 </button>
-                <button id="discord-share-btn"
-                    class="min-h-[40px] px-4 border-2 border-pico-lavend bg-pico-black text-pico-lavend
-                           text-xs uppercase tracking-widest cursor-pointer font-pixel
-                           shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none"
-                    title="Discord Activityで再生するためのコードをコピー">
-                    Discord
-                </button>
                 <button id="show-history-btn"
                     class="min-h-[40px] px-4 border-2 border-pico-yellow bg-pico-black text-pico-yellow
                            text-xs uppercase tracking-widest cursor-pointer font-pixel
@@ -619,7 +612,6 @@
 
         // ── 共有リンクコピー機能 ──
         const shareBtn = document.getElementById('share-link-copy');
-        const discordShareBtn = document.getElementById('discord-share-btn');
 
         shareBtn.addEventListener('click', async () => {
             if (!daw) return;
@@ -632,26 +624,6 @@
                     shareUrl,
                     'このページの共有リンクをコピーしました！',
                     'text-pico-green text-xs uppercase tracking-widest'
-                );
-            } catch (err) {
-                console.error(err);
-            }
-        });
-
-        // ── Discord Activity 共有コードコピー機能 ──
-        // MMLペイロード（g.xxx 部分）をコピーする
-        // ユーザーはDiscord Activityを起動してこのコードを貼り付けると再生できる
-        discordShareBtn.addEventListener('click', async () => {
-            if (!daw) return;
-            const { full } = daw.getMML();
-            try {
-                const payload = await encodeMml(full);
-                // Discord Activity で貼り付けるコード（ペイロード部分のみ）
-                openShareModal(
-                    'discord-share-modal-overlay',
-                    payload,
-                    'Discord用コードをコピーしました！ Activityに貼り付けてください。',
-                    'text-pico-lavend text-xs uppercase tracking-widest'
                 );
             } catch (err) {
                 console.error(err);
@@ -939,33 +911,6 @@
                     style="word-break:break-all"></textarea>
                 <div class="flex items-center gap-3">
                     <button class="share-modal-copy-btn min-h-[36px] px-4 border-2 border-pico-cyan bg-pico-black text-pico-cyan
-                                   text-xs uppercase tracking-widest cursor-pointer font-pixel
-                                   shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">コピー</button>
-                    <span class="share-modal-status text-xs uppercase tracking-widest"></span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ════ Discord 共有モーダル ════ -->
-    <div id="discord-share-modal-overlay"
-        class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden"
-        onclick="if(event.target===this)this.classList.add('hidden')">
-        <div class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
-            <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
-                <span class="text-pico-yellow text-sm font-bold">Discord Activity コード</span>
-                <button class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none"
-                    onclick="document.getElementById('discord-share-modal-overlay').classList.add('hidden')">&times;</button>
-            </div>
-            <div class="p-4 flex flex-col gap-3 text-xs">
-                <p class="text-pico-lavend leading-relaxed">Discord Activity を起動して、このコードを貼り付けると再生できます。</p>
-                <textarea readonly
-                    class="w-full bg-pico-black border-2 border-pico-lavend text-pico-lavend font-pixel text-xs p-2 resize-none leading-relaxed cursor-pointer"
-                    rows="4"
-                    onclick="this.select()"
-                    style="word-break:break-all"></textarea>
-                <div class="flex items-center gap-3">
-                    <button class="share-modal-copy-btn min-h-[36px] px-4 border-2 border-pico-lavend bg-pico-black text-pico-lavend
                                    text-xs uppercase tracking-widest cursor-pointer font-pixel
                                    shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">コピー</button>
                     <span class="share-modal-status text-xs uppercase tracking-widest"></span>
