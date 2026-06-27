@@ -10494,8 +10494,8 @@ var createDtmStudio = async (options = {}) => {
   drumGain.gain.value = options.drumVolume ?? 1;
   drumGain.connect(audioCtx.destination);
   const resumeAudio = () => {
-    if (audioCtx.state === "suspended") return audioCtx.resume();
-    return Promise.resolve();
+    if (audioCtx.state === "closed") return Promise.resolve();
+    return audioCtx.resume();
   };
   const eng = options.engines ?? {};
   const sf = eng.SoundFont ?? SoundFont;
