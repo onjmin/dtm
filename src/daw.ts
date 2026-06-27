@@ -1362,12 +1362,7 @@ export const mountDAW = (
 	// ============================================================
 	const updateTransport = (): void => {
 		const playing = playbackState === "playing";
-		const label = playing
-			? "停止"
-			: playbackState === "paused"
-				? "再開"
-				: "試聴";
-		refs.playBtn.innerHTML = `${icon(playing ? "pause" : "play")}<span>${label}</span>`;
+		refs.playBtn.innerHTML = icon(playing ? "pause" : "play");
 		refs.playBtn.classList.toggle("dtm-play--stop", playing);
 	};
 

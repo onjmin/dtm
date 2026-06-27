@@ -119,7 +119,7 @@ export const buildUI = (
   <div class="dtm-topbar" data-dtm="transport">
     <div class="dtm-topbar-row1">
       <button class="dtm-iconbtn" data-dtm="prev-bar" title="1小節前">${icon("chevronLeft")}</button>
-      <button class="dtm-play" data-dtm="play" disabled>${icon("play")}<span>試聴</span></button>
+      <button class="dtm-play" data-dtm="play" disabled>${icon("play")}</button>
       <button class="dtm-iconbtn" data-dtm="next-bar" title="1小節後">${icon("chevronRight")}</button>
       <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>ソロ</span></label>
       <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
@@ -207,22 +207,22 @@ export const buildUI = (
   <details class="dtm-panel ${showMidi ? "" : "dtm-hidden"}" data-dtm="midi-panel">
     <summary>MIDI / MML 入力</summary>
     <div class="dtm-panel-body">
-      <div class="dtm-row">
-        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; min-width: 48px;">
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
           <span class="dtm-label" style="line-height: 1;">MIDI</span>
           <button class="dtm-infobtn" data-dtm="midi-info" title="MIDIの読み込み解説">${icon("info", 12)}</button>
         </div>
-        <input type="file" class="dtm-input dtm-grow" accept=".mid,.midi" data-dtm="midi-input">
-        <button class="dtm-btn dtm-btn--success" data-dtm="midi-load">読込</button>
+        <input type="file" class="dtm-input dtm-grow" accept=".mid,.midi" data-dtm="midi-input" style="min-width:0">
+        <button class="dtm-btn dtm-btn--success" data-dtm="midi-load" style="flex-shrink:0">読込</button>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
-      <div class="dtm-row">
-        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; min-width: 48px;">
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
           <span class="dtm-label" style="line-height: 1;">MML</span>
           <button class="dtm-infobtn" data-dtm="mml-info" title="MMLの書き方解説">${icon("info", 12)}</button>
         </div>
         <textarea class="dtm-textarea dtm-grow" data-dtm="mml-input" placeholder="MMLを入力"></textarea>
-        <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">読込</button>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load" style="flex-shrink:0">読込</button>
       </div>
       <p class="dtm-load-note dtm-hidden" data-dtm="mml-load-note"></p>
     </div>

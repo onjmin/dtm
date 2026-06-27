@@ -188,16 +188,12 @@ export const DAW_CSS = `
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 0 20px;
+  width: var(--dtm-tap);
+  height: var(--dtm-tap);
+  flex: 0 0 auto;
   border: 2px solid var(--c-black);
   background: var(--dtm-success);
   color: var(--c-black);
-  font-family: var(--dtm-font);
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: .2em;
   cursor: pointer;
   box-shadow: 0 0 0 2px var(--dtm-success), 4px 4px 0 var(--c-black);
 }
@@ -206,7 +202,6 @@ export const DAW_CSS = `
 .dtm-play--stop {
   background: var(--dtm-danger);
   box-shadow: 0 0 0 2px var(--dtm-danger), 4px 4px 0 var(--c-black);
-  color: var(--c-white);
 }
 .dtm-rec { color: var(--dtm-danger); }
 

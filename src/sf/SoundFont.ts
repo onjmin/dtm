@@ -105,7 +105,7 @@ export class SoundFont {
 		const { buffer, _param } = zone;
 		if (!buffer || !_param) return;
 		src.buffer = buffer;
-		g.gain.setValueAtTime(volume, _when);
+		g.gain.setValueAtTime(volume, ctx.currentTime);
 		src.playbackRate.setValueAtTime(_param.playbackRate, 0);
 		Object.assign(src, _param.src);
 		const _duration = duration + SoundFont.afterTime;
@@ -116,10 +116,7 @@ export class SoundFont {
 				: src.loop
 					? _duration
 					: Math.min(_duration, _param.max));
-		if (!isDrum) {
-			if (src.loop) g.gain.setValueAtTime(volume, end - SoundFont.afterTime);
-			g.gain.linearRampToValueAtTime(0, end);
-		}
+		if (!isDrum) g.gain.linearRampToValueAtTime(0, end);
 		src.connect(g).connect(destination);
 		src.start(_when);
 		src.stop(end);
