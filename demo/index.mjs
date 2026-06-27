@@ -1226,7 +1226,7 @@ var buildUI = (target, options) => {
   <div class="dtm-topbar" data-dtm="transport">
     <div class="dtm-topbar-row1">
       <button class="dtm-iconbtn" data-dtm="prev-bar" title="1\u5C0F\u7BC0\u524D">${icon("chevronLeft")}</button>
-      <button class="dtm-play" data-dtm="play" disabled>${icon("play")}<span>\u8A66\u8074</span></button>
+      <button class="dtm-play" data-dtm="play" disabled>${icon("play")}</button>
       <button class="dtm-iconbtn" data-dtm="next-bar" title="1\u5C0F\u7BC0\u5F8C">${icon("chevronRight")}</button>
       <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>\u30BD\u30ED</span></label>
       <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
@@ -1314,22 +1314,22 @@ var buildUI = (target, options) => {
   <details class="dtm-panel ${showMidi ? "" : "dtm-hidden"}" data-dtm="midi-panel">
     <summary>MIDI / MML \u5165\u529B</summary>
     <div class="dtm-panel-body">
-      <div class="dtm-row">
-        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; min-width: 48px;">
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
           <span class="dtm-label" style="line-height: 1;">MIDI</span>
           <button class="dtm-infobtn" data-dtm="midi-info" title="MIDI\u306E\u8AAD\u307F\u8FBC\u307F\u89E3\u8AAC">${icon("info", 12)}</button>
         </div>
-        <input type="file" class="dtm-input dtm-grow" accept=".mid,.midi" data-dtm="midi-input">
-        <button class="dtm-btn dtm-btn--success" data-dtm="midi-load">\u8AAD\u8FBC</button>
+        <input type="file" class="dtm-input dtm-grow" accept=".mid,.midi" data-dtm="midi-input" style="min-width:0">
+        <button class="dtm-btn dtm-btn--success" data-dtm="midi-load" style="flex-shrink:0">\u8AAD\u8FBC</button>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
-      <div class="dtm-row">
-        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; min-width: 48px;">
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
           <span class="dtm-label" style="line-height: 1;">MML</span>
           <button class="dtm-infobtn" data-dtm="mml-info" title="MML\u306E\u66F8\u304D\u65B9\u89E3\u8AAC">${icon("info", 12)}</button>
         </div>
         <textarea class="dtm-textarea dtm-grow" data-dtm="mml-input" placeholder="MML\u3092\u5165\u529B"></textarea>
-        <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load">\u8AAD\u8FBC</button>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load" style="flex-shrink:0">\u8AAD\u8FBC</button>
       </div>
       <p class="dtm-load-note dtm-hidden" data-dtm="mml-load-note"></p>
     </div>
@@ -4987,16 +4987,12 @@ var DAW_CSS = `
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 0 20px;
+  width: var(--dtm-tap);
+  height: var(--dtm-tap);
+  flex: 0 0 auto;
   border: 2px solid var(--c-black);
   background: var(--dtm-success);
   color: var(--c-black);
-  font-family: var(--dtm-font);
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: .2em;
   cursor: pointer;
   box-shadow: 0 0 0 2px var(--dtm-success), 4px 4px 0 var(--c-black);
 }
@@ -5005,7 +5001,6 @@ var DAW_CSS = `
 .dtm-play--stop {
   background: var(--dtm-danger);
   box-shadow: 0 0 0 2px var(--dtm-danger), 4px 4px 0 var(--c-black);
-  color: var(--c-white);
 }
 .dtm-rec { color: var(--dtm-danger); }
 
@@ -8383,8 +8378,7 @@ var mountDAW = (target, options = {}) => {
   };
   const updateTransport = () => {
     const playing = playbackState === "playing";
-    const label = playing ? "\u505C\u6B62" : playbackState === "paused" ? "\u518D\u958B" : "\u8A66\u8074";
-    refs.playBtn.innerHTML = `${icon(playing ? "pause" : "play")}<span>${label}</span>`;
+    refs.playBtn.innerHTML = icon(playing ? "pause" : "play");
     refs.playBtn.classList.toggle("dtm-play--stop", playing);
   };
   const updateUndoRedo = () => {
@@ -10268,15 +10262,12 @@ var SoundFont = class _SoundFont {
     const { buffer, _param } = zone;
     if (!buffer || !_param) return;
     src.buffer = buffer;
-    g.gain.setValueAtTime(volume, _when);
+    g.gain.setValueAtTime(volume, ctx.currentTime);
     src.playbackRate.setValueAtTime(_param.playbackRate, 0);
     Object.assign(src, _param.src);
     const _duration = duration + _SoundFont.afterTime;
     const end = _when + (isDrum ? buffer.duration : src.loop ? _duration : Math.min(_duration, _param.max));
-    if (!isDrum) {
-      if (src.loop) g.gain.setValueAtTime(volume, end - _SoundFont.afterTime);
-      g.gain.linearRampToValueAtTime(0, end);
-    }
+    if (!isDrum) g.gain.linearRampToValueAtTime(0, end);
     src.connect(g).connect(destination);
     src.start(_when);
     src.stop(end);
