@@ -3551,12 +3551,14 @@ var drawKeyboard = () => {
     const totalPitch = pitchIndex + pitchRangeStart;
     const pitchMod12 = totalPitch % 12;
     const isBlackKey = blackKeyPitches.has(pitchMod12);
+    const octave = Math.floor(totalPitch / 12) - 1;
+    const isC4Range = octave === 4;
     const screenY = y - g_draw_offset_y;
     const bkW = Math.floor(KEYBOARD_WIDTH * BK_RATIO);
     if (isBlackKey) {
-      g_key_ctx.fillStyle = WHITE_KEY;
+      g_key_ctx.fillStyle = isC4Range ? "#d8d4be" : WHITE_KEY;
       g_key_ctx.fillRect(0, screenY, KEYBOARD_WIDTH, keyHeight);
-      g_key_ctx.fillStyle = BLACK_KEY;
+      g_key_ctx.fillStyle = isC4Range ? "#1a1408" : BLACK_KEY;
       g_key_ctx.fillRect(0, screenY, bkW, keyHeight);
       g_key_ctx.strokeStyle = BK_EDGE;
       g_key_ctx.lineWidth = 1;
@@ -3565,7 +3567,7 @@ var drawKeyboard = () => {
       g_key_ctx.lineTo(bkW, screenY + keyHeight);
       g_key_ctx.stroke();
     } else {
-      g_key_ctx.fillStyle = WHITE_KEY;
+      g_key_ctx.fillStyle = isC4Range ? "#dedad0" : WHITE_KEY;
       g_key_ctx.fillRect(0, screenY, KEYBOARD_WIDTH, keyHeight);
       if (pitchMod12 === 5 || pitchMod12 === 0) {
         g_key_ctx.strokeStyle = WW_SEP;
@@ -3577,13 +3579,13 @@ var drawKeyboard = () => {
       }
     }
     if (pitchMod12 === 0) {
-      const octave = Math.floor(totalPitch / 12) - 1;
+      const octave2 = Math.floor(totalPitch / 12) - 1;
       g_key_ctx.fillStyle = "#555040";
       g_key_ctx.font = "10px 'k8x12',monospace";
       g_key_ctx.textAlign = "right";
       g_key_ctx.textBaseline = "bottom";
       g_key_ctx.fillText(
-        `${KEY_NAMES[pitchMod12]}${octave}`,
+        `${KEY_NAMES[pitchMod12]}${octave2}`,
         KEYBOARD_WIDTH - 4,
         screenY + keyHeight - 2
       );
@@ -3635,17 +3637,22 @@ var drawGrid = (noteLengthSteps = 1) => {
   drawKeyboard();
   drawHeader();
   g_grid_ctx.clearRect(0, 0, g_grid_canvas.width, g_grid_canvas.height);
-  const { keyHeight, keyCount, stepWidth, stepsPerBar } = g_config;
+  const { keyHeight, keyCount, stepWidth, stepsPerBar, pitchRangeStart } = g_config;
   const startY = Math.floor(g_draw_offset_y / keyHeight) * keyHeight;
   const endY = g_draw_offset_y + g_grid_canvas.height;
   for (let y = startY; y < endY; y += keyHeight) {
     const pitchIndex = keyCount - 1 - y / keyHeight;
+    const totalPitch = pitchIndex + pitchRangeStart;
     const pitchMod12 = pitchIndex % 12;
     const isBlackKey = blackKeyPitches.has(pitchMod12);
     const isC = pitchMod12 === 0;
+    const octave = Math.floor(totalPitch / 12) - 1;
+    const isC4Range = octave === 4;
     const screenY = y - g_draw_offset_y;
-    if (isBlackKey) {
-      g_grid_ctx.fillStyle = "#0d1020";
+    g_grid_ctx.fillStyle = isBlackKey ? "#080b16" : "#111628";
+    g_grid_ctx.fillRect(0, screenY, g_grid_canvas.width, keyHeight);
+    if (isC4Range) {
+      g_grid_ctx.fillStyle = "rgba(41,173,255,0.05)";
       g_grid_ctx.fillRect(0, screenY, g_grid_canvas.width, keyHeight);
     }
     g_grid_ctx.beginPath();

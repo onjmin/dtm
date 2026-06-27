@@ -253,13 +253,13 @@
                     class="min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-cyan text-pico-black
                            text-xs uppercase tracking-widest cursor-pointer font-pixel
                            shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
-                    ■ SIMPLE (4 TRACKS)
+                    初心者モード
                 </button>
                 <button id="mode-advanced"
                     class="min-h-[40px] px-4 border-2 border-pico-gray bg-pico-black text-pico-gray
                            text-xs uppercase tracking-widest cursor-pointer font-pixel
                            shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
-                    □ ADVANCED (15 TRACKS)
+                    上級者モード
                 </button>
                 <span id="mode-desc" class="text-pico-lavend text-xs uppercase tracking-widest">
                     AUTO MIDI CLASSIFY
@@ -270,7 +270,13 @@
     </div>
 
     <!-- ════ DAW マウント ════ -->
-    <div id="app" class="max-w-4xl mx-auto px-3 pb-8 pt-3"></div>
+    <div id="app" class="max-w-4xl mx-auto px-3 pb-8 pt-3">
+        <div id="app-loading" class="flex flex-col items-center justify-center gap-3 py-16 text-pico-lavend font-pixel">
+            <div class="text-pico-cyan text-lg" style="animation:dtm-blink 1s step-start infinite">▶ エディタを準備中...</div>
+            <div class="text-xs text-pico-gray">音源・UIを読み込んでいます。しばらくお待ちください</div>
+        </div>
+        <style>@keyframes dtm-blink{0%,100%{opacity:1}50%{opacity:0}}</style>
+    </div>
 
     <!-- ════ 共有リンク (Share Link) ════ -->
     <div class="max-w-4xl mx-auto px-3 pb-8 flex flex-col gap-2">
@@ -358,6 +364,10 @@
         const loadingEl = document.getElementById('loading');
         const appEl = document.getElementById('app');
         const presetSelect = document.getElementById('preset');
+
+        // 初期ロード中はヘッダのloading欄にも表示
+        loadingEl.textContent = '準備中...';
+        loadingEl.style.display = '';
 
         // 楽器プリセットのドロップダウンを構築（保存値があれば初期選択に使う）
         for (const [key, preset] of Object.entries(INSTRUMENT_PRESETS)) {
@@ -488,6 +498,8 @@
         }
 
         mountEditor(currentMode, initialMml);
+        loadingEl.textContent = '';
+        loadingEl.style.display = 'none';
 
         // ── モード切替（simple / advanced）はブラウザを閉じても維持する ──
         const BTN_ACTIVE = 'min-h-[40px] px-4 border-2 border-pico-cyan bg-pico-cyan text-pico-black text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none';
@@ -499,7 +511,7 @@
             const desc = document.getElementById('mode-desc');
             btnSimple.className = mode === 'simple' ? BTN_ACTIVE : BTN_INACTIVE;
             btnAdvanced.className = mode === 'advanced' ? BTN_ACTIVE : BTN_INACTIVE;
-            desc.textContent = mode === 'simple' ? 'AUTO MIDI CLASSIFY' : 'MIDI 1:1 TRACK MAPPING';
+            desc.textContent = mode === 'simple' ? 'MIDIを役割別に自動分類' : 'MIDIを1:1でマッピング';
         };
         // 保存されたモードでボタンの見た目を初期化（advanced 復元時に SIMPLE が点灯したままになるのを防ぐ）
         updateModeButtons(currentMode);
@@ -974,7 +986,7 @@
             </div>
             <div class="p-4 overflow-y-auto text-xs leading-relaxed flex flex-col gap-3">
                 <div>
-                    <h4 class="text-pico-cyan text-sm font-bold mb-1">■ SIMPLE (4 TRACKS)</h4>
+                    <h4 class="text-pico-cyan text-sm font-bold mb-1">■ 初心者モード（4トラック）</h4>
                     <p class="text-pico-white">シンプルな4トラック構成です。各トラックの役割があらかじめ決まっています。</p>
                     <ul class="list-disc pl-4 mt-1 text-pico-lavend">
                         <li>メロディー … 曲の主役。一度に1つの音を鳴らします</li>
@@ -985,7 +997,7 @@
                     <p class="text-pico-lavend mt-1">※MIDIを読み込むと、各トラックの特徴から自動でこの4つの役割に振り分けられます。</p>
                 </div>
                 <div class="border-t border-pico-gray/30 pt-3">
-                    <h4 class="text-pico-cyan text-sm font-bold mb-1">■ ADVANCED (15 TRACKS)</h4>
+                    <h4 class="text-pico-cyan text-sm font-bold mb-1">■ 上級者モード（15トラック）</h4>
                     <p class="text-pico-white">より自由に作り込める、15トラック構成です。</p>
                     <ul class="list-disc pl-4 mt-1 text-pico-lavend">
                         <li>最大15本のトラックを、それぞれ個別に編集できます。</li>
