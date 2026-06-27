@@ -174,6 +174,156 @@
         }
         #credit a { color: var(--c-gray); text-decoration: none; }
         #credit a:hover { color: var(--c-cyan); }
+
+        /* ─── Chat panel ─── */
+        #chat-panel {
+            background: var(--c-navy);
+            border: 2px solid #000;
+            box-shadow: inset 0 0 0 2px #000, 0 0 0 2px var(--c-pink), 4px 4px 0 #000;
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 8px;
+        }
+        #chat-header {
+            padding: 6px 10px;
+            background: #000;
+            color: var(--c-pink);
+            font-size: 11px;
+            letter-spacing: .08em;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            user-select: none;
+        }
+        #chat-header:hover {
+            color: var(--c-yellow);
+        }
+        #chat-header.has-unread #chat-title {
+            color: var(--c-yellow);
+            animation: chat-blink 0.5s steps(2) infinite;
+        }
+        @keyframes chat-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        #chat-body {
+            padding: 8px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        #chat-panel.collapsed #chat-body {
+            display: none;
+        }
+        #chat-messages {
+            max-height: 120px;
+            overflow-y: auto;
+            background: #0a0a14;
+            border: 2px solid #000;
+            padding: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        #chat-messages::-webkit-scrollbar {
+            width: 8px;
+        }
+        #chat-messages::-webkit-scrollbar-track {
+            background: #000;
+        }
+        #chat-messages::-webkit-scrollbar-thumb {
+            background: var(--c-gray);
+            border: 2px solid #000;
+        }
+        #chat-form {
+            display: flex;
+            gap: 6px;
+        }
+        #chat-input {
+            flex: 1;
+            background: #000;
+            border: 2px solid #000;
+            box-shadow: 0 0 0 2px var(--c-gray);
+            color: var(--c-text);
+            font-family: 'k8x12', ui-monospace, monospace;
+            font-size: 12px;
+            padding: 6px 8px;
+            outline: none;
+        }
+        #chat-input:focus {
+            box-shadow: 0 0 0 2px var(--c-cyan);
+        }
+        #chat-send-btn {
+            background: var(--c-gray);
+            border: 2px solid #000;
+            box-shadow: 2px 2px 0 #000;
+            color: var(--c-text);
+            font-family: 'k8x12', ui-monospace, monospace;
+            font-size: 11px;
+            padding: 6px 12px;
+            cursor: pointer;
+            outline: none;
+            image-rendering: pixelated;
+        }
+        #chat-send-btn:hover {
+            background: var(--c-muted);
+            color: var(--c-yellow);
+        }
+        #chat-send-btn:active {
+            transform: translate(2px, 2px);
+            box-shadow: 0px 0px 0 #000;
+        }
+        .chat-message {
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+            font-size: 11px;
+            line-height: 1.4;
+            animation: message-appear 0.2s steps(2);
+        }
+        @keyframes message-appear {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .chat-avatar {
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            width: 20px;
+            height: 20px;
+            background: #000;
+            border: 1px solid var(--c-gray);
+            border-radius: 2px;
+            font-size: 12px;
+            line-height: 1;
+            flex-shrink: 0;
+            box-sizing: border-box;
+        }
+        .chat-msg-content {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex: 1;
+        }
+        .chat-msg-meta {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+        }
+        .chat-msg-author {
+            font-weight: bold;
+            letter-spacing: .04em;
+        }
+        .chat-msg-time {
+            color: var(--c-muted);
+            font-size: 9px;
+        }
+        .chat-msg-text {
+            color: var(--c-text);
+            word-break: break-all;
+            white-space: pre-wrap;
+        }
     </style>
 </head>
 
@@ -205,6 +355,21 @@
             <div id="players-list"><!-- JS で動的生成 --></div>
         </div>
 
+        <!-- Chat panel -->
+        <div id="chat-panel">
+            <div id="chat-header">
+                <span id="chat-toggle-icon">▼</span>
+                <span id="chat-title">CHAT</span>
+            </div>
+            <div id="chat-body">
+                <div id="chat-messages"></div>
+                <form id="chat-form">
+                    <input type="text" id="chat-input" placeholder="メッセージを入力..." autocomplete="off" maxlength="100" />
+                    <button type="submit" id="chat-send-btn">送信</button>
+                </form>
+            </div>
+        </div>
+
         <!-- Off-screen edit indicators -->
         <div class="offscreen-arrow left"  id="arrow-left"></div>
         <div class="offscreen-arrow right" id="arrow-right"></div>
@@ -234,7 +399,7 @@
     }
     </script>
 
-    <script type="module" src="./collab.js?v=2111de78"></script>
+    <script type="module" src="./collab.js?v=c4d2c2cd"></script>
 </body>
 
 </html>
