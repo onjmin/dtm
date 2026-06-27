@@ -1224,14 +1224,17 @@ var buildUI = (target, options) => {
   target.innerHTML = `
 <div class="dtm-daw" data-dtm="root">
   <div class="dtm-topbar" data-dtm="transport">
-    <button class="dtm-iconbtn" data-dtm="prev-bar" title="1\u5C0F\u7BC0\u524D">${icon("chevronLeft")}</button>
-    <button class="dtm-play" data-dtm="play" disabled>${icon("play")}<span>\u8A66\u8074</span></button>
-    <button class="dtm-iconbtn" data-dtm="next-bar" title="1\u5C0F\u7BC0\u5F8C">${icon("chevronRight")}</button>
-    <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>\u30BD\u30ED</span></label>
-    <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
-    <span class="dtm-grow"></span>
-    <span class="dtm-label">BPM</span>
-    <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
+    <div class="dtm-topbar-row1">
+      <button class="dtm-iconbtn" data-dtm="prev-bar" title="1\u5C0F\u7BC0\u524D">${icon("chevronLeft")}</button>
+      <button class="dtm-play" data-dtm="play" disabled>${icon("play")}<span>\u8A66\u8074</span></button>
+      <button class="dtm-iconbtn" data-dtm="next-bar" title="1\u5C0F\u7BC0\u5F8C">${icon("chevronRight")}</button>
+      <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>\u30BD\u30ED</span></label>
+      <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
+      <span class="dtm-grow"></span>
+      <span class="dtm-label">BPM</span>
+      <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
+    </div>
+    <div class="dtm-tracks" data-dtm="track-tabs"></div>
   </div>
 
   <div class="dtm-tooldock">
@@ -1253,8 +1256,6 @@ var buildUI = (target, options) => {
       <option value="4">3\u902332</option>
     </select>
   </div>
-
-  <div class="dtm-tracks" data-dtm="track-tabs"></div>
 
   <div class="dtm-roll-wrap">
     <div class="dtm-roll" data-dtm="roll">
@@ -4950,7 +4951,7 @@ var DAW_CSS = `
   top: 0;
   z-index: 20;
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--dtm-gap);
   padding: 6px;
@@ -4960,18 +4961,19 @@ var DAW_CSS = `
     inset 0 0 0 2px var(--c-black),
     0 0 0 2px var(--dtm-success),
     4px 4px 0 var(--c-black);
+}
+.dtm-topbar-row1 {
+  display: flex;
+  align-items: center;
+  gap: var(--dtm-gap);
+  flex-basis: 100%;
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
-.dtm-topbar::-webkit-scrollbar {
-  display: none;
-}
-.dtm-topbar > * {
-  flex-shrink: 0;
-}
-.dtm-topbar > .dtm-grow {
-  flex-shrink: 1;
-}
+.dtm-topbar-row1::-webkit-scrollbar { display: none; }
+.dtm-topbar-row1 > * { flex-shrink: 0; }
+.dtm-topbar-row1 > .dtm-grow { flex-shrink: 1; }
 
 /* PLAY\u30DC\u30BF\u30F3 \u2014 \u30B2\u30FC\u30E0\u306E\u300C\u6C7A\u5B9A\u30DC\u30BF\u30F3\u300D\u7684\u5B58\u5728\u611F */
 .dtm-play {
@@ -5161,46 +5163,39 @@ var DAW_CSS = `
 .dtm-modebtn--active { background: var(--dtm-primary); color: var(--dtm-pfg); }
 .dtm-modebtn:not(.dtm-modebtn--active):active { background: var(--dtm-border2); }
 
-/* \u2500\u2500\u2500 \u30C8\u30E9\u30C3\u30AF\u30D4\u30EB\uFF08\u30AD\u30E3\u30E9\u30AF\u30BF\u30FC\u9078\u629E\u30DC\u30BF\u30F3\uFF09 \u2500\u2500\u2500 */
+/* \u2500\u2500\u2500 \u30C8\u30E9\u30C3\u30AF\u30D4\u30EB\uFF08\u756A\u53F7\u30DC\u30BF\u30F3\u3001\u30C8\u30E9\u30F3\u30B9\u30DD\u30FC\u30C8\u30D0\u30FC2\u884C\u76EE\uFF09 \u2500\u2500\u2500 */
 .dtm-tracks {
+  flex-basis: 100%;
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--dtm-gap);
+  flex-wrap: nowrap;
+  gap: 3px;
 }
 .dtm-pill {
   --dtm-pill-color: var(--dtm-primary);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex: 1 1 auto;
   justify-content: center;
-  min-height: 42px;
-  padding: 0 12px;
-  border: 2px solid var(--dtm-border2);
-  background: var(--dtm-deep);
-  color: var(--dtm-muted);
+  flex: 1 1 0;
+  min-width: 0;
+  height: 26px;
+  padding: 0;
+  border: 2px solid var(--c-black);
+  background: color-mix(in srgb, var(--dtm-pill-color) 40%, black);
+  color: var(--c-white);
   font-family: var(--dtm-font);
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: .1em;
+  font-size: 11px;
+  font-weight: bold;
   cursor: pointer;
-  box-shadow: 3px 3px 0 var(--c-black);
+  box-shadow: 2px 2px 0 var(--c-black);
+  opacity: 0.7;
 }
-.dtm-pill .dtm-dot {
-  width: 8px; height: 8px;
-  background: var(--dtm-pill-color);
-  flex: 0 0 auto;
-  box-shadow: 1px 1px 0 var(--c-black);
-}
-/* \u30A2\u30AF\u30C6\u30A3\u30D6\u9078\u629E = \u91D1\u8272\u30CF\u30A4\u30E9\u30A4\u30C8 + \u30AB\u30FC\u30BD\u30EB */
+/* \u30A2\u30AF\u30C6\u30A3\u30D6\u9078\u629E = \u4E0D\u900F\u660E + \u91D1\u67A0 */
 .dtm-pill--active {
+  opacity: 1;
   border-color: var(--dtm-gold);
-  color: var(--dtm-gold);
-  background: var(--dtm-surface);
-  box-shadow: 0 0 0 2px var(--dtm-gold), 3px 3px 0 var(--c-black);
+  box-shadow: 0 0 0 1px var(--dtm-gold), 2px 2px 0 var(--c-black);
 }
-.dtm-pill--active::before { content: "\u25BA "; font-size: 10px; }
-.dtm-pill:not(.dtm-pill--active):active { transform: translate(3px,3px); box-shadow: none; }
+.dtm-pill:not(.dtm-pill--active):active { transform: translate(2px,2px); box-shadow: none; }
 
 /* \u2500\u2500\u2500 \u30D4\u30A2\u30CE\u30ED\u30FC\u30EB\uFF08\u30C8\u30E9\u30C3\u30AB\u30FC\u98A8\uFF09 \u2500\u2500\u2500 */
 .dtm-roll-wrap { display: flex; gap: var(--dtm-gap); }
@@ -5344,7 +5339,7 @@ var DAW_CSS = `
 }
 .dtm-overlay[hidden] { display: none; }
 .dtm-overlay::before {
-  content: 'NOW LOADING';
+  content: '\u30ED\u30FC\u30C9\u4E2D';
   font-family: var(--dtm-font);
   font-size: 13px;
   color: var(--dtm-primary);
@@ -5535,6 +5530,15 @@ var DAW_CSS = `
   background: var(--dtm-deep);
   display: flex;
   justify-content: center;
+}
+
+.dtm-confirm-footer {
+  padding: 8px 12px;
+  border-top: 2px solid var(--c-black);
+  background: var(--dtm-deep);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .dtm-modal {
@@ -6559,9 +6563,11 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   const mmlInfoItem = makeMenuItem("MML\u66F8\u5F0F\u3068\u306F");
   const embedItem = makeMenuItem("\u57CB\u3081\u8FBC\u3080");
   const copyMmlItem = makeMenuItem("MML\u30B3\u30D4\u30FC");
-  menuDropdown.appendChild(showMmlItem);
-  menuDropdown.appendChild(mmlInfoItem);
-  menuDropdown.appendChild(embedItem);
+  if (!options._skipInfoModals) {
+    menuDropdown.appendChild(showMmlItem);
+    menuDropdown.appendChild(mmlInfoItem);
+    menuDropdown.appendChild(embedItem);
+  }
   menuDropdown.appendChild(copyMmlItem);
   menuContainer.appendChild(menuDropdown);
   mmlHeader.appendChild(menuContainer);
@@ -6715,6 +6721,8 @@ var mountMmlPlayer = (target, mml, options = {}) => {
           volume: trackVolume,
           // 解説モーダル内の試聴サンプルは規約同意を要求しない。
           skipConsent: true,
+          // 再帰的なモーダル生成を防ぐ。
+          _skipInfoModals: true,
           onStop: () => {
             if (activeSampleBtn === el) resetSampleBtn(el);
           }
@@ -6724,65 +6732,67 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       });
     }
   };
-  showMmlItem.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleMenu(false);
-    const modalBody = openInfoModal("MML\u3092\u8868\u793A");
-    const desc = doc.createElement("p");
-    desc.textContent = "\u3053\u306EMML\u3092\u30B3\u30D4\u30FC\u3057\u3066\u3001\u4ED6\u306E\u30D7\u30EC\u30A4\u30E4\u30FC\u3084\u5171\u6709URL\u306B\u8CBC\u308A\u4ED8\u3051\u3066\u4F7F\u7528\u3067\u304D\u307E\u3059\u3002";
-    desc.style.marginBottom = "8px";
-    modalBody.appendChild(desc);
-    const sourceMml = options.getMml?.() ?? mml;
-    const displayMml = sourceMml.split(";").map((s) => s.trim()).filter((s) => s.length > 0).join(";\n");
-    const pre = doc.createElement("pre");
-    pre.textContent = displayMml;
-    pre.style.whiteSpace = "pre-wrap";
-    pre.style.wordBreak = "break-all";
-    pre.style.cursor = "text";
-    pre.addEventListener("click", () => {
-      const range = doc.createRange();
-      range.selectNodeContents(pre);
-      const sel = doc.defaultView?.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(range);
-    });
-    modalBody.appendChild(pre);
-    appendCopyButton(modalBody, sourceMml);
-  });
-  mmlInfoItem.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleMenu(false);
-    const modalBody = openInfoModal("MML\u306E\u66F8\u304D\u65B9\u89E3\u8AAC");
-    modalBody.innerHTML = MML_INFO_HTML;
-    wireSampleButtons(modalBody);
-  });
-  embedItem.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    toggleMenu(false);
-    const modalBody = openInfoModal("\u57CB\u3081\u8FBC\u307F");
-    const loading = doc.createElement("p");
-    loading.textContent = "\u751F\u6210\u4E2D...";
-    modalBody.appendChild(loading);
-    try {
-      const embedBase = options.embedUrl ?? "https://onjmin.github.io/dtm/demo/embed.html";
-      const payload = await encodeMml(mml);
-      const url2 = `${embedBase}#${payload}`;
-      const snippet = `<iframe src="${url2}" width="100%" height="260" frameborder="0" loading="lazy" title="@onjmin/dtm player"></iframe>`;
-      if (!modalBody.isConnected) return;
-      loading.remove();
+  if (!options._skipInfoModals) {
+    showMmlItem.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleMenu(false);
+      const modalBody = openInfoModal("MML\u3092\u8868\u793A");
       const desc = doc.createElement("p");
-      desc.textContent = "\u3053\u306EHTML\u3092\u30D6\u30ED\u30B0\u3084\u30B5\u30A4\u30C8\u306B\u8CBC\u308A\u4ED8\u3051\u308B\u3068\u3001\u30D7\u30EC\u30A4\u30E4\u30FC\u3092\u305D\u306E\u307E\u307E\u57CB\u3081\u8FBC\u3081\u307E\u3059\u3002";
+      desc.textContent = "\u3053\u306EMML\u3092\u30B3\u30D4\u30FC\u3057\u3066\u3001\u4ED6\u306E\u30D7\u30EC\u30A4\u30E4\u30FC\u3084\u5171\u6709URL\u306B\u8CBC\u308A\u4ED8\u3051\u3066\u4F7F\u7528\u3067\u304D\u307E\u3059\u3002";
+      desc.style.marginBottom = "8px";
+      modalBody.appendChild(desc);
+      const sourceMml = options.getMml?.() ?? mml;
+      const displayMml = sourceMml.split(";").map((s) => s.trim()).filter((s) => s.length > 0).join(";\n");
       const pre = doc.createElement("pre");
-      pre.textContent = snippet;
+      pre.textContent = displayMml;
       pre.style.whiteSpace = "pre-wrap";
       pre.style.wordBreak = "break-all";
-      modalBody.append(desc, pre);
-      appendCopyButton(modalBody, snippet);
-    } catch (err2) {
-      console.error("[dtm] failed to generate embed snippet", err2);
-      if (modalBody.isConnected) loading.textContent = "\u751F\u6210\u306B\u5931\u6557\u3057\u307E\u3057\u305F";
-    }
-  });
+      pre.style.cursor = "text";
+      pre.addEventListener("click", () => {
+        const range = doc.createRange();
+        range.selectNodeContents(pre);
+        const sel = doc.defaultView?.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      });
+      modalBody.appendChild(pre);
+      appendCopyButton(modalBody, sourceMml);
+    });
+    mmlInfoItem.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleMenu(false);
+      const modalBody = openInfoModal("MML\u306E\u66F8\u304D\u65B9\u89E3\u8AAC");
+      modalBody.innerHTML = MML_INFO_HTML;
+      wireSampleButtons(modalBody);
+    });
+    embedItem.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      toggleMenu(false);
+      const modalBody = openInfoModal("\u57CB\u3081\u8FBC\u307F");
+      const loading = doc.createElement("p");
+      loading.textContent = "\u751F\u6210\u4E2D...";
+      modalBody.appendChild(loading);
+      try {
+        const embedBase = options.embedUrl ?? "https://onjmin.github.io/dtm/demo/embed.html";
+        const payload = await encodeMml(mml);
+        const url2 = `${embedBase}#${payload}`;
+        const snippet = `<iframe src="${url2}" width="100%" height="260" frameborder="0" loading="lazy" title="@onjmin/dtm player"></iframe>`;
+        if (!modalBody.isConnected) return;
+        loading.remove();
+        const desc = doc.createElement("p");
+        desc.textContent = "\u3053\u306EHTML\u3092\u30D6\u30ED\u30B0\u3084\u30B5\u30A4\u30C8\u306B\u8CBC\u308A\u4ED8\u3051\u308B\u3068\u3001\u30D7\u30EC\u30A4\u30E4\u30FC\u3092\u305D\u306E\u307E\u307E\u57CB\u3081\u8FBC\u3081\u307E\u3059\u3002";
+        const pre = doc.createElement("pre");
+        pre.textContent = snippet;
+        pre.style.whiteSpace = "pre-wrap";
+        pre.style.wordBreak = "break-all";
+        modalBody.append(desc, pre);
+        appendCopyButton(modalBody, snippet);
+      } catch (err2) {
+        console.error("[dtm] failed to generate embed snippet", err2);
+        if (modalBody.isConnected) loading.textContent = "\u751F\u6210\u306B\u5931\u6557\u3057\u307E\u3057\u305F";
+      }
+    });
+  }
   copyMmlItem.addEventListener("click", async (e) => {
     e.stopPropagation();
     const success = await copyToClipboard(doc, options.getMml?.() ?? mml);
@@ -7379,8 +7389,8 @@ var MIDI_INFO_HTML = `
 
   <h4>3. \u30E2\u30FC\u30C9\u306B\u3088\u308B\u53D6\u308A\u8FBC\u307F\u65B9\u306E\u9055\u3044</h4>
   <ul>
-    <li><strong>SIMPLE</strong>: \u5404\u30C8\u30E9\u30C3\u30AF\u306E\u7279\u5FB4\u304B\u3089\u3001\u30E1\u30ED\u30C7\u30A3\u30FC\u30FB\u30B5\u30D6\u30E1\u30ED\u30FB\u30D9\u30FC\u30B9\u30FB\u4F34\u594F\u306E4\u3064\u306E\u5F79\u5272\u306B\u81EA\u52D5\u3067\u632F\u308A\u5206\u3051\u3089\u308C\u307E\u3059\u3002</li>
-    <li><strong>ADVANCED</strong>: MIDI\u306E\u30C8\u30E9\u30C3\u30AF\u69CB\u6210\u304C\u305D\u306E\u307E\u307E\u53CD\u6620\u3055\u308C\u307E\u3059\uFF081\u5BFE1\uFF09\u3002</li>
+    <li><strong>\u521D\u5FC3\u8005\u30E2\u30FC\u30C9</strong>: \u5404\u30C8\u30E9\u30C3\u30AF\u306E\u7279\u5FB4\u304B\u3089\u3001\u30E1\u30ED\u30C7\u30A3\u30FC\u30FB\u30B5\u30D6\u30E1\u30ED\u30FB\u30D9\u30FC\u30B9\u30FB\u4F34\u594F\u306E4\u3064\u306E\u5F79\u5272\u306B\u81EA\u52D5\u3067\u632F\u308A\u5206\u3051\u3089\u308C\u307E\u3059\u3002</li>
+    <li><strong>\u4E0A\u7D1A\u8005\u30E2\u30FC\u30C9</strong>: MIDI\u306E\u30C8\u30E9\u30C3\u30AF\u69CB\u6210\u304C\u305D\u306E\u307E\u307E\u53CD\u6620\u3055\u308C\u307E\u3059\uFF081\u5BFE1\uFF09\u3002</li>
   </ul>
 
   <h4>4. MIDI\u30D5\u30A1\u30A4\u30EB\u3092\u624B\u306B\u5165\u308C\u308B</h4>
@@ -7432,105 +7442,105 @@ var TRACKS_SIMPLE = [
 var TRACKS_ADVANCED = [
   {
     id: "t0",
-    name: "TRACK 01",
+    name: "\u30C8\u30E9\u30C3\u30AF1",
     color: [41, 173, 255],
     instrument: 0,
     volume: 100
   },
   {
     id: "t1",
-    name: "TRACK 02",
+    name: "\u30C8\u30E9\u30C3\u30AF2",
     color: [0, 228, 54],
     instrument: 1,
     volume: 100
   },
   {
     id: "t2",
-    name: "TRACK 03",
+    name: "\u30C8\u30E9\u30C3\u30AF3",
     color: [255, 119, 168],
     instrument: 2,
     volume: 100
   },
   {
     id: "t3",
-    name: "TRACK 04",
+    name: "\u30C8\u30E9\u30C3\u30AF4",
     color: [255, 163, 0],
     instrument: 3,
     volume: 100
   },
   {
     id: "t4",
-    name: "TRACK 05",
+    name: "\u30C8\u30E9\u30C3\u30AF5",
     color: [255, 236, 39],
     instrument: 4,
     volume: 100
   },
   {
     id: "t5",
-    name: "TRACK 06",
+    name: "\u30C8\u30E9\u30C3\u30AF6",
     color: [131, 118, 156],
     instrument: 5,
     volume: 100
   },
   {
     id: "t6",
-    name: "TRACK 07",
+    name: "\u30C8\u30E9\u30C3\u30AF7",
     color: [255, 0, 77],
     instrument: 6,
     volume: 100
   },
   {
     id: "t7",
-    name: "TRACK 08",
+    name: "\u30C8\u30E9\u30C3\u30AF8",
     color: [255, 204, 170],
     instrument: 7,
     volume: 100
   },
   {
     id: "t8",
-    name: "TRACK 09",
+    name: "\u30C8\u30E9\u30C3\u30AF9",
     color: [194, 195, 199],
     instrument: 8,
     volume: 100
   },
   {
     id: "t9",
-    name: "TRACK 10",
+    name: "\u30C8\u30E9\u30C3\u30AF10",
     color: [0, 135, 81],
     instrument: 9,
     volume: 100
   },
   {
     id: "t10",
-    name: "TRACK 11",
+    name: "\u30C8\u30E9\u30C3\u30AF11",
     color: [171, 82, 54],
     instrument: 10,
     volume: 100
   },
   {
     id: "t11",
-    name: "TRACK 12",
+    name: "\u30C8\u30E9\u30C3\u30AF12",
     color: [126, 37, 83],
     instrument: 11,
     volume: 100
   },
   {
     id: "t12",
-    name: "TRACK 13",
+    name: "\u30C8\u30E9\u30C3\u30AF13",
     color: [255, 241, 232],
     instrument: 12,
     volume: 100
   },
   {
     id: "t13",
-    name: "TRACK 14",
+    name: "\u30C8\u30E9\u30C3\u30AF14",
     color: [120, 200, 255],
     instrument: 13,
     volume: 100
   },
   {
     id: "t14",
-    name: "TRACK 15",
+    name: "\u30C8\u30E9\u30C3\u30AF15",
     color: [100, 255, 160],
     instrument: 14,
     volume: 100
@@ -8377,19 +8387,20 @@ var mountDAW = (target, options = {}) => {
   };
   const updateTrackPanel = () => {
     refs.trackTabs.innerHTML = "";
-    for (const t of trackStates) {
+    for (const [i, t] of trackStates.entries()) {
       const [r, g, b] = t.config.color;
       const btn = document.createElement("button");
       btn.className = `dtm-pill ${t.config.id === activeTrackId ? "dtm-pill--active" : ""}`;
       btn.style.setProperty("--dtm-pill-color", `rgb(${r},${g},${b})`);
-      btn.innerHTML = `<span class="dtm-dot"></span><span>${t.config.name}</span>`;
+      btn.title = t.config.name;
+      btn.textContent = String(i + 1);
       btn.addEventListener("click", () => switchTrack(t.config.id));
       refs.trackTabs.appendChild(btn);
     }
     const active = getActive();
     refs.trackBody.innerHTML = `
       <div class="dtm-row">
-        <span class="dtm-label">velocity</span>
+        <span class="dtm-label">\u30D9\u30ED\u30B7\u30C6\u30A3</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="track-vol" min="0" max="127" value="${active.volume}">
         <span class="dtm-label" data-dtm="track-vol-label">${active.volume}</span>
       </div>`;
@@ -9037,6 +9048,31 @@ var mountDAW = (target, options = {}) => {
       setLoading(false);
     }, 30);
   };
+  const showConfirmModal = (message) => new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "dtm-modal-overlay";
+    overlay.innerHTML = `
+				<div class="dtm-modal">
+					<div class="dtm-modal-header">
+						<span class="dtm-modal-title">\u30E2\u30FC\u30C9\u306E\u78BA\u8A8D</span>
+					</div>
+					<div class="dtm-modal-body"><p>${message}</p></div>
+					<div class="dtm-confirm-footer">
+						<button class="dtm-btn dtm-btn--ghost dtm-confirm-no">\u3044\u3044\u3048\uFF08\u3053\u306E\u307E\u307E\u8AAD\u307F\u8FBC\u3080\uFF09</button>
+						<button class="dtm-btn dtm-btn--primary dtm-confirm-yes">\u306F\u3044\uFF08\u4E0A\u7D1A\u8005\u30E2\u30FC\u30C9\u306B\u5207\u308A\u66FF\u3048\u308B\uFF09</button>
+					</div>
+				</div>`;
+    const close = (result) => {
+      overlay.remove();
+      resolve(result);
+    };
+    overlay.querySelector(".dtm-confirm-yes").addEventListener("click", () => close(true));
+    overlay.querySelector(".dtm-confirm-no").addEventListener("click", () => close(false));
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close(false);
+    });
+    document.body.appendChild(overlay);
+  });
   const wireEvents = () => {
     refs.playBtn.addEventListener("click", togglePlay);
     refs.playBtn.disabled = false;
@@ -9156,10 +9192,25 @@ var mountDAW = (target, options = {}) => {
       "click",
       () => copy(refs.outputMini.textContent ?? "", refs.copyMiniBtn)
     );
-    refs.mmlLoadBtn.addEventListener(
-      "click",
-      () => overlayDuring(() => loadMML(refs.mmlInput.value))
-    );
+    refs.mmlLoadBtn.addEventListener("click", async () => {
+      const mml = refs.mmlInput.value;
+      if (!isAdvanced && options.onRequestAdvancedMode) {
+        const { mergedTrackCount } = parseMML(mml, {
+          stepsPerBar: renderConfig.stepsPerBar,
+          clampTrackCount: trackStates.length
+        });
+        if (mergedTrackCount > 0) {
+          const confirmed = await showConfirmModal(
+            "\u521D\u5FC3\u8005\u30E2\u30FC\u30C9\u3067\u8AAD\u307F\u8FBC\u3080\u3068\u3001\u97F3\u304C\u5D29\u308C\u308B\u53EF\u80FD\u6027\u304C\u3042\u308A\u307E\u3059\u3002<br>\u4E0A\u7D1A\u8005\u30E2\u30FC\u30C9\u306B\u5207\u308A\u66FF\u3048\u307E\u3059\u304B\uFF1F"
+          );
+          if (confirmed) {
+            options.onRequestAdvancedMode(mml);
+            return;
+          }
+        }
+      }
+      overlayDuring(() => loadMML(mml));
+    });
     let activeSamplePlayer = null;
     let activeSampleButton = null;
     const collapseActiveSample = () => {
@@ -9252,6 +9303,7 @@ var mountDAW = (target, options = {}) => {
                 singingVoices: options.singingVoices,
                 drumPatterns: options.drumPatterns,
                 volume: masterVolume,
+                _skipInfoModals: true,
                 onStop: () => {
                   if (activeSampleButton === htmlBtn) {
                     htmlBtn.textContent = "\u25B6 \u8A66\u8074";
@@ -9333,7 +9385,7 @@ var mountDAW = (target, options = {}) => {
       refs.overlay.hidden = true;
       setLoading(false);
     });
-    refs.midiLoadBtn.addEventListener("click", () => {
+    refs.midiLoadBtn.addEventListener("click", async () => {
       if (!pendingMidi) return;
       const selected = [];
       const btns = refs.midiTrackSelection.querySelectorAll("button");
@@ -9342,6 +9394,19 @@ var mountDAW = (target, options = {}) => {
           selected.push(detectedTracks[i].index);
       });
       if (selected.length === 0) return;
+      if (!isAdvanced && options.onRequestAdvancedMode && selected.length > trackStates.length) {
+        const confirmed = await showConfirmModal(
+          "\u521D\u5FC3\u8005\u30E2\u30FC\u30C9\u3067\u8AAD\u307F\u8FBC\u3080\u3068\u3001\u97F3\u304C\u5D29\u308C\u308B\u53EF\u80FD\u6027\u304C\u3042\u308A\u307E\u3059\u3002<br>\u4E0A\u7D1A\u8005\u30E2\u30FC\u30C9\u306B\u5207\u308A\u66FF\u3048\u307E\u3059\u304B\uFF1F"
+        );
+        if (confirmed) {
+          const midi = pendingMidi;
+          const sel = selected.slice();
+          options.onRequestAdvancedMode(void 0, (newDaw) => {
+            newDaw.applyMidiParsed?.(midi, sel);
+          });
+          return;
+        }
+      }
       overlayDuring(() => applyMidiSelection(pendingMidi, selected));
     });
   };
@@ -9478,6 +9543,9 @@ var mountDAW = (target, options = {}) => {
     },
     loadMML,
     loadMIDI,
+    applyMidiParsed: (midi, selectedIndices) => {
+      overlayDuring(() => applyMidiSelection(midi, selectedIndices));
+    },
     exportMIDI: exportMIDI2,
     setBpm,
     getPlaybackState: () => playbackState,
@@ -10193,7 +10261,7 @@ var SoundFont = class _SoundFont {
     const { buffer, _param } = zone;
     if (!buffer || !_param) return;
     src.buffer = buffer;
-    g.gain.value = volume;
+    g.gain.setValueAtTime(volume, _when);
     src.playbackRate.setValueAtTime(_param.playbackRate, 0);
     Object.assign(src, _param.src);
     const _duration = duration + _SoundFont.afterTime;
@@ -10554,7 +10622,7 @@ var createDtmStudio = async (options = {}) => {
     if (opts.label !== null) {
       const lab = doc.createElement("span");
       lab.className = "dtm-controlbar-label";
-      lab.textContent = opts.label ?? "INSTRUMENT";
+      lab.textContent = opts.label ?? "\u697D\u5668\u30D7\u30EA\u30BB\u30C3\u30C8";
       wrapper.appendChild(lab);
     }
     const select = doc.createElement("select");
@@ -10753,8 +10821,8 @@ var createDtmStudio = async (options = {}) => {
     const doc = target.ownerDocument;
     const tracksFor = opts.tracksFor ?? ((m) => m === "advanced" ? TRACKS_ADVANCED : TRACKS_SIMPLE);
     const labels = {
-      simple: opts.labels?.simple ?? "\u30B7\u30F3\u30D7\u30EB",
-      advanced: opts.labels?.advanced ?? "\u30A2\u30C9\u30D0\u30F3\u30B9"
+      simple: opts.labels?.simple ?? "\u521D\u5FC3\u8005",
+      advanced: opts.labels?.advanced ?? "\u4E0A\u7D1A\u8005"
     };
     const editorOptionsFor = (mode) => typeof opts.editorOptions === "function" ? opts.editorOptions(mode) : opts.editorOptions ?? {};
     let currentMode = opts.mode ?? "simple";
@@ -10764,7 +10832,7 @@ var createDtmStudio = async (options = {}) => {
     if (opts.label !== null) {
       const lab = doc.createElement("span");
       lab.className = "dtm-controlbar-label";
-      lab.textContent = opts.label ?? "MODE";
+      lab.textContent = opts.label ?? "\u30E2\u30FC\u30C9";
       wrapper.appendChild(lab);
     }
     const seg = doc.createElement("div");
@@ -10795,7 +10863,15 @@ var createDtmStudio = async (options = {}) => {
         ...editorOpts,
         mode,
         tracks: tracksFor(mode),
-        initialMML: mml ?? editorOpts.initialMML
+        initialMML: mml ?? editorOpts.initialMML,
+        onRequestAdvancedMode: (pendingMml, applyMidi) => {
+          doUnmount();
+          currentMode = "advanced";
+          updateButtons();
+          opts.onChange?.("advanced");
+          doMount("advanced", pendingMml);
+          if (applyMidi && daw) applyMidi(daw);
+        }
       });
       attachWrapper();
       opts.onMount?.(daw, mode);
