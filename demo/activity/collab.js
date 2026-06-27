@@ -70,12 +70,32 @@ const discordDot    = document.getElementById('discord-dot');
 const discordStatus = document.getElementById('discord-status');
 const relayDot      = document.getElementById('relay-dot');
 const relayStatus   = document.getElementById('relay-status');
+const resetTimerEl  = document.getElementById('reset-timer');
 const playersList   = document.getElementById('players-list');
 const bootMsg       = document.getElementById('boot-msg');
 const loadError     = document.getElementById('load-error');
 const dawArea       = document.getElementById('daw-area');
 const arrowLeft     = document.getElementById('arrow-left');
 const arrowRight    = document.getElementById('arrow-right');
+
+// ─── リセットカウントダウン ────────────────────────────────────
+let nextResetTime = 0;
+
+const updateResetTimer = () => {
+    if (!resetTimerEl) return;
+    const remaining = nextResetTime - Date.now();
+    if (remaining <= 0 || !nextResetTime) {
+        resetTimerEl.textContent = 'リセットまで --:--';
+        return;
+    }
+    const totalSec = Math.floor(remaining / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    resetTimerEl.textContent = `リセットまで ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    resetTimerEl.style.color = totalSec < 60 ? 'var(--c-red)' : 'var(--c-yellow)';
+};
+
+setInterval(updateResetTimer, 1000);
 
 // ─── 状態 ─────────────────────────────────────────────────────
 let myTrackIndex = -1;
@@ -102,7 +122,7 @@ const setRelayStatus = (state, msg) => {
 };
 const showError = (msg) => {
     loadError.style.display = 'block';
-    loadError.textContent = '⚠ ' + msg;
+    loadError.textContent = '⚠ エラー: ' + msg;
 };
 
 // プレイヤーカード一覧を再描画
@@ -123,13 +143,13 @@ const renderPlayers = () => {
 
         const audioBtn = document.createElement('button');
         audioBtn.className = 'mute-btn' + (mute.audioMuted ? ' muted' : '');
-        audioBtn.title = mute.audioMuted ? '音ミュート中' : '音あり';
+        audioBtn.title = mute.audioMuted ? 'ミュート中（クリックで解除）' : '音あり（クリックでミュート）';
         audioBtn.textContent = mute.audioMuted ? '🔇' : '🔊';
         audioBtn.addEventListener('click', () => toggleAudioMute(p.trackIndex));
 
         const visualBtn = document.createElement('button');
         visualBtn.className = 'mute-btn' + (mute.visualMuted ? ' muted' : '');
-        visualBtn.title = mute.visualMuted ? '非表示中' : '表示中';
+        visualBtn.title = mute.visualMuted ? '非表示中（クリックで表示）' : '表示中（クリックで非表示）';
         visualBtn.textContent = mute.visualMuted ? '🙈' : '👁️';
         visualBtn.addEventListener('click', () => toggleVisualMute(p.trackIndex));
 
@@ -329,13 +349,13 @@ const getRelayUrl = () => {
 };
 
 const connectRelay = (roomId) => {
-    setRelayStatus('', 'CONNECTING TO RELAY…');
+    setRelayStatus('', '接続中…');
     const url = `${getRelayUrl()}?room=${encodeURIComponent(roomId)}`;
     ws = new WebSocket(url);
     ws._roomId = roomId;
 
     ws.addEventListener('open', () => {
-        setRelayStatus('connected', 'RELAY CONNECTED');
+        setRelayStatus('connected', '接続済み');
         ws.send(JSON.stringify({ type: 'join', roomId, userId: myUserId, username: myUsername }));
     });
 
@@ -346,13 +366,12 @@ const connectRelay = (roomId) => {
     });
 
     ws.addEventListener('close', () => {
-        setRelayStatus('error', 'RELAY DISCONNECTED');
-        // 3秒後に再接続
+        setRelayStatus('error', '切断（再接続中…）');
         setTimeout(() => connectRelay(roomId), 3000);
     });
 
     ws.addEventListener('error', () => {
-        setRelayStatus('error', 'RELAY ERROR');
+        setRelayStatus('error', '接続エラー');
     });
 };
 
@@ -363,13 +382,14 @@ const handleRelayMessage = (msg) => {
             myTrackIndex = msg.yourTrackIndex;
             players.set(myUserId, { username: myUsername, trackIndex: myTrackIndex });
             renderPlayers();
+            if (msg.nextReset) nextResetTime = msg.nextReset;
             // 自分の保存済みノートを保留（DAW起動後に適用）
             if (msg.yourNotes?.length > 0) pendingOwnNotes = msg.yourNotes;
             // スペクテーターから昇格した場合は DAW を再マウント
             if (wasSpectator && myTrackIndex >= 0 && dawInstance) {
                 dawInstance.destroy();
                 dawInstance = null;
-                document.getElementById('players-label').textContent = '► PLAYERS';
+                document.getElementById('players-label').textContent = '► 参加者';
                 initDAW(false).then(() => {
                     rebroadcastInstrumentOverrides();
                 }).catch(console.error);
@@ -383,6 +403,7 @@ const handleRelayMessage = (msg) => {
             // DAW起動後に適用するため保留
             pendingAllTracks = msg.tracks ?? [];
             if (dawInstance) applyPendingNotes();
+            if (msg.nextReset) nextResetTime = msg.nextReset;
             renderPlayers();
             // 再接続時に全プレイヤーへトラック楽器を再通知
             rebroadcastInstrumentOverrides();
@@ -421,6 +442,20 @@ const handleRelayMessage = (msg) => {
             remoteCursors.set(msg.userId, { step: msg.step, pitch: msg.pitch, trackIndex: msg.trackIndex });
             break;
         }
+        case 'reset': {
+            // サーバー側でノートがクリアされたのでDAWを再マウントして同期
+            if (msg.nextReset) nextResetTime = msg.nextReset;
+            pendingOwnNotes = [];
+            pendingAllTracks = [];
+            trackInstrumentOverrides.clear();
+            if (dawInstance) {
+                dawInstance.destroy();
+                dawInstance = null;
+                const spectator = myTrackIndex === -1;
+                initDAW(spectator).catch(console.error);
+            }
+            break;
+        }
         case 'patch': {
             if (!dawInstance) return;
             const trackId = TRACK_IDS[msg.trackIndex];
@@ -455,7 +490,7 @@ const initDAW = async (spectator = false) => {
     const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     const DTM = await import(isLocal
         ? 'http://localhost:40298/dist/index.mjs'
-        : '/.proxy/dtm/demo/index.mjs?v=7041f72e');
+        : '/.proxy/dtm/demo/index.mjs?v=2d15f439');
 
     const { createDtmStudio, TRACKS_ADVANCED } = DTM;
 
@@ -525,12 +560,12 @@ const main = async () => {
             sdk.ready(),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
         ]);
-        setDiscordStatus('connected', 'DISCORD CONNECTED');
+        setDiscordStatus('connected', 'Discord接続済み');
         roomId = `${sdk.guildId ?? 'guild'}:${sdk.channelId ?? 'channel'}`;
 
     } catch (e) {
         const isTimeout = e?.message === 'timeout';
-        setDiscordStatus('error', isTimeout ? 'STANDALONE MODE' : 'DISCORD ERROR');
+        setDiscordStatus('error', isTimeout ? 'スタンドアローンモード' : 'Discord接続エラー');
         roomId = 'local-' + myUserId.slice(0, 6);
     }
 
@@ -554,11 +589,11 @@ const main = async () => {
     if (myTrackIndex === -1) {
         // スペクテーターモード：全トラックを読み取り専用で表示
         bootMsg.style.display = 'none';
-        document.getElementById('players-label').textContent = '► PLAYERS  （満員 — 閲覧専用）';
+        document.getElementById('players-label').textContent = '► 参加者  （満員 — 閲覧専用）';
         try {
             await initDAW(true);
         } catch (e) {
-            showError('DAW初期化に失敗しました: ' + (e?.message ?? e));
+            showError('DAWの初期化に失敗しました: ' + (e?.message ?? e));
             console.error(e);
         }
         return;
@@ -567,12 +602,12 @@ const main = async () => {
     try {
         await initDAW(false);
     } catch (e) {
-        showError('DAW初期化に失敗しました: ' + (e?.message ?? e));
+        showError('DAWの初期化に失敗しました: ' + (e?.message ?? e));
         console.error(e);
     }
 };
 
 main().catch((e) => {
-    showError('初期化エラー: ' + (e?.message ?? e));
+    showError('起動に失敗しました: ' + (e?.message ?? e));
     console.error(e);
 });
