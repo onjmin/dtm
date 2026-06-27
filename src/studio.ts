@@ -330,7 +330,8 @@ export const createDtmStudio = async (
 	};
 
 	// ── AudioContext とゲイン段 ──
-	const audioCtx = options.audioContext ?? new AudioContext();
+	const audioCtx =
+		options.audioContext ?? new AudioContext({ sampleRate: 44100 });
 	const masterGain = audioCtx.createGain();
 	masterGain.gain.value = options.masterVolume ?? 1;
 	masterGain.connect(audioCtx.destination);

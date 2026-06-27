@@ -772,7 +772,7 @@ export const mountDAW = (
 		if (isLoading) return;
 		options.onResumeAudio?.();
 		const active = getActive();
-		dispatchNote(active.config.id, pitch, active.volume, 100, 0, 0.1);
+		dispatchNote(active.config.id, pitch, active.volume, 100, 0, 0.5);
 	};
 
 	const findActiveNoteAt = (x: number, y: number, margin = 0): Note | null => {

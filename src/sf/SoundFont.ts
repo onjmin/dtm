@@ -105,7 +105,6 @@ export class SoundFont {
 		const { buffer, _param } = zone;
 		if (!buffer || !_param) return;
 		src.buffer = buffer;
-		g.gain.setValueAtTime(volume, ctx.currentTime);
 		src.playbackRate.setValueAtTime(_param.playbackRate, 0);
 		Object.assign(src, _param.src);
 		const _duration = duration + SoundFont.afterTime;
@@ -116,6 +115,7 @@ export class SoundFont {
 				: src.loop
 					? _duration
 					: Math.min(_duration, _param.max));
+		g.gain.setValueAtTime(volume, ctx.currentTime);
 		if (!isDrum) g.gain.linearRampToValueAtTime(0, end);
 		src.connect(g).connect(destination);
 		src.start(_when);
@@ -170,7 +170,9 @@ const adjustZone = async (ctx: AudioContext, zone: Zone): Promise<void> => {
 			a[i] = n / 0x10000;
 		}
 	} else if (zone.file) {
-		const buf = Uint8Array.from(atob(zone.file), (c) => c.charCodeAt(0)).buffer;
+		const bytes = Uint8Array.from(atob(zone.file), (c) => c.charCodeAt(0));
+		const buf = bytes.buffer;
+
 		// macOS Safari はスリープ復帰後に AudioContext を "interrupted" 状態にする。
 		// その状態で decodeAudioData を呼ぶと "null is not an object" エラーになるため、
 		// interrupted のときだけ resume を試みる（"suspended" は autoplay 制限で resume が
@@ -180,8 +182,111 @@ const adjustZone = async (ctx: AudioContext, zone: Zone): Promise<void> => {
 				await ctx.resume();
 			} catch {}
 		}
-		zone.buffer = await ctx.decodeAudioData(buf);
+		try {
+			zone.buffer = await ctx.decodeAudioData(buf);
+		} catch (e) {
+			console.error(
+				`[zone.file format] keyRange: ${zone.keyRangeLow}-${zone.keyRangeHigh} - Decode failed:`,
+				e,
+			);
+			throw e;
+		}
 	}
+
+	// ループ拡張ロジック（Safari等の超短周期ループバグ対策）
+	// ループ範囲が30ms（0.03秒）未満の場合、ループ部分を自前で複製して引き伸ばす
+	if (zone.buffer && zone.loopStart >= 1 && zone.loopStart < zone.loopEnd) {
+		const loopLenSeconds = (zone.loopEnd - zone.loopStart) / zone.sampleRate;
+		if (loopLenSeconds < 0.03) {
+			const oldBuf = zone.buffer;
+			const sampleRate = oldBuf.sampleRate;
+			const rateRatio = sampleRate / zone.sampleRate;
+			const loopStartFrame = Math.round(zone.loopStart * rateRatio);
+			const loopEndFrame = Math.round(zone.loopEnd * rateRatio);
+			const loopLengthFrame = loopEndFrame - loopStartFrame;
+
+			if (loopLengthFrame > 0) {
+				const minLoopLenFrame = Math.round(0.2 * sampleRate); // 0.2秒（200ms）を目標にする
+				const repeatCount = Math.ceil(minLoopLenFrame / loopLengthFrame);
+				const attackLength = Math.min(loopStartFrame, oldBuf.length);
+				const releaseLength = Math.max(0, oldBuf.length - loopEndFrame);
+				const newLength =
+					attackLength + loopLengthFrame * repeatCount + releaseLength;
+
+				let totalPeak = 0;
+				let loopPeak = 0;
+				if (oldBuf.numberOfChannels > 0) {
+					const ch0 = oldBuf.getChannelData(0);
+					for (let i = 0; i < ch0.length; i++) {
+						const abs = Math.abs(ch0[i]);
+						if (abs > totalPeak) totalPeak = abs;
+						if (i >= loopStartFrame && i < loopEndFrame) {
+							if (abs > loopPeak) loopPeak = abs;
+						}
+					}
+				}
+
+				// ゲイン補正倍率の計算
+				let gainMultiplier = 1.0;
+				if (loopPeak > 0 && totalPeak > 0 && loopPeak < totalPeak * 0.8) {
+					gainMultiplier = (totalPeak * 0.75) / loopPeak; // アタック（全体）ピークの75%を目標にする（気持ち抑えめ）
+					if (gainMultiplier > 20.0) gainMultiplier = 20.0; // 過剰増幅によるクリップ防止
+				}
+
+				try {
+					const newBuf = ctx.createBuffer(
+						oldBuf.numberOfChannels,
+						newLength,
+						sampleRate,
+					);
+					for (let ch = 0; ch < oldBuf.numberOfChannels; ch++) {
+						const oldData = oldBuf.getChannelData(ch);
+						const newData = newBuf.getChannelData(ch);
+
+						// アタック部分をコピー
+						newData.set(oldData.subarray(0, attackLength), 0);
+
+						// ループ部分を複製して充填（ここでゲイン補正を適用）
+						let offset = attackLength;
+						const loopData = oldData.subarray(loopStartFrame, loopEndFrame);
+						const normalizedLoopData = new Float32Array(loopLengthFrame);
+						for (let i = 0; i < loopLengthFrame; i++) {
+							normalizedLoopData[i] = loopData[i] * gainMultiplier;
+						}
+
+						for (let r = 0; r < repeatCount; r++) {
+							newData.set(normalizedLoopData, offset);
+							offset += loopLengthFrame;
+						}
+
+						// リリース部分をコピー（ゲイン補正を適用）
+						if (releaseLength > 0 && loopEndFrame < oldBuf.length) {
+							const releaseData = oldData.subarray(loopEndFrame);
+							if (gainMultiplier !== 1.0) {
+								const normalizedRelease = new Float32Array(releaseLength);
+								for (let i = 0; i < releaseLength; i++) {
+									normalizedRelease[i] = releaseData[i] * gainMultiplier;
+								}
+								newData.set(normalizedRelease, offset);
+							} else {
+								newData.set(releaseData, offset);
+							}
+						}
+					}
+
+					zone.buffer = newBuf;
+					zone.loopEnd =
+						zone.loopStart + (zone.loopEnd - zone.loopStart) * repeatCount;
+				} catch (e) {
+					console.warn(
+						"[SoundFont.loopExtension] Failed to extend loop buffer:",
+						e,
+					);
+				}
+			}
+		}
+	}
+
 	for (const [k, v] of [
 		["loopStart", 0],
 		["loopEnd", 0],
