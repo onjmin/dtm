@@ -275,7 +275,19 @@
             <div class="text-pico-cyan text-lg" style="animation:dtm-blink 1s step-start infinite">▶ エディタを準備中...</div>
             <div class="text-xs text-pico-gray">音源・UIを読み込んでいます。しばらくお待ちください</div>
         </div>
-        <style>@keyframes dtm-blink{0%,100%{opacity:1}50%{opacity:0}}</style>
+        <style>
+            @keyframes dtm-blink {
+
+                0%,
+                100% {
+                    opacity: 1
+                }
+
+                50% {
+                    opacity: 0
+                }
+            }
+        </style>
     </div>
 
     <!-- ════ 共有リンク (Share Link) ════ -->
@@ -346,10 +358,13 @@
     </footer>
 
     <script type="module">
-        const isLocal = location.hostname === 'localhost';
-        const DTM = await import(isLocal
-            ? 'http://localhost:40298/dist/index.mjs'
-            : './index.mjs');
+        // location.hostname 自体がローカルか、またはプライベートIPのレンジか
+        const isLocal =
+            location.hostname === 'localhost' ||
+            location.hostname.endsWith('.local') ||
+            // 宛先がプライベートIPやループバックの場合にtrueを返すシンプルな判定
+            /^127\.|^10\.|^192\.168\.|^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(location.hostname);
+        const DTM = await import(isLocal ? `http://${location.hostname}:40298/dist/index.mjs` : './index.mjs');
 
         const { createDtmStudio, INSTRUMENT_PRESETS, TRACKS_SIMPLE, TRACKS_ADVANCED, encodeMml, decodeMml, parseMML, VOICE_IMAGE_KEY, VOICE_IMAGES } = DTM;
 
@@ -429,6 +444,14 @@
                 onDrumChange: (name) => writeStored(DRUM_STORAGE_KEY, name),
                 onInstrumentChange: (name) => {
                     selectInstrumentPreset(name).catch(console.error);
+                },
+                onRequestAdvancedMode: (pendingMml, applyMidi) => {
+                    daw?.destroy();
+                    currentMode = 'advanced';
+                    writeStored(MODE_STORAGE_KEY, currentMode);
+                    updateModeButtons(currentMode);
+                    mountEditor('advanced', applyMidi ? undefined : pendingMml);
+                    if (applyMidi && daw) applyMidi(daw);
                 },
             });
             window.daw = daw;
@@ -908,7 +931,8 @@
     <div id="share-link-modal-overlay"
         class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden"
         onclick="if(event.target===this)this.classList.add('hidden')">
-        <div class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
+        <div
+            class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
             <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
                 <span class="text-pico-yellow text-sm font-bold">共有リンク</span>
                 <button class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none"
@@ -918,11 +942,10 @@
                 <p class="text-pico-lavend leading-relaxed">このURLをコピーして共有すると、同じ曲を他の人が開けます。</p>
                 <textarea readonly
                     class="w-full bg-pico-black border-2 border-pico-cyan text-pico-cyan font-pixel text-xs p-2 resize-none leading-relaxed cursor-pointer"
-                    rows="4"
-                    onclick="this.select()"
-                    style="word-break:break-all"></textarea>
+                    rows="4" onclick="this.select()" style="word-break:break-all"></textarea>
                 <div class="flex items-center gap-3">
-                    <button class="share-modal-copy-btn min-h-[36px] px-4 border-2 border-pico-cyan bg-pico-black text-pico-cyan
+                    <button
+                        class="share-modal-copy-btn min-h-[36px] px-4 border-2 border-pico-cyan bg-pico-black text-pico-cyan
                                    text-xs uppercase tracking-widest cursor-pointer font-pixel
                                    shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">コピー</button>
                     <span class="share-modal-status text-xs uppercase tracking-widest"></span>
@@ -935,7 +958,8 @@
     <div id="multiplay-modal-overlay"
         class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden"
         onclick="if(event.target===this)this.classList.add('hidden')">
-        <div class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
+        <div
+            class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
             <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
                 <span class="text-pico-yellow text-sm font-bold">マルチプレイ作曲 (Discord Activity)</span>
                 <button class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none"
@@ -959,9 +983,8 @@
                     <p class="text-pico-lavend text-[10px] leading-relaxed break-all">
                         下のリンクからDiscordアクティビティで呼び出せるようになります。
                     </p>
-                    <a href="https://discord.com/oauth2/authorize?client_id=1519696988495548547"
-                        target="_blank" rel="noopener"
-                        class="block w-full mt-2 px-3 py-2 border-2 border-pico-lavend bg-pico-black text-pico-lavend
+                    <a href="https://discord.com/oauth2/authorize?client_id=1519696988495548547" target="_blank"
+                        rel="noopener" class="block w-full mt-2 px-3 py-2 border-2 border-pico-lavend bg-pico-black text-pico-lavend
                                text-xs uppercase tracking-widest font-pixel text-center no-underline
                                shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none
                                hover:text-pico-cyan hover:border-pico-cyan">
