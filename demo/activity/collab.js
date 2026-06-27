@@ -160,6 +160,116 @@ const renderPlayers = () => {
     }
 };
 
+// ─── チャット UI ──────────────────────────────────────────────
+const getPlayerEmoji = (trackIndex) => {
+    if (trackIndex === -1 || trackIndex == null) return '👻';
+    return TRACK_EMOJIS[trackIndex] ?? '🎵';
+};
+
+const getPlayerColor = (trackIndex) => {
+    if (trackIndex === -1 || trackIndex == null) return 'var(--c-muted)';
+    return TRACK_COLORS[trackIndex] ?? 'var(--c-text)';
+};
+
+const appendChatMessage = (msg) => {
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return;
+
+    const msgEl = document.createElement('div');
+    msgEl.className = 'chat-message';
+
+    const emoji = getPlayerEmoji(msg.trackIndex);
+    const color = getPlayerColor(msg.trackIndex);
+
+    // アバター
+    const avatar = document.createElement('span');
+    avatar.className = 'chat-avatar';
+    avatar.textContent = emoji;
+    avatar.style.borderColor = color;
+    msgEl.appendChild(avatar);
+
+    // メッセージ本体
+    const content = document.createElement('div');
+    content.className = 'chat-msg-content';
+
+    // メタ情報 (作成者 + 時間)
+    const meta = document.createElement('div');
+    meta.className = 'chat-msg-meta';
+
+    const author = document.createElement('span');
+    author.className = 'chat-msg-author';
+    author.style.color = color;
+    const shortName = msg.username.replace(/^Player-/, '');
+    const trackLabel = msg.trackIndex >= 0 ? ` @${msg.trackIndex + 1}` : ' (観覧)';
+    author.textContent = `${shortName}${trackLabel}`;
+    meta.appendChild(author);
+
+    const time = document.createElement('span');
+    time.className = 'chat-msg-time';
+    const date = new Date(msg.timestamp ?? Date.now());
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mm = String(date.getMinutes()).padStart(2, '0');
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    time.textContent = `${hh}:${mm}:${ss}`;
+    meta.appendChild(time);
+
+    content.appendChild(meta);
+
+    // テキスト
+    const text = document.createElement('div');
+    text.className = 'chat-msg-text';
+    text.textContent = msg.text;
+    content.appendChild(text);
+
+    msgEl.appendChild(content);
+    chatMessages.appendChild(msgEl);
+
+    // 件数制限（最大100件）
+    while (chatMessages.children.length > 100) {
+        chatMessages.removeChild(chatMessages.firstChild);
+    }
+
+    // スクロール
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+};
+
+const initChatUI = () => {
+    const chatForm = document.getElementById('chat-form');
+    const chatInput = document.getElementById('chat-input');
+    const chatHeader = document.getElementById('chat-header');
+    const chatPanel = document.getElementById('chat-panel');
+    const chatToggleIcon = document.getElementById('chat-toggle-icon');
+
+    if (chatForm && chatInput) {
+        chatForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const text = chatInput.value.trim();
+            if (!text) return;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'chat', text }));
+                chatInput.value = '';
+            }
+        });
+    }
+
+    if (chatHeader && chatPanel) {
+        chatHeader.addEventListener('click', () => {
+            chatPanel.classList.toggle('collapsed');
+            chatHeader.classList.remove('has-unread');
+            const isCollapsed = chatPanel.classList.contains('collapsed');
+            if (chatToggleIcon) {
+                chatToggleIcon.textContent = isCollapsed ? '▶' : '▼';
+            }
+            if (!isCollapsed) {
+                const chatMessages = document.getElementById('chat-messages');
+                if (chatMessages) {
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                }
+            }
+        });
+    }
+};
+
 // ─── ミュート操作 ─────────────────────────────────────────────
 const toggleAudioMute = (trackIndex) => {
     const m = muteState.get(trackIndex) ?? { audioMuted: false, visualMuted: false };
@@ -472,6 +582,25 @@ const handleRelayMessage = (msg) => {
             }
             break;
         }
+        case 'chat': {
+            appendChatMessage(msg);
+            const chatPanel = document.getElementById('chat-panel');
+            if (chatPanel && chatPanel.classList.contains('collapsed')) {
+                const chatHeader = document.getElementById('chat-header');
+                if (chatHeader) {
+                    chatHeader.classList.add('has-unread');
+                }
+            }
+            break;
+        }
+        case 'chat-history': {
+            if (Array.isArray(msg.history)) {
+                for (const chatMsg of msg.history) {
+                    appendChatMessage(chatMsg);
+                }
+            }
+            break;
+        }
     }
 };
 
@@ -541,6 +670,9 @@ const initDAW = async (spectator = false) => {
 
 // ─── エントリポイント ─────────────────────────────────────────
 const main = async () => {
+    // チャット UI 初期化
+    initChatUI();
+
     // Discord SDK URL Mapping
     try {
         patchUrlMappings([

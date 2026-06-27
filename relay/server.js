@@ -33,6 +33,84 @@ const wss = new WebSocketServer({ server });
  */
 const rooms = new Map();
 
+// ─── 連投規制 / スパム対策 ──────────────────────────────
+const messageCooldowns = new Map(); // userId -> lastMessageTime (timestamp)
+const simhashCache = new Map();     // userId -> number[] (simhash history)
+const allowedSameCount = 3;
+
+/**
+ * 類似連投判定用 simhash
+ */
+const calcSimhash = (text, ngram = 3, hashbits = 32) => {
+    const normalized = text.replace(/\s+/g, "");
+    if (normalized.length === 0) return null;
+
+    const gramsSet = new Set();
+    for (let i = 0; i < normalized.length - ngram + 1; i++) {
+        gramsSet.add(normalized.slice(i, i + ngram));
+    }
+
+    const vector = Array(hashbits).fill(0);
+
+    for (const gram of gramsSet) {
+        const hash = fnv1a32(gram);
+
+        for (let i = 0; i < hashbits; i++) {
+            const bit = (hash >> i) & 1;
+            vector[i] += bit === 1 ? 1 : -1;
+        }
+    }
+
+    let fingerprint = 0;
+    for (let i = 0; i < hashbits; i++) {
+        if (vector[i] > 0) {
+            fingerprint |= 1 << i;
+        }
+    }
+
+    return fingerprint >>> 0;
+};
+
+const fnv1a32 = (str) => {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+        hash ^= str.charCodeAt(i);
+        hash = (hash * 0x01000193) >>> 0;
+    }
+    return hash >>> 0;
+};
+
+const hammingDistance32 = (hash1, hash2) => {
+    let xor = hash1 ^ hash2;
+    let dist = 0;
+    while (xor) {
+        dist += xor & 1;
+        xor >>>= 1;
+    }
+    return dist;
+};
+
+const isSameSimhash = (text, userId) => {
+    if (text.length < 4) return false;
+    const simhash = calcSimhash(text);
+    if (!simhash) return false;
+    
+    const simhashLog = simhashCache.get(userId);
+    if (simhashLog) {
+        const isSame = simhashLog
+            .slice(0, allowedSameCount)
+            .every((v) => hammingDistance32(v, simhash) < 8);
+        if (isSame) {
+            return true;
+        }
+        simhashLog.unshift(simhash);
+        simhashCache.set(userId, simhashLog.slice(0, allowedSameCount));
+        return false;
+    }
+    simhashCache.set(userId, [simhash]);
+    return false;
+};
+
 const keyOf = (n) => `${n.startStep}_${n.pitch}`;
 
 const broadcast = (room, message, exceptUserId = null) => {
@@ -45,7 +123,7 @@ const broadcast = (room, message, exceptUserId = null) => {
 };
 
 const getOrCreateRoom = (id) => {
-    if (!rooms.has(id)) rooms.set(id, { users: new Map(), trackNotes: new Map() });
+    if (!rooms.has(id)) rooms.set(id, { users: new Map(), trackNotes: new Map(), chatHistory: [] });
     return rooms.get(id);
 };
 
@@ -144,6 +222,10 @@ wss.on('connection', (ws) => {
             if (trackIndex >= 0) {
                 broadcast(room, { type: 'user-join', userId, username, trackIndex }, userId);
             }
+            // チャット履歴の同期
+            if (room.chatHistory && room.chatHistory.length > 0) {
+                ws.send(JSON.stringify({ type: 'chat-history', history: room.chatHistory }));
+            }
             return;
         }
 
@@ -197,6 +279,67 @@ wss.on('connection', (ws) => {
             broadcast(room, { type: 'patch', userId, trackIndex: user.trackIndex, added, removed }, userId);
             return;
         }
+
+        // ── chat ──────────────────────────────────────────────
+        if (msg.type === 'chat') {
+            if (!roomId || !userId) return;
+            const room = rooms.get(roomId);
+            if (!room) return;
+            const user = room.users.get(userId);
+            if (!user) return; // 観覧者(trackIndex === -1)もチャットできるように user があればOK
+
+            const now = Date.now();
+            const lastTime = messageCooldowns.get(userId) ?? 0;
+            const text = String(msg.text ?? '').trim().slice(0, 100);
+            if (!text) return;
+
+            // 1. 連投頻度チェック (1秒以内はブロック)
+            if (now - lastTime < 1000) {
+                ws.send(JSON.stringify({
+                    type: 'chat',
+                    userId: 'system',
+                    username: 'SYSTEM',
+                    trackIndex: -1,
+                    text: '⚠️ 送信頻度が早すぎます。しばらくお待ちください。',
+                    timestamp: now
+                }));
+                return;
+            }
+
+            // 2. 類似度チェック (simhash 連投ブロック)
+            if (isSameSimhash(text, userId)) {
+                ws.send(JSON.stringify({
+                    type: 'chat',
+                    userId: 'system',
+                    username: 'SYSTEM',
+                    trackIndex: -1,
+                    text: '⚠️ 似たようなメッセージが連投されています。',
+                    timestamp: now
+                }));
+                return;
+            }
+
+            // 最終送信時刻を更新
+            messageCooldowns.set(userId, now);
+
+            const chatMsg = {
+                type: 'chat',
+                userId,
+                username: user.username,
+                trackIndex: user.trackIndex,
+                text,
+                timestamp: now
+            };
+
+            if (!room.chatHistory) room.chatHistory = [];
+            room.chatHistory.push(chatMsg);
+            if (room.chatHistory.length > 50) {
+                room.chatHistory.shift();
+            }
+
+            broadcast(room, chatMsg);
+            return;
+        }
     });
 
     ws.on('close', () => {
@@ -208,6 +351,11 @@ wss.on('connection', (ws) => {
             broadcast(room, { type: 'user-leave', userId, trackIndex: user.trackIndex });
         }
         room.users.delete(userId);
+
+        // クリーンアップ
+        messageCooldowns.delete(userId);
+        simhashCache.delete(userId);
+
         // trackNotes は削除しない（再参加・新規参加のために保持）
         // 全員抜けたら部屋ごと削除
         if (room.users.size === 0) rooms.delete(roomId);
@@ -234,6 +382,7 @@ const doHourlyReset = () => {
         for (const [key, entry] of room.trackNotes) {
             if (typeof key === 'number') entry.notes = [];
         }
+        room.chatHistory = [];
         broadcast(room, { type: 'reset', nextReset });
     }
     console.log(`[relay] Hourly reset performed. Next reset: ${new Date(nextReset).toISOString()}`);
