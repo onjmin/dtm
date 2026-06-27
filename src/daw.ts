@@ -5,10 +5,10 @@
  * MIDI/コード解析も注入（parseMidi / parseChord / parseChords）。未注入なら該当UIを隠す。
  */
 
+import { GM_INSTRUMENT_NAMES } from "./audio-config";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import { buildUI } from "./daw-ui";
 import { DRUM_PATTERNS } from "./drum-config";
-import { GM_INSTRUMENT_NAMES } from "./audio-config";
 import { icon } from "./icons";
 import { INSTRUMENT_PRESETS } from "./instrument-presets";
 import {
@@ -387,7 +387,6 @@ export const mountDAW = (
 		keyHeight: BASE_KEY_HEIGHT,
 		stepWidth: BASE_STEP_WIDTH * 2, // zoom100% 相当
 	};
-	const leftPaddingSteps = renderConfig.stepsPerBar * 16;
 
 	// --- 状態 ---
 	let zoomX = 100;
@@ -404,11 +403,9 @@ export const mountDAW = (
 	let snapGridSteps = 12;
 	const gridLineSteps = 48;
 	let currentOffsetX = 0;
-	const _initPitch = options.initialScrollPitch;
+	const _initPitch = options.initialScrollPitch ?? 48;
 	let currentOffsetY =
-		_initPitch !== undefined
-			? (renderConfig.keyCount - 1 - _initPitch) * renderConfig.keyHeight - 215
-			: (104 - 1 - 60) * renderConfig.keyHeight - 215;
+		(renderConfig.keyCount - 1 - _initPitch) * renderConfig.keyHeight - 215;
 	let playStartStep = 0;
 	let isSolo = false;
 	// loadMML で取り込んだ歌詞トラック（@@n）の同期コンダクタ。歌詞が無ければ空
@@ -420,6 +417,7 @@ export const mountDAW = (
 	let currentPlayStep = 0;
 	// 初期化完了フラグ（MMLCore構築時の早期コールバックを抑止）
 	let ready = false;
+	let isLoading = false;
 
 	// 選択・コピー
 	let selectedNotes: Note[] = [];
@@ -451,7 +449,7 @@ export const mountDAW = (
 		};
 		if (lyricsDebounceTimer) clearTimeout(lyricsDebounceTimer);
 		lyricsDebounceTimer = setTimeout(() => {
-			options.onLyricsChange!(trackId, data);
+			options.onLyricsChange?.(trackId, data);
 			lyricsDebounceTimer = null;
 		}, 300);
 	};
@@ -545,14 +543,29 @@ export const mountDAW = (
 	// 描画
 	// ============================================================
 	const getMaxNoteStep = (): number => {
-		let maxStep = renderConfig.stepsPerBar * 4;
+		let maxEndStep = 0;
 		for (const t of trackStates) {
 			for (const n of t.core.getNotes()) {
 				const end = n.startStep + n.durationSteps;
-				if (end > maxStep) maxStep = end;
+				if (end > maxEndStep) {
+					maxEndStep = end;
+				}
 			}
 		}
-		return maxStep;
+		if (maxEndStep === 0) {
+			return renderConfig.stepsPerBar * 4;
+		}
+		const lastNoteMeasure = Math.floor(
+			(maxEndStep - 1) / renderConfig.stepsPerBar,
+		);
+		return (lastNoteMeasure + 2) * renderConfig.stepsPerBar;
+	};
+
+	const getMaxOffsetX = (): number => {
+		const canvas = getGridCanvas();
+		const maxNoteStep = getMaxNoteStep();
+		const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
+		return Math.max(0, totalContentWidth - canvas.width);
 	};
 
 	const getMaxOffsetY = (): number => {
@@ -640,19 +653,14 @@ export const mountDAW = (
 	// ============================================================
 	const updateScrollbars = (): void => {
 		const canvas = getGridCanvas();
-		const maxNoteStep = getMaxNoteStep();
-		const leftPaddingWidth = leftPaddingSteps * renderConfig.stepWidth;
-		const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
-		const maxOffsetX = totalContentWidth - canvas.width + leftPaddingWidth;
+		const maxOffsetX = getMaxOffsetX();
 		const sbW = refs.hScroll.clientWidth;
 		if (maxOffsetX <= 0) {
 			refs.hScrollThumb.style.width = "100%";
 			refs.hScrollThumb.style.left = "0";
 		} else {
-			const thumbW = Math.max(
-				40,
-				(canvas.width / (totalContentWidth + leftPaddingWidth)) * sbW,
-			);
+			const totalContentWidth = getMaxNoteStep() * renderConfig.stepWidth;
+			const thumbW = Math.max(40, (canvas.width / totalContentWidth) * sbW);
 			const ratio = currentOffsetX / maxOffsetX;
 			refs.hScrollThumb.style.width = `${thumbW}px`;
 			refs.hScrollThumb.style.left = `${clamp(ratio * (sbW - thumbW), 0, sbW - thumbW)}px`;
@@ -709,11 +717,7 @@ export const mountDAW = (
 		});
 
 		const moveH = (clientX: number): void => {
-			const canvas = getGridCanvas();
-			const maxNoteStep = getMaxNoteStep();
-			const leftPaddingWidth = leftPaddingSteps * renderConfig.stepWidth;
-			const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
-			const maxOffsetX = totalContentWidth - canvas.width + leftPaddingWidth;
+			const maxOffsetX = getMaxOffsetX();
 			if (maxOffsetX <= 0) return;
 			const rect = refs.hScroll.getBoundingClientRect();
 			const thumbW = Number.parseFloat(refs.hScrollThumb.style.width) || 40;
@@ -765,6 +769,7 @@ export const mountDAW = (
 	let lastMultiPreviewPitch: number | null = null;
 
 	const playPreview = (pitch: number): void => {
+		if (isLoading) return;
 		options.onResumeAudio?.();
 		const active = getActive();
 		dispatchNote(active.config.id, pitch, active.volume, 100, 0, 0.1);
@@ -1102,7 +1107,11 @@ export const mountDAW = (
 					0,
 					getMaxOffsetY(),
 				);
-				currentOffsetX = Math.max(0, currentOffsetX + event.deltaX);
+				currentOffsetX = clamp(
+					currentOffsetX + event.deltaX,
+					0,
+					getMaxOffsetX(),
+				);
 				setDrawOffset(currentOffsetX, currentOffsetY);
 				redrawAll();
 			},
@@ -1145,9 +1154,10 @@ export const mountDAW = (
 			(currentOffsetX + canvas.width / 2) / renderConfig.stepWidth;
 		renderConfig.stepWidth = (BASE_STEP_WIDTH * (zoomX * 2)) / 100;
 		refs.zoomXLabel.textContent = `${zoomX}%`;
-		currentOffsetX = Math.max(
-			0,
+		currentOffsetX = clamp(
 			centerStep * renderConfig.stepWidth - canvas.width / 2,
+			0,
+			getMaxOffsetX(),
 		);
 		setDrawOffset(currentOffsetX, currentOffsetY);
 		redrawAll();
@@ -1230,8 +1240,12 @@ export const mountDAW = (
 				currentOffsetX / renderConfig.stepWidth + visibleSteps - 4;
 			if (currentPlayStep > threshold) {
 				const visibleBars = Math.round(visibleSteps / renderConfig.stepsPerBar);
-				currentOffsetX +=
-					visibleBars * renderConfig.stepsPerBar * renderConfig.stepWidth;
+				currentOffsetX = clamp(
+					currentOffsetX +
+						visibleBars * renderConfig.stepsPerBar * renderConfig.stepWidth,
+					0,
+					getMaxOffsetX(),
+				);
 				setDrawOffset(currentOffsetX, currentOffsetY);
 			}
 			redrawAll();
@@ -1319,9 +1333,10 @@ export const mountDAW = (
 		if (playbackState !== "paused") {
 			// 再生開始位置までスクロール
 			const canvas = getGridCanvas();
-			currentOffsetX = Math.max(
-				0,
+			currentOffsetX = clamp(
 				playStartStep * renderConfig.stepWidth - canvas.width * 0.5,
+				0,
+				getMaxOffsetX(),
 			);
 			setDrawOffset(currentOffsetX, currentOffsetY);
 		}
@@ -1998,7 +2013,7 @@ export const mountDAW = (
 		if (firstPitch !== null) {
 			centerPitch(firstPitch);
 		} else {
-			setDrawOffset(currentOffsetX, currentOffsetY);
+			centerPitch(48);
 		}
 		redrawAll();
 		updateTrackPanel(); // 読み込んだ歌詞を編集UIへ反映
@@ -2090,7 +2105,7 @@ export const mountDAW = (
 		if (firstPitch !== null) {
 			centerPitch(firstPitch);
 		} else {
-			setDrawOffset(currentOffsetX, currentOffsetY);
+			centerPitch(48);
 		}
 		redrawAll();
 		updateTrackPanel();
@@ -2633,6 +2648,7 @@ export const mountDAW = (
 	document.addEventListener("pointerup", onPointerUp);
 
 	const setLoading = (loading: boolean): void => {
+		isLoading = loading;
 		refs.topbar.classList.toggle("is-loading", loading);
 	};
 
@@ -2664,9 +2680,10 @@ export const mountDAW = (
 		playbackState = "paused";
 
 		const canvas = getGridCanvas();
-		currentOffsetX = Math.max(
-			0,
+		currentOffsetX = clamp(
 			step * renderConfig.stepWidth - canvas.width * 0.5,
+			0,
+			getMaxOffsetX(),
 		);
 		setDrawOffset(currentOffsetX, currentOffsetY);
 
