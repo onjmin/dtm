@@ -10320,7 +10320,7 @@ var adjustZone = async (ctx, zone) => {
     }
   } else if (zone.file) {
     const buf = Uint8Array.from(atob(zone.file), (c) => c.charCodeAt(0)).buffer;
-    if (ctx.state !== "running") {
+    if (ctx.state === "interrupted") {
       try {
         await ctx.resume();
       } catch {
