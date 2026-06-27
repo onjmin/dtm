@@ -1380,12 +1380,13 @@ export const mountDAW = (
 	const updateTrackPanel = (): void => {
 		// トラックピル（色分け・常時表示）
 		refs.trackTabs.innerHTML = "";
-		for (const t of trackStates) {
+		for (const [i, t] of trackStates.entries()) {
 			const [r, g, b] = t.config.color;
 			const btn = document.createElement("button");
 			btn.className = `dtm-pill ${t.config.id === activeTrackId ? "dtm-pill--active" : ""}`;
 			btn.style.setProperty("--dtm-pill-color", `rgb(${r},${g},${b})`);
-			btn.innerHTML = `<span class="dtm-dot"></span><span>${t.config.name}</span>`;
+			btn.title = t.config.name;
+			btn.textContent = String(i + 1);
 			btn.addEventListener("click", () => switchTrack(t.config.id));
 			refs.trackTabs.appendChild(btn);
 		}
@@ -2170,9 +2171,15 @@ export const mountDAW = (
 				overlay.remove();
 				resolve(result);
 			};
-			(overlay.querySelector(".dtm-confirm-yes") as HTMLElement).addEventListener("click", () => close(true));
-			(overlay.querySelector(".dtm-confirm-no") as HTMLElement).addEventListener("click", () => close(false));
-			overlay.addEventListener("click", (e) => { if (e.target === overlay) close(false); });
+			(
+				overlay.querySelector(".dtm-confirm-yes") as HTMLElement
+			).addEventListener("click", () => close(true));
+			(
+				overlay.querySelector(".dtm-confirm-no") as HTMLElement
+			).addEventListener("click", () => close(false));
+			overlay.addEventListener("click", (e) => {
+				if (e.target === overlay) close(false);
+			});
 			document.body.appendChild(overlay);
 		});
 
@@ -2534,7 +2541,11 @@ export const mountDAW = (
 					selected.push(detectedTracks[i].index);
 			});
 			if (selected.length === 0) return;
-			if (!isAdvanced && options.onRequestAdvancedMode && selected.length > trackStates.length) {
+			if (
+				!isAdvanced &&
+				options.onRequestAdvancedMode &&
+				selected.length > trackStates.length
+			) {
 				const confirmed = await showConfirmModal(
 					"初心者モードで読み込むと、音が崩れる可能性があります。<br>上級者モードに切り替えますか？",
 				);

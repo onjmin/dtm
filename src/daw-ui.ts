@@ -117,14 +117,17 @@ export const buildUI = (
 	target.innerHTML = `
 <div class="dtm-daw" data-dtm="root">
   <div class="dtm-topbar" data-dtm="transport">
-    <button class="dtm-iconbtn" data-dtm="prev-bar" title="1小節前">${icon("chevronLeft")}</button>
-    <button class="dtm-play" data-dtm="play" disabled>${icon("play")}<span>試聴</span></button>
-    <button class="dtm-iconbtn" data-dtm="next-bar" title="1小節後">${icon("chevronRight")}</button>
-    <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>ソロ</span></label>
-    <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
-    <span class="dtm-grow"></span>
-    <span class="dtm-label">BPM</span>
-    <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
+    <div class="dtm-topbar-row1">
+      <button class="dtm-iconbtn" data-dtm="prev-bar" title="1小節前">${icon("chevronLeft")}</button>
+      <button class="dtm-play" data-dtm="play" disabled>${icon("play")}<span>試聴</span></button>
+      <button class="dtm-iconbtn" data-dtm="next-bar" title="1小節後">${icon("chevronRight")}</button>
+      <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>ソロ</span></label>
+      <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
+      <span class="dtm-grow"></span>
+      <span class="dtm-label">BPM</span>
+      <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
+    </div>
+    <div class="dtm-tracks" data-dtm="track-tabs"></div>
   </div>
 
   <div class="dtm-tooldock">
@@ -146,8 +149,6 @@ export const buildUI = (
       <option value="4">3連32</option>
     </select>
   </div>
-
-  <div class="dtm-tracks" data-dtm="track-tabs"></div>
 
   <div class="dtm-roll-wrap">
     <div class="dtm-roll" data-dtm="roll">

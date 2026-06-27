@@ -159,7 +159,7 @@ export const DAW_CSS = `
   top: 0;
   z-index: 20;
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--dtm-gap);
   padding: 6px;
@@ -169,18 +169,19 @@ export const DAW_CSS = `
     inset 0 0 0 2px var(--c-black),
     0 0 0 2px var(--dtm-success),
     4px 4px 0 var(--c-black);
+}
+.dtm-topbar-row1 {
+  display: flex;
+  align-items: center;
+  gap: var(--dtm-gap);
+  flex-basis: 100%;
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
-.dtm-topbar::-webkit-scrollbar {
-  display: none;
-}
-.dtm-topbar > * {
-  flex-shrink: 0;
-}
-.dtm-topbar > .dtm-grow {
-  flex-shrink: 1;
-}
+.dtm-topbar-row1::-webkit-scrollbar { display: none; }
+.dtm-topbar-row1 > * { flex-shrink: 0; }
+.dtm-topbar-row1 > .dtm-grow { flex-shrink: 1; }
 
 /* PLAYボタン — ゲームの「決定ボタン」的存在感 */
 .dtm-play {
@@ -370,46 +371,39 @@ export const DAW_CSS = `
 .dtm-modebtn--active { background: var(--dtm-primary); color: var(--dtm-pfg); }
 .dtm-modebtn:not(.dtm-modebtn--active):active { background: var(--dtm-border2); }
 
-/* ─── トラックピル（キャラクター選択ボタン） ─── */
+/* ─── トラックピル（番号ボタン、トランスポートバー2行目） ─── */
 .dtm-tracks {
+  flex-basis: 100%;
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--dtm-gap);
+  flex-wrap: nowrap;
+  gap: 3px;
 }
 .dtm-pill {
   --dtm-pill-color: var(--dtm-primary);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex: 1 1 auto;
   justify-content: center;
-  min-height: 42px;
-  padding: 0 12px;
-  border: 2px solid var(--dtm-border2);
-  background: var(--dtm-deep);
-  color: var(--dtm-muted);
+  flex: 1 1 0;
+  min-width: 0;
+  height: 26px;
+  padding: 0;
+  border: 2px solid var(--c-black);
+  background: color-mix(in srgb, var(--dtm-pill-color) 40%, black);
+  color: var(--c-white);
   font-family: var(--dtm-font);
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: .1em;
+  font-size: 11px;
+  font-weight: bold;
   cursor: pointer;
-  box-shadow: 3px 3px 0 var(--c-black);
+  box-shadow: 2px 2px 0 var(--c-black);
+  opacity: 0.7;
 }
-.dtm-pill .dtm-dot {
-  width: 8px; height: 8px;
-  background: var(--dtm-pill-color);
-  flex: 0 0 auto;
-  box-shadow: 1px 1px 0 var(--c-black);
-}
-/* アクティブ選択 = 金色ハイライト + カーソル */
+/* アクティブ選択 = 不透明 + 金枠 */
 .dtm-pill--active {
+  opacity: 1;
   border-color: var(--dtm-gold);
-  color: var(--dtm-gold);
-  background: var(--dtm-surface);
-  box-shadow: 0 0 0 2px var(--dtm-gold), 3px 3px 0 var(--c-black);
+  box-shadow: 0 0 0 1px var(--dtm-gold), 2px 2px 0 var(--c-black);
 }
-.dtm-pill--active::before { content: "► "; font-size: 10px; }
-.dtm-pill:not(.dtm-pill--active):active { transform: translate(3px,3px); box-shadow: none; }
+.dtm-pill:not(.dtm-pill--active):active { transform: translate(2px,2px); box-shadow: none; }
 
 /* ─── ピアノロール（トラッカー風） ─── */
 .dtm-roll-wrap { display: flex; gap: var(--dtm-gap); }
