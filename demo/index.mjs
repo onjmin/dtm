@@ -10273,7 +10273,10 @@ var SoundFont = class _SoundFont {
     Object.assign(src, _param.src);
     const _duration = duration + _SoundFont.afterTime;
     const end = _when + (isDrum ? buffer.duration : src.loop ? _duration : Math.min(_duration, _param.max));
-    if (!isDrum) g.gain.linearRampToValueAtTime(0, end);
+    if (!isDrum) {
+      if (src.loop) g.gain.setValueAtTime(volume, end - _SoundFont.afterTime);
+      g.gain.linearRampToValueAtTime(0, end);
+    }
     src.connect(g).connect(destination);
     src.start(_when);
     src.stop(end);

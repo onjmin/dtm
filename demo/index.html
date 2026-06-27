@@ -289,12 +289,12 @@
                            shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
                     リンクをコピー
                 </button>
-                <button id="discord-share-btn"
+                <button id="multiplay-btn"
                     class="min-h-[40px] px-4 border-2 border-pico-lavend bg-pico-black text-pico-lavend
                            text-xs uppercase tracking-widest cursor-pointer font-pixel
                            shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none"
-                    title="Discord Activityで再生するためのコードをコピー">
-                    Discord
+                    title="他の人とリアルタイムで協力作曲できるDiscord Activity">
+                    マルチプレイ
                 </button>
                 <button id="show-history-btn"
                     class="min-h-[40px] px-4 border-2 border-pico-yellow bg-pico-black text-pico-yellow
@@ -619,7 +619,6 @@
 
         // ── 共有リンクコピー機能 ──
         const shareBtn = document.getElementById('share-link-copy');
-        const discordShareBtn = document.getElementById('discord-share-btn');
 
         shareBtn.addEventListener('click', async () => {
             if (!daw) return;
@@ -638,24 +637,9 @@
             }
         });
 
-        // ── Discord Activity 共有コードコピー機能 ──
-        // MMLペイロード（g.xxx 部分）をコピーする
-        // ユーザーはDiscord Activityを起動してこのコードを貼り付けると再生できる
-        discordShareBtn.addEventListener('click', async () => {
-            if (!daw) return;
-            const { full } = daw.getMML();
-            try {
-                const payload = await encodeMml(full);
-                // Discord Activity で貼り付けるコード（ペイロード部分のみ）
-                openShareModal(
-                    'discord-share-modal-overlay',
-                    payload,
-                    'Discord用コードをコピーしました！ Activityに貼り付けてください。',
-                    'text-pico-lavend text-xs uppercase tracking-widest'
-                );
-            } catch (err) {
-                console.error(err);
-            }
+        // ── マルチプレイモーダル ──
+        document.getElementById('multiplay-btn').addEventListener('click', () => {
+            document.getElementById('multiplay-modal-overlay').classList.remove('hidden');
         });
 
         // ── 作業履歴（スナップショット）機能 ──
@@ -947,28 +931,42 @@
         </div>
     </div>
 
-    <!-- ════ Discord 共有モーダル ════ -->
-    <div id="discord-share-modal-overlay"
+    <!-- ════ マルチプレイモーダル ════ -->
+    <div id="multiplay-modal-overlay"
         class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden"
         onclick="if(event.target===this)this.classList.add('hidden')">
         <div class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
             <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
-                <span class="text-pico-yellow text-sm font-bold">Discord Activity コード</span>
+                <span class="text-pico-yellow text-sm font-bold">マルチプレイ作曲 (Discord Activity)</span>
                 <button class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none"
-                    onclick="document.getElementById('discord-share-modal-overlay').classList.add('hidden')">&times;</button>
+                    onclick="document.getElementById('multiplay-modal-overlay').classList.add('hidden')">&times;</button>
             </div>
-            <div class="p-4 flex flex-col gap-3 text-xs">
-                <p class="text-pico-lavend leading-relaxed">Discord Activity を起動して、このコードを貼り付けると再生できます。</p>
-                <textarea readonly
-                    class="w-full bg-pico-black border-2 border-pico-lavend text-pico-lavend font-pixel text-xs p-2 resize-none leading-relaxed cursor-pointer"
-                    rows="4"
-                    onclick="this.select()"
-                    style="word-break:break-all"></textarea>
-                <div class="flex items-center gap-3">
-                    <button class="share-modal-copy-btn min-h-[36px] px-4 border-2 border-pico-lavend bg-pico-black text-pico-lavend
-                                   text-xs uppercase tracking-widest cursor-pointer font-pixel
-                                   shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">コピー</button>
-                    <span class="share-modal-status text-xs uppercase tracking-widest"></span>
+            <div class="p-4 flex flex-col gap-3 text-xs overflow-y-auto">
+                <p class="text-pico-cyan leading-relaxed">
+                    Discord 上で他の人とリアルタイムに協力して作曲できるアクティビティです。
+                </p>
+                <div class="bg-pico-black/60 border border-pico-lavend/30 rounded p-3">
+                    <p class="text-pico-yellow mb-1 font-bold">できること</p>
+                    <ul class="list-disc pl-4 text-pico-lavend leading-relaxed space-y-1">
+                        <li>最大15人のプレイヤーが各トラックを分担して同時編集</li>
+                        <li>ノートの追加・削除がリアルタイムで全員に同期</li>
+                        <li>他のプレイヤーの編集中の位置がカーソルで見える</li>
+                        <li>各プレイヤーの音声ミュート／視覚的非表示を個別設定</li>
+                        <li>満員時は読み取り専用（スペクテーター）で参加可能</li>
+                    </ul>
+                </div>
+                <div class="bg-pico-black/40 border border-pico-gray/30 rounded p-3">
+                    <p class="text-pico-lavend text-[10px] leading-relaxed break-all">
+                        下のリンクからDiscordアクティビティで呼び出せるようになります。
+                    </p>
+                    <a href="https://discord.com/oauth2/authorize?client_id=1519696988495548547"
+                        target="_blank" rel="noopener"
+                        class="block w-full mt-2 px-3 py-2 border-2 border-pico-lavend bg-pico-black text-pico-lavend
+                               text-xs uppercase tracking-widest font-pixel text-center no-underline
+                               shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none
+                               hover:text-pico-cyan hover:border-pico-cyan">
+                        ▶ Discord アクティビティを追加
+                    </a>
                 </div>
             </div>
         </div>
