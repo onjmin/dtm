@@ -339,8 +339,12 @@ export const createDtmStudio = async (
 	drumGain.connect(audioCtx.destination);
 
 	const resumeAudio = (): Promise<void> => {
-		if (audioCtx.state === "suspended") return audioCtx.resume();
-		return Promise.resolve();
+		// Safari は new AudioContext() 直後に state が "running" と報告するが、
+		// ユーザー操作前はオーディオ出力が実際には有効化されていない場合がある。
+		// "running" でも resume() を呼ぶことは no-op で安全なため、
+		// closed 以外では常に resume() を呼んで Safari の autoplay ゲートを確実に開く。
+		if (audioCtx.state === "closed") return Promise.resolve();
+		return audioCtx.resume();
 	};
 
 	// ── エンジン（注入優先、無ければ組み込み SoundFont）──
