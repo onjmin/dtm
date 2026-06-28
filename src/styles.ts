@@ -405,8 +405,8 @@ export const DAW_CSS = `
 .dtm-roll {
   position: relative;
   flex: 1 1 auto;
-  height: 56vh;
-  min-height: 280px;
+  height: 32vh;
+  max-height: 32vh;
   background: var(--dtm-deep);
   border: 2px solid var(--c-black);
   box-shadow:
