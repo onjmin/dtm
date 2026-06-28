@@ -82,7 +82,7 @@ export const DAW_CSS = `
   display: flex;
   flex-direction: column;
   gap: var(--dtm-gap);
-  padding: 6px;
+  padding: 0;
   image-rendering: pixelated;
   -webkit-font-smoothing: none;
   -moz-osx-font-smoothing: unset;
