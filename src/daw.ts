@@ -2271,27 +2271,11 @@ export const mountDAW = (
 		// マクロ
 		refs.macroClear.addEventListener("click", () => {
 			const active = getActive();
-			const notesBefore = active.core.getNotes().map((n) => ({
-				startStep: n.startStep,
-				pitch: n.pitch,
-				durationSteps: n.durationSteps,
-				velocity: n.velocity,
-			}));
-
 			active.core.beginBatch();
 			active.core.clearNotesWithoutHistory();
 			active.core.endBatch();
 			active.core.saveHistory();
 			redrawAll();
-
-			// Trigger onNotesPatch manually to notify other collaborative session members
-			if (!suppressPatch && options.onNotesPatch && notesBefore.length > 0) {
-				const removed = notesBefore.map((n) => ({
-					startStep: n.startStep,
-					pitch: n.pitch,
-				}));
-				options.onNotesPatch(activeTrackId, [], removed);
-			}
 		});
 		refs.macroRandom.addEventListener("click", () => {
 			generateRandomPattern(getActive().core, {
@@ -2770,15 +2754,10 @@ export const mountDAW = (
 				});
 			}
 			for (const r of removed) {
-				const matchingNotes = track.core
+				const note = track.core
 					.getNotes()
-					.filter(
-						(n) =>
-							Math.abs(n.startStep - r.startStep) < 0.1 && n.pitch === r.pitch,
-					);
-				for (const note of matchingNotes) {
-					track.core.deleteNoteById(note.id);
-				}
+					.find((n) => n.startStep === r.startStep && n.pitch === r.pitch);
+				if (note) track.core.deleteNoteById(note.id);
 			}
 			track.core.endBatch();
 			suppressPatch = false;
@@ -2833,36 +2812,6 @@ export const mountDAW = (
 				else side = "bottom";
 			}
 			return { x, y, onScreen, side };
-		},
-		clearTrack: (trackId: string): void => {
-			const track = trackStates.find((t) => t.config.id === trackId);
-			if (!track) return;
-
-			const notesBefore = track.core.getNotes().map((n) => ({
-				startStep: n.startStep,
-				pitch: n.pitch,
-				durationSteps: n.durationSteps,
-				velocity: n.velocity,
-			}));
-
-			if (notesBefore.length === 0) return;
-
-			suppressPatch = true;
-			track.core.beginBatch();
-			track.core.clearNotesWithoutHistory();
-			track.core.endBatch();
-			track.core.saveHistory();
-			suppressPatch = false;
-			redrawAll();
-
-			// Trigger onNotesPatch manually for synchronization
-			if (options.onNotesPatch) {
-				const removed = notesBefore.map((n) => ({
-					startStep: n.startStep,
-					pitch: n.pitch,
-				}));
-				options.onNotesPatch(trackId, [], removed);
-			}
 		},
 		destroy: () => {
 			sequencer.stop();
