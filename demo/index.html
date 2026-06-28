@@ -961,13 +961,15 @@
         <div
             class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
             <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
-                <span class="text-pico-yellow text-sm font-bold">マルチプレイ作曲 (Discord Activity)</span>
+                <!-- タイトルを分かりやすく変更 -->
+                <span class="text-pico-yellow text-sm font-bold">マルチプレイ作曲 (DTMコラボ)</span>
                 <button class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none"
                     onclick="document.getElementById('multiplay-modal-overlay').classList.add('hidden')">&times;</button>
             </div>
             <div class="p-4 flex flex-col gap-3 text-xs overflow-y-auto">
+                <!-- 現在のページのマルチプレイ版であることを明記 -->
                 <p class="text-pico-cyan leading-relaxed">
-                    Discord 上で他の人とリアルタイムに協力して作曲できるアクティビティです。
+                    現在のページをそのままマルチプレイに対応させた、リアルタイム共同編集版のWebサービスです。
                 </p>
                 <div class="bg-pico-black/60 border border-pico-lavend/30 rounded p-3">
                     <p class="text-pico-yellow mb-1 font-bold">できること</p>
@@ -981,14 +983,14 @@
                 </div>
                 <div class="bg-pico-black/40 border border-pico-gray/30 rounded p-3">
                     <p class="text-pico-lavend text-[10px] leading-relaxed break-all">
-                        下のリンクからDiscordアクティビティで呼び出せるようになります。
+                        下のリンクから「DTMコラボ」へ移動し、ルームを作成・参加して一緒に作曲できます。
                     </p>
-                    <a href="https://discord.com/oauth2/authorize?client_id=1519696988495548547" target="_blank"
-                        rel="noopener" class="block w-full mt-2 px-3 py-2 border-2 border-pico-lavend bg-pico-black text-pico-lavend
+                    <!-- 指定のURLへ接続 -->
+                    <a href="https://onjmin.github.io/dtm-collab/" target="_blank" rel="noopener" class="block w-full mt-2 px-3 py-2 border-2 border-pico-lavend bg-pico-black text-pico-lavend
                                text-xs uppercase tracking-widest font-pixel text-center no-underline
                                shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none
                                hover:text-pico-cyan hover:border-pico-cyan">
-                        ▶ Discord アクティビティを追加
+                        ▶ DTMコラボを開く
                     </a>
                 </div>
             </div>
