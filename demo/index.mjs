@@ -1335,7 +1335,7 @@ var buildUI = (target, options) => {
     </div>
   </details>
 
-  <details class="dtm-panel" style="display: none;">
+  <details class="dtm-panel">
     <summary>\u30DE\u30AF\u30ED</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row">
@@ -9156,24 +9156,11 @@ var mountDAW = (target, options = {}) => {
     });
     refs.macroClear.addEventListener("click", () => {
       const active = getActive();
-      const notesBefore = active.core.getNotes().map((n) => ({
-        startStep: n.startStep,
-        pitch: n.pitch,
-        durationSteps: n.durationSteps,
-        velocity: n.velocity
-      }));
       active.core.beginBatch();
       active.core.clearNotesWithoutHistory();
       active.core.endBatch();
       active.core.saveHistory();
       redrawAll();
-      if (!suppressPatch && options.onNotesPatch && notesBefore.length > 0) {
-        const removed = notesBefore.map((n) => ({
-          startStep: n.startStep,
-          pitch: n.pitch
-        }));
-        options.onNotesPatch(activeTrackId, [], removed);
-      }
     });
     refs.macroRandom.addEventListener("click", () => {
       generateRandomPattern(getActive().core, {
@@ -9596,12 +9583,8 @@ var mountDAW = (target, options = {}) => {
         });
       }
       for (const r of removed) {
-        const matchingNotes = track.core.getNotes().filter(
-          (n) => Math.abs(n.startStep - r.startStep) < 0.1 && n.pitch === r.pitch
-        );
-        for (const note of matchingNotes) {
-          track.core.deleteNoteById(note.id);
-        }
+        const note = track.core.getNotes().find((n) => n.startStep === r.startStep && n.pitch === r.pitch);
+        if (note) track.core.deleteNoteById(note.id);
       }
       track.core.endBatch();
       suppressPatch = false;
@@ -9646,31 +9629,6 @@ var mountDAW = (target, options = {}) => {
         else side = "bottom";
       }
       return { x, y, onScreen, side };
-    },
-    clearTrack: (trackId) => {
-      const track = trackStates.find((t) => t.config.id === trackId);
-      if (!track) return;
-      const notesBefore = track.core.getNotes().map((n) => ({
-        startStep: n.startStep,
-        pitch: n.pitch,
-        durationSteps: n.durationSteps,
-        velocity: n.velocity
-      }));
-      if (notesBefore.length === 0) return;
-      suppressPatch = true;
-      track.core.beginBatch();
-      track.core.clearNotesWithoutHistory();
-      track.core.endBatch();
-      track.core.saveHistory();
-      suppressPatch = false;
-      redrawAll();
-      if (options.onNotesPatch) {
-        const removed = notesBefore.map((n) => ({
-          startStep: n.startStep,
-          pitch: n.pitch
-        }));
-        options.onNotesPatch(trackId, [], removed);
-      }
     },
     destroy: () => {
       sequencer.stop();
