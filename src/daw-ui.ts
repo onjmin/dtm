@@ -228,7 +228,7 @@ export const buildUI = (
     </div>
   </details>
 
-  <details class="dtm-panel">
+  <details class="dtm-panel" style="display: none;">
     <summary>マクロ</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row">
