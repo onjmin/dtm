@@ -7654,7 +7654,10 @@ var mountDAW = (target, options = {}) => {
                 const currByKey = new Map(
                   notes.map((n) => [`${n.startStep}_${n.pitch}`, n])
                 );
-                const added = notes.filter((n) => !prevByKey.has(`${n.startStep}_${n.pitch}`)).map((n) => ({
+                const added = notes.filter((n) => {
+                  const prev = prevByKey.get(`${n.startStep}_${n.pitch}`);
+                  return !prev || prev.durationSteps !== n.durationSteps || prev.velocity !== n.velocity;
+                }).map((n) => ({
                   startStep: n.startStep,
                   pitch: n.pitch,
                   durationSteps: n.durationSteps,
@@ -7665,7 +7668,7 @@ var mountDAW = (target, options = {}) => {
                   options.onNotesPatch(config.id, added, removed);
                 }
               }
-              prevNotes = [...notes];
+              prevNotes = notes.map((n) => ({ ...n }));
               redrawAll();
               updateUndoRedo();
             }
@@ -9577,6 +9580,8 @@ var mountDAW = (target, options = {}) => {
       suppressPatch = true;
       track.core.beginBatch();
       for (const n of added) {
+        const existing = track.core.getNotes().find((e) => e.startStep === n.startStep && e.pitch === n.pitch);
+        if (existing) track.core.deleteNoteById(existing.id);
         track.core.addNote(n.startStep, n.pitch, {
           noteLengthSteps: n.durationSteps,
           velocity: n.velocity
