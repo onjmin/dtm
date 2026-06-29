@@ -475,8 +475,18 @@ export const mountDAW = (
 								const currByKey = new Map(
 									notes.map((n) => [`${n.startStep}_${n.pitch}`, n]),
 								);
+								// added は「新規ノート」に加え「同一キー(startStep,pitch)のまま
+								// durationSteps/velocity が変化したノート」も含める（リサイズ/ベロシティ同期）。
+								// 受信側 applyPatch は同一キーがあれば upsert（上書き）する。
 								const added = notes
-									.filter((n) => !prevByKey.has(`${n.startStep}_${n.pitch}`))
+									.filter((n) => {
+										const prev = prevByKey.get(`${n.startStep}_${n.pitch}`);
+										return (
+											!prev ||
+											prev.durationSteps !== n.durationSteps ||
+											prev.velocity !== n.velocity
+										);
+									})
 									.map((n) => ({
 										startStep: n.startStep,
 										pitch: n.pitch,
@@ -490,7 +500,10 @@ export const mountDAW = (
 									options.onNotesPatch(config.id, added, removed);
 								}
 							}
-							prevNotes = [...notes];
+							// moveNote/resizeNote はノートオブジェクトをその場で書き換えるため、
+							// 参照のシャローコピーだと次回差分時に旧状態が失われる。
+							// 値コピーでスナップショットして移動・リサイズを確実に検出する。
+							prevNotes = notes.map((n) => ({ ...n }));
 							redrawAll();
 							updateUndoRedo();
 						},
@@ -2748,6 +2761,12 @@ export const mountDAW = (
 			suppressPatch = true;
 			track.core.beginBatch();
 			for (const n of added) {
+				// upsert: 同一キー(startStep,pitch)が既にあれば一旦削除してから追加し、
+				// durationSteps/velocity の変更（リサイズ等）を確実に反映する。
+				const existing = track.core
+					.getNotes()
+					.find((e) => e.startStep === n.startStep && e.pitch === n.pitch);
+				if (existing) track.core.deleteNoteById(existing.id);
 				track.core.addNote(n.startStep, n.pitch, {
 					noteLengthSteps: n.durationSteps,
 					velocity: n.velocity,
