@@ -7775,6 +7775,7 @@ var mountDAW = (target, options = {}) => {
     drawGrid(gridLineSteps);
     for (const t of trackStates) {
       if (hiddenTracks.has(t.config.id)) continue;
+      if (isSolo && t.config.id !== activeTrackId) continue;
       const [r, g, b] = t.config.color;
       const a = t.config.id === activeTrackId ? 1 : 0.3;
       drawNotes(t.core.getNotes(), [r, g, b, a]);
@@ -9109,6 +9110,7 @@ var mountDAW = (target, options = {}) => {
     });
     refs.soloCheckbox.addEventListener("change", () => {
       isSolo = refs.soloCheckbox.checked;
+      redrawAll();
     });
     refs.toolPen.addEventListener("click", () => setToolMode("pen"));
     refs.toolSelect.addEventListener("click", () => setToolMode("select"));
@@ -10883,9 +10885,9 @@ var createDtmStudio = async (options = {}) => {
     const daw = mountDAW(target, base);
     mountedEditors.push(daw);
     const wantPresetUI = presetUI ?? features.presetUI;
+    const rollEl = target.querySelector('[data-dtm="roll"]');
     if (wantPresetUI) {
       editorPresetSelects.get(target)?.destroy();
-      const rollEl = target.querySelector('[data-dtm="roll"]');
       presetSelect = mountPresetSelect(target, {
         getDaw: () => daw,
         getTrackIds: () => trackIds,
@@ -10900,12 +10902,14 @@ var createDtmStudio = async (options = {}) => {
       editorPresetSelects.set(target, presetSelect);
     }
     daw.setInstrument(initialPreset);
+    const initialOverlay = rollEl ? showLoadingOverlay(rollEl) : null;
     daw.setLoading?.(true);
     void loadPreset(
       initialPreset,
       trackIds,
       isAdvancedMode ? "advanced" : "simple"
     ).finally(() => {
+      initialOverlay?.remove();
       daw.setLoading?.(false);
     });
     const destroy = () => {
