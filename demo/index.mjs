@@ -11207,6 +11207,7 @@ export {
   playSingingMML,
   setDrawOffset,
   shiftNotes,
+  showLoadingOverlay,
   stripLyrics,
   stripMmlMeta,
   vocalVolumeToGain

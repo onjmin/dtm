@@ -366,7 +366,7 @@
             /^127\.|^10\.|^192\.168\.|^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(location.hostname);
         const DTM = await import(isLocal ? `http://${location.hostname}:40298/dist/index.mjs` : './index.mjs');
 
-        const { createDtmStudio, INSTRUMENT_PRESETS, TRACKS_SIMPLE, TRACKS_ADVANCED, encodeMml, decodeMml, parseMML, VOICE_IMAGE_KEY, VOICE_IMAGES } = DTM;
+        const { createDtmStudio, INSTRUMENT_PRESETS, TRACKS_SIMPLE, TRACKS_ADVANCED, encodeMml, decodeMml, parseMML, VOICE_IMAGE_KEY, VOICE_IMAGES, showLoadingOverlay } = DTM;
 
         // ── 永続化（モード / 楽器 / ドラム）。MML読込で #inst= / #drum= が自動入力され得るため値も保存する ──
         const MODE_STORAGE_KEY = 'dtm-mode';
@@ -418,8 +418,16 @@
             const wasPlaying = daw ? (daw.getPlaybackState() === 'playing') : false;
             if (wasPlaying && daw) daw.pause();
             loadingEl.style.display = '';
+            daw?.setLoading?.(true);
+            const rollEl = appEl.querySelector('[data-dtm="roll"]');
+            const overlay = rollEl ? showLoadingOverlay(rollEl) : null;
             try { await studio.loadPreset(v, trackIdsFor(currentMode)); }
-            finally { loadingEl.style.display = 'none'; if (wasPlaying && daw) daw.play(); }
+            finally {
+                overlay?.remove();
+                daw?.setLoading?.(false);
+                loadingEl.style.display = 'none';
+                if (wasPlaying && daw) daw.play();
+            }
         };
 
         presetSelect.addEventListener('change', () => {
