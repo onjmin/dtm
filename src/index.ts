@@ -52,7 +52,7 @@ export {
 	type PresetSelectOptions,
 } from "./studio";
 // UIユーティリティ
-export { DAW_CSS, injectStyles } from "./styles";
+export { DAW_CSS, injectStyles, showLoadingOverlay } from "./styles";
 export { createSynth, freqFromPitch, type Synth } from "./synth";
 export type { NoteData, NoteRemove } from "./types";
 export * from "./types";
