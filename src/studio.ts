@@ -755,11 +755,11 @@ export const createDtmStudio = async (
 		// プリセット選択UI（任意）。DAW の先頭へ差し込み、配線は mountPresetSelect に委ねる。
 		// 同じ target への再マウントで重複しないよう、既存分は破棄する。
 		const wantPresetUI = presetUI ?? features.presetUI;
+		// ローディングの暗幕はコンポーネント全体ではなくピアノロールだけに被せる。
+		// buildUI 直後なので roll 要素は存在し、楽器変更では再マウントされない（＝寿命中有効）。
+		const rollEl = target.querySelector<HTMLElement>('[data-dtm="roll"]');
 		if (wantPresetUI) {
 			editorPresetSelects.get(target)?.destroy();
-			// ローディングの暗幕はコンポーネント全体ではなくピアノロールだけに被せる。
-			// buildUI 直後なので roll 要素は存在し、楽器変更では再マウントされない（＝寿命中有効）。
-			const rollEl = target.querySelector<HTMLElement>('[data-dtm="roll"]');
 			presetSelect = mountPresetSelect(target, {
 				getDaw: () => daw,
 				getTrackIds: () => trackIds,
@@ -775,13 +775,16 @@ export const createDtmStudio = async (
 		}
 
 		// このエディタのトラック構成ぶんプリセットをロードして名前も埋め込む。
+		// プリセット変更時（applyPreset）と同様、ロード中はピアノロールに暗幕を被せる。
 		daw.setInstrument(initialPreset);
+		const initialOverlay = rollEl ? showLoadingOverlay(rollEl) : null;
 		daw.setLoading?.(true);
 		void loadPreset(
 			initialPreset,
 			trackIds,
 			isAdvancedMode ? "advanced" : "simple",
 		).finally(() => {
+			initialOverlay?.remove();
 			daw.setLoading?.(false);
 		});
 
