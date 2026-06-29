@@ -623,6 +623,7 @@ export const mountDAW = (
 		drawGrid(gridLineSteps);
 		for (const t of trackStates) {
 			if (hiddenTracks.has(t.config.id)) continue;
+			if (isSolo && t.config.id !== activeTrackId) continue;
 			const [r, g, b] = t.config.color;
 			const a = t.config.id === activeTrackId ? 1 : 0.3;
 			drawNotes(t.core.getNotes(), [r, g, b, a]);
@@ -2226,6 +2227,7 @@ export const mountDAW = (
 
 		refs.soloCheckbox.addEventListener("change", () => {
 			isSolo = refs.soloCheckbox.checked;
+			redrawAll();
 		});
 
 		refs.toolPen.addEventListener("click", () => setToolMode("pen"));
