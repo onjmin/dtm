@@ -758,7 +758,6 @@
         const historyModalOverlay = document.getElementById('history-modal-overlay');
         const historyModalClose = document.getElementById('history-modal-close');
         const historySaveCurrent = document.getElementById('history-save-current');
-        const historyClearAll = document.getElementById('history-clear-all');
         const historyDeleteSelected = document.getElementById('history-delete-selected');
         const historyList = document.getElementById('history-list');
         const historyToast = document.getElementById('history-toast');
@@ -1030,15 +1029,7 @@
             }
         });
 
-        historyClearAll.addEventListener('click', () => {
-            if (confirm('すべての作業履歴を削除しますか？')) {
-                stopAllPreviews();
-                localStorage.removeItem(HISTORY_STORAGE_KEY);
-                selectedHistoryIndices.clear();
-                updateSelectionCountDisplay();
-                updateHistoryList();
-            }
-        });
+
 
         historyDeleteSelected.addEventListener('click', () => {
             if (selectedHistoryIndices.size === 0) {
@@ -1211,8 +1202,6 @@
                             <line x1="14" y1="11" x2="14" y2="17"></line>
                         </svg>
                     </button>
-                    <button id="history-clear-all"
-                        class="text-pico-red hover:text-pico-pink text-xs cursor-pointer font-bold">全削除</button>
                     <button id="history-modal-close"
                         class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none">&times;</button>
                 </div>
