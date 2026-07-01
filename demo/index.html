@@ -685,8 +685,12 @@
         const saveSnapshot = () => {
             if (!daw) return;
             if (gracePeriodActive) return;
-            const { full } = daw.getMML();
+            const mmlData = daw.getMML();
+            const { full, trackCount } = mmlData;
             if (!full || full === lastSavedMml) return;
+
+            // ノートが1つも存在しない場合は有意な編集とみなさずスナップショット対象外とする
+            if (trackCount === 0) return;
 
             try {
                 let history = [];
