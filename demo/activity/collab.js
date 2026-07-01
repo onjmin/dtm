@@ -619,7 +619,7 @@ const initDAW = async (spectator = false) => {
     const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     const DTM = await import(isLocal
         ? 'http://localhost:40298/dist/index.mjs'
-        : '/.proxy/dtm/demo/index.mjs?v=8b819e1a');
+        : '/.proxy/dtm/demo/index.mjs?v=6ed8c932');
 
     const { createDtmStudio, TRACKS_ADVANCED } = DTM;
 
