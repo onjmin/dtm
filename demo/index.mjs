@@ -7853,7 +7853,9 @@ var mountDAW = (target, options = {}) => {
           0,
           Math.floor(currentOffsetX / renderConfig.stepWidth / snapGridSteps) * snapGridSteps
         );
-        void jumpTo(snappedStep);
+        pausedPlayStep = snappedStep;
+        currentPlayStep = snappedStep;
+        void play();
       }
     };
     refs.hScroll.addEventListener("pointerdown", (e) => {
