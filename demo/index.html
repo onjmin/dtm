@@ -841,7 +841,7 @@
                 const directUrl = `${location.href.split('#')[0]}#${payload}`;
 
                 const meta = document.createElement('div');
-                meta.className = 'flex items-center justify-between text-xs text-pico-silver font-bold';
+                meta.className = 'flex items-center justify-between text-sm text-pico-silver font-bold';
                 const timeStr = new Date(item.timestamp).toLocaleString();
                 const modeStr = item.mode === 'advanced' ? '上級者' : '初心者';
 
@@ -893,8 +893,8 @@
                 leftContainer.appendChild(iconContainer);
 
                 const rightSpan = document.createElement('span');
-                rightSpan.textContent = `${item.mml.length}文字 (圧縮後: ${payload.length}B)`;
-                rightSpan.className = 'text-pico-cyan text-xs font-bold';
+                rightSpan.innerHTML = `<span class="text-pico-yellow">${item.mml.length}</span>文字 (圧縮後: <span class="text-pico-yellow">${payload.length}</span>B)`;
+                rightSpan.className = 'text-pico-cyan text-sm font-bold';
 
                 meta.appendChild(leftContainer);
                 meta.appendChild(rightSpan);
@@ -1187,8 +1187,9 @@
                         class="w-7 h-7 flex items-center justify-center border border-pico-cyan text-pico-cyan bg-pico-black cursor-pointer hover:bg-pico-cyan hover:text-pico-black transition-colors rounded shadow-[1px_1px_0_#000] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
                         title="現在のスナップショットを保存">
                         <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                            <circle cx="12" cy="13" r="4"></circle>
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                            <polyline points="7 3 7 8 15 8"></polyline>
                         </svg>
                     </button>
                     <button id="history-delete-selected"
