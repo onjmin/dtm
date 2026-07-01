@@ -842,15 +842,13 @@
 
                 const meta = document.createElement('div');
                 meta.className = 'flex items-center justify-between text-sm text-pico-silver font-bold relative z-10';
-                
                 const dateObj = new Date(item.timestamp);
-                const yy = String(dateObj.getFullYear()).slice(-2);
-                const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dateObj.getDay()];
+                const monthName = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][dateObj.getMonth()];
                 const dd = String(dateObj.getDate()).padStart(2, '0');
                 const hh = String(dateObj.getHours()).padStart(2, '0');
                 const min = String(dateObj.getMinutes()).padStart(2, '0');
-                const ss = String(dateObj.getSeconds()).padStart(2, '0');
-                const shortTimeStr = `${yy}/${mm}/${dd} ${hh}:${min}:${ss}`;
+                const shortTimeStr = `${dayName} ${monthName} ${dd} ${hh}:${min}`;
 
                 const modeStr = item.mode === 'advanced' ? '上級者' : '初心者';
 
@@ -911,7 +909,7 @@
 
                 // 背景用のうっすらした日時表示
                 const bgTime = document.createElement('div');
-                bgTime.className = 'absolute right-2 bottom-[-4px] text-[24px] font-pixel font-bold text-pico-lavend opacity-10 pointer-events-none z-0 tracking-tighter select-none';
+                bgTime.className = 'absolute right-2 bottom-[-6px] text-[36px] font-pixel font-bold text-pico-lavend opacity-20 pointer-events-none z-0 tracking-tighter select-none';
                 bgTime.textContent = shortTimeStr;
                 div.appendChild(bgTime);
 
