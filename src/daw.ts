@@ -705,7 +705,8 @@ export const mountDAW = (
 				hScrollWasPlaying = false;
 				const snappedStep = Math.max(
 					0,
-					Math.floor(currentOffsetX / renderConfig.stepWidth / snapGridSteps) * snapGridSteps,
+					Math.floor(currentOffsetX / renderConfig.stepWidth / snapGridSteps) *
+						snapGridSteps,
 				);
 				// playStartStep は変えず、一時停止位置だけ更新して再開
 				pausedPlayStep = snappedStep;
