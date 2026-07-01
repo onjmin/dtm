@@ -835,7 +835,7 @@
                 const globalIndex = page * HISTORY_PAGE_SIZE + i;
 
                 const div = document.createElement('div');
-                div.className = 'flex flex-col gap-1.5 p-3 border border-pico-gray/30 bg-black/20 rounded relative overflow-hidden';
+                div.className = 'flex flex-col gap-1.5 p-3 border border-pico-gray/30 bg-black/20 rounded relative overflow-hidden shrink-0';
 
                 const payload = await encodeMml(item.mml);
                 const directUrl = `${location.href.split('#')[0]}#${payload}`;
@@ -909,7 +909,7 @@
 
                 // 背景用のうっすらした日時表示
                 const bgTime = document.createElement('div');
-                bgTime.className = 'absolute right-2 bottom-[-6px] text-[36px] font-pixel font-bold text-pico-lavend opacity-20 pointer-events-none z-0 tracking-tighter select-none';
+                bgTime.className = 'absolute right-2 top-[-6px] text-[36px] font-pixel font-bold text-pico-lavend opacity-20 pointer-events-none z-0 tracking-tighter select-none';
                 bgTime.textContent = shortTimeStr;
                 div.appendChild(bgTime);
 
