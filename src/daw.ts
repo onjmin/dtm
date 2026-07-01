@@ -707,7 +707,10 @@ export const mountDAW = (
 					0,
 					Math.floor(currentOffsetX / renderConfig.stepWidth / snapGridSteps) * snapGridSteps,
 				);
-				void jumpTo(snappedStep);
+				// playStartStep は変えず、一時停止位置だけ更新して再開
+				pausedPlayStep = snappedStep;
+				currentPlayStep = snappedStep;
+				void play();
 			}
 		};
 		refs.hScroll.addEventListener("pointerdown", (e) => {
