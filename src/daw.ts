@@ -697,8 +697,23 @@ export const mountDAW = (
 	const initScrollbarDrag = (): void => {
 		let draggingH = false;
 		let draggingV = false;
+		let hScrollWasPlaying = false;
+		const finishHScroll = (): void => {
+			if (!draggingH) return;
+			draggingH = false;
+			if (hScrollWasPlaying) {
+				hScrollWasPlaying = false;
+				const snappedStep = Math.max(
+					0,
+					Math.floor(currentOffsetX / renderConfig.stepWidth / snapGridSteps) * snapGridSteps,
+				);
+				void jumpTo(snappedStep);
+			}
+		};
 		refs.hScroll.addEventListener("pointerdown", (e) => {
 			draggingH = true;
+			hScrollWasPlaying = playbackState === "playing";
+			if (hScrollWasPlaying) pause();
 			e.preventDefault();
 			refs.hScroll.setPointerCapture(e.pointerId);
 			moveH(e.clientX);
@@ -715,9 +730,7 @@ export const mountDAW = (
 		refs.vScroll.addEventListener("pointermove", (e) => {
 			if (draggingV) moveV(e.clientY);
 		});
-		refs.hScroll.addEventListener("pointerup", () => {
-			draggingH = false;
-		});
+		refs.hScroll.addEventListener("pointerup", finishHScroll);
 		refs.vScroll.addEventListener("pointerup", () => {
 			draggingV = false;
 		});
@@ -726,7 +739,7 @@ export const mountDAW = (
 			if (draggingV) moveV(e.clientY);
 		});
 		document.addEventListener("pointerup", () => {
-			draggingH = false;
+			finishHScroll();
 			draggingV = false;
 		});
 
