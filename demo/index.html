@@ -714,14 +714,10 @@
                 return false;
             }
 
-            // ノートが1つも存在しない場合は有意な編集とみなさずスナップショット対象外とする
-            if (trackCount === 0) {
-                if (manual) showHistoryToast('ノートが空のため保存されません。', 'text-pico-orange');
-                return false;
-            }
+            // ノートが1つも存在しない場合は有意な編集とみなさず自動スナップショット対象外とする
+            if (!manual && trackCount === 0) return false;
 
-            if (lastSavedMml && isSimilarMml(full, lastSavedMml)) {
-                if (manual) showHistoryToast('前回と似ているためスキップされました。', 'text-pico-orange');
+            if (!manual && lastSavedMml && isSimilarMml(full, lastSavedMml)) {
                 console.log('[dtm] snapshot skipped due to similarity');
                 return false;
             }
