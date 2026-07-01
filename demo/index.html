@@ -835,14 +835,23 @@
                 const globalIndex = page * HISTORY_PAGE_SIZE + i;
 
                 const div = document.createElement('div');
-                div.className = 'flex flex-col gap-1.5 p-3 border border-pico-gray/30 bg-black/20 rounded';
+                div.className = 'flex flex-col gap-1.5 p-3 border border-pico-gray/30 bg-black/20 rounded relative overflow-hidden';
 
                 const payload = await encodeMml(item.mml);
                 const directUrl = `${location.href.split('#')[0]}#${payload}`;
 
                 const meta = document.createElement('div');
-                meta.className = 'flex items-center justify-between text-sm text-pico-silver font-bold';
-                const timeStr = new Date(item.timestamp).toLocaleString();
+                meta.className = 'flex items-center justify-between text-sm text-pico-silver font-bold relative z-10';
+                
+                const dateObj = new Date(item.timestamp);
+                const yy = String(dateObj.getFullYear()).slice(-2);
+                const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const dd = String(dateObj.getDate()).padStart(2, '0');
+                const hh = String(dateObj.getHours()).padStart(2, '0');
+                const min = String(dateObj.getMinutes()).padStart(2, '0');
+                const ss = String(dateObj.getSeconds()).padStart(2, '0');
+                const shortTimeStr = `${yy}/${mm}/${dd} ${hh}:${min}:${ss}`;
+
                 const modeStr = item.mode === 'advanced' ? '上級者' : '初心者';
 
                 const parsed = parseMML(item.mml, { collectLyrics: true });
@@ -866,7 +875,7 @@
                 label.appendChild(checkbox);
 
                 const leftSpan = document.createElement('span');
-                leftSpan.textContent = `${timeStr} | モード: ${modeStr} | BPM: ${bpmVal}`;
+                leftSpan.textContent = `モード: ${modeStr} | BPM: ${bpmVal}`;
                 label.appendChild(leftSpan);
 
                 leftContainer.appendChild(label);
@@ -893,16 +902,22 @@
                 leftContainer.appendChild(iconContainer);
 
                 const rightSpan = document.createElement('span');
-                rightSpan.innerHTML = `<span class="text-pico-yellow">${item.mml.length}</span>文字 (圧縮後: <span class="text-pico-yellow">${payload.length}</span>B)`;
+                rightSpan.innerHTML = `<span class="text-pico-yellow">${item.mml.length}</span>文字`;
                 rightSpan.className = 'text-pico-cyan text-sm font-bold';
 
                 meta.appendChild(leftContainer);
                 meta.appendChild(rightSpan);
                 div.appendChild(meta);
 
+                // 背景用のうっすらした日時表示
+                const bgTime = document.createElement('div');
+                bgTime.className = 'absolute right-2 bottom-[-4px] text-[24px] font-pixel font-bold text-pico-lavend opacity-10 pointer-events-none z-0 tracking-tighter select-none';
+                bgTime.textContent = shortTimeStr;
+                div.appendChild(bgTime);
+
                 // プレビュー表示用コンテナ
                 const playerContainer = document.createElement('div');
-                playerContainer.className = 'mt-2 border-t border-pico-gray/20 pt-2 hidden';
+                playerContainer.className = 'mt-2 border-t border-pico-gray/20 pt-2 hidden relative z-10';
                 const playerAppDiv = document.createElement('div');
                 playerContainer.appendChild(playerAppDiv);
 
@@ -936,7 +951,7 @@
                 });
 
                 const linkContainer = document.createElement('div');
-                linkContainer.className = 'flex items-center justify-between mt-2 gap-3';
+                linkContainer.className = 'flex items-center justify-between mt-2 gap-3 relative z-10';
 
                 const leftActions = document.createElement('div');
                 leftActions.className = 'flex items-center gap-3';
