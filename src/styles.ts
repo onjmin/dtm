@@ -897,6 +897,7 @@ export const DAW_CSS = `
   height: 20px;
   border-radius: 50%;
   object-fit: cover;
+  image-rendering: pixelated;
 }
 
 /* ─── 広幅拡張 ─── */

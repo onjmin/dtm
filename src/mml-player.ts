@@ -846,6 +846,7 @@ export const mountMmlPlayer = (
 		img.height = 20;
 		img.style.borderRadius = "50%";
 		img.style.objectFit = "cover";
+		img.style.imageRendering = "pixelated";
 		img.draggable = false;
 		promotedToImage.add(em);
 		em.textContent = "";
