@@ -118,6 +118,8 @@ export type MMLNotePlacement = {
 	startStep: number;
 	pitch: number;
 	durationSteps: number;
+	/** v コマンドで指定されたベロシティ（0-127、既定100） */
+	velocity: number;
 };
 
 /** 再生ビュー用の表示トークン（mountMmlPlayer のノート列ハイライトに使う） */
@@ -223,6 +225,7 @@ export const parseMML = (
 	let octave = 4;
 	let currentStep = 0;
 	let baseLength = 16;
+	let velocity = 100;
 
 	// 取り込み先トラック → 発音を供給したソースチャンネル集合。
 	// 1トラックに2系統以上集まれば「合算」されたとみなす（clamp畳み込み等）。
@@ -250,6 +253,7 @@ export const parseMML = (
 			octave = 4;
 			currentStep = 0;
 			baseLength = 16;
+			velocity = 100;
 			continue;
 		}
 
@@ -344,6 +348,8 @@ export const parseMML = (
 					if (bpm === null) {
 						bpm = clamp(Number.parseInt(numStr, 10), 1, 255);
 					}
+				} else if (ch === "v" && numStr) {
+					velocity = clamp(Number.parseInt(numStr, 10), 0, 127);
 				}
 				// 発音位置には影響しないが、再生専用UIがグレーアウト表示できるよう
 				// トークンとして残す（durationSteps 0 でハイライト対象外）。
@@ -394,6 +400,7 @@ export const parseMML = (
 						startStep: currentStep,
 						pitch: p,
 						durationSteps: Math.max(1, steps),
+						velocity,
 					});
 				}
 				pushTok("chord", currentStep, Math.max(1, steps), tokStart);
@@ -418,6 +425,7 @@ export const parseMML = (
 					startStep: currentStep,
 					pitch: midiPitch,
 					durationSteps: Math.max(1, steps),
+					velocity,
 				});
 				pushTok("note", currentStep, Math.max(1, steps), tokStart);
 				currentStep += steps;

@@ -2031,6 +2031,7 @@ export const mountDAW = (
 			if (!t) continue;
 			t.core.addNote(p.startStep, p.pitch, {
 				noteLengthSteps: p.durationSteps,
+				velocity: p.velocity,
 			});
 		}
 		if (parsedBpm) setBpm(parsedBpm);

@@ -119,7 +119,7 @@ export const playMML = (
 				startStep: p.startStep,
 				durationSteps: p.durationSteps,
 				pitch: p.pitch,
-				velocity: 100,
+				velocity: p.velocity,
 			}));
 		return { id: String(index), volume: masterVolume, notes };
 	});
