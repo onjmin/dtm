@@ -22,6 +22,7 @@ import {
 	KOE_VOICEBANK_TERMS,
 	PREWARM_NOTES,
 	panToStereo,
+	parseCustomVocals,
 	type SingingVoices,
 	type StreamVoiceTrack,
 	VOICE_IMAGE_KEY,
@@ -39,7 +40,7 @@ import {
 	DEFAULT_PAN,
 	DEFAULT_VOCAL_VOLUME,
 } from "./types";
-import { VOICE_IMAGES } from "./voice-images";
+import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "./voice-images";
 
 const STEPS_PER_BEAT = 48;
 const STEPS_PER_BAR = 192;
@@ -331,6 +332,11 @@ export const mountMmlPlayer = (
 		collectLyrics: true,
 	});
 	const lyricTracks = lyrics ?? new Map();
+	// カスタムボーカル宣言（@@key icon_url koe_url）。再生前にカタログへ流し込み、
+	// アイコン表示にも使う（parseMML は宣言行を無視するので生MMLから直接読む）
+	const customVocalByKey = new Map(
+		parseCustomVocals(mml).map((d) => [d.key, d]),
+	);
 	const bpm = parsedBpm ?? options.defaultBpm ?? DEFAULT_BPM;
 	// トップレベル宣言: ドラムパターンを解決（曲全体に効く。トラックとは1対1でない）
 	const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
@@ -837,11 +843,23 @@ export const mountMmlPlayer = (
 	for (const [index, lt] of lyricTracks) {
 		const em = emojiByTrack.get(index);
 		if (!em) continue;
+		const custom = customVocalByKey.get(lt.model.toLowerCase());
 		const imgKey = VOICE_IMAGE_KEY[lt.model.toLowerCase()];
-		const src = imgKey ? VOICE_IMAGES[imgKey] : undefined;
+		const src = custom
+			? custom.iconUrl || FALLBACK_VOCAL_ICON
+			: imgKey
+				? VOICE_IMAGES[imgKey]
+				: undefined;
 		if (!src) continue;
 		const img = doc.createElement("img");
 		img.src = src;
+		// カスタムアイコンのロード失敗時はフォールバック画像へ差し替える
+		if (custom) {
+			img.onerror = () => {
+				img.onerror = null;
+				img.src = FALLBACK_VOCAL_ICON;
+			};
+		}
 		img.width = 20;
 		img.height = 20;
 		img.style.borderRadius = "50%";
@@ -1369,6 +1387,15 @@ export const mountMmlPlayer = (
 				},
 			});
 			try {
+				// カスタムボーカルの .koe URL をカタログへ登録してからロードする
+				// （未登録だと catalog に無いキー扱いになり klatt へフォールバックしてしまう）
+				if (customVocalByKey.size > 0) {
+					v.registerVoicebanks?.(
+						Object.fromEntries(
+							[...customVocalByKey].map(([k, d]) => [k, d.url]),
+						),
+					);
+				}
 				await v.loadModels(tracks.map((t) => t.model));
 				if (skipSinging) return;
 				const startTime = performance.now();

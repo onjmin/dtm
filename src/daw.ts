@@ -12,12 +12,14 @@ import { DRUM_PATTERNS } from "./drum-config";
 import { icon } from "./icons";
 import { INSTRUMENT_PRESETS } from "./instrument-presets";
 import {
+	isValidHttpUrl,
 	KOE_VOICEBANK_LABELS,
 	KOE_VOICEBANK_TERMS,
 	KOE_VOICEBANKS,
 	MAX_VOCAL_VOLUME,
 	normalizeLyrics,
 	panToStereo,
+	parseCustomVocals,
 	type StreamVoiceTrack,
 	VOICE_IMAGE_KEY,
 	vocalVolumeToGain,
@@ -53,6 +55,7 @@ import {
 import { createSequencer, type Sequencer } from "./sequencer";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import type {
+	CustomVocalDef,
 	DawInstance,
 	DawMode,
 	DawOptions,
@@ -71,7 +74,7 @@ import {
 	DEFAULT_VOCAL_VOLUME,
 	MML_END_MARKER,
 } from "./types";
-import { VOICE_IMAGES } from "./voice-images";
+import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "./voice-images";
 
 const CHORD_INFO_HTML = `
 <div class="dtm-modal-body-content">
@@ -290,20 +293,30 @@ export const TRACKS_ADVANCED: TrackConfig[] = [
 const DEFAULT_TRACKS = TRACKS_SIMPLE;
 
 /**
- * 歌詞エディタのモデル選択肢（空文字＝「なし」は別途先頭に追加する）。
- * 内蔵フォルマント合成 "klatt" に加え、@onjmin/koe のUTAU音源（簡略キーワード）を並べる。
+ * 内蔵モデルの静的リスト（klatt + koe音源）。
+ * カスタムボーカルは mountDAW スコープ内で動的に追加する。
  */
-const LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
+const BASE_LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
 
-/** モデルキーワード → プルダウン表示名。未登録はキーワードをそのまま表示する */
-const LYRIC_MODEL_LABELS: Record<string, string> = {
+/** 内蔵モデルキーワード → プルダウン表示名 */
+const BASE_LYRIC_MODEL_LABELS: Record<string, string> = {
 	klatt: "軽量ロボ声",
 	...KOE_VOICEBANK_LABELS,
 };
 
-/** モデルキーワードのUI表示名を返す（未登録はキーワードそのまま） */
-const lyricModelLabel = (model: string): string =>
-	LYRIC_MODEL_LABELS[model] ?? model;
+/** モデルキーワードのUI表示名を返す（カスタムボーカル辞書を参照し、未登録はキーワードそのまま） */
+const lyricModelLabel = (
+	model: string,
+	customMap: Map<string, CustomVocalDef>,
+): string =>
+	BASE_LYRIC_MODEL_LABELS[model] ?? customMap.get(model)?.label ?? model;
+
+/**
+ * 歌唱モデルプルダウンの「カスタム音源を追加…」選択肢のセンチネル値。
+ * `+` はカスタムボーカルのキー文字集合（英数字+アンダースコア）に含まれないため、
+ * MML 宣言由来のキーと衝突しない。
+ */
+const CUSTOM_VOCAL_ADD_VALUE = "+custom";
 
 const clamp = (v: number, min: number, max: number): number =>
 	Math.min(Math.max(v, min), max);
@@ -418,6 +431,31 @@ export const mountDAW = (
 	// 初期化完了フラグ（MMLCore構築時の早期コールバックを抑止）
 	let ready = false;
 	let isLoading = false;
+
+	/**
+	 * カスタムボーカル辞書（key → CustomVocalDef）。
+	 * DawOptions.customVocals で静的初期化し、loadMML で MML 宣言行が上書きする。
+	 * UI（カスタム音源を追加…）からも登録される。
+	 */
+	const customVocalsMap = new Map<string, CustomVocalDef>();
+	/** 辞書へ登録する（キーは小文字化。内蔵モデル名との衝突は無視して乗っ取りを防ぐ） */
+	const registerCustomVocal = (def: CustomVocalDef): void => {
+		const key = def.key.toLowerCase();
+		if (BASE_LYRIC_MODELS.includes(key)) return;
+		customVocalsMap.set(key, { ...def, key });
+	};
+	/** 辞書を DawOptions.customVocals の静的登録だけの状態へ戻す（loadMML の先頭で使う） */
+	const resetCustomVocals = (): void => {
+		customVocalsMap.clear();
+		for (const d of options.customVocals ?? []) registerCustomVocal(d);
+	};
+	resetCustomVocals();
+	/** UI追加用の空きキー（custom1, custom2, …）を採番する */
+	const genCustomVocalKey = (): string => {
+		let n = 1;
+		while (customVocalsMap.has(`custom${n}`)) n++;
+		return `custom${n}`;
+	};
 
 	// 選択・コピー
 	let selectedNotes: Note[] = [];
@@ -1351,6 +1389,15 @@ export const mountDAW = (
 			const overlay = showLoadingOverlay(refs.rollContainer);
 			setLoading(true);
 			try {
+				// カスタムボーカルの .koe URL をカタログへ流し込んでからロードする
+				// （未登録だと catalog に無いキー扱いになり klatt へフォールバックしてしまう）
+				if (customVocalsMap.size > 0) {
+					voices.registerVoicebanks?.(
+						Object.fromEntries(
+							[...customVocalsMap].map(([k, d]) => [k, d.url]),
+						),
+					);
+				}
 				await voices.loadModels(streamTracks.map((t) => t.model));
 				await voices.warm(streamTracks);
 			} catch (err) {
@@ -1537,6 +1584,14 @@ export const mountDAW = (
         <a data-dtm="lyric-terms-link" target="_blank" rel="noopener" style="color:var(--dtm-primary);text-decoration:underline"></a>
         <span>の利用規約に従ってください</span>
       </div>
+      <div class="dtm-row dtm-hidden" data-dtm="lyric-custom" style="flex-direction:column;align-items:stretch;gap:4px">
+        <input type="url" class="dtm-input" data-dtm="lyric-custom-src" placeholder="音源URL（https://〜.koe）" aria-label="カスタム音源（.koe）のURL">
+        <input type="url" class="dtm-input" data-dtm="lyric-custom-icon" placeholder="アイコン画像URL（任意）" aria-label="カスタム音源のアイコン画像URL">
+        <div class="dtm-row">
+          <span class="dtm-label dtm-grow" data-dtm="lyric-custom-note" style="color:var(--dtm-warn)"></span>
+          <button class="dtm-btn dtm-btn--primary" data-dtm="lyric-custom-apply">追加</button>
+        </div>
+      </div>
       <div class="dtm-row" data-dtm="lyric-body" style="flex-direction:column;align-items:stretch">
         <div class="dtm-row">
           <span class="dtm-label">声量</span>
@@ -1587,6 +1642,21 @@ export const mountDAW = (
 			const lyricTermsLink = lyricDiv.querySelector(
 				'[data-dtm="lyric-terms-link"]',
 			) as HTMLAnchorElement;
+			const lyricCustom = lyricDiv.querySelector(
+				'[data-dtm="lyric-custom"]',
+			) as HTMLElement;
+			const lyricCustomSrc = lyricDiv.querySelector(
+				'[data-dtm="lyric-custom-src"]',
+			) as HTMLInputElement;
+			const lyricCustomIcon = lyricDiv.querySelector(
+				'[data-dtm="lyric-custom-icon"]',
+			) as HTMLInputElement;
+			const lyricCustomNote = lyricDiv.querySelector(
+				'[data-dtm="lyric-custom-note"]',
+			) as HTMLElement;
+			const lyricCustomApply = lyricDiv.querySelector(
+				'[data-dtm="lyric-custom-apply"]',
+			) as HTMLButtonElement;
 			// 定位ラベル: 64=C / 左寄りは L<量> / 右寄りは R<量>
 			const fmtPan = (pan: number): string =>
 				pan === 64 ? "C" : pan < 64 ? `L${64 - pan}` : `R${pan - 64}`;
@@ -1598,9 +1668,23 @@ export const mountDAW = (
 				lyricModelSel.appendChild(o);
 			};
 			addOpt("", "ボーカルなし");
-			for (const m of LYRIC_MODELS) addOpt(m, lyricModelLabel(m));
-			if (active.lyricModel && !LYRIC_MODELS.includes(active.lyricModel)) {
-				addOpt(active.lyricModel, lyricModelLabel(active.lyricModel));
+			// 内蔵モデル
+			for (const m of BASE_LYRIC_MODELS)
+				addOpt(m, lyricModelLabel(m, customVocalsMap));
+			// カスタムボーカル（MML・DawOptions・UI追加で登録済みのもの）
+			for (const [k, def] of customVocalsMap) addOpt(k, def.label ?? k);
+			// URL指定でカスタム音源を登録する入力エリアを開く選択肢
+			addOpt(CUSTOM_VOCAL_ADD_VALUE, "カスタム音源を追加…");
+			// 上記どちらにも含まれない非標準モデル（往復維持用）
+			if (
+				active.lyricModel &&
+				!BASE_LYRIC_MODELS.includes(active.lyricModel) &&
+				!customVocalsMap.has(active.lyricModel)
+			) {
+				addOpt(
+					active.lyricModel,
+					lyricModelLabel(active.lyricModel, customVocalsMap),
+				);
 			}
 			lyricModelSel.value = active.lyricModel;
 			lyricOctaveSel.value = String(active.vocalOctave);
@@ -1615,11 +1699,16 @@ export const mountDAW = (
 				lyricCount.textContent = active.lyricModel && n > 0 ? `${n}音節` : "";
 			};
 			const syncLyricTerms = (): void => {
+				// カスタムボーカルには利用規約情報がないため非表示
+				if (customVocalsMap.has(active.lyricModel)) {
+					lyricTerms.classList.add("dtm-hidden");
+					return;
+				}
 				const url = active.lyricModel
 					? KOE_VOICEBANK_TERMS[active.lyricModel]
 					: undefined;
 				if (url) {
-					const label = lyricModelLabel(active.lyricModel);
+					const label = lyricModelLabel(active.lyricModel, customVocalsMap);
 					lyricTermsLink.textContent = `${label}UTAU音源`;
 					lyricTermsLink.href = url;
 					lyricTerms.classList.remove("dtm-hidden");
@@ -1628,9 +1717,27 @@ export const mountDAW = (
 				}
 			};
 			const syncLyricIcon = (): void => {
-				const imgKey = active.lyricModel
-					? VOICE_IMAGE_KEY[active.lyricModel.toLowerCase()]
-					: undefined;
+				if (!active.lyricModel) {
+					lyricIcon.removeAttribute("src");
+					lyricIcon.classList.add("dtm-hidden");
+					return;
+				}
+				// カスタムボーカルなら iconUrl を使う（空文字 = フォールバック）
+				const customDef = customVocalsMap.get(active.lyricModel);
+				if (customDef !== undefined) {
+					const iconSrc = customDef.iconUrl || FALLBACK_VOCAL_ICON;
+					lyricIcon.src = iconSrc;
+					lyricIcon.classList.remove("dtm-hidden");
+					// 画像ロードエラー時（URL は有効でも画像が不正等）もフォールバック
+					lyricIcon.onerror = () => {
+						lyricIcon.onerror = null;
+						lyricIcon.src = FALLBACK_VOCAL_ICON;
+					};
+					return;
+				}
+				// 内蔵ボーカルの場合は VOICE_IMAGE_KEY → VOICE_IMAGES を参照
+				lyricIcon.onerror = null;
+				const imgKey = VOICE_IMAGE_KEY[active.lyricModel.toLowerCase()];
 				const src = imgKey ? VOICE_IMAGES[imgKey] : undefined;
 				if (src) {
 					lyricIcon.src = src;
@@ -1650,10 +1757,41 @@ export const mountDAW = (
 			};
 			syncLyricVisibility();
 			lyricModelSel.addEventListener("change", () => {
+				if (lyricModelSel.value === CUSTOM_VOCAL_ADD_VALUE) {
+					// モデルはまだ変えず、URL入力エリアだけ開く（「追加」で確定）
+					lyricCustomNote.textContent = "";
+					lyricCustom.classList.remove("dtm-hidden");
+					return;
+				}
+				lyricCustom.classList.add("dtm-hidden");
 				active.lyricModel = lyricModelSel.value;
 				syncLyricVisibility();
 				syncInstDisabled();
 				fireLyricsChange(active);
+			});
+			lyricCustomApply.addEventListener("click", () => {
+				const src = lyricCustomSrc.value.trim();
+				if (!isValidHttpUrl(src)) {
+					lyricCustomNote.textContent =
+						"音源URLが不正です（http/httpsのみ・2048文字まで）";
+					return;
+				}
+				const iconRaw = lyricCustomIcon.value.trim();
+				const iconUrl = isValidHttpUrl(iconRaw) ? iconRaw : "";
+				// 同じ音源URLが登録済みならそのキーを使い回す（重複登録を防ぐ）
+				const existing = [...customVocalsMap.values()].find(
+					(d) => d.url === src,
+				);
+				const key = existing?.key ?? genCustomVocalKey();
+				registerCustomVocal({
+					key,
+					iconUrl: iconUrl || (existing?.iconUrl ?? ""),
+					url: src,
+				});
+				active.lyricModel = key;
+				fireLyricsChange(active);
+				// プルダウンへ新キーを反映し、選択状態でパネルを再描画する
+				updateTrackPanel();
 			});
 			lyricOctaveSel.addEventListener("change", () => {
 				active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
@@ -1886,11 +2024,34 @@ export const mountDAW = (
 				const head = params ? `${x.model} ${params}` : x.model;
 				return `@@${x.i} ${head} ${x.text}`;
 			});
-		const full = [metaLineFull, ...trackLines, ...lyricLines, MML_END_MARKER]
+
+		// 実際に使われているカスタムボーカルの宣言行（@@key icon_url koe_url）を収集する。
+		// 使われていない（＝lyricLines に出ない）カスタムボーカルは出力しない（MML をクリーンに保つ）。
+		const customVocalDecls: string[] = [];
+		for (const [key, def] of customVocalsMap) {
+			const isUsed = trackStates.some(
+				(t) =>
+					t.lyricModel.trim().toLowerCase() === key &&
+					t.lyrics.trim().length > 0 &&
+					clipNotes(t.core.getNotes()).length > 0,
+			);
+			if (!isUsed) continue;
+			const iconPart = def.iconUrl || "-";
+			customVocalDecls.push(`@@${key} ${iconPart} ${def.url}`);
+		}
+
+		const full = [
+			metaLineFull,
+			...customVocalDecls,
+			...trackLines,
+			...lyricLines,
+			MML_END_MARKER,
+		]
 			.filter((s) => s.length > 0)
 			.join(";\n");
 		const minified = [
 			metaLineMini,
+			...customVocalDecls,
 			...trackLinesMini,
 			...lyricLines,
 			MML_END_MARKER,
@@ -1965,6 +2126,12 @@ export const mountDAW = (
 		stop();
 		clearAll();
 		for (const t of trackStates) t.core.setLoadMode(true);
+
+		// カスタムボーカル辞書を静的登録（DawOptions.customVocals）だけへ戻してから、
+		// このMMLの宣言行で上書きする（前に読んだ曲のカスタム音源を持ち越さない）
+		resetCustomVocals();
+		for (const def of parseCustomVocals(mml)) registerCustomVocal(def);
+
 		const {
 			placements,
 			bpm: parsedBpm,

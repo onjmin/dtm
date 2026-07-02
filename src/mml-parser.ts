@@ -8,7 +8,7 @@
  * `collectLyrics` 指定時は解析済みの歌詞トラック辞書も併せて返す。
  */
 
-import { parseLyrics, stripLyrics } from "./lyrics";
+import { parseLyrics, stripCustomVocals, stripLyrics } from "./lyrics";
 import type { LyricTrack } from "./types";
 import { DEFAULT_STEPS_PER_BAR, MML_END_MARKER } from "./types";
 
@@ -198,8 +198,14 @@ export const parseMML = (
 		};
 	}
 
+	// 0. カスタムボーカル宣言行（@@key icon_url koe_url）を除去する。
+	//    宣言中の URL に含まれる "//" を行コメントと誤認すると、minify（1行）MML では
+	//    そこから曲全体が削れてしまうため、コメント除去より前に必ず取り除く。
+	//    宣言自体の解析は利用側（daw.ts の loadMML 等）が parseCustomVocals で行う。
+	const noCustomVocals = stripCustomVocals(mml);
+
 	// 1. コメント除去。歌詞行（@@n）の解析・除去は改行を畳み込む前に行う
-	const noComments = mml
+	const noComments = noCustomVocals
 		.replace(/\/\*[\s\S]*?\*\//g, "") // ブロックコメント
 		.replace(/\/\/.*$/gm, ""); // 行コメント
 

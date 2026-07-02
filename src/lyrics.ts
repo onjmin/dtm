@@ -16,7 +16,12 @@
  */
 
 import { leadInFromEntry, VoiceBank, Worldline } from "@onjmin/koe";
-import type { LyricSyllable, LyricTrack, PlayNoteEvent } from "./types";
+import type {
+	CustomVocalDef,
+	LyricSyllable,
+	LyricTrack,
+	PlayNoteEvent,
+} from "./types";
 import { DEFAULT_GATE, DEFAULT_PAN, DEFAULT_VOCAL_VOLUME } from "./types";
 import type {
 	VoiceWorkerInit,
@@ -296,8 +301,11 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		let pan = 64; // 省略時の定位（中央）
 		let octave = 0; // 省略時のオクターブシフト（演奏ノートのピッチそのまま）
 
+		// モデル名は英字・アンダースコア始まりで、2文字目以降は数字も許す
+		// （カスタムボーカルのキー custom1 等）。`v100` 等のパラメータトークンは
+		// 先読みの [vqpo]-?\d で区切るため誤って取り込まない。
 		const modelMatch = rest.match(
-			/^([a-z_]+?)(?=(?:[vqpo]-?\d)|[^a-z_]|$)(?::(\d+))?/i,
+			/^([a-z_][a-z0-9_]*?)(?=(?:[vqpo]-?\d)|[^a-z0-9_]|$)(?::(\d+))?/i,
 		);
 		let model = "";
 		const metaTokens: string[] = [];
@@ -384,6 +392,83 @@ export const stripLyrics = (mml: string): string => {
 	}
 	return kept.join("\n");
 };
+
+// ─────────────────────────────────────────────────────────────
+// カスタムボーカル宣言（@@keyword icon_url koe_url）
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * カスタムボーカル宣言行のパターン。`@@数字` とは区別するため先頭トークンは英字必須。
+ * キャプチャ: [1]=key（英数字+アンダースコア）, [2]=iconUrl, [3]=koeUrl
+ */
+const CUSTOM_VOCAL_LINE = /^@@([a-zA-Z_][a-zA-Z0-9_]*)\s+(\S+)\s+(\S+)\s*$/;
+
+/** カスタムボーカル URL の常識的な最大長（これを超えるものは読み込まない） */
+const CUSTOM_VOCAL_URL_MAX_LEN = 2048;
+
+/** URL 文字列が http / https スキームの妥当な形式かを簡易チェックする（UI入力の検証にも使う） */
+export const isValidHttpUrl = (s: string): boolean => {
+	if (s.length > CUSTOM_VOCAL_URL_MAX_LEN) return false;
+	try {
+		const u = new URL(s);
+		return u.protocol === "http:" || u.protocol === "https:";
+	} catch {
+		return false;
+	}
+};
+
+/**
+ * MMLからカスタムボーカル宣言行を解析し、定義配列を返す。
+ *
+ * 記法: `@@key icon_url koe_url`
+ *   例: `@@testvocal https://example.com/icon.png https://example.com/voice.koe`
+ *
+ * - key は英字始まりの英数字・アンダースコア列（数字のみは既存 LYRIC_LINE 扱い）
+ * - icon_url は http / https の URL のみ有効。不正・長すぎは 404Chip.png にフォールバック
+ * - koe_url は http / https の URL かつ {CUSTOM_VOCAL_URL_MAX_LEN} 文字以内のみ有効。
+ *   不正・長すぎの場合はその宣言ごとスキップ（楽曲読み込みは継続する）。
+ * - 同一 key が複数あれば後勝ち。
+ */
+export const parseCustomVocals = (mml: string): CustomVocalDef[] => {
+	const map = new Map<string, CustomVocalDef>();
+	for (const seg of splitSegments(mml)) {
+		const m = seg.match(CUSTOM_VOCAL_LINE);
+		if (!m) continue;
+		const key = m[1].toLowerCase();
+		const iconUrl = m[2];
+		const koeUrl = m[3];
+		// koe URL が不正・長すぎならスキップ（楽曲読み込みは中断しない）
+		if (!isValidHttpUrl(koeUrl)) {
+			console.warn(
+				`[dtm] カスタムボーカル "${key}": koe URL が不正または長すぎるためスキップします`,
+				koeUrl.slice(0, 80),
+			);
+			continue;
+		}
+		// icon URL は不正でも宣言全体は生かし、フォールバックで表示する
+		const resolvedIconUrl = isValidHttpUrl(iconUrl) ? iconUrl : "";
+		map.set(key, { key, iconUrl: resolvedIconUrl, url: koeUrl });
+	}
+	return [...map.values()];
+};
+
+/**
+ * カスタムボーカル宣言行を除去し、残りの MML を返す。
+ * `parseMML` / `parseLyrics` が `@@keyword` を誤解釈しないよう前処理する。
+ *
+ * 宣言セグメントだけを取り除き、それ以外の行・`;` 区切りは元の構造のまま残す
+ * （コメント除去より前の生MMLに適用しても他セグメントへ影響しないため）。
+ */
+export const stripCustomVocals = (mml: string): string =>
+	mml
+		.split(/[\n\r]+/)
+		.map((line) =>
+			line
+				.split(";")
+				.filter((seg) => !CUSTOM_VOCAL_LINE.test(seg.trim()))
+				.join(";"),
+		)
+		.join("\n");
 
 // ─────────────────────────────────────────────────────────────
 // 同期（ヘッドレス）
@@ -1277,6 +1362,13 @@ export type SingingVoices = {
 	/** 使用する歌唱モデル（.koe）をロードして完了を待つ。 */
 	loadModels: (models: Iterable<string>) => Promise<void>;
 	/**
+	 * koe音源カタログへキーワード → .koe URL（または Blob）を追加・上書き登録する。
+	 * カスタムボーカル（`@@key icon_url koe_url` / DawOptions.customVocals）の音源を
+	 * 再生前に流し込むために使う。同一キーへ同じ値を再登録した場合はロード済み
+	 * キャッシュを保ったまま無視する。省略可能（外部注入の実装が無くても動くように）。
+	 */
+	registerVoicebanks?: (banks: Record<string, string | Blob>) => void;
+	/**
 	 * 各トラック先頭の数音を先に合成してキャッシュへ積む（頭出しの貯金）。
 	 * これで再生開始直後の密なフレーズでもアンダーランしにくくなる。count 既定 {@link PREWARM_NOTES}。
 	 */
@@ -1392,6 +1484,22 @@ export const createSingingVoices = (
 		const set = new Set<string>();
 		for (const m of models) if (m) set.add(m.toLowerCase());
 		await Promise.all([...set].map((m) => load(m)));
+	};
+
+	const registerVoicebanks: NonNullable<SingingVoices["registerVoicebanks"]> = (
+		banks,
+	) => {
+		for (const [k, v] of Object.entries(banks)) {
+			const key = k.toLowerCase();
+			// klatt はフォールバック先なので上書き不可（loaded から消すと逃げ場がなくなる）
+			if (key === FALLBACK_MODEL) continue;
+			// 同じ音源の再登録は無視（ロード済みキャッシュ・進行中ロードを保つ）
+			if (catalog[key] === v) continue;
+			catalog[key] = v;
+			// 差し替え時は旧音源のキャッシュを破棄し、次回 load で新URLから取得する
+			loaded.delete(key);
+			loading.delete(key);
+		}
 	};
 
 	/** 1トラックを発音順に走査し、直前母音を伝播させながらコールバックする（promote/警告共通）。 */
@@ -1551,7 +1659,14 @@ export const createSingingVoices = (
 		for (const v of loaded.values()) v.reset?.();
 	};
 
-	return { loadModels, warm, startStream, stopStream, reset };
+	return {
+		loadModels,
+		registerVoicebanks,
+		warm,
+		startStream,
+		stopStream,
+		reset,
+	};
 };
 
 /** 歌唱合成モデルのレジストリ（プラグイン方式） */

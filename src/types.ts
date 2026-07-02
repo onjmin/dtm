@@ -80,6 +80,24 @@ export type PianoRollOptions = {
 // 編集ツールモード
 export type ToolMode = "pen" | "select" | "eraser";
 
+/**
+ * カスタムボーカル定義。
+ * MML 中の `@@key icon_url koe_url` 構文で宣言するか、
+ * `DawOptions.customVocals` から静的に登録できる。
+ *
+ * - `key`     : MML 中のモデル名（例: "testvocal"）。小文字で一意。
+ * - `iconUrl` : アイコン画像の URL。読み込み失敗時は assets/404Chip.png にフォールバック。
+ *              未指定・空文字・不正 URL もフォールバック扱い。
+ * - `url`     : koe 音源 URL（.koe ファイル）。常識外の長さ（> 2048 文字）は無視する。
+ * - `label`   : UI プルダウン表示名。省略時は key をそのまま使う。
+ */
+export type CustomVocalDef = {
+	key: string;
+	iconUrl: string;
+	url: string;
+	label?: string;
+};
+
 // ============================================================
 // DAW (Layer 2) 関連の型
 // ============================================================
@@ -298,6 +316,12 @@ export type DawOptions = {
 	drumPatterns?: Record<string, import("./drum-config").DrumPattern>;
 	/** 歌唱合成の先読みや制御を行うヘルパ（.koe音源の再生前プリロードに使用） */
 	singingVoices?: SingingVoices;
+	/**
+	 * 静的に登録するカスタムボーカル定義の配列。
+	 * MML 中の `@@key icon_url koe_url` 宣言行と同等だが、コードから直接渡せる。
+	 * MML 宣言行と両方ある場合は MML 側（後読み）が優先して上書きする。
+	 */
+	customVocals?: CustomVocalDef[];
 	defaultBpm?: number;
 	initialMML?: string;
 	/** 利用規約への同意画面の表示をスキップするかどうか */
