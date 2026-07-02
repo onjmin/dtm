@@ -650,6 +650,7 @@ export const KOE_VOICEBANKS: Record<string, string> = {
 	ruko_female: "欲音ルコ♀歌連続音普1.00.koe",
 	teto: "重音テト単独音.koe",
 	shiyo: "革命シヨ.koe",
+	rei: "足立レイver3.5.0.koe",
 };
 
 /**
@@ -664,6 +665,7 @@ export const KOE_VOICEBANK_LABELS: Record<string, string> = {
 	ruko_female: "欲音ルコ♀",
 	teto: "重音テト",
 	shiyo: "革命シヨ",
+	rei: "足立レイ",
 };
 
 /**
@@ -679,6 +681,7 @@ export const VOICE_IMAGE_KEY: Record<string, string> = {
 	ruko_female: "ruko",
 	teto: "teto",
 	shiyo: "shiyo",
+	rei: "rei",
 };
 
 /**
@@ -692,6 +695,7 @@ export const KOE_VOICEBANK_TERMS: Record<string, string> = {
 	ruko_female: "https://long-sleeper.net/index.php?id=22",
 	teto: "https://kasaneteto.jp/guidelines/voice.html",
 	shiyo: "https://kakumeisiyo.my.canva.site/dagkuyjwycs",
+	rei: "https://mechanicalgirl.jp/guidelines/",
 };
 
 /** ファイル名（日本語可）を encodeURIComponent して .koe のフルURLにする */
