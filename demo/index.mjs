@@ -10600,6 +10600,9 @@ var SoundFont = class _SoundFont {
     this.ch = ch;
     this.isDrum = isDrum;
   }
+  zones;
+  ch;
+  isDrum;
   static afterTime = 0.5;
   static fonts = /* @__PURE__ */ new Map();
   static ch = -1;
