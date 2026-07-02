@@ -4370,6 +4370,7 @@ var parseMML = (mml, options = {}) => {
   let octave = 4;
   let currentStep = 0;
   let baseLength = 16;
+  let velocity = 100;
   const contributors = /* @__PURE__ */ new Map();
   const recordContributor = () => {
     let set = contributors.get(trackIndex);
@@ -4390,6 +4391,7 @@ var parseMML = (mml, options = {}) => {
       octave = 4;
       currentStep = 0;
       baseLength = 16;
+      velocity = 100;
       continue;
     }
     const body = part.replace(/\s+/g, "").toLowerCase();
@@ -4468,6 +4470,8 @@ var parseMML = (mml, options = {}) => {
           if (bpm === null) {
             bpm = clamp2(Number.parseInt(numStr, 10), 1, 255);
           }
+        } else if (ch === "v" && numStr) {
+          velocity = clamp2(Number.parseInt(numStr, 10), 0, 127);
         }
         pushTok("ctrl", currentStep, 0, tokStart);
       } else if (ch === "[") {
@@ -4513,7 +4517,8 @@ var parseMML = (mml, options = {}) => {
             trackIndex,
             startStep: currentStep,
             pitch: p,
-            durationSteps: Math.max(1, steps)
+            durationSteps: Math.max(1, steps),
+            velocity
           });
         }
         pushTok("chord", currentStep, Math.max(1, steps), tokStart);
@@ -4536,7 +4541,8 @@ var parseMML = (mml, options = {}) => {
           trackIndex,
           startStep: currentStep,
           pitch: midiPitch,
-          durationSteps: Math.max(1, steps)
+          durationSteps: Math.max(1, steps),
+          velocity
         });
         pushTok("note", currentStep, Math.max(1, steps), tokStart);
         currentStep += steps;
@@ -6458,7 +6464,7 @@ var mountMmlPlayer = (target, mml, options = {}) => {
       startStep: p.startStep,
       durationSteps: p.durationSteps,
       pitch: p.pitch,
-      velocity: 100
+      velocity: p.velocity
     }));
     return { id: String(index), volume: trackVolume, notes };
   });
@@ -8947,7 +8953,8 @@ var mountDAW = (target, options = {}) => {
       const t = trackStates[p.trackIndex];
       if (!t) continue;
       t.core.addNote(p.startStep, p.pitch, {
-        noteLengthSteps: p.durationSteps
+        noteLengthSteps: p.durationSteps,
+        velocity: p.velocity
       });
     }
     if (parsedBpm) setBpm(parsedBpm);
@@ -9683,7 +9690,7 @@ var playMML = (mml, options = {}) => {
       startStep: p.startStep,
       durationSteps: p.durationSteps,
       pitch: p.pitch,
-      velocity: 100
+      velocity: p.velocity
     }));
     return { id: String(index), volume: masterVolume, notes };
   });

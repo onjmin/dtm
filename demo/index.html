@@ -706,7 +706,7 @@
 
         const saveSnapshot = (manual = false) => {
             if (!daw) return false;
-            if (gracePeriodActive) return false;
+            if (!manual && gracePeriodActive) return false;
             const mmlData = daw.getMML();
             const { full, trackCount } = mmlData;
             if (!full || full === lastSavedMml) {
