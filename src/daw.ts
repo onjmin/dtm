@@ -321,6 +321,11 @@ const DEFAULT_TRACKS = TRACKS_SIMPLE;
  * カスタムボーカルは mountDAW スコープ内で動的に追加する。
  */
 const BASE_LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
+const BASE_LYRIC_MODEL_KEYS = new Set(
+	BASE_LYRIC_MODELS.map((m) => m.toLowerCase()),
+);
+const isBuiltinLyricModel = (model: string): boolean =>
+	BASE_LYRIC_MODEL_KEYS.has(model.toLowerCase());
 
 /** 内蔵モデルキーワード → プルダウン表示名 */
 const BASE_LYRIC_MODEL_LABELS: Record<string, string> = {
@@ -468,7 +473,7 @@ export const mountDAW = (
 	/** 辞書へ登録する（キーは小文字化。内蔵モデル名との衝突は無視して乗っ取りを防ぐ） */
 	const registerCustomVocal = (def: CustomVocalDef): void => {
 		const key = def.key.toLowerCase();
-		if (BASE_LYRIC_MODELS.includes(key)) return;
+		if (isBuiltinLyricModel(key)) return;
 		customVocalsMap.set(key, { ...def, key });
 	};
 	/** 辞書を DawOptions.customVocals の静的登録だけの状態へ戻す（loadMML の先頭で使う） */
@@ -1720,7 +1725,7 @@ export const mountDAW = (
 			// 上記どちらにも含まれない非標準モデル（往復維持用）
 			if (
 				active.lyricModel &&
-				!BASE_LYRIC_MODELS.includes(active.lyricModel) &&
+				!isBuiltinLyricModel(active.lyricModel) &&
 				!customVocalsMap.has(active.lyricModel)
 			) {
 				addOpt(
@@ -1728,7 +1733,12 @@ export const mountDAW = (
 					lyricModelLabel(active.lyricModel, customVocalsMap),
 				);
 			}
-			lyricModelSel.value = active.lyricModel;
+			const selectedLyricModel = isBuiltinLyricModel(active.lyricModel)
+				? (BASE_LYRIC_MODELS.find(
+						(m) => m.toLowerCase() === active.lyricModel.toLowerCase(),
+					) ?? active.lyricModel)
+				: active.lyricModel;
+			lyricModelSel.value = selectedLyricModel;
 			lyricOctaveSel.value = String(active.vocalOctave);
 			// 値はプロパティ経由で設定（HTML文字列に混ぜず、</textarea>等の混入を防ぐ）
 			lyricInput.value = active.lyrics;
@@ -1838,7 +1848,7 @@ export const mountDAW = (
 							"識別子が不正です（英字またはアンダースコアで始まる英数字・_のみ）";
 						return;
 					}
-					if (BASE_LYRIC_MODELS.includes(keyRaw)) {
+					if (isBuiltinLyricModel(keyRaw)) {
 						lyricCustomNote.textContent =
 							"その識別子は内蔵モデル名と衝突しています";
 						return;
