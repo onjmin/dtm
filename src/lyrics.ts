@@ -736,6 +736,8 @@ export const KOE_VOICEBANKS: Record<string, string> = {
 	teto: "重音テト単独音.koe",
 	shiyo: "革命シヨ.koe",
 	rei: "足立レイver3.5.0.koe",
+	MGRoid: "MGRoid_原音設定済み.koe",
+	MOTRoid: "MOTRoid完全版V2.koe",
 };
 
 /**
@@ -751,6 +753,8 @@ export const KOE_VOICEBANK_LABELS: Record<string, string> = {
 	teto: "重音テト",
 	shiyo: "革命シヨ",
 	rei: "足立レイ",
+	MGRoid: "MGRoid",
+	MOTRoid: "MOTRoid",
 };
 
 /**
@@ -767,6 +771,8 @@ export const VOICE_IMAGE_KEY: Record<string, string> = {
 	teto: "teto",
 	shiyo: "shiyo",
 	rei: "rei",
+	MGRoid: "MGRoid",
+	MOTRoid: "MOTRoid",
 };
 
 /**
@@ -781,6 +787,8 @@ export const KOE_VOICEBANK_TERMS: Record<string, string> = {
 	teto: "https://kasaneteto.jp/guidelines/voice.html",
 	shiyo: "https://kakumeisiyo.my.canva.site/dagkuyjwycs",
 	rei: "https://mechanicalgirl.jp/guidelines/",
+	MGRoid: "https://x.com/nisusansu/status/1048825378188353536",
+	MOTRoid: "https://www.nicovideo.jp/watch/sm40031282",
 };
 
 /** ファイル名（日本語可）を encodeURIComponent して .koe のフルURLにする */

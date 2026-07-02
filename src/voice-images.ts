@@ -9,6 +9,8 @@ import ruko from "../assets/ruko.png";
 import shiyo from "../assets/shiyo.png";
 import teto from "../assets/teto.png";
 import tsukuyomi from "../assets/tsukuyomi.png";
+import MGRoid from "../assets/MGRoid.png";
+import MOTRoid from "../assets/MOTRoid.png";
 
 export const VOICE_IMAGES: Record<string, string> = {
 	puyuyu,
@@ -19,6 +21,8 @@ export const VOICE_IMAGES: Record<string, string> = {
 	teto,
 	tsukuyomi,
 	rei,
+	MGRoid,
+	MOTRoid,
 };
 
 /**
