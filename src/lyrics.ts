@@ -1018,7 +1018,7 @@ const createLocalBackend = async (
 		}
 		const rate = entry.pitch > 0 ? targetHz / entry.pitch : 1;
 		return {
-			pcm: Float32Array.from(pcm),
+			pcm: new Float32Array(pcm),
 			preSec: entry.pre / KOE_SAMPLE_RATE / rate,
 			rate,
 		};
