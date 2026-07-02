@@ -311,7 +311,7 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		const metaTokens: string[] = [];
 
 		if (modelMatch) {
-			model = resolveKoeVoicebankKey(modelMatch[1]);
+			model = modelMatch[1].toLowerCase();
 			if (modelMatch[2]) {
 				volume = clamp(Number.parseInt(modelMatch[2], 10), 0, MAX_VOCAL_VOLUME);
 			}
@@ -739,13 +739,6 @@ export const KOE_VOICEBANKS: Record<string, string> = {
 	MGRoid: "MGRoid_原音設定済み.koe",
 	MOTRoid: "MOTRoid完全版V2.koe",
 };
-
-const KOE_VOICEBANK_KEY_MAP: Record<string, string> = Object.fromEntries(
-	Object.keys(KOE_VOICEBANKS).map((k) => [k.toLowerCase(), k]),
-);
-
-export const resolveKoeVoicebankKey = (name: string): string =>
-	KOE_VOICEBANK_KEY_MAP[name.toLowerCase()] ?? name.toLowerCase();
 
 /**
  * koe音源キーワード → UI表示名（日本語）。歌詞モデルのプルダウン等で使う。
@@ -1451,7 +1444,7 @@ export const createSingingVoices = (
 	// 既定カタログ（キーワード→フルURL）に利用側のカタログを重ねる
 	const catalog: Record<string, string | Blob> = {};
 	for (const [k, file] of Object.entries(KOE_VOICEBANKS))
-		catalog[k.toLowerCase()] = koeUrl(file);
+		catalog[k] = koeUrl(file);
 	for (const [k, v] of Object.entries(options.voicebanks ?? {}))
 		catalog[k.toLowerCase()] = v;
 
