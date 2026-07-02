@@ -2502,7 +2502,9 @@ var KOE_VOICEBANKS = {
   ruko_female: "\u6B32\u97F3\u30EB\u30B3\u2640\u6B4C\u9023\u7D9A\u97F3\u666E1.00.koe",
   teto: "\u91CD\u97F3\u30C6\u30C8\u5358\u72EC\u97F3.koe",
   shiyo: "\u9769\u547D\u30B7\u30E8.koe",
-  rei: "\u8DB3\u7ACB\u30EC\u30A4ver3.5.0.koe"
+  rei: "\u8DB3\u7ACB\u30EC\u30A4ver3.5.0.koe",
+  MGRoid: "MGRoid_\u539F\u97F3\u8A2D\u5B9A\u6E08\u307F.koe",
+  MOTRoid: "MOTRoid\u5B8C\u5168\u7248V2.koe"
 };
 var KOE_VOICEBANK_LABELS = {
   tsukuyomi: "\u3064\u304F\u3088\u307F\u3061\u3083\u3093",
@@ -2512,7 +2514,9 @@ var KOE_VOICEBANK_LABELS = {
   ruko_female: "\u6B32\u97F3\u30EB\u30B3\u2640",
   teto: "\u91CD\u97F3\u30C6\u30C8",
   shiyo: "\u9769\u547D\u30B7\u30E8",
-  rei: "\u8DB3\u7ACB\u30EC\u30A4"
+  rei: "\u8DB3\u7ACB\u30EC\u30A4",
+  MGRoid: "MGRoid",
+  MOTRoid: "MOTRoid"
 };
 var VOICE_IMAGE_KEY = {
   klatt: "puyuyu",
@@ -2523,7 +2527,9 @@ var VOICE_IMAGE_KEY = {
   ruko_female: "ruko",
   teto: "teto",
   shiyo: "shiyo",
-  rei: "rei"
+  rei: "rei",
+  MGRoid: "MGRoid",
+  MOTRoid: "MOTRoid"
 };
 var KOE_VOICEBANK_TERMS = {
   tsukuyomi: "https://tyc.rei-yumesaki.net/material/utau/terms/",
@@ -2533,7 +2539,9 @@ var KOE_VOICEBANK_TERMS = {
   ruko_female: "https://long-sleeper.net/index.php?id=22",
   teto: "https://kasaneteto.jp/guidelines/voice.html",
   shiyo: "https://kakumeisiyo.my.canva.site/dagkuyjwycs",
-  rei: "https://mechanicalgirl.jp/guidelines/"
+  rei: "https://mechanicalgirl.jp/guidelines/",
+  MGRoid: "https://x.com/nisusansu/status/1048825378188353536",
+  MOTRoid: "https://www.nicovideo.jp/watch/sm40031282"
 };
 var koeUrl = (name, base = KOE_BASE_URL) => `${base}/${encodeURIComponent(name)}`;
 var DEFAULT_WORLDLINE_SCRIPT = "https://onjmin.github.io/koe/demo/world/worldline.js";
@@ -6336,6 +6344,12 @@ var teto_default = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAA
 // assets/tsukuyomi.png
 var tsukuyomi_default = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAB3UlEQVR42tWXPUsDQRCGnwuijYIoFqKmEDSCxIgIgqnsogbsrC3ERiwN4g8Ikk6sFH+BnYofvcTKxoigBCzEYGGjWIiCOYvNBHe5TdQUt051czc3e++zO7tzHnUst7vn04BlFue9Ws8jhGxN9ZTPzU43NkIlj41E6AQ8m/JYfByAoWgXAPtHJzRCRN43SbizBkzlv1X2VzLuVoHYzf0TAMnys+aLCTGThMTJGnKfQOpyWF1cvgHQsh4FYPDzRd3vmQHgoPShJbi9uqhJyPk1UK3Jwsq1/115rLst8AX/4UFP0NsbGHf7+Kr579l7zR/ZGvbcrAJR7vvqEOwcTdZMYIuTPCYJUS7Ewydgzn2Bay2gdWzqR4nMuMPlhcC5l/HcWQOnCaU4lVU3xI9tnwFQnOgDoDmdDs5QKmlxYhdGmBA2ibhTBfKFHCkCm00dAKymJn+USAidHx8DkI+0q7PBUC7j5BJ7jlSB7RyXziVT8fM7Oz7AeLmsz3VEaWi7UvtAcmvJC+qmq4T/XT8gdTsw2692to07AF7jeU35wFq/7COqzhdVnVOnu3aHgNm1VpVXlImJX9zQffO5kDg1dlb3CNj6dZsVK2vAVP7Xf8bwCfxWuc23Eanmt/xlh07gC6oBviFE8rZHAAAAAElFTkSuQmCC";
 
+// assets/MGRoid.png
+var MGRoid_default = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABy0lEQVR42tWXv0tCURTHPy9dwog0AssiVLChNmnQaHaJIoj+gQgkoj+jsSEiGmpodosWA9ck6g1BDg0qQYNLDpG1GK/h3RvvxfU+nbyd6f4473C/33ve95xr0b853kk2m2UQs21bDi3v+ghDtnCQQzEWcwDO2u2+kC83mwDcTEwEMWkZx4Cjc7xMJAA4DkCeGx11GRDrjUZDefdG5YA+uwUyaQetlstEPK5ELi0ajfZ1gKEzYEkG/iK/23l0B7MDRnwV1O51fYx6dABj/wI9coHsdz1g3j0NCyZsLRPmK+HL4jMAixdlAD4KB0pmxsquQtSOCgDMs6Bkwkgd0FoqlQIgs7oFQGhjRemX+ZwW/lMAfNfo9RdZxumAshZ0r8K+Ow6lT9zBUk4d6anqIq/v+5CH17tm1wIrqAOSTHiQuJvlMzdAoYiKuSDkRjPgiE4IgPtkUlv3q19fWj/ZSRndDyhNIsyJ+n+dzyvna7e3ALwJvZisVFD1F7ZtO/9DB+SJHw53lVneqytW1PteVdDwd4HU/u3zivKDzbkZbc2QViqVtMiNZMDy5oJE8Pcu3zsdAMYjEWVAzzvg/yrhQK/ker3u20yn0wPFHjoDP1pgkXMfnLDSAAAAAElFTkSuQmCC";
+
+// assets/MOTRoid.png
+var MOTRoid_default = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAByElEQVR42s2WTyiEURTFfyMbS1ZSlIUxScpCNrNAkpLdhClFlJRJdpQ/5V+xE7PQFJHFyJKUJKLZaBZqkhjKQslCLG3UWIw7ec/7xidq3lnNve++23fOO2/u86ChPbyd+hp3tDbzH9g5OFLivVCXByCPHMPjlrkw+KsiuhI5VyBfT/z3mev9JJZ1ezywdfeccnNmbhVyuy/3Coj7nVwv2KwpAaAn8ZiVkezT652UsO8WCK5jJ0pcH9OYOrha9un1GVivwMzEOADJ6CoApQtx48bdQNnnr3cAugMNAMRWpoz1/usbALzBQQB8/kZLFZAv0/EwVpdVESfGMV+lsb94xz4FMu4f6lTybpkLdObf+lurwNTcvOLWh6XpXzX0n54Z89JP+ts/CwRtj1cAFHq9Sj4+uWisr5sdVeLXZBKA/ZIqy6fhT3O7YmNJPdOWFmNd8vBQiW97R7JOTXtfxYKjyAwAzQPp//jxp8v0tAuFjA3Pw2EA5ourjfvt84DTQkFNVQrgrb9Dyb/UNhlvhe76ootjtd9a+gXxlrjy2P0eEOZOyDDTGLpFRtlPJezzgNPZC6LBPgDKlyPG9fvhAQCC0XWzAms7dt2CDzsGp242tsuqAAAAAElFTkSuQmCC";
+
 // src/voice-images.ts
 var VOICE_IMAGES = {
   puyuyu: puyuyu_default,
@@ -6345,7 +6359,9 @@ var VOICE_IMAGES = {
   shiyo: shiyo_default,
   teto: teto_default,
   tsukuyomi: tsukuyomi_default,
-  rei: rei_default
+  rei: rei_default,
+  MGRoid: MGRoid_default,
+  MOTRoid: MOTRoid_default
 };
 var FALLBACK_VOCAL_ICON = Chip_default;
 
@@ -7563,6 +7579,29 @@ var MIDI_INFO_HTML = `
   <p style="margin-top:4px;"><small>\u6B4C\u8A5E\u306E\u62BD\u51FA: <a href="https://rpgen3.github.io/ust2txt/" target="_blank" rel="noopener">ust2txt</a></small></p>
 </div>
 `;
+var KOE_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>1. UTAU\u97F3\u6E90\u3092 .koe \u306B\u5909\u63DB\u3059\u308B</h4>
+  <p>UTAU\u7528\u306E\u97F3\u6E90\uFF08zip\uFF09\u3092\u305D\u306E\u307E\u307E\u4F7F\u3046\u3053\u3068\u306F\u3067\u304D\u307E\u305B\u3093\u3002\u4E0B\u8A18\u306E\u5909\u63DB\u30B5\u30A4\u30C8\u3067 <code>.koe</code> \u5F62\u5F0F\u306B\u5909\u63DB\u3057\u3066\u304F\u3060\u3055\u3044\u3002</p>
+  <p style="margin-top:4px;"><small>\u5909\u63DB\u30B5\u30A4\u30C8: <a href="https://onjmin.github.io/koe/demo/" target="_blank" rel="noopener">koe\u5909\u63DB\u30C7\u30E2\uFF08onjmin.github.io/koe/demo\uFF09</a></small></p>
+
+  <h4>2. \u5909\u63DB\u3057\u305F .koe \u3092\u30A2\u30C3\u30D7\u30ED\u30FC\u30C9\u3059\u308B</h4>
+  <p>\u5909\u63DB\u5F8C\u306E <code>.koe</code> \u30D5\u30A1\u30A4\u30EB\u306F\u3001\u8AB0\u3067\u3082\u76F4\u63A5\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3067\u304D\u308B\u5F62\u3067\u30CD\u30C3\u30C8\u4E0A\u306B\u7F6E\u304F\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u30ED\u30FC\u30AB\u30EB\u306E\u30D5\u30A1\u30A4\u30EB\u30D1\u30B9\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF09\u3002</p>
+  <ul>
+    <li><strong>Google\u30C9\u30E9\u30A4\u30D6</strong>: \u30A2\u30C3\u30D7\u30ED\u30FC\u30C9\u5F8C\u3001\u5171\u6709\u8A2D\u5B9A\u3092\u300C\u30EA\u30F3\u30AF\u3092\u77E5\u3063\u3066\u3044\u308B\u5168\u54E1\u300D\u306B\u5909\u66F4 \u2192 \u5171\u6709\u30EA\u30F3\u30AF\u306E<code>/d/</code>\u3068<code>/view</code>\u306E\u9593\u306EID\uFF08\u30D5\u30A1\u30A4\u30EBID\uFF09\u3092 controlled URL \u306B\u7D44\u307F\u8FBC\u3093\u3067\u76F4\u63A5\u30EA\u30F3\u30AF\u5316\u3057\u307E\u3059\uFF08\u4F8B: <code>https://drive.google.com/uc?export=download&id=\u30D5\u30A1\u30A4\u30EBID</code>\uFF09\u3002</li>
+    <li>\u305D\u306E\u4ED6\u3001\u76F4\u63A5\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9URL\u3092\u767A\u884C\u3067\u304D\u308B\u30DB\u30B9\u30C6\u30A3\u30F3\u30B0\uFF08GitHub Pages\u3001Cloudflare R2 \u306A\u3069\uFF09\u3067\u3082\u69CB\u3044\u307E\u305B\u3093\u3002</li>
+  </ul>
+
+  <h4>3. DTM\u3067\u4F7F\u3046</h4>
+  <ul>
+    <li>\u6B4C\u5531\u30E2\u30C7\u30EB\u306E\u30D7\u30EB\u30C0\u30A6\u30F3\u304B\u3089\u300C\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\u3092\u8FFD\u52A0\u2026\u300D\u3092\u9078\u3073\u307E\u3059\u3002</li>
+    <li>\u300C\u97F3\u6E90URL\u300D\u306B\u624B\u98062\u306E\u76F4\u63A5\u30EA\u30F3\u30AF\u3092\u8CBC\u308A\u4ED8\u3051\u307E\u3059\u3002</li>
+    <li>\u30A2\u30A4\u30B3\u30F3\u753B\u50CFUR\u30EB\u30FB\u8868\u793A\u540D\u30FB\u8B58\u5225\u5B50\u306F\u4EFB\u610F\u3067\u3059\uFF08\u7701\u7565\u53EF\uFF09\u3002</li>
+    <li>\u300C\u8FFD\u52A0\u300D\u3092\u62BC\u3059\u3068\u30D7\u30EB\u30C0\u30A6\u30F3\u306B\u767B\u9332\u3055\u308C\u3001\u4EE5\u964D\u305D\u306E\u30C8\u30E9\u30C3\u30AF\u3067\u4F7F\u3048\u307E\u3059\u3002</li>
+  </ul>
+  <p style="margin-top:4px;"><small>\u203B\u30A2\u30C3\u30D7\u30ED\u30FC\u30C9\u3057\u305F\u97F3\u6E90\u306F\u81EA\u5DF1\u8CAC\u4EFB\u3067\u7BA1\u7406\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u6A29\u5229\u95A2\u4FC2\uFF08\u914D\u5E03\u5143\u306E\u5229\u7528\u898F\u7D04\uFF09\u306B\u3082\u5F93\u3063\u3066\u304F\u3060\u3055\u3044\u3002</small></p>
+</div>
+`;
 var BASE_STEP_WIDTH = 0.5;
 var BASE_KEY_HEIGHT = 15;
 var TRACKS_SIMPLE = [
@@ -7710,6 +7749,7 @@ var BASE_LYRIC_MODEL_LABELS = {
 };
 var lyricModelLabel = (model, customMap) => BASE_LYRIC_MODEL_LABELS[model] ?? customMap.get(model)?.label ?? model;
 var CUSTOM_VOCAL_ADD_VALUE = "+custom";
+var CUSTOM_VOCAL_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 var clamp3 = (v, min, max) => Math.min(Math.max(v, min), max);
 var normalizeInstrumentName = (name) => {
   if (!name) return "";
@@ -8707,8 +8747,14 @@ var mountDAW = (target, options = {}) => {
         <span>\u306E\u5229\u7528\u898F\u7D04\u306B\u5F93\u3063\u3066\u304F\u3060\u3055\u3044</span>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="lyric-custom" style="flex-direction:column;align-items:stretch;gap:4px">
+        <div class="dtm-row" style="justify-content: space-between; align-items: center;">
+          <a data-dtm="lyric-custom-conv-link" href="https://onjmin.github.io/koe/demo/" target="_blank" rel="noopener" style="font-size:11px;color:var(--dtm-primary);text-decoration:underline">UTAU\u97F3\u6E90(zip)\u3092.koe\u306B\u5909\u63DB</a>
+          <button class="dtm-btn dtm-btn--ghost dtm-btn--xs" data-dtm="lyric-custom-guide">\u4F7F\u3044\u65B9\u30AC\u30A4\u30C9</button>
+        </div>
         <input type="url" class="dtm-input" data-dtm="lyric-custom-src" placeholder="\u97F3\u6E90URL\uFF08https://\u301C.koe\uFF09" aria-label="\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\uFF08.koe\uFF09\u306EURL">
         <input type="url" class="dtm-input" data-dtm="lyric-custom-icon" placeholder="\u30A2\u30A4\u30B3\u30F3\u753B\u50CFURL\uFF08\u4EFB\u610F\uFF09" aria-label="\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\u306E\u30A2\u30A4\u30B3\u30F3\u753B\u50CFURL">
+        <input type="text" class="dtm-input" data-dtm="lyric-custom-alias" placeholder="\u8868\u793A\u540D\uFF08\u4EFB\u610F\uFF09" aria-label="\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\u306E\u8868\u793A\u540D\uFF08\u30D7\u30EB\u30C0\u30A6\u30F3\u306E\u5225\u540D\uFF09" maxlength="64">
+        <input type="text" class="dtm-input" data-dtm="lyric-custom-key" placeholder="\u8B58\u5225\u5B50\uFF08\u4EFB\u610F\u30FB\u7701\u7565\u3067\u81EA\u52D5\u63A1\u756A\u3001\u82F1\u5B57\u59CB\u307E\u308A\u82F1\u6570\u5B57\u3068_\uFF09" aria-label="\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\u306EMML\u8B58\u5225\u5B50\uFF08\u30AD\u30FC\uFF09" maxlength="32">
         <div class="dtm-row">
           <span class="dtm-label dtm-grow" data-dtm="lyric-custom-note" style="color:var(--dtm-warn)"></span>
           <button class="dtm-btn dtm-btn--primary" data-dtm="lyric-custom-apply">\u8FFD\u52A0</button>
@@ -8772,6 +8818,15 @@ var mountDAW = (target, options = {}) => {
       );
       const lyricCustomIcon = lyricDiv.querySelector(
         '[data-dtm="lyric-custom-icon"]'
+      );
+      const lyricCustomAlias = lyricDiv.querySelector(
+        '[data-dtm="lyric-custom-alias"]'
+      );
+      const lyricCustomKey = lyricDiv.querySelector(
+        '[data-dtm="lyric-custom-key"]'
+      );
+      const lyricCustomGuide = lyricDiv.querySelector(
+        '[data-dtm="lyric-custom-guide"]'
       );
       const lyricCustomNote = lyricDiv.querySelector(
         '[data-dtm="lyric-custom-note"]'
@@ -8862,6 +8917,8 @@ var mountDAW = (target, options = {}) => {
       lyricModelSel.addEventListener("change", () => {
         if (lyricModelSel.value === CUSTOM_VOCAL_ADD_VALUE) {
           lyricCustomNote.textContent = "";
+          lyricCustomAlias.value = "";
+          lyricCustomKey.value = "";
           lyricCustom.classList.remove("dtm-hidden");
           return;
         }
@@ -8871,6 +8928,9 @@ var mountDAW = (target, options = {}) => {
         syncInstDisabled();
         fireLyricsChange(active);
       });
+      lyricCustomGuide.addEventListener("click", () => {
+        showModal("\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90(.koe)\u306E\u4F7F\u3044\u65B9", KOE_INFO_HTML);
+      });
       lyricCustomApply.addEventListener("click", () => {
         const src = lyricCustomSrc.value.trim();
         if (!isValidHttpUrl(src)) {
@@ -8879,14 +8939,35 @@ var mountDAW = (target, options = {}) => {
         }
         const iconRaw = lyricCustomIcon.value.trim();
         const iconUrl = isValidHttpUrl(iconRaw) ? iconRaw : "";
+        const alias = lyricCustomAlias.value.trim();
         const existing = [...customVocalsMap.values()].find(
           (d) => d.url === src
         );
-        const key = existing?.key ?? genCustomVocalKey();
+        const keyRaw = lyricCustomKey.value.trim().toLowerCase();
+        let key;
+        if (keyRaw) {
+          if (!CUSTOM_VOCAL_KEY_RE.test(keyRaw)) {
+            lyricCustomNote.textContent = "\u8B58\u5225\u5B50\u304C\u4E0D\u6B63\u3067\u3059\uFF08\u82F1\u5B57\u307E\u305F\u306F\u30A2\u30F3\u30C0\u30FC\u30B9\u30B3\u30A2\u3067\u59CB\u307E\u308B\u82F1\u6570\u5B57\u30FB_\u306E\u307F\uFF09";
+            return;
+          }
+          if (BASE_LYRIC_MODELS.includes(keyRaw)) {
+            lyricCustomNote.textContent = "\u305D\u306E\u8B58\u5225\u5B50\u306F\u5185\u8535\u30E2\u30C7\u30EB\u540D\u3068\u885D\u7A81\u3057\u3066\u3044\u307E\u3059";
+            return;
+          }
+          const conflict = customVocalsMap.get(keyRaw);
+          if (conflict && conflict.url !== src) {
+            lyricCustomNote.textContent = "\u305D\u306E\u8B58\u5225\u5B50\u306F\u5225\u306E\u97F3\u6E90\u306B\u4F7F\u7528\u6E08\u307F\u3067\u3059";
+            return;
+          }
+          key = keyRaw;
+        } else {
+          key = existing?.key ?? genCustomVocalKey();
+        }
         registerCustomVocal({
           key,
           iconUrl: iconUrl || (existing?.iconUrl ?? ""),
-          url: src
+          url: src,
+          label: alias || existing?.label
         });
         active.lyricModel = key;
         fireLyricsChange(active);
