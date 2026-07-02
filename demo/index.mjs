@@ -1719,7 +1719,7 @@ var INSTRUMENT_PRESETS = {
   }
 };
 
-// node_modules/.pnpm/@onjmin+koe@1.0.3/node_modules/@onjmin/koe/dist/index.js
+// node_modules/.pnpm/@onjmin+koe@1.0.4/node_modules/@onjmin/koe/dist/index.js
 var MAGIC = 1263486208;
 function parseKoeHeader(headerBytes) {
   const view = new DataView(headerBytes);
@@ -1729,6 +1729,8 @@ function parseKoeHeader(headerBytes) {
   return { jsonLength: view.getUint32(4, true) };
 }
 var pcmBase = (jsonLength) => 8 + jsonLength;
+var MAX_PHONEME_SAMPLES = 5242880;
+var MAX_JSON_LENGTH = 50 * 1024 * 1024;
 var BlobVoiceSource = class {
   constructor(blob2, base) {
     this.blob = blob2;
@@ -1750,22 +1752,60 @@ var RangeVoiceSource = class {
   base;
   async readBytes(offset, length) {
     const start = this.base + offset;
-    const res = await fetch(this.url, {
-      headers: { Range: `bytes=${start}-${start + length - 1}` }
-    });
-    if (!res.ok && res.status !== 206) {
-      throw new Error(`.koe range request failed: ${res.status}`);
-    }
-    return res.arrayBuffer();
+    return rangeFetch(this.url, start, length);
   }
 };
 async function rangeFetch(url2, start, length) {
   const res = await fetch(url2, {
-    headers: { Range: `bytes=${start}-${start + length - 1}` }
+    headers: { Range: `bytes=${start}-${start + length - 1}` },
+    credentials: "omit"
+    // never leak cookies / auth to a MML-supplied URL
   });
-  if (!res.ok && res.status !== 206)
-    throw new Error(`.koe fetch failed: ${res.status}`);
-  return res.arrayBuffer();
+  if (res.status !== 206) {
+    throw new Error(
+      `.koe fetch failed: expected 206 Partial Content, got ${res.status}`
+    );
+  }
+  return readCapped(res, length);
+}
+async function readCapped(res, length) {
+  const reader = res.body?.getReader();
+  if (!reader) {
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength > length) {
+      throw new Error(
+        `.koe fetch failed: response exceeds requested ${length} bytes`
+      );
+    }
+    return buf;
+  }
+  const out = new Uint8Array(length);
+  let received = 0;
+  for (; ; ) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (received + value.byteLength > length) {
+      await reader.cancel();
+      throw new Error(
+        `.koe fetch failed: response exceeds requested ${length} bytes`
+      );
+    }
+    out.set(value, received);
+    received += value.byteLength;
+  }
+  return received === length ? out.buffer : out.buffer.slice(0, received);
+}
+function validateJsonLength(jsonLength) {
+  if (!Number.isInteger(jsonLength) || jsonLength < 0 || jsonLength > MAX_JSON_LENGTH) {
+    throw new Error(`manifest JSON length out of bounds: ${jsonLength}`);
+  }
+}
+function parseManifest(json) {
+  const manifest = JSON.parse(new TextDecoder().decode(json));
+  if (!manifest || typeof manifest !== "object" || typeof manifest.phonemes !== "object" || manifest.phonemes === null) {
+    throw new Error("invalid manifest: missing phonemes table");
+  }
+  return manifest;
 }
 var VoiceBank = class _VoiceBank {
   constructor(manifest, source) {
@@ -1779,20 +1819,41 @@ var VoiceBank = class _VoiceBank {
    * @param koe a Blob/File of the .koe archive, or a URL (served with Range support)
    */
   static async load(koe) {
-    if (typeof koe === "string") {
-      const header2 = await rangeFetch(koe, 0, 8);
-      const { jsonLength: jsonLength2 } = parseKoeHeader(header2);
-      const json2 = await rangeFetch(koe, 8, jsonLength2);
-      const manifest2 = JSON.parse(new TextDecoder().decode(json2));
-      return new _VoiceBank(
-        manifest2,
-        new RangeVoiceSource(koe, pcmBase(jsonLength2))
+    try {
+      if (typeof koe === "string") {
+        if (/^blob:/i.test(koe)) {
+          const res = await fetch(koe);
+          if (!res.ok) {
+            throw new Error(`blob: URL fetch failed: ${res.status}`);
+          }
+          return await _VoiceBank.fromBlob(await res.blob());
+        }
+        if (!/^https?:/i.test(koe)) {
+          throw new Error(`unsupported URL protocol: ${koe}`);
+        }
+        const header = await rangeFetch(koe, 0, 8);
+        const { jsonLength } = parseKoeHeader(header);
+        validateJsonLength(jsonLength);
+        const json = await rangeFetch(koe, 8, jsonLength);
+        const manifest = parseManifest(json);
+        return new _VoiceBank(
+          manifest,
+          new RangeVoiceSource(koe, pcmBase(jsonLength))
+        );
+      }
+      return await _VoiceBank.fromBlob(koe);
+    } catch (error) {
+      throw new Error(
+        `Failed to load .koe voice bank: ${error instanceof Error ? error.message : String(error)}`
       );
     }
+  }
+  static async fromBlob(koe) {
     const header = await koe.slice(0, 8).arrayBuffer();
     const { jsonLength } = parseKoeHeader(header);
+    validateJsonLength(jsonLength);
     const json = await koe.slice(8, 8 + jsonLength).arrayBuffer();
-    const manifest = JSON.parse(new TextDecoder().decode(json));
+    const manifest = parseManifest(json);
     return new _VoiceBank(
       manifest,
       new BlobVoiceSource(koe, pcmBase(jsonLength))
@@ -1800,7 +1861,7 @@ var VoiceBank = class _VoiceBank {
   }
   /** True if the bank contains a phoneme under this alias. */
   has(phoneme) {
-    return this.manifest.phonemes[phoneme] !== void 0;
+    return Object.hasOwn(this.manifest.phonemes, phoneme);
   }
   /**
    * Raw Int16 PCM bytes (48 kHz / mono) for a phoneme, or null if unknown.
@@ -1808,8 +1869,11 @@ var VoiceBank = class _VoiceBank {
    * worker / AudioWorklet.
    */
   async readPcmBytes(phoneme) {
+    if (!Object.hasOwn(this.manifest.phonemes, phoneme)) return null;
     const entry = this.manifest.phonemes[phoneme];
-    if (!entry) return null;
+    if (!Number.isInteger(entry.offset) || !Number.isInteger(entry.length) || entry.offset < 0 || entry.length < 0 || entry.length > MAX_PHONEME_SAMPLES) {
+      throw new Error(`manifest entry out of bounds for phoneme: ${phoneme}`);
+    }
     return this.source.readBytes(entry.offset, entry.length * 2);
   }
   /**
@@ -1819,7 +1883,7 @@ var VoiceBank = class _VoiceBank {
   async getPcm(phoneme) {
     const buf = await this.readPcmBytes(phoneme);
     if (!buf) return null;
-    const int16 = new Int16Array(buf);
+    const int16 = new Int16Array(buf, 0, Math.floor(buf.byteLength / 2));
     const f64 = new Float64Array(int16.length);
     for (let i = 0; i < int16.length; i++) f64[i] = int16[i] / 32768;
     return f64;
@@ -2010,7 +2074,8 @@ var Worldline = class _Worldline {
     }
     const outLen = WL._PhraseSynthSynth(ps, yPtrPtr, 0);
     const yPtr = WL.getValue(yPtrPtr, "*");
-    const audio = outLen > 0 ? new Float32Array(WL.HEAPF32.buffer, yPtr, outLen).slice() : null;
+    const audio = outLen > 0 && yPtr ? new Float32Array(WL.HEAPF32.buffer, yPtr, outLen).slice() : null;
+    if (yPtr) WL._free(yPtr);
     WL._free(yPtrPtr);
     WL._PhraseSynthDelete(ps);
     return audio;
@@ -2201,7 +2266,7 @@ var parseLyrics = (mml) => {
     let pan = 64;
     let octave = 0;
     const modelMatch = rest.match(
-      /^([a-z_]+?)(?=(?:[vqpo]-?\d)|[^a-z_]|$)(?::(\d+))?/i
+      /^([a-z_][a-z0-9_]*?)(?=(?:[vqpo]-?\d)|[^a-z0-9_]|$)(?::(\d+))?/i
     );
     let model = "";
     const metaTokens = [];
@@ -2276,6 +2341,40 @@ var stripLyrics = (mml) => {
   }
   return kept.join("\n");
 };
+var CUSTOM_VOCAL_LINE = /^@@([a-zA-Z_][a-zA-Z0-9_]*)\s+(\S+)\s+(\S+)\s*$/;
+var CUSTOM_VOCAL_URL_MAX_LEN = 2048;
+var isValidHttpUrl = (s) => {
+  if (s.length > CUSTOM_VOCAL_URL_MAX_LEN) return false;
+  try {
+    const u = new URL(s);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+var parseCustomVocals = (mml) => {
+  const map = /* @__PURE__ */ new Map();
+  for (const seg of splitSegments(mml)) {
+    const m = seg.match(CUSTOM_VOCAL_LINE);
+    if (!m) continue;
+    const key = m[1].toLowerCase();
+    const iconUrl = m[2];
+    const koeUrl2 = m[3];
+    if (!isValidHttpUrl(koeUrl2)) {
+      console.warn(
+        `[dtm] \u30AB\u30B9\u30BF\u30E0\u30DC\u30FC\u30AB\u30EB "${key}": koe URL \u304C\u4E0D\u6B63\u307E\u305F\u306F\u9577\u3059\u304E\u308B\u305F\u3081\u30B9\u30AD\u30C3\u30D7\u3057\u307E\u3059`,
+        koeUrl2.slice(0, 80)
+      );
+      continue;
+    }
+    const resolvedIconUrl = isValidHttpUrl(iconUrl) ? iconUrl : "";
+    map.set(key, { key, iconUrl: resolvedIconUrl, url: koeUrl2 });
+  }
+  return [...map.values()];
+};
+var stripCustomVocals = (mml) => mml.split(/[\n\r]+/).map(
+  (line) => line.split(";").filter((seg) => !CUSTOM_VOCAL_LINE.test(seg.trim())).join(";")
+).join("\n");
 var panToStereo = (pan) => Math.max(-1, Math.min(1, (pan - 64) / 64));
 var createLyricsConductor = (lyrics) => {
   const pointers = /* @__PURE__ */ new Map();
@@ -2801,6 +2900,16 @@ var createSingingVoices = (ctx, destination, options = {}) => {
     for (const m of models) if (m) set.add(m.toLowerCase());
     await Promise.all([...set].map((m) => load2(m)));
   };
+  const registerVoicebanks = (banks) => {
+    for (const [k, v] of Object.entries(banks)) {
+      const key = k.toLowerCase();
+      if (key === FALLBACK_MODEL) continue;
+      if (catalog[key] === v) continue;
+      catalog[key] = v;
+      loaded.delete(key);
+      loading.delete(key);
+    }
+  };
   const forEachSungNote = (track, fn) => {
     let prevVowel = "";
     for (const note of track.notes) {
@@ -2907,7 +3016,14 @@ var createSingingVoices = (ctx, destination, options = {}) => {
     stopStream();
     for (const v of loaded.values()) v.reset?.();
   };
-  return { loadModels, warm, startStream, stopStream, reset };
+  return {
+    loadModels,
+    registerVoicebanks,
+    warm,
+    startStream,
+    stopStream,
+    reset
+  };
 };
 var createVoiceRegistry = (models = {}, fallback = "klatt") => {
   const sing = (model, syllable, e) => {
@@ -4361,7 +4477,8 @@ var parseMML = (mml, options = {}) => {
       meta: {}
     };
   }
-  const noComments = mml.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const noCustomVocals = stripCustomVocals(mml);
+  const noComments = noCustomVocals.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   const meta = parseMmlMeta(noComments);
   const noMeta = stripMmlMeta(noComments);
   const lyrics = collectLyrics ? parseLyrics(noMeta) : void 0;
@@ -6192,6 +6309,9 @@ var createSynth = (ctx, destination = ctx.destination) => {
   return { playNote, playDrum };
 };
 
+// assets/404Chip.png
+var Chip_default = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAcElEQVR42u2WOw7AIAxD7Yr7X9kdqi5IIXQKBWckKHrOTyEAodAuFJsBDGAAA7TIIT0LkuTQ/1r0L4u3XgZ6ZbNKsvf9mlBSqu5fU9DXMFP3teujeOtPQbYPZnplFK88A4xuwmM2IX0VG8AABjge4AZHeT8uyZjZYAAAAABJRU5ErkJggg==";
+
 // assets/puyuyu.png
 var puyuyu_default = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAB60lEQVR42tWXPUxTURiGn9vWMCgtEQoDcWhAFgdtB0dMGjfcIAwMjcYoKIObq3F1EwKixNR0cCC46YQ4ODqIi4kRjUPj0Jaa1roYi9fh9Kuck3tvb7v08C73J+/5Tt7nnPvlHoeQend3yKULXXxQc8L4IvRZsU6JM9NJAKLZOQCazox6jiU0/2Gzrgq6r5RvetsFeP+2EkjEPgJ+yd3olDL81RObEp+My7Ct6oLrRcIeAmbyyKULngOikf2uJpA6GT54kug7gfZ6HO6cdwF+pYYBGBxT12vzrwF49mKpq8JXZzcAyG9dBqBRqgJw8lNRob+ybwkBc+2vrx1oBknQq4Sg6OnyCEf7g319YGU1rSM6taWujtou9S/ZwILxid1gf2sP2NsJZZdGZz57DkhMvlG9/uVZvT906bePwO9GDYCBwSFtDUWLN1UfePxkw/tzCumXeawh0O4D59InNAL54gIAN27d1wZsPrqnvu8zz/V+EdIvBD7u/bGUgEhI/BjLae9PlwqBBf385trbQ0Buvj2ccAFGR396kuhVZvJyOQ5A6s5Xx64+UPlebd2p/wAhYSYQ3S40tef1XCxwIkn+fx4s2wPmv2FyXCdhJjcT+703k1v3V+x0OhkJiV7ll9x+Ap1Px25giWNzOv4HHKK9IIEhxAYAAAAASUVORK5CYII=";
 
@@ -6227,6 +6347,7 @@ var VOICE_IMAGES = {
   tsukuyomi: tsukuyomi_default,
   rei: rei_default
 };
+var FALLBACK_VOCAL_ICON = Chip_default;
 
 // src/mml-player.ts
 var STEPS_PER_BEAT3 = 48;
@@ -6425,6 +6546,9 @@ var mountMmlPlayer = (target, mml, options = {}) => {
     collectLyrics: true
   });
   const lyricTracks = lyrics ?? /* @__PURE__ */ new Map();
+  const customVocalByKey = new Map(
+    parseCustomVocals(mml).map((d) => [d.key, d])
+  );
   const bpm = parsedBpm ?? options.defaultBpm ?? DEFAULT_BPM;
   const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
   const drumPattern = meta.drum ? drumPatternDict[meta.drum] ?? null : null;
@@ -6826,11 +6950,18 @@ var mountMmlPlayer = (target, mml, options = {}) => {
   for (const [index, lt] of lyricTracks) {
     const em = emojiByTrack.get(index);
     if (!em) continue;
+    const custom = customVocalByKey.get(lt.model.toLowerCase());
     const imgKey = VOICE_IMAGE_KEY[lt.model.toLowerCase()];
-    const src = imgKey ? VOICE_IMAGES[imgKey] : void 0;
+    const src = custom ? custom.iconUrl || FALLBACK_VOCAL_ICON : imgKey ? VOICE_IMAGES[imgKey] : void 0;
     if (!src) continue;
     const img = doc.createElement("img");
     img.src = src;
+    if (custom) {
+      img.onerror = () => {
+        img.onerror = null;
+        img.src = FALLBACK_VOCAL_ICON;
+      };
+    }
     img.width = 20;
     img.height = 20;
     img.style.borderRadius = "50%";
@@ -7270,6 +7401,13 @@ var mountMmlPlayer = (target, mml, options = {}) => {
         }
       });
       try {
+        if (customVocalByKey.size > 0) {
+          v.registerVoicebanks?.(
+            Object.fromEntries(
+              [...customVocalByKey].map(([k, d]) => [k, d.url])
+            )
+          );
+        }
         await v.loadModels(tracks.map((t) => t.model));
         if (skipSinging) return;
         const startTime = performance.now();
@@ -7565,12 +7703,13 @@ var TRACKS_ADVANCED = [
   }
 ];
 var DEFAULT_TRACKS = TRACKS_SIMPLE;
-var LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
-var LYRIC_MODEL_LABELS2 = {
+var BASE_LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
+var BASE_LYRIC_MODEL_LABELS = {
   klatt: "\u8EFD\u91CF\u30ED\u30DC\u58F0",
   ...KOE_VOICEBANK_LABELS
 };
-var lyricModelLabel = (model) => LYRIC_MODEL_LABELS2[model] ?? model;
+var lyricModelLabel = (model, customMap) => BASE_LYRIC_MODEL_LABELS[model] ?? customMap.get(model)?.label ?? model;
+var CUSTOM_VOCAL_ADD_VALUE = "+custom";
 var clamp3 = (v, min, max) => Math.min(Math.max(v, min), max);
 var normalizeInstrumentName = (name) => {
   if (!name) return "";
@@ -7627,6 +7766,22 @@ var mountDAW = (target, options = {}) => {
   let currentPlayStep = 0;
   let ready = false;
   let isLoading = false;
+  const customVocalsMap = /* @__PURE__ */ new Map();
+  const registerCustomVocal = (def) => {
+    const key = def.key.toLowerCase();
+    if (BASE_LYRIC_MODELS.includes(key)) return;
+    customVocalsMap.set(key, { ...def, key });
+  };
+  const resetCustomVocals = () => {
+    customVocalsMap.clear();
+    for (const d of options.customVocals ?? []) registerCustomVocal(d);
+  };
+  resetCustomVocals();
+  const genCustomVocalKey = () => {
+    let n = 1;
+    while (customVocalsMap.has(`custom${n}`)) n++;
+    return `custom${n}`;
+  };
   let selectedNotes = [];
   let selectionRect = null;
   let copiedNotes = [];
@@ -8380,6 +8535,13 @@ var mountDAW = (target, options = {}) => {
       const overlay = showLoadingOverlay(refs.rollContainer);
       setLoading(true);
       try {
+        if (customVocalsMap.size > 0) {
+          voices.registerVoicebanks?.(
+            Object.fromEntries(
+              [...customVocalsMap].map(([k, d]) => [k, d.url])
+            )
+          );
+        }
         await voices.loadModels(streamTracks.map((t) => t.model));
         await voices.warm(streamTracks);
       } catch (err2) {
@@ -8544,6 +8706,14 @@ var mountDAW = (target, options = {}) => {
         <a data-dtm="lyric-terms-link" target="_blank" rel="noopener" style="color:var(--dtm-primary);text-decoration:underline"></a>
         <span>\u306E\u5229\u7528\u898F\u7D04\u306B\u5F93\u3063\u3066\u304F\u3060\u3055\u3044</span>
       </div>
+      <div class="dtm-row dtm-hidden" data-dtm="lyric-custom" style="flex-direction:column;align-items:stretch;gap:4px">
+        <input type="url" class="dtm-input" data-dtm="lyric-custom-src" placeholder="\u97F3\u6E90URL\uFF08https://\u301C.koe\uFF09" aria-label="\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\uFF08.koe\uFF09\u306EURL">
+        <input type="url" class="dtm-input" data-dtm="lyric-custom-icon" placeholder="\u30A2\u30A4\u30B3\u30F3\u753B\u50CFURL\uFF08\u4EFB\u610F\uFF09" aria-label="\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\u306E\u30A2\u30A4\u30B3\u30F3\u753B\u50CFURL">
+        <div class="dtm-row">
+          <span class="dtm-label dtm-grow" data-dtm="lyric-custom-note" style="color:var(--dtm-warn)"></span>
+          <button class="dtm-btn dtm-btn--primary" data-dtm="lyric-custom-apply">\u8FFD\u52A0</button>
+        </div>
+      </div>
       <div class="dtm-row" data-dtm="lyric-body" style="flex-direction:column;align-items:stretch">
         <div class="dtm-row">
           <span class="dtm-label">\u58F0\u91CF</span>
@@ -8594,6 +8764,21 @@ var mountDAW = (target, options = {}) => {
       const lyricTermsLink = lyricDiv.querySelector(
         '[data-dtm="lyric-terms-link"]'
       );
+      const lyricCustom = lyricDiv.querySelector(
+        '[data-dtm="lyric-custom"]'
+      );
+      const lyricCustomSrc = lyricDiv.querySelector(
+        '[data-dtm="lyric-custom-src"]'
+      );
+      const lyricCustomIcon = lyricDiv.querySelector(
+        '[data-dtm="lyric-custom-icon"]'
+      );
+      const lyricCustomNote = lyricDiv.querySelector(
+        '[data-dtm="lyric-custom-note"]'
+      );
+      const lyricCustomApply = lyricDiv.querySelector(
+        '[data-dtm="lyric-custom-apply"]'
+      );
       const fmtPan = (pan) => pan === 64 ? "C" : pan < 64 ? `L${64 - pan}` : `R${pan - 64}`;
       const addOpt = (value, label) => {
         const o = document.createElement("option");
@@ -8602,9 +8787,15 @@ var mountDAW = (target, options = {}) => {
         lyricModelSel.appendChild(o);
       };
       addOpt("", "\u30DC\u30FC\u30AB\u30EB\u306A\u3057");
-      for (const m of LYRIC_MODELS) addOpt(m, lyricModelLabel(m));
-      if (active.lyricModel && !LYRIC_MODELS.includes(active.lyricModel)) {
-        addOpt(active.lyricModel, lyricModelLabel(active.lyricModel));
+      for (const m of BASE_LYRIC_MODELS)
+        addOpt(m, lyricModelLabel(m, customVocalsMap));
+      for (const [k, def] of customVocalsMap) addOpt(k, def.label ?? k);
+      addOpt(CUSTOM_VOCAL_ADD_VALUE, "\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\u3092\u8FFD\u52A0\u2026");
+      if (active.lyricModel && !BASE_LYRIC_MODELS.includes(active.lyricModel) && !customVocalsMap.has(active.lyricModel)) {
+        addOpt(
+          active.lyricModel,
+          lyricModelLabel(active.lyricModel, customVocalsMap)
+        );
       }
       lyricModelSel.value = active.lyricModel;
       lyricOctaveSel.value = String(active.vocalOctave);
@@ -8618,9 +8809,13 @@ var mountDAW = (target, options = {}) => {
         lyricCount.textContent = active.lyricModel && n > 0 ? `${n}\u97F3\u7BC0` : "";
       };
       const syncLyricTerms = () => {
+        if (customVocalsMap.has(active.lyricModel)) {
+          lyricTerms.classList.add("dtm-hidden");
+          return;
+        }
         const url2 = active.lyricModel ? KOE_VOICEBANK_TERMS[active.lyricModel] : void 0;
         if (url2) {
-          const label = lyricModelLabel(active.lyricModel);
+          const label = lyricModelLabel(active.lyricModel, customVocalsMap);
           lyricTermsLink.textContent = `${label}UTAU\u97F3\u6E90`;
           lyricTermsLink.href = url2;
           lyricTerms.classList.remove("dtm-hidden");
@@ -8629,7 +8824,24 @@ var mountDAW = (target, options = {}) => {
         }
       };
       const syncLyricIcon = () => {
-        const imgKey = active.lyricModel ? VOICE_IMAGE_KEY[active.lyricModel.toLowerCase()] : void 0;
+        if (!active.lyricModel) {
+          lyricIcon.removeAttribute("src");
+          lyricIcon.classList.add("dtm-hidden");
+          return;
+        }
+        const customDef = customVocalsMap.get(active.lyricModel);
+        if (customDef !== void 0) {
+          const iconSrc = customDef.iconUrl || FALLBACK_VOCAL_ICON;
+          lyricIcon.src = iconSrc;
+          lyricIcon.classList.remove("dtm-hidden");
+          lyricIcon.onerror = () => {
+            lyricIcon.onerror = null;
+            lyricIcon.src = FALLBACK_VOCAL_ICON;
+          };
+          return;
+        }
+        lyricIcon.onerror = null;
+        const imgKey = VOICE_IMAGE_KEY[active.lyricModel.toLowerCase()];
         const src = imgKey ? VOICE_IMAGES[imgKey] : void 0;
         if (src) {
           lyricIcon.src = src;
@@ -8648,10 +8860,37 @@ var mountDAW = (target, options = {}) => {
       };
       syncLyricVisibility();
       lyricModelSel.addEventListener("change", () => {
+        if (lyricModelSel.value === CUSTOM_VOCAL_ADD_VALUE) {
+          lyricCustomNote.textContent = "";
+          lyricCustom.classList.remove("dtm-hidden");
+          return;
+        }
+        lyricCustom.classList.add("dtm-hidden");
         active.lyricModel = lyricModelSel.value;
         syncLyricVisibility();
         syncInstDisabled();
         fireLyricsChange(active);
+      });
+      lyricCustomApply.addEventListener("click", () => {
+        const src = lyricCustomSrc.value.trim();
+        if (!isValidHttpUrl(src)) {
+          lyricCustomNote.textContent = "\u97F3\u6E90URL\u304C\u4E0D\u6B63\u3067\u3059\uFF08http/https\u306E\u307F\u30FB2048\u6587\u5B57\u307E\u3067\uFF09";
+          return;
+        }
+        const iconRaw = lyricCustomIcon.value.trim();
+        const iconUrl = isValidHttpUrl(iconRaw) ? iconRaw : "";
+        const existing = [...customVocalsMap.values()].find(
+          (d) => d.url === src
+        );
+        const key = existing?.key ?? genCustomVocalKey();
+        registerCustomVocal({
+          key,
+          iconUrl: iconUrl || (existing?.iconUrl ?? ""),
+          url: src
+        });
+        active.lyricModel = key;
+        fireLyricsChange(active);
+        updateTrackPanel();
       });
       lyricOctaveSel.addEventListener("change", () => {
         active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
@@ -8836,9 +9075,25 @@ var mountDAW = (target, options = {}) => {
       const head = params ? `${x.model} ${params}` : x.model;
       return `@@${x.i} ${head} ${x.text}`;
     });
-    const full = [metaLineFull, ...trackLines, ...lyricLines, MML_END_MARKER].filter((s) => s.length > 0).join(";\n");
+    const customVocalDecls = [];
+    for (const [key, def] of customVocalsMap) {
+      const isUsed = trackStates.some(
+        (t) => t.lyricModel.trim().toLowerCase() === key && t.lyrics.trim().length > 0 && clipNotes(t.core.getNotes()).length > 0
+      );
+      if (!isUsed) continue;
+      const iconPart = def.iconUrl || "-";
+      customVocalDecls.push(`@@${key} ${iconPart} ${def.url}`);
+    }
+    const full = [
+      metaLineFull,
+      ...customVocalDecls,
+      ...trackLines,
+      ...lyricLines,
+      MML_END_MARKER
+    ].filter((s) => s.length > 0).join(";\n");
     const minified = [
       metaLineMini,
+      ...customVocalDecls,
       ...trackLinesMini,
       ...lyricLines,
       MML_END_MARKER
@@ -8903,6 +9158,8 @@ var mountDAW = (target, options = {}) => {
     stop();
     clearAll();
     for (const t of trackStates) t.core.setLoadMode(true);
+    resetCustomVocals();
+    for (const def of parseCustomVocals(mml)) registerCustomVocal(def);
     const {
       placements,
       bpm: parsedBpm,
@@ -11226,12 +11483,14 @@ export {
   init,
   injectStyles,
   isChordHeavyTrack,
+  isValidHttpUrl,
   koeUrl,
   mountDAW,
   mountMmlPlayer,
   normalizeLyrics,
   onClick,
   panToStereo,
+  parseCustomVocals,
   parseLyrics,
   parseMML,
   parseMmlMeta,
@@ -11240,6 +11499,7 @@ export {
   setDrawOffset,
   shiftNotes,
   showLoadingOverlay,
+  stripCustomVocals,
   stripLyrics,
   stripMmlMeta,
   vocalVolumeToGain

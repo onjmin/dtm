@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // node_modules/.pnpm/@onjmin+koe@1.0.3/node_modules/@onjmin/koe/dist/index.js
+  // node_modules/.pnpm/@onjmin+koe@1.0.4/node_modules/@onjmin/koe/dist/index.js
   var MAGIC = 1263486208;
   function parseKoeHeader(headerBytes) {
     const view = new DataView(headerBytes);
@@ -10,6 +10,8 @@
     return { jsonLength: view.getUint32(4, true) };
   }
   var pcmBase = (jsonLength) => 8 + jsonLength;
+  var MAX_PHONEME_SAMPLES = 5242880;
+  var MAX_JSON_LENGTH = 50 * 1024 * 1024;
   var BlobVoiceSource = class {
     constructor(blob, base) {
       this.blob = blob;
@@ -31,22 +33,60 @@
     base;
     async readBytes(offset, length) {
       const start = this.base + offset;
-      const res = await fetch(this.url, {
-        headers: { Range: `bytes=${start}-${start + length - 1}` }
-      });
-      if (!res.ok && res.status !== 206) {
-        throw new Error(`.koe range request failed: ${res.status}`);
-      }
-      return res.arrayBuffer();
+      return rangeFetch(this.url, start, length);
     }
   };
   async function rangeFetch(url, start, length) {
     const res = await fetch(url, {
-      headers: { Range: `bytes=${start}-${start + length - 1}` }
+      headers: { Range: `bytes=${start}-${start + length - 1}` },
+      credentials: "omit"
+      // never leak cookies / auth to a MML-supplied URL
     });
-    if (!res.ok && res.status !== 206)
-      throw new Error(`.koe fetch failed: ${res.status}`);
-    return res.arrayBuffer();
+    if (res.status !== 206) {
+      throw new Error(
+        `.koe fetch failed: expected 206 Partial Content, got ${res.status}`
+      );
+    }
+    return readCapped(res, length);
+  }
+  async function readCapped(res, length) {
+    const reader = res.body?.getReader();
+    if (!reader) {
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength > length) {
+        throw new Error(
+          `.koe fetch failed: response exceeds requested ${length} bytes`
+        );
+      }
+      return buf;
+    }
+    const out = new Uint8Array(length);
+    let received = 0;
+    for (; ; ) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (received + value.byteLength > length) {
+        await reader.cancel();
+        throw new Error(
+          `.koe fetch failed: response exceeds requested ${length} bytes`
+        );
+      }
+      out.set(value, received);
+      received += value.byteLength;
+    }
+    return received === length ? out.buffer : out.buffer.slice(0, received);
+  }
+  function validateJsonLength(jsonLength) {
+    if (!Number.isInteger(jsonLength) || jsonLength < 0 || jsonLength > MAX_JSON_LENGTH) {
+      throw new Error(`manifest JSON length out of bounds: ${jsonLength}`);
+    }
+  }
+  function parseManifest(json) {
+    const manifest = JSON.parse(new TextDecoder().decode(json));
+    if (!manifest || typeof manifest !== "object" || typeof manifest.phonemes !== "object" || manifest.phonemes === null) {
+      throw new Error("invalid manifest: missing phonemes table");
+    }
+    return manifest;
   }
   var VoiceBank = class _VoiceBank {
     constructor(manifest, source) {
@@ -60,20 +100,41 @@
      * @param koe a Blob/File of the .koe archive, or a URL (served with Range support)
      */
     static async load(koe) {
-      if (typeof koe === "string") {
-        const header2 = await rangeFetch(koe, 0, 8);
-        const { jsonLength: jsonLength2 } = parseKoeHeader(header2);
-        const json2 = await rangeFetch(koe, 8, jsonLength2);
-        const manifest2 = JSON.parse(new TextDecoder().decode(json2));
-        return new _VoiceBank(
-          manifest2,
-          new RangeVoiceSource(koe, pcmBase(jsonLength2))
+      try {
+        if (typeof koe === "string") {
+          if (/^blob:/i.test(koe)) {
+            const res = await fetch(koe);
+            if (!res.ok) {
+              throw new Error(`blob: URL fetch failed: ${res.status}`);
+            }
+            return await _VoiceBank.fromBlob(await res.blob());
+          }
+          if (!/^https?:/i.test(koe)) {
+            throw new Error(`unsupported URL protocol: ${koe}`);
+          }
+          const header = await rangeFetch(koe, 0, 8);
+          const { jsonLength } = parseKoeHeader(header);
+          validateJsonLength(jsonLength);
+          const json = await rangeFetch(koe, 8, jsonLength);
+          const manifest = parseManifest(json);
+          return new _VoiceBank(
+            manifest,
+            new RangeVoiceSource(koe, pcmBase(jsonLength))
+          );
+        }
+        return await _VoiceBank.fromBlob(koe);
+      } catch (error) {
+        throw new Error(
+          `Failed to load .koe voice bank: ${error instanceof Error ? error.message : String(error)}`
         );
       }
+    }
+    static async fromBlob(koe) {
       const header = await koe.slice(0, 8).arrayBuffer();
       const { jsonLength } = parseKoeHeader(header);
+      validateJsonLength(jsonLength);
       const json = await koe.slice(8, 8 + jsonLength).arrayBuffer();
-      const manifest = JSON.parse(new TextDecoder().decode(json));
+      const manifest = parseManifest(json);
       return new _VoiceBank(
         manifest,
         new BlobVoiceSource(koe, pcmBase(jsonLength))
@@ -81,7 +142,7 @@
     }
     /** True if the bank contains a phoneme under this alias. */
     has(phoneme) {
-      return this.manifest.phonemes[phoneme] !== void 0;
+      return Object.hasOwn(this.manifest.phonemes, phoneme);
     }
     /**
      * Raw Int16 PCM bytes (48 kHz / mono) for a phoneme, or null if unknown.
@@ -89,8 +150,11 @@
      * worker / AudioWorklet.
      */
     async readPcmBytes(phoneme) {
+      if (!Object.hasOwn(this.manifest.phonemes, phoneme)) return null;
       const entry = this.manifest.phonemes[phoneme];
-      if (!entry) return null;
+      if (!Number.isInteger(entry.offset) || !Number.isInteger(entry.length) || entry.offset < 0 || entry.length < 0 || entry.length > MAX_PHONEME_SAMPLES) {
+        throw new Error(`manifest entry out of bounds for phoneme: ${phoneme}`);
+      }
       return this.source.readBytes(entry.offset, entry.length * 2);
     }
     /**
@@ -100,7 +164,7 @@
     async getPcm(phoneme) {
       const buf = await this.readPcmBytes(phoneme);
       if (!buf) return null;
-      const int16 = new Int16Array(buf);
+      const int16 = new Int16Array(buf, 0, Math.floor(buf.byteLength / 2));
       const f64 = new Float64Array(int16.length);
       for (let i = 0; i < int16.length; i++) f64[i] = int16[i] / 32768;
       return f64;
@@ -291,7 +355,8 @@
       }
       const outLen = WL._PhraseSynthSynth(ps, yPtrPtr, 0);
       const yPtr = WL.getValue(yPtrPtr, "*");
-      const audio = outLen > 0 ? new Float32Array(WL.HEAPF32.buffer, yPtr, outLen).slice() : null;
+      const audio = outLen > 0 && yPtr ? new Float32Array(WL.HEAPF32.buffer, yPtr, outLen).slice() : null;
+      if (yPtr) WL._free(yPtr);
       WL._free(yPtrPtr);
       WL._PhraseSynthDelete(ps);
       return audio;
