@@ -2503,8 +2503,8 @@ var KOE_VOICEBANKS = {
   teto: "\u91CD\u97F3\u30C6\u30C8\u5358\u72EC\u97F3.koe",
   shiyo: "\u9769\u547D\u30B7\u30E8.koe",
   rei: "\u8DB3\u7ACB\u30EC\u30A4ver3.5.0.koe",
-  MGRoid: "MGRoid_\u539F\u97F3\u8A2D\u5B9A\u6E08\u307F.koe",
-  MOTRoid: "MOTRoid\u5B8C\u5168\u7248V2.koe"
+  mgroid: "MGRoid_\u539F\u97F3\u8A2D\u5B9A\u6E08\u307F.koe",
+  motroid: "MOTRoid\u5B8C\u5168\u7248V2.koe"
 };
 var KOE_VOICEBANK_LABELS = {
   tsukuyomi: "\u3064\u304F\u3088\u307F\u3061\u3083\u3093",
@@ -2515,8 +2515,8 @@ var KOE_VOICEBANK_LABELS = {
   teto: "\u91CD\u97F3\u30C6\u30C8",
   shiyo: "\u9769\u547D\u30B7\u30E8",
   rei: "\u8DB3\u7ACB\u30EC\u30A4",
-  MGRoid: "MGRoid",
-  MOTRoid: "MOTRoid"
+  mgroid: "MGRoid",
+  motroid: "MOTRoid"
 };
 var VOICE_IMAGE_KEY = {
   klatt: "puyuyu",
@@ -2528,8 +2528,8 @@ var VOICE_IMAGE_KEY = {
   teto: "teto",
   shiyo: "shiyo",
   rei: "rei",
-  MGRoid: "MGRoid",
-  MOTRoid: "MOTRoid"
+  mgroid: "MGRoid",
+  motroid: "MOTRoid"
 };
 var KOE_VOICEBANK_TERMS = {
   tsukuyomi: "https://tyc.rei-yumesaki.net/material/utau/terms/",
@@ -2540,8 +2540,8 @@ var KOE_VOICEBANK_TERMS = {
   teto: "https://kasaneteto.jp/guidelines/voice.html",
   shiyo: "https://kakumeisiyo.my.canva.site/dagkuyjwycs",
   rei: "https://mechanicalgirl.jp/guidelines/",
-  MGRoid: "https://x.com/nisusansu/status/1048825378188353536",
-  MOTRoid: "https://www.nicovideo.jp/watch/sm40031282"
+  mgroid: "https://x.com/nisusansu/status/1048825378188353536",
+  motroid: "https://www.nicovideo.jp/watch/sm40031282"
 };
 var koeUrl = (name, base = KOE_BASE_URL) => `${base}/${encodeURIComponent(name)}`;
 var DEFAULT_WORLDLINE_SCRIPT = "https://onjmin.github.io/koe/demo/world/worldline.js";
