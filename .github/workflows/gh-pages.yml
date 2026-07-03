@@ -8,6 +8,9 @@ on:
 
 jobs:
   build-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     permissions:
       actions: write
       checks: write
@@ -68,4 +71,5 @@ jobs:
           path: ./docs
 
       - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v5
