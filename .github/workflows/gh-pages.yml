@@ -12,6 +12,8 @@ jobs:
       actions: write
       checks: write
       contents: write
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
 
     steps:
