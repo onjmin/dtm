@@ -26,15 +26,15 @@ app.use("*", (c, next) => {
 });
 
 // ── API プロキシ（picotune / rpgen）──
-const API_ORIGIN = "https://rpgen-search.pages.dev";
+const API_ORIGIN = "https://rpgen-search.pages.dev/api";
 
 app.get("/picotune/*", async (c) => {
 	const path = c.req.path;
 	const qs = c.req.raw.url.split("?").slice(1).join("?");
 	const url = `${API_ORIGIN}${path}${qs ? `?${qs}` : ""}`;
 	const headers: Record<string, string> = {};
-	const apiKey = c.req.header("X-API-Key");
-	if (apiKey) headers["X-API-Key"] = apiKey;
+	const authorization = c.req.header("Authorization");
+	if (authorization) headers.Authorization = authorization;
 	try {
 		const res = await fetch(url, { headers });
 		const body = await res.arrayBuffer();
@@ -53,8 +53,8 @@ app.get("/rpgen/*", async (c) => {
 	const qs = c.req.raw.url.split("?").slice(1).join("?");
 	const url = `${API_ORIGIN}${path}${qs ? `?${qs}` : ""}`;
 	const headers: Record<string, string> = {};
-	const apiKey = c.req.header("X-API-Key");
-	if (apiKey) headers["X-API-Key"] = apiKey;
+	const authorization = c.req.header("Authorization");
+	if (authorization) headers.Authorization = authorization;
 	try {
 		const res = await fetch(url, { headers });
 		const body = await res.arrayBuffer();

@@ -787,8 +787,13 @@ export const DAW_CSS = `
 .dtm-modal-body {
   padding: 12px;
   overflow-y: auto;
+  overflow-x: hidden;
   font-size: 13px;
   line-height: 1.6;
+}
+.dtm-modal-body * {
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .dtm-modal-body a {
   color: var(--dtm-primary);

@@ -327,6 +327,33 @@ export const extractMidiPlacements = (
 };
 
 /**
+ * AI採譜（audio→MIDI）にありがちな「めちゃくちゃな採譜」を弾くための簡易品質判定。
+ * 人力採譜では起こりにくい特徴を検出する:
+ *   - 極端に短い音符（グレースノート未満）が大半を占める → onset誤検出の乱打
+ *   - 同一startStepに多数の音（半音混じりの塊）が積み重なる → ノイズをそのまま音高化した塊
+ * どちらかが閾値を超えたら「人力採譜ではなさそう」と判定する。
+ */
+export const isPlausibleMidiTranscription = (
+	midi: unknown,
+	selectedIndices: number[],
+): boolean => {
+	const { placements } = extractMidiPlacements(midi, selectedIndices);
+	if (placements.length < 4) return false;
+
+	const shortCount = placements.filter((p) => p.durationSteps <= 1).length;
+	const shortRatio = shortCount / placements.length;
+
+	const countByStep = new Map<number, number>();
+	for (const p of placements) {
+		countByStep.set(p.startStep, (countByStep.get(p.startStep) ?? 0) + 1);
+	}
+	const denseSteps = [...countByStep.values()].filter((n) => n >= 6).length;
+	const denseRatio = denseSteps / countByStep.size;
+
+	return shortRatio < 0.6 && denseRatio < 0.35;
+};
+
+/**
  * advancedモード用：選択された MIDI トラックを選択順に DAW トラックへ上から詰める
  * （k番目に選んだトラック → trackIds[k]）。自動分類なし。
  *

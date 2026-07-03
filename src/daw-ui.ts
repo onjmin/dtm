@@ -51,9 +51,7 @@ export type DawUIRefs = {
 	midiInfoBtn: HTMLButtonElement;
 	midiTrackSelection: HTMLElement;
 	midiPanel: HTMLElement;
-	midiSearchInput: HTMLInputElement;
-	midiSearchBtn: HTMLButtonElement;
-	midiSearchResults: HTMLElement;
+	midiSearchOpenBtn: HTMLButtonElement;
 	mmlInput: HTMLTextAreaElement;
 	mmlLoadBtn: HTMLButtonElement;
 	mmlLoadNote: HTMLElement;
@@ -225,12 +223,6 @@ export const buildUI = (
         <button class="dtm-btn dtm-btn--success" data-dtm="midi-load" style="flex-shrink:0">読込</button>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
-      <div class="dtm-row" data-dtm="midi-search-row" style="flex-wrap:nowrap;${showMidiSearch ? "" : "display:none"}">
-        <span class="dtm-label" style="line-height:1;">検索</span>
-        <input type="text" class="dtm-input dtm-grow" data-dtm="midi-search-input" placeholder="曲名でMIDI検索" style="min-width:0">
-        <button class="dtm-btn dtm-btn--primary" data-dtm="midi-search-btn" style="flex-shrink:0">検索</button>
-      </div>
-      <div class="dtm-row dtm-hidden" data-dtm="midi-search-results" style="flex-direction:column;align-items:stretch;gap:4px;max-height:200px;overflow-y:auto"></div>
       <div class="dtm-row" style="flex-wrap:nowrap">
         <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
           <span class="dtm-label" style="line-height: 1;">MML</span>
@@ -238,6 +230,9 @@ export const buildUI = (
         </div>
         <textarea class="dtm-textarea dtm-grow" data-dtm="mml-input" placeholder="MMLを入力"></textarea>
         <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load" style="flex-shrink:0">読込</button>
+      </div>
+      <div class="dtm-row" data-dtm="midi-search-row" style="justify-content:flex-end;${showMidiSearch ? "" : "display:none"}">
+        <button class="dtm-btn dtm-btn--primary" data-dtm="midi-search-open">MML検索</button>
       </div>
       <p class="dtm-load-note dtm-hidden" data-dtm="mml-load-note"></p>
     </div>
@@ -370,9 +365,7 @@ export const buildUI = (
 		midiInfoBtn: sel("midi-info"),
 		midiTrackSelection: sel("midi-track-selection"),
 		midiPanel: sel("midi-panel"),
-		midiSearchInput: sel("midi-search-input"),
-		midiSearchBtn: sel("midi-search-btn"),
-		midiSearchResults: sel("midi-search-results"),
+		midiSearchOpenBtn: sel("midi-search-open"),
 		mmlInput: sel("mml-input"),
 		mmlLoadBtn: sel("mml-load"),
 		mmlLoadNote: sel("mml-load-note"),

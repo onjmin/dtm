@@ -5,9 +5,12 @@ export type MidiSearchConfig = {
 
 export type PicotuneSong = {
 	id: string;
+	file: string;
 	title: string;
 	user: string;
 	twitter_id?: string;
+	date?: string;
+	no?: number;
 	description?: string;
 };
 
@@ -29,13 +32,13 @@ export class MidiSearchClient {
 	}
 
 	private get baseUrl(): string {
-		return this.config.baseUrl ?? "https://rpgen-search.pages.dev";
+		return this.config.baseUrl ?? "https://rpgen-search.pages.dev/api";
 	}
 
 	private headers(): Record<string, string> {
 		const h: Record<string, string> = {};
 		if (this.config.apiKey) {
-			h["X-API-Key"] = this.config.apiKey;
+			h["Authorization"] = `Bearer ${this.config.apiKey}`;
 		}
 		return h;
 	}
@@ -50,7 +53,7 @@ export class MidiSearchClient {
 		const res = await fetch(url, { headers: this.headers() });
 		if (!res.ok) throw new Error(`picotune search failed: ${res.status}`);
 		const body = await res.json();
-		return (body.songs ?? body) as PicotuneSong[];
+		return (body.data ?? body.songs ?? body) as PicotuneSong[];
 	}
 
 	async fetchMidi(fileName: string): Promise<ArrayBuffer> {
