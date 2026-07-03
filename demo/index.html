@@ -958,7 +958,7 @@
                     e.preventDefault();
                     if (confirm('現在の編集内容が破棄されます。この履歴を読み込みますか？')) {
                         stopAllPreviews();
-                        location.hash = payload;
+                        historyModalOverlay.classList.add('hidden');
                         const carriedMode = item.mode;
                         if (carriedMode !== currentMode) {
                             currentMode = carriedMode;
@@ -969,7 +969,6 @@
                         mountEditor(currentMode, item.mml);
                         mountPlayer(item.mml);
                         lastSavedMml = item.mml;
-                        historyModalOverlay.classList.add('hidden');
                         activateGracePeriod(10);
                     }
                 });
