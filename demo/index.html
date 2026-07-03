@@ -959,17 +959,19 @@
                     if (confirm('現在の編集内容が破棄されます。この履歴を読み込みますか？')) {
                         stopAllPreviews();
                         historyModalOverlay.classList.add('hidden');
-                        const carriedMode = item.mode;
-                        if (carriedMode !== currentMode) {
-                            currentMode = carriedMode;
-                            updateModeButtons(carriedMode);
-                            writeStored(MODE_STORAGE_KEY, carriedMode);
-                        }
-                        daw.destroy();
-                        mountEditor(currentMode, item.mml);
-                        mountPlayer(item.mml);
-                        lastSavedMml = item.mml;
-                        activateGracePeriod(10);
+                        setTimeout(() => {
+                            const carriedMode = item.mode;
+                            if (carriedMode !== currentMode) {
+                                currentMode = carriedMode;
+                                updateModeButtons(carriedMode);
+                                writeStored(MODE_STORAGE_KEY, carriedMode);
+                            }
+                            daw.destroy();
+                            mountEditor(currentMode, item.mml);
+                            mountPlayer(item.mml);
+                            lastSavedMml = item.mml;
+                            activateGracePeriod(10);
+                        }, 0);
                     }
                 });
 
