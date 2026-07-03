@@ -1223,7 +1223,10 @@ export const mountDAW = (
 	};
 
 	const applyRollBackground = (dataUrl: string | null): void => {
-		refs.rollContainer.style.backgroundImage = dataUrl ? `url(${dataUrl})` : "";
+		refs.rollContainer.style.setProperty(
+			"--dtm-roll-bg-image",
+			dataUrl ? `url(${dataUrl})` : "none",
+		);
 		refs.bgRemoveBtn.classList.toggle("dtm-hidden", !dataUrl);
 		setBackgroundActive(!!dataUrl);
 		redrawAll();

@@ -408,15 +408,24 @@ export const DAW_CSS = `
   height: 32vh;
   max-height: 32vh;
   background: var(--dtm-deep);
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
   border: 2px solid var(--c-black);
   box-shadow:
     inset 0 0 0 2px var(--c-black),
     0 0 0 2px var(--dtm-border2),
     4px 4px 0 var(--c-black);
   overflow: hidden;
+}
+/* カスタム背景画像レイヤー（画像自体を半透明化し、キャンバス側の塗りは維持） */
+.dtm-roll::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--dtm-roll-bg-image, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.4;
+  pointer-events: none;
 }
 .dtm-vscroll {
   position: relative;
