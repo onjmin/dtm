@@ -3,6 +3,7 @@
 import fallback from "../assets/404Chip.png";
 import MGRoid from "../assets/MGRoid.png";
 import MOTRoid from "../assets/MOTRoid.png";
+import NYNRoid from "../assets/NYNRoid.png";
 import puyuyu from "../assets/puyuyu.png";
 import rei from "../assets/rei.png";
 import rino from "../assets/rino.png";
@@ -23,6 +24,7 @@ export const VOICE_IMAGES: Record<string, string> = {
 	rei,
 	MGRoid,
 	MOTRoid,
+	NYNRoid,
 };
 
 /**
