@@ -738,7 +738,7 @@ export const KOE_VOICEBANKS: Record<string, string> = {
 	rei: "足立レイver3.5.0.koe",
 	mgroid: "MGRoid_原音設定済み.koe",
 	motroid: "MOTRoid完全版V2.koe",
-	nynroid: "NYNRoidver1.4.koe"
+	nynroid: "NYNRoidver1.4.koe",
 };
 
 /**
@@ -756,7 +756,7 @@ export const KOE_VOICEBANK_LABELS: Record<string, string> = {
 	rei: "足立レイ",
 	mgroid: "MGRoid",
 	motroid: "MOTRoid",
-	nynroid: "NYNRoid"
+	nynroid: "NYNRoid",
 };
 
 /**
@@ -775,7 +775,7 @@ export const VOICE_IMAGE_KEY: Record<string, string> = {
 	rei: "rei",
 	mgroid: "MGRoid",
 	motroid: "MOTRoid",
-	nynroid: "NYNRoid"
+	nynroid: "NYNRoid",
 };
 
 /**
