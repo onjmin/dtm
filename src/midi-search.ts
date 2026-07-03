@@ -1,6 +1,3 @@
-const DEFAULT_BASE_URL =
-	typeof location !== "undefined" ? location.origin : "https://api.example.com";
-
 export type MidiSearchConfig = {
 	apiKey?: string;
 	baseUrl?: string;
@@ -32,7 +29,7 @@ export class MidiSearchClient {
 	}
 
 	private get baseUrl(): string {
-		return this.config.baseUrl ?? DEFAULT_BASE_URL;
+		return this.config.baseUrl ?? "https://rpgen-search.pages.dev";
 	}
 
 	private headers(): Record<string, string> {
