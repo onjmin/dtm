@@ -7594,12 +7594,13 @@ var KOE_INFO_HTML = `
 
   <h4>3. DTM\u3067\u4F7F\u3046</h4>
   <ul>
-    <li>\u6B4C\u5531\u30E2\u30C7\u30EB\u306E\u30D7\u30EB\u30C0\u30A6\u30F3\u304B\u3089\u300C\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\u3092\u8FFD\u52A0\u2026\u300D\u3092\u9078\u3073\u307E\u3059\u3002</li>
-    <li>\u300C\u97F3\u6E90URL\u300D\u306B\u624B\u98062\u306E\u76F4\u63A5\u30EA\u30F3\u30AF\u3092\u8CBC\u308A\u4ED8\u3051\u307E\u3059\u3002</li>
-    <li>\u30A2\u30A4\u30B3\u30F3\u753B\u50CFUR\u30EB\u30FB\u8868\u793A\u540D\u30FB\u8B58\u5225\u5B50\u306F\u4EFB\u610F\u3067\u3059\uFF08\u7701\u7565\u53EF\uFF09\u3002</li>
+    <li>\u6B4C\u5531\u30E2\u30C7\u30EB\u306E\u30D7\u30EB\u30C0\u30A6\u30F3\u304B\u3089\u300C\u30AB\u30B9\u30BF\u30E0\u97F3\u58F0\u3092\u8FFD\u52A0\u2026\u300D\u3092\u9078\u3073\u307E\u3059\u3002</li>
+    <li>\u300C\u97F3\u58F0URL\u300D\u306B\u624B\u98062\u306E\u76F4\u63A5\u30EA\u30F3\u30AF\u3092\u8CBC\u308A\u4ED8\u3051\u307E\u3059\u3002</li>
+    <li>\u30A2\u30A4\u30B3\u30F3\u753B\u50CFURL\u306F\u4EFB\u610F\u3067\u3059\uFF08\u7701\u7565\u53EF\uFF09\u3002\u8B58\u5225\u5B50\u306F\u30D5\u30A1\u30A4\u30EB\u540D\u304B\u3089\u81EA\u52D5\u751F\u6210\u3055\u308C\u307E\u3059\u3002</li>
     <li>\u300C\u8FFD\u52A0\u300D\u3092\u62BC\u3059\u3068\u30D7\u30EB\u30C0\u30A6\u30F3\u306B\u767B\u9332\u3055\u308C\u3001\u4EE5\u964D\u305D\u306E\u30C8\u30E9\u30C3\u30AF\u3067\u4F7F\u3048\u307E\u3059\u3002</li>
   </ul>
   <p style="margin-top:4px;"><small>\u203B\u30A2\u30C3\u30D7\u30ED\u30FC\u30C9\u3057\u305F\u97F3\u6E90\u306F\u81EA\u5DF1\u8CAC\u4EFB\u3067\u7BA1\u7406\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u6A29\u5229\u95A2\u4FC2\uFF08\u914D\u5E03\u5143\u306E\u5229\u7528\u898F\u7D04\uFF09\u306B\u3082\u5F93\u3063\u3066\u304F\u3060\u3055\u3044\u3002</small></p>
+  <p style="margin-top:4px;color:var(--dtm-warn);"><small>\u203BUTAU\u97F3\u6E90\u3092 <code>.koe</code> \u306B\u5909\u63DB\u3057\u3066\u30CD\u30C3\u30C8\u4E0A\u306B\u7F6E\u304F\u884C\u70BA\u306F\u3001\u97F3\u6E90\u30C7\u30FC\u30BF\u306E\u518D\u52A0\u5DE5\u30FB\u518D\u914D\u5E03\u306B\u3042\u305F\u308A\u307E\u3059\u3002\u3053\u308C\u304C\u914D\u5E03\u5143\u306E\u5229\u7528\u898F\u7D04\u306B\u53CD\u3057\u3066\u3044\u306A\u3044\u304B\uFF08\u6539\u5909\u30FB\u518D\u914D\u5E03\u306E\u53EF\u5426\u3001\u5546\u7528\u5229\u7528\u306E\u53EF\u5426\u306A\u3069\uFF09\u306F\u5FC5\u305A\u3054\u81EA\u8EAB\u3067\u78BA\u8A8D\u3057\u3001\u305D\u306E\u8CAC\u4EFB\u3092\u8CA0\u3063\u3066\u304F\u3060\u3055\u3044\u3002</small></p>
 </div>
 `;
 var BASE_STEP_WIDTH = 0.5;
@@ -7750,6 +7751,18 @@ var BASE_LYRIC_MODEL_LABELS = {
 var lyricModelLabel = (model, customMap) => BASE_LYRIC_MODEL_LABELS[model] ?? customMap.get(model)?.label ?? model;
 var CUSTOM_VOCAL_ADD_VALUE = "+custom";
 var CUSTOM_VOCAL_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+var deriveCustomVocalKeyFromUrl = (url2) => {
+  let name;
+  try {
+    const path = new URL(url2).pathname;
+    name = decodeURIComponent(path.slice(path.lastIndexOf("/") + 1));
+  } catch {
+    return "";
+  }
+  name = name.replace(/\.[^.]*$/, "").normalize("NFKC").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (name && /^[0-9]/.test(name)) name = `_${name}`;
+  return CUSTOM_VOCAL_KEY_RE.test(name) ? name : "";
+};
 var clamp3 = (v, min, max) => Math.min(Math.max(v, min), max);
 var normalizeInstrumentName = (name) => {
   if (!name) return "";
@@ -8751,10 +8764,8 @@ var mountDAW = (target, options = {}) => {
           <a data-dtm="lyric-custom-conv-link" href="https://onjmin.github.io/koe/demo/" target="_blank" rel="noopener" style="font-size:11px;color:var(--dtm-primary);text-decoration:underline">UTAU\u97F3\u6E90(zip)\u3092.koe\u306B\u5909\u63DB</a>
           <button class="dtm-btn dtm-btn--ghost dtm-btn--xs" data-dtm="lyric-custom-guide">\u4F7F\u3044\u65B9\u30AC\u30A4\u30C9</button>
         </div>
-        <input type="url" class="dtm-input" data-dtm="lyric-custom-src" placeholder="\u97F3\u6E90URL\uFF08https://\u301C.koe\uFF09" aria-label="\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\uFF08.koe\uFF09\u306EURL">
-        <input type="url" class="dtm-input" data-dtm="lyric-custom-icon" placeholder="\u30A2\u30A4\u30B3\u30F3\u753B\u50CFURL\uFF08\u4EFB\u610F\uFF09" aria-label="\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\u306E\u30A2\u30A4\u30B3\u30F3\u753B\u50CFURL">
-        <input type="text" class="dtm-input" data-dtm="lyric-custom-alias" placeholder="\u8868\u793A\u540D\uFF08\u4EFB\u610F\uFF09" aria-label="\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\u306E\u8868\u793A\u540D\uFF08\u30D7\u30EB\u30C0\u30A6\u30F3\u306E\u5225\u540D\uFF09" maxlength="64">
-        <input type="text" class="dtm-input" data-dtm="lyric-custom-key" placeholder="\u8B58\u5225\u5B50\uFF08\u4EFB\u610F\u30FB\u7701\u7565\u3067\u81EA\u52D5\u63A1\u756A\u3001\u82F1\u5B57\u59CB\u307E\u308A\u82F1\u6570\u5B57\u3068_\uFF09" aria-label="\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\u306EMML\u8B58\u5225\u5B50\uFF08\u30AD\u30FC\uFF09" maxlength="32">
+        <input type="url" class="dtm-input" data-dtm="lyric-custom-src" placeholder="\u97F3\u58F0URL\uFF08https://\u301C.koe\uFF09" aria-label="\u30AB\u30B9\u30BF\u30E0\u97F3\u58F0\uFF08.koe\uFF09\u306EURL">
+        <input type="url" class="dtm-input" data-dtm="lyric-custom-icon" placeholder="\u30A2\u30A4\u30B3\u30F3\u753B\u50CFURL\uFF08\u4EFB\u610F\uFF09" aria-label="\u30AB\u30B9\u30BF\u30E0\u97F3\u58F0\u306E\u30A2\u30A4\u30B3\u30F3\u753B\u50CFURL">
         <div class="dtm-row">
           <span class="dtm-label dtm-grow" data-dtm="lyric-custom-note" style="color:var(--dtm-warn)"></span>
           <button class="dtm-btn dtm-btn--primary" data-dtm="lyric-custom-apply">\u8FFD\u52A0</button>
@@ -8819,12 +8830,6 @@ var mountDAW = (target, options = {}) => {
       const lyricCustomIcon = lyricDiv.querySelector(
         '[data-dtm="lyric-custom-icon"]'
       );
-      const lyricCustomAlias = lyricDiv.querySelector(
-        '[data-dtm="lyric-custom-alias"]'
-      );
-      const lyricCustomKey = lyricDiv.querySelector(
-        '[data-dtm="lyric-custom-key"]'
-      );
       const lyricCustomGuide = lyricDiv.querySelector(
         '[data-dtm="lyric-custom-guide"]'
       );
@@ -8845,7 +8850,7 @@ var mountDAW = (target, options = {}) => {
       for (const m of BASE_LYRIC_MODELS)
         addOpt(m, lyricModelLabel(m, customVocalsMap));
       for (const [k, def] of customVocalsMap) addOpt(k, def.label ?? k);
-      addOpt(CUSTOM_VOCAL_ADD_VALUE, "\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90\u3092\u8FFD\u52A0\u2026");
+      addOpt(CUSTOM_VOCAL_ADD_VALUE, "\u30AB\u30B9\u30BF\u30E0\u97F3\u58F0\u3092\u8FFD\u52A0\u2026");
       if (active.lyricModel && !BASE_LYRIC_MODELS.includes(active.lyricModel) && !customVocalsMap.has(active.lyricModel)) {
         addOpt(
           active.lyricModel,
@@ -8917,9 +8922,10 @@ var mountDAW = (target, options = {}) => {
       lyricModelSel.addEventListener("change", () => {
         if (lyricModelSel.value === CUSTOM_VOCAL_ADD_VALUE) {
           lyricCustomNote.textContent = "";
-          lyricCustomAlias.value = "";
-          lyricCustomKey.value = "";
           lyricCustom.classList.remove("dtm-hidden");
+          lyricIcon.removeAttribute("src");
+          lyricIcon.classList.add("dtm-hidden");
+          lyricTerms.classList.add("dtm-hidden");
           return;
         }
         lyricCustom.classList.add("dtm-hidden");
@@ -8929,45 +8935,41 @@ var mountDAW = (target, options = {}) => {
         fireLyricsChange(active);
       });
       lyricCustomGuide.addEventListener("click", () => {
-        showModal("\u30AB\u30B9\u30BF\u30E0\u97F3\u6E90(.koe)\u306E\u4F7F\u3044\u65B9", KOE_INFO_HTML);
+        showModal("\u30AB\u30B9\u30BF\u30E0\u97F3\u58F0(.koe)\u306E\u4F7F\u3044\u65B9", KOE_INFO_HTML);
       });
       lyricCustomApply.addEventListener("click", () => {
         const src = lyricCustomSrc.value.trim();
         if (!isValidHttpUrl(src)) {
-          lyricCustomNote.textContent = "\u97F3\u6E90URL\u304C\u4E0D\u6B63\u3067\u3059\uFF08http/https\u306E\u307F\u30FB2048\u6587\u5B57\u307E\u3067\uFF09";
+          lyricCustomNote.textContent = "\u97F3\u58F0URL\u304C\u4E0D\u6B63\u3067\u3059\uFF08http/https\u306E\u307F\u30FB2048\u6587\u5B57\u307E\u3067\uFF09";
           return;
         }
         const iconRaw = lyricCustomIcon.value.trim();
         const iconUrl = isValidHttpUrl(iconRaw) ? iconRaw : "";
-        const alias = lyricCustomAlias.value.trim();
         const existing = [...customVocalsMap.values()].find(
           (d) => d.url === src
         );
-        const keyRaw = lyricCustomKey.value.trim().toLowerCase();
         let key;
-        if (keyRaw) {
-          if (!CUSTOM_VOCAL_KEY_RE.test(keyRaw)) {
-            lyricCustomNote.textContent = "\u8B58\u5225\u5B50\u304C\u4E0D\u6B63\u3067\u3059\uFF08\u82F1\u5B57\u307E\u305F\u306F\u30A2\u30F3\u30C0\u30FC\u30B9\u30B3\u30A2\u3067\u59CB\u307E\u308B\u82F1\u6570\u5B57\u30FB_\u306E\u307F\uFF09";
-            return;
-          }
-          if (BASE_LYRIC_MODELS.includes(keyRaw)) {
-            lyricCustomNote.textContent = "\u305D\u306E\u8B58\u5225\u5B50\u306F\u5185\u8535\u30E2\u30C7\u30EB\u540D\u3068\u885D\u7A81\u3057\u3066\u3044\u307E\u3059";
-            return;
-          }
-          const conflict = customVocalsMap.get(keyRaw);
-          if (conflict && conflict.url !== src) {
-            lyricCustomNote.textContent = "\u305D\u306E\u8B58\u5225\u5B50\u306F\u5225\u306E\u97F3\u6E90\u306B\u4F7F\u7528\u6E08\u307F\u3067\u3059";
-            return;
-          }
-          key = keyRaw;
+        if (existing) {
+          key = existing.key;
         } else {
-          key = existing?.key ?? genCustomVocalKey();
+          const derived = deriveCustomVocalKeyFromUrl(src);
+          if (derived && !BASE_LYRIC_MODELS.includes(derived)) {
+            if (!customVocalsMap.has(derived)) {
+              key = derived;
+            } else {
+              let n = 2;
+              while (customVocalsMap.has(`${derived}${n}`)) n++;
+              key = `${derived}${n}`;
+            }
+          } else {
+            key = genCustomVocalKey();
+          }
         }
         registerCustomVocal({
           key,
           iconUrl: iconUrl || (existing?.iconUrl ?? ""),
           url: src,
-          label: alias || existing?.label
+          label: existing?.label
         });
         active.lyricModel = key;
         fireLyricsChange(active);
