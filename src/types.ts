@@ -1,5 +1,5 @@
-import type { MidiSearchConfig } from "./midi-search";
 import type { SingingVoices } from "./lyrics";
+import type { MidiSearchConfig } from "./midi-search";
 
 export const DEFAULT_VOCAL_VOLUME = 200;
 export const DEFAULT_BPM = 120;

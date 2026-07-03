@@ -38,7 +38,7 @@ export class MidiSearchClient {
 	private headers(): Record<string, string> {
 		const h: Record<string, string> = {};
 		if (this.config.apiKey) {
-			h["Authorization"] = `Bearer ${this.config.apiKey}`;
+			h.Authorization = `Bearer ${this.config.apiKey}`;
 		}
 		return h;
 	}

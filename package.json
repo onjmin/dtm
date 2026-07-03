@@ -26,7 +26,7 @@
 	"scripts": {
 		"dev": "rimraf dist && tsup && biome format src --write && tsx demo/server.ts",
 		"build": "rimraf dist && tsup && biome format src --write",
-		"check": "biome check src",
+		"check": "biome check src --write",
 		"prepublishOnly": "pnpm run build",
 		"patch": "pnpm version patch",
 		"publish-dangerous-dont-use-this-command": "pnpm publish --access public"
