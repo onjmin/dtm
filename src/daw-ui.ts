@@ -29,6 +29,9 @@ export type DawUIRefs = {
 	zoomXOut: HTMLButtonElement;
 	zoomYIn: HTMLButtonElement;
 	zoomYOut: HTMLButtonElement;
+	bgFileInput: HTMLInputElement;
+	bgUploadBtn: HTMLButtonElement;
+	bgRemoveBtn: HTMLButtonElement;
 	// roll
 	rollContainer: HTMLElement;
 	wrapper: HTMLElement;
@@ -193,6 +196,12 @@ export const buildUI = (
         <span class="dtm-label" data-dtm="zoomy-label">100%</span>
         <button class="dtm-iconbtn" data-dtm="zoomy-in" title="拡大">＋</button>
       </div>
+      <div class="dtm-row">
+        <span class="dtm-label">背景画像</span>
+        <input type="file" accept="image/*" data-dtm="bg-file-input" class="dtm-hidden">
+        <button class="dtm-btn dtm-btn--primary" data-dtm="bg-upload">アップロード</button>
+        <button class="dtm-btn dtm-btn--danger dtm-hidden" data-dtm="bg-remove">削除</button>
+      </div>
     </div>
   </details>
 
@@ -347,6 +356,9 @@ export const buildUI = (
 		zoomXOut: sel("zoomx-out"),
 		zoomYIn: sel("zoomy-in"),
 		zoomYOut: sel("zoomy-out"),
+		bgFileInput: sel("bg-file-input"),
+		bgUploadBtn: sel("bg-upload"),
+		bgRemoveBtn: sel("bg-remove"),
 		rollContainer: sel("roll"),
 		wrapper: sel("wrapper"),
 		vScroll: sel("vscroll"),

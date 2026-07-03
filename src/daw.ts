@@ -52,6 +52,7 @@ import {
 	getGridPosition,
 	getHeaderCanvas,
 	init,
+	setBackgroundActive,
 	setDrawOffset,
 } from "./renderer";
 import { createSequencer, type Sequencer } from "./sequencer";
@@ -1197,6 +1198,35 @@ export const mountDAW = (
 			selectedOriginal = [];
 			redrawAll();
 		}
+	};
+
+	// ============================================================
+	// ピアノロール背景画像（カスタム背景）
+	// ============================================================
+	const ROLL_BG_STORAGE_KEY = "dtm-piano-roll-bg";
+
+	const resizeImageToDataUrl = (
+		img: HTMLImageElement,
+		maxW: number,
+		maxH: number,
+	): string => {
+		const scale = Math.min(1, maxW / img.width, maxH / img.height);
+		const width = Math.max(1, Math.round(img.width * scale));
+		const height = Math.max(1, Math.round(img.height * scale));
+		const canvas = document.createElement("canvas");
+		canvas.width = width;
+		canvas.height = height;
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return img.src;
+		ctx.drawImage(img, 0, 0, width, height);
+		return canvas.toDataURL("image/jpeg", 0.7);
+	};
+
+	const applyRollBackground = (dataUrl: string | null): void => {
+		refs.rollContainer.style.backgroundImage = dataUrl ? `url(${dataUrl})` : "";
+		refs.bgRemoveBtn.classList.toggle("dtm-hidden", !dataUrl);
+		setBackgroundActive(!!dataUrl);
+		redrawAll();
 	};
 
 	// ============================================================
@@ -2542,6 +2572,34 @@ export const mountDAW = (
 			notifyViewState();
 		});
 
+		refs.bgUploadBtn.addEventListener("click", () => refs.bgFileInput.click());
+		refs.bgFileInput.addEventListener("change", () => {
+			const file = refs.bgFileInput.files?.[0];
+			refs.bgFileInput.value = "";
+			if (!file) return;
+			const reader = new FileReader();
+			reader.onload = () => {
+				const img = new Image();
+				img.onload = () => {
+					const maxW = refs.rollContainer.clientWidth || 800;
+					const maxH = refs.rollContainer.clientHeight || 450;
+					const dataUrl = resizeImageToDataUrl(img, maxW, maxH);
+					try {
+						localStorage.setItem(ROLL_BG_STORAGE_KEY, dataUrl);
+					} catch {}
+					applyRollBackground(dataUrl);
+				};
+				img.src = reader.result as string;
+			};
+			reader.readAsDataURL(file);
+		});
+		refs.bgRemoveBtn.addEventListener("click", () => {
+			try {
+				localStorage.removeItem(ROLL_BG_STORAGE_KEY);
+			} catch {}
+			applyRollBackground(null);
+		});
+
 		// 和音分解モード / 和音伴奏トラック無視のチェック状態変化を通知（永続化用）
 		refs.decomposeChordToggle.addEventListener("change", notifyViewState);
 		refs.ignoreChordHeavyToggle.addEventListener("change", notifyViewState);
@@ -3178,6 +3236,10 @@ export const mountDAW = (
 	updateUndoRedo();
 	redrawAll();
 	if (options.initialMML) loadMML(options.initialMML);
+	try {
+		const storedBg = localStorage.getItem(ROLL_BG_STORAGE_KEY);
+		if (storedBg) applyRollBackground(storedBg);
+	} catch {}
 
 	// リサイズ対応（Canvas再構築）
 	let resizeTimer: ReturnType<typeof setTimeout> | null = null;

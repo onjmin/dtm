@@ -18,6 +18,15 @@ export const getRenderConfig = (): RenderConfig => g_config;
 
 let g_draw_offset_x = 0;
 let g_draw_offset_y = 0;
+let g_bg_active = false;
+
+/**
+ * カスタム背景画像の有無を設定します。
+ * 有効時はグリッド/ヘッダーの塗りつぶしを半透明にし、背景を透過させます。
+ */
+export const setBackgroundActive = (active: boolean): void => {
+	g_bg_active = active;
+};
 
 export const getDrawOffset = (): { x: number; y: number } => ({
 	x: g_draw_offset_x,
@@ -231,7 +240,7 @@ export const drawHeader = (): void => {
 	g_header_ctx.save();
 	g_header_ctx.translate(-g_draw_offset_x, 0);
 
-	g_header_ctx.fillStyle = "#0a0f1f";
+	g_header_ctx.fillStyle = g_bg_active ? "rgba(10,15,31,0.55)" : "#0a0f1f";
 	g_header_ctx.fillRect(
 		g_draw_offset_x,
 		0,
@@ -299,7 +308,14 @@ export const drawGrid = (noteLengthSteps: number = 1): void => {
 		const screenY = y - g_draw_offset_y;
 
 		// 行ごとの背景（黒鍵: 暗め、白鍵: やや明るめでシマ模様）
-		g_grid_ctx.fillStyle = isBlackKey ? "#080b16" : "#111628";
+		// カスタム背景が有効な場合は半透明にして背景画像を透過させる
+		g_grid_ctx.fillStyle = g_bg_active
+			? isBlackKey
+				? "rgba(8,11,22,0.55)"
+				: "rgba(17,22,40,0.45)"
+			: isBlackKey
+				? "#080b16"
+				: "#111628";
 		g_grid_ctx.fillRect(0, screenY, g_grid_canvas.width, keyHeight);
 
 		// C4〜B4帯のハイライトオーバーレイ

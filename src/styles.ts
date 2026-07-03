@@ -408,6 +408,9 @@ export const DAW_CSS = `
   height: 32vh;
   max-height: 32vh;
   background: var(--dtm-deep);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   border: 2px solid var(--c-black);
   box-shadow:
     inset 0 0 0 2px var(--c-black),
