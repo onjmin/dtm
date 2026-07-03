@@ -7,18 +7,9 @@ on:
       - main
 
 jobs:
-  build-deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    permissions:
-      actions: write
-      checks: write
-      contents: write
-      pages: write
-      id-token: write
+  # 1. ビルドジョブ：ファイルの生成とアップロードを行う
+  build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,6 +61,17 @@ jobs:
         with:
           path: ./docs
 
+  # 2. デプロイジョブ：ビルド完了後にPagesへデプロイする
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write # デプロイに必須
+      id-token: write # OIDC認証に必須
+    runs-on: ubuntu-latest
+    needs: build # buildジョブが成功した後に実行する
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@v4 # v5でエラーが出る場合は安定したv4に下げるのも手です（必要に応じて使い分けてください）
