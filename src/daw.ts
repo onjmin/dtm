@@ -1202,14 +1202,75 @@ export const mountDAW = (
 
 	// ============================================================
 	// ピアノロール背景画像（カスタム背景）
+	// localStorage は同期API・文字列専用で容量も小さく GIF 等の大きいバイナリに不向きなため、
+	// Blob をそのまま保存できる IndexedDB を使用する。
 	// ============================================================
-	const ROLL_BG_STORAGE_KEY = "dtm-piano-roll-bg";
+	const BG_DB_NAME = "dtm-daw-db";
+	const BG_DB_STORE = "settings";
+	const BG_DB_KEY = "piano-roll-bg";
+	// リサイズ＋再圧縮の対象とする静止ラスター画像形式（GIF等アニメーション画像はここに含めない）
+	const COMPRESSIBLE_IMAGE_TYPES = new Set([
+		"image/jpeg",
+		"image/png",
+		"image/webp",
+		"image/bmp",
+	]);
 
-	const resizeImageToDataUrl = (
+	const openBgDb = (): Promise<IDBDatabase> =>
+		new Promise((resolve, reject) => {
+			const req = indexedDB.open(BG_DB_NAME, 1);
+			req.onupgradeneeded = () => req.result.createObjectStore(BG_DB_STORE);
+			req.onsuccess = () => resolve(req.result);
+			req.onerror = () => reject(req.error);
+		});
+
+	const saveBgBlob = async (blob: Blob): Promise<void> => {
+		const db = await openBgDb();
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const tx = db.transaction(BG_DB_STORE, "readwrite");
+				tx.objectStore(BG_DB_STORE).put(blob, BG_DB_KEY);
+				tx.oncomplete = () => resolve();
+				tx.onerror = () => reject(tx.error);
+			});
+		} finally {
+			db.close();
+		}
+	};
+
+	const loadBgBlob = async (): Promise<Blob | null> => {
+		const db = await openBgDb();
+		try {
+			return await new Promise<Blob | null>((resolve, reject) => {
+				const tx = db.transaction(BG_DB_STORE, "readonly");
+				const req = tx.objectStore(BG_DB_STORE).get(BG_DB_KEY);
+				req.onsuccess = () => resolve((req.result as Blob | undefined) ?? null);
+				req.onerror = () => reject(req.error);
+			});
+		} finally {
+			db.close();
+		}
+	};
+
+	const deleteBgBlob = async (): Promise<void> => {
+		const db = await openBgDb();
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const tx = db.transaction(BG_DB_STORE, "readwrite");
+				tx.objectStore(BG_DB_STORE).delete(BG_DB_KEY);
+				tx.oncomplete = () => resolve();
+				tx.onerror = () => reject(tx.error);
+			});
+		} finally {
+			db.close();
+		}
+	};
+
+	const resizeImageToBlob = (
 		img: HTMLImageElement,
 		maxW: number,
 		maxH: number,
-	): string => {
+	): Promise<Blob> => {
 		const scale = Math.min(1, maxW / img.width, maxH / img.height);
 		const width = Math.max(1, Math.round(img.width * scale));
 		const height = Math.max(1, Math.round(img.height * scale));
@@ -1217,18 +1278,34 @@ export const mountDAW = (
 		canvas.width = width;
 		canvas.height = height;
 		const ctx = canvas.getContext("2d");
-		if (!ctx) return img.src;
-		ctx.drawImage(img, 0, 0, width, height);
-		return canvas.toDataURL("image/jpeg", 0.7);
+		if (ctx) ctx.drawImage(img, 0, 0, width, height);
+		return new Promise((resolve, reject) => {
+			canvas.toBlob(
+				(blob) => (blob ? resolve(blob) : reject(new Error("toBlob failed"))),
+				"image/jpeg",
+				0.7,
+			);
+		});
 	};
 
-	const applyRollBackground = (dataUrl: string | null): void => {
-		refs.rollContainer.style.setProperty(
-			"--dtm-roll-bg-image",
-			dataUrl ? `url(${dataUrl})` : "none",
-		);
-		refs.bgRemoveBtn.classList.toggle("dtm-hidden", !dataUrl);
-		setBackgroundActive(!!dataUrl);
+	let currentBgObjectUrl: string | null = null;
+
+	const applyRollBackground = (blob: Blob | null): void => {
+		if (currentBgObjectUrl) {
+			URL.revokeObjectURL(currentBgObjectUrl);
+			currentBgObjectUrl = null;
+		}
+		if (blob) {
+			currentBgObjectUrl = URL.createObjectURL(blob);
+			refs.rollContainer.style.setProperty(
+				"--dtm-roll-bg-image",
+				`url(${currentBgObjectUrl})`,
+			);
+		} else {
+			refs.rollContainer.style.setProperty("--dtm-roll-bg-image", "none");
+		}
+		refs.bgRemoveBtn.classList.toggle("dtm-hidden", !blob);
+		setBackgroundActive(!!blob);
 		redrawAll();
 	};
 
@@ -2580,27 +2657,31 @@ export const mountDAW = (
 			const file = refs.bgFileInput.files?.[0];
 			refs.bgFileInput.value = "";
 			if (!file) return;
-			const reader = new FileReader();
-			reader.onload = () => {
-				const img = new Image();
-				img.onload = () => {
-					const maxW = refs.rollContainer.clientWidth || 800;
-					const maxH = refs.rollContainer.clientHeight || 450;
-					const dataUrl = resizeImageToDataUrl(img, maxW, maxH);
-					try {
-						localStorage.setItem(ROLL_BG_STORAGE_KEY, dataUrl);
-					} catch {}
-					applyRollBackground(dataUrl);
-				};
-				img.src = reader.result as string;
+			// 静止ラスター画像のみリサイズ＋再圧縮する（GIF等アニメーション画像は劣化・アニメ破壊を避けるため無加工で保存）
+			if (!COMPRESSIBLE_IMAGE_TYPES.has(file.type)) {
+				saveBgBlob(file)
+					.then(() => applyRollBackground(file))
+					.catch(() => {});
+				return;
+			}
+			const objectUrl = URL.createObjectURL(file);
+			const img = new Image();
+			img.onload = () => {
+				URL.revokeObjectURL(objectUrl);
+				const maxW = refs.rollContainer.clientWidth || 800;
+				const maxH = refs.rollContainer.clientHeight || 450;
+				resizeImageToBlob(img, maxW, maxH)
+					.then((blob) =>
+						saveBgBlob(blob).then(() => applyRollBackground(blob)),
+					)
+					.catch(() => {});
 			};
-			reader.readAsDataURL(file);
+			img.src = objectUrl;
 		});
 		refs.bgRemoveBtn.addEventListener("click", () => {
-			try {
-				localStorage.removeItem(ROLL_BG_STORAGE_KEY);
-			} catch {}
-			applyRollBackground(null);
+			deleteBgBlob()
+				.catch(() => {})
+				.finally(() => applyRollBackground(null));
 		});
 
 		// 和音分解モード / 和音伴奏トラック無視のチェック状態変化を通知（永続化用）
@@ -3239,10 +3320,11 @@ export const mountDAW = (
 	updateUndoRedo();
 	redrawAll();
 	if (options.initialMML) loadMML(options.initialMML);
-	try {
-		const storedBg = localStorage.getItem(ROLL_BG_STORAGE_KEY);
-		if (storedBg) applyRollBackground(storedBg);
-	} catch {}
+	loadBgBlob()
+		.then((blob) => {
+			if (blob) applyRollBackground(blob);
+		})
+		.catch(() => {});
 
 	// リサイズ対応（Canvas再構築）
 	let resizeTimer: ReturnType<typeof setTimeout> | null = null;
