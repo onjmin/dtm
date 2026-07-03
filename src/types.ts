@@ -1,3 +1,4 @@
+import type { MidiSearchConfig } from "./midi-search";
 import type { SingingVoices } from "./lyrics";
 
 export const DEFAULT_VOCAL_VOLUME = 200;
@@ -332,6 +333,8 @@ export type DawOptions = {
 	 * - MML読み込み時: `pendingMml` にMML文字列が渡され、`applyMidi` は undefined。
 	 * - MIDI読み込み時: `pendingMml` は undefined、`applyMidi` に新DAWへ適用する関数が渡される。
 	 */
+	/** MIDI検索クライアントの設定（未指定なら検索UI非表示）。 */
+	midiSearch?: MidiSearchConfig;
 	onRequestAdvancedMode?: (
 		pendingMml?: string,
 		applyMidi?: (daw: DawInstance) => void,

@@ -36,6 +36,7 @@ import {
 	extractMidiPlacements,
 	extractMidiPlacementsByTrack,
 } from "./midi-io";
+import { MidiSearchClient } from "./midi-search";
 import { decomposeToMonophonic, isChordHeavyTrack, MMLCore } from "./mml-core";
 import { MML_INFO_HTML } from "./mml-info";
 import { formatMmlMeta, parseMML } from "./mml-parser";
@@ -430,6 +431,10 @@ export const mountDAW = (
 	const drumPatterns = options.drumPatterns ?? DRUM_PATTERNS;
 	const showMidi = !!options.parseMidi;
 	const showChord = !isAdvanced;
+	const midiSearchClient = options.midiSearch
+		? new MidiSearchClient(options.midiSearch)
+		: undefined;
+	const showMidiSearch = !!midiSearchClient?.enabled;
 
 	const refs = buildUI(target, {
 		tracks: trackConfigs,
@@ -440,6 +445,7 @@ export const mountDAW = (
 		defaultBpm: options.defaultBpm ?? DEFAULT_BPM,
 		showMidi,
 		showChord,
+		showMidiSearch,
 	});
 
 	// --- 描画設定 ---
@@ -2481,7 +2487,8 @@ export const mountDAW = (
 			const barsBack = playbackState === "playing" ? 2 : 1;
 			const targetStep = Math.max(
 				0,
-				(Math.floor((getCurrentPlayStep() - 1) / renderConfig.stepsPerBar) - barsBack) *
+				(Math.floor((getCurrentPlayStep() - 1) / renderConfig.stepsPerBar) -
+					barsBack) *
 					renderConfig.stepsPerBar,
 			);
 			jumpTo(targetStep);
@@ -2778,6 +2785,7 @@ export const mountDAW = (
 		);
 
 		if (showMidi) wireMidi();
+		if (showMidiSearch) wireMidiSearch();
 
 		// キーボードショートカット
 		document.addEventListener("keydown", onKeyDown);
@@ -2852,6 +2860,74 @@ export const mountDAW = (
 				}
 			}
 			overlayDuring(() => applyMidiSelection(pendingMidi, selected));
+		});
+	};
+
+	const wireMidiSearch = (): void => {
+		if (!midiSearchClient) return;
+		refs.midiSearchBtn.addEventListener("click", async () => {
+			const q = refs.midiSearchInput.value.trim();
+			if (!q) return;
+			refs.midiSearchBtn.disabled = true;
+			refs.midiSearchBtn.textContent = "検索中...";
+			refs.midiSearchResults.innerHTML = "";
+			refs.midiSearchResults.classList.remove("dtm-hidden");
+			try {
+				const songs = await midiSearchClient.searchSongs({ title: q });
+				if (songs.length === 0) {
+					refs.midiSearchResults.innerHTML =
+						'<span class="dtm-label" style="color:var(--dtm-warn)">見つかりませんでした</span>';
+					return;
+				}
+				for (const song of songs) {
+					const row = document.createElement("div");
+					row.className = "dtm-row";
+					row.style.cssText = "flex-wrap:nowrap;gap:4px;padding:2px 0";
+					const label = document.createElement("span");
+					label.className = "dtm-label";
+					label.style.cssText =
+						"flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+					label.textContent = `${song.title} - ${song.user}`;
+					const btn = document.createElement("button");
+					btn.className = "dtm-btn dtm-btn--primary";
+					btn.style.cssText = "flex-shrink:0";
+					btn.textContent = "取込";
+					btn.addEventListener("click", async () => {
+						btn.disabled = true;
+						btn.textContent = "読込中...";
+						try {
+							const midiBytes = await midiSearchClient.fetchMidi(song.id);
+							if (!options.parseMidi) return;
+							const pending = await options.parseMidi(
+								new Uint8Array(midiBytes),
+							);
+							const analysis = analyzeMidiTracks(pending);
+							const sel = analysis
+								.filter((a) => a.selected)
+								.map((a) => a.index);
+							overlayDuring(() => applyMidiSelection(pending, sel));
+						} catch (e) {
+							console.error("[dtm] MIDI fetch failed", e);
+							btn.textContent = "失敗";
+						} finally {
+							btn.disabled = false;
+						}
+					});
+					row.appendChild(label);
+					row.appendChild(btn);
+					refs.midiSearchResults.appendChild(row);
+				}
+			} catch (e) {
+				console.error("[dtm] MIDI search failed", e);
+				refs.midiSearchResults.innerHTML =
+					'<span class="dtm-label" style="color:var(--dtm-warn)">検索に失敗しました</span>';
+			} finally {
+				refs.midiSearchBtn.disabled = false;
+				refs.midiSearchBtn.textContent = "検索";
+			}
+		});
+		refs.midiSearchInput.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") refs.midiSearchBtn.click();
 		});
 	};
 

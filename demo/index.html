@@ -397,7 +397,13 @@
         // ════ ここが主役: 関数1つで AudioContext・SoundFont(楽器/ドラム)・歌声・録音・MIDI・コードを一括配線 ════
         // 楽器/ドラムのSoundFontはCDNから動的import、歌声ワーカーは同梱 dist/voice-worker.js を自動解決する。
         // このデモは自前の #preset を使うため、内蔵のプリセット選択UIは無効化している。
-        const studio = await createDtmStudio({ defaultPreset, features: { presetUI: false } });
+        // MIDI検索APIキーは GitHub Pages の secrets から注入される（window.__DTM_API_KEY__）。
+        const midiApiKey = window.__DTM_API_KEY__;
+        const studio = await createDtmStudio({
+            defaultPreset,
+            features: { presetUI: false },
+            midiSearch: midiApiKey ? { apiKey: midiApiKey } : undefined,
+        });
         window.studio = studio;
 
         const tracksFor = (mode) => mode === 'simple' ? TRACKS_SIMPLE : TRACKS_ADVANCED;

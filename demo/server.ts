@@ -25,6 +25,49 @@ app.use("*", (c, next) => {
 	return next();
 });
 
+// ── API プロキシ（picotune / rpgen）──
+// 開発時に /picotune/*, /rpgen/* へのリクエストを API サーバーへ中継する。
+// プロキシ先は環境変数 DTM_API_ORIGIN で指定（既定は http://localhost:8787）。
+const API_ORIGIN = process.env.DTM_API_ORIGIN ?? "http://localhost:8787";
+
+app.get("/picotune/*", async (c) => {
+	const path = c.req.path;
+	const qs = c.req.raw.url.split("?").slice(1).join("?");
+	const url = `${API_ORIGIN}${path}${qs ? `?${qs}` : ""}`;
+	const headers: Record<string, string> = {};
+	const apiKey = c.req.header("X-API-Key");
+	if (apiKey) headers["X-API-Key"] = apiKey;
+	try {
+		const res = await fetch(url, { headers });
+		const body = await res.arrayBuffer();
+		return c.newResponse(body, res.status, {
+			"Content-Type": res.headers.get("Content-Type") ?? "application/octet-stream",
+			"Access-Control-Allow-Origin": "*",
+		});
+	} catch {
+		return c.text("API proxy error", 502);
+	}
+});
+
+app.get("/rpgen/*", async (c) => {
+	const path = c.req.path;
+	const qs = c.req.raw.url.split("?").slice(1).join("?");
+	const url = `${API_ORIGIN}${path}${qs ? `?${qs}` : ""}`;
+	const headers: Record<string, string> = {};
+	const apiKey = c.req.header("X-API-Key");
+	if (apiKey) headers["X-API-Key"] = apiKey;
+	try {
+		const res = await fetch(url, { headers });
+		const body = await res.arrayBuffer();
+		return c.newResponse(body, res.status, {
+			"Content-Type": res.headers.get("Content-Type") ?? "application/octet-stream",
+			"Access-Control-Allow-Origin": "*",
+		});
+	} catch {
+		return c.text("API proxy error", 502);
+	}
+});
+
 // サーバー起動
 serve({ fetch: app.fetch, port: 40298 });
 

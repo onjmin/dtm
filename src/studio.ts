@@ -167,6 +167,8 @@ export type DtmStudioOptions = {
 		/** 編集UIに楽器プリセット選択UIを差し込む。 */
 		presetUI?: boolean;
 	};
+	/** MIDI検索クライアントの設定（未指定なら検索UI非表示）。 */
+	midiSearch?: import("./midi-search").MidiSearchConfig;
 };
 
 /** 編集UIのマウント時オプション（DawOptions を一部上書きできる）。 */
@@ -643,13 +645,17 @@ export const createDtmStudio = async (
 		target: HTMLElement,
 		opts: MountEditorOptions = {},
 	): DawInstance => {
+		const mergedOpts: MountEditorOptions = {
+			midiSearch: options.midiSearch,
+			...opts,
+		};
 		const {
 			preset,
 			presetUI,
 			onInstrumentChange,
 			onTrackInstrumentChange: externalOnTrackInstrumentChange,
 			...dawOverrides
-		} = opts;
+		} = mergedOpts;
 		const tracks: TrackConfig[] = dawOverrides.tracks ?? TRACKS_SIMPLE;
 		const trackIds = tracks.map((t) => t.id);
 

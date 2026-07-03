@@ -24,6 +24,12 @@ export * from "./linked-list";
 export * from "./lyrics";
 export * from "./macros";
 export * from "./midi-io";
+export { MidiSearchClient } from "./midi-search";
+export type {
+	MidiSearchConfig,
+	PicotuneSong,
+	PicotuneSearchParams,
+} from "./midi-search";
 // ============================================================
 // Layer 1: ヘッドレスコア & プリミティブ
 // ============================================================
