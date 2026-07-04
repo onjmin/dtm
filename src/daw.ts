@@ -325,6 +325,26 @@ const DEFAULT_TRACKS = TRACKS_SIMPLE;
  */
 const BASE_LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
 
+/** 内蔵モデルのカテゴリ定義（プルダウンの optgroup 表示用） */
+const LYRIC_MODEL_CATEGORIES = [
+	{
+		label: "kusaプリセット",
+		models: ["klatt", "tsukuyomi"],
+	},
+	{
+		label: "おんJ組",
+		models: ["roze", "shiyo", "rino"],
+	},
+	{
+		label: "一般組",
+		models: ["teto", "rei", "ruko_male", "ruko_female"],
+	},
+	{
+		label: "クッキー☆",
+		models: ["mgroid", "motroid", "nynroid"],
+	},
+];
+
 /** 内蔵モデルキーワード → プルダウン表示名 */
 const BASE_LYRIC_MODEL_LABELS: Record<string, string> = {
 	klatt: "軽量ロボ声",
@@ -1834,21 +1854,40 @@ export const mountDAW = (
 			// 定位ラベル: 64=C / 左寄りは L<量> / 右寄りは R<量>
 			const fmtPan = (pan: number): string =>
 				pan === 64 ? "C" : pan < 64 ? `L${64 - pan}` : `R${pan - 64}`;
-			// 選択肢: なし(空＝無効、既定) + 既知モデル + 読込MML由来の非標準モデル（往復維持）
-			const addOpt = (value: string, label: string): void => {
+			// 選択肢: なし(空＝無効、既定) + 既知モデル + 読込MML由来 of 非標準モデル（往復維持）
+			const addOpt = (
+				parent: HTMLElement,
+				value: string,
+				label: string,
+			): void => {
 				const o = document.createElement("option");
 				o.value = value;
 				o.textContent = label;
-				lyricModelSel.appendChild(o);
+				parent.appendChild(o);
 			};
-			addOpt("", "ボーカルなし");
-			// 内蔵モデル
-			for (const m of BASE_LYRIC_MODELS)
-				addOpt(m, lyricModelLabel(m, customVocalsMap));
+			addOpt(lyricModelSel, "", "ボーカルなし");
+
+			// カテゴリごとに optgroup を作成して追加
+			for (const cat of LYRIC_MODEL_CATEGORIES) {
+				const group = document.createElement("optgroup");
+				group.label = cat.label;
+				for (const m of cat.models) {
+					addOpt(group, m, lyricModelLabel(m, customVocalsMap));
+				}
+				lyricModelSel.appendChild(group);
+			}
+
+			// カスタム音声の optgroup
+			const customGroup = document.createElement("optgroup");
+			customGroup.label = "カスタム音声";
+
 			// カスタムボーカル（MML・DawOptions・UI追加で登録済みのもの）
-			for (const [k, def] of customVocalsMap) addOpt(k, def.label ?? k);
+			for (const [k, def] of customVocalsMap) {
+				addOpt(customGroup, k, def.label ?? k);
+			}
 			// URL指定でカスタム音声を登録する入力エリアを開く選択肢
-			addOpt(CUSTOM_VOCAL_ADD_VALUE, "カスタム音声を追加…");
+			addOpt(customGroup, CUSTOM_VOCAL_ADD_VALUE, "カスタム音声を追加…");
+
 			// 上記どちらにも含まれない非標準モデル（往復維持用）
 			if (
 				active.lyricModel &&
@@ -1856,10 +1895,13 @@ export const mountDAW = (
 				!customVocalsMap.has(active.lyricModel)
 			) {
 				addOpt(
+					customGroup,
 					active.lyricModel,
 					lyricModelLabel(active.lyricModel, customVocalsMap),
 				);
 			}
+
+			lyricModelSel.appendChild(customGroup);
 			lyricModelSel.value = active.lyricModel;
 			lyricOctaveSel.value = String(active.vocalOctave);
 			// 値はプロパティ経由で設定（HTML文字列に混ぜず、</textarea>等の混入を防ぐ）
