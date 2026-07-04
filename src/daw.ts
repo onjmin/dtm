@@ -332,11 +332,11 @@ const LYRIC_MODEL_CATEGORIES = [
 		models: ["klatt", "tsukuyomi"],
 	},
 	{
-		label: "おんJ組",
+		label: "おんJ",
 		models: ["roze", "shiyo", "rino"],
 	},
 	{
-		label: "一般組",
+		label: "一般",
 		models: ["teto", "rei", "ruko_male", "ruko_female"],
 	},
 	{
