@@ -1228,6 +1228,7 @@ export const mountDAW = (
 	const BG_DB_NAME = "dtm-daw-db";
 	const BG_DB_STORE = "settings";
 	const BG_DB_KEY = "piano-roll-bg";
+	const BG_OPACITY_KEY = "dtm-piano-roll-bg-opacity";
 	// リサイズ＋再圧縮の対象とする静止ラスター画像形式（GIF等アニメーション画像はここに含めない）
 	const COMPRESSIBLE_IMAGE_TYPES = new Set([
 		"image/jpeg",
@@ -1310,6 +1311,14 @@ export const mountDAW = (
 
 	let currentBgObjectUrl: string | null = null;
 
+	const applyBgOpacity = (opacityVal: number): void => {
+		refs.rollContainer.style.setProperty(
+			"--dtm-roll-bg-opacity",
+			String(opacityVal / 100),
+		);
+		refs.bgOpacityInput.value = String(opacityVal);
+	};
+
 	const applyRollBackground = (blob: Blob | null): void => {
 		if (currentBgObjectUrl) {
 			URL.revokeObjectURL(currentBgObjectUrl);
@@ -1321,8 +1330,10 @@ export const mountDAW = (
 				"--dtm-roll-bg-image",
 				`url(${currentBgObjectUrl})`,
 			);
+			refs.bgOpacityRow.classList.remove("dtm-hidden");
 		} else {
 			refs.rollContainer.style.setProperty("--dtm-roll-bg-image", "none");
+			refs.bgOpacityRow.classList.add("dtm-hidden");
 		}
 		refs.bgRemoveBtn.classList.toggle("dtm-hidden", !blob);
 		setBackgroundActive(!!blob);
@@ -2733,6 +2744,13 @@ export const mountDAW = (
 				.catch(() => {})
 				.finally(() => applyRollBackground(null));
 		});
+		refs.bgOpacityInput.addEventListener("input", () => {
+			const opacityVal = Number.parseInt(refs.bgOpacityInput.value, 10);
+			applyBgOpacity(opacityVal);
+			try {
+				localStorage.setItem(BG_OPACITY_KEY, String(opacityVal));
+			} catch (_) {}
+		});
 
 		// 和音分解モード / 和音伴奏トラック無視のチェック状態変化を通知（永続化用）
 		refs.decomposeChordToggle.addEventListener("change", notifyViewState);
@@ -3370,6 +3388,24 @@ export const mountDAW = (
 	updateUndoRedo();
 	redrawAll();
 	if (options.initialMML) loadMML(options.initialMML);
+
+	// 背景不透明度の初期ロード
+	let initialOpacity = 40;
+	try {
+		const storedOpacity = localStorage.getItem(BG_OPACITY_KEY);
+		if (storedOpacity !== null) {
+			initialOpacity = Number.parseInt(storedOpacity, 10);
+			if (
+				Number.isNaN(initialOpacity) ||
+				initialOpacity < 0 ||
+				initialOpacity > 100
+			) {
+				initialOpacity = 40;
+			}
+		}
+	} catch (_) {}
+	applyBgOpacity(initialOpacity);
+
 	loadBgBlob()
 		.then((blob) => {
 			if (blob) applyRollBackground(blob);

@@ -32,6 +32,8 @@ export type DawUIRefs = {
 	bgFileInput: HTMLInputElement;
 	bgUploadBtn: HTMLButtonElement;
 	bgRemoveBtn: HTMLButtonElement;
+	bgOpacityInput: HTMLInputElement;
+	bgOpacityRow: HTMLElement;
 	// roll
 	rollContainer: HTMLElement;
 	wrapper: HTMLElement;
@@ -202,6 +204,10 @@ export const buildUI = (
         <button class="dtm-btn dtm-btn--primary" data-dtm="bg-upload">アップロード</button>
         <button class="dtm-btn dtm-btn--danger dtm-hidden" data-dtm="bg-remove">削除</button>
       </div>
+      <div class="dtm-row dtm-hidden" data-dtm="bg-opacity-row">
+        <span class="dtm-label">背景不透明度</span>
+        <input type="range" min="0" max="100" value="40" data-dtm="bg-opacity" class="dtm-slider">
+      </div>
     </div>
   </details>
 
@@ -359,6 +365,8 @@ export const buildUI = (
 		bgFileInput: sel("bg-file-input"),
 		bgUploadBtn: sel("bg-upload"),
 		bgRemoveBtn: sel("bg-remove"),
+		bgOpacityInput: sel("bg-opacity"),
+		bgOpacityRow: sel("bg-opacity-row"),
 		rollContainer: sel("roll"),
 		wrapper: sel("wrapper"),
 		vScroll: sel("vscroll"),

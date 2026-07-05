@@ -424,7 +424,7 @@ export const DAW_CSS = `
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  opacity: 0.4;
+  opacity: var(--dtm-roll-bg-opacity, 0.4);
   pointer-events: none;
 }
 .dtm-vscroll {
