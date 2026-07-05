@@ -2379,6 +2379,7 @@ export const mountDAW = (
 			lyrics,
 			meta,
 			mergedTrackCount,
+			trackVelocity,
 		} = parseMML(mml, {
 			stepsPerBar: renderConfig.stepsPerBar,
 			collectLyrics: true,
@@ -2411,6 +2412,14 @@ export const mountDAW = (
 			if (t.trackInstrument !== name) {
 				t.trackInstrument = name;
 				options.onTrackInstrumentChange?.(i, name);
+			}
+		});
+		// トラックごとの v（ベロシティ）を復元する（GUIのベロシティスライダーに反映）
+		trackStates.forEach((t, i) => {
+			const v = trackVelocity.get(i);
+			if (v !== undefined && v !== t.volume) {
+				t.volume = v;
+				t.core.setVolume(v);
 			}
 		});
 
@@ -2803,11 +2812,11 @@ export const mountDAW = (
 		refs.mmlLoadBtn.addEventListener("click", async () => {
 			const mml = refs.mmlInput.value;
 			if (!isAdvanced && options.onRequestAdvancedMode) {
-				const { mergedTrackCount } = parseMML(mml, {
+				const { mergedTrackCount, meta } = parseMML(mml, {
 					stepsPerBar: renderConfig.stepsPerBar,
 					clampTrackCount: trackStates.length,
 				});
-				if (mergedTrackCount > 0) {
+				if (mergedTrackCount > 0 || meta.mode === "advanced") {
 					const confirmed = await showConfirmModal(
 						"初心者モードで読み込むと、音が崩れる可能性があります。<br>上級者モードに切り替えますか？",
 					);

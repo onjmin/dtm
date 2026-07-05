@@ -153,6 +153,12 @@ export type ParsedMML = {
 	 * シンプルモードで「複数トラックを合算した」旨を控えめに知らせる用途。
 	 */
 	mergedTrackCount: number;
+	/**
+	 * トラックごとに最後に指定された v（ベロシティ）コマンドの値。
+	 * generateMML はトラック全体で単一の v をヘッダーに出力するため、
+	 * 読込時はこの値をトラックの既定ベロシティ（GUIのスライダー）へ復元する。
+	 */
+	trackVelocity: Map<number, number>;
 	/** トップレベル宣言（楽器プリセット・ドラムパターン）。常に返す（無ければ空オブジェクト） */
 	meta: MmlMeta;
 };
@@ -194,6 +200,7 @@ export const parseMML = (
 			tokenTracks: collectTokens ? tokenTracks : undefined,
 			lyrics: collectLyrics ? new Map() : undefined,
 			mergedTrackCount: 0,
+			trackVelocity: new Map(),
 			meta: {},
 		};
 	}
@@ -236,6 +243,8 @@ export const parseMML = (
 	// 取り込み先トラック → 発音を供給したソースチャンネル集合。
 	// 1トラックに2系統以上集まれば「合算」されたとみなす（clamp畳み込み等）。
 	const contributors = new Map<number, Set<number>>();
+	// トラックごとに最後に指定された v の値（ノートが無くても復元できるようここで記録する）
+	const trackVelocity = new Map<number, number>();
 	const recordContributor = (): void => {
 		let set = contributors.get(trackIndex);
 		if (!set) {
@@ -356,6 +365,7 @@ export const parseMML = (
 					}
 				} else if (ch === "v" && numStr) {
 					velocity = clamp(Number.parseInt(numStr, 10), 0, 127);
+					trackVelocity.set(trackIndex, velocity);
 				}
 				// 発音位置には影響しないが、再生専用UIがグレーアウト表示できるよう
 				// トークンとして残す（durationSteps 0 でハイライト対象外）。
@@ -452,6 +462,7 @@ export const parseMML = (
 		tokenTracks: collectTokens ? tokenTracks : undefined,
 		lyrics,
 		mergedTrackCount,
+		trackVelocity,
 		meta,
 	};
 };
