@@ -4,8 +4,48 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-M0KNK6K99N"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-M0KNK6K99N');
+    </script>
+
     <link rel="icon" href="https://avatars.githubusercontent.com/u/88383494" />
-    <title>DTM BGM Playground</title>
+    <link rel="canonical" href="https://onjmin.github.io/dtm/demo/bgm.html" />
+    <title>DTM BGM Playground - playMML() ヘッドレスBGM再生API デモ</title>
+    <meta name="description" content="Web Audio APIでシームレスループ・イントロ付きループ・サビ検知イベント(Cues)を実現するヘッドレスBGM再生API「playMML()」のデモ。MML文字列を渡すだけでゲームにズレないBGMを組み込めます。ロード不要の軽量内蔵シンセ搭載。" />
+    <meta name="keywords" content="DTM, BGM, playMML, ループ再生, ゲーム音楽, MML, Web Audio API, シームレスループ, サビ検知, Cues, JavaScript, ブラウザ, 無料" />
+
+    <!-- Open Graph Protocol (OGP) for SNS / Discord -->
+    <meta property="og:title" content="DTM BGM Playground - playMML() ヘッドレスBGM再生API デモ" />
+    <meta property="og:description" content="MML文字列を渡すだけで、シームレスループやサビ検知イベントを備えたゲームBGMを裏側で再生できるplayMML() APIのデモ。" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://onjmin.github.io/dtm/demo/bgm.html" />
+    <meta property="og:image" content="https://avatars.githubusercontent.com/u/88383494" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="DTM BGM Playground - playMML()" />
+    <meta name="twitter:description" content="ゲームにシームレスなBGMを組み込むヘッドレス再生API playMML() のデモ。" />
+
+    <!-- 構造化データ (Google検索用) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareSourceCode",
+      "name": "DTM BGM Playground (playMML)",
+      "programmingLanguage": "JavaScript",
+      "url": "https://onjmin.github.io/dtm/demo/bgm.html",
+      "description": "MML中間言語を使用したヘッドレスBGM再生API playMML() のデモ。シームレスループ、サビ検知イベント(Cues)などゲーム音楽の同期機能を提供。",
+      "isPartOf": {
+        "@type": "SoftwareApplication",
+        "name": "DTM Demo",
+        "url": "https://onjmin.github.io/dtm/demo/"
+      }
+    }
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @font-face {
