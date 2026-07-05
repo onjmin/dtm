@@ -38,7 +38,10 @@ export const createSynth = (
 		osc.frequency.value = freqFromPitch(e.pitch);
 		const t0 = ctx.currentTime + e.when;
 		const peak = Math.max(0.0001, 0.06 * e.volume * 1.5);
+		const releaseTime = Math.min(0.02, e.duration * 0.1);
+		const sustainDuration = e.duration - releaseTime;
 		gain.gain.setValueAtTime(peak, t0);
+		gain.gain.setValueAtTime(peak, t0 + sustainDuration);
 		gain.gain.exponentialRampToValueAtTime(0.001, t0 + e.duration);
 		osc.connect(gain);
 		// ステレオ定位（非対応環境では destination 直結）
