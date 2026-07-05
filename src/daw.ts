@@ -2637,11 +2637,10 @@ export const mountDAW = (
 		refs.playBtn.addEventListener("click", togglePlay);
 		refs.playBtn.disabled = false;
 		refs.prevBarBtn.addEventListener("click", () => {
-			const barsBack = playbackState === "playing" ? 2 : 1;
 			const targetStep = Math.max(
 				0,
 				(Math.floor((getCurrentPlayStep() - 1) / renderConfig.stepsPerBar) -
-					barsBack) *
+					1) *
 					renderConfig.stepsPerBar,
 			);
 			jumpTo(targetStep);
