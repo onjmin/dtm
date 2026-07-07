@@ -1,10 +1,10 @@
-import { parseChords } from "@onjmin/chord-parser";
-import { buildChordPlacements, type ChordPatternType } from "./chords";
+import { parseChords, parseChord } from "@onjmin/chord-parser";
 import {
-	playChords,
-	type PlayChordsOptions,
+	playPlacements,
+	type PlayPlacementsOptions,
 	type MmlPlayback,
 } from "./headless-player";
+import { createSynth } from "./synth";
 import { icon } from "./icons";
 import { injectStyles } from "./styles";
 import { DEFAULT_STEPS_PER_BAR } from "./types";
@@ -29,10 +29,6 @@ export type MountChordPlayerOptions = {
 	volume?: number;
 	/** BPM 既定120 */
 	bpm?: number;
-	/** 伴奏パターン 既定 \"block\" */
-	patternType?: ChordPatternType;
-	/** ルートシフト */
-	rootShift?: number;
 	/** スタジオインスタンス（DtmStudio）。指定時は高品質SoundFontが使われます */
 	studio?: any;
 	/** 再生終了時コールバック */
@@ -345,12 +341,40 @@ export const mountChordPlayer = (
 		setPlayBtnStyle(true);
 		updateActiveIndex(0);
 
-		const playOpts: PlayChordsOptions = {
-			volume: options.volume ?? 80,
+		// chordEvents から block コードの配置データを直接構築する
+		const C3 = 48;
+		const volume = options.volume ?? 80;
+		const placements: Array<{
+			trackIndex: number;
+			startStep: number;
+			durationSteps: number;
+			pitch: number;
+			velocity: number;
+		}> = [];
+
+		for (const event of chordEvents) {
+			const whenStep = Math.floor(event.when / secondsPerStep);
+			const durationSteps = Math.floor(event.duration / secondsPerStep);
+			let notes: number[];
+			try {
+				notes = [...parseChord(`${event.key}${event.chord}`).notes];
+			} catch {
+				continue;
+			}
+			for (const noteOffset of notes) {
+				placements.push({
+					trackIndex: 3,
+					startStep: whenStep,
+					durationSteps,
+					pitch: C3 + noteOffset,
+					velocity: 100,
+				});
+			}
+		}
+
+		const playOptions: PlayPlacementsOptions = {
 			bpm,
-			patternType: options.patternType ?? "block",
-			rootShift: options.rootShift ?? 0,
-			audioContext: options.audioContext,
+			volume,
 			onTick: (step) => {
 				const idx = getActiveIndex(step);
 				updateActiveIndex(idx);
@@ -361,9 +385,21 @@ export const mountChordPlayer = (
 		};
 
 		if (options.studio) {
-			activePlayback = options.studio.playChords(chords, playOpts);
+			// studio から渡された AudioContext を使い内蔵シンセで鳴らす
+			const ctx = options.audioContext;
+			if (ctx) {
+				const synth = createSynth(ctx);
+				activePlayback = playPlacements(placements, {
+					...playOptions,
+					audioContext: ctx,
+					synth: false,
+					onPlayNote: (e) => synth.playNote(e),
+				});
+			} else {
+				activePlayback = playPlacements(placements, playOptions);
+			}
 		} else {
-			activePlayback = playChords(chords, playOpts);
+			activePlayback = playPlacements(placements, playOptions);
 		}
 	};
 
