@@ -31,7 +31,8 @@ export const DAW_CSS = `
 .dtm-daw,
 .dtm-controlbar,
 .dtm-modal-overlay,
-.dtm-consent-overlay {
+.dtm-consent-overlay,
+.dtm-chord-player {
   /* PICO-8 16色パレットより */
   --c-black:   #000000;
   --c-navy:    #1d2b53;
@@ -1266,6 +1267,104 @@ export const DAW_CSS = `
   background: var(--tk, var(--dtm-primary));
   color: var(--c-black);
   font-weight: bold;
+}
+
+/* ─── コード進行プレイヤー ─── */
+.dtm-chord-player {
+  font-family: var(--dtm-font);
+  font-size: 13px;
+  letter-spacing: .06em;
+  color: var(--dtm-text);
+  background: var(--dtm-surface);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-border),
+    4px 4px 0 var(--c-black);
+  overflow: hidden;
+  image-rendering: pixelated;
+  -webkit-font-smoothing: none;
+}
+.dtm-chord-player *,
+.dtm-chord-player *::before,
+.dtm-chord-player *::after { box-sizing: border-box; }
+
+/* コントロールバー */
+.dtm-cp-ctrl {
+  display: flex;
+  align-items: center;
+  gap: var(--dtm-gap);
+  padding: 6px 8px;
+  background: var(--dtm-deep);
+  border-bottom: 2px solid var(--c-black);
+}
+
+/* メタ情報 (BPM / 時間) */
+.dtm-cp-meta {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--dtm-muted);
+}
+.dtm-cp-time {
+  margin-left: auto;
+  font-size: 11px;
+  font-family: var(--dtm-font);
+  color: var(--dtm-muted);
+  letter-spacing: .1em;
+}
+
+/* スクロールエリア */
+.dtm-cp-scroll {
+  padding: 8px 10px 10px;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.dtm-cp-scroll::-webkit-scrollbar { display: none; }
+
+/* セクション見出し */
+.dtm-cp-section {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  margin-top: 8px;
+  padding-left: 2px;
+  border-left: 3px solid;
+  padding-left: 5px;
+}
+
+/* 小節行 */
+.dtm-cp-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+/* 小節区切りパイプ */
+.dtm-cp-pipe {
+  font-size: 12px;
+  color: var(--dtm-border2);
+  font-family: var(--dtm-font);
+}
+
+/* コードセル */
+.dtm-cp-chord {
+  display: inline-block;
+  font-family: var(--dtm-font);
+  font-size: 12px;
+  padding: 2px 5px;
+  border: 2px solid transparent;
+  cursor: default;
+}
+.dtm-cp-chord--active {
+  border-color: var(--c-black) !important;
+  color: var(--c-black) !important;
+  box-shadow: 2px 2px 0 var(--c-black);
 }
 `;
 

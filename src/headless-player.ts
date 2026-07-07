@@ -72,6 +72,8 @@ export type PlayMmlOptions = {
 	pauseWhenHidden?: boolean;
 	/** ループ無効時に曲末（または stop()）で呼ばれる。 */
 	onStop?: () => void;
+	/** 再生中のステップ更新（1/192小節ごと）時のコールバック */
+	onTick?: (step: number) => void;
 };
 
 export type MmlPlayback = {
@@ -166,7 +168,9 @@ export const playPlacements = (
 			options.onPlayDrum?.({ ...e, velocity });
 			synth?.playDrum({ ...e, velocity });
 		},
-		onTick: () => {},
+		onTick: (step) => {
+			options.onTick?.(step);
+		},
 		onEnd: (_interrupted) => finish(),
 		stepsPerBar: STEPS_PER_BAR,
 	});

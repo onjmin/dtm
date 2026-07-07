@@ -36,6 +36,11 @@ import {
 	type PlayNoteOptions,
 	type PlayChordsOptions,
 } from "./headless-player";
+import {
+	mountChordPlayer,
+	type ChordPlayerInstance,
+	type MountChordPlayerOptions,
+} from "./chord-player";
 import { parseMML, parseMmlMeta } from "./mml-parser";
 import {
 	type MmlPlayerInstance,
@@ -303,6 +308,12 @@ export type DtmStudio = {
 		mml: string,
 		options?: MountPlayerOptions,
 	) => MmlPlayerInstance;
+	/** コード進行再生専用プレイヤー（UI）をマウントする */
+	mountChordPlayer: (
+		target: HTMLElement,
+		chords: string,
+		options?: Omit<MountChordPlayerOptions, "studio">,
+	) => ChordPlayerInstance;
 	/** UIなしで高品質な楽器再生（SoundFont）を行う */
 	play: (
 		mml: string,
@@ -674,6 +685,7 @@ export const createDtmStudio = async (
 	const editorPresetSelects = new WeakMap<HTMLElement, PresetSelectInstance>();
 	const mountedEditors: DawInstance[] = [];
 	const mountedPlayers: MmlPlayerInstance[] = [];
+	const mountedChordPlayers: ChordPlayerInstance[] = [];
 	const mountedModeSwitches: ModeSwitchInstance[] = [];
 
 	const mountEditor = (
@@ -1241,12 +1253,42 @@ export const createDtmStudio = async (
 		});
 	};
 
+	const mountChordPlayerInstance = (
+		target: HTMLElement,
+		chords: string,
+		options: Omit<MountChordPlayerOptions, "studio"> = {},
+	): ChordPlayerInstance => {
+		const player = mountChordPlayer(target, chords, {
+			...options,
+			audioContext: audioCtx,
+			studio: {
+				playChords: (chordsStr: string, playOpts: any) => {
+					return playChords(chordsStr, playOpts);
+				},
+			},
+		});
+		mountedChordPlayers.push(player);
+
+		const destroy = (): void => {
+			player.destroy();
+			const i = mountedChordPlayers.indexOf(player);
+			if (i >= 0) mountedChordPlayers.splice(i, 1);
+		};
+
+		return {
+			...player,
+			destroy,
+		};
+	};
+
 	const dispose = (): void => {
 		for (const m of [...mountedModeSwitches]) m.destroy();
 		for (const p of mountedPlayers) p.destroy();
+		for (const cp of mountedChordPlayers) cp.destroy();
 		for (const d of mountedEditors) d.destroy();
 		mountedModeSwitches.length = 0;
 		mountedPlayers.length = 0;
+		mountedChordPlayers.length = 0;
 		mountedEditors.length = 0;
 		void audioCtx.close();
 	};
@@ -1256,6 +1298,7 @@ export const createDtmStudio = async (
 		singingVoices,
 		mountEditor,
 		mountPlayer,
+		mountChordPlayer: mountChordPlayerInstance,
 		play,
 		playNote,
 		playChords,

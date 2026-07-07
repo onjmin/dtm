@@ -42,6 +42,7 @@ export { MidiSearchClient } from "./midi-search";
 export * from "./mml-core";
 // 補助ロジック（再利用可能）
 export * from "./mml-parser";
+export * from "./chord-player";
 export type { MmlPlayerInstance, MmlPlayerOptions } from "./mml-player";
 // 再生専用ビュー（mountDAW と対）
 export { decodeMml, encodeMml, mountMmlPlayer } from "./mml-player";

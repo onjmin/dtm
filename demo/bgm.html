@@ -331,6 +331,38 @@
             </div>
         </div>
 
+        <!-- Chord Player UI Section -->
+        <div class="game-win bg-pico-surface p-4 flex flex-col gap-3 mb-4">
+            <div class="flex justify-between items-center border-b-2 border-pico-black pb-1">
+                <span class="text-pico-yellow text-sm font-bold tracking-widest uppercase">
+                    ■ Chord Player UI Component
+                </span>
+                <span class="text-[10px] text-pico-lavend">mountChordPlayer()</span>
+            </div>
+            
+            <div class="flex flex-col gap-2">
+                <div class="text-xs text-pico-lavend mb-1">
+                    コード進行を入力し、「MOUNT PLAYER」ボタンを押すと専用の再生プレイヤーUIが下にマウントされます。
+                </div>
+                <textarea id="chord-input" rows="5" 
+                    class="w-full bg-pico-black border-2 border-pico-gray p-2 text-xs text-pico-white font-mono focus:outline-none focus:border-pico-yellow"># INTRO
+| C | G | Am | F |
+# A-MELO
+| C | G | Am | Em |
+| F | C | F | G |</textarea>
+                <div class="flex gap-2 mt-1">
+                    <button id="mount-chord-btn" 
+                        class="px-4 py-1.5 bg-pico-black border-2 border-pico-cyan text-pico-cyan text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+                        MOUNT PLAYER
+                    </button>
+                </div>
+            </div>
+            
+            <div id="chord-player-mount-target" class="mt-2 min-h-[50px] border border-dashed border-pico-gray/30 rounded-xl p-2 bg-pico-black/10 flex items-center justify-center">
+                <span class="text-xs text-pico-lavend italic">No player mounted yet.</span>
+            </div>
+        </div>
+
         <!-- Documentation details -->
         <div class="game-win bg-pico-navy p-4 text-[11px] leading-relaxed flex flex-col gap-4">
             <h3 class="text-pico-yellow text-sm font-bold border-b border-pico-gray/30 pb-1">playMML() API & Usage Guide</h3>
@@ -417,7 +449,7 @@ playMML(mmlString, {
             ? 'http://localhost:40298/dist/index.mjs'
             : './index.mjs');
 
-        const { createDtmStudio, playMML, playNote, playChords } = DTM;
+        const { createDtmStudio, playMML, playNote, playChords, mountChordPlayer } = DTM;
 
         const studio = await createDtmStudio();
         window.studio = studio;
@@ -655,6 +687,33 @@ playMML(mmlString, {
         // Initialize Headless demo
         document.getElementById("headless-mml-input").value = HEADLESS_SAMPLE_MML;
         renderCuesList();
+
+        // ── mountChordPlayer demo ──
+        let mountedChordPlayerInstance = null;
+
+        document.getElementById("mount-chord-btn").addEventListener("click", async () => {
+            const target = document.getElementById("chord-player-mount-target");
+            const chords = document.getElementById("chord-input").value;
+
+            // 既存のプレイヤーを破棄してマウント先をクリア
+            if (mountedChordPlayerInstance) {
+                mountedChordPlayerInstance.destroy();
+                mountedChordPlayerInstance = null;
+            }
+            target.innerHTML = "";
+
+            // AudioContext を resume してからマウント
+            const audioContext = studio.audioContext;
+            if (audioContext.state === "suspended") {
+                await audioContext.resume();
+            }
+
+            mountedChordPlayerInstance = studio.mountChordPlayer(target, chords, {
+                volume: 80,
+                bpm: 120,
+                patternType: "arpeggio",
+            });
+        });
     </script>
 </body>
 
