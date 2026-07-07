@@ -25,6 +25,11 @@ import {
 	koeUrl,
 	type SingingVoices,
 } from "./lyrics";
+import {
+	playMML,
+	type PlayMmlOptions,
+	type MmlPlayback,
+} from "./headless-player";
 import { parseMML, parseMmlMeta } from "./mml-parser";
 import {
 	type MmlPlayerInstance,
@@ -291,6 +296,14 @@ export type DtmStudio = {
 		mml: string,
 		options?: MountPlayerOptions,
 	) => MmlPlayerInstance;
+	/** UIなしで高品質な楽器再生（SoundFont）を行う */
+	play: (
+		mml: string,
+		options?: Omit<
+			PlayMmlOptions,
+			"audioContext" | "destination" | "onPlayNote" | "onPlayDrum" | "synth"
+		>,
+	) => MmlPlayback;
 	/** 楽器プリセットを（指定トラックぶん）ロードする。 */
 	loadPreset: (presetKey: string, trackIds?: string[]) => Promise<void>;
 	/** 既定の楽器プリセットキー（options.defaultPreset ?? "retro_game"）。 */
@@ -1036,6 +1049,90 @@ export const createDtmStudio = async (
 		return { ...player, destroy };
 	};
 
+	const play = (
+		mml: string,
+		opts: Omit<
+			PlayMmlOptions,
+			"audioContext" | "destination" | "onPlayNote" | "onPlayDrum" | "synth"
+		> = {},
+	): MmlPlayback => {
+		const parsed = parseMML(mml, {});
+		const meta = parsed.meta ?? {};
+		const playerPreset =
+			meta.instrument && INSTRUMENT_PRESETS[meta.instrument]
+				? meta.instrument
+				: defaultPreset;
+
+		const isAdvancedMode = meta.mode === "advanced";
+
+		const trackIndices = [
+			...new Set(parsed.placements.map((p) => p.trackIndex)),
+		];
+		const trackIds = trackIndices.map((idx) =>
+			getRoleForTrackIndex(idx, isAdvancedMode ? "advanced" : "simple"),
+		);
+		const loadTrackIds = trackIds.length > 0 ? trackIds : [...TRACK_ROLES];
+
+		const playerTrackInstKeys = new Map<number, string>();
+		const loadPlayerTrackInstruments = async (): Promise<void> => {
+			if (!meta.trackInstruments) return;
+			await listReady;
+			for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
+				const key = resolveNameToKey(name);
+				if (!key) continue;
+				playerTrackInstKeys.set(Number(idxStr), key);
+				await loadInstrument(key);
+			}
+		};
+
+		void Promise.all([
+			loadPreset(
+				playerPreset,
+				loadTrackIds,
+				isAdvancedMode ? "advanced" : "simple",
+			),
+			loadPlayerTrackInstruments(),
+		]);
+
+		const playPlayerNote = (e: PlayNoteEvent): void => {
+			const idx = Number(e.trackId);
+			const overrideKey = playerTrackInstKeys.get(idx);
+			let sfInst: SoundFontInstance | undefined;
+			if (overrideKey) {
+				sfInst = soundFonts.get(overrideKey);
+			} else {
+				const role = getRoleForTrackIndex(
+					idx,
+					isAdvancedMode ? "advanced" : "simple",
+				);
+				sfInst = resolveSoundFont(
+					playerPreset,
+					role,
+					isAdvancedMode ? "advanced" : "simple",
+				);
+			}
+			if (!sfInst) return;
+			sfInst.play({
+				ctx: audioCtx,
+				destination: masterGain,
+				pitch: e.pitch,
+				volume: e.volume,
+				when: e.when,
+				duration: e.duration,
+			});
+		};
+
+		return playMML(mml, {
+			...opts,
+			audioContext: audioCtx,
+			destination: masterGain,
+			synth: false,
+			onPlayNote: playPlayerNote,
+			onPlayDrum: playDrum,
+			onResumeAudio: resumeAudio,
+		});
+	};
+
 	const dispose = (): void => {
 		for (const m of [...mountedModeSwitches]) m.destroy();
 		for (const p of mountedPlayers) p.destroy();
@@ -1051,6 +1148,7 @@ export const createDtmStudio = async (
 		singingVoices,
 		mountEditor,
 		mountPlayer,
+		play,
 		loadPreset,
 		defaultPreset,
 		mountPresetSelect,

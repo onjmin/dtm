@@ -298,6 +298,10 @@
                         ■ STOP
                     </button>
                     <div class="flex items-center gap-2 mt-1">
+                        <input type="checkbox" id="headless-sf-checkbox" class="accent-pico-orange">
+                        <label for="headless-sf-checkbox" class="text-pico-lavend text-[10px] cursor-pointer">USE SOUNDFONT</label>
+                    </div>
+                    <div class="flex items-center gap-2 mt-1">
                         <span class="text-pico-lavend text-[10px]">VOLUME:</span>
                         <input type="range" id="headless-vol" min="0" max="100" value="50"
                             class="grow accent-pico-orange">
@@ -544,15 +548,15 @@ playMML(mmlString, {
                 };
             });
 
-            consoleLog(`Starting playMML(). Loop: ${JSON.stringify(loopOption)}, Cues: ${resolvedCues.length} registered`, "text-pico-yellow");
+            const useSF = document.getElementById("headless-sf-checkbox").checked;
+            consoleLog(`Starting BGM (${useSF ? 'SoundFont' : 'Internal Synth'}). Loop: ${JSON.stringify(loopOption)}, Cues: ${resolvedCues.length} registered`, "text-pico-yellow");
 
             try {
                 const audioContext = studio.audioContext;
                 if (audioContext.state === "suspended") {
                     await audioContext.resume();
                 }
-                activeHeadlessPlayback = playMML(mml, {
-                    audioContext,
+                const playOpts = {
                     volume: vol,
                     loop: loopOption,
                     cues: resolvedCues,
@@ -562,7 +566,15 @@ playMML(mmlString, {
                     onStop: () => {
                         consoleLog("BGM playback stopped.", "text-pico-red");
                     }
-                });
+                };
+                if (useSF) {
+                    activeHeadlessPlayback = studio.play(mml, playOpts);
+                } else {
+                    activeHeadlessPlayback = playMML(mml, {
+                        ...playOpts,
+                        audioContext
+                    });
+                }
             } catch (err) {
                 consoleLog(`Error playing BGM: ${err.message}`, "text-pico-red");
             }
