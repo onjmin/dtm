@@ -301,6 +301,14 @@
                         <input type="checkbox" id="headless-sf-checkbox" class="accent-pico-orange">
                         <label for="headless-sf-checkbox" class="text-pico-lavend text-[10px] cursor-pointer">USE SOUNDFONT</label>
                     </div>
+                    <button id="headless-note-btn"
+                        class="min-h-[30px] px-4 border border-pico-cyan bg-pico-black text-pico-cyan text-[10px] uppercase tracking-widest cursor-pointer font-pixel shadow-[2px_2px_0_#000] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none mt-1">
+                        ♪ PLAY NOTE (C4)
+                    </button>
+                    <button id="headless-chords-btn"
+                        class="min-h-[30px] px-4 border border-pico-yellow bg-pico-black text-pico-yellow text-[10px] uppercase tracking-widest cursor-pointer font-pixel shadow-[2px_2px_0_#000] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none mt-1">
+                        ▤ PLAY CHORDS (C-Dm-G-C)
+                    </button>
                     <div class="flex items-center gap-2 mt-1">
                         <span class="text-pico-lavend text-[10px]">VOLUME:</span>
                         <input type="range" id="headless-vol" min="0" max="100" value="50"
@@ -409,7 +417,7 @@ playMML(mmlString, {
             ? 'http://localhost:40298/dist/index.mjs'
             : './index.mjs');
 
-        const { createDtmStudio, playMML } = DTM;
+        const { createDtmStudio, playMML, playNote, playChords } = DTM;
 
         const studio = await createDtmStudio();
         window.studio = studio;
@@ -594,6 +602,53 @@ playMML(mmlString, {
             const vol = parseInt(e.target.value);
             if (activeHeadlessPlayback) {
                 activeHeadlessPlayback.setVolume(vol);
+            }
+        });
+
+        document.getElementById("headless-note-btn").addEventListener("click", async () => {
+            const useSF = document.getElementById("headless-sf-checkbox").checked;
+            const pitch = 60; // C4
+            consoleLog(`Playing single note (C4) using ${useSF ? 'SoundFont' : 'Internal Synth'}`);
+            try {
+                if (useSF) {
+                    await studio.playNote({ pitch, duration: 0.8 });
+                } else {
+                    const audioContext = studio.audioContext;
+                    playNote({ pitch, duration: 0.8, audioContext });
+                }
+            } catch (err) {
+                consoleLog(`Error playing note: ${err.message}`, "text-pico-red");
+            }
+        });
+
+        document.getElementById("headless-chords-btn").addEventListener("click", async () => {
+            if (activeHeadlessPlayback) {
+                activeHeadlessPlayback.destroy();
+            }
+            const useSF = document.getElementById("headless-sf-checkbox").checked;
+            const chordsStr = "C Dm G C";
+            consoleLog(`Playing chords (${chordsStr}) using ${useSF ? 'SoundFont' : 'Internal Synth'}`);
+            try {
+                const audioContext = studio.audioContext;
+                if (audioContext.state === "suspended") {
+                    await audioContext.resume();
+                }
+                const playOpts = {
+                    volume: 80,
+                    onStop: () => {
+                        consoleLog("Chords playback stopped.", "text-pico-red");
+                    }
+                };
+                if (useSF) {
+                    activeHeadlessPlayback = studio.playChords(chordsStr, playOpts);
+                } else {
+                    activeHeadlessPlayback = playChords(chordsStr, {
+                        ...playOpts,
+                        audioContext
+                    });
+                }
+            } catch (err) {
+                consoleLog(`Error playing chords: ${err.message}`, "text-pico-red");
             }
         });
 

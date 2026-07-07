@@ -19,6 +19,7 @@
  * 歌声が必要なら mountMmlPlayer / createDtmStudio を使う。
  */
 
+import { buildChordPlacements, type ChordPatternType } from "./chords";
 import { DRUM_PATTERNS, type DrumPattern } from "./drum-config";
 import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
@@ -87,24 +88,34 @@ export type MmlPlayback = {
 	destroy: () => void;
 };
 
-/**
- * MML 文字列を画面なしで再生する。呼び出した時点で再生を開始する。
- * ブラウザの自動再生ポリシー上、初回はユーザー操作のコールスタック内で呼ぶこと。
- */
-export const playMML = (
-	mml: string,
-	options: PlayMmlOptions = {},
-): MmlPlayback => {
-	const { placements, bpm: parsedBpm, meta } = parseMML(mml);
-	const bpm = parsedBpm ?? options.defaultBpm ?? DEFAULT_BPM;
+export type PlayPlacementsOptions = PlayMmlOptions & {
+	bpm: number;
+	metaVolume?: number;
+	metaDrum?: string;
+	metaDrumVolume?: number;
+};
 
+/**
+ * パース済みの配置データ（placements）を画面なしで再生する。
+ */
+export const playPlacements = (
+	placements: Array<{
+		trackIndex: number;
+		startStep: number;
+		durationSteps: number;
+		pitch: number;
+		velocity: number;
+	}>,
+	options: PlayPlacementsOptions,
+): MmlPlayback => {
+	const bpm = options.bpm;
 	const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
-	const drumPattern: DrumPattern | null = meta.drum
-		? (drumPatternDict[meta.drum] ?? null)
+	const drumPattern: DrumPattern | null = options.metaDrum
+		? (drumPatternDict[options.metaDrum] ?? null)
 		: null;
 
-	let masterVolume = meta.volume ?? options.volume ?? 100;
-	const drumVolume = meta.drumVolume ?? 80;
+	let masterVolume = options.metaVolume ?? options.volume ?? 100;
+	const drumVolume = options.metaDrumVolume ?? 80;
 
 	// placements を trackIndex ごとに単音列へまとめる
 	const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
@@ -180,8 +191,6 @@ export const playMML = (
 	}
 
 	// ── 再生開始 ──
-	// AudioContext が suspended のままスケジュールを始めると、resume 完了の瞬間に
-	// 先読み予約が過去時刻となって冒頭が潰れる（"ピチュ"）。resume を待ってから start する。
 	playing = true;
 	void (async () => {
 		const resumes: Promise<void>[] = [];
@@ -224,4 +233,88 @@ export const playMML = (
 		resume,
 		destroy,
 	};
+};
+
+/**
+ * MML 文字列を画面なしで再生する。呼び出した時点で再生を開始する。
+ * ブラウザの自動再生ポリシー上、初回はユーザー操作のコールスタック内で呼ぶこと。
+ */
+export const playMML = (
+	mml: string,
+	options: PlayMmlOptions = {},
+): MmlPlayback => {
+	const { placements, bpm: parsedBpm, meta } = parseMML(mml);
+	const bpm = parsedBpm ?? options.defaultBpm ?? DEFAULT_BPM;
+	return playPlacements(placements, {
+		...options,
+		bpm,
+		metaVolume: meta.volume,
+		metaDrum: meta.drum,
+		metaDrumVolume: meta.drumVolume,
+	});
+};
+
+export type PlayNoteOptions = {
+	audioContext?: AudioContext;
+	destination?: AudioNode;
+	pitch: number;
+	volume?: number;
+	duration?: number;
+};
+
+/**
+ * 簡易な単音（軽量シンセ）を再生する。
+ */
+export const playNote = (options: PlayNoteOptions): void => {
+	const ctx = options.audioContext ?? new AudioContext();
+	const destination = options.destination ?? ctx.destination;
+	const synth = createSynth(ctx, destination);
+	const vol = options.volume ?? 80;
+	const dur = options.duration ?? 1.0;
+
+	synth.playNote({
+		trackId: "melody",
+		pitch: options.pitch,
+		velocity: 100,
+		volume: vol / 100,
+		when: 0,
+		duration: dur,
+	});
+};
+
+export type PlayChordsOptions = PlayMmlOptions & {
+	patternType?: ChordPatternType;
+	rootShift?: number;
+	bpm?: number;
+};
+
+/**
+ * コード進行（軽量シンセ）を再生する。
+ */
+export const playChords = (
+	chordStr: string,
+	options: PlayChordsOptions = {},
+): MmlPlayback => {
+	const bpm = options.bpm ?? options.defaultBpm ?? DEFAULT_BPM;
+	const chordPlacements = buildChordPlacements({
+		chordStr,
+		patternType: options.patternType ?? "block",
+		rootShift: options.rootShift ?? 0,
+		bpm,
+		stepsPerBar: STEPS_PER_BAR,
+	});
+
+	const placements = chordPlacements.map((p) => ({
+		trackIndex: 3, // 伴奏トラック
+		startStep: p.startStep,
+		durationSteps: p.durationSteps,
+		pitch: p.pitch,
+		velocity: p.velocity,
+	}));
+
+	return playPlacements(placements, {
+		...options,
+		bpm,
+		metaVolume: options.volume ?? 100,
+	});
 };

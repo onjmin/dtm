@@ -12,6 +12,12 @@ export {
 	type MmlPlayback,
 	type PlayMmlOptions,
 	playMML,
+	playPlacements,
+	type PlayPlacementsOptions,
+	playNote,
+	type PlayNoteOptions,
+	playChords,
+	type PlayChordsOptions,
 } from "./headless-player";
 export {
 	type PlaySingingMmlOptions,

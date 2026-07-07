@@ -16,6 +16,7 @@
 
 import { parseArrayBuffer } from "midi-json-parser";
 import { buildNameToKeyMapping } from "./audio-config";
+import { buildChordPlacements } from "./chords";
 import { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 import { DRUM_FONT, DRUM_KEYS } from "./drum-config";
 import { INSTRUMENT_PRESETS } from "./instrument-presets";
@@ -27,8 +28,13 @@ import {
 } from "./lyrics";
 import {
 	playMML,
+	playPlacements,
+	playNote,
+	playChords,
 	type PlayMmlOptions,
 	type MmlPlayback,
+	type PlayNoteOptions,
+	type PlayChordsOptions,
 } from "./headless-player";
 import { parseMML, parseMmlMeta } from "./mml-parser";
 import {
@@ -48,6 +54,7 @@ import type {
 	PlayNoteEvent,
 	TrackConfig,
 } from "./types";
+import { DEFAULT_BPM, DEFAULT_STEPS_PER_BAR } from "./types";
 
 // ── 外部エンジンの最小型（SoundFont / midi-parser）──
 type SoundFontInstance = {
@@ -301,6 +308,21 @@ export type DtmStudio = {
 		mml: string,
 		options?: Omit<
 			PlayMmlOptions,
+			"audioContext" | "destination" | "onPlayNote" | "onPlayDrum" | "synth"
+		>,
+	) => MmlPlayback;
+	/** SoundFontを用いた単音再生を行う */
+	playNote: (options: {
+		pitch: number;
+		volume?: number;
+		duration?: number;
+		instrument?: string;
+	}) => Promise<void>;
+	/** SoundFontを用いたコード進行再生を行う */
+	playChords: (
+		chordStr: string,
+		options?: Omit<
+			PlayChordsOptions,
 			"audioContext" | "destination" | "onPlayNote" | "onPlayDrum" | "synth"
 		>,
 	) => MmlPlayback;
@@ -1133,6 +1155,92 @@ export const createDtmStudio = async (
 		});
 	};
 
+	const playNote = async (options: {
+		pitch: number;
+		volume?: number;
+		duration?: number;
+		instrument?: string;
+	}): Promise<void> => {
+		await listReady;
+		const key = options.instrument
+			? resolveNameToKey(options.instrument)
+			: undefined;
+		const sfKey = key ?? nameToKey[INSTRUMENT_PRESETS[defaultPreset].melody];
+		if (!sfKey) return;
+		await loadInstrument(sfKey);
+		const sfInst = soundFonts.get(sfKey);
+		if (!sfInst) return;
+
+		const vol = options.volume ?? 80;
+		const dur = options.duration ?? 1.0;
+
+		if (audioCtx.state === "suspended") {
+			await audioCtx.resume();
+		}
+
+		sfInst.play({
+			ctx: audioCtx,
+			destination: masterGain,
+			pitch: options.pitch,
+			volume: vol / 100,
+			when: 0,
+			duration: dur,
+		});
+	};
+
+	const playChords = (
+		chordStr: string,
+		opts: Omit<
+			PlayChordsOptions,
+			"audioContext" | "destination" | "onPlayNote" | "onPlayDrum" | "synth"
+		> = {},
+	): MmlPlayback => {
+		const bpm = opts.bpm ?? opts.defaultBpm ?? DEFAULT_BPM;
+		const chordPlacements = buildChordPlacements({
+			chordStr,
+			patternType: opts.patternType ?? "block",
+			rootShift: opts.rootShift ?? 0,
+			bpm,
+			stepsPerBar: DEFAULT_STEPS_PER_BAR,
+		});
+
+		const placements = chordPlacements.map((p) => ({
+			trackIndex: 3, // 伴奏トラック
+			startStep: p.startStep,
+			durationSteps: p.durationSteps,
+			pitch: p.pitch,
+			velocity: p.velocity,
+		}));
+
+		const playerPreset = defaultPreset;
+		void loadPreset(playerPreset, ["chord"]);
+
+		const playPlayerNote = (e: PlayNoteEvent): void => {
+			const sfInst = resolveSoundFont(playerPreset, "chord");
+			if (!sfInst) return;
+			sfInst.play({
+				ctx: audioCtx,
+				destination: masterGain,
+				pitch: e.pitch,
+				volume: e.volume,
+				when: e.when,
+				duration: e.duration,
+			});
+		};
+
+		return playPlacements(placements, {
+			...opts,
+			audioContext: audioCtx,
+			destination: masterGain,
+			synth: false,
+			onPlayNote: playPlayerNote,
+			onPlayDrum: playDrum,
+			onResumeAudio: resumeAudio,
+			bpm,
+			metaVolume: opts.volume ?? 100,
+		});
+	};
+
 	const dispose = (): void => {
 		for (const m of [...mountedModeSwitches]) m.destroy();
 		for (const p of mountedPlayers) p.destroy();
@@ -1149,6 +1257,8 @@ export const createDtmStudio = async (
 		mountEditor,
 		mountPlayer,
 		play,
+		playNote,
+		playChords,
 		loadPreset,
 		defaultPreset,
 		mountPresetSelect,
