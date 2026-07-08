@@ -17,12 +17,15 @@
     <link rel="icon" href="https://i.imgur.com/6S6JMjy.png" />
     <meta name="google-site-verification" content="umOJryZRtZeDsWC10CFmGjDOJy7SjkpL3DWlXblOnyE" />
     <title>DTM Demo</title>
-    <meta name="description" content="PC・Android・iPhone対応。ブラウザで今すぐ無料で遊べる、MML中間言語を使用したWebベースのピアノロール打ち込み・DTMデモ。インストール不要で、UTAU音声による歌声合成やMIDI自動解析・分類機能が使えます。 / Free, no-install web-based piano roll DTM sequencer for PC, Android, and iPhone." />
-    <meta name="keywords" content="DTM, ピアノロール, 無料, ブラウザ, スマホ, PC, Android, iPhone, MML, UTAU, Web Audio, sequencer, シーケンサー" />
+    <meta name="description"
+        content="PC・Android・iPhone対応。ブラウザで今すぐ無料で遊べる、MML中間言語を使用したWebベースのピアノロール打ち込み・DTMデモ。インストール不要で、UTAU音声による歌声合成やMIDI自動解析・分類機能が使えます。 / Free, no-install web-based piano roll DTM sequencer for PC, Android, and iPhone." />
+    <meta name="keywords"
+        content="DTM, ピアノロール, 無料, ブラウザ, スマホ, PC, Android, iPhone, MML, UTAU, Web Audio, sequencer, シーケンサー" />
 
     <!-- Open Graph Protocol (OGP) for SNS / Discord -->
     <meta property="og:title" content="DTM Demo" />
-    <meta property="og:description" content="PC・Android・iPhone対応！ブラウザから無料で今すぐ遊べるWeb DTM・ピアノロール打ち込みデモ。MML生成やUTAU音声による歌声合成に対応。" />
+    <meta property="og:description"
+        content="PC・Android・iPhone対応！ブラウザから無料で今すぐ遊べるWeb DTM・ピアノロール打ち込みデモ。MML生成やUTAU音声による歌声合成に対応。" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://onjmin.github.io/dtm/demo/" />
     <meta property="og:image" content="https://i.imgur.com/6S6JMjy.png" />
@@ -439,7 +442,8 @@
         const studio = await createDtmStudio({
             defaultPreset,
             features: { presetUI: false },
-            midiSearch: { apiKey: '114514' },
+            midiSearch: { apiKey: '114514', baseUrl: isLocal ? location.origin : '' },
+
         });
         window.studio = studio;
 
@@ -728,7 +732,7 @@
         const isSimilarMml = (a, b) => {
             if (a === b) return true;
             if (Math.abs(a.length - b.length) > 30) return false;
-            
+
             const len1 = a.length;
             const len2 = b.length;
             if (len1 > 2000 || len2 > 2000) return false;
@@ -805,18 +809,18 @@
         const historyList = document.getElementById('history-list');
         const historyToast = document.getElementById('history-toast');
         const historySelectionCount = document.getElementById('history-selection-count');
-        
+
         let historyToastTimer = null;
         const showHistoryToast = (msg, colorClass = 'text-pico-white') => {
             if (!historyToast) return;
             historyToast.textContent = msg;
             historyToast.className = `text-[10px] font-bold opacity-0 transition-opacity duration-300 pointer-events-none mr-2 ${colorClass}`;
-            
+
             // 強制リフローでアニメーションを確実に発火
             void historyToast.offsetWidth;
             historyToast.classList.remove('opacity-0');
             historyToast.classList.add('opacity-100');
-            
+
             if (historyToastTimer) clearTimeout(historyToastTimer);
             historyToastTimer = setTimeout(() => {
                 historyToast.classList.remove('opacity-100');
@@ -1226,12 +1230,15 @@
             <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
                 <span class="text-pico-yellow text-sm font-bold">作業履歴 (スナップショット)</span>
                 <div class="flex items-center gap-3">
-                    <span id="history-selection-count" class="text-[10px] text-pico-orange font-bold mr-2 hidden"></span>
-                    <span id="history-toast" class="text-[10px] font-bold opacity-0 transition-opacity duration-300 pointer-events-none mr-2"></span>
+                    <span id="history-selection-count"
+                        class="text-[10px] text-pico-orange font-bold mr-2 hidden"></span>
+                    <span id="history-toast"
+                        class="text-[10px] font-bold opacity-0 transition-opacity duration-300 pointer-events-none mr-2"></span>
                     <button id="history-save-current"
                         class="w-7 h-7 flex items-center justify-center border border-pico-cyan text-pico-cyan bg-pico-black cursor-pointer hover:bg-pico-cyan hover:text-pico-black transition-colors rounded shadow-[1px_1px_0_#000] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
                         title="現在のスナップショットを保存">
-                        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5"
+                            stroke-linecap="round" stroke-linejoin="round">
                             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
                             <polyline points="17 21 17 13 7 13 7 21"></polyline>
                             <polyline points="7 3 7 8 15 8"></polyline>
@@ -1240,9 +1247,11 @@
                     <button id="history-delete-selected"
                         class="w-7 h-7 flex items-center justify-center border border-pico-orange text-pico-orange bg-pico-black cursor-pointer hover:bg-pico-orange hover:text-pico-black transition-colors rounded shadow-[1px_1px_0_#000] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
                         title="選択した履歴を削除">
-                        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5"
+                            stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                            </path>
                             <line x1="10" y1="11" x2="10" y2="17"></line>
                             <line x1="14" y1="11" x2="14" y2="17"></line>
                         </svg>

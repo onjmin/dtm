@@ -1,6 +1,11 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import process, { loadEnvFile } from "node:process";
+
+try {
+	loadEnvFile();
+} catch {}
 
 const app = new Hono();
 
@@ -34,15 +39,20 @@ app.get("/picotune/*", async (c) => {
 	const qs = c.req.raw.url.split("?").slice(1).join("?");
 	const url = `${API_ORIGIN}${path}${qs ? `?${qs}` : ""}`;
 	const headers: Record<string, string> = {};
-	const authorization = c.req.header("Authorization");
-	if (authorization) headers.Authorization = authorization;
+	const auth = process.env.API_KEY ?? c.req.header("Authorization");
+	if (auth) {
+		headers.Authorization = auth.startsWith("Bearer ") ? auth : `Bearer ${auth}`;
+	}
 	try {
 		const res = await fetch(url, { headers });
 		const body = await res.arrayBuffer();
-		return c.newResponse(body, res.status, {
-			"Content-Type":
-				res.headers.get("Content-Type") ?? "application/octet-stream",
-			"Access-Control-Allow-Origin": "*",
+		return c.newResponse(body, {
+			status: res.status,
+			headers: {
+				"Content-Type":
+					res.headers.get("Content-Type") ?? "application/octet-stream",
+				"Access-Control-Allow-Origin": "*",
+			},
 		});
 	} catch {
 		return c.text("API proxy error", 502);
@@ -54,15 +64,20 @@ app.get("/rpgen/*", async (c) => {
 	const qs = c.req.raw.url.split("?").slice(1).join("?");
 	const url = `${API_ORIGIN}${path}${qs ? `?${qs}` : ""}`;
 	const headers: Record<string, string> = {};
-	const authorization = c.req.header("Authorization");
-	if (authorization) headers.Authorization = authorization;
+	const auth = process.env.API_KEY ?? c.req.header("Authorization");
+	if (auth) {
+		headers.Authorization = auth.startsWith("Bearer ") ? auth : `Bearer ${auth}`;
+	}
 	try {
 		const res = await fetch(url, { headers });
 		const body = await res.arrayBuffer();
-		return c.newResponse(body, res.status, {
-			"Content-Type":
-				res.headers.get("Content-Type") ?? "application/octet-stream",
-			"Access-Control-Allow-Origin": "*",
+		return c.newResponse(body, {
+			status: res.status,
+			headers: {
+				"Content-Type":
+					res.headers.get("Content-Type") ?? "application/octet-stream",
+				"Access-Control-Allow-Origin": "*",
+			},
 		});
 	} catch {
 		return c.text("API proxy error", 502);
@@ -74,15 +89,20 @@ app.get("/rechord/*", async (c) => {
 	const qs = c.req.raw.url.split("?").slice(1).join("?");
 	const url = `${API_ORIGIN}${path}${qs ? `?${qs}` : ""}`;
 	const headers: Record<string, string> = {};
-	const authorization = c.req.header("Authorization");
-	if (authorization) headers.Authorization = authorization;
+	const auth = process.env.API_KEY ?? c.req.header("Authorization");
+	if (auth) {
+		headers.Authorization = auth.startsWith("Bearer ") ? auth : `Bearer ${auth}`;
+	}
 	try {
 		const res = await fetch(url, { headers });
 		const body = await res.arrayBuffer();
-		return c.newResponse(body, res.status, {
-			"Content-Type":
-				res.headers.get("Content-Type") ?? "application/octet-stream",
-			"Access-Control-Allow-Origin": "*",
+		return c.newResponse(body, {
+			status: res.status,
+			headers: {
+				"Content-Type":
+					res.headers.get("Content-Type") ?? "application/octet-stream",
+				"Access-Control-Allow-Origin": "*",
+			},
 		});
 	} catch {
 		return c.text("API proxy error", 502);
