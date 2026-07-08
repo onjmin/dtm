@@ -56,6 +56,7 @@ export class SoundFont {
 			const win = window as unknown as Record<string, { zones: Zone[] }>;
 			for (const [pitch, v] of await findZone(
 				ctx,
+				fontName,
 				win[fontName].zones,
 				pitchs,
 			)) {
@@ -107,6 +108,13 @@ export class SoundFont {
 		src.buffer = buffer;
 		src.playbackRate.setValueAtTime(_param.playbackRate, 0);
 		Object.assign(src, _param.src);
+		// Start with 0 volume at currentTime to avoid clicking on connection
+		g.gain.setValueAtTime(0, ctx.currentTime);
+		const attackTime = 0.005; // 5ms fade-in
+		const startGainTime = Math.max(ctx.currentTime, _when);
+		g.gain.setValueAtTime(0, startGainTime);
+		g.gain.linearRampToValueAtTime(volume, startGainTime + attackTime);
+
 		const _duration = duration + SoundFont.afterTime;
 		const end =
 			_when +
@@ -115,16 +123,26 @@ export class SoundFont {
 				: src.loop
 					? _duration
 					: Math.min(_duration, _param.max));
-		g.gain.setValueAtTime(volume, ctx.currentTime);
-		if (!isDrum) g.gain.linearRampToValueAtTime(0, end);
+
+		if (!isDrum) {
+			g.gain.setValueAtTime(volume, startGainTime + attackTime);
+			g.gain.linearRampToValueAtTime(0, end);
+		}
+
 		src.connect(g).connect(destination);
 		src.start(_when);
 		src.stop(end);
+
+		src.onended = () => {
+			src.disconnect();
+			g.disconnect();
+		};
 	}
 }
 
 const findZone = (
 	ctx: AudioContext,
+	fontName: string,
 	zones: Zone[],
 	pitchs: number[] = [],
 ): Promise<[number, Zone][]> => {
@@ -146,14 +164,29 @@ const findZone = (
 		}
 	return Promise.all(
 		[...map].map(async ([k, v]) => {
-			await adjustZone(ctx, v);
+			await adjustZone(ctx, fontName, v);
 			await addParam(v, k);
 			return [k, v] as [number, Zone];
 		}),
 	);
 };
 
-const adjustZone = async (ctx: AudioContext, zone: Zone): Promise<void> => {
+const isDecayInstrument = (fontName: string): boolean => {
+	const match = fontName.match(/_tone_(\d+)_/);
+	if (!match) return false;
+	const program = Math.floor(Number(match[1]) / 10);
+	if (0 <= program && program <= 15) return true; // Pianos, Chromatic Percussion
+	if (24 <= program && program <= 39) return true; // Guitars, Basses
+	if (program === 46) return true; // Harp
+	if (104 <= program && program <= 119) return true; // Ethnic, Percussive
+	return false;
+};
+
+const adjustZone = async (
+	ctx: AudioContext,
+	fontName: string,
+	zone: Zone,
+): Promise<void> => {
 	if (zone.buffer) return;
 	zone.delay = 0;
 	if (zone.sample) {
@@ -212,7 +245,6 @@ const adjustZone = async (ctx: AudioContext, zone: Zone): Promise<void> => {
 				const releaseLength = Math.max(0, oldBuf.length - loopEndFrame);
 				const newLength =
 					attackLength + loopLengthFrame * repeatCount + releaseLength;
-
 				let totalPeak = 0;
 				let loopPeak = 0;
 				if (oldBuf.numberOfChannels > 0) {
@@ -228,7 +260,12 @@ const adjustZone = async (ctx: AudioContext, zone: Zone): Promise<void> => {
 
 				// ゲイン補正倍率の計算
 				let gainMultiplier = 1.0;
-				if (loopPeak > 0 && totalPeak > 0 && loopPeak < totalPeak * 0.8) {
+				if (
+					!isDecayInstrument(fontName) &&
+					loopPeak > 0 &&
+					totalPeak > 0 &&
+					loopPeak < totalPeak * 0.8
+				) {
 					gainMultiplier = (totalPeak * 0.75) / loopPeak; // アタック（全体）ピークの75%を目標にする（気持ち抑えめ）
 					if (gainMultiplier > 20.0) gainMultiplier = 20.0; // 過剰増幅によるクリップ防止
 				}
@@ -243,10 +280,15 @@ const adjustZone = async (ctx: AudioContext, zone: Zone): Promise<void> => {
 						const oldData = oldBuf.getChannelData(ch);
 						const newData = newBuf.getChannelData(ch);
 
-						// アタック部分をコピー
-						newData.set(oldData.subarray(0, attackLength), 0);
+						// アタック部分をコピーしつつ、ゲイン補正倍率を 1.0 から gainMultiplier へ緩やかに遷移させる
+						// これにより、アタック（等倍）からループ（ブースト）への切り替わりでのクリックノイズを完全に防止する
+						for (let i = 0; i < attackLength; i++) {
+							const ratio = attackLength > 0 ? i / attackLength : 0;
+							const m = 1.0 + (gainMultiplier - 1.0) * ratio;
+							newData[i] = oldData[i] * m;
+						}
 
-						// ループ部分を複製して充填（ここでゲイン補正を適用）
+						// ループ部分を複製して充填（ゲイン補正を適用）
 						let offset = attackLength;
 						const loopData = oldData.subarray(loopStartFrame, loopEndFrame);
 						const normalizedLoopData = new Float32Array(loopLengthFrame);

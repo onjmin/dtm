@@ -78,8 +78,9 @@ export const createSynth = (
 		}
 		osc.connect(gain);
 		// ステレオ定位（非対応環境では destination 直結）
+		let panner: StereoPannerNode | null = null;
 		if (typeof ctx.createStereoPanner === "function" && e.pan) {
-			const panner = ctx.createStereoPanner();
+			panner = ctx.createStereoPanner();
 			panner.pan.value = Math.max(-1, Math.min(1, e.pan));
 			gain.connect(panner);
 			panner.connect(destination);
@@ -88,6 +89,12 @@ export const createSynth = (
 		}
 		osc.start(t0);
 		osc.stop(t0 + e.duration + 0.02);
+
+		osc.onended = () => {
+			osc.disconnect();
+			gain.disconnect();
+			if (panner) panner.disconnect();
+		};
 	};
 
 	// 簡易ドラム音。SoundFontを持たないため、キック/スネア/ハイハットを
