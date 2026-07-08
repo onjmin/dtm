@@ -4,7 +4,10 @@ import {
 	type PlayPlacementsOptions,
 	type MmlPlayback,
 } from "./headless-player";
-import { createSynth, type SynthTone } from "./synth";
+import { buildNameToKeyMapping } from "./audio-config";
+import { SoundFont } from "./sf/SoundFont";
+import { createSynth } from "./synth";
+import { DRUM_KEYS } from "./drum-config";
 import { icon } from "./icons";
 import { injectStyles } from "./styles";
 import { DEFAULT_STEPS_PER_BAR } from "./types";
@@ -22,35 +25,138 @@ const SECTION_COLOR_LIST = [
 	{ fg: "#ffa300", bg: "#1a0d00", border: "#ffa300" }, // orange
 ];
 
+const SOUNDFONT_NAME = "FluidR3_GM_sf2_file";
+
 /**
  * `#tone=<名前>` で指定できる音色プリセット。
- * 軽量シンセ（オシレータ）の波形とエンベロープの組み合わせで近似する。
+ * webaudiofont (WAF) の GM 楽器名へマッピングする。
+ * gmName が null のものは軽量オシレータシンセへのフォールバック。
  */
-const TONE_PRESETS: Record<string, { label: string; tone: SynthTone }> = {
-	square: { label: "SQUARE", tone: {} },
-	piano: { label: "PIANO", tone: { wave: "triangle", decay: true, gain: 1.5 } },
-	guitar: {
-		label: "GUITAR",
-		tone: { wave: "sawtooth", decay: true, gain: 0.7 },
-	},
-	organ: { label: "ORGAN", tone: { wave: "square", attack: 0.02, gain: 0.8 } },
-	strings: {
-		label: "STRINGS",
-		tone: { wave: "sawtooth", attack: 0.15, gain: 0.55 },
-	},
-	bell: { label: "BELL", tone: { wave: "sine", decay: true, gain: 1.8 } },
-	sine: { label: "SINE", tone: { wave: "sine", gain: 1.6 } },
-	triangle: { label: "TRIANGLE", tone: { wave: "triangle", gain: 1.4 } },
-	sawtooth: { label: "SAWTOOTH", tone: { wave: "sawtooth", gain: 0.6 } },
+const WAF_TONE_PRESETS: Record<
+	string,
+	{ label: string; gmName: string | null }
+> = {
+	square: { label: "SQUARE", gmName: null },
+	piano: { label: "PIANO", gmName: "Acoustic Grand Piano" },
+	epiano: { label: "E.PIANO", gmName: "Electric Piano 1" },
+	guitar: { label: "GUITAR", gmName: "Acoustic Guitar (nylon)" },
+	strings: { label: "STRINGS", gmName: "String Ensemble 1" },
+	organ: { label: "ORGAN", gmName: "Church Organ" },
+	bell: { label: "BELL", gmName: "Tubular Bells" },
+	pad: { label: "PAD", gmName: "Pad 2 (warm)" },
+	vibraphone: { label: "VIBRA", gmName: "Vibraphone" },
+	choir: { label: "CHOIR", gmName: "Choir Aahs" },
+	harp: { label: "HARP", gmName: "Orchestral Harp" },
+	flute: { label: "FLUTE", gmName: "Flute" },
 };
 
 /**
- * 入力文字列から `#tone=<名前>` メタ行を読み取る。
+ * 入力文字列から `#tone=<名前>` または `#instrument=<名前>` メタ行を読み取る。
  * `#` 行は parseChords 側でコメントとして無視されるため、進行の解析には影響しない。
  */
 const parseToneMeta = (chords: string): string | null => {
-	const m = chords.match(/^#\s*tone\s*=\s*([a-zA-Z]+)\s*$/im);
+	const m = chords.match(/^#\s*(?:tone|instrument)\s*=\s*([a-zA-Z]+)\s*$/im);
 	return m ? m[1].toLowerCase() : null;
+};
+
+/**
+ * 入力文字列から `#metronome` または `#metronome=on` メタ行を読み取る。
+ */
+const parseMetronomeMeta = (chords: string): boolean => {
+	return /^#\s*metronome(?:\s*=\s*on)?\s*$/im.test(chords);
+};
+
+/**
+ * GM楽器名 → 4桁インスツルメントキー（例: "Acoustic Grand Piano" → "0000"）
+ * buildNameToKeyMapping() は静的データを同期パースするため、実際には常に即解決する。
+ */
+let _nameToKeyCache: Record<string, string> | null = null;
+const getNameToKey = async (): Promise<Record<string, string>> => {
+	if (!_nameToKeyCache) _nameToKeyCache = await buildNameToKeyMapping();
+	return _nameToKeyCache;
+};
+
+/**
+ * WAF SoundFont インスタンスキャッシュ（グローバル共有。同一楽器の多重ロードを防ぐ）
+ */
+const _wafCache = new Map<string, SoundFont>();
+const _wafLoading = new Map<string, Promise<SoundFont | null>>();
+
+/**
+ * GM楽器名から WAF SoundFont をロード（キャッシュ済みなら即返す）。
+ * ロード失敗時は null を返してオシレータシンセへフォールバックさせる。
+ */
+const loadWafFont = (
+	ctx: AudioContext,
+	gmName: string,
+): Promise<SoundFont | null> => {
+	if (_wafCache.has(gmName)) return Promise.resolve(_wafCache.get(gmName)!);
+	if (_wafLoading.has(gmName)) return _wafLoading.get(gmName)!;
+
+	const p = (async () => {
+		try {
+			const nameToKey = await getNameToKey();
+			const key = nameToKey[gmName];
+			if (!key) throw new Error(`GM name not found: ${gmName}`);
+			const fullName = `${key}_${SOUNDFONT_NAME}`;
+			const sf = await SoundFont.load({
+				ctx,
+				fontName: `_tone_${fullName}`,
+				url: SoundFont.toURL(fullName),
+			});
+			_wafCache.set(gmName, sf);
+			return sf;
+		} catch (e) {
+			console.warn(
+				`[chord-player] WAF load failed for "${gmName}", fallback to synth`,
+				e,
+			);
+			return null;
+		} finally {
+			_wafLoading.delete(gmName);
+		}
+	})();
+
+	_wafLoading.set(gmName, p);
+	return p;
+};
+
+/**
+ * ドラム音源キャッシュ（メトロノーム用）
+ */
+const _drumCache = new Map<number, SoundFont>();
+const _drumLoading = new Map<number, Promise<SoundFont | null>>();
+
+const loadDrumFont = (
+	ctx: AudioContext,
+	pitch: number,
+): Promise<SoundFont | null> => {
+	if (_drumCache.has(pitch)) return Promise.resolve(_drumCache.get(pitch)!);
+	if (_drumLoading.has(pitch)) return _drumLoading.get(pitch)!;
+
+	const p = (async () => {
+		try {
+			const fontName = `_drum_${pitch}_0_${SOUNDFONT_NAME}`;
+			const url = `https://surikov.github.io/webaudiofontdata/sound/128${pitch}_0_${SOUNDFONT_NAME}.js`;
+			const sf = await SoundFont.load({
+				ctx,
+				fontName,
+				url,
+				isDrum: true,
+				pitchs: [pitch],
+			});
+			_drumCache.set(pitch, sf);
+			return sf;
+		} catch (e) {
+			console.warn(`[chord-player] Drum WAF load failed for pitch ${pitch}`, e);
+			return null;
+		} finally {
+			_drumLoading.delete(pitch);
+		}
+	})();
+
+	_drumLoading.set(pitch, p);
+	return p;
 };
 
 export type MountChordPlayerOptions = {
@@ -72,6 +178,8 @@ export type ChordPlayerInstance = {
 	play: (fromIndex?: number) => void;
 	stop: () => void;
 	destroy: () => void;
+	/** メトロノームのオン/オフを切り替える */
+	toggleMetronome: () => void;
 };
 
 type DisplayPart = {
@@ -107,6 +215,8 @@ const buildDisplayLines = (
 			const label = line.replace(/^#\s*/, "").trim();
 			if (/^t\d+$/i.test(label)) continue;
 			if (/^tone\s*=/i.test(label)) continue;
+			if (/^instrument\s*=/i.test(label)) continue;
+			if (/^metronome/i.test(label)) continue;
 			colorIdx++;
 			displayLines.push({
 				type: "section",
@@ -190,17 +300,27 @@ export const mountChordPlayer = (
 	let activePlayback: MmlPlayback | null = null;
 	let isPlaying = false;
 	let loopEnabled = false;
+	let metronomeEnabled = parseMetronomeMeta(chords);
 	/** 再生開始位置（秒）。途中再生時に onTick の step を絶対時刻へ換算する */
 	let playOffsetSec = 0;
 	/** audioContext 未指定時に内部生成する ctx（初回再生時に生成、destroy で閉じる） */
 	let ownCtx: AudioContext | null = null;
 	/** 現在の再生の出力を束ねる Gain。停止・シーク時にここを絞って即座に音を切る */
 	let activeCut: { gain: GainNode; ctx: AudioContext } | null = null;
+	/** メトロノームの setTimeout ハンドル */
+	let metronomeTimer: ReturnType<typeof setTimeout> | null = null;
+	/** メトロノーム再生開始時の AudioContext.currentTime */
+	let metronomeStartCtxTime = 0;
+	/** メトロノーム再生開始時の再生位置（秒） */
+	let metronomeStartPlaySec = 0;
+	/** メトロノーム次回スケジュール済みビート番号 */
+	let metronomeNextBeat = 0;
 
-	// 音色プリセットの解決（#tone=piano 等。未指定は従来の square）
+	// 音色プリセットの解決（#tone=piano 等。未指定は piano をデフォルト）
 	const toneName = parseToneMeta(chords);
 	const tonePreset =
-		(toneName ? TONE_PRESETS[toneName] : undefined) ?? TONE_PRESETS.square;
+		(toneName ? WAF_TONE_PRESETS[toneName] : undefined) ??
+		WAF_TONE_PRESETS.piano;
 
 	/**
 	 * 発音済み・予約済みの音を即座に止める。
@@ -218,6 +338,14 @@ export const mountChordPlayer = (
 		setTimeout(() => gain.disconnect(), 80);
 	};
 
+	/** メトロノームを停止する（タイマーのキャンセルのみ。音は killSound 側で処理） */
+	const stopMetronome = () => {
+		if (metronomeTimer !== null) {
+			clearTimeout(metronomeTimer);
+			metronomeTimer = null;
+		}
+	};
+
 	// コード進行イベントのパース
 	let chordEvents: ReturnType<typeof parseChords> = [];
 	try {
@@ -229,6 +357,7 @@ export const mountChordPlayer = (
 	const displayLines = buildDisplayLines(chords, chordEvents.length);
 	const secondsPerBar = (60 / bpm) * 4;
 	const secondsPerStep = secondsPerBar / DEFAULT_STEPS_PER_BAR;
+	const secondsPerBeat = 60 / bpm;
 
 	const totalSec =
 		chordEvents.length > 0
@@ -276,6 +405,17 @@ export const mountChordPlayer = (
 		if (isPlaying) seekTo(Math.max(0, activeIndex));
 	});
 
+	// メトロノームボタン
+	const metroBtn = doc.createElement("button");
+	metroBtn.type = "button";
+	metroBtn.className = "dtm-cp-metro";
+	metroBtn.innerHTML = "♩";
+	metroBtn.title = metronomeEnabled ? "METRONOME ON" : "METRONOME OFF";
+	metroBtn.classList.toggle("dtm-cp-metro--on", metronomeEnabled);
+	metroBtn.addEventListener("click", () => {
+		toggleMetronome();
+	});
+
 	// BPM表示
 	const bpmSpan = doc.createElement("span");
 	bpmSpan.className = "dtm-cp-meta";
@@ -302,6 +442,7 @@ export const mountChordPlayer = (
 
 	ctrlBar.appendChild(playBtn);
 	ctrlBar.appendChild(loopBtn);
+	ctrlBar.appendChild(metroBtn);
 	ctrlBar.appendChild(bpmSpan);
 	ctrlBar.appendChild(toneSpan);
 	ctrlBar.appendChild(timeSpan);
@@ -426,6 +567,127 @@ export const mountChordPlayer = (
 		}
 	};
 
+	// ── メトロノームスケジューラ ──
+	/**
+	 * WAF ドラム音でメトロノームを鳴らす。
+	 * AudioContext の先読みスケジューリングを使い、次ビートを PLAN_AHEAD 秒先まで
+	 * 予約してから setTimeout で起床し直す（sequencer と同じ先読み方式）。
+	 */
+	const METRONOME_PLAN_AHEAD = 0.12; // 先読み秒数
+
+	const scheduleMetronomeBeats = (ctx: AudioContext, cutGain: GainNode) => {
+		if (!metronomeEnabled || !isPlaying) return;
+
+		const now = ctx.currentTime;
+		// 現在の再生位置（秒）を AudioContext 時刻から逆算
+		const playedSec = now - metronomeStartCtxTime + metronomeStartPlaySec;
+		// 現在ビートインデックス
+		const currentBeat = Math.floor(playedSec / secondsPerBeat);
+
+		// 先読み範囲内のビートをスケジュール
+		let beat = Math.max(metronomeNextBeat, currentBeat);
+		while (true) {
+			const beatAbsSec =
+				metronomeStartCtxTime + (beat * secondsPerBeat - metronomeStartPlaySec);
+			if (beatAbsSec > now + METRONOME_PLAN_AHEAD) break;
+			if (beatAbsSec >= now - 0.01) {
+				// ビート1拍目（小節頭）はキック、それ以外はハイハット
+				const isDownbeat = beat % 4 === 0;
+				const pitch = isDownbeat ? DRUM_KEYS.kick : DRUM_KEYS.hihatClosed;
+				const velocity = isDownbeat ? 0.7 : 0.45;
+
+				// WAFドラム音があれば使う、なければオシレータシンセで代替
+				const wafDrum = _drumCache.get(pitch);
+				if (wafDrum) {
+					wafDrum.play({
+						ctx,
+						destination: cutGain,
+						pitch,
+						volume: velocity,
+						when: Math.max(0, beatAbsSec - ctx.currentTime),
+					});
+				} else {
+					// シンセフォールバック
+					const synth = createSynth(ctx, cutGain);
+					synth.playDrum({
+						pitch,
+						velocity,
+						when: Math.max(0, beatAbsSec - ctx.currentTime),
+						duration: 0.3,
+					});
+				}
+			}
+			beat++;
+		}
+		metronomeNextBeat = beat;
+
+		// 次の起床タイミング（先読み幅の半分後）
+		metronomeTimer = setTimeout(
+			() => scheduleMetronomeBeats(ctx, cutGain),
+			(METRONOME_PLAN_AHEAD / 2) * 1000,
+		);
+	};
+
+	/**
+	 * メトロノームを開始する。
+	 * playOffsetSec（現在の再生開始位置）に合わせてビート位置を揃える。
+	 */
+	const startMetronome = (ctx: AudioContext, cutGain: GainNode) => {
+		stopMetronome();
+		if (!metronomeEnabled) return;
+
+		metronomeStartCtxTime = ctx.currentTime;
+		metronomeStartPlaySec = playOffsetSec;
+		// 現在の再生位置に最も近い次のビートから始める
+		metronomeNextBeat = Math.ceil(playOffsetSec / secondsPerBeat);
+
+		// ドラム音源を非同期でプリロード（初回のみネットワーク）
+		const pitches = [DRUM_KEYS.kick, DRUM_KEYS.hihatClosed];
+		Promise.all(pitches.map((p) => loadDrumFont(ctx, p))).then(() => {
+			if (isPlaying && metronomeEnabled) {
+				scheduleMetronomeBeats(ctx, cutGain);
+			}
+		});
+	};
+
+	/** WAF音源で発音する関数。ロード済みなら即使用、未ロードならオシレータシンセで代替。 */
+	type WafPlayFn = (e: {
+		pitch: number;
+		velocity: number;
+		volume: number;
+		when: number;
+		duration: number;
+		ctx: AudioContext;
+		destination: GainNode;
+	}) => void;
+
+	const makeWafPlayFn = (gmName: string | null): WafPlayFn => {
+		return ({ pitch, volume, when, duration, ctx, destination }) => {
+			const waf = gmName ? _wafCache.get(gmName) : null;
+			if (waf) {
+				waf.play({
+					ctx,
+					destination,
+					pitch,
+					volume: volume * 0.85,
+					when,
+					duration,
+				});
+			} else {
+				// フォールバック: オシレータシンセ
+				const synth = createSynth(ctx, destination);
+				synth.playNote({
+					trackId: "chord",
+					pitch,
+					velocity: 100,
+					volume,
+					when,
+					duration,
+				});
+			}
+		};
+	};
+
 	const play = (fromIndex = 0) => {
 		if (isPlaying || chordEvents.length === 0) return;
 		const startIdx = Math.max(0, Math.min(fromIndex, chordEvents.length - 1));
@@ -477,8 +739,14 @@ export const mountChordPlayer = (
 		const ctx = options.audioContext ?? (ownCtx as AudioContext);
 		const cutGain = ctx.createGain();
 		cutGain.connect(ctx.destination);
-		const synth = createSynth(ctx, cutGain, tonePreset.tone);
 		activeCut = { gain: cutGain, ctx };
+
+		// WAF 音源をプリロード（ロード中でも再生開始し、ロード後に以降のノートから使用）
+		if (tonePreset.gmName) {
+			loadWafFont(ctx, tonePreset.gmName); // 非同期プリロード（エラーは内部でハンドル済み）
+		}
+
+		const wafPlay = makeWafPlayFn(tonePreset.gmName);
 
 		const playOptions: PlayPlacementsOptions = {
 			bpm,
@@ -486,7 +754,17 @@ export const mountChordPlayer = (
 			loop: loopEnabled,
 			audioContext: ctx,
 			synth: false,
-			onPlayNote: (e) => synth.playNote(e),
+			onPlayNote: (e) => {
+				wafPlay({
+					pitch: e.pitch,
+					velocity: e.velocity,
+					volume: e.volume,
+					when: e.when,
+					duration: e.duration,
+					ctx,
+					destination: cutGain,
+				});
+			},
 			// 自前 ctx のときだけタブ非アクティブで自動一時停止（従来挙動の踏襲）
 			pauseWhenHidden: !options.audioContext,
 			onTick: (step) => {
@@ -505,6 +783,9 @@ export const mountChordPlayer = (
 		};
 
 		activePlayback = playPlacements(placements, playOptions);
+
+		// メトロノームをコードと同時に開始
+		startMetronome(ctx, cutGain);
 	};
 
 	/** 指定コードから再生し直す（停止中なら再生開始）。前の音は即座に切る */
@@ -513,6 +794,7 @@ export const mountChordPlayer = (
 			// onStop を発火させずに現在の再生だけ破棄する
 			activePlayback?.destroy();
 			activePlayback = null;
+			stopMetronome();
 			killSound();
 			isPlaying = false;
 		}
@@ -532,12 +814,13 @@ export const mountChordPlayer = (
 		if (!isPlaying) return;
 		activePlayback?.destroy();
 		activePlayback = null;
+		stopMetronome();
+		killSound();
 		handlePlaybackStop();
 	};
 
 	const handlePlaybackStop = () => {
 		isPlaying = false;
-		liveOptions = null;
 		setPlayBtnStyle(false);
 		updateActiveIndex(-1);
 		updateTimeDisplay(0);
@@ -553,15 +836,64 @@ export const mountChordPlayer = (
 		}
 	});
 
+	/** メトロノームのオン/オフを切り替える */
+	const toggleMetronome = () => {
+		metronomeEnabled = !metronomeEnabled;
+		metroBtn.classList.toggle("dtm-cp-metro--on", metronomeEnabled);
+		metroBtn.title = metronomeEnabled ? "METRONOME ON" : "METRONOME OFF";
+		if (isPlaying) {
+			if (metronomeEnabled) {
+				// 現在の cutGain に繋いでメトロノームを再開
+				if (activeCut) {
+					startMetronome(activeCut.ctx, activeCut.gain);
+				}
+			} else {
+				stopMetronome();
+				// 既スケジュール済みの音は cutGain でミュートできないため、
+				// seek で再起動してメトロノームなしで再開する
+				seekTo(Math.max(0, activeIndex));
+			}
+		}
+	};
+
 	const destroy = () => {
 		stop();
 		container.remove();
 	};
+
+	// ── メトロノームボタンのスタイル注入 ──
+	// dtm-cp-metro は既存 CSS にないため、ここでインラインスタイルを補完する
+	const metroStyle = doc.createElement("style");
+	metroStyle.textContent = `
+		.dtm-cp-metro {
+			background: none;
+			border: 1px solid var(--c-black, #000);
+			color: var(--dtm-fg, #fff);
+			font-size: 13px;
+			padding: 2px 6px;
+			cursor: pointer;
+			border-radius: 2px;
+			opacity: 0.45;
+			transition: opacity 0.15s, background 0.15s;
+		}
+		.dtm-cp-metro:hover { opacity: 0.75; }
+		.dtm-cp-metro--on {
+			opacity: 1;
+			background: var(--dtm-primary, #29adff);
+			color: #000;
+			border-color: var(--dtm-primary, #29adff);
+		}
+	`;
+	if (!doc.getElementById("dtm-cp-metro-style")) {
+		metroStyle.id = "dtm-cp-metro-style";
+		doc.head.appendChild(metroStyle);
+	}
 
 	return {
 		element: container,
 		play,
 		stop,
 		destroy,
+		toggleMetronome,
 	};
 };
