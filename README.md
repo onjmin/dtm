@@ -1,7 +1,12 @@
-MML を中間言語に用いた、モバイルファーストな DAW / ピアノロール打ち込みコンポーネント。
-楽器・ドラムに加え、UTAU 音源（[@onjmin/koe](https://www.npmjs.com/package/@onjmin/koe)）による歌声合成にも対応。
+# @onjmin/dtm
 
-- [DEMO](https://onjmin.github.io/dtm/demo)
+MML を中間言語に用いた、モバイルファーストな DAW / ピアノロール打ち込みコンポーネント。
+楽器・ドラムに加え、UTAU 音源（[@onjmin/koe](https://www.npmjs.com/package/@onjmin/koe)）による歌声合成にも対応しています。
+
+## デモ
+
+- [DAW エディタ・プレイヤーデモ (demo/index.html)](https://onjmin.github.io/dtm/demo)
+- [ヘッドレス再生・コード進行プレイヤーデモ (demo/bgm.html)](https://onjmin.github.io/dtm/demo/bgm.html)
 - [npm](https://www.npmjs.com/package/@onjmin/dtm)
 
 ## インストール
@@ -10,29 +15,41 @@ MML を中間言語に用いた、モバイルファーストな DAW / ピアノ
 npm i @onjmin/dtm
 ```
 
+---
+
 ## クイックスタート（全部入り `createDtmStudio`）
 
-楽器・ドラムの SoundFont、歌声合成、録音までを内包した一番簡単な入口。SoundFont は実行時に
-CDN から動的 import し、歌声合成ワーカーは同梱の `dist/voice-worker.js` を使う（差し替え可能）。
+楽器・ドラムの SoundFont、歌声合成、録音までを内包した一番簡単な入口です。SoundFont は実行時に CDN から動的 import し、歌声合成ワーカーは同梱の `dist/voice-worker.js` を使います。
 
 ```ts
 import { createDtmStudio } from "@onjmin/dtm";
 
 const studio = await createDtmStudio();
 
-// 編集UI（ピアノロール・音・歌声込み）
+// 1. 編集UI（ピアノロール・音・歌声込み）
 const daw = studio.mountEditor(document.getElementById("editor"), {
   initialMML: "@0 t120 o5 l8 ccggaag4 ffeeddc4",
 });
 
-// 再生専用UI（MML を渡すだけ）
+// 2. 再生専用UI（MML を渡すだけ）
 studio.mountPlayer(document.getElementById("player"), daw.getMML().full);
+
+// 3. コード進行プレビューUI（コードネームテキストを渡すだけ）
+studio.mountChordPlayer(
+  document.getElementById("chord-player"),
+  "| C | G | Am | F |",
+  {
+    volume: 80,
+    bpm: 120,
+  }
+);
 ```
+
+---
 
 ## モード（`simple` / `advanced`）
 
-トラック構成と MIDI の取り込み方が異なる 2 つのモードがあります。`mode` オプションで切り替え、
-合わせて `tracks` に対応するトラック構成（`TRACKS_SIMPLE` / `TRACKS_ADVANCED`）を渡します。
+トラック構成と MIDI の取り込み方が異なる 2 つのモードがあります。`mode` オプションで切り替え、合わせて `tracks` に対応するトラック構成（`TRACKS_SIMPLE` / `TRACKS_ADVANCED`）を渡します。
 
 | モード | トラック | MIDI 取り込み | 伴奏（コード進行）UI |
 | --- | --- | --- | --- |
@@ -124,37 +141,13 @@ function mountWithMode(mode: DawMode, mml?: string) {
 - MML 読み込みの場合は `pendingMml` にその MML 文字列が渡されます。`initialMML` に渡すか `daw.loadMML(pendingMml)` を呼ぶことで上級者モードのDAWに適用できます。
 - MIDI 読み込みの場合は `applyMidi` 関数が渡されます。新しいDAWインスタンスを生成した直後に `applyMidi(newDaw)` を呼ぶと MIDI が適用されます。
 
-## 低レベル API（`mountDAW` / 注入式）
+---
 
-本体は音を持たない設計で、`onPlayNote` / `onPlayDrum` に自前のシンセを繋ぐ
-（`createDtmStudio` はこの配線を内包したもの）。
+## ヘッドレス再生（画面なし再生 API）
 
-```ts
-import { mountDAW } from "@onjmin/dtm";
+画面を一切持たず、MML 文字列やコード進行を渡して音だけを鳴らす関数群です。ゲームの BGM のように「鳴らして・止める」用途に向きます。
 
-const daw = mountDAW(document.getElementById("app"), {
-  getAudioTime: () => audioCtx.currentTime,
-  onResumeAudio: () => audioCtx.resume(),
-  onPlayNote: ({ trackId, pitch, volume, when, duration }) => {
-    mySynth.play({ pitch, volume, when, duration });
-  },
-  onPlayDrum: ({ pitch, velocity, when, duration }) => {
-    myDrum.play({ pitch, velocity, when, duration });
-  },
-});
-
-daw.play();
-daw.getMML();   // { full, minified }
-daw.destroy();
-```
-
-`onPlayNote` / `onPlayDrum` を省略すると無音で編集だけできます。`parseMidi` を渡すと MIDI 読込 UI が有効になります。また、コード進行入力 UI は標準で有効です（内部的に `@onjmin/chord-parser` を使用しています）。
-再生専用ビューが必要なら `mountMmlPlayer` を使います。
-
-## ヘッドレス再生（ゲーム BGM 向け `playMML`）
-
-画面を一切持たず、MML 文字列を渡して音だけを鳴らす関数。`mountMmlPlayer` のような
-DOM ビューは作らないので、ゲームの BGM のように「鳴らして・止める」用途に向きます。
+### 1. MML ヘッドレス再生 (`playMML`)
 
 ```ts
 import { playMML } from "@onjmin/dtm";
@@ -186,7 +179,7 @@ const bgm = playMML(mml, {
 });
 ```
 
-### 高度なループ設定 & 再生キュー（ゲーム同期）
+#### 高度なループ設定 & 再生キュー（ゲーム同期）
 
 イントロを1回再生したあとに特定区間をループさせたり、曲の特定位置（サビなど）でゲーム内の演出を切り替えるためのイベントを発火させたりできます。
 
@@ -214,13 +207,68 @@ const bgm = playMML(mml, {
 });
 ```
 
+### 2. コード進行ヘッドレス再生 (`playChords`)
+
+コード進行テキストを渡して、伴奏パターン（軽量シンセ）のみをヘッドレスで鳴らすための関数です。
+
+```ts
+import { playChords } from "@onjmin/dtm";
+
+const chords = playChords("| C | G | Am | F |", {
+  bpm: 120,
+  volume: 80,
+  loop: true,
+  patternType: "arpeggio", // 演奏パターンを指定可能
+});
+
+chords.stop(); // 停止
+chords.destroy(); // 停止＋AudioContextの解放
+```
+
+- **演奏パターン (`patternType`)** は以下の種類をサポートしています：
+  - `"block"`: すべての構成音を同時に伸ばす
+  - `"arpeggio"`: 構成音を低い順に分散する
+  - `"arpeggio-fast"`: 素早く構成音を分散する
+  - `"offbeat"`: 裏打ち（2/4拍目）
+  - `"yatsume"`: 八つ目（特定のリズムパターン）
+  - `"alternating"`: 交互に伴奏音を鳴らす
+
 > 歌声合成（`@@n` 歌詞トラック）はヘッドレス再生では未対応です（楽器・ドラムのみ）。
 > 歌声が必要なら `mountMmlPlayer` / `createDtmStudio` を使ってください。
 
+---
+
+## 低レベル API（`mountDAW` / `mountChordPlayer` / 注入式）
+
+本体は音を持たない設計で、`onPlayNote` / `onPlayDrum` に自前のシンセを繋ぐことができます（`createDtmStudio` はこの配線を内包したもの）。
+
+```ts
+import { mountDAW, mountChordPlayer } from "@onjmin/dtm";
+
+const daw = mountDAW(document.getElementById("app"), {
+  getAudioTime: () => audioCtx.currentTime,
+  onResumeAudio: () => audioCtx.resume(),
+  onPlayNote: ({ trackId, pitch, volume, when, duration }) => {
+    mySynth.play({ pitch, volume, when, duration });
+  },
+  onPlayDrum: ({ pitch, velocity, when, duration }) => {
+    myDrum.play({ pitch, velocity, when, duration });
+  },
+});
+
+// UIなしの単独コード進行プレイヤー UI のマウントも低レベルで直接行えます
+const cp = mountChordPlayer(document.getElementById("chord-app"), "| C | G | Am | F |", {
+  audioContext: audioCtx,
+  bpm: 120,
+  volume: 50,
+});
+```
+
+---
+
 ## 歌声合成（歌詞トラック `@@n`）
 
-演奏トラック `@n` とは別に歌詞専用行 `@@n` を書くと、そのトラックの Note On に合わせて
-1 音節ずつ歌わせられます。
+演奏トラック `@n` とは別に歌詞専用行 `@@n` を書くと、そのトラックの Note On に合わせて 1 音節ずつ歌わせられます。
 
 ```
 @@<トラックID> <モデル> [v<声量>] [q<ゲート>] [p<定位>] [o<オクターブ>] <かな歌詞>
@@ -236,8 +284,10 @@ const bgm = playMML(mml, {
 - `createDtmStudio` を使えば歌声は自動で配線されます。低レベル API で使う場合は
   `createSingingVoices` の戻り値を `mountDAW` / `mountMmlPlayer` の `singingVoices` に渡してください。
 
-重い WORLD 再合成は専用 Web Worker で実行してメインスレッド（楽器・UI）を塞がず、
-複数ボーカルは音源ごとに並列合成されます。
+重い WORLD 再合成は専用 Web Worker で実行してメインスレッド（楽器・UI）を塞がず、複数ボーカルは音源ごとに並列合成されます。
+
+---
 
 ## ライセンス
+
 [MIT](./LICENSE)
