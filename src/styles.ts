@@ -1299,6 +1299,28 @@ export const DAW_CSS = `
   border-bottom: 2px solid var(--c-black);
 }
 
+/* ループ切替ボタン */
+.dtm-cp-loop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid var(--dtm-border2);
+  background: var(--dtm-bg);
+  color: var(--dtm-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.dtm-cp-loop:active { transform: translate(1px,1px); }
+.dtm-cp-loop--on {
+  border-color: var(--c-black);
+  background: var(--dtm-gold);
+  color: var(--c-black);
+  box-shadow: 2px 2px 0 var(--c-black);
+}
+
 /* メタ情報 (BPM / 時間) */
 .dtm-cp-meta {
   font-size: 11px;
@@ -1314,6 +1336,24 @@ export const DAW_CSS = `
   letter-spacing: .1em;
 }
 
+/* プログレスバー — ドット絵風のセグメント塗り。クリックでシーク */
+.dtm-cp-progress {
+  height: 14px;
+  background: var(--dtm-deep);
+  border-bottom: 2px solid var(--c-black);
+  cursor: pointer;
+}
+.dtm-cp-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--dtm-primary) 0, var(--dtm-primary) 6px,
+    var(--c-navy) 6px, var(--c-navy) 8px
+  );
+}
+.dtm-cp-progress-fill--on { border-right: 2px solid var(--c-white); }
+
 /* スクロールエリア */
 .dtm-cp-scroll {
   padding: 8px 10px 10px;
@@ -1326,15 +1366,21 @@ export const DAW_CSS = `
 }
 .dtm-cp-scroll::-webkit-scrollbar { display: none; }
 
-/* セクション見出し */
+/* セクション見出し — セクション色の帯とピクセルマーカー */
 .dtm-cp-section {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .14em;
   margin-top: 8px;
-  padding-left: 2px;
-  border-left: 3px solid;
-  padding-left: 5px;
+  padding: 1px 8px 1px 5px;
+  color: var(--cp-fg, var(--dtm-text));
+  border-left: 4px solid var(--cp-fg, var(--dtm-text));
+  background: linear-gradient(90deg, var(--cp-bg, transparent), transparent);
+  align-self: flex-start;
+}
+.dtm-cp-section::before {
+  content: "■";
+  margin-right: 5px;
 }
 
 /* 小節行 */
@@ -1352,19 +1398,37 @@ export const DAW_CSS = `
   font-family: var(--dtm-font);
 }
 
-/* コードセル */
+/* コードセル — ゲームのボタン風チップ（タップでそこから再生） */
 .dtm-cp-chord {
   display: inline-block;
   font-family: var(--dtm-font);
   font-size: 12px;
   padding: 2px 5px;
   border: 2px solid transparent;
-  cursor: default;
+  color: var(--cp-fg, var(--dtm-text));
+  background: var(--cp-bg, transparent);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
+.dtm-cp-chord:not(.dtm-cp-chord--dead):hover {
+  border-color: var(--cp-fg, var(--dtm-text));
+}
+.dtm-cp-chord:not(.dtm-cp-chord--dead):active {
+  transform: translate(1px,1px);
+}
+.dtm-cp-chord:focus-visible {
+  outline: 2px solid var(--c-white);
+  outline-offset: 0;
+}
+.dtm-cp-chord--dead { cursor: default; }
+.dtm-cp-chord--played { opacity: .45; }
 .dtm-cp-chord--active {
-  border-color: var(--c-black) !important;
-  color: var(--c-black) !important;
+  border-color: var(--c-black);
+  color: var(--c-black);
+  background: var(--cp-fg, var(--dtm-primary));
   box-shadow: 2px 2px 0 var(--c-black);
+  opacity: 1;
 }
 `;
 

@@ -37,7 +37,8 @@ export type MountChordPlayerOptions = {
 
 export type ChordPlayerInstance = {
 	element: HTMLElement;
-	play: () => void;
+	/** 再生開始。fromIndex でコードイベントの途中から開始できる */
+	play: (fromIndex?: number) => void;
 	stop: () => void;
 	destroy: () => void;
 };
@@ -156,6 +157,11 @@ export const mountChordPlayer = (
 	let activeIndex = -1;
 	let activePlayback: MmlPlayback | null = null;
 	let isPlaying = false;
+	let loopEnabled = false;
+	/** 再生開始位置（秒）。途中再生時に onTick の step を絶対時刻へ換算する */
+	let playOffsetSec = 0;
+	/** 現在の再生に渡した options への参照。loop の生きた切替に使う */
+	let liveOptions: PlayPlacementsOptions | null = null;
 
 	// コード進行イベントのパース
 	let chordEvents: ReturnType<typeof parseChords> = [];
@@ -202,6 +208,19 @@ export const mountChordPlayer = (
 	};
 	setPlayBtnStyle(false);
 
+	// ループ切替 — 再生中でも即時反映される
+	const loopBtn = doc.createElement("button");
+	loopBtn.type = "button";
+	loopBtn.className = "dtm-cp-loop";
+	loopBtn.innerHTML = icon("loop", 12);
+	loopBtn.title = "LOOP OFF";
+	loopBtn.addEventListener("click", () => {
+		loopEnabled = !loopEnabled;
+		loopBtn.classList.toggle("dtm-cp-loop--on", loopEnabled);
+		loopBtn.title = loopEnabled ? "LOOP ON" : "LOOP OFF";
+		if (liveOptions) liveOptions.loop = loopEnabled;
+	});
+
 	// BPM表示
 	const bpmSpan = doc.createElement("span");
 	bpmSpan.className = "dtm-cp-meta";
@@ -222,9 +241,25 @@ export const mountChordPlayer = (
 	updateTimeDisplay(0);
 
 	ctrlBar.appendChild(playBtn);
+	ctrlBar.appendChild(loopBtn);
 	ctrlBar.appendChild(bpmSpan);
 	ctrlBar.appendChild(timeSpan);
 	container.appendChild(ctrlBar);
+
+	// ── プログレスバー（クリックでシーク） ──
+	const progress = doc.createElement("div");
+	progress.className = "dtm-cp-progress";
+	progress.title = "クリックでシーク";
+	const progressFill = doc.createElement("div");
+	progressFill.className = "dtm-cp-progress-fill";
+	progress.appendChild(progressFill);
+	container.appendChild(progress);
+
+	const setProgress = (ratio: number) => {
+		const clamped = Math.max(0, Math.min(1, ratio));
+		progressFill.style.width = `${clamped * 100}%`;
+		progressFill.classList.toggle("dtm-cp-progress-fill--on", clamped > 0);
+	};
 
 	// ── スクロールエリア ──
 	const scrollArea = doc.createElement("div");
@@ -239,8 +274,8 @@ export const mountChordPlayer = (
 		if (dl.type === "section") {
 			const secDiv = doc.createElement("div");
 			secDiv.className = "dtm-cp-section";
-			secDiv.style.color = palette.fg;
-			secDiv.style.borderLeftColor = palette.fg;
+			secDiv.style.setProperty("--cp-fg", palette.fg);
+			secDiv.style.setProperty("--cp-bg", palette.bg);
 			secDiv.textContent = dl.section ?? "";
 			scrollArea.appendChild(secDiv);
 			return;
@@ -260,10 +295,26 @@ export const mountChordPlayer = (
 
 			const chordSpan = doc.createElement("span");
 			chordSpan.className = "dtm-cp-chord";
-			chordSpan.style.color = palette.fg;
+			chordSpan.style.setProperty("--cp-fg", palette.fg);
+			chordSpan.style.setProperty("--cp-bg", palette.bg);
 			chordSpan.textContent = p.text;
 			chordSpan.setAttribute("data-eidx", String(p.eventIdx));
-			chordSpan.setAttribute("data-cidx", String(dl.colorIdx));
+
+			if (p.eventIdx >= 0) {
+				// タップでそのコードから再生
+				chordSpan.setAttribute("role", "button");
+				chordSpan.setAttribute("tabindex", "0");
+				chordSpan.title = "ここから再生";
+				chordSpan.addEventListener("click", () => seekTo(p.eventIdx));
+				chordSpan.addEventListener("keydown", (ev) => {
+					if (ev.key === "Enter" || ev.key === " ") {
+						ev.preventDefault();
+						seekTo(p.eventIdx);
+					}
+				});
+			} else {
+				chordSpan.classList.add("dtm-cp-chord--dead");
+			}
 
 			barDiv.appendChild(chordSpan);
 			chordSpans.push(chordSpan);
@@ -276,8 +327,7 @@ export const mountChordPlayer = (
 	target.appendChild(container);
 
 	// ── アクティブインデックス計算 ──
-	const getActiveIndex = (currentStep: number): number => {
-		const currentSec = currentStep * secondsPerStep;
+	const getActiveIndexBySec = (currentSec: number): number => {
 		return chordEvents.findIndex((event) => {
 			return (
 				currentSec >= event.when && currentSec < event.when + event.duration
@@ -288,35 +338,21 @@ export const mountChordPlayer = (
 	// ── アクティブコード表示の更新 ──
 	const updateActiveIndex = (idx: number) => {
 		if (idx === activeIndex) return;
-
-		// 以前のハイライトをリセット
-		if (activeIndex >= 0) {
-			const prevSpan = chordSpans.find(
-				(s) => s.getAttribute("data-eidx") === String(activeIndex),
-			);
-			if (prevSpan) {
-				const cidx = Number(prevSpan.getAttribute("data-cidx") ?? 0);
-				const pal = SECTION_COLOR_LIST[cidx % SECTION_COLOR_LIST.length];
-				prevSpan.classList.remove("dtm-cp-chord--active");
-				prevSpan.style.color = pal.fg;
-				prevSpan.style.backgroundColor = "";
-			}
-		}
-
 		activeIndex = idx;
 
-		// 新しいハイライトを適用
-		if (activeIndex >= 0) {
+		for (const s of chordSpans) {
+			const eidx = Number(s.getAttribute("data-eidx"));
+			if (eidx < 0) continue;
+			s.classList.toggle("dtm-cp-chord--active", eidx === idx);
+			// 再生済みコードは薄く表示して現在位置を分かりやすくする
+			s.classList.toggle("dtm-cp-chord--played", idx >= 0 && eidx < idx);
+		}
+
+		if (idx >= 0) {
 			const activeSpan = chordSpans.find(
-				(s) => s.getAttribute("data-eidx") === String(activeIndex),
+				(s) => s.getAttribute("data-eidx") === String(idx),
 			);
 			if (activeSpan) {
-				const cidx = Number(activeSpan.getAttribute("data-cidx") ?? 0);
-				const pal = SECTION_COLOR_LIST[cidx % SECTION_COLOR_LIST.length];
-				activeSpan.classList.add("dtm-cp-chord--active");
-				activeSpan.style.color = "#000000";
-				activeSpan.style.backgroundColor = pal.fg;
-
 				// 自動横スクロール（アクティブコードを中央に）
 				const elCenter = activeSpan.offsetLeft + activeSpan.offsetWidth / 2;
 				const containerCenter = scrollArea.clientWidth / 2;
@@ -326,22 +362,21 @@ export const mountChordPlayer = (
 					Math.min(elCenter - containerCenter, Math.max(0, maxScroll)),
 				);
 			}
-
-			// 時間表示の同期
-			const currentSec = chordEvents[activeIndex].when;
-			updateTimeDisplay(currentSec);
-		} else {
-			updateTimeDisplay(0);
 		}
 	};
 
-	const play = () => {
+	const play = (fromIndex = 0) => {
 		if (isPlaying || chordEvents.length === 0) return;
+		const startIdx = Math.max(0, Math.min(fromIndex, chordEvents.length - 1));
 		isPlaying = true;
 		setPlayBtnStyle(true);
-		updateActiveIndex(0);
+		playOffsetSec = chordEvents[startIdx].when;
+		updateActiveIndex(startIdx);
+		updateTimeDisplay(playOffsetSec);
+		setProgress(totalSec > 0 ? playOffsetSec / totalSec : 0);
 
 		// chordEvents から block コードの配置データを直接構築する
+		// （途中再生時は開始コードの when を step 0 に平行移動する）
 		const C3 = 48;
 		const volume = options.volume ?? 80;
 		const placements: Array<{
@@ -353,7 +388,10 @@ export const mountChordPlayer = (
 		}> = [];
 
 		for (const event of chordEvents) {
-			const whenStep = Math.floor(event.when / secondsPerStep);
+			if (event.when < playOffsetSec) continue;
+			const whenStep = Math.floor(
+				(event.when - playOffsetSec) / secondsPerStep,
+			);
 			const durationSteps = Math.floor(event.duration / secondsPerStep);
 			let notes: number[];
 			try {
@@ -375,33 +413,57 @@ export const mountChordPlayer = (
 		const playOptions: PlayPlacementsOptions = {
 			bpm,
 			volume,
+			loop: loopEnabled,
 			onTick: (step) => {
-				const idx = getActiveIndex(step);
-				updateActiveIndex(idx);
+				const span = totalSec - playOffsetSec;
+				let rel = step * secondsPerStep;
+				// ループ中に step がリセットされない実装でも時刻が範囲内に収まるようにする
+				if (span > 0 && rel > span && liveOptions?.loop) rel %= span;
+				const currentSec = playOffsetSec + rel;
+				updateActiveIndex(getActiveIndexBySec(currentSec));
+				updateTimeDisplay(Math.min(currentSec, totalSec));
+				setProgress(totalSec > 0 ? currentSec / totalSec : 0);
 			},
 			onStop: () => {
 				handlePlaybackStop();
 			},
 		};
 
-		if (options.studio) {
+		if (options.studio && options.audioContext) {
 			// studio から渡された AudioContext を使い内蔵シンセで鳴らす
 			const ctx = options.audioContext;
-			if (ctx) {
-				const synth = createSynth(ctx);
-				activePlayback = playPlacements(placements, {
-					...playOptions,
-					audioContext: ctx,
-					synth: false,
-					onPlayNote: (e) => synth.playNote(e),
-				});
-			} else {
-				activePlayback = playPlacements(placements, playOptions);
-			}
+			const synth = createSynth(ctx);
+			liveOptions = {
+				...playOptions,
+				audioContext: ctx,
+				synth: false,
+				onPlayNote: (e) => synth.playNote(e),
+			};
 		} else {
-			activePlayback = playPlacements(placements, playOptions);
+			liveOptions = playOptions;
 		}
+		activePlayback = playPlacements(placements, liveOptions);
 	};
+
+	/** 指定コードから再生し直す（停止中なら再生開始） */
+	const seekTo = (idx: number) => {
+		if (isPlaying) {
+			// onStop を発火させずに現在の再生だけ破棄する
+			activePlayback?.destroy();
+			activePlayback = null;
+			isPlaying = false;
+		}
+		play(idx);
+	};
+
+	progress.addEventListener("click", (ev) => {
+		if (totalSec <= 0) return;
+		const rect = progress.getBoundingClientRect();
+		if (rect.width <= 0) return;
+		const sec = ((ev.clientX - rect.left) / rect.width) * totalSec;
+		const idx = getActiveIndexBySec(sec);
+		seekTo(idx >= 0 ? idx : 0);
+	});
 
 	const stop = () => {
 		if (!isPlaying) return;
@@ -412,8 +474,11 @@ export const mountChordPlayer = (
 
 	const handlePlaybackStop = () => {
 		isPlaying = false;
+		liveOptions = null;
 		setPlayBtnStyle(false);
 		updateActiveIndex(-1);
+		updateTimeDisplay(0);
+		setProgress(0);
 		options.onStop?.();
 	};
 
