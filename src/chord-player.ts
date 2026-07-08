@@ -295,7 +295,7 @@ export const mountChordPlayer = (
 	const doc = target.ownerDocument;
 	injectStyles(doc);
 
-	const bpm = options.bpm ?? 120;
+	let bpm = options.bpm ?? 120;
 	let activeIndex = -1;
 	let activePlayback: MmlPlayback | null = null;
 	let isPlaying = false;
@@ -369,11 +369,10 @@ export const mountChordPlayer = (
 	}
 
 	const displayLines = buildDisplayLines(chords, chordEvents.length);
-	const secondsPerBar = (60 / bpm) * 4;
-	const secondsPerStep = secondsPerBar / DEFAULT_STEPS_PER_BAR;
-	const secondsPerBeat = 60 / bpm;
-
-	const totalSec =
+	let secondsPerBar = (60 / bpm) * 4;
+	let secondsPerStep = secondsPerBar / DEFAULT_STEPS_PER_BAR;
+	let secondsPerBeat = 60 / bpm;
+	let totalSec =
 		chordEvents.length > 0
 			? chordEvents[chordEvents.length - 1].when +
 				chordEvents[chordEvents.length - 1].duration
@@ -446,10 +445,23 @@ export const mountChordPlayer = (
 		toggleMetronome();
 	});
 
-	// BPM表示
-	const bpmSpan = doc.createElement("span");
-	bpmSpan.className = "dtm-cp-meta";
-	bpmSpan.textContent = `BPM ${bpm}`;
+	// BPM widget: [−] BPM 120 [+]
+	const bpmGroup = doc.createElement("div");
+	bpmGroup.className = "dtm-cp-bpm-group";
+	const bpmDecBtn = doc.createElement("button");
+	bpmDecBtn.type = "button";
+	bpmDecBtn.className = "dtm-cp-bpm-btn";
+	bpmDecBtn.textContent = "\u2212";
+	bpmDecBtn.title = "BPM -5";
+	const bpmLabel = doc.createElement("span");
+	bpmLabel.className = "dtm-cp-bpm-label";
+	bpmLabel.textContent = `BPM ${bpm}`;
+	const bpmIncBtn = doc.createElement("button");
+	bpmIncBtn.type = "button";
+	bpmIncBtn.className = "dtm-cp-bpm-btn";
+	bpmIncBtn.textContent = "+";
+	bpmIncBtn.title = "BPM +5";
+	bpmGroup.append(bpmDecBtn, bpmLabel, bpmIncBtn);
 
 	// ── 楽器トグルボタン（Piano / Guitar / Strings） ──
 	const INSTRUMENT_DEFS: {
@@ -519,10 +531,70 @@ export const mountChordPlayer = (
 	ctrlBar.appendChild(playBtn);
 	ctrlBar.appendChild(loopBtn);
 	ctrlBar.appendChild(metroBtn);
-	ctrlBar.appendChild(bpmSpan);
+	ctrlBar.appendChild(bpmGroup);
 	ctrlBar.appendChild(instrGroup);
 	ctrlBar.appendChild(timeSpan);
 	container.appendChild(ctrlBar);
+
+	// BPM recompute (called on every BPM change)
+	const recomputeTimings = (newBpm: number) => {
+		bpm = Math.max(40, Math.min(240, newBpm));
+		try {
+			chordEvents = parseChords(chords, bpm);
+		} catch {
+			chordEvents = [];
+		}
+		secondsPerBar = (60 / bpm) * 4;
+		secondsPerStep = secondsPerBar / DEFAULT_STEPS_PER_BAR;
+		secondsPerBeat = 60 / bpm;
+		totalSec =
+			chordEvents.length > 0
+				? chordEvents[chordEvents.length - 1].when +
+					chordEvents[chordEvents.length - 1].duration
+				: 0;
+		bpmLabel.textContent = `BPM ${bpm}`;
+		updateTimeDisplay(isPlaying ? playOffsetSec : 0);
+		if (isPlaying) seekTo(Math.max(0, activeIndex));
+	};
+
+	const changeBpm = (delta: number) => {
+		const next = Math.max(40, Math.min(240, bpm + delta));
+		if (next !== bpm) recomputeTimings(next);
+	};
+
+	// Hold-to-repeat on BPM buttons
+	const setupBpmBtn = (btn: HTMLButtonElement, delta: number) => {
+		let repeatId: ReturnType<typeof setTimeout> | null = null;
+		const stop = () => {
+			if (repeatId !== null) {
+				clearInterval(repeatId);
+				repeatId = null;
+			}
+		};
+		const start = () => {
+			changeBpm(delta);
+			repeatId = setTimeout(() => {
+				repeatId = setInterval(
+					() => changeBpm(delta),
+					80,
+				) as unknown as ReturnType<typeof setTimeout>;
+			}, 400);
+		};
+		btn.addEventListener("mousedown", start);
+		btn.addEventListener(
+			"touchstart",
+			(e) => {
+				e.preventDefault();
+				start();
+			},
+			{ passive: false },
+		);
+		btn.addEventListener("mouseup", stop);
+		btn.addEventListener("mouseleave", stop);
+		btn.addEventListener("touchend", stop);
+	};
+	setupBpmBtn(bpmDecBtn, -5);
+	setupBpmBtn(bpmIncBtn, +5);
 
 	// 3楽器のWAFフォントをバックグラウンドでプリロード（マウント直後に開始）
 	// → 初回クリック時のローディング待ち時間を短縮する
@@ -724,18 +796,21 @@ export const mountChordPlayer = (
 		stopMetronome();
 		if (!metronomeEnabled) return;
 
-		metronomeStartCtxTime = ctx.currentTime;
+		// Must match sequencer.ts START_DELAY = 0.1 so beat 0 fires exactly with the first note.
+		// The sequencer does: startTime = ctx.currentTime + 0.1 inside seq.start().
+		// Without this offset the metronome fires 100 ms early.
+		const SEQ_START_DELAY = 0.1;
+		metronomeStartCtxTime = ctx.currentTime + SEQ_START_DELAY;
 		metronomeStartPlaySec = playOffsetSec;
-		// 現在の再生位置に最も近い次のビートから始める
 		metronomeNextBeat = Math.ceil(playOffsetSec / secondsPerBeat);
 
-		// ドラム音源を非同期でプリロード（初回のみネットワーク）
-		const pitches = [DRUM_KEYS.kick, DRUM_KEYS.hihatClosed];
-		Promise.all(pitches.map((p) => loadDrumFont(ctx, p))).then(() => {
-			if (isPlaying && metronomeEnabled) {
-				scheduleMetronomeBeats(ctx, cutGain);
-			}
-		});
+		// Preload drum WAF in background; synth fallback handles beats until they are cached
+		for (const p of [DRUM_KEYS.kick, DRUM_KEYS.hihatClosed]) {
+			if (!_drumCache.has(p)) loadDrumFont(ctx, p);
+		}
+
+		// Schedule immediately - no async wait that would offset the first beat
+		scheduleMetronomeBeats(ctx, cutGain);
 	};
 
 	/** WAF音源で発音する関数。ロード済みなら即使用、未ロードならオシレータシンセで代替。 */
@@ -1053,6 +1128,43 @@ export const mountChordPlayer = (
 			background: var(--dtm-primary, #29adff) !important;
 			color: #000 !important;
 			font-weight: bold;
+		}
+		/* BPM widget styles */
+		.dtm-cp-bpm-group {
+			display: flex;
+			align-items: center;
+			gap: 0;
+			border: 1px solid rgba(255,255,255,0.15);
+			border-radius: 4px;
+			overflow: hidden;
+		}
+		.dtm-cp-bpm-btn {
+			background: rgba(255,255,255,0.06);
+			border: none;
+			color: rgba(255,255,255,0.7);
+			font-size: 14px;
+			padding: 1px 7px 2px;
+			cursor: pointer;
+			line-height: 1;
+			user-select: none;
+			-webkit-user-select: none;
+			transition: background 0.1s;
+		}
+		.dtm-cp-bpm-btn:hover {
+			background: rgba(255,255,255,0.18);
+			color: #fff;
+		}
+		.dtm-cp-bpm-btn:active {
+			background: var(--dtm-primary, #29adff);
+			color: #000;
+		}
+		.dtm-cp-bpm-label {
+			font-size: 11px;
+			color: rgba(255,255,255,0.7);
+			padding: 0 6px;
+			white-space: nowrap;
+			min-width: 56px;
+			text-align: center;
 		}
 	`;
 	if (!doc.getElementById("dtm-cp-metro-style")) {
