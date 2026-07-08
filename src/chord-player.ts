@@ -299,6 +299,9 @@ export const mountChordPlayer = (
 	let activeIndex = -1;
 	let activePlayback: MmlPlayback | null = null;
 	let isPlaying = false;
+	let isLoading = false;
+	/** インクリメントして進行中ロードを「キャンセル」する */
+	let loadAbortId = 0;
 	let loopEnabled = false;
 	let metronomeEnabled = parseMetronomeMeta(chords);
 	/** 再生開始位置（秒）。途中再生時に onTick の step を絶対時刻へ換算する */
@@ -391,6 +394,22 @@ export const mountChordPlayer = (
 		}
 	};
 	setPlayBtnStyle(false);
+
+	/**
+	 * ロード中スピナー表示。loading=true のとき再生ボタンをスピナーに変え、
+	 * 操作を受け付けないようにする。false で通常状態へ戻す。
+	 */
+	const setLoadingUI = (loading: boolean) => {
+		isLoading = loading;
+		playBtn.disabled = loading;
+		if (loading) {
+			playBtn.classList.remove("dtm-play--stop");
+			playBtn.innerHTML = '<span class="dtm-cp-spinner"></span>';
+			playBtn.title = "Loading...";
+		} else {
+			setPlayBtnStyle(isPlaying);
+		}
+	};
 
 	// ループ切替 — 再生中なら現在のコードから再生し直して反映する
 	const loopBtn = doc.createElement("button");
@@ -688,18 +707,16 @@ export const mountChordPlayer = (
 		};
 	};
 
-	const play = (fromIndex = 0) => {
-		if (isPlaying || chordEvents.length === 0) return;
-		const startIdx = Math.max(0, Math.min(fromIndex, chordEvents.length - 1));
-		isPlaying = true;
-		setPlayBtnStyle(true);
-		playOffsetSec = chordEvents[startIdx].when;
-		updateActiveIndex(startIdx);
-		updateTimeDisplay(playOffsetSec);
-		setProgress(totalSec > 0 ? playOffsetSec / totalSec : 0);
-
-		// chordEvents から block コードの配置データを直接構築する
-		// （途中再生時は開始コードの when を step 0 に平行移動する）
+	/**
+	 * 再生処理の本体。WAF ロード完了後に呼ばれる。
+	 * startIdx: 再生開始コードインデックス
+	 * ctx/cutGain: ロード前に確保済みのオーディオグラフ
+	 */
+	const playInternal = (
+		startIdx: number,
+		ctx: AudioContext,
+		cutGain: GainNode,
+	) => {
 		const C3 = 48;
 		const volume = options.volume ?? 80;
 		const placements: Array<{
@@ -731,19 +748,6 @@ export const mountChordPlayer = (
 					velocity: 100,
 				});
 			}
-		}
-
-		// 注入 ctx（studio 等）がなければ自前の ctx を初回再生時に生成する。
-		// どちらの場合も出力を「カット用 Gain」経由にして、停止・シークで即消音できるようにする。
-		ownCtx ??= options.audioContext ? null : new AudioContext();
-		const ctx = options.audioContext ?? (ownCtx as AudioContext);
-		const cutGain = ctx.createGain();
-		cutGain.connect(ctx.destination);
-		activeCut = { gain: cutGain, ctx };
-
-		// WAF 音源をプリロード（ロード中でも再生開始し、ロード後に以降のノートから使用）
-		if (tonePreset.gmName) {
-			loadWafFont(ctx, tonePreset.gmName); // 非同期プリロード（エラーは内部でハンドル済み）
 		}
 
 		const wafPlay = makeWafPlayFn(tonePreset.gmName);
@@ -788,8 +792,50 @@ export const mountChordPlayer = (
 		startMetronome(ctx, cutGain);
 	};
 
+	const play = (fromIndex = 0) => {
+		if (isPlaying || isLoading || chordEvents.length === 0) return;
+		const startIdx = Math.max(0, Math.min(fromIndex, chordEvents.length - 1));
+		playOffsetSec = chordEvents[startIdx].when;
+
+		// AudioContext と cutGain はロード待ち前に確保する（AudioContext.resume の
+		// タイミングをユーザー操作コールスタック内に収めるため）
+		ownCtx ??= options.audioContext ? null : new AudioContext();
+		const ctx = options.audioContext ?? (ownCtx as AudioContext);
+		const cutGain = ctx.createGain();
+		cutGain.connect(ctx.destination);
+		activeCut = { gain: cutGain, ctx };
+
+		const startPlayback = () => {
+			isPlaying = true;
+			setPlayBtnStyle(true);
+			updateActiveIndex(startIdx);
+			updateTimeDisplay(playOffsetSec);
+			setProgress(totalSec > 0 ? playOffsetSec / totalSec : 0);
+			playInternal(startIdx, ctx, cutGain);
+		};
+
+		// WAF 音源が未ロードならスピナーを出してロード完了を待つ
+		if (tonePreset.gmName && !_wafCache.has(tonePreset.gmName)) {
+			const myAbortId = ++loadAbortId;
+			setLoadingUI(true);
+			loadWafFont(ctx, tonePreset.gmName).then(() => {
+				if (loadAbortId !== myAbortId) return; // stop/seek でキャンセルされた
+				setLoadingUI(false);
+				startPlayback();
+			});
+		} else {
+			// すでにキャッシュ済み（または square = WAF なし）は即時再生
+			startPlayback();
+		}
+	};
+
 	/** 指定コードから再生し直す（停止中なら再生開始）。前の音は即座に切る */
 	const seekTo = (idx: number) => {
+		// ロード中なら先にキャンセル
+		if (isLoading) {
+			++loadAbortId;
+			setLoadingUI(false);
+		}
 		if (isPlaying) {
 			// onStop を発火させずに現在の再生だけ破棄する
 			activePlayback?.destroy();
@@ -811,6 +857,14 @@ export const mountChordPlayer = (
 	});
 
 	const stop = () => {
+		// ロード中のキャンセル（ロードが完了しても再生しない）
+		if (isLoading) {
+			++loadAbortId;
+			setLoadingUI(false);
+			// cutGain は確保済みなので切り離す
+			killSound();
+			return;
+		}
 		if (!isPlaying) return;
 		activePlayback?.destroy();
 		activePlayback = null;
@@ -861,8 +915,7 @@ export const mountChordPlayer = (
 		container.remove();
 	};
 
-	// ── メトロノームボタンのスタイル注入 ──
-	// dtm-cp-metro は既存 CSS にないため、ここでインラインスタイルを補完する
+	// ── スタイル注入（メトロノームボタン + ローディングスピナー） ──
 	const metroStyle = doc.createElement("style");
 	metroStyle.textContent = `
 		.dtm-cp-metro {
@@ -882,6 +935,20 @@ export const mountChordPlayer = (
 			background: var(--dtm-primary, #29adff);
 			color: #000;
 			border-color: var(--dtm-primary, #29adff);
+		}
+		@keyframes dtm-cp-spin {
+			from { transform: rotate(0deg); }
+			to   { transform: rotate(360deg); }
+		}
+		.dtm-cp-spinner {
+			display: inline-block;
+			width: 10px;
+			height: 10px;
+			border: 2px solid rgba(255,255,255,0.3);
+			border-top-color: #fff;
+			border-radius: 50%;
+			animation: dtm-cp-spin 0.7s linear infinite;
+			vertical-align: middle;
 		}
 	`;
 	if (!doc.getElementById("dtm-cp-metro-style")) {
