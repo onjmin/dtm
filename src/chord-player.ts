@@ -206,6 +206,19 @@ type DisplayLine = {
 };
 
 /**
+ * parseChords と同じ区切り文字（| l ｌ →）で行を小節に分割する
+ */
+const BAR_SEP = /[|lｌ→]/;
+
+/**
+ * parseChords でイベントを生成しないシンボル（表示はするが eventCounter は進めない）
+ *   = … 直前コードの継続（duration 拡張）
+ *   _ … 休符（last = null）
+ *   N / N.C. … ノーコード（last = null）
+ */
+const NON_EVENT_RE = /^[=_]$|^N\.C\.$|^N$/i;
+
+/**
  * コード進行テキストから表示用の構造化データを組み立てる
  */
 const buildDisplayLines = (
@@ -218,7 +231,9 @@ const buildDisplayLines = (
 		.filter((l) => l);
 	const displayLines: DisplayLine[] = [];
 	let eventCounter = 0;
-	let colorIdx = -1;
+	// #コメント行がない場合でもデフォルト色（インデックス0）が使われるよう 0 で初期化する。
+	// #コメント行が現れるたびにインクリメントして次の色へ切り替える。
+	let colorIdx = 0;
 
 	for (const line of rawLines) {
 		if (/^#/.test(line)) {
@@ -227,21 +242,26 @@ const buildDisplayLines = (
 			if (/^tone\s*=/i.test(label)) continue;
 			if (/^instrument\s*=/i.test(label)) continue;
 			if (/^metronome/i.test(label)) continue;
-			colorIdx++;
+			if (displayLines.length > 0 || eventCounter > 0) colorIdx++;
 			displayLines.push({
 				type: "section",
 				section: label,
-				colorIdx: Math.max(0, colorIdx),
+				colorIdx: colorIdx,
 			});
 			continue;
 		}
 
-		const segments = line.split("|");
-		if (segments.length <= 1) continue;
+		// parseChords と同じ区切り文字で分割する（| l ｌ →）
+		// 改行も暗黙的な小節区切りなので、区切り文字を含まない行（1行=1小節）も処理する
+		const segments = line.split(BAR_SEP);
+		if (segments.length === 0) continue;
+		const hasMultiSeg = segments.length > 1;
 
 		const parts: DisplayPart[] = [];
 		for (let i = 0; i < segments.length; i++) {
-			if (i > 0) parts.push({ text: "|", isChord: false, eventIdx: -1 });
+			// 区切り文字の種類によらず | で表示する（複数セグメントの場合のみ）
+			if (hasMultiSeg && i > 0)
+				parts.push({ text: "|", isChord: false, eventIdx: -1 });
 			const bar = segments[i].trim();
 			if (!bar) continue;
 
@@ -269,8 +289,8 @@ const buildDisplayLines = (
 					continue;
 				}
 
-				// 3. 通常のコード [A-G]
-				if (/^[A-G]$/i.test(char)) {
+				// 3. 通常のコード [A-G]（parseChords 同様に大文字のみ。maj/aug 等の小文字を誤検出しない）
+				if (/^[A-G]$/.test(char)) {
 					const prev = bar[j - 1];
 					const prev2 = bar.slice(Math.max(0, j - 2), j);
 					if (prev === "/" || prev2.toLowerCase() === "on") continue;
@@ -283,12 +303,13 @@ const buildDisplayLines = (
 				.sort((a, b) => a - b);
 
 			if (uniqueSplitAt.length === 0) {
+				const isEvent = !NON_EVENT_RE.test(bar);
 				parts.push({
 					text: bar,
 					isChord: true,
-					eventIdx: eventCounter < eventsCount ? eventCounter : -1,
+					eventIdx: isEvent && eventCounter < eventsCount ? eventCounter : -1,
 				});
-				eventCounter++;
+				if (isEvent) eventCounter++;
 				continue;
 			}
 
@@ -299,12 +320,14 @@ const buildDisplayLines = (
 					ci < uniqueSplitAt.length - 1 ? uniqueSplitAt[ci + 1] : bar.length;
 				const symbol = bar.slice(start, end).trim();
 				if (symbol) {
+					// parseChords でイベントを生成しないシンボルは eventCounter を進めない
+					const isEvent = !NON_EVENT_RE.test(symbol);
 					parts.push({
 						text: symbol,
 						isChord: true,
-						eventIdx: eventCounter < eventsCount ? eventCounter : -1,
+						eventIdx: isEvent && eventCounter < eventsCount ? eventCounter : -1,
 					});
-					eventCounter++;
+					if (isEvent) eventCounter++;
 				}
 			}
 		}
@@ -312,7 +335,7 @@ const buildDisplayLines = (
 		if (parts.length > 0) {
 			displayLines.push({
 				type: "bar",
-				colorIdx: Math.max(0, colorIdx),
+				colorIdx: colorIdx,
 				parts,
 			});
 		}

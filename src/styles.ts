@@ -1360,8 +1360,6 @@ export const DAW_CSS = `
   max-height: 180px;
   overflow-y: auto;
   padding: 8px 10px 10px;
-  overflow-x: auto;
-  white-space: nowrap;
   scrollbar-width: none;
   display: flex;
   flex-direction: column;
@@ -1390,6 +1388,7 @@ export const DAW_CSS = `
 .dtm-cp-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 2px;
   margin-top: 2px;
 }

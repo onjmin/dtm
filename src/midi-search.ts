@@ -89,6 +89,7 @@ export class MidiSearchClient {
 		const res = await fetch(url, { headers: this.headers() });
 		if (!res.ok) throw new Error(`rechord search failed: ${res.status}`);
 		const body = await res.json();
-		return (body.data ?? body) as RechordScore[];
+		const list = body.result ?? body.data ?? body;
+		return Array.isArray(list) ? list : [];
 	}
 }

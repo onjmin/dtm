@@ -3162,6 +3162,20 @@ export const mountDAW = (
 		}
 	};
 
+	/** MML検索キャッシュ（ページリロードまで保持） */
+	let mmlSearchCache: {
+		query: string;
+		count: number;
+		renderResults: (container: HTMLElement) => void;
+	} | null = null;
+
+	/** コード進行検索キャッシュ（ページリロードまで保持） */
+	let chordSearchCache: {
+		query: string;
+		count: number;
+		renderResults: (container: HTMLElement) => void;
+	} | null = null;
+
 	const wireMidiSearch = (): void => {
 		if (!midiSearchClient) return;
 		refs.midiSearchOpenBtn.addEventListener("click", () => {
@@ -3172,6 +3186,7 @@ export const mountDAW = (
 					<input type="text" class="dtm-input dtm-grow" data-dtm="modal-midi-search-input" placeholder="曲名でMML検索" style="min-width:0">
 					<button class="dtm-btn dtm-btn--primary" data-dtm="modal-midi-search-btn" style="flex-shrink:0">検索</button>
 				</div>
+				<div data-dtm="modal-midi-search-status" style="font-size:11px;color:rgba(255,255,255,0.5);min-height:1.4em"></div>
 				<div class="dtm-row" data-dtm="modal-midi-search-results" style="flex-direction:column;align-items:stretch;gap:4px"></div>
 				`,
 			);
@@ -3181,9 +3196,19 @@ export const mountDAW = (
 			const searchBtn = refs.modalBody.querySelector(
 				'[data-dtm="modal-midi-search-btn"]',
 			) as HTMLButtonElement;
+			const statusEl = refs.modalBody.querySelector(
+				'[data-dtm="modal-midi-search-status"]',
+			) as HTMLElement;
 			const results = refs.modalBody.querySelector(
 				'[data-dtm="modal-midi-search-results"]',
 			) as HTMLElement;
+
+			// キャッシュがあれば入力と結果を復元
+			if (mmlSearchCache) {
+				input.value = mmlSearchCache.query;
+				statusEl.textContent = `「${mmlSearchCache.query}」の検索結果\u3000${mmlSearchCache.count}件のヒット`;
+				mmlSearchCache.renderResults(results);
+			}
 
 			const runSearch = async (): Promise<void> => {
 				const q = input.value.trim();
@@ -3192,40 +3217,89 @@ export const mountDAW = (
 				searchBtn.disabled = true;
 				searchBtn.textContent = "検索中...";
 				results.innerHTML = "";
+				statusEl.textContent = "";
 				try {
 					const songs = await midiSearchClient.searchSongs({ title: q });
 					if (songs.length === 0) {
+						statusEl.textContent = `「${q}」の検索結果\u30000件のヒット`;
 						results.innerHTML =
 							'<span class="dtm-label" style="color:var(--dtm-warn)">見つかりませんでした</span>';
+						mmlSearchCache = {
+							query: q,
+							count: 0,
+							renderResults: (c) => {
+								c.innerHTML =
+									'<span class="dtm-label" style="color:var(--dtm-warn)">見つかりませんでした</span>';
+							},
+						};
 						return;
 					}
-					for (const song of songs) {
-						const box = document.createElement("div");
-						box.className = "dtm-modal-sample-box";
-						const row = document.createElement("div");
-						row.className = "dtm-row";
-						row.style.cssText = "flex-wrap:nowrap;gap:4px;padding:2px 0";
-						const label = document.createElement("span");
-						label.className = "dtm-label";
-						label.style.cssText =
-							"flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
-						label.textContent = `${song.title} - ${song.user}`;
-						const previewBtn = document.createElement("button");
-						previewBtn.className = "dtm-btn dtm-btn--ghost";
-						previewBtn.style.cssText = "flex-shrink:0";
-						previewBtn.textContent = "▶ 試聴";
-						const loadBtn = document.createElement("button");
-						loadBtn.className = "dtm-btn dtm-btn--primary";
-						loadBtn.style.cssText = "flex-shrink:0";
-						loadBtn.textContent = "読み込み";
-						const playerContainer = document.createElement("div");
-						playerContainer.className = "dtm-modal-sample-player-container";
+					statusEl.textContent = `「${q}」の検索結果\u3000${songs.length}件のヒット`;
+					const renderMmlResults = (container: HTMLElement): void => {
+						container.innerHTML = "";
+						for (const song of songs) {
+							const box = document.createElement("div");
+							box.className = "dtm-modal-sample-box";
+							const row = document.createElement("div");
+							row.className = "dtm-row";
+							row.style.cssText = "flex-wrap:nowrap;gap:4px;padding:2px 0";
+							const label = document.createElement("span");
+							label.className = "dtm-label";
+							label.style.cssText =
+								"flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+							label.textContent = `${song.title} - ${song.user}`;
+							const previewBtn = document.createElement("button");
+							previewBtn.className = "dtm-btn dtm-btn--ghost";
+							previewBtn.style.cssText = "flex-shrink:0";
+							previewBtn.textContent = "▶ 試聴";
+							const loadBtn = document.createElement("button");
+							loadBtn.className = "dtm-btn dtm-btn--primary";
+							loadBtn.style.cssText = "flex-shrink:0";
+							loadBtn.textContent = "読み込み";
+							const playerContainer = document.createElement("div");
+							playerContainer.className = "dtm-modal-sample-player-container";
 
-						previewBtn.addEventListener("click", async () => {
-							if (searchPreviewBtn === previewBtn) {
-								if (searchPreviewPlayer?.isPlaying()) {
-									searchPreviewPlayer.stop();
+							previewBtn.addEventListener("click", async () => {
+								if (searchPreviewBtn === previewBtn) {
+									if (searchPreviewPlayer?.isPlaying()) {
+										searchPreviewPlayer.stop();
+									} else {
+										stop();
+										previewBtn.textContent = "読込中...";
+										try {
+											const midi = await fetchVerifiedMidi(song.file);
+											const mml = buildPreviewMml(midi);
+											playerContainer.innerHTML = "";
+											const player = mountMmlPlayer(playerContainer, mml, {
+												onPlayNote: options.onPlayNote,
+												onPlayDrum: options.onPlayDrum,
+												onResumeAudio: options.onResumeAudio,
+												getAudioTime: options.getAudioTime,
+												singingVoices: options.singingVoices,
+												drumPatterns: options.drumPatterns,
+												volume: masterVolume,
+												_skipInfoModals: true,
+												onStop: () => {
+													if (searchPreviewBtn === previewBtn) {
+														previewBtn.textContent = "▶ 試聴";
+														previewBtn.classList.remove("dtm-btn--danger");
+														previewBtn.classList.add("dtm-btn--ghost");
+													}
+												},
+											});
+											searchPreviewPlayer = player;
+											searchPreviewBtn = previewBtn;
+											player.play();
+											previewBtn.textContent = "■ 停止";
+											previewBtn.classList.remove("dtm-btn--ghost");
+											previewBtn.classList.add("dtm-btn--danger");
+										} catch (e) {
+											console.error("[dtm] MIDI preview failed", e);
+											previewBtn.textContent = "失敗";
+										}
+									}
 								} else {
+									collapseSearchPreview();
 									stop();
 									previewBtn.textContent = "読込中...";
 									try {
@@ -3260,71 +3334,42 @@ export const mountDAW = (
 										previewBtn.textContent = "失敗";
 									}
 								}
-							} else {
-								collapseSearchPreview();
-								stop();
-								previewBtn.textContent = "読込中...";
+							});
+
+							loadBtn.addEventListener("click", async () => {
+								loadBtn.disabled = true;
+								loadBtn.textContent = "読込中...";
 								try {
-									const midi = await fetchVerifiedMidi(song.file);
-									const mml = buildPreviewMml(midi);
-									playerContainer.innerHTML = "";
-									const player = mountMmlPlayer(playerContainer, mml, {
-										onPlayNote: options.onPlayNote,
-										onPlayDrum: options.onPlayDrum,
-										onResumeAudio: options.onResumeAudio,
-										getAudioTime: options.getAudioTime,
-										singingVoices: options.singingVoices,
-										drumPatterns: options.drumPatterns,
-										volume: masterVolume,
-										_skipInfoModals: true,
-										onStop: () => {
-											if (searchPreviewBtn === previewBtn) {
-												previewBtn.textContent = "▶ 試聴";
-												previewBtn.classList.remove("dtm-btn--danger");
-												previewBtn.classList.add("dtm-btn--ghost");
-											}
-										},
-									});
-									searchPreviewPlayer = player;
-									searchPreviewBtn = previewBtn;
-									player.play();
-									previewBtn.textContent = "■ 停止";
-									previewBtn.classList.remove("dtm-btn--ghost");
-									previewBtn.classList.add("dtm-btn--danger");
+									const pending = await fetchVerifiedMidi(song.file);
+									const analysis = analyzeMidiTracks(pending);
+									const sel = analysis
+										.filter((a) => a.selected)
+										.map((a) => a.index);
+									collapseSearchPreview();
+									overlayDuring(() => applyMidiSelection(pending, sel));
+									refs.modalOverlay.setAttribute("hidden", "");
 								} catch (e) {
-									console.error("[dtm] MIDI preview failed", e);
-									previewBtn.textContent = "失敗";
+									console.error("[dtm] MIDI fetch failed", e);
+									loadBtn.textContent = "失敗";
+								} finally {
+									loadBtn.disabled = false;
 								}
-							}
-						});
+							});
 
-						loadBtn.addEventListener("click", async () => {
-							loadBtn.disabled = true;
-							loadBtn.textContent = "読込中...";
-							try {
-								const pending = await fetchVerifiedMidi(song.file);
-								const analysis = analyzeMidiTracks(pending);
-								const sel = analysis
-									.filter((a) => a.selected)
-									.map((a) => a.index);
-								collapseSearchPreview();
-								overlayDuring(() => applyMidiSelection(pending, sel));
-								refs.modalOverlay.setAttribute("hidden", "");
-							} catch (e) {
-								console.error("[dtm] MIDI fetch failed", e);
-								loadBtn.textContent = "失敗";
-							} finally {
-								loadBtn.disabled = false;
-							}
-						});
-
-						row.appendChild(label);
-						row.appendChild(previewBtn);
-						row.appendChild(loadBtn);
-						box.appendChild(row);
-						box.appendChild(playerContainer);
-						results.appendChild(box);
-					}
+							row.appendChild(label);
+							row.appendChild(previewBtn);
+							row.appendChild(loadBtn);
+							box.appendChild(row);
+							box.appendChild(playerContainer);
+							container.appendChild(box);
+						}
+					};
+					renderMmlResults(results);
+					mmlSearchCache = {
+						query: q,
+						count: songs.length,
+						renderResults: renderMmlResults,
+					};
 				} catch (e) {
 					console.error("[dtm] MIDI search failed", e);
 					results.innerHTML =
@@ -3354,6 +3399,7 @@ export const mountDAW = (
 				<input type="text" class="dtm-input dtm-grow" data-dtm="modal-chord-search-input" placeholder="曲名やコード進行で検索" style="min-width:0">
 				<button class="dtm-btn dtm-btn--primary" data-dtm="modal-chord-search-btn" style="flex-shrink:0">検索</button>
 			</div>
+			<div data-dtm="modal-chord-search-status" style="font-size:11px;color:rgba(255,255,255,0.5);min-height:1.4em"></div>
 			<div class="dtm-row" data-dtm="modal-chord-search-results" style="flex-direction:column;align-items:stretch;gap:4px"></div>
 			`,
 		);
@@ -3364,9 +3410,19 @@ export const mountDAW = (
 		const searchBtn = refs.modalBody.querySelector(
 			'[data-dtm="modal-chord-search-btn"]',
 		) as HTMLButtonElement;
+		const statusEl = refs.modalBody.querySelector(
+			'[data-dtm="modal-chord-search-status"]',
+		) as HTMLElement;
 		const results = refs.modalBody.querySelector(
 			'[data-dtm="modal-chord-search-results"]',
 		) as HTMLElement;
+
+		// キャッシュがあれば入力と結果を復元
+		if (chordSearchCache) {
+			input.value = chordSearchCache.query;
+			statusEl.textContent = `「${chordSearchCache.query}」の検索結果　${chordSearchCache.count}件のヒット`;
+			chordSearchCache.renderResults(results);
+		}
 
 		const runSearch = async (): Promise<void> => {
 			const q = input.value.trim();
@@ -3375,108 +3431,128 @@ export const mountDAW = (
 			searchBtn.disabled = true;
 			searchBtn.textContent = "検索中...";
 			results.innerHTML = "";
+			statusEl.textContent = "";
 			try {
 				const scores = await midiSearchClient.searchRechord(q);
 				if (scores.length === 0) {
+					statusEl.textContent = `「${q}」の検索結果　0件のヒット`;
 					results.innerHTML =
 						'<span class="dtm-label" style="color:var(--dtm-warn)">見つかりませんでした</span>';
+					chordSearchCache = {
+						query: q,
+						count: 0,
+						renderResults: (c) => {
+							c.innerHTML =
+								'<span class="dtm-label" style="color:var(--dtm-warn)">見つかりませんでした</span>';
+						},
+					};
 					return;
 				}
-				for (const score of scores) {
-					const box = document.createElement("div");
-					box.className = "dtm-modal-sample-box";
-					const row = document.createElement("div");
-					row.className = "dtm-row";
-					row.style.cssText = "flex-wrap:nowrap;gap:4px;padding:2px 0";
-					const label = document.createElement("span");
-					label.className = "dtm-label";
-					label.style.cssText =
-						"flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
-					label.textContent = `${score.title}${score.user?.screen_name ? ` - ${score.user.screen_name}` : ""}`;
+				statusEl.textContent = `「${q}」の検索結果　${scores.length}件のヒット`;
+				const renderChordResults = (container: HTMLElement): void => {
+					container.innerHTML = "";
+					for (const score of scores) {
+						const box = document.createElement("div");
+						box.className = "dtm-modal-sample-box";
+						const row = document.createElement("div");
+						row.className = "dtm-row";
+						row.style.cssText = "flex-wrap:nowrap;gap:4px;padding:2px 0";
+						const label = document.createElement("span");
+						label.className = "dtm-label";
+						label.style.cssText =
+							"flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+						label.textContent = `${score.title}${score.user?.screen_name ? ` - ${score.user.screen_name}` : ""}`;
 
-					const previewBtn = document.createElement("button");
-					previewBtn.className = "dtm-btn dtm-btn--ghost";
-					previewBtn.style.cssText = "flex-shrink:0";
-					previewBtn.textContent = "▶ 試聴";
+						const previewBtn = document.createElement("button");
+						previewBtn.className = "dtm-btn dtm-btn--ghost";
+						previewBtn.style.cssText = "flex-shrink:0";
+						previewBtn.textContent = "▶ 試聴";
 
-					const loadBtn = document.createElement("button");
-					loadBtn.className = "dtm-btn dtm-btn--primary";
-					loadBtn.style.cssText = "flex-shrink:0";
-					loadBtn.textContent = "読み込み";
+						const loadBtn = document.createElement("button");
+						loadBtn.className = "dtm-btn dtm-btn--primary";
+						loadBtn.style.cssText = "flex-shrink:0";
+						loadBtn.textContent = "読み込み";
 
-					const playerContainer = document.createElement("div");
-					playerContainer.className = "dtm-modal-sample-player-container";
+						const playerContainer = document.createElement("div");
+						playerContainer.className = "dtm-modal-sample-player-container";
 
-					previewBtn.addEventListener("click", async () => {
-						if (searchPreviewBtn === previewBtn) {
-							if (searchPreviewPlayer?.isPlaying()) {
-								searchPreviewPlayer.stop();
+						previewBtn.addEventListener("click", async () => {
+							if (searchPreviewBtn === previewBtn) {
+								if (searchPreviewPlayer?.isPlaying()) {
+									searchPreviewPlayer.stop();
+								} else {
+									stop();
+									previewBtn.textContent = "再生中...";
+									try {
+										searchPreviewPlayer?.play();
+										previewBtn.textContent = "■ 停止";
+										previewBtn.classList.remove("dtm-btn--ghost");
+										previewBtn.classList.add("dtm-btn--danger");
+									} catch (e) {
+										console.error("[dtm] Chord preview play failed", e);
+										previewBtn.textContent = "失敗";
+									}
+								}
 							} else {
+								collapseSearchPreview();
 								stop();
-								previewBtn.textContent = "再生中...";
+								previewBtn.textContent = "読込中...";
 								try {
-									searchPreviewPlayer?.play();
+									playerContainer.innerHTML = "";
+									const player = mountChordPlayer(
+										playerContainer,
+										score.content,
+										{
+											volume: masterVolume,
+											bpm: score.bpm ?? bpm ?? 120,
+											_skipInfoModals: true,
+											onStop: () => {
+												if (searchPreviewBtn === previewBtn) {
+													previewBtn.textContent = "▶ 試聴";
+													previewBtn.classList.remove("dtm-btn--danger");
+													previewBtn.classList.add("dtm-btn--ghost");
+												}
+											},
+										},
+									);
+									searchPreviewPlayer = player;
+									searchPreviewBtn = previewBtn;
+									player.play();
 									previewBtn.textContent = "■ 停止";
 									previewBtn.classList.remove("dtm-btn--ghost");
 									previewBtn.classList.add("dtm-btn--danger");
 								} catch (e) {
-									console.error("[dtm] Chord preview play failed", e);
+									console.error("[dtm] Chord preview mount failed", e);
 									previewBtn.textContent = "失敗";
 								}
 							}
-						} else {
+						});
+
+						loadBtn.addEventListener("click", () => {
 							collapseSearchPreview();
-							stop();
-							previewBtn.textContent = "読込中...";
-							try {
-								playerContainer.innerHTML = "";
-								const player = mountChordPlayer(
-									playerContainer,
-									score.content,
-									{
-										volume: masterVolume,
-										bpm: score.bpm ?? bpm ?? 120,
-										_skipInfoModals: true,
-										onStop: () => {
-											if (searchPreviewBtn === previewBtn) {
-												previewBtn.textContent = "▶ 試聴";
-												previewBtn.classList.remove("dtm-btn--danger");
-												previewBtn.classList.add("dtm-btn--ghost");
-											}
-										},
-									},
-								);
-								searchPreviewPlayer = player;
-								searchPreviewBtn = previewBtn;
-								player.play();
-								previewBtn.textContent = "■ 停止";
-								previewBtn.classList.remove("dtm-btn--ghost");
-								previewBtn.classList.add("dtm-btn--danger");
-							} catch (e) {
-								console.error("[dtm] Chord preview mount failed", e);
-								previewBtn.textContent = "失敗";
+							chordTextArea.value = score.content;
+							active.savedChordInput = score.content;
+							if (score.bpm) {
+								setBpm(score.bpm);
 							}
-						}
-					});
+							applyChord();
+							refs.modalOverlay.setAttribute("hidden", "");
+						});
 
-					loadBtn.addEventListener("click", () => {
-						collapseSearchPreview();
-						chordTextArea.value = score.content;
-						active.savedChordInput = score.content;
-						if (score.bpm) {
-							setBpm(score.bpm);
-						}
-						applyChord();
-						refs.modalOverlay.setAttribute("hidden", "");
-					});
-
-					row.appendChild(label);
-					row.appendChild(previewBtn);
-					row.appendChild(loadBtn);
-					box.appendChild(row);
-					box.appendChild(playerContainer);
-					results.appendChild(box);
-				}
+						row.appendChild(label);
+						row.appendChild(previewBtn);
+						row.appendChild(loadBtn);
+						box.appendChild(row);
+						box.appendChild(playerContainer);
+						container.appendChild(box);
+					}
+				};
+				renderChordResults(results);
+				chordSearchCache = {
+					query: q,
+					count: scores.length,
+					renderResults: renderChordResults,
+				};
 			} catch (e) {
 				console.error("[dtm] Chord search failed", e);
 				results.innerHTML =
