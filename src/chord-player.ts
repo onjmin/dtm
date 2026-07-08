@@ -1,17 +1,17 @@
-import { parseChords, parseChord } from "@onjmin/chord-parser";
-import {
-	playPlacements,
-	type PlayPlacementsOptions,
-	type MmlPlayback,
-} from "./headless-player";
-import { copyToClipboard, encodeMml } from "./mml-player";
-import { CHORD_INFO_HTML } from "./chord-info";
+import { parseChord, parseChords } from "@onjmin/chord-parser";
 import { buildNameToKeyMapping } from "./audio-config";
-import { SoundFont } from "./sf/SoundFont";
-import { createSynth } from "./synth";
+import { CHORD_INFO_HTML } from "./chord-info";
 import { DRUM_KEYS } from "./drum-config";
+import {
+	type MmlPlayback,
+	type PlayPlacementsOptions,
+	playPlacements,
+} from "./headless-player";
 import { icon } from "./icons";
+import { copyToClipboard, encodeMml } from "./mml-player";
+import { SoundFont } from "./sf/SoundFont";
 import { injectStyles } from "./styles";
+import { createSynth } from "./synth";
 import { DEFAULT_STEPS_PER_BAR } from "./types";
 
 /**
@@ -1089,6 +1089,25 @@ export const mountChordPlayer = (
 					0,
 					Math.min(elCenter - containerCenter, Math.max(0, maxScroll)),
 				);
+
+				// 自動縦スクロール（アクティブコードがスクロールエリア外にあればスクロール）
+				const top = activeSpan.offsetTop;
+				const height = activeSpan.offsetHeight;
+				const scrollContainerHeight = scrollArea.clientHeight;
+				const currentScrollTop = scrollArea.scrollTop;
+				const padding = 4; // 上下のマージン
+
+				if (scrollContainerHeight > 0) {
+					if (top < currentScrollTop + padding) {
+						scrollArea.scrollTop = Math.max(0, top - padding);
+					} else if (
+						top + height >
+						currentScrollTop + scrollContainerHeight - padding
+					) {
+						scrollArea.scrollTop =
+							top + height - scrollContainerHeight + padding;
+					}
+				}
 			}
 		}
 	};

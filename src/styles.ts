@@ -1356,6 +1356,9 @@ export const DAW_CSS = `
 
 /* スクロールエリア */
 .dtm-cp-scroll {
+  position: relative;
+  max-height: 180px;
+  overflow-y: auto;
   padding: 8px 10px 10px;
   overflow-x: auto;
   white-space: nowrap;

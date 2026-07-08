@@ -16,9 +16,24 @@
 
 import { parseArrayBuffer } from "midi-json-parser";
 import { buildNameToKeyMapping } from "./audio-config";
+import {
+	type ChordPlayerInstance,
+	type MountChordPlayerOptions,
+	mountChordPlayer,
+} from "./chord-player";
 import { buildChordPlacements } from "./chords";
 import { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 import { DRUM_FONT, DRUM_KEYS } from "./drum-config";
+import {
+	type MmlPlayback,
+	type PlayChordsOptions,
+	type PlayMmlOptions,
+	type PlayNoteOptions,
+	playChords,
+	playMML,
+	playNote,
+	playPlacements,
+} from "./headless-player";
 import { INSTRUMENT_PRESETS } from "./instrument-presets";
 import {
 	createSingingVoices,
@@ -26,21 +41,6 @@ import {
 	koeUrl,
 	type SingingVoices,
 } from "./lyrics";
-import {
-	playMML,
-	playPlacements,
-	playNote,
-	playChords,
-	type PlayMmlOptions,
-	type MmlPlayback,
-	type PlayNoteOptions,
-	type PlayChordsOptions,
-} from "./headless-player";
-import {
-	mountChordPlayer,
-	type ChordPlayerInstance,
-	type MountChordPlayerOptions,
-} from "./chord-player";
 import { parseMML, parseMmlMeta } from "./mml-parser";
 import {
 	type MmlPlayerInstance,

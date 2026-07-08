@@ -4,20 +4,21 @@
 
 // 設定・プリセット
 export * from "./audio-config";
+export * from "./chord-player";
 export * from "./chords";
 export { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 export * from "./drum-config";
 // ヘッドレス再生（DOM非依存・BGM向け）＋ 内蔵synthプリミティブ
 export {
 	type MmlPlayback,
-	type PlayMmlOptions,
-	playMML,
-	playPlacements,
-	type PlayPlacementsOptions,
-	playNote,
-	type PlayNoteOptions,
-	playChords,
 	type PlayChordsOptions,
+	type PlayMmlOptions,
+	type PlayNoteOptions,
+	type PlayPlacementsOptions,
+	playChords,
+	playMML,
+	playNote,
+	playPlacements,
 } from "./headless-player";
 export {
 	type PlaySingingMmlOptions,
@@ -42,7 +43,6 @@ export { MidiSearchClient } from "./midi-search";
 export * from "./mml-core";
 // 補助ロジック（再利用可能）
 export * from "./mml-parser";
-export * from "./chord-player";
 export type { MmlPlayerInstance, MmlPlayerOptions } from "./mml-player";
 // 再生専用ビュー（mountDAW と対）
 export { decodeMml, encodeMml, mountMmlPlayer } from "./mml-player";
