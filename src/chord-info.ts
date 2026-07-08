@@ -11,10 +11,11 @@ export const CHORD_INFO_HTML = `
   <h4>1. 基本的な書き方と小節の区切り</h4>
   <p>小節を <code>|</code> (縦棒) または <code>→</code> で区切り、その中にコードネームを入力します。</p>
   <pre>例: | C | G | Am | Em |</pre>
+  <p style="margin-top:4px; margin-bottom:12px;"><small>コード進行を自分で考えるのが難しいときは、コード進行の共有サイト（例: <a href="https://rechord.cc/scores" target="_blank" rel="noopener" style="color: var(--dtm-primary, #29adff); text-decoration: underline;">rechord.cc</a>）から好きな進行を探してコピペするのも手です。区切り文字（<code>|</code>）を合わせれば、そのまま使用できます。</small></p>
 
   <h4>2. 便利な制御文字</h4>
   <ul>
-    <li><code>=</code> (継続): 直前のコードをそのまま次の拍まで伸ばします（タイ）。<br><small>例: <code>| C = | F G |</code> (Cを2拍伸ばし、後半1拍ずつF, G)</small></li>
+    <li><code>=</code> (継続): 直前のコードをそのまま次の拍まで伸ばします（タイ）。<br><small>例: <code>| C = | F G |</code> (Cを2拍伸ばし、前半1拍ずつF, G)</small></li>
     <li><code>%</code> (繰り返し): 直前のコードをもう一度繰り返します。<br><small>例: <code>| C % |</code> (1小節内でCを2回鳴らす)</small></li>
     <li><code>_</code> (休符): 伴奏を一時的に止めます（休符）。</li>
     <li><code>N</code> または <code>N.C.</code> (ノーコード): 伴奏を止めます。</li>
@@ -30,7 +31,7 @@ export const CHORD_INFO_HTML = `
     <li><b>三和音</b>: <code>C</code> (メジャー), <code>Cm</code> (マイナー), <code>Cdim</code> (ディミニッシュ), <code>Caug</code> または <code>C+</code> (オーグメント)</li>
     <li><b>四和音 (7th等)</b>: <code>CM7</code> または <code>Cmaj7</code>, <code>C7</code>, <code>Cm7</code>, <code>CmM7</code>, <code>Cdim7</code>, <code>Cm7b5</code> (ハーフディミニッシュ)</li>
     <li><b>テンション・その他</b>: <code>Cadd9</code>, <code>C9</code>, <code>Csus4</code>, <code>Csus2</code>, <code>C6</code>, <code>C69</code></li>
-    <li><b>分数コード (ベース音指定)</b>: <code>C/E</code> (ベース音がE的Cメジャー), <code>Dm7/G</code></li>
+    <li><b>分数コード (ベース音指定)</b>: <code>C/E</code> (ベース音がEのCメジャー), <code>Dm7/G</code></li>
   </ul>
 
   <h4>5. セクション（見出し）を作る</h4>
