@@ -1,3 +1,20 @@
+export type RechordScore = {
+	id: number;
+	title: string;
+	content: string;
+	bpm?: number;
+	capo?: number;
+	beat?: string;
+	instrument?: string;
+	loop?: boolean;
+	user?: {
+		id: number;
+		name: string;
+		screen_name: string;
+		twitter?: string;
+	};
+};
+
 export type MidiSearchConfig = {
 	apiKey?: string;
 	baseUrl?: string;
@@ -61,5 +78,17 @@ export class MidiSearchClient {
 		const res = await fetch(url, { headers: this.headers() });
 		if (!res.ok) throw new Error(`picotune fetch failed: ${res.status}`);
 		return res.arrayBuffer();
+	}
+
+	async searchRechord(word: string): Promise<RechordScore[]> {
+		if (!this.enabled) return [];
+		const qs = new URLSearchParams();
+		qs.set("word", word);
+		qs.set("guest", "true");
+		const url = `${this.baseUrl}/rechord/scores?${qs.toString()}`;
+		const res = await fetch(url, { headers: this.headers() });
+		if (!res.ok) throw new Error(`rechord search failed: ${res.status}`);
+		const body = await res.json();
+		return (body.data ?? body) as RechordScore[];
 	}
 }
