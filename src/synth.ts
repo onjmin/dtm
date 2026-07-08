@@ -22,27 +22,60 @@ export type Synth = {
 	playDrum: (e: PlayDrumEvent) => void;
 };
 
+/** createSynth の音色設定。省略時は従来どおりの square 持続音。 */
+export type SynthTone = {
+	/** オシレータ波形。既定 "square" */
+	wave?: OscillatorType;
+	/** アタック秒（0 で即時立ち上がり）。既定 0 */
+	attack?: number;
+	/** true でピアノ/ギター的な指数減衰（持続音でなく減衰音になる） */
+	decay?: boolean;
+	/** 波形ごとの聴感補正に使う音量倍率。既定 1 */
+	gain?: number;
+};
+
 /**
  * AudioContext と出力先ノードを束ねた発音器を作る。
  * @param ctx 発音に使う AudioContext
  * @param destination 接続先（省略時は ctx.destination）。ゲーム側ミキサーへ繋ぐ用途。
+ * @param tone 音色設定（波形・エンベロープ）。省略時は従来の square 持続音。
  */
 export const createSynth = (
 	ctx: AudioContext,
 	destination: AudioNode = ctx.destination,
+	tone: SynthTone = {},
 ): Synth => {
+	const wave = tone.wave ?? "square";
+	const attack = tone.attack ?? 0;
+	const gainScale = tone.gain ?? 1;
+
 	const playNote = (e: PlayNoteEvent): void => {
 		const osc = ctx.createOscillator();
 		const gain = ctx.createGain();
-		osc.type = "square";
+		osc.type = wave;
 		osc.frequency.value = freqFromPitch(e.pitch);
 		const t0 = ctx.currentTime + e.when;
-		const peak = Math.max(0.0001, 0.06 * e.volume * 1.5);
-		const releaseTime = Math.min(0.02, e.duration * 0.1);
-		const sustainDuration = e.duration - releaseTime;
-		gain.gain.setValueAtTime(peak, t0);
-		gain.gain.setValueAtTime(peak, t0 + sustainDuration);
-		gain.gain.exponentialRampToValueAtTime(0.001, t0 + e.duration);
+		const peak = Math.max(0.0001, 0.06 * e.volume * 1.5 * gainScale);
+		if (tone.decay) {
+			// 減衰音（ピアノ/ギター系）: 立ち上がり後にノート長いっぱいで指数減衰
+			gain.gain.setValueAtTime(0.0001, t0);
+			gain.gain.linearRampToValueAtTime(peak, t0 + Math.max(0.003, attack));
+			gain.gain.exponentialRampToValueAtTime(0.001, t0 + e.duration);
+		} else {
+			const releaseTime = Math.min(0.02, e.duration * 0.1);
+			const sustainDuration = e.duration - releaseTime;
+			if (attack > 0) {
+				gain.gain.setValueAtTime(0.0001, t0);
+				gain.gain.linearRampToValueAtTime(
+					peak,
+					t0 + Math.min(attack, sustainDuration),
+				);
+			} else {
+				gain.gain.setValueAtTime(peak, t0);
+			}
+			gain.gain.setValueAtTime(peak, t0 + sustainDuration);
+			gain.gain.exponentialRampToValueAtTime(0.001, t0 + e.duration);
+		}
 		osc.connect(gain);
 		// ステレオ定位（非対応環境では destination 直結）
 		if (typeof ctx.createStereoPanner === "function" && e.pan) {

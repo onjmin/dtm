@@ -4,7 +4,7 @@ import {
 	type PlayPlacementsOptions,
 	type MmlPlayback,
 } from "./headless-player";
-import { createSynth } from "./synth";
+import { createSynth, type SynthTone } from "./synth";
 import { icon } from "./icons";
 import { injectStyles } from "./styles";
 import { DEFAULT_STEPS_PER_BAR } from "./types";
@@ -21,6 +21,37 @@ const SECTION_COLOR_LIST = [
 	{ fg: "#83769c", bg: "#0e0c14", border: "#83769c" }, // lavender
 	{ fg: "#ffa300", bg: "#1a0d00", border: "#ffa300" }, // orange
 ];
+
+/**
+ * `#tone=<名前>` で指定できる音色プリセット。
+ * 軽量シンセ（オシレータ）の波形とエンベロープの組み合わせで近似する。
+ */
+const TONE_PRESETS: Record<string, { label: string; tone: SynthTone }> = {
+	square: { label: "SQUARE", tone: {} },
+	piano: { label: "PIANO", tone: { wave: "triangle", decay: true, gain: 1.5 } },
+	guitar: {
+		label: "GUITAR",
+		tone: { wave: "sawtooth", decay: true, gain: 0.7 },
+	},
+	organ: { label: "ORGAN", tone: { wave: "square", attack: 0.02, gain: 0.8 } },
+	strings: {
+		label: "STRINGS",
+		tone: { wave: "sawtooth", attack: 0.15, gain: 0.55 },
+	},
+	bell: { label: "BELL", tone: { wave: "sine", decay: true, gain: 1.8 } },
+	sine: { label: "SINE", tone: { wave: "sine", gain: 1.6 } },
+	triangle: { label: "TRIANGLE", tone: { wave: "triangle", gain: 1.4 } },
+	sawtooth: { label: "SAWTOOTH", tone: { wave: "sawtooth", gain: 0.6 } },
+};
+
+/**
+ * 入力文字列から `#tone=<名前>` メタ行を読み取る。
+ * `#` 行は parseChords 側でコメントとして無視されるため、進行の解析には影響しない。
+ */
+const parseToneMeta = (chords: string): string | null => {
+	const m = chords.match(/^#\s*tone\s*=\s*([a-zA-Z]+)\s*$/im);
+	return m ? m[1].toLowerCase() : null;
+};
 
 export type MountChordPlayerOptions = {
 	/** 使用する AudioContext（省略時は内部生成） */
@@ -75,6 +106,7 @@ const buildDisplayLines = (
 		if (/^#/.test(line)) {
 			const label = line.replace(/^#\s*/, "").trim();
 			if (/^t\d+$/i.test(label)) continue;
+			if (/^tone\s*=/i.test(label)) continue;
 			colorIdx++;
 			displayLines.push({
 				type: "section",
@@ -160,8 +192,31 @@ export const mountChordPlayer = (
 	let loopEnabled = false;
 	/** 再生開始位置（秒）。途中再生時に onTick の step を絶対時刻へ換算する */
 	let playOffsetSec = 0;
-	/** 現在の再生に渡した options への参照。loop の生きた切替に使う */
-	let liveOptions: PlayPlacementsOptions | null = null;
+	/** audioContext 未指定時に内部生成する ctx（初回再生時に生成、destroy で閉じる） */
+	let ownCtx: AudioContext | null = null;
+	/** 現在の再生の出力を束ねる Gain。停止・シーク時にここを絞って即座に音を切る */
+	let activeCut: { gain: GainNode; ctx: AudioContext } | null = null;
+
+	// 音色プリセットの解決（#tone=piano 等。未指定は従来の square）
+	const toneName = parseToneMeta(chords);
+	const tonePreset =
+		(toneName ? TONE_PRESETS[toneName] : undefined) ?? TONE_PRESETS.square;
+
+	/**
+	 * 発音済み・予約済みの音を即座に止める。
+	 * Web Audio は先読みスケジュールするため、シーケンサ停止だけでは鳴り続ける。
+	 * クリックノイズを避けるため 30ms だけフェードして切り離す。
+	 */
+	const killSound = () => {
+		if (!activeCut) return;
+		const { gain, ctx } = activeCut;
+		activeCut = null;
+		const t = ctx.currentTime;
+		gain.gain.cancelScheduledValues(t);
+		gain.gain.setValueAtTime(gain.gain.value, t);
+		gain.gain.linearRampToValueAtTime(0, t + 0.03);
+		setTimeout(() => gain.disconnect(), 80);
+	};
 
 	// コード進行イベントのパース
 	let chordEvents: ReturnType<typeof parseChords> = [];
@@ -208,7 +263,7 @@ export const mountChordPlayer = (
 	};
 	setPlayBtnStyle(false);
 
-	// ループ切替 — 再生中でも即時反映される
+	// ループ切替 — 再生中なら現在のコードから再生し直して反映する
 	const loopBtn = doc.createElement("button");
 	loopBtn.type = "button";
 	loopBtn.className = "dtm-cp-loop";
@@ -218,13 +273,18 @@ export const mountChordPlayer = (
 		loopEnabled = !loopEnabled;
 		loopBtn.classList.toggle("dtm-cp-loop--on", loopEnabled);
 		loopBtn.title = loopEnabled ? "LOOP ON" : "LOOP OFF";
-		if (liveOptions) liveOptions.loop = loopEnabled;
+		if (isPlaying) seekTo(Math.max(0, activeIndex));
 	});
 
 	// BPM表示
 	const bpmSpan = doc.createElement("span");
 	bpmSpan.className = "dtm-cp-meta";
 	bpmSpan.textContent = `BPM ${bpm}`;
+
+	// 音色表示（#tone= 指定時のみ意味を持つが、既定でも現在の音色を示す）
+	const toneSpan = doc.createElement("span");
+	toneSpan.className = "dtm-cp-meta";
+	toneSpan.textContent = `♪${tonePreset.label}`;
 
 	// 時間表示（右寄せ）
 	const timeSpan = doc.createElement("span");
@@ -243,6 +303,7 @@ export const mountChordPlayer = (
 	ctrlBar.appendChild(playBtn);
 	ctrlBar.appendChild(loopBtn);
 	ctrlBar.appendChild(bpmSpan);
+	ctrlBar.appendChild(toneSpan);
 	ctrlBar.appendChild(timeSpan);
 	container.appendChild(ctrlBar);
 
@@ -410,15 +471,29 @@ export const mountChordPlayer = (
 			}
 		}
 
+		// 注入 ctx（studio 等）がなければ自前の ctx を初回再生時に生成する。
+		// どちらの場合も出力を「カット用 Gain」経由にして、停止・シークで即消音できるようにする。
+		ownCtx ??= options.audioContext ? null : new AudioContext();
+		const ctx = options.audioContext ?? (ownCtx as AudioContext);
+		const cutGain = ctx.createGain();
+		cutGain.connect(ctx.destination);
+		const synth = createSynth(ctx, cutGain, tonePreset.tone);
+		activeCut = { gain: cutGain, ctx };
+
 		const playOptions: PlayPlacementsOptions = {
 			bpm,
 			volume,
 			loop: loopEnabled,
+			audioContext: ctx,
+			synth: false,
+			onPlayNote: (e) => synth.playNote(e),
+			// 自前 ctx のときだけタブ非アクティブで自動一時停止（従来挙動の踏襲）
+			pauseWhenHidden: !options.audioContext,
 			onTick: (step) => {
 				const span = totalSec - playOffsetSec;
 				let rel = step * secondsPerStep;
 				// ループ中に step がリセットされない実装でも時刻が範囲内に収まるようにする
-				if (span > 0 && rel > span && liveOptions?.loop) rel %= span;
+				if (span > 0 && rel > span && loopEnabled) rel %= span;
 				const currentSec = playOffsetSec + rel;
 				updateActiveIndex(getActiveIndexBySec(currentSec));
 				updateTimeDisplay(Math.min(currentSec, totalSec));
@@ -429,28 +504,16 @@ export const mountChordPlayer = (
 			},
 		};
 
-		if (options.studio && options.audioContext) {
-			// studio から渡された AudioContext を使い内蔵シンセで鳴らす
-			const ctx = options.audioContext;
-			const synth = createSynth(ctx);
-			liveOptions = {
-				...playOptions,
-				audioContext: ctx,
-				synth: false,
-				onPlayNote: (e) => synth.playNote(e),
-			};
-		} else {
-			liveOptions = playOptions;
-		}
-		activePlayback = playPlacements(placements, liveOptions);
+		activePlayback = playPlacements(placements, playOptions);
 	};
 
-	/** 指定コードから再生し直す（停止中なら再生開始） */
+	/** 指定コードから再生し直す（停止中なら再生開始）。前の音は即座に切る */
 	const seekTo = (idx: number) => {
 		if (isPlaying) {
 			// onStop を発火させずに現在の再生だけ破棄する
 			activePlayback?.destroy();
 			activePlayback = null;
+			killSound();
 			isPlaying = false;
 		}
 		play(idx);
