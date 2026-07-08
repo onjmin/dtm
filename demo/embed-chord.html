@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-M0KNK6K99N"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-M0KNK6K99N');
+    </script>
+
+    <link rel="icon" href="https://avatars.githubusercontent.com/u/88383494" />
+    <title>Chord Player (Embed)</title>
+    <style>
+        @font-face {
+            font-family: 'k8x12';
+            src: url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff2') format('woff2'),
+                url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff') format('woff'),
+                url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.ttf') format('truetype');
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            color: #fff1e8;
+            font-family: 'k8x12', ui-monospace, monospace;
+            font-size: 14px;
+            -webkit-font-smoothing: none;
+            font-smooth: never;
+        }
+
+        #player {
+            padding: 6px;
+        }
+
+        #boot {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 16px;
+            color: #83769c;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+            font-size: 12px;
+        }
+
+        #boot .spin {
+            color: #29adff;
+            animation: blink 1s steps(1) infinite;
+        }
+
+        @keyframes blink {
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: 0
+            }
+        }
+
+        #err {
+            display: none;
+            padding: 16px;
+            color: #ff004d;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .credit {
+            display: block;
+            text-align: right;
+            padding: 2px 8px 6px;
+            font-size: 10px;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        .credit a {
+            color: #5f574f;
+            text-decoration: none;
+        }
+
+        .credit a:hover {
+            color: #29adff;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="boot"><span class="spin">█</span> LOADING PLAYER…</div>
+    <div id="err"></div>
+    <div id="player"></div>
+    <div class="credit"><a href="https://github.com/onjmin/dtm" target="_blank" rel="noopener">♪ @onjmin/dtm</a></div>
+
+    <script type="module">
+        // ── URLペイロードの復号 ──
+        const fromBase64Url = (s) => {
+            let normalized = s.replace(/-/g, '+').replace(/_/g, '/');
+            while (normalized.length % 4 !== 0) {
+                normalized += '=';
+            }
+            const bin = atob(normalized);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            return bytes;
+        };
+        const HIRAGANA_START = 0x3041;
+        const PROLONGED_MARK = 0x30fc;
+        const SHIFT_KATAKANA = 255;
+        const VALUE_PROLONGED = 223;
+
+        const customDecode = (bytes) => {
+            let str = "";
+            let i = 0;
+            while (i < bytes.length) {
+                const byte = bytes[i];
+                if (byte <= 127) {
+                    str += String.fromCharCode(byte);
+                    i++;
+                } else if (byte === VALUE_PROLONGED) {
+                    str += String.fromCharCode(PROLONGED_MARK);
+                    i++;
+                } else if (byte >= 128 && byte <= 222) {
+                    str += String.fromCharCode(HIRAGANA_START + (byte - 128));
+                    i++;
+                } else if (byte === SHIFT_KATAKANA) {
+                    if (i + 1 < bytes.length) {
+                        const nextByte = bytes[i + 1];
+                        if (nextByte >= 128 && nextByte <= 222) {
+                            str += String.fromCharCode(HIRAGANA_START + 0x60 + (nextByte - 128));
+                        }
+                        i += 2;
+                    } else {
+                        i++;
+                    }
+                } else {
+                    i++;
+                }
+            }
+            return str;
+        };
+
+        const gunzipCustom = async (bytes) => {
+            const ds = new DecompressionStream('gzip');
+            const writer = ds.writable.getWriter();
+            writer.write(bytes);
+            writer.close();
+            const buf = await new Response(ds.readable).arrayBuffer();
+            return customDecode(new Uint8Array(buf));
+        };
+
+        const gunzip = async (bytes) => {
+            const ds = new DecompressionStream('gzip');
+            const writer = ds.writable.getWriter();
+            writer.write(bytes);
+            writer.close();
+            const buf = await new Response(ds.readable).arrayBuffer();
+            return new TextDecoder().decode(buf);
+        };
+
+        const decodeMml = async (payload) => {
+            if (!payload) return '';
+            if (payload.startsWith('z.')) return await gunzipCustom(fromBase64Url(payload.slice(2)));
+            if (payload.startsWith('g.')) return await gunzip(fromBase64Url(payload.slice(2)));
+            if (payload.startsWith('u.')) return decodeURIComponent(payload.slice(2));
+            return decodeURIComponent(payload);
+        };
+
+        const bootEl = document.getElementById('boot');
+        const errEl = document.getElementById('err');
+        const playerEl = document.getElementById('player');
+
+        const fail = (msg) => {
+            bootEl.style.display = 'none';
+            errEl.style.display = 'block';
+            errEl.textContent = msg;
+        };
+
+        try {
+            const payload = location.hash.slice(1);
+            const chords = await decodeMml(payload);
+            if (!chords) {
+                fail('再生するコード進行データがURLにありません（#... が空です）。');
+            } else {
+                const isLocal = location.hostname === 'localhost';
+                const DTM = await import(isLocal
+                    ? 'http://localhost:40298/dist/index.mjs'
+                    : './index.mjs');
+                const { createDtmStudio } = DTM;
+
+                const studio = await createDtmStudio();
+                bootEl.style.display = 'none';
+                studio.mountChordPlayer(playerEl, chords, { volume: 50 });
+            }
+        } catch (e) {
+            fail('プレイヤーの初期化に失敗しました: ' + (e?.message ?? e));
+            console.error(e);
+        }
+    </script>
+</body>
+
+</html>

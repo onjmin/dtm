@@ -1278,6 +1278,7 @@ export const createDtmStudio = async (
 		return {
 			...player,
 			destroy,
+			isPlaying: player.isPlaying,
 		};
 	};
 

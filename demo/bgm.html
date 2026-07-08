@@ -712,6 +712,7 @@ playMML(mmlString, {
                 volume: 80,
                 bpm: 120,
                 patternType: "arpeggio",
+                getChords: () => document.getElementById("chord-input").value,
             });
         });
     </script>

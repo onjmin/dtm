@@ -150,7 +150,7 @@ type LaneView = {
 	tokens: LaneToken[];
 };
 
-const copyToClipboard = async (
+export const copyToClipboard = async (
 	doc: Document,
 	text: string,
 ): Promise<boolean> => {

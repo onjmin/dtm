@@ -4,6 +4,8 @@ import {
 	type PlayPlacementsOptions,
 	type MmlPlayback,
 } from "./headless-player";
+import { copyToClipboard, encodeMml } from "./mml-player";
+import { CHORD_INFO_HTML } from "./chord-info";
 import { buildNameToKeyMapping } from "./audio-config";
 import { SoundFont } from "./sf/SoundFont";
 import { createSynth } from "./synth";
@@ -170,6 +172,12 @@ export type MountChordPlayerOptions = {
 	studio?: any;
 	/** 再生終了時コールバック */
 	onStop?: () => void;
+	/** 埋め込みプレイヤーのベースURL */
+	embedUrl?: string;
+	/** 進行中のコード文字列を取得する */
+	getChords?: () => string;
+	/** モーダル等の表示をスキップするか（再帰防止用） */
+	_skipInfoModals?: boolean;
 };
 
 export type ChordPlayerInstance = {
@@ -180,6 +188,8 @@ export type ChordPlayerInstance = {
 	destroy: () => void;
 	/** メトロノームのオン/オフを切り替える */
 	toggleMetronome: () => void;
+	/** 再生中か否かを取得する */
+	isPlaying: () => boolean;
 };
 
 type DisplayPart = {
@@ -237,16 +247,42 @@ const buildDisplayLines = (
 
 			const splitAt: number[] = [];
 			for (let j = 0; j < bar.length; j++) {
-				const c = bar[j];
-				if (/^[A-G]$/.test(c)) {
+				const char = bar[j];
+				// 1. 制御文字 (=, %, _)
+				if (char === "=" || char === "%" || char === "_") {
+					splitAt.push(j);
+					splitAt.push(j + 1);
+					continue;
+				}
+
+				// 2. N.C. または N
+				const sub = bar.slice(j);
+				if (/^N\.C\.(?:\b|\s|$)/i.test(sub)) {
+					splitAt.push(j);
+					splitAt.push(j + 4);
+					j += 3;
+					continue;
+				}
+				if (/^N(?:\b|\s|$)/i.test(sub)) {
+					splitAt.push(j);
+					splitAt.push(j + 1);
+					continue;
+				}
+
+				// 3. 通常のコード [A-G]
+				if (/^[A-G]$/i.test(char)) {
 					const prev = bar[j - 1];
-					const prev2 = bar.slice(j - 2, j);
-					if (prev === "/" || prev2 === "on") continue;
+					const prev2 = bar.slice(Math.max(0, j - 2), j);
+					if (prev === "/" || prev2.toLowerCase() === "on") continue;
 					splitAt.push(j);
 				}
 			}
 
-			if (splitAt.length === 0) {
+			const uniqueSplitAt = Array.from(new Set(splitAt))
+				.filter((idx) => idx >= 0 && idx < bar.length)
+				.sort((a, b) => a - b);
+
+			if (uniqueSplitAt.length === 0) {
 				parts.push({
 					text: bar,
 					isChord: true,
@@ -256,10 +292,11 @@ const buildDisplayLines = (
 				continue;
 			}
 
-			for (let ci = 0; ci < splitAt.length; ci++) {
+			for (let ci = 0; ci < uniqueSplitAt.length; ci++) {
 				if (ci > 0) parts.push({ text: "", isChord: false, eventIdx: -1 });
-				const start = splitAt[ci];
-				const end = ci < splitAt.length - 1 ? splitAt[ci + 1] : bar.length;
+				const start = uniqueSplitAt[ci];
+				const end =
+					ci < uniqueSplitAt.length - 1 ? uniqueSplitAt[ci + 1] : bar.length;
 				const symbol = bar.slice(start, end).trim();
 				if (symbol) {
 					parts.push({
@@ -306,6 +343,8 @@ export const mountChordPlayer = (
 	let metronomeEnabled = parseMetronomeMeta(chords);
 	/** 再生開始位置（秒）。途中再生時に onTick の step を絶対時刻へ換算する */
 	let playOffsetSec = 0;
+	/** 現在の再生時刻（秒）。メトロノームの中途有効化時に同期に用いる */
+	let currentPlaySec = 0;
 	/** audioContext 未指定時に内部生成する ctx（初回再生時に生成、destroy で閉じる） */
 	let ownCtx: AudioContext | null = null;
 	/** 現在の再生の出力を束ねる Gain。停止・シーク時にここを絞って即座に音を切る */
@@ -453,15 +492,32 @@ export const mountChordPlayer = (
 	bpmDecBtn.className = "dtm-cp-bpm-btn";
 	bpmDecBtn.textContent = "\u2212";
 	bpmDecBtn.title = "BPM -5";
-	const bpmLabel = doc.createElement("span");
-	bpmLabel.className = "dtm-cp-bpm-label";
-	bpmLabel.textContent = `BPM ${bpm}`;
+	const bpmInput = doc.createElement("input");
+	bpmInput.type = "number";
+	bpmInput.className = "dtm-cp-bpm-input";
+	bpmInput.min = "40";
+	bpmInput.max = "240";
+	bpmInput.value = String(bpm);
+	bpmInput.title = "BPM (クリックで直接入力)";
+	bpmInput.addEventListener("change", () => {
+		const val = Number.parseInt(bpmInput.value, 10);
+		if (!Number.isNaN(val)) {
+			recomputeTimings(val);
+		} else {
+			bpmInput.value = String(bpm);
+		}
+	});
+	bpmInput.addEventListener("keydown", (e) => {
+		if (e.key === "Enter") {
+			bpmInput.blur();
+		}
+	});
 	const bpmIncBtn = doc.createElement("button");
 	bpmIncBtn.type = "button";
 	bpmIncBtn.className = "dtm-cp-bpm-btn";
 	bpmIncBtn.textContent = "+";
 	bpmIncBtn.title = "BPM +5";
-	bpmGroup.append(bpmDecBtn, bpmLabel, bpmIncBtn);
+	bpmGroup.append(bpmDecBtn, bpmInput, bpmIncBtn);
 
 	// ── 楽器トグルボタン（Piano / Guitar / Strings） ──
 	const INSTRUMENT_DEFS: {
@@ -534,7 +590,317 @@ export const mountChordPlayer = (
 	ctrlBar.appendChild(bpmGroup);
 	ctrlBar.appendChild(instrGroup);
 	ctrlBar.appendChild(timeSpan);
+
+	// ── Context Menu (コード進行を表示 / コード進行とは / 埋め込む / コード進行コピー) ──
+	const menuContainer = doc.createElement("div");
+	menuContainer.className = "dtm-player-more-container";
+
+	const moreBtn = doc.createElement("button");
+	moreBtn.type = "button";
+	moreBtn.className = "dtm-player-more-btn";
+	moreBtn.innerHTML = icon("more", 14);
+	moreBtn.title = "メニュー";
+	menuContainer.appendChild(moreBtn);
+
+	const menuDropdown = doc.createElement("div");
+	menuDropdown.className = "dtm-player-menu";
+	menuDropdown.style.display = "none";
+
+	const makeMenuItem = (label: string): HTMLButtonElement => {
+		const item = doc.createElement("button");
+		item.type = "button";
+		item.className = "dtm-player-menu-item";
+		item.textContent = label;
+		return item;
+	};
+
+	const showChordsItem = makeMenuItem("コード進行を表示");
+	const chordInfoItem = makeMenuItem("コード進行とは");
+	const embedItem = makeMenuItem("埋め込む");
+	const copyChordsItem = makeMenuItem("コード進行コピー");
+
+	if (!options._skipInfoModals) {
+		menuDropdown.appendChild(showChordsItem);
+		menuDropdown.appendChild(chordInfoItem);
+		menuDropdown.appendChild(embedItem);
+	}
+	menuDropdown.appendChild(copyChordsItem);
+	menuContainer.appendChild(menuDropdown);
+
+	ctrlBar.appendChild(menuContainer);
 	container.appendChild(ctrlBar);
+
+	// Context menu handlers
+	const toggleMenu = (show?: boolean): void => {
+		const visible =
+			show !== undefined ? show : menuDropdown.style.display === "none";
+		menuDropdown.style.display = visible ? "flex" : "none";
+		if (visible) {
+			moreBtn.classList.add("is-active");
+			doc.addEventListener("click", handleOutsideClick);
+		} else {
+			moreBtn.classList.remove("is-active");
+			doc.removeEventListener("click", handleOutsideClick);
+		}
+	};
+
+	const handleOutsideClick = (e: MouseEvent): void => {
+		if (!menuContainer.contains(e.target as Node)) {
+			toggleMenu(false);
+		}
+	};
+
+	moreBtn.addEventListener("click", (e) => {
+		e.stopPropagation();
+		toggleMenu();
+	});
+
+	// ── 共通モーダル（コード進行を表示 / コード進行とは / 埋め込む で使う） ──
+	let infoModalEl: HTMLElement | null = null;
+	let modalSamplePlayer: ChordPlayerInstance | null = null;
+
+	const closeInfoModal = (): void => {
+		if (modalSamplePlayer) {
+			modalSamplePlayer.stop();
+			modalSamplePlayer.destroy();
+			modalSamplePlayer = null;
+		}
+		infoModalEl?.remove();
+		infoModalEl = null;
+	};
+
+	/** タイトル付きのモーダルを開き、中身を書き込む body 要素を返す。 */
+	const openInfoModal = (title: string): HTMLElement => {
+		closeInfoModal();
+
+		const overlay = doc.createElement("div");
+		overlay.className = "dtm-modal-overlay";
+
+		const modal = doc.createElement("div");
+		modal.className = "dtm-win dtm-modal";
+
+		const header = doc.createElement("div");
+		header.className = "dtm-modal-header";
+		const titleEl = doc.createElement("span");
+		titleEl.className = "dtm-modal-title";
+		titleEl.textContent = title;
+		const closeBtn = doc.createElement("button");
+		closeBtn.type = "button";
+		closeBtn.className = "dtm-modal-close";
+		closeBtn.innerHTML = "&times;";
+		closeBtn.title = "閉じる";
+		header.append(titleEl, closeBtn);
+
+		const modalBody = doc.createElement("div");
+		modalBody.className = "dtm-modal-body";
+
+		modal.append(header, modalBody);
+		overlay.appendChild(modal);
+
+		closeBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			closeInfoModal();
+		});
+		overlay.addEventListener("click", (e) => {
+			if (e.target === overlay) closeInfoModal();
+		});
+
+		doc.body.appendChild(overlay);
+		infoModalEl = overlay;
+		return modalBody;
+	};
+
+	/** モーダル内に「コピー」ボタンを差し込むヘルパ。 */
+	const appendCopyButton = (parent: HTMLElement, text: string): void => {
+		const actions = doc.createElement("div");
+		actions.style.marginTop = "8px";
+		const copyBtn = doc.createElement("button");
+		copyBtn.type = "button";
+		copyBtn.className = "dtm-btn dtm-btn--primary dtm-btn--xs";
+		copyBtn.textContent = "📋 コピー";
+		copyBtn.addEventListener("click", async (e) => {
+			e.stopPropagation();
+			const ok = await copyToClipboard(doc, text);
+			copyBtn.textContent = ok ? "✓ コピー完了" : "コピー失敗";
+			if (ok) copyBtn.classList.add("dtm-btn--success");
+			setTimeout(() => {
+				copyBtn.textContent = "📋 コピー";
+				copyBtn.classList.remove("dtm-btn--success");
+			}, 1200);
+		});
+		actions.appendChild(copyBtn);
+		parent.appendChild(actions);
+	};
+
+	// コード進行とは: サンプル進行ボックスの試聴・コピーボタンを接続する。
+	const wireSampleButtons = (modalBody: HTMLElement): void => {
+		const copyBtns = modalBody.querySelectorAll(".dtm-modal-sample-copy-btn");
+		for (const btn of copyBtns) {
+			const el = btn as HTMLButtonElement;
+			el.addEventListener("click", async (e) => {
+				e.stopPropagation();
+				const sampleChords = el.getAttribute("data-chords") ?? "";
+				const original = el.textContent;
+				const ok = await copyToClipboard(
+					doc,
+					sampleChords.replace(/\\n/g, "\n"),
+				);
+				el.textContent = ok ? "✓ コピー完了" : "コピー失敗";
+				if (ok) el.classList.add("dtm-btn--success");
+				setTimeout(() => {
+					el.textContent = original;
+					el.classList.remove("dtm-btn--success");
+				}, 1200);
+			});
+		}
+
+		let activeSampleBtn: HTMLButtonElement | null = null;
+		const resetSampleBtn = (b: HTMLButtonElement | null): void => {
+			if (!b) return;
+			b.textContent = "▶ 試聴";
+			b.classList.remove("dtm-btn--danger");
+			b.classList.add("dtm-btn--primary");
+		};
+		const markPlaying = (b: HTMLButtonElement): void => {
+			b.textContent = "■ 停止";
+			b.classList.remove("dtm-btn--primary");
+			b.classList.add("dtm-btn--danger");
+		};
+
+		const playBtns = modalBody.querySelectorAll(".dtm-modal-sample-play-btn");
+		for (const btn of playBtns) {
+			const el = btn as HTMLButtonElement;
+			el.addEventListener("click", (e) => {
+				e.stopPropagation();
+				const sampleChords = (el.getAttribute("data-chords") ?? "").replace(
+					/\\n/g,
+					"\n",
+				);
+
+				// 同じサンプルの再押下: 再生／停止のトグル。
+				if (activeSampleBtn === el && modalSamplePlayer) {
+					if (modalSamplePlayer.isPlaying()) {
+						modalSamplePlayer.stop();
+					} else {
+						modalSamplePlayer.play();
+						markPlaying(el);
+					}
+					return;
+				}
+
+				// 別のサンプル: 既存プレイヤーを破棄して作り直す。
+				if (modalSamplePlayer) {
+					modalSamplePlayer.stop();
+					modalSamplePlayer.destroy();
+					modalSamplePlayer = null;
+				}
+				resetSampleBtn(activeSampleBtn);
+				activeSampleBtn = el;
+
+				const sampleBox = el.closest(".dtm-modal-sample-box");
+				const container = sampleBox?.querySelector(
+					".dtm-modal-sample-player-container",
+				) as HTMLElement | null;
+				if (!container) return;
+				container.innerHTML = "";
+				modalSamplePlayer = mountChordPlayer(container, sampleChords, {
+					audioContext: options.audioContext ?? ownCtx ?? undefined,
+					volume: options.volume ?? 100,
+					bpm: options.bpm ?? 120,
+					studio: options.studio,
+					// 再帰的なモーダル生成を防ぐ。
+					_skipInfoModals: true,
+					onStop: () => {
+						if (activeSampleBtn === el) resetSampleBtn(el);
+					},
+				});
+				markPlaying(el);
+				modalSamplePlayer.play();
+			});
+		}
+	};
+
+	if (!options._skipInfoModals) {
+		showChordsItem.addEventListener("click", (e) => {
+			e.stopPropagation();
+			toggleMenu(false);
+			const modalBody = openInfoModal("コード進行を表示");
+			const desc = doc.createElement("p");
+			desc.textContent =
+				"このコード進行をコピーして、他のプレイヤーや共有URLに貼り付けて使用できます。";
+			desc.style.marginBottom = "8px";
+			modalBody.appendChild(desc);
+			const sourceChords = options.getChords?.() ?? chords;
+			const pre = doc.createElement("pre");
+			pre.textContent = sourceChords;
+			pre.style.whiteSpace = "pre-wrap";
+			pre.style.wordBreak = "break-all";
+			pre.style.cursor = "text";
+			pre.addEventListener("click", () => {
+				const range = doc.createRange();
+				range.selectNodeContents(pre);
+				const sel = doc.defaultView?.getSelection();
+				sel?.removeAllRanges();
+				sel?.addRange(range);
+			});
+			modalBody.appendChild(pre);
+			appendCopyButton(modalBody, sourceChords);
+		});
+
+		chordInfoItem.addEventListener("click", (e) => {
+			e.stopPropagation();
+			toggleMenu(false);
+			const modalBody = openInfoModal("コード進行の書き方解説");
+			modalBody.innerHTML = CHORD_INFO_HTML;
+			wireSampleButtons(modalBody);
+		});
+
+		embedItem.addEventListener("click", async (e) => {
+			e.stopPropagation();
+			toggleMenu(false);
+			const modalBody = openInfoModal("埋め込む");
+			const loading = doc.createElement("p");
+			loading.textContent = "生成中...";
+			modalBody.appendChild(loading);
+			try {
+				const embedBase =
+					options.embedUrl ??
+					"https://onjmin.github.io/dtm/demo/embed-chord.html";
+				const sourceChords = options.getChords?.() ?? chords;
+				const payload = await encodeMml(sourceChords);
+				const url = `${embedBase}#${payload}`;
+				const snippet = `<iframe src="${url}" width="100%" height="260" frameborder="0" loading="lazy" title="@onjmin/dtm chord progression player"></iframe>`;
+				// 生成待ちの間にモーダルが閉じられていたら何もしない。
+				if (!modalBody.isConnected) return;
+				loading.remove();
+				const desc = doc.createElement("p");
+				desc.textContent =
+					"このHTMLをブログやサイトに貼り付けると、プレイヤーをそのまま埋め込めます。";
+				const pre = doc.createElement("pre");
+				pre.textContent = snippet;
+				pre.style.whiteSpace = "pre-wrap";
+				pre.style.wordBreak = "break-all";
+				modalBody.append(desc, pre);
+				appendCopyButton(modalBody, snippet);
+			} catch (err) {
+				console.error("[dtm] failed to generate embed snippet", err);
+				if (modalBody.isConnected) loading.textContent = "生成に失敗しました";
+			}
+		});
+	}
+
+	copyChordsItem.addEventListener("click", async (e) => {
+		e.stopPropagation();
+		const success = await copyToClipboard(doc, options.getChords?.() ?? chords);
+		if (success) {
+			copyChordsItem.textContent = "コピーしました！";
+		} else {
+			copyChordsItem.textContent = "コピー失敗";
+		}
+		setTimeout(() => {
+			copyChordsItem.textContent = "コード進行コピー";
+		}, 2000);
+	});
 
 	// BPM recompute (called on every BPM change)
 	const recomputeTimings = (newBpm: number) => {
@@ -552,7 +918,7 @@ export const mountChordPlayer = (
 				? chordEvents[chordEvents.length - 1].when +
 					chordEvents[chordEvents.length - 1].duration
 				: 0;
-		bpmLabel.textContent = `BPM ${bpm}`;
+		bpmInput.value = String(bpm);
 		updateTimeDisplay(isPlaying ? playOffsetSec : 0);
 		if (isPlaying) seekTo(Math.max(0, activeIndex));
 	};
@@ -792,17 +1158,27 @@ export const mountChordPlayer = (
 	 * メトロノームを開始する。
 	 * playOffsetSec（現在の再生開始位置）に合わせてビート位置を揃える。
 	 */
-	const startMetronome = (ctx: AudioContext, cutGain: GainNode) => {
+	const startMetronome = (
+		ctx: AudioContext,
+		cutGain: GainNode,
+		isResume = false,
+	) => {
 		stopMetronome();
 		if (!metronomeEnabled) return;
 
-		// Must match sequencer.ts START_DELAY = 0.1 so beat 0 fires exactly with the first note.
-		// The sequencer does: startTime = ctx.currentTime + 0.1 inside seq.start().
-		// Without this offset the metronome fires 100 ms early.
-		const SEQ_START_DELAY = 0.1;
-		metronomeStartCtxTime = ctx.currentTime + SEQ_START_DELAY;
-		metronomeStartPlaySec = playOffsetSec;
-		metronomeNextBeat = Math.ceil(playOffsetSec / secondsPerBeat);
+		if (isResume) {
+			metronomeStartCtxTime = ctx.currentTime;
+			metronomeStartPlaySec = currentPlaySec;
+			metronomeNextBeat = Math.ceil(currentPlaySec / secondsPerBeat);
+		} else {
+			// Must match sequencer.ts START_DELAY = 0.1 so beat 0 fires exactly with the first note.
+			// The sequencer does: startTime = ctx.currentTime + 0.1 inside seq.start().
+			// Without this offset the metronome fires 100 ms early.
+			const SEQ_START_DELAY = 0.1;
+			metronomeStartCtxTime = ctx.currentTime + SEQ_START_DELAY;
+			metronomeStartPlaySec = playOffsetSec;
+			metronomeNextBeat = Math.ceil(playOffsetSec / secondsPerBeat);
+		}
 
 		// Preload drum WAF in background; synth fallback handles beats until they are cached
 		for (const p of [DRUM_KEYS.kick, DRUM_KEYS.hihatClosed]) {
@@ -927,6 +1303,7 @@ export const mountChordPlayer = (
 				// ループ中に step がリセットされない実装でも時刻が範囲内に収まるようにする
 				if (span > 0 && rel > span && loopEnabled) rel %= span;
 				const currentSec = playOffsetSec + rel;
+				currentPlaySec = currentSec;
 				updateActiveIndex(getActiveIndexBySec(currentSec));
 				updateTimeDisplay(Math.min(currentSec, totalSec));
 				setProgress(totalSec > 0 ? currentSec / totalSec : 0);
@@ -946,6 +1323,7 @@ export const mountChordPlayer = (
 		if (isPlaying || isLoading || chordEvents.length === 0) return;
 		const startIdx = Math.max(0, Math.min(fromIndex, chordEvents.length - 1));
 		playOffsetSec = chordEvents[startIdx].when;
+		currentPlaySec = playOffsetSec;
 
 		// AudioContext と cutGain はロード待ち前に確保する（AudioContext.resume の
 		// タイミングをユーザー操作コールスタック内に収めるため）
@@ -1051,7 +1429,7 @@ export const mountChordPlayer = (
 			if (metronomeEnabled) {
 				// 現在の cutGain に繋いでメトロノームを再開
 				if (activeCut) {
-					startMetronome(activeCut.ctx, activeCut.gain);
+					startMetronome(activeCut.ctx, activeCut.gain, true);
 				}
 			} else {
 				stopMetronome();
@@ -1064,6 +1442,8 @@ export const mountChordPlayer = (
 
 	const destroy = () => {
 		stop();
+		closeInfoModal();
+		toggleMenu(false);
 		container.remove();
 	};
 
@@ -1158,13 +1538,29 @@ export const mountChordPlayer = (
 			background: var(--dtm-primary, #29adff);
 			color: #000;
 		}
-		.dtm-cp-bpm-label {
+		.dtm-cp-bpm-input {
 			font-size: 11px;
 			color: rgba(255,255,255,0.7);
-			padding: 0 6px;
+			background: none;
+			border: none;
+			padding: 0;
 			white-space: nowrap;
-			min-width: 56px;
+			width: 48px;
 			text-align: center;
+			font-family: inherit;
+		}
+		.dtm-cp-bpm-input::-webkit-outer-spin-button,
+		.dtm-cp-bpm-input::-webkit-inner-spin-button {
+			-webkit-appearance: none;
+			margin: 0;
+		}
+		.dtm-cp-bpm-input[type=number] {
+			-moz-appearance: textfield;
+		}
+		.dtm-cp-bpm-input:focus {
+			outline: none;
+			background: rgba(255,255,255,0.15);
+			color: #fff;
 		}
 	`;
 	if (!doc.getElementById("dtm-cp-metro-style")) {
@@ -1178,5 +1574,6 @@ export const mountChordPlayer = (
 		stop,
 		destroy,
 		toggleMetronome,
+		isPlaying: () => isPlaying,
 	};
 };

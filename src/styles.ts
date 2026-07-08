@@ -1393,9 +1393,12 @@ export const DAW_CSS = `
 
 /* 小節区切りパイプ */
 .dtm-cp-pipe {
-  font-size: 12px;
-  color: var(--dtm-border2);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.35);
   font-family: var(--dtm-font);
+  font-weight: bold;
+  margin: 0 4px;
+  user-select: none;
 }
 
 /* コードセル — ゲームのボタン風チップ（タップでそこから再生） */

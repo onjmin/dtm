@@ -9,6 +9,7 @@ app.get("/", serveStatic({ root: "./demo" }));
 
 // 埋め込み専用プレイヤー（YouTube の /embed 相当）
 app.get("/embed.html", serveStatic({ path: "./demo/embed.html" }));
+app.get("/embed-chord.html", serveStatic({ path: "./demo/embed-chord.html" }));
 
 // ヘッドレスBGM再生デモページ
 app.get("/bgm.html", serveStatic({ path: "./demo/bgm.html" }));
