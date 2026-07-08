@@ -321,9 +321,20 @@ export const mountChordPlayer = (
 
 	// 音色プリセットの解決（#tone=piano 等。未指定は piano をデフォルト）
 	const toneName = parseToneMeta(chords);
-	const tonePreset =
-		(toneName ? WAF_TONE_PRESETS[toneName] : undefined) ??
-		WAF_TONE_PRESETS.piano;
+	const initialPreset =
+		(toneName &&
+		(toneName === "piano" || toneName === "guitar" || toneName === "strings")
+			? WAF_TONE_PRESETS[toneName]
+			: undefined) ?? WAF_TONE_PRESETS.piano;
+	/** UI で選択中の楽器キー。再生中もリアルタイムで切り替え可。 */
+	let activeInstrumentKey: "piano" | "guitar" | "strings" =
+		toneName === "guitar"
+			? "guitar"
+			: toneName === "strings"
+				? "strings"
+				: "piano";
+	/** UI で選択中の楽器の GM 名（onPlayNote から動的に参照） */
+	let activeGmName: string | null = initialPreset.gmName;
 
 	/**
 	 * 発音済み・予約済みの音を即座に止める。
@@ -440,10 +451,56 @@ export const mountChordPlayer = (
 	bpmSpan.className = "dtm-cp-meta";
 	bpmSpan.textContent = `BPM ${bpm}`;
 
-	// 音色表示（#tone= 指定時のみ意味を持つが、既定でも現在の音色を示す）
-	const toneSpan = doc.createElement("span");
-	toneSpan.className = "dtm-cp-meta";
-	toneSpan.textContent = `♪${tonePreset.label}`;
+	// ── 楽器トグルボタン（Piano / Guitar / Strings） ──
+	const INSTRUMENT_DEFS: {
+		key: "piano" | "guitar" | "strings";
+		label: string;
+		emoji: string;
+	}[] = [
+		{ key: "piano", label: "Piano", emoji: "🎹" },
+		{ key: "guitar", label: "Guitar", emoji: "🎸" },
+		{ key: "strings", label: "Strings", emoji: "🎻" },
+	];
+
+	const instrGroup = doc.createElement("div");
+	instrGroup.className = "dtm-cp-instr-group";
+
+	const instrBtns = new Map<string, HTMLButtonElement>();
+
+	const updateInstrButtons = () => {
+		for (const { key } of INSTRUMENT_DEFS) {
+			instrBtns
+				.get(key)
+				?.classList.toggle(
+					"dtm-cp-instr-btn--active",
+					key === activeInstrumentKey,
+				);
+		}
+	};
+
+	const switchInstrument = (key: "piano" | "guitar" | "strings") => {
+		if (activeInstrumentKey === key) return;
+		activeInstrumentKey = key;
+		activeGmName = WAF_TONE_PRESETS[key].gmName;
+		updateInstrButtons();
+		// バックグラウンドでプリロード（未キャッシュの場合のみネット取得）
+		if (activeGmName && !_wafCache.has(activeGmName)) {
+			const ctx = ownCtx ?? options.audioContext;
+			if (ctx) loadWafFont(ctx, activeGmName);
+		}
+	};
+
+	for (const { key, label, emoji } of INSTRUMENT_DEFS) {
+		const btn = doc.createElement("button");
+		btn.type = "button";
+		btn.className = "dtm-cp-instr-btn";
+		btn.textContent = `${emoji} ${label}`;
+		btn.title = label;
+		btn.addEventListener("click", () => switchInstrument(key));
+		instrGroup.appendChild(btn);
+		instrBtns.set(key, btn);
+	}
+	updateInstrButtons();
 
 	// 時間表示（右寄せ）
 	const timeSpan = doc.createElement("span");
@@ -463,9 +520,21 @@ export const mountChordPlayer = (
 	ctrlBar.appendChild(loopBtn);
 	ctrlBar.appendChild(metroBtn);
 	ctrlBar.appendChild(bpmSpan);
-	ctrlBar.appendChild(toneSpan);
+	ctrlBar.appendChild(instrGroup);
 	ctrlBar.appendChild(timeSpan);
 	container.appendChild(ctrlBar);
+
+	// 3楽器のWAFフォントをバックグラウンドでプリロード（マウント直後に開始）
+	// → 初回クリック時のローディング待ち時間を短縮する
+	const preloadInstruments = () => {
+		const ctx = ownCtx ?? options.audioContext;
+		if (!ctx) return;
+		for (const key of ["piano", "guitar", "strings"] as const) {
+			const gmName = WAF_TONE_PRESETS[key].gmName;
+			if (gmName) loadWafFont(ctx, gmName);
+		}
+	};
+	// AudioContext はユーザー操作後に生成されるため、preload は play() 初回呼び出し後に委ねる
 
 	// ── プログレスバー（クリックでシーク） ──
 	const progress = doc.createElement("div");
@@ -680,31 +749,39 @@ export const mountChordPlayer = (
 		destination: GainNode;
 	}) => void;
 
-	const makeWafPlayFn = (gmName: string | null): WafPlayFn => {
-		return ({ pitch, volume, when, duration, ctx, destination }) => {
-			const waf = gmName ? _wafCache.get(gmName) : null;
-			if (waf) {
-				waf.play({
-					ctx,
-					destination,
-					pitch,
-					volume: volume * 0.85,
-					when,
-					duration,
-				});
-			} else {
-				// フォールバック: オシレータシンセ
-				const synth = createSynth(ctx, destination);
-				synth.playNote({
-					trackId: "chord",
-					pitch,
-					velocity: 100,
-					volume,
-					when,
-					duration,
-				});
-			}
-		};
+	/**
+	 * activeGmName を動的に参照して発音する（楽器切り替えをリアルタイムに反映）。
+	 * WAFキャッシュにあれば使い、なければオシレータシンセで代替。
+	 */
+	const wafPlayDynamic: WafPlayFn = ({
+		pitch,
+		volume,
+		when,
+		duration,
+		ctx,
+		destination,
+	}) => {
+		const waf = activeGmName ? _wafCache.get(activeGmName) : null;
+		if (waf) {
+			waf.play({
+				ctx,
+				destination,
+				pitch,
+				volume: volume * 0.85,
+				when,
+				duration,
+			});
+		} else {
+			const synth = createSynth(ctx, destination);
+			synth.playNote({
+				trackId: "chord",
+				pitch,
+				velocity: 100,
+				volume,
+				when,
+				duration,
+			});
+		}
 	};
 
 	/**
@@ -750,8 +827,6 @@ export const mountChordPlayer = (
 			}
 		}
 
-		const wafPlay = makeWafPlayFn(tonePreset.gmName);
-
 		const playOptions: PlayPlacementsOptions = {
 			bpm,
 			volume,
@@ -759,7 +834,7 @@ export const mountChordPlayer = (
 			audioContext: ctx,
 			synth: false,
 			onPlayNote: (e) => {
-				wafPlay({
+				wafPlayDynamic({
 					pitch: e.pitch,
 					velocity: e.velocity,
 					volume: e.volume,
@@ -815,10 +890,10 @@ export const mountChordPlayer = (
 		};
 
 		// WAF 音源が未ロードならスピナーを出してロード完了を待つ
-		if (tonePreset.gmName && !_wafCache.has(tonePreset.gmName)) {
+		if (activeGmName && !_wafCache.has(activeGmName)) {
 			const myAbortId = ++loadAbortId;
 			setLoadingUI(true);
-			loadWafFont(ctx, tonePreset.gmName).then(() => {
+			loadWafFont(ctx, activeGmName).then(() => {
 				if (loadAbortId !== myAbortId) return; // stop/seek でキャンセルされた
 				setLoadingUI(false);
 				startPlayback();
@@ -827,6 +902,8 @@ export const mountChordPlayer = (
 			// すでにキャッシュ済み（または square = WAF なし）は即時再生
 			startPlayback();
 		}
+		// 初回 AudioContext 確保後に残り2楽器もバックグラウンドプリロード
+		preloadInstruments();
 	};
 
 	/** 指定コードから再生し直す（停止中なら再生開始）。前の音は即座に切る */
@@ -949,6 +1026,33 @@ export const mountChordPlayer = (
 			border-radius: 50%;
 			animation: dtm-cp-spin 0.7s linear infinite;
 			vertical-align: middle;
+		}
+		/* 楽器トグルボタン群 */
+		.dtm-cp-instr-group {
+			display: flex;
+			gap: 2px;
+			border: 1px solid rgba(255,255,255,0.15);
+			border-radius: 4px;
+			overflow: hidden;
+		}
+		.dtm-cp-instr-btn {
+			background: rgba(255,255,255,0.06);
+			border: none;
+			color: rgba(255,255,255,0.5);
+			font-size: 11px;
+			padding: 2px 7px;
+			cursor: pointer;
+			transition: background 0.15s, color 0.15s;
+			white-space: nowrap;
+		}
+		.dtm-cp-instr-btn:hover {
+			background: rgba(255,255,255,0.14);
+			color: rgba(255,255,255,0.85);
+		}
+		.dtm-cp-instr-btn--active {
+			background: var(--dtm-primary, #29adff) !important;
+			color: #000 !important;
+			font-weight: bold;
 		}
 	`;
 	if (!doc.getElementById("dtm-cp-metro-style")) {
