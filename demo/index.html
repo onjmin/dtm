@@ -442,7 +442,7 @@
         const studio = await createDtmStudio({
             defaultPreset,
             features: { presetUI: false },
-            midiSearch: { apiKey: '114514', baseUrl: isLocal ? location.origin : '' },
+            midiSearch: { apiKey: '114514', baseUrl: isLocal ? location.origin : null },
 
         });
         window.studio = studio;
