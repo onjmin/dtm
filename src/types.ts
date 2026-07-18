@@ -300,6 +300,10 @@ export type DawOptions = {
 	initialActiveTrack?: string;
 	/** 初期スクロールで中央に表示するMIDIピッチ番号（0–127）。未指定なら既定位置。 */
 	initialScrollPitch?: number;
+	/** マスタ音量 0-100。既定50。 */
+	masterVolume?: number;
+	/** ドラム音量 0-100。既定80。 */
+	drumVolume?: number;
 
 	// --- 注入される外部パーサ（任意） ---
 	parseMidi?: ParseMidiFn;
@@ -383,6 +387,12 @@ export type DawInstance = {
 	) => void;
 	/** リモートから受信した歌詞・UTAU設定を適用する。 */
 	applyLyrics: (trackId: string, data: LyricSyncData) => void;
+	/** マスタ音量を 0-100 で変更する。 */
+	setMasterVolume: (volume: number) => void;
+	/** マスタ音量を 0-100 で変更する（`setMasterVolume` のエイリアス）。 */
+	setVolume: (volume: number) => void;
+	/** ドラム音量を 0-100 で変更する。 */
+	setDrumVolume: (volume: number) => void;
 	/** リモートから受信したトラック個別楽器を適用する（`onTrackInstrumentChange` は発火しない）。 */
 	applyTrackInstrument: (trackIndex: number, instrumentName: string) => void;
 	/**

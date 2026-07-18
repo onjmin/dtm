@@ -190,6 +190,8 @@ export type ChordPlayerInstance = {
 	toggleMetronome: () => void;
 	/** 再生中か否かを取得する */
 	isPlaying: () => boolean;
+	/** マスタ音量を 0-100 で変更する。 */
+	setVolume: (volume: number) => void;
 };
 
 type DisplayPart = {
@@ -359,6 +361,7 @@ export const mountChordPlayer = (
 	let activeIndex = -1;
 	let activePlayback: MmlPlayback | null = null;
 	let isPlaying = false;
+	let masterVolume = options.volume ?? 80;
 	let isLoading = false;
 	/** インクリメントして進行中ロードを「キャンセル」する */
 	let loadAbortId = 0;
@@ -828,7 +831,7 @@ export const mountChordPlayer = (
 				container.innerHTML = "";
 				modalSamplePlayer = mountChordPlayer(container, sampleChords, {
 					audioContext: options.audioContext ?? ownCtx ?? undefined,
-					volume: options.volume ?? 100,
+					volume: masterVolume,
 					bpm: options.bpm ?? 120,
 					studio: options.studio,
 					// 再帰的なモーダル生成を防ぐ。
@@ -1288,7 +1291,7 @@ export const mountChordPlayer = (
 		cutGain: GainNode,
 	) => {
 		const C3 = 48;
-		const volume = options.volume ?? 80;
+		const volume = masterVolume;
 		const placements: Array<{
 			trackIndex: number;
 			startStep: number;
@@ -1482,6 +1485,11 @@ export const mountChordPlayer = (
 		}
 	};
 
+	const setVolume = (volume: number) => {
+		masterVolume = Math.max(0, Math.min(100, volume));
+		activePlayback?.setVolume(masterVolume);
+	};
+
 	const destroy = () => {
 		stop();
 		closeInfoModal();
@@ -1614,6 +1622,7 @@ export const mountChordPlayer = (
 		element: container,
 		play,
 		stop,
+		setVolume,
 		destroy,
 		toggleMetronome,
 		isPlaying: () => isPlaying,

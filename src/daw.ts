@@ -470,6 +470,10 @@ export const mountDAW = (
 		showChord,
 		showMidiSearch,
 	});
+	refs.masterVolume.value = String(options.masterVolume ?? 50);
+	refs.masterVolumeLabel.textContent = `${options.masterVolume ?? 50}%`;
+	refs.drumVolume.value = String(options.drumVolume ?? 80);
+	refs.drumVolumeLabel.textContent = `${options.drumVolume ?? 80}%`;
 
 	// --- 描画設定 ---
 	const renderConfig: RenderConfig = {
@@ -484,8 +488,8 @@ export const mountDAW = (
 	let zoomX = 100;
 	let zoomY = 100;
 	let bpm = options.defaultBpm ?? DEFAULT_BPM;
-	let masterVolume = 50;
-	let drumVolume = 80;
+	let masterVolume = options.masterVolume ?? 50;
+	let drumVolume = options.drumVolume ?? 80;
 	let currentDrumPattern = refs.drumSelect.value;
 	// MML出力の先頭に埋め込む楽器プリセット名（トップレベル宣言。空なら宣言なし）
 	let currentInstrument = "";
@@ -3759,6 +3763,21 @@ export const mountDAW = (
 		getCurrentPlayStep,
 		forcePauseAt,
 		setLoading,
+		setMasterVolume: (volume: number) => {
+			masterVolume = clamp(volume, 0, 100);
+			refs.masterVolume.value = String(masterVolume);
+			refs.masterVolumeLabel.textContent = `${masterVolume}%`;
+		},
+		setVolume: (volume: number) => {
+			masterVolume = clamp(volume, 0, 100);
+			refs.masterVolume.value = String(masterVolume);
+			refs.masterVolumeLabel.textContent = `${masterVolume}%`;
+		},
+		setDrumVolume: (volume: number) => {
+			drumVolume = clamp(volume, 0, 100);
+			refs.drumVolume.value = String(drumVolume);
+			refs.drumVolumeLabel.textContent = `${drumVolume}%`;
+		},
 		applyPatch: (
 			trackId: string,
 			added: import("./types").NoteData[],

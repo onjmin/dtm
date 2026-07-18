@@ -45,6 +45,34 @@ studio.mountChordPlayer(
 );
 ```
 
+## マスター音量の調整
+
+ライブラリの再生音量は 0-100 のパーセンテージで調整できます。
+
+- `createDtmStudio` / `mountDAW` / `mountEditor` などの DAW 系 API では `masterVolume` を使います。
+- ヘッドレス再生 API（`playMML` / `playChords` / `mountChordPlayer`）では `volume` を使います。
+- 再生中に音量を切り替えたい場合は各インスタンスの `setVolume()` を呼び出します。
+
+```ts
+const studio = await createDtmStudio();
+const daw = studio.mountEditor(editorEl, {
+  initialMML: "@0 t120 o5 l8 ccggaag4 ffeeddc4",
+  masterVolume: 60,
+});
+daw.setVolume(40);
+
+const bgm = playMML("@0 t120 o5 l8 ccggaag4 ffeeddc4", {
+  loop: true,
+  volume: 70,
+});
+bgm.setVolume(50);
+
+const chordPlayer = studio.mountChordPlayer(chordEl, "| C | G | Am | F |", {
+  volume: 80,
+});
+chordPlayer.setVolume(65);
+```
+
 ---
 
 ## モード（`simple` / `advanced`）

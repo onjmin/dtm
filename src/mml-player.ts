@@ -64,6 +64,8 @@ export type MmlPlayerOptions = {
 	onResumeAudio?: () => void | Promise<void>;
 	/** 内蔵の簡易square-wave synthを使うか。既定は onPlayNote 未指定なら true */
 	synth?: boolean;
+	/** マスタ音量 0-100。既定100。 */
+	masterVolume?: number;
 	/** BPM未検出時のフォールバック。既定120 */
 	defaultBpm?: number;
 	/** 各トラックの 0-100 ボリューム。既定100 */
@@ -96,6 +98,7 @@ export type MmlPlayerInstance = {
 	play: () => void;
 	stop: () => void;
 	isPlaying: () => boolean;
+	setVolume: (volume: number) => void;
 	destroy: () => void;
 };
 
@@ -344,6 +347,7 @@ export const mountMmlPlayer = (
 		? (drumPatternDict[meta.drum] ?? null)
 		: null;
 	const trackVolume = meta.volume ?? options.volume ?? 100;
+	let masterVolume = options.masterVolume ?? 100;
 	const drumVolume = meta.drumVolume ?? 80;
 	const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
 	const useSynth = options.synth ?? !options.onPlayNote;
@@ -1304,14 +1308,19 @@ export const mountMmlPlayer = (
 			// 歌詞トラックの発音は歌声ストリーミング（startStream）が担当するため、
 			// ここでは楽器音も歌声も鳴らさない。（ただし音声合成をスキップした場合は鳴らす）
 			if (lyricTracks.has(trackIdx) && !skipSinging) return;
-			options.onPlayNote?.(e);
-			if (useSynth) ensureSynth().playNote(e);
+			const volume = e.volume * (masterVolume / 100);
+			options.onPlayNote?.({ ...e, volume });
+			if (useSynth) ensureSynth().playNote({ ...e, volume });
 		},
 		onPlayDrum: (e) => {
 			// ドラムは曲全体に効くトップレベル宣言でトラックと1対1ではないため、
 			// 特定トラックの絵文字（旧実装は先頭を流用）を跳ねさせない。
 			// 先頭トラックがドラムの度に跳ね続けるバグの原因だった。
-			const velocity = e.velocity * (drumVolume / 100) * (trackVolume / 100);
+			const velocity =
+				e.velocity *
+				(drumVolume / 100) *
+				(trackVolume / 100) *
+				(masterVolume / 100);
 			options.onPlayDrum?.({ ...e, velocity });
 			if (useSynth) ensureSynth().playDrum({ ...e, velocity });
 		},
@@ -1339,6 +1348,10 @@ export const mountMmlPlayer = (
 		options.onStop?.();
 	};
 
+	const setVolume = (volume: number): void => {
+		masterVolume = volume;
+	};
+
 	// 歌詞トラックを「絶対時刻ベースのストリーミング用」ノート列へ変換する（再生は常に step0 から）。
 	const buildStreamTracks = (): StreamVoiceTrack[] =>
 		[...lyricTracks.entries()].map(([index, lt]) => {
@@ -1364,7 +1377,8 @@ export const mountMmlPlayer = (
 				model: lt.model,
 				volume:
 					vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) *
-					(trackVolume / 100),
+					(trackVolume / 100) *
+					(masterVolume / 100),
 				pan: panToStereo(lt.pan ?? DEFAULT_PAN),
 				notes,
 			};
@@ -1492,6 +1506,7 @@ export const mountMmlPlayer = (
 		play,
 		stop,
 		isPlaying: () => playing,
+		setVolume,
 		destroy,
 	};
 	return instance;
