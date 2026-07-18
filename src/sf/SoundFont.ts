@@ -158,7 +158,7 @@ const findZone = (
 	for (let i = zones.length - 1; i >= 0; i--)
 		for (const v of set) {
 			const zone = zones[i];
-			if (v < zone.keyRangeLow || v > zone.keyRangeHigh + 1) continue;
+			if (v < zone.keyRangeLow || v > zone.keyRangeHigh) continue;
 			set.delete(v);
 			map.set(v, { ...zone });
 		}
@@ -266,7 +266,7 @@ const adjustZone = async (
 					totalPeak > 0 &&
 					loopPeak < totalPeak * 0.8
 				) {
-					gainMultiplier = (totalPeak * 0.75) / loopPeak; // アタック（全体）ピークの75%を目標にする（気持ち抑えめ）
+					gainMultiplier = (totalPeak * 0.75) / loopPeak; // アタック（全体）ピークの75%を目標にする
 					if (gainMultiplier > 20.0) gainMultiplier = 20.0; // 過剰増幅によるクリップ防止
 				}
 
@@ -283,7 +283,7 @@ const adjustZone = async (
 						// アタック部分をコピーしつつ、ゲイン補正倍率を 1.0 から gainMultiplier へ緩やかに遷移させる
 						// これにより、アタック（等倍）からループ（ブースト）への切り替わりでのクリックノイズを完全に防止する
 						for (let i = 0; i < attackLength; i++) {
-							const ratio = attackLength > 0 ? i / attackLength : 0;
+							const ratio = attackLength > 1 ? i / (attackLength - 1) : 0;
 							const m = 1.0 + (gainMultiplier - 1.0) * ratio;
 							newData[i] = oldData[i] * m;
 						}
