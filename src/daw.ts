@@ -75,6 +75,7 @@ import {
 	DEFAULT_BPM,
 	DEFAULT_GATE,
 	DEFAULT_PAN,
+	DEFAULT_VELOCITY,
 	DEFAULT_VOCAL_VOLUME,
 	MML_END_MARKER,
 } from "./types";
@@ -2522,12 +2523,18 @@ export const mountDAW = (
 			t.vocalPan = lt.pan;
 			t.vocalOctave = lt.octave ?? 0;
 		});
+		// 注意: p.velocity は generateMML がトラック全体に単一の v ヘッダーしか出力しないため、
+		// そのトラックの「ベロシティ」スライダー値（上で trackVelocity から t.volume へ復元済み）が
+		// 全ノートへ均一にコピーされたものに過ぎない。ここでも p.velocity をノート速度として使うと
+		// 発音式 (trackVol/100)*(velocity/127) が同じ値を二重に掛け合わせてしまい、
+		// スライダーが既定の100から離れるほど再生音量が二乗的に小さくなるバグになる。
+		// そのため、MML読込直後のノート速度は既定値へ戻し、トラック音量側だけに反映させる。
 		for (const p of placements) {
 			const t = trackStates[p.trackIndex];
 			if (!t) continue;
 			t.core.addNote(p.startStep, p.pitch, {
 				noteLengthSteps: p.durationSteps,
-				velocity: p.velocity,
+				velocity: DEFAULT_VELOCITY,
 			});
 		}
 		if (parsedBpm) setBpm(parsedBpm);
