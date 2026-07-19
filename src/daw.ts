@@ -512,6 +512,38 @@ export const mountDAW = (
 	let playbackState: PlaybackState = "stopped";
 	let pausedPlayStep = 0;
 	let currentPlayStep = 0;
+	// トラックピル（タブ）DOM。再生中に発音の瞬間だけ点灯させるため trackId で引けるようにする。
+	const trackPillEls = new Map<string, HTMLButtonElement>();
+	// 発音タイミングに合わせて点灯・消灯を予約するタイマー。停止/一時停止/シークで全部キャンセルする。
+	let soundTimers: ReturnType<typeof setTimeout>[] = [];
+	const clearSoundTimers = (): void => {
+		for (const t of soundTimers) clearTimeout(t);
+		soundTimers = [];
+		for (const el of trackPillEls.values())
+			el.classList.remove("dtm-pill--sounding");
+	};
+	/** 発音予定時刻（e.when秒後）に合わせてタブを短く点灯させる。 */
+	const flashTrackPill = (
+		trackId: string,
+		when: number,
+		duration: number,
+	): void => {
+		const el = trackPillEls.get(trackId);
+		if (!el) return;
+		const litMs = Math.min(Math.max(duration * 1000, 60), 400);
+		soundTimers.push(
+			setTimeout(
+				() => el.classList.add("dtm-pill--sounding"),
+				Math.max(0, when * 1000),
+			),
+		);
+		soundTimers.push(
+			setTimeout(
+				() => el.classList.remove("dtm-pill--sounding"),
+				Math.max(0, when * 1000) + litMs,
+			),
+		);
+	};
 	// 初期化完了フラグ（MMLCore構築時の早期コールバックを抑止）
 	let ready = false;
 	let isLoading = false;
@@ -1499,6 +1531,7 @@ export const mountDAW = (
 			if (idx >= 0 && lyricTrackIndices.has(idx) && options.singingVoices) {
 				return;
 			}
+			flashTrackPill(e.trackId, e.when, e.duration);
 			options.onPlayNote?.({ ...e, volume: e.volume * (masterVolume / 100) });
 		},
 		onPlayDrum: (e) => {
@@ -1627,6 +1660,10 @@ export const mountDAW = (
 		if (streaming && voices) {
 			voices.startStream(streamTracks, sequencer.getStartTime(), {
 				isAudible: (t) => !isSolo || t.id === activeTrackId,
+				onScheduled: (t, note, t0) => {
+					if (!t.id) return;
+					flashTrackPill(t.id, t0 - getAudioTime(), note.durationSec);
+				},
 			});
 		}
 		updateTransport();
@@ -1636,12 +1673,14 @@ export const mountDAW = (
 		pausedPlayStep = currentPlayStep;
 		sequencer.stop();
 		options.singingVoices?.stopStream();
+		clearSoundTimers();
 		playbackState = "paused";
 		updateTransport();
 	};
 	const stop = (): void => {
 		sequencer.stop();
 		options.singingVoices?.stopStream();
+		clearSoundTimers();
 		playbackState = "stopped";
 		currentPlayStep = 0;
 		updateTransport();
@@ -1670,6 +1709,7 @@ export const mountDAW = (
 	const updateTrackPanel = (): void => {
 		// トラックピル（色分け・常時表示）
 		refs.trackTabs.innerHTML = "";
+		trackPillEls.clear();
 		for (const [i, t] of trackStates.entries()) {
 			const [r, g, b] = t.config.color;
 			const btn = document.createElement("button");
@@ -1679,6 +1719,7 @@ export const mountDAW = (
 			btn.textContent = String(i + 1);
 			btn.addEventListener("click", () => switchTrack(t.config.id));
 			refs.trackTabs.appendChild(btn);
+			trackPillEls.set(t.config.id, btn);
 		}
 		// ボディ
 		const active = getActive();
@@ -3688,6 +3729,7 @@ export const mountDAW = (
 		if (wasPlaying) {
 			sequencer.stop();
 			options.singingVoices?.stopStream();
+			clearSoundTimers();
 			playStartStep = step;
 			pausedPlayStep = step;
 			currentPlayStep = step;

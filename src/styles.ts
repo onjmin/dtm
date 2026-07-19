@@ -400,6 +400,11 @@ export const DAW_CSS = `
   box-shadow: 0 0 0 1px var(--dtm-gold), 2px 2px 0 var(--c-black);
 }
 .dtm-pill:not(.dtm-pill--active):active { transform: translate(2px,2px); box-shadow: none; }
+/* 再生中、実際に発音した瞬間だけ点灯（どのタブが今鳴っているか視覚的に分かるように） */
+.dtm-pill--sounding {
+  background: color-mix(in srgb, var(--dtm-pill-color) 85%, white);
+  transition: background 30ms linear;
+}
 
 /* ─── ピアノロール（トラッカー風） ─── */
 .dtm-roll-wrap { display: flex; gap: var(--dtm-gap); }

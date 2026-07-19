@@ -1355,6 +1355,16 @@ export type StreamPlaybackOptions = {
 	 * 引数には遅れたノート情報と遅延秒数が渡されます。
 	 */
 	onLateSkip?: (note: StreamVoiceNote, delay: number) => void;
+	/**
+	 * ノートの発音が実際にスケジュールされた瞬間に呼ばれる（合成完了後、AudioContext へ
+	 * 予約する直前）。UI側で「今このトラックが鳴っている」を可視化する用途を想定。
+	 * t0 は発音予定の AudioContext 絶対時刻。
+	 */
+	onScheduled?: (
+		track: StreamVoiceTrack,
+		note: StreamVoiceNote,
+		t0: number,
+	) => void;
 };
 
 /**
@@ -1642,6 +1652,7 @@ export const createSingingVoices = (
 							const delay = ctx.currentTime - t0;
 							if (delay < 0.05) {
 								scheduleCached(key, t0, peak, track.pan);
+								opts?.onScheduled?.(track, note, t0);
 							} else {
 								console.warn(
 									`[dtm] Synthesizer late skip: ${note.syllable.kana} at ${note.startSec}s (delayed by ${delay.toFixed(3)}s)`,
@@ -1663,6 +1674,7 @@ export const createSingingVoices = (
 						duration: note.durationSec,
 						pan: track.pan,
 					});
+					opts?.onScheduled?.(track, note, t0);
 					await new Promise((resolve) => setTimeout(resolve, 0));
 				}
 			}
