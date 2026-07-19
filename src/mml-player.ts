@@ -447,6 +447,7 @@ export const mountMmlPlayer = (
 		if (!voices) {
 			const ctx = ensureCtx();
 			voices = createSingingVoices(ctx, ctx.destination);
+			voices.setVolume(masterVolume / 100);
 		}
 		return voices;
 	};
@@ -1350,6 +1351,7 @@ export const mountMmlPlayer = (
 
 	const setVolume = (volume: number): void => {
 		masterVolume = volume;
+		peekVoices()?.setVolume(masterVolume / 100);
 	};
 
 	// 歌詞トラックを「絶対時刻ベースのストリーミング用」ノート列へ変換する（再生は常に step0 から）。
@@ -1377,8 +1379,7 @@ export const mountMmlPlayer = (
 				model: lt.model,
 				volume:
 					vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) *
-					(trackVolume / 100) *
-					(masterVolume / 100),
+					(trackVolume / 100),
 				pan: panToStereo(lt.pan ?? DEFAULT_PAN),
 				notes,
 			};

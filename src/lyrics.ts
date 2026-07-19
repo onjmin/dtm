@@ -1403,6 +1403,13 @@ export type SingingVoices = {
 	stopStream: () => void;
 	/** ストリーム停止＋各モデルの内部状態を初期化する。 */
 	reset: () => void;
+	/**
+	 * マスタ音量（0〜1のゲイン）をリアルタイムに反映する。
+	 * 発音時にゲインを焼き込む方式だと再生中の音量変更が既にスケジュール済み・
+	 * ストリーミング中の音符に効かないため、全モデル共通の GainNode を介して
+	 * 常時ライブ反映できるようにする。
+	 */
+	setVolume: (gain: number) => void;
 };
 
 /** {@link SingingVoices.warm} の既定先合成数（各トラック先頭からの音数）。 */
@@ -1456,8 +1463,12 @@ export const createSingingVoices = (
 	// 走行中の合成ループを中断（停止・一時停止・別曲への切り替え）させる。
 	let streamSession = 0;
 
+	// 全モデル共通のマスタ音量ゲイン。setVolume で常時ライブに変更できる。
+	const masterGain = ctx.createGain();
+	masterGain.connect(destination);
+
 	const loaded = new Map<string, VoiceModel>([
-		[FALLBACK_MODEL, createKlattVoice(ctx, destination)],
+		[FALLBACK_MODEL, createKlattVoice(ctx, masterGain)],
 	]);
 	const loading = new Map<string, Promise<VoiceModel | null>>();
 
@@ -1474,7 +1485,7 @@ export const createSingingVoices = (
 			// マニフェストだけ先読みし、音素PCMは歌う直前にオンデマンド取得する
 			// （= 初回に .koe 全体をDLしない。モバイル初回ロードの待ちを解消）。
 			// Blob/File が直接渡されたケース（ローカル読み込み）はそのまま BlobVoiceSource。
-			createKoeVoice(ctx, destination, {
+			createKoeVoice(ctx, masterGain, {
 				koe,
 				worldlineScriptUrl: options.worldlineScriptUrl,
 				lightweight: options.lightweight,
@@ -1671,6 +1682,10 @@ export const createSingingVoices = (
 		for (const v of loaded.values()) v.reset?.();
 	};
 
+	const setVolume: SingingVoices["setVolume"] = (gain) => {
+		masterGain.gain.value = Math.max(0, gain);
+	};
+
 	return {
 		loadModels,
 		registerVoicebanks,
@@ -1678,6 +1693,7 @@ export const createSingingVoices = (
 		startStream,
 		stopStream,
 		reset,
+		setVolume,
 	};
 };
 

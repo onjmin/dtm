@@ -489,6 +489,7 @@ export const mountDAW = (
 	let zoomY = 100;
 	let bpm = options.defaultBpm ?? DEFAULT_BPM;
 	let masterVolume = options.masterVolume ?? 50;
+	options.singingVoices?.setVolume(masterVolume / 100);
 	let drumVolume = options.drumVolume ?? 80;
 	let currentDrumPattern = refs.drumSelect.value;
 	// MML出力の先頭に埋め込む楽器プリセット名（トップレベル宣言。空なら宣言なし）
@@ -1576,9 +1577,7 @@ export const mountDAW = (
 					return {
 						id: trackState?.config.id,
 						model: lt.model,
-						volume:
-							vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) *
-							(masterVolume / 100),
+						volume: vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME),
 						pan: panToStereo(lt.pan ?? DEFAULT_PAN),
 						notes,
 					};
@@ -2777,6 +2776,7 @@ export const mountDAW = (
 		refs.masterVolume.addEventListener("input", () => {
 			masterVolume = Number.parseInt(refs.masterVolume.value, 10) || 0;
 			refs.masterVolumeLabel.textContent = `${masterVolume}%`;
+			options.singingVoices?.setVolume(masterVolume / 100);
 		});
 		refs.drumSelect.addEventListener("change", () => {
 			currentDrumPattern = refs.drumSelect.value;
@@ -3767,11 +3767,13 @@ export const mountDAW = (
 			masterVolume = clamp(volume, 0, 100);
 			refs.masterVolume.value = String(masterVolume);
 			refs.masterVolumeLabel.textContent = `${masterVolume}%`;
+			options.singingVoices?.setVolume(masterVolume / 100);
 		},
 		setVolume: (volume: number) => {
 			masterVolume = clamp(volume, 0, 100);
 			refs.masterVolume.value = String(masterVolume);
 			refs.masterVolumeLabel.textContent = `${masterVolume}%`;
+			options.singingVoices?.setVolume(masterVolume / 100);
 		},
 		setDrumVolume: (volume: number) => {
 			drumVolume = clamp(volume, 0, 100);
