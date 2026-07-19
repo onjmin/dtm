@@ -1740,6 +1740,15 @@ export const mountDAW = (
 			active.core.setVolume(active.volume);
 			volLabel.textContent = String(active.volume);
 		});
+		// 歌詞モデルが設定されているトラックはベロシティが再生に反映されない（声量が代わりに効く）ため、
+		// 編集できないように見せる（実際に無効化して誤操作を防ぐ）。
+		const syncVelocityDisabled = (): void => {
+			volInput.disabled = !!active.lyricModel;
+			volInput.title = active.lyricModel
+				? "歌詞モードのときはベロシティが再生に反映されません（声量で調整してください）"
+				: "";
+		};
+		syncVelocityDisabled();
 
 		// 楽器個別選択（デフォルト＝プリセット or GM楽器名指定）
 		const instRow = document.createElement("div");
@@ -2043,6 +2052,7 @@ export const mountDAW = (
 				active.lyricModel = lyricModelSel.value;
 				syncLyricVisibility();
 				syncInstDisabled();
+				syncVelocityDisabled();
 				fireLyricsChange(active);
 			});
 			lyricCustomGuide.addEventListener("click", () => {

@@ -330,6 +330,7 @@ export const mountMmlPlayer = (
 		tokenTracks,
 		lyrics,
 		meta,
+		trackVelocity,
 	} = parseMML(mml, {
 		collectTokens: true,
 		collectLyrics: true,
@@ -421,7 +422,12 @@ export const mountMmlPlayer = (
 				pitch: p.pitch,
 				velocity: p.velocity,
 			}));
-		return { id: String(index), volume: trackVolume, notes };
+		// MMLの各トラック見出し（@n）に埋め込まれた v<N>（トラック個別ベロシティ、DAWの
+		// 「ベロシティ」スライダー由来）を優先する。無ければ曲全体の既定音量へフォールバック。
+		// これを外すとDAWで付けたトラックごとの音量差が再生専用ビューで消え、
+		// 特定の楽器だけ音量が食い違って聞こえるバグになる。
+		const volume = trackVelocity.get(index) ?? trackVolume;
+		return { id: String(index), volume, notes };
 	});
 
 	const colorOf = (index: number): string =>

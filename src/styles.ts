@@ -317,6 +317,7 @@ export const DAW_CSS = `
 .dtm-textarea { width: 100%; min-height: 56px; resize: vertical; line-height: 1.7; }
 .dtm-textarea.dtm-grow { width: 0; }
 .dtm-range { height: var(--dtm-tap); accent-color: var(--dtm-primary); }
+.dtm-range:disabled { opacity: .35; cursor: default; }
 
 /* ─── コントロールバー（楽器プリセット / モード切替などの差し込みUI） ─── */
 .dtm-controlbar {
