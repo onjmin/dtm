@@ -451,7 +451,7 @@ export const mountMmlPlayer = (
 		if (!voices) {
 			const ctx = ensureCtx();
 			voices = createSingingVoices(ctx, ctx.destination);
-			voices.setVolume(masterVolume / 100);
+			voices.setVolume((trackVolume / 100) * (masterVolume / 100));
 		}
 		return voices;
 	};
@@ -1355,7 +1355,7 @@ export const mountMmlPlayer = (
 
 	const setVolume = (volume: number): void => {
 		masterVolume = volume;
-		peekVoices()?.setVolume(masterVolume / 100);
+		peekVoices()?.setVolume((trackVolume / 100) * (masterVolume / 100));
 	};
 
 	// 歌詞トラックを「絶対時刻ベースのストリーミング用」ノート列へ変換する（再生は常に step0 から）。
@@ -1378,12 +1378,14 @@ export const mountMmlPlayer = (
 					durationSec: n.durationSteps * secondsPerStep * gate,
 				});
 			}
+			// 注意: trackVolume/masterVolume はここでは掛けない。voices の共有先（studio 経由の
+			// DAW 等）が同じ SingingVoices インスタンスのゲインノードを既にライブ制御している場合、
+			// ここでも static に掛けるとマスタ音量が二重適用され、歌声だけ楽器よりも音量が
+			// ズレて聞こえるバグになる。マスタ相当の反映は startStream 直前の setVolume に一本化する。
 			return {
 				id: String(index),
 				model: lt.model,
-				volume:
-					vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) *
-					(trackVolume / 100),
+				volume: vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME),
 				pan: panToStereo(lt.pan ?? DEFAULT_PAN),
 				notes,
 			};
@@ -1439,7 +1441,11 @@ export const mountMmlPlayer = (
 		}
 		seq.start(0);
 		if (streaming && !skipSinging) {
-			ensureVoices().startStream(tracks, seq.getStartTime(), {
+			const v = ensureVoices();
+			// 楽器と同じ「曲既定音量×現在のマスタ音量」を歌声のゲインノードへ反映してから鳴らす。
+			// buildStreamTracks 側では掛けていない（二重適用防止）ため、ここが唯一の適用点になる。
+			v.setVolume((trackVolume / 100) * (masterVolume / 100));
+			v.startStream(tracks, seq.getStartTime(), {
 				isAudible: (t) => !mutedTracks.has(Number(t.id)),
 				onLateSkip: () => {
 					showPlayerMessage(
