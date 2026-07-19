@@ -351,13 +351,18 @@
 | C | G | Am | Em |
 | F | C | F | G |</textarea>
                 <div class="flex gap-2 mt-1">
-                    <button id="mount-chord-btn" 
+                    <button id="mount-chord-btn"
                         class="px-4 py-1.5 bg-pico-black border-2 border-pico-cyan text-pico-cyan text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
                         MOUNT PLAYER
                     </button>
                 </div>
+                <div id="chord-player-volume-row" class="hidden items-center gap-2 mt-1">
+                    <span class="text-xs text-pico-lavend">🔊</span>
+                    <input type="range" id="chord-player-volume" min="0" max="100" value="80" class="flex-1" />
+                    <span id="chord-player-volume-label" class="text-xs text-pico-white min-w-[3em] text-right">80%</span>
+                </div>
             </div>
-            
+
             <div id="chord-player-mount-target" class="mt-2 min-h-[50px] border border-dashed border-pico-gray/30 rounded-xl p-2 bg-pico-black/10 flex items-center justify-center">
                 <span class="text-xs text-pico-lavend italic">No player mounted yet.</span>
             </div>
@@ -714,6 +719,18 @@ playMML(mmlString, {
                 patternType: "arpeggio",
                 getChords: () => document.getElementById("chord-input").value,
             });
+
+            const volumeRow = document.getElementById("chord-player-volume-row");
+            volumeRow.classList.remove("hidden");
+            volumeRow.classList.add("flex");
+        });
+
+        document.getElementById("chord-player-volume").addEventListener("input", (e) => {
+            const vol = parseInt(e.target.value);
+            document.getElementById("chord-player-volume-label").textContent = `${vol}%`;
+            if (mountedChordPlayerInstance) {
+                mountedChordPlayerInstance.setVolume(vol);
+            }
         });
     </script>
 </body>

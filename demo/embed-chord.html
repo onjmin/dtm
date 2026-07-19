@@ -81,6 +81,26 @@
             line-height: 1.6;
         }
 
+        #volume-row {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 0 8px 6px;
+            font-size: 11px;
+            color: #83769c;
+        }
+
+        #volume-row input[type="range"] {
+            flex: 1;
+            accent-color: #29adff;
+        }
+
+        #volume-label {
+            min-width: 3.2em;
+            text-align: right;
+            color: #fff1e8;
+        }
+
         .credit {
             display: block;
             text-align: right;
@@ -105,6 +125,11 @@
     <div id="boot"><span class="spin">█</span> LOADING PLAYER…</div>
     <div id="err"></div>
     <div id="player"></div>
+    <div id="volume-row">
+        <span>🔊</span>
+        <input type="range" id="volume-slider" min="0" max="100" value="50" />
+        <span id="volume-label">50%</span>
+    </div>
     <div class="credit"><a href="https://github.com/onjmin/dtm" target="_blank" rel="noopener">♪ @onjmin/dtm</a></div>
 
     <script type="module">
@@ -205,7 +230,17 @@
 
                 const studio = await createDtmStudio();
                 bootEl.style.display = 'none';
-                studio.mountChordPlayer(playerEl, chords, { volume: 50 });
+                const player = studio.mountChordPlayer(playerEl, chords, { volume: 50 });
+
+                const volumeRow = document.getElementById('volume-row');
+                const volumeSlider = document.getElementById('volume-slider');
+                const volumeLabel = document.getElementById('volume-label');
+                volumeRow.style.display = 'flex';
+                volumeSlider.addEventListener('input', () => {
+                    const vol = parseInt(volumeSlider.value, 10);
+                    volumeLabel.textContent = `${vol}%`;
+                    player.setVolume(vol);
+                });
             }
         } catch (e) {
             fail('プレイヤーの初期化に失敗しました: ' + (e?.message ?? e));
