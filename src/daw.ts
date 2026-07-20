@@ -2445,13 +2445,26 @@ export const mountDAW = (
 	const loadMML = (mml: string): void => {
 		if (!mml) return;
 		stop();
-		clearAll();
-		for (const t of trackStates) t.core.setLoadMode(true);
+		const applyActiveOnly = refs.applyActiveOnly?.checked ?? false;
+		const activeTrackIndex = trackStates.findIndex(
+			(t) => t.config.id === activeTrackId,
+		);
+
+		if (applyActiveOnly) {
+			const active = getActive();
+			active.core.clearNotesWithoutHistory();
+			active.core.setLoadMode(true);
+		} else {
+			clearAll();
+			for (const t of trackStates) t.core.setLoadMode(true);
+		}
 
 		// カスタムボーカル辞書を静的登録（DawOptions.customVocals）だけへ戻してから、
 		// このMMLの宣言行で上書きする（前に読んだ曲のカスタム音声を持ち越さない）
-		resetCustomVocals();
-		for (const def of parseCustomVocals(mml)) registerCustomVocal(def);
+		if (!applyActiveOnly) {
+			resetCustomVocals();
+			for (const def of parseCustomVocals(mml)) registerCustomVocal(def);
+		}
 
 		const {
 			placements,
@@ -2467,27 +2480,30 @@ export const mountDAW = (
 			clampTrackCount: trackStates.length,
 		});
 		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量）を復元する
-		if (meta.instrument && INSTRUMENT_PRESETS[meta.instrument]) {
-			currentInstrument = meta.instrument;
-			options.onInstrumentChange?.(meta.instrument);
-		}
-		if (meta.drum && drumPatterns[meta.drum]) {
-			currentDrumPattern = meta.drum;
-			refs.drumSelect.value = meta.drum;
-			options.onDrumChange?.(meta.drum);
-		}
-		if (meta.volume !== undefined) {
-			masterVolume = meta.volume;
-			refs.masterVolume.value = String(meta.volume);
-			refs.masterVolumeLabel.textContent = `${meta.volume}%`;
-		}
-		if (meta.drumVolume !== undefined) {
-			drumVolume = meta.drumVolume;
-			refs.drumVolume.value = String(meta.drumVolume);
-			refs.drumVolumeLabel.textContent = `${meta.drumVolume}%`;
+		if (!applyActiveOnly) {
+			if (meta.instrument && INSTRUMENT_PRESETS[meta.instrument]) {
+				currentInstrument = meta.instrument;
+				options.onInstrumentChange?.(meta.instrument);
+			}
+			if (meta.drum && drumPatterns[meta.drum]) {
+				currentDrumPattern = meta.drum;
+				refs.drumSelect.value = meta.drum;
+				options.onDrumChange?.(meta.drum);
+			}
+			if (meta.volume !== undefined) {
+				masterVolume = meta.volume;
+				refs.masterVolume.value = String(meta.volume);
+				refs.masterVolumeLabel.textContent = `${meta.volume}%`;
+			}
+			if (meta.drumVolume !== undefined) {
+				drumVolume = meta.drumVolume;
+				refs.drumVolume.value = String(meta.drumVolume);
+				refs.drumVolumeLabel.textContent = `${meta.drumVolume}%`;
+			}
 		}
 		// トラック個別楽器を復元する（URLエンコーダがスペースを除去するため正規化して復元）
 		trackStates.forEach((t, i) => {
+			if (applyActiveOnly && i !== activeTrackIndex) return;
 			const name = normalizeInstrumentName(meta.trackInstruments?.[i] ?? "");
 			if (t.trackInstrument !== name) {
 				t.trackInstrument = name;
@@ -2496,6 +2512,7 @@ export const mountDAW = (
 		});
 		// トラックごとの v（ベロシティ）を復元する（GUIのベロシティスライダーに反映）
 		trackStates.forEach((t, i) => {
+			if (applyActiveOnly && i !== activeTrackIndex) return;
 			const v = trackVelocity.get(i);
 			if (v !== undefined && v !== t.volume) {
 				t.volume = v;
@@ -2505,15 +2522,26 @@ export const mountDAW = (
 
 		// 歌詞トラック（@@n）を各トラックの歌詞入力へ復元する（編集UIに反映）。
 		// 表示用かなは正規化済み音節を結合したもの（長音は母音かなに展開済み）。
-		for (const t of trackStates) {
-			t.lyrics = "";
-			t.lyricModel = ""; // 既定は「なし」（歌わない）
-			t.vocalVolume = DEFAULT_VOCAL_VOLUME;
-			t.vocalGate = 100;
-			t.vocalPan = 64;
-			t.vocalOctave = 0;
+		if (applyActiveOnly) {
+			const active = getActive();
+			active.lyrics = "";
+			active.lyricModel = ""; // 既定は「なし」（歌わない）
+			active.vocalVolume = DEFAULT_VOCAL_VOLUME;
+			active.vocalGate = 100;
+			active.vocalPan = 64;
+			active.vocalOctave = 0;
+		} else {
+			for (const t of trackStates) {
+				t.lyrics = "";
+				t.lyricModel = ""; // 既定は「なし」（歌わない）
+				t.vocalVolume = DEFAULT_VOCAL_VOLUME;
+				t.vocalGate = 100;
+				t.vocalPan = 64;
+				t.vocalOctave = 0;
+			}
 		}
 		lyrics?.forEach((lt) => {
+			if (applyActiveOnly && lt.trackId !== activeTrackIndex) return;
 			const t = trackStates[lt.trackId];
 			if (!t) return;
 			t.lyrics = lt.syllables.map((s) => s.kana).join("");
@@ -2530,6 +2558,7 @@ export const mountDAW = (
 		// スライダーが既定の100から離れるほど再生音量が二乗的に小さくなるバグになる。
 		// そのため、MML読込直後のノート速度は既定値へ戻し、トラック音量側だけに反映させる。
 		for (const p of placements) {
+			if (applyActiveOnly && p.trackIndex !== activeTrackIndex) continue;
 			const t = trackStates[p.trackIndex];
 			if (!t) continue;
 			t.core.addNote(p.startStep, p.pitch, {
@@ -2537,8 +2566,9 @@ export const mountDAW = (
 				velocity: DEFAULT_VELOCITY,
 			});
 		}
-		if (parsedBpm) setBpm(parsedBpm);
-		for (const t of trackStates) {
+		if (!applyActiveOnly && parsedBpm) setBpm(parsedBpm);
+		const targets = applyActiveOnly ? [getActive()] : trackStates;
+		for (const t of targets) {
 			t.core.setLoadMode(false);
 			t.core.addHistoryOnce();
 		}
@@ -2602,17 +2632,32 @@ export const mountDAW = (
 		selectedIndices: number[],
 	): void => {
 		stop();
-		clearAll();
-		for (const t of trackStates) t.core.setLoadMode(true);
-		// MIDI入力には歌詞情報がないので全トラックの歌詞を初期化する
-		for (const t of trackStates) {
-			t.lyrics = "";
-			t.lyricModel = "";
-			t.vocalVolume = DEFAULT_VOCAL_VOLUME;
-			t.vocalGate = 100;
-			t.vocalPan = 64;
-			t.vocalOctave = 0;
+		const applyActiveOnly = refs.applyActiveOnly?.checked ?? false;
+
+		if (applyActiveOnly) {
+			const active = getActive();
+			active.core.clearNotesWithoutHistory();
+			active.core.setLoadMode(true);
+			active.lyrics = "";
+			active.lyricModel = "";
+			active.vocalVolume = DEFAULT_VOCAL_VOLUME;
+			active.vocalGate = 100;
+			active.vocalPan = 64;
+			active.vocalOctave = 0;
+		} else {
+			clearAll();
+			for (const t of trackStates) t.core.setLoadMode(true);
+			// MIDI入力には歌詞情報がないので全トラックの歌詞を初期化する
+			for (const t of trackStates) {
+				t.lyrics = "";
+				t.lyricModel = "";
+				t.vocalVolume = DEFAULT_VOCAL_VOLUME;
+				t.vocalGate = 100;
+				t.vocalPan = 64;
+				t.vocalOctave = 0;
+			}
 		}
+
 		// advancedモードはMIDIトラックインデックスで1:1マッピング、simpleは役割別に自動分類
 		const { placements, bpm: parsedBpm } = isAdvanced
 			? extractMidiPlacementsByTrack(
@@ -2622,6 +2667,7 @@ export const mountDAW = (
 				)
 			: extractMidiPlacements(midi, selectedIndices);
 		for (const p of placements) {
+			if (applyActiveOnly && p.trackId !== activeTrackId) continue;
 			const t = trackStates.find((ts) => ts.config.id === p.trackId);
 			if (!t) continue;
 			t.core.addNote(p.startStep, p.pitch, {
@@ -2629,8 +2675,9 @@ export const mountDAW = (
 				velocity: p.velocity,
 			});
 		}
-		setBpm(Math.round(parsedBpm));
-		for (const t of trackStates) {
+		if (!applyActiveOnly) setBpm(Math.round(parsedBpm));
+		const targets = applyActiveOnly ? [getActive()] : trackStates;
+		for (const t of targets) {
 			t.core.setLoadMode(false);
 			t.core.addHistoryOnce();
 		}

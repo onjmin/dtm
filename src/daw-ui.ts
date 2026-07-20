@@ -60,6 +60,7 @@ export type DawUIRefs = {
 	mmlInput: HTMLTextAreaElement;
 	mmlLoadBtn: HTMLButtonElement;
 	mmlLoadNote: HTMLElement;
+	applyActiveOnly: HTMLInputElement;
 	shiftSelect: HTMLSelectElement;
 	shiftApplyBtn: HTMLButtonElement;
 	// macros
@@ -250,6 +251,11 @@ export const buildUI = (
         <button class="dtm-btn dtm-btn--primary" data-dtm="midi-search-open">MML検索</button>
       </div>
       <p class="dtm-load-note dtm-hidden" data-dtm="mml-load-note"></p>
+      <div class="dtm-row" style="margin-top:8px;">
+        <label class="dtm-checkbox-label" title="有効にすると、現在選択中のトラックのみ変更します">
+          <input type="checkbox" class="dtm-checkbox" data-dtm="apply-active-only"> 現在のトラックのみ対象とする
+        </label>
+      </div>
     </div>
   </details>
 
@@ -389,6 +395,7 @@ export const buildUI = (
 		mmlInput: sel("mml-input"),
 		mmlLoadBtn: sel("mml-load"),
 		mmlLoadNote: sel("mml-load-note"),
+		applyActiveOnly: sel("apply-active-only"),
 		shiftSelect: sel("shift-select"),
 		shiftApplyBtn: sel("shift-apply"),
 		macroClear: sel("macro-clear"),
