@@ -1006,19 +1006,27 @@
                     if (confirm('現在の編集内容が破棄されます。この履歴を読み込みますか？')) {
                         stopAllPreviews();
                         historyModalOverlay.classList.add('hidden');
+                        // MMLの解析＋ピアノロール再構築は同期処理で、曲が長いとメインスレッドを
+                        // 長時間ブロックする。せめて「処理中」が伝わるよう、暗幕を先に描画させて
+                        // から（setTimeout でペイントの隙間を作ってから）重い処理へ入る。
+                        const historyLoadOverlay = showLoadingOverlay(document.body);
                         setTimeout(() => {
-                            const carriedMode = item.mode;
-                            if (carriedMode !== currentMode) {
-                                currentMode = carriedMode;
-                                updateModeButtons(carriedMode);
-                                writeStored(MODE_STORAGE_KEY, carriedMode);
+                            try {
+                                const carriedMode = item.mode;
+                                if (carriedMode !== currentMode) {
+                                    currentMode = carriedMode;
+                                    updateModeButtons(carriedMode);
+                                    writeStored(MODE_STORAGE_KEY, carriedMode);
+                                }
+                                daw.destroy();
+                                mountEditor(currentMode, item.mml);
+                                mountPlayer(item.mml);
+                                lastSavedMml = item.mml;
+                                activateGracePeriod(10);
+                            } finally {
+                                historyLoadOverlay.remove();
                             }
-                            daw.destroy();
-                            mountEditor(currentMode, item.mml);
-                            mountPlayer(item.mml);
-                            lastSavedMml = item.mml;
-                            activateGracePeriod(10);
-                        }, 0);
+                        }, 30);
                     }
                 });
 
