@@ -1295,6 +1295,7 @@ export const mountMmlPlayer = (
 
 	const renderPlayhead = (step: number): void => {
 		const intStep = Math.floor(step);
+		playStep = intStep;
 		const beatIndex = Math.floor(step / STEPS_PER_BEAT) % 4;
 		for (let i = 0; i < 4; i++)
 			beatDots[i].classList.toggle("dtm-player-beat-dot--on", i === beatIndex);
@@ -1324,6 +1325,7 @@ export const mountMmlPlayer = (
 	};
 
 	const resetPlayhead = (): void => {
+		playStep = 0;
 		for (const d of beatDots) d.classList.remove("dtm-player-beat-dot--on");
 		barEl.textContent = "-";
 		chordEl.textContent = "";
@@ -1376,10 +1378,11 @@ export const mountMmlPlayer = (
 
 	let playing = false;
 	let skipSinging = false;
+	let playStep = 0;
 
 	const setPlayingUI = (on: boolean): void => {
 		playing = on;
-		playBtn.innerHTML = icon(on ? "stop" : "play", 12);
+		playBtn.innerHTML = icon(on ? "pause" : "play", 12);
 		playBtn.classList.toggle("dtm-player-play--stop", on);
 	};
 
@@ -1533,6 +1536,18 @@ export const mountMmlPlayer = (
 		finish();
 	};
 
+	// 一時停止。stop() と異なり再生位置はリセットせず、次の再生でその位置から再開する
+	// （エディタの再生ボタンと同じ「再生⇔一時停止」挙動）。
+	const pause = (): void => {
+		if (!playing) return;
+		seq.stop();
+		peekVoices()?.stopStream();
+		clearJumpTimers();
+		setPlayingUI(false);
+		if (activePlayer === instance) activePlayer = null;
+		options.onStop?.();
+	};
+
 	let isSeeking = false;
 
 	// シークバー操作。再生中ならその場で再生位置を切り替え、停止中は
@@ -1561,7 +1576,7 @@ export const mountMmlPlayer = (
 	});
 
 	playBtn.addEventListener("click", () => {
-		if (playing) stop();
+		if (playing) pause();
 		else play(Number(seekInput.value));
 	});
 
