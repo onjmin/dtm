@@ -1005,6 +1005,58 @@ export const DAW_CSS = `
   margin-left: 8px;
   font-weight: bold;
 }
+.dtm-player-seek-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dtm-player-seek {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 12px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.dtm-player-seek:disabled { cursor: default; opacity: 0.4; }
+.dtm-player-seek::-webkit-slider-runnable-track {
+  height: 6px;
+  background: var(--dtm-border2);
+  border: 2px solid var(--c-black);
+}
+.dtm-player-seek::-moz-range-track {
+  height: 6px;
+  background: var(--dtm-border2);
+  border: 2px solid var(--c-black);
+}
+.dtm-player-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 16px;
+  margin-top: -7px;
+  background: var(--dtm-primary);
+  border: 2px solid var(--c-black);
+  box-shadow: 2px 2px 0 var(--c-black);
+  cursor: pointer;
+}
+.dtm-player-seek::-moz-range-thumb {
+  width: 12px;
+  height: 16px;
+  background: var(--dtm-primary);
+  border: 2px solid var(--c-black);
+  box-shadow: 2px 2px 0 var(--c-black);
+  cursor: pointer;
+  border-radius: 0;
+}
+.dtm-player-time {
+  flex: 0 0 auto;
+  font-family: 'k8x12', monospace;
+  font-size: 11px;
+  color: var(--dtm-text);
+  white-space: nowrap;
+}
 .dtm-player-dots {
   margin-left: auto;
   display: flex;

@@ -997,6 +997,38 @@ export const mountMmlPlayer = (
 	head.append(playBtn, beatRow, dots, mmlHeader);
 	root.appendChild(head);
 
+	// シークバー（再生位置の表示・操作）
+	const seekRow = doc.createElement("div");
+	seekRow.className = "dtm-player-seek-row";
+
+	const seekInput = doc.createElement("input");
+	seekInput.type = "range";
+	seekInput.className = "dtm-player-seek";
+	seekInput.min = "0";
+	seekInput.max = String(Math.max(1, maxStep));
+	seekInput.step = "1";
+	seekInput.value = "0";
+	seekInput.disabled = trackIndices.length === 0;
+
+	const timeEl = doc.createElement("span");
+	timeEl.className = "dtm-player-time";
+	timeEl.textContent = "0:00 / 0:00";
+
+	seekRow.append(seekInput, timeEl);
+	root.appendChild(seekRow);
+
+	const formatTime = (step: number): string => {
+		const totalSec = Math.max(0, step * secondsPerStep);
+		const m = Math.floor(totalSec / 60);
+		const s = Math.floor(totalSec % 60);
+		return `${m}:${String(s).padStart(2, "0")}`;
+	};
+
+	const updateTimeLabel = (step: number): void => {
+		timeEl.textContent = `${formatTime(step)} / ${formatTime(maxStep)}`;
+	};
+	updateTimeLabel(0);
+
 	// 遅延通知メッセージ領域
 	const msgArea = doc.createElement("div");
 	msgArea.className = "dtm-player-message";
@@ -1267,6 +1299,10 @@ export const mountMmlPlayer = (
 		for (let i = 0; i < 4; i++)
 			beatDots[i].classList.toggle("dtm-player-beat-dot--on", i === beatIndex);
 		barEl.textContent = String(Math.floor(step / STEPS_PER_BAR) + 1);
+		if (!isSeeking) {
+			seekInput.value = String(Math.min(maxStep, Math.max(0, intStep)));
+			updateTimeLabel(intStep);
+		}
 		const chordName = stepChords[intStep] ?? "";
 		if (chordEl.textContent !== chordName) {
 			chordEl.textContent = chordName;
@@ -1291,6 +1327,8 @@ export const mountMmlPlayer = (
 		for (const d of beatDots) d.classList.remove("dtm-player-beat-dot--on");
 		barEl.textContent = "-";
 		chordEl.textContent = "";
+		seekInput.value = "0";
+		updateTimeLabel(0);
 		for (const view of laneViews) {
 			for (const t of view.tokens) t.el.classList.remove("is-active");
 			view.lane.scrollLeft = 0;
@@ -1358,8 +1396,11 @@ export const mountMmlPlayer = (
 		peekVoices()?.setVolume((trackVolume / 100) * (masterVolume / 100));
 	};
 
-	// 歌詞トラックを「絶対時刻ベースのストリーミング用」ノート列へ変換する（再生は常に step0 から）。
-	const buildStreamTracks = (): StreamVoiceTrack[] =>
+	// 歌詞トラックを「シーク開始位置（fromStep）基準の相対時刻」のストリーミング用
+	// ノート列へ変換する。音節はノートの発生順（index）で対応しているため、
+	// fromStep 以降のノートだけを、元の index を保ったまま抽出する必要がある
+	// （先頭から詰め直すと音節がズレる）。
+	const buildStreamTracks = (fromStep: number): StreamVoiceTrack[] =>
 		[...lyricTracks.entries()].map(([index, lt]) => {
 			const seqTrack = seqTracks.find((t) => Number(t.id) === index);
 			const sorted = [...(seqTrack?.notes ?? [])].sort(
@@ -1371,10 +1412,11 @@ export const mountMmlPlayer = (
 			const notes = [];
 			for (let i = 0; i < count; i++) {
 				const n = sorted[i];
+				if (n.startStep < fromStep) continue;
 				notes.push({
 					syllable: lt.syllables[i],
 					pitch: n.pitch + semis,
-					startSec: n.startStep * secondsPerStep,
+					startSec: (n.startStep - fromStep) * secondsPerStep,
 					durationSec: n.durationSteps * secondsPerStep * gate,
 				});
 			}
@@ -1393,9 +1435,11 @@ export const mountMmlPlayer = (
 
 	// 歌声がある場合は .koe ロード＋頭出し合成を待ってから、楽器と同じアンカーで
 	// ストリーミング再生を開始する。待機中に停止／別プレイヤー開始されたら起動しない。
-	const startWhenReady = async (): Promise<void> => {
+	// シーク位置（fromStep）からのノートを頭出しして渡すため、シーク後の再生でも
+	// 歌声は途切れずついてくる。
+	const startWhenReady = async (fromStep: number): Promise<void> => {
 		const streaming = voicesAvailable && lyricTracks.size > 0;
-		const tracks = streaming ? buildStreamTracks() : [];
+		const tracks = streaming ? buildStreamTracks(fromStep) : [];
 		if (streaming) {
 			const v = ensureVoices();
 			const overlay = showLoadingOverlay(body, {
@@ -1404,7 +1448,7 @@ export const mountMmlPlayer = (
 					if (!playing || activePlayer !== instance) return;
 					skipSinging = true;
 					overlay.remove();
-					seq.start(0);
+					seq.start(fromStep);
 				},
 			});
 			try {
@@ -1439,7 +1483,7 @@ export const mountMmlPlayer = (
 			}
 			if (!playing || activePlayer !== instance || skipSinging) return;
 		}
-		seq.start(0);
+		seq.start(fromStep);
 		if (streaming && !skipSinging) {
 			const v = ensureVoices();
 			// 楽器と同じ「曲既定音量×現在のマスタ音量」を歌声のゲインノードへ反映してから鳴らす。
@@ -1456,9 +1500,9 @@ export const mountMmlPlayer = (
 		}
 	};
 
-	const play = (): void => {
+	const play = (fromStep = 0): void => {
 		if (playing || trackIndices.length === 0) return;
-		if (checkConsentAndShow(() => play())) return;
+		if (checkConsentAndShow(() => play(fromStep))) return;
 		if (activePlayer && activePlayer !== instance) activePlayer.stop();
 		activePlayer = instance;
 		skipSinging = false;
@@ -1478,7 +1522,7 @@ export const mountMmlPlayer = (
 			// 待機中に停止／別プレイヤー開始されていたら起動しない。
 			if (!playing || activePlayer !== instance) return;
 			if (voicesAvailable && lyricTracks.size > 0) ensureVoices().reset();
-			await startWhenReady();
+			await startWhenReady(fromStep);
 		})();
 	};
 
@@ -1489,9 +1533,36 @@ export const mountMmlPlayer = (
 		finish();
 	};
 
+	let isSeeking = false;
+
+	// シークバー操作。再生中ならその場で再生位置を切り替え、停止中は
+	// 表示だけを更新して次回の再生開始位置として憶えておく。
+	const seekTo = (step: number): void => {
+		const clamped = Math.min(maxStep, Math.max(0, Math.round(step)));
+		renderPlayhead(clamped);
+		if (playing) {
+			seq.stop();
+			peekVoices()?.stopStream();
+			clearJumpTimers();
+			setPlayingUI(false);
+			play(clamped);
+		}
+	};
+
+	seekInput.addEventListener("pointerdown", () => {
+		isSeeking = true;
+	});
+	seekInput.addEventListener("input", () => {
+		renderPlayhead(Number(seekInput.value));
+	});
+	seekInput.addEventListener("change", () => {
+		isSeeking = false;
+		seekTo(Number(seekInput.value));
+	});
+
 	playBtn.addEventListener("click", () => {
 		if (playing) stop();
-		else play();
+		else play(Number(seekInput.value));
 	});
 
 	const destroy = (): void => {
