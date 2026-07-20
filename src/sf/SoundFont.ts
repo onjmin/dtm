@@ -176,7 +176,7 @@ const isDecayInstrument = (fontName: string): boolean => {
 	if (!match) return false;
 	const program = Math.floor(Number(match[1]) / 10);
 	if (0 <= program && program <= 15) return true; // Pianos, Chromatic Percussion
-	if (24 <= program && program <= 39) return true; // Guitars, Basses
+	if (24 <= program && program <= 37) return true; // Guitars, Basses (Synth Bass 38, 39 are sustain)
 	if (program === 46) return true; // Harp
 	if (104 <= program && program <= 119) return true; // Ethnic, Percussive
 	return false;
@@ -318,7 +318,7 @@ const adjustZone = async (
 
 					zone.buffer = newBuf;
 					zone.loopEnd =
-						zone.loopStart + (zone.loopEnd - zone.loopStart) * repeatCount;
+						zone.loopStart + (loopLengthFrame / rateRatio) * repeatCount;
 				} catch (e) {
 					console.warn(
 						"[SoundFont.loopExtension] Failed to extend loop buffer:",
