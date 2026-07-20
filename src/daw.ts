@@ -2689,10 +2689,32 @@ export const mountDAW = (
 	const overlayDuring = (fn: () => void): void => {
 		refs.overlay.hidden = false;
 		setLoading(true);
+
+		// 固定位置のモーダルローディング表示を追加
+		const globalOverlay = document.createElement("div");
+		globalOverlay.className = "dtm-overlay";
+		globalOverlay.style.position = "fixed";
+		globalOverlay.style.zIndex = "99999";
+		const spinner = document.createElement("div");
+		spinner.className = "dtm-spinner";
+		const fill = document.createElement("i");
+		fill.className = "dtm-spinner-fill";
+		spinner.appendChild(fill);
+		globalOverlay.appendChild(spinner);
+		const label = document.createElement("div");
+		label.className = "dtm-loading-label";
+		label.textContent = "処理中...";
+		globalOverlay.appendChild(label);
+		document.body.appendChild(globalOverlay);
+
 		setTimeout(() => {
-			fn();
-			refs.overlay.hidden = true;
-			setLoading(false);
+			try {
+				fn();
+			} finally {
+				refs.overlay.hidden = true;
+				setLoading(false);
+				globalOverlay.remove();
+			}
 		}, 30);
 	};
 
@@ -2847,36 +2869,44 @@ export const mountDAW = (
 
 		// マクロ
 		refs.macroClear.addEventListener("click", () => {
-			const active = getActive();
-			active.core.beginBatch();
-			active.core.clearNotesWithoutHistory();
-			active.core.endBatch();
-			active.core.saveHistory();
-			redrawAll();
+			overlayDuring(() => {
+				const active = getActive();
+				active.core.beginBatch();
+				active.core.clearNotesWithoutHistory();
+				active.core.endBatch();
+				active.core.saveHistory();
+				redrawAll();
+			});
 		});
 		refs.macroRandom.addEventListener("click", () => {
-			generateRandomPattern(getActive().core, {
-				stepsPerBar: renderConfig.stepsPerBar,
-				startStep: playStartStep,
-				pitchRangeStart: renderConfig.pitchRangeStart,
+			overlayDuring(() => {
+				generateRandomPattern(getActive().core, {
+					stepsPerBar: renderConfig.stepsPerBar,
+					startStep: playStartStep,
+					pitchRangeStart: renderConfig.pitchRangeStart,
+				});
+				redrawAll();
 			});
-			redrawAll();
 		});
 		refs.macroHarmonic.addEventListener("click", () => {
-			const chord = trackStates.find((t) => t.config.id === "chord");
-			if (!chord || activeTrackId === "chord") return;
-			applyHarmonicFilter(getActive().core, chord.core, {
-				stepsPerBar: renderConfig.stepsPerBar,
+			overlayDuring(() => {
+				const chord = trackStates.find((t) => t.config.id === "chord");
+				if (!chord || activeTrackId === "chord") return;
+				applyHarmonicFilter(getActive().core, chord.core, {
+					stepsPerBar: renderConfig.stepsPerBar,
+				});
+				redrawAll();
 			});
-			redrawAll();
 		});
 		refs.macroMono.addEventListener("click", () => {
-			const chord = trackStates.find((t) => t.config.id === "chord");
-			if (!chord || activeTrackId === "chord") return;
-			applyMonophonic(getActive().core, chord.core, {
-				stepsPerBar: renderConfig.stepsPerBar,
+			overlayDuring(() => {
+				const chord = trackStates.find((t) => t.config.id === "chord");
+				if (!chord || activeTrackId === "chord") return;
+				applyMonophonic(getActive().core, chord.core, {
+					stepsPerBar: renderConfig.stepsPerBar,
+				});
+				redrawAll();
 			});
-			redrawAll();
 		});
 
 		// 出力
