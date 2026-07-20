@@ -110,7 +110,7 @@ export const createSynth = (
 			const g = ctx.createGain();
 			osc.frequency.setValueAtTime(150, t0);
 			osc.frequency.exponentialRampToValueAtTime(50, t0 + 0.12);
-			g.gain.setValueAtTime(vol * 0.9, t0);
+			g.gain.setValueAtTime(vol * 0.135, t0);
 			g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
 			osc.connect(g).connect(destination);
 			osc.start(t0);
@@ -130,7 +130,7 @@ export const createSynth = (
 		filter.type = isSnareLike ? "bandpass" : "highpass";
 		filter.frequency.value = isSnareLike ? 2000 : 8000;
 		const g = ctx.createGain();
-		g.gain.setValueAtTime(vol * (isSnareLike ? 0.7 : 0.4), t0);
+		g.gain.setValueAtTime(vol * (isSnareLike ? 0.105 : 0.06), t0);
 		g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
 		src.connect(filter).connect(g).connect(destination);
 		src.start(t0);
