@@ -54,10 +54,10 @@ export const createSynth = (
 	// 呼び出し側には見えない（API 変更なし）。
 	const compressor = ctx.createDynamicsCompressor();
 	compressor.threshold.value = -12; // dB: この水準を超えると圧縮開始
-	compressor.knee.value = 6;        // dB: ソフトニーで自然な圧縮感
-	compressor.ratio.value = 8;       // 8:1 で強めに抑制しクリップを防ぐ
-	compressor.attack.value = 0.003;  // 3ms: トランジェントを逃さず捕捉
-	compressor.release.value = 0.15;  // 150ms: 音符間で素早く回復
+	compressor.knee.value = 6; // dB: ソフトニーで自然な圧縮感
+	compressor.ratio.value = 8; // 8:1 で強めに抑制しクリップを防ぐ
+	compressor.attack.value = 0.003; // 3ms: トランジェントを逃さず捕捉
+	compressor.release.value = 0.15; // 150ms: 音符間で素早く回復
 	compressor.connect(destination);
 
 	const playNote = (e: PlayNoteEvent): void => {
