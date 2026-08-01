@@ -223,17 +223,24 @@
 
         <!-- Player Interface -->
         <div class="game-win bg-pico-navy p-4 flex flex-col gap-4">
-            <!-- MML Input -->
+            <!-- MML Input & Sample Loaders -->
             <div class="flex flex-col gap-2">
-                <div class="flex items-center justify-between">
-                    <span class="text-pico-lavend text-xs">MML STRING:</span>
-                    <div class="flex gap-2">
-                        <button id="sample-instrument-btn" class="text-pico-cyan hover:text-pico-white text-[10px] underline cursor-pointer">LOAD BGM SAMPLE</button>
-                        <button id="sample-singing-btn" class="text-pico-pink hover:text-pico-white text-[10px] underline cursor-pointer">LOAD SINGING SAMPLE</button>
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-pico-gray/30 pb-1.5">
+                    <span class="text-pico-yellow text-xs font-bold tracking-widest uppercase">
+                        1. MML INPUT
+                    </span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-pico-lavend text-[10px]">PRESET SAMPLES:</span>
+                        <button id="sample-instrument-btn" class="px-2 py-0.5 bg-pico-black border border-pico-cyan text-pico-cyan hover:bg-pico-cyan hover:text-pico-black text-[10px] cursor-pointer">
+                            🎵 INSTRUMENT BGM
+                        </button>
+                        <button id="sample-singing-btn" class="px-2 py-0.5 bg-pico-black border border-pico-pink text-pico-pink hover:bg-pico-pink hover:text-pico-black text-[10px] cursor-pointer">
+                            🎤 SINGING BGM (koe)
+                        </button>
                     </div>
                 </div>
                 <textarea id="headless-mml-input"
-                    class="w-full h-24 p-2 bg-pico-black border-2 border-pico-gray text-pico-white font-mono text-xs focus:outline-none focus:border-pico-cyan"></textarea>
+                    class="w-full h-28 p-2 bg-pico-black border-2 border-pico-gray text-pico-white font-mono text-xs focus:outline-none focus:border-pico-cyan"></textarea>
             </div>
 
             <!-- Loop Config and Cues -->
@@ -289,51 +296,89 @@
                 </div>
             </div>
 
-            <!-- Controls and Event Log -->
-            <div class="flex flex-col md:flex-row gap-4 items-stretch">
-                <!-- Action Buttons -->
-                <div class="flex flex-col gap-2 shrink-0 justify-center">
-                    <button id="headless-play-btn"
-                        class="min-h-[40px] px-6 border-2 border-pico-orange bg-pico-black text-pico-orange text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
-                        ▶ PLAY BGM (playMML)
-                    </button>
-                    <button id="headless-play-singing-btn"
-                        class="min-h-[40px] px-6 border-2 border-pico-pink bg-pico-black text-pico-pink text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
-                        🎤 PLAY SINGING (playSingingMML)
-                    </button>
-                    <button id="headless-stop-btn"
-                        class="min-h-[40px] px-6 border-2 border-pico-red bg-pico-black text-pico-red text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
-                        ■ STOP
-                    </button>
-                    <div class="flex items-center gap-2 mt-1">
-                        <input type="checkbox" id="headless-sf-checkbox" class="accent-pico-orange">
-                        <label for="headless-sf-checkbox" class="text-pico-lavend text-[10px] cursor-pointer">USE SOUNDFONT</label>
+            <!-- Playback Action Buttons Grid -->
+            <div class="border border-pico-gray/40 bg-pico-black/40 p-3 flex flex-col gap-3">
+                <div class="text-pico-yellow text-xs font-bold tracking-widest uppercase border-b border-pico-gray/30 pb-1 flex justify-between items-center">
+                    <span>2. PLAYBACK CONTROLS</span>
+                    <span class="text-pico-lavend text-[10px] font-normal">Click any button below for instant playback</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <!-- Column 1: Built-in Lightweight Synth -->
+                    <div class="flex flex-col gap-2 p-2.5 bg-pico-black/50 border border-pico-cyan/30 rounded">
+                        <div class="text-pico-cyan text-[11px] font-bold tracking-wide flex items-center justify-between border-b border-pico-cyan/20 pb-1">
+                            <span>⚡ BUILT-IN LIGHTWEIGHT SYNTH</span>
+                            <span class="text-[9px] text-pico-lavend">内蔵軽量シンセ</span>
+                        </div>
+                        <button id="btn-play-mml-synth"
+                            class="py-2.5 px-3 border border-pico-cyan bg-pico-black text-pico-cyan hover:bg-pico-cyan hover:text-pico-black text-xs font-pixel text-left flex items-center justify-between cursor-pointer active:translate-y-[1px]">
+                            <span>▶ PLAY BGM</span>
+                            <span class="text-[9px] bg-pico-cyan/20 px-1 border border-pico-cyan/40">playMML()</span>
+                        </button>
+                        <button id="btn-play-singing-synth"
+                            class="py-2.5 px-3 border border-pico-pink bg-pico-black text-pico-pink hover:bg-pico-pink hover:text-pico-black text-xs font-pixel text-left flex items-center justify-between cursor-pointer active:translate-y-[1px]">
+                            <span>🎤 PLAY SINGING (koe)</span>
+                            <span class="text-[9px] bg-pico-pink/20 px-1 border border-pico-pink/40">playSingingMML()</span>
+                        </button>
                     </div>
-                    <button id="headless-note-btn"
-                        class="min-h-[30px] px-4 border border-pico-cyan bg-pico-black text-pico-cyan text-[10px] uppercase tracking-widest cursor-pointer font-pixel shadow-[2px_2px_0_#000] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none mt-1">
-                        ♪ PLAY NOTE (C4)
-                    </button>
-                    <button id="headless-chords-btn"
-                        class="min-h-[30px] px-4 border border-pico-yellow bg-pico-black text-pico-yellow text-[10px] uppercase tracking-widest cursor-pointer font-pixel shadow-[2px_2px_0_#000] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none mt-1">
-                        ▤ PLAY CHORDS (C-Dm-G-C)
-                    </button>
-                    <div class="flex items-center gap-2 mt-1">
-                        <span class="text-pico-lavend text-[10px]">VOLUME:</span>
-                        <input type="range" id="headless-vol" min="0" max="100" value="50"
-                            class="grow accent-pico-orange">
+
+                    <!-- Column 2: External Audio Source (SoundFont) -->
+                    <div class="flex flex-col gap-2 p-2.5 bg-pico-black/50 border border-pico-orange/30 rounded">
+                        <div class="text-pico-orange text-[11px] font-bold tracking-wide flex items-center justify-between border-b border-pico-orange/20 pb-1">
+                            <span>🎷 EXTERNAL SOUND ENGINE (SoundFont)</span>
+                            <span class="text-[9px] text-pico-lavend">外部音源フック</span>
+                        </div>
+                        <button id="btn-play-mml-sf"
+                            class="py-2.5 px-3 border border-pico-orange bg-pico-black text-pico-orange hover:bg-pico-orange hover:text-pico-black text-xs font-pixel text-left flex items-center justify-between cursor-pointer active:translate-y-[1px]">
+                            <span>▶ PLAY BGM</span>
+                            <span class="text-[9px] bg-pico-orange/20 px-1 border border-pico-orange/40">studio.play()</span>
+                        </button>
+                        <button id="btn-play-singing-sf"
+                            class="py-2.5 px-3 border border-pico-yellow bg-pico-black text-pico-yellow hover:bg-pico-yellow hover:text-pico-black text-xs font-pixel text-left flex items-center justify-between cursor-pointer active:translate-y-[1px]">
+                            <span>🎤 PLAY SINGING (koe)</span>
+                            <span class="text-[9px] bg-pico-yellow/20 px-1 border border-pico-yellow/40">studio.playSingingMML()</span>
+                        </button>
                     </div>
                 </div>
 
-                <!-- Event Console -->
-                <div class="grow flex flex-col border border-pico-gray/40 bg-pico-black/30 p-3 min-h-[120px] max-h-[160px] overflow-hidden">
-                    <div class="flex justify-between items-center border-b border-pico-gray/30 pb-1 mb-2">
-                        <span class="text-pico-green text-xs uppercase tracking-widest">CONSOLE OUTPUT</span>
-                        <button id="headless-console-clear"
-                            class="text-pico-lavend hover:text-pico-white text-[10px] cursor-pointer">CLEAR</button>
+                <div class="flex flex-col md:flex-row gap-4 items-stretch pt-2 border-t border-pico-gray/30">
+                    <!-- Stop & Volume Controls -->
+                    <div class="flex flex-col gap-2 shrink-0 w-full md:w-64">
+                        <button id="headless-stop-btn"
+                            class="py-2 px-4 border-2 border-pico-red bg-pico-black text-pico-red text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+                            ■ STOP PLAYBACK
+                        </button>
+
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="text-pico-lavend text-[10px]">MASTER VOL:</span>
+                            <input type="range" id="headless-vol" min="0" max="100" value="50"
+                                class="grow accent-pico-orange">
+                        </div>
+
+                        <!-- Test Triggers -->
+                        <div class="flex gap-2 mt-1 pt-2 border-t border-pico-gray/30">
+                            <button id="headless-note-btn"
+                                class="grow py-1 border border-pico-cyan bg-pico-black text-pico-cyan text-[10px] uppercase tracking-widest cursor-pointer font-pixel shadow-[2px_2px_0_#000] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none">
+                                ♪ NOTE (C4)
+                            </button>
+                            <button id="headless-chords-btn"
+                                class="grow py-1 border border-pico-yellow bg-pico-black text-pico-yellow text-[10px] uppercase tracking-widest cursor-pointer font-pixel shadow-[2px_2px_0_#000] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none">
+                                ▤ CHORDS
+                            </button>
+                        </div>
                     </div>
-                    <div id="headless-console"
-                        class="grow overflow-y-auto font-mono text-[10px] text-pico-silver flex flex-col gap-1 pr-1">
-                        <div class="text-pico-lavend">Console initialized. Ready to play BGM...</div>
+
+                    <!-- Event Console -->
+                    <div class="grow flex flex-col border border-pico-gray/40 bg-pico-black/30 p-3 min-h-[140px] max-h-[180px] overflow-hidden">
+                        <div class="flex justify-between items-center border-b border-pico-gray/30 pb-1 mb-2">
+                            <span class="text-pico-green text-xs uppercase tracking-widest">CONSOLE OUTPUT</span>
+                            <button id="headless-console-clear"
+                                class="text-pico-lavend hover:text-pico-white text-[10px] cursor-pointer">CLEAR</button>
+                        </div>
+                        <div id="headless-console"
+                            class="grow overflow-y-auto font-mono text-[10px] text-pico-silver flex flex-col gap-1 pr-1">
+                            <div class="text-pico-lavend">Console initialized. Ready to play BGM...</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -605,74 +650,95 @@ playMML(mmlString, {
             return { vol, loopOption, resolvedCues };
         };
 
-        document.getElementById("headless-play-btn").addEventListener("click", async () => {
+        const stopActivePlayback = () => {
             if (activeHeadlessPlayback) {
                 activeHeadlessPlayback.destroy();
                 activeHeadlessPlayback = null;
             }
+        };
 
+        // 1. Built-in Lightweight Synth - BGM
+        document.getElementById("btn-play-mml-synth").addEventListener("click", async () => {
+            stopActivePlayback();
             const mml = document.getElementById("headless-mml-input").value || HEADLESS_SAMPLE_MML;
             const { vol, loopOption, resolvedCues } = getPlayOptions();
-            const useSF = document.getElementById("headless-sf-checkbox").checked;
-            consoleLog(`Starting BGM (${useSF ? 'SoundFont' : 'Internal Synth'}). Loop: ${JSON.stringify(loopOption)}, Cues: ${resolvedCues.length} registered`, "text-pico-yellow");
-
+            consoleLog(`Starting BGM (Built-in Synth). Loop: ${JSON.stringify(loopOption)}`, "text-pico-cyan font-bold");
             try {
                 const audioContext = studio.audioContext;
-                if (audioContext.state === "suspended") {
-                    await audioContext.resume();
-                }
-                const playOpts = {
+                if (audioContext.state === "suspended") await audioContext.resume();
+                activeHeadlessPlayback = playMML(mml, {
                     volume: vol,
                     loop: loopOption,
                     cues: resolvedCues,
-                    onCue: (cueId) => {
-                        consoleLog(`CUE ACTIVATED: ${cueId}`, "text-pico-green font-bold");
-                    },
-                    onStop: () => {
-                        consoleLog("BGM playback stopped.", "text-pico-red");
-                    }
-                };
-                if (useSF) {
-                    activeHeadlessPlayback = studio.play(mml, playOpts);
-                } else {
-                    activeHeadlessPlayback = playMML(mml, {
-                        ...playOpts,
-                        audioContext
-                    });
-                }
+                    onCue: (id) => consoleLog(`CUE ACTIVATED: ${id}`, "text-pico-green font-bold"),
+                    onStop: () => consoleLog("BGM playback stopped.", "text-pico-red"),
+                    audioContext
+                });
             } catch (err) {
                 consoleLog(`Error playing BGM: ${err.message}`, "text-pico-red");
             }
         });
 
-        document.getElementById("headless-play-singing-btn").addEventListener("click", async () => {
-            if (activeHeadlessPlayback) {
-                activeHeadlessPlayback.destroy();
-                activeHeadlessPlayback = null;
-            }
-
+        // 2. Built-in Lightweight Synth - Singing (koe)
+        document.getElementById("btn-play-singing-synth").addEventListener("click", async () => {
+            stopActivePlayback();
             const mml = document.getElementById("headless-mml-input").value || HEADLESS_SINGING_SAMPLE_MML;
             const { vol, loopOption, resolvedCues } = getPlayOptions();
-            consoleLog(`Starting Singing BGM (playSingingMML). Loop: ${JSON.stringify(loopOption)}, Cues: ${resolvedCues.length} registered`, "text-pico-pink font-bold");
-
+            consoleLog(`Starting Singing BGM (Built-in Synth + koe). Loop: ${JSON.stringify(loopOption)}`, "text-pico-pink font-bold");
             try {
                 const audioContext = studio.audioContext;
-                if (audioContext.state === "suspended") {
-                    await audioContext.resume();
-                }
-                const playOpts = {
+                if (audioContext.state === "suspended") await audioContext.resume();
+                activeHeadlessPlayback = await playSingingMML(mml, {
                     volume: vol,
                     loop: loopOption,
                     cues: resolvedCues,
-                    onCue: (cueId) => {
-                        consoleLog(`CUE ACTIVATED: ${cueId}`, "text-pico-green font-bold");
-                    },
-                    onStop: () => {
-                        consoleLog("Singing BGM playback stopped.", "text-pico-red");
-                    },
-                    audioContext
-                };
-                activeHeadlessPlayback = await playSingingMML(mml, playOpts);
+                    onCue: (id) => consoleLog(`CUE ACTIVATED: ${id}`, "text-pico-green font-bold"),
+                    onStop: () => consoleLog("Singing BGM playback stopped.", "text-pico-red"),
+                    audioContext,
+                    singingVoices: studio.singingVoices
+                });
+            } catch (err) {
+                consoleLog(`Error playing Singing BGM: ${err.message}`, "text-pico-red");
+            }
+        });
+
+        // 3. External Sound Engine (SoundFont) - BGM
+        document.getElementById("btn-play-mml-sf").addEventListener("click", async () => {
+            stopActivePlayback();
+            const mml = document.getElementById("headless-mml-input").value || HEADLESS_SAMPLE_MML;
+            const { vol, loopOption, resolvedCues } = getPlayOptions();
+            consoleLog(`Starting BGM (External SoundFont Engine). Loop: ${JSON.stringify(loopOption)}`, "text-pico-orange font-bold");
+            try {
+                const audioContext = studio.audioContext;
+                if (audioContext.state === "suspended") await audioContext.resume();
+                activeHeadlessPlayback = studio.play(mml, {
+                    volume: vol,
+                    loop: loopOption,
+                    cues: resolvedCues,
+                    onCue: (id) => consoleLog(`CUE ACTIVATED: ${id}`, "text-pico-green font-bold"),
+                    onStop: () => consoleLog("BGM playback stopped.", "text-pico-red")
+                });
+            } catch (err) {
+                consoleLog(`Error playing BGM: ${err.message}`, "text-pico-red");
+            }
+        });
+
+        // 4. External Sound Engine (SoundFont) - Singing (koe)
+        document.getElementById("btn-play-singing-sf").addEventListener("click", async () => {
+            stopActivePlayback();
+            const mml = document.getElementById("headless-mml-input").value || HEADLESS_SINGING_SAMPLE_MML;
+            const { vol, loopOption, resolvedCues } = getPlayOptions();
+            consoleLog(`Starting Singing BGM (External SoundFont Engine + koe). Loop: ${JSON.stringify(loopOption)}`, "text-pico-yellow font-bold");
+            try {
+                const audioContext = studio.audioContext;
+                if (audioContext.state === "suspended") await audioContext.resume();
+                activeHeadlessPlayback = await studio.playSingingMML(mml, {
+                    volume: vol,
+                    loop: loopOption,
+                    cues: resolvedCues,
+                    onCue: (id) => consoleLog(`CUE ACTIVATED: ${id}`, "text-pico-green font-bold"),
+                    onStop: () => consoleLog("Singing BGM playback stopped.", "text-pico-red")
+                });
             } catch (err) {
                 consoleLog(`Error playing Singing BGM: ${err.message}`, "text-pico-red");
             }
@@ -682,7 +748,7 @@ playMML(mmlString, {
             if (activeHeadlessPlayback) {
                 activeHeadlessPlayback.destroy();
                 activeHeadlessPlayback = null;
-                consoleLog("Stopped playMML() and cleaned context.");
+                consoleLog("Stopped playback and cleaned context.");
             } else {
                 consoleLog("No active BGM playing.");
             }
@@ -696,7 +762,7 @@ playMML(mmlString, {
         });
 
         document.getElementById("headless-note-btn").addEventListener("click", async () => {
-            const useSF = document.getElementById("headless-sf-checkbox").checked;
+            const useSF = isSoundFont();
             const pitch = 60; // C4
             consoleLog(`Playing single note (C4) using ${useSF ? 'SoundFont' : 'Internal Synth'}`);
             try {
@@ -715,7 +781,7 @@ playMML(mmlString, {
             if (activeHeadlessPlayback) {
                 activeHeadlessPlayback.destroy();
             }
-            const useSF = document.getElementById("headless-sf-checkbox").checked;
+            const useSF = isSoundFont();
             const chordsStr = "C Dm G C";
             consoleLog(`Playing chords (${chordsStr}) using ${useSF ? 'SoundFont' : 'Internal Synth'}`);
             try {

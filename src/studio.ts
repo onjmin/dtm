@@ -34,6 +34,10 @@ import {
 	playNote,
 	playPlacements,
 } from "./headless-player";
+import {
+	type PlaySingingMmlOptions,
+	playSingingMML,
+} from "./headless-singing-player";
 import { INSTRUMENT_PRESETS } from "./instrument-presets";
 import {
 	createSingingVoices,
@@ -322,6 +326,18 @@ export type DtmStudio = {
 			"audioContext" | "destination" | "onPlayNote" | "onPlayDrum" | "synth"
 		>,
 	) => MmlPlayback;
+	/** UIなしで高品質な楽器再生（SoundFont）＋歌声合成を行う */
+	playSingingMML: (
+		mml: string,
+		options?: Omit<
+			PlaySingingMmlOptions,
+			"audioContext" | "destination" | "onPlayNote" | "onPlayDrum" | "synth"
+		>,
+	) => Promise<MmlPlayback>;
+	/** SoundFontへ PlayNoteEvent を鳴らす（headless API の onPlayNote フック用） */
+	playNoteEvent: (e: PlayNoteEvent) => void;
+	/** SoundFontへ PlayDrumEvent を鳴らす（headless API の onPlayDrum フック用） */
+	playDrumEvent: (e: PlayDrumEvent) => void;
 	/** SoundFontを用いた単音再生を行う */
 	playNote: (options: {
 		pitch: number;
@@ -1167,6 +1183,91 @@ export const createDtmStudio = async (
 		});
 	};
 
+	const playSingingMMLInstance = (
+		mml: string,
+		opts: Omit<
+			PlaySingingMmlOptions,
+			"audioContext" | "destination" | "onPlayNote" | "onPlayDrum" | "synth"
+		> = {},
+	): Promise<MmlPlayback> => {
+		const { placements } = parseMML(mml);
+		const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
+			(a, b) => a - b,
+		);
+		const isAdvancedMode = trackIndices.some((idx) => idx >= 4);
+		const playerPreset = defaultPreset;
+		void loadPreset(
+			playerPreset,
+			trackIndices.map(String),
+			isAdvancedMode ? "advanced" : "simple",
+		);
+
+		const playPlayerNote = (e: PlayNoteEvent): void => {
+			const trackIdx = Number(e.trackId);
+			const role = TRACK_ROLES[trackIdx] ?? "melody";
+			let sfInst = resolveSoundFont(
+				playerPreset,
+				role,
+				isAdvancedMode ? "advanced" : "simple",
+			);
+			if (!sfInst) {
+				void loadPreset(
+					playerPreset,
+					[role],
+					isAdvancedMode ? "advanced" : "simple",
+				);
+				sfInst = resolveSoundFont(
+					playerPreset,
+					role,
+					isAdvancedMode ? "advanced" : "simple",
+				);
+			}
+			if (!sfInst) return;
+			sfInst.play({
+				ctx: audioCtx,
+				destination: masterGain,
+				pitch: e.pitch,
+				volume: e.volume,
+				when: e.when,
+				duration: e.duration,
+			});
+		};
+
+		return playSingingMML(mml, {
+			...opts,
+			audioContext: audioCtx,
+			destination: masterGain,
+			synth: false,
+			singingVoices,
+			onPlayNote: playPlayerNote,
+			onPlayDrum: playDrum,
+			onResumeAudio: resumeAudio,
+		});
+	};
+
+	const playNoteEvent = (e: PlayNoteEvent): void => {
+		const idx = Number(e.trackId);
+		const role = TRACK_ROLES[idx] ?? "melody";
+		let sfInst = resolveSoundFont(defaultPreset, role, "simple");
+		if (!sfInst) {
+			void loadPreset(defaultPreset, [role], "simple");
+			sfInst = resolveSoundFont(defaultPreset, role, "simple");
+		}
+		if (!sfInst) return;
+		sfInst.play({
+			ctx: audioCtx,
+			destination: masterGain,
+			pitch: e.pitch,
+			volume: e.volume,
+			when: e.when,
+			duration: e.duration,
+		});
+	};
+
+	const playDrumEvent = (e: PlayDrumEvent): void => {
+		playDrum(e);
+	};
+
 	const playNote = async (options: {
 		pitch: number;
 		volume?: number;
@@ -1301,6 +1402,9 @@ export const createDtmStudio = async (
 		mountPlayer,
 		mountChordPlayer: mountChordPlayerInstance,
 		play,
+		playSingingMML: playSingingMMLInstance,
+		playNoteEvent,
+		playDrumEvent,
 		playNote,
 		playChords,
 		loadPreset,
