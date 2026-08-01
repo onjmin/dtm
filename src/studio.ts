@@ -136,6 +136,27 @@ const TRACK_ROLES = [
 	"t14",
 ] as const;
 
+/** trackId（名前付き文字列・t<N>・数値文字列）からインデックスと役割を逆引きする */
+const resolveTrackIdxAndRole = (
+	trackId: string,
+): { trackIdx: number; role: string } => {
+	const roleIdx = (TRACK_ROLES as readonly string[]).indexOf(trackId);
+	if (roleIdx >= 0) {
+		return { trackIdx: roleIdx, role: trackId };
+	}
+	if (trackId.startsWith("t")) {
+		const parsed = Number(trackId.slice(1));
+		const validIdx = Number.isNaN(parsed) ? 0 : parsed;
+		return {
+			trackIdx: validIdx,
+			role: TRACK_ROLES[validIdx] ?? `t${validIdx}`,
+		};
+	}
+	const parsed = Number(trackId);
+	const validIdx = Number.isNaN(parsed) ? 0 : parsed;
+	return { trackIdx: validIdx, role: TRACK_ROLES[validIdx] ?? `t${validIdx}` };
+};
+
 /** 同梱ワーカー（dist/voice-worker.js）の既定URLを import.meta 基準で解決する。 */
 const resolveDefaultVoiceWorkerUrl = (): string | undefined => {
 	try {
@@ -1145,19 +1166,19 @@ export const createDtmStudio = async (
 		]);
 
 		const playPlayerNote = (e: PlayNoteEvent): void => {
-			const idx = Number(e.trackId);
-			const overrideKey = playerTrackInstKeys.get(idx);
+			const { trackIdx, role } = resolveTrackIdxAndRole(e.trackId);
+			const overrideKey = playerTrackInstKeys.get(trackIdx);
 			let sfInst: SoundFontInstance | undefined;
 			if (overrideKey) {
 				sfInst = soundFonts.get(overrideKey);
 			} else {
-				const role = getRoleForTrackIndex(
-					idx,
+				const roleFromIdx = getRoleForTrackIndex(
+					trackIdx,
 					isAdvancedMode ? "advanced" : "simple",
 				);
 				sfInst = resolveSoundFont(
 					playerPreset,
-					role,
+					roleFromIdx,
 					isAdvancedMode ? "advanced" : "simple",
 				);
 			}
@@ -1203,8 +1224,7 @@ export const createDtmStudio = async (
 		);
 
 		const playPlayerNote = (e: PlayNoteEvent): void => {
-			const trackIdx = Number(e.trackId);
-			const role = TRACK_ROLES[trackIdx] ?? "melody";
+			const { role } = resolveTrackIdxAndRole(e.trackId);
 			let sfInst = resolveSoundFont(
 				playerPreset,
 				role,
@@ -1246,8 +1266,7 @@ export const createDtmStudio = async (
 	};
 
 	const playNoteEvent = (e: PlayNoteEvent): void => {
-		const idx = Number(e.trackId);
-		const role = TRACK_ROLES[idx] ?? "melody";
+		const { role } = resolveTrackIdxAndRole(e.trackId);
 		let sfInst = resolveSoundFont(defaultPreset, role, "simple");
 		if (!sfInst) {
 			void loadPreset(defaultPreset, [role], "simple");
