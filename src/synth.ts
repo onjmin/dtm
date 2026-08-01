@@ -49,6 +49,17 @@ export const createSynth = (
 	const attack = tone.attack ?? 0;
 	const gainScale = tone.gain ?? 1;
 
+	// 複数トラックが同時発音する際の合算クリッピングを防ぐ内部コンプレッサー。
+	// 全オシレータ／ノイズはここへ繋ぎ、compressor → destination へ出力する。
+	// 呼び出し側には見えない（API 変更なし）。
+	const compressor = ctx.createDynamicsCompressor();
+	compressor.threshold.value = -12; // dB: この水準を超えると圧縮開始
+	compressor.knee.value = 6;        // dB: ソフトニーで自然な圧縮感
+	compressor.ratio.value = 8;       // 8:1 で強めに抑制しクリップを防ぐ
+	compressor.attack.value = 0.003;  // 3ms: トランジェントを逃さず捕捉
+	compressor.release.value = 0.15;  // 150ms: 音符間で素早く回復
+	compressor.connect(destination);
+
 	const playNote = (e: PlayNoteEvent): void => {
 		const osc = ctx.createOscillator();
 		const gain = ctx.createGain();
@@ -83,9 +94,9 @@ export const createSynth = (
 			panner = ctx.createStereoPanner();
 			panner.pan.value = Math.max(-1, Math.min(1, e.pan));
 			gain.connect(panner);
-			panner.connect(destination);
+			panner.connect(compressor);
 		} else {
-			gain.connect(destination);
+			gain.connect(compressor);
 		}
 		osc.start(t0);
 		osc.stop(t0 + e.duration + 0.02);
@@ -112,7 +123,7 @@ export const createSynth = (
 			osc.frequency.exponentialRampToValueAtTime(50, t0 + 0.12);
 			g.gain.setValueAtTime(vol * 0.135, t0);
 			g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
-			osc.connect(g).connect(destination);
+			osc.connect(g).connect(compressor);
 			osc.start(t0);
 			osc.stop(t0 + 0.2);
 			osc.onended = () => osc.disconnect();
@@ -132,7 +143,7 @@ export const createSynth = (
 		const g = ctx.createGain();
 		g.gain.setValueAtTime(vol * (isSnareLike ? 0.105 : 0.06), t0);
 		g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-		src.connect(filter).connect(g).connect(destination);
+		src.connect(filter).connect(g).connect(compressor);
 		src.start(t0);
 		src.stop(t0 + dur);
 		src.onended = () => {
