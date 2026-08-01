@@ -165,11 +165,15 @@ export const playSingingMML = async (
 		onCue: options.onCue,
 		getAudioTime: () => ctx.currentTime,
 		onPlayNote: (e) => {
-			// trackId は名前付き文字列（"melody" 等）なので、逆引きでインデックスを得る。
+			// trackId は名前付き文字列（"melody" 等）または "t4" のような形式なので、インデックスを抽出する
 			const namedIdx = TRACK_ID_BY_INDEX.indexOf(
 				e.trackId as (typeof TRACK_ID_BY_INDEX)[number],
 			);
-			const trackIdx = namedIdx >= 0 ? namedIdx : Number(e.trackId);
+			let trackIdx = namedIdx >= 0 ? namedIdx : Number(e.trackId);
+			if (Number.isNaN(trackIdx) && e.trackId.startsWith("t")) {
+				trackIdx = Number(e.trackId.slice(1));
+			}
+
 			if (lyricTracks.has(trackIdx)) return;
 			options.onPlayNote?.(e);
 			synth?.playNote(e);
