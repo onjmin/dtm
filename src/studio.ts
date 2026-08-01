@@ -771,8 +771,8 @@ export const createDtmStudio = async (
 		}
 
 		const playNote = (e: PlayNoteEvent): void => {
-			// トラックインデックスを trackId から逆引き（"melody"→0, "t2"→2 等）
-			const trackIdx = tracks.findIndex((t) => t.id === e.trackId);
+			// トラックインデックスを trackId から逆引き（"melody"→0, "t2"→2, "t9"→9 等）
+			const { trackIdx, role } = resolveTrackIdxAndRole(e.trackId);
 			const overrideKey =
 				trackIdx >= 0 ? trackInstOverrides.get(trackIdx) : undefined;
 			let sfInst: SoundFontInstance | undefined;
@@ -781,7 +781,7 @@ export const createDtmStudio = async (
 			} else {
 				sfInst = resolveSoundFont(
 					editorPreset,
-					e.trackId,
+					role,
 					isAdvancedMode ? "advanced" : "simple",
 				);
 			}
@@ -1211,34 +1211,60 @@ export const createDtmStudio = async (
 			"audioContext" | "destination" | "onPlayNote" | "onPlayDrum" | "synth"
 		> = {},
 	): Promise<MmlPlayback> => {
-		const { placements } = parseMML(mml);
-		const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
-			(a, b) => a - b,
+		const parsed = parseMML(mml, {});
+		const meta = parsed.meta ?? {};
+		const playerPreset =
+			meta.instrument && INSTRUMENT_PRESETS[meta.instrument]
+				? meta.instrument
+				: defaultPreset;
+
+		const isAdvancedMode =
+			meta.mode === "advanced" ||
+			parsed.placements.some((p) => p.trackIndex >= 4);
+
+		const trackIndices = [
+			...new Set(parsed.placements.map((p) => p.trackIndex)),
+		];
+		const trackIds = trackIndices.map((idx) =>
+			getRoleForTrackIndex(idx, isAdvancedMode ? "advanced" : "simple"),
 		);
-		const isAdvancedMode = trackIndices.some((idx) => idx >= 4);
-		const playerPreset = defaultPreset;
-		void loadPreset(
-			playerPreset,
-			trackIndices.map(String),
-			isAdvancedMode ? "advanced" : "simple",
-		);
+		const loadTrackIds = trackIds.length > 0 ? trackIds : [...TRACK_ROLES];
+
+		const playerTrackInstKeys = new Map<number, string>();
+		const loadPlayerTrackInstruments = async (): Promise<void> => {
+			if (!meta.trackInstruments) return;
+			await listReady;
+			for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
+				const key = resolveNameToKey(name);
+				if (!key) continue;
+				playerTrackInstKeys.set(Number(idxStr), key);
+				await loadInstrument(key);
+			}
+		};
+
+		void Promise.all([
+			loadPreset(
+				playerPreset,
+				loadTrackIds,
+				isAdvancedMode ? "advanced" : "simple",
+			),
+			loadPlayerTrackInstruments(),
+		]);
 
 		const playPlayerNote = (e: PlayNoteEvent): void => {
-			const { role } = resolveTrackIdxAndRole(e.trackId);
-			let sfInst = resolveSoundFont(
-				playerPreset,
-				role,
-				isAdvancedMode ? "advanced" : "simple",
-			);
-			if (!sfInst) {
-				void loadPreset(
-					playerPreset,
-					[role],
+			const { trackIdx, role } = resolveTrackIdxAndRole(e.trackId);
+			const overrideKey = playerTrackInstKeys.get(trackIdx);
+			let sfInst: SoundFontInstance | undefined;
+			if (overrideKey) {
+				sfInst = soundFonts.get(overrideKey);
+			} else {
+				const roleFromIdx = getRoleForTrackIndex(
+					trackIdx,
 					isAdvancedMode ? "advanced" : "simple",
 				);
 				sfInst = resolveSoundFont(
 					playerPreset,
-					role,
+					roleFromIdx,
 					isAdvancedMode ? "advanced" : "simple",
 				);
 			}
