@@ -1,61 +1,41 @@
 /**
- * playSingingMML — 歌声付き（@@n 歌詞トラック）のヘッドレス MML 再生。【未実装スタブ】
+ * playSingingMML — 歌声付き（@@n 歌詞トラック）のヘッドレス MML 再生。
  *
  * 楽器・ドラムのみの {@link playMML} とは別関数として切り出す。歌声は重い WORLD 再合成・
  * worker のホスティング・非同期プリロードを伴うため、軽量な playMML に混ぜず分離する方針。
  * 中身は実質「mountMmlPlayer の音響経路（sequencer + 内蔵synth + 歌声ストリーム配線）から
- * DOM を抜いたもの」になる予定。
- *
- * ─────────────────────────────────────────────────────────────────────────
- * 実装メモ / 懸念事項（実装する人へ）
- * ─────────────────────────────────────────────────────────────────────────
- *
- * ■ 全体の構成（実装方針）
- *   1. parseMML(mml, { collectLyrics: true }) で placements / lyrics / meta を取る。
- *   2. 楽器トラックは playMML と同じく seqTracks 化 → createSequencer + createSynth で再生。
- *   3. 歌声は createSingingVoices(ctx, destination, { voiceWorkerUrl }) を生成し、
- *      mml-player.ts の buildStreamTracks 相当で StreamVoiceTrack[] を構築。
- *   4. loadModels → warm を await（ここがローディング相当）。完了後に
- *      seq.start(0) と voices.startStream(tracks, seq.getStartTime()) を「同じアンカー」で開始。
- *      ※ 既存の正準実装は mml-player.ts の startWhenReady()。ほぼそのまま流用できる。
- *
- * ■ 非同期プリロードがあるため、この関数は Promise を返す（fire-and-forget にしない）。
- *   loadModels/warm の完了を待ってから resolve する。待機中に stop された場合は起動しない
- *   ガードが要る（mml-player.ts の `if (!playing || activePlayer !== instance) return;` 相当）。
- *
- * ■ worker URL は利用側がホストする（必須）。createSingingVoices の voiceWorkerUrl に渡す。
- *   省略時はメインスレッド合成にフォールバックするが、BGM 用途では worker 必須を推奨。
- *   あるいは既存の singingVoices インスタンスを注入できるようにする（createDtmStudio と同様）。
- *
- * ■【最大の懸念】シームレスループと歌声ストリームが噛み合わない
- *   - 今回 sequencer に入れたループは「先読みタイムラインを永久に再アーム」する方式
- *     （sequencer.ts の loopBase += loopLengthSec）。楽器はこれで継ぎ目なくループする。
- *   - 一方 startStream は【1セッション制】。startStream を呼び直すと streamSession が増えて
- *     前のループが中断される（lyrics.ts:1402 / 1421）。よって「次周を裏で先行スケジュール」は
- *     前周をキャンセルしてしまうため不可。
- *   - さらに先読みは STREAM_LOOKAHEAD_SEC = 1.5 秒（lyrics.ts:1276）。曲末ぎりぎりで
- *     startStream を再発行すると、まだ合成待ちだった末尾〜1.5秒の歌が毎周ドロップする。
- *   → 「境界で呼び直す」方式は継ぎ目が汚れる/歌が欠ける。採用しないこと。
- *
- * ■【推奨する解】startStream 自体をループ対応にする（lyrics.ts の小改修）
- *   sequencer.ts と同じ要領で、startStream({ loopLengthSec }) を受け取り、runTrack の
- *   items を一巡したら i=0 に戻して内部オフセットへ loopLengthSec を加算する。
- *   1セッションのまま先読みが途切れず、継ぎ目もドロップも出ない。loopLengthSec は楽器側
- *   （sequencer の loopLengthSec）と同一値を共有すれば、伴奏と歌が同周期で永久に揃う。
- *   ※ この改修が入るまでは loop:true を歌入りで使うとズレる。下のガード参照。
- *
- * ■ AudioContext / visibility は playMML と同じ方針（ctx 所有権で suspend 権限を分ける）。
- *   ただし注入 ctx + 注入 destination を createSingingVoices にもそのまま渡すこと
- *   （歌声と楽器を同じミキサーへ流す）。
- *
- * ■ stop/destroy では seq.stop() に加えて voices.stopStream()（+ 内部生成なら ctx.close）
- *   とモデルの後始末（reset）を忘れない。
- *
- * 関連: {@link playMML}（楽器のみ）, mml-player.ts（DOM版の正準実装）, lyrics.ts（歌声合成）。
+ * DOM を抜いたもの」。
  */
 
+import { DRUM_PATTERNS, type DrumPattern } from "./drum-config";
 import type { MmlPlayback, PlayMmlOptions } from "./headless-player";
-import type { SingingVoices } from "./lyrics";
+import {
+	createSingingVoices,
+	PREWARM_NOTES,
+	panToStereo,
+	parseCustomVocals,
+	type SingingVoices,
+	type StreamVoiceNote,
+	type StreamVoiceTrack,
+	vocalVolumeToGain,
+} from "./lyrics";
+import { parseMML } from "./mml-parser";
+import {
+	createSequencer,
+	resolveLoopPoint,
+	type SequencerTrack,
+} from "./sequencer";
+import { createSynth, type Synth } from "./synth";
+import type { Note } from "./types";
+import {
+	DEFAULT_BPM,
+	DEFAULT_GATE,
+	DEFAULT_PAN,
+	DEFAULT_VOCAL_VOLUME,
+} from "./types";
+
+const STEPS_PER_BEAT = 48;
+const STEPS_PER_BAR = 192;
 
 export type PlaySingingMmlOptions = PlayMmlOptions & {
 	/**
@@ -71,23 +51,278 @@ export type PlaySingingMmlOptions = PlayMmlOptions & {
 };
 
 /**
- * 歌声付き MML を画面なしで再生する。【未実装】
+ * 歌声付き MML を画面なしで再生する。
  *
- * @throws 現状は常に未実装エラーを投げる。実装方針は本ファイル冒頭の実装メモを参照。
+ * @param mml MML文字列
+ * @param options 再生オプション
+ * @returns MmlPlayback コントロールオブジェクトを含む Promise
  */
-export const playSingingMML = (
-	_mml: string,
-	_options: PlaySingingMmlOptions = {},
+export const playSingingMML = async (
+	mml: string,
+	options: PlaySingingMmlOptions = {},
 ): Promise<MmlPlayback> => {
-	// TODO: 実装する。手順は本ファイル冒頭の「実装メモ / 懸念事項」を参照。
-	//   1. parseMML(collectLyrics) → 楽器は playMML 同様に seq+synth、歌声は
-	//      createSingingVoices + buildStreamTracks 相当で配線（mml-player.ts を流用）。
-	//   2. loadModels → warm を await してから seq.start と startStream を同一アンカーで開始。
-	//   3. loop:true のシームレス化には startStream のループ対応（lyrics.ts 改修）が前提。
-	//      それが入るまで loop は歌だけ1周で尽きてズレる点に注意（暫定で警告 or 非対応扱い）。
-	return Promise.reject(
-		new Error(
-			"playSingingMML is not implemented yet. See implementation notes at the top of headless-singing-player.ts.",
-		),
+	const {
+		placements,
+		bpm: parsedBpm,
+		meta,
+		lyrics,
+	} = parseMML(mml, {
+		collectLyrics: true,
+	});
+	const lyricTracks = lyrics ?? new Map();
+	const customVocalByKey = new Map(
+		parseCustomVocals(mml).map((d) => [d.key, d]),
 	);
+	const bpm = parsedBpm ?? options.defaultBpm ?? DEFAULT_BPM;
+	const secondsPerStep = 60 / bpm / STEPS_PER_BEAT;
+
+	const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
+	const drumPattern: DrumPattern | null = meta.drum
+		? (drumPatternDict[meta.drum] ?? null)
+		: null;
+
+	const drumVolume = meta.drumVolume ?? 80;
+	const trackVolume = meta.volume ?? 100;
+	let masterVolume = options.volume ?? 100;
+
+	// placements を trackIndex ごとにまとめる
+	const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
+		(a, b) => a - b,
+	);
+	const seqTracks: SequencerTrack[] = trackIndices.map((index) => {
+		let id = 0;
+		const notes: Note[] = placements
+			.filter((p) => p.trackIndex === index)
+			.map((p) => ({
+				id: id++,
+				startStep: p.startStep,
+				durationSteps: p.durationSteps,
+				pitch: p.pitch,
+				velocity: p.velocity,
+			}));
+		return {
+			id: String(index),
+			volume: (trackVolume / 100) * masterVolume,
+			notes,
+		};
+	});
+
+	// AudioContext & Synth
+	const ownsCtx = !options.audioContext;
+	const ctx = options.audioContext ?? new AudioContext();
+	const destination = options.destination ?? ctx.destination;
+	const useSynth = options.synth ?? !options.onPlayNote;
+	const synth: Synth | null = useSynth ? createSynth(ctx, destination) : null;
+
+	const pauseWhenHidden = options.pauseWhenHidden ?? ownsCtx;
+
+	let playing = false;
+	let destroyed = false;
+	let voices: SingingVoices | null = options.singingVoices ?? null;
+
+	const buildStreamTracks = (fromStep: number): StreamVoiceTrack[] =>
+		[...lyricTracks.entries()].map(([index, lt]) => {
+			const seqTrack = seqTracks.find((t) => Number(t.id) === index);
+			const sorted = [...(seqTrack?.notes ?? [])].sort(
+				(a, b) => a.startStep - b.startStep,
+			);
+			const gate = (lt.gate ?? DEFAULT_GATE) / 100;
+			const semis = (lt.octave ?? 0) * 12;
+			const count = Math.min(sorted.length, lt.syllables.length);
+			const notes: StreamVoiceNote[] = [];
+			for (let i = 0; i < count; i++) {
+				const n = sorted[i];
+				if (n.startStep < fromStep) continue;
+				notes.push({
+					syllable: lt.syllables[i],
+					pitch: n.pitch + semis,
+					startSec: (n.startStep - fromStep) * secondsPerStep,
+					durationSec: n.durationSteps * secondsPerStep * gate,
+				});
+			}
+			return {
+				id: String(index),
+				model: lt.model,
+				volume: vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME),
+				pan: panToStereo(lt.pan ?? DEFAULT_PAN),
+				notes,
+			};
+		});
+
+	const seq = createSequencer({
+		getTracks: () => seqTracks,
+		getBpm: () => bpm,
+		getPlayStartStep: () => 0,
+		getDrumPattern: () => drumPattern,
+		getSoloTrackId: () => null,
+		getLoop: () => options.loop ?? false,
+		cues: options.cues,
+		onCue: options.onCue,
+		getAudioTime: () => ctx.currentTime,
+		onPlayNote: (e) => {
+			const trackIdx = Number(e.trackId);
+			if (lyricTracks.has(trackIdx)) return;
+			options.onPlayNote?.(e);
+			synth?.playNote(e);
+		},
+		onPlayDrum: (e) => {
+			const velocity =
+				e.velocity *
+				(drumVolume / 100) *
+				(trackVolume / 100) *
+				(masterVolume / 100);
+			options.onPlayDrum?.({ ...e, velocity });
+			synth?.playDrum({ ...e, velocity });
+		},
+		onTick: (step) => {
+			options.onTick?.(step);
+		},
+		onEnd: (_interrupted) => finish(),
+		stepsPerBar: STEPS_PER_BAR,
+	});
+
+	const finish = (): void => {
+		if (!playing) return;
+		playing = false;
+		voices?.stopStream();
+		options.onStop?.();
+	};
+
+	const onVisibilityChange = (): void => {
+		if (!playing) return;
+		if (document.hidden) {
+			void ctx.suspend();
+		} else if (ctx.state === "suspended") {
+			void ctx.resume();
+		}
+	};
+	if (pauseWhenHidden && typeof document !== "undefined") {
+		document.addEventListener("visibilitychange", onVisibilityChange);
+	}
+
+	const stop = (): void => {
+		if (!playing) return;
+		seq.stop();
+		finish();
+	};
+
+	const setVolume = (volume: number): void => {
+		masterVolume = volume;
+		const effectiveTrackVolume = (trackVolume / 100) * masterVolume;
+		for (const t of seqTracks) t.volume = effectiveTrackVolume;
+		voices?.setVolume((trackVolume / 100) * (masterVolume / 100));
+	};
+
+	const suspend = (): Promise<void> => ctx.suspend();
+	const resume = (): Promise<void> => ctx.resume();
+
+	const destroy = (): void => {
+		seq.stop();
+		playing = false;
+		destroyed = true;
+		voices?.reset();
+		if (pauseWhenHidden && typeof document !== "undefined") {
+			document.removeEventListener("visibilitychange", onVisibilityChange);
+		}
+		if (ownsCtx && ctx.state !== "closed") {
+			void ctx.close();
+		}
+	};
+
+	const playback: MmlPlayback = {
+		stop,
+		isPlaying: () => playing,
+		setVolume,
+		suspend,
+		resume,
+		destroy,
+	};
+
+	playing = true;
+	try {
+		const resumes: Promise<void>[] = [];
+		const r = options.onResumeAudio?.();
+		if (r) resumes.push(Promise.resolve(r));
+		if (ctx.state === "suspended") resumes.push(ctx.resume());
+		if (resumes.length > 0) await Promise.all(resumes);
+
+		if (!playing || destroyed) {
+			return playback;
+		}
+
+		if (lyricTracks.size > 0) {
+			if (!voices) {
+				voices = createSingingVoices(ctx, destination, {
+					voiceWorkerUrl: options.voiceWorkerUrl,
+				});
+			}
+
+			if (customVocalByKey.size > 0 && voices.registerVoicebanks) {
+				voices.registerVoicebanks(
+					Object.fromEntries([...customVocalByKey].map(([k, d]) => [k, d.url])),
+				);
+			}
+
+			const streamTracks = buildStreamTracks(0);
+			await voices.loadModels(streamTracks.map((t) => t.model));
+			if (!playing || destroyed) {
+				return playback;
+			}
+
+			await voices.warm(streamTracks, PREWARM_NOTES);
+			if (!playing || destroyed) {
+				return playback;
+			}
+
+			let loopLengthSec: number | undefined;
+			let loopStartSec: number | undefined;
+			const loopOption = options.loop ?? false;
+			if (loopOption) {
+				let loopStartStep = 0;
+				let loopEndStep = -1;
+				if (typeof loopOption === "object") {
+					loopStartStep = loopOption.start
+						? resolveLoopPoint(
+								loopOption.start,
+								bpm,
+								STEPS_PER_BAR,
+								secondsPerStep,
+							)
+						: 0;
+					const endVal = loopOption.end
+						? resolveLoopPoint(
+								loopOption.end,
+								bpm,
+								STEPS_PER_BAR,
+								secondsPerStep,
+							)
+						: null;
+					loopEndStep = endVal !== null ? endVal : -1;
+				}
+				if (loopEndStep === -1) {
+					let maxEndStep = 0;
+					for (const p of placements) {
+						maxEndStep = Math.max(maxEndStep, p.startStep + p.durationSteps);
+					}
+					loopEndStep = maxEndStep;
+				}
+				loopStartSec = loopStartStep * secondsPerStep;
+				loopLengthSec = (loopEndStep - loopStartStep) * secondsPerStep;
+			}
+
+			seq.start(0);
+			voices.setVolume((trackVolume / 100) * (masterVolume / 100));
+			voices.startStream(streamTracks, seq.getStartTime(), {
+				loopLengthSec,
+				loopStartSec,
+			});
+		} else {
+			seq.start(0);
+		}
+	} catch (err) {
+		stop();
+		throw err;
+	}
+
+	return playback;
 };

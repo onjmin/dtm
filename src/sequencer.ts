@@ -76,7 +76,7 @@ type TimelineEvent = {
 	duration: number; // 秒
 };
 
-const resolveLoopPoint = (
+export const resolveLoopPoint = (
 	point: LoopPoint,
 	_bpm: number,
 	stepsPerBar: number,

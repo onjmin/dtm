@@ -67,11 +67,28 @@ const bgm = playMML("@0 t120 o5 l8 ccggaag4 ffeeddc4", {
 });
 bgm.setVolume(50);
 
+```ts
 const chordPlayer = studio.mountChordPlayer(chordEl, "| C | G | Am | F |", {
   volume: 80,
 });
 chordPlayer.setVolume(65);
 ```
+
+---
+
+## 再生機能・API 一覧
+
+用途や UI の有無、歌声対応の有無に応じた各種再生関数が用意されています。
+
+| 関数名 | UI描画 (DOM) | 歌声対応 (`@@n`) | 戻り値 | 主な用途と効果 |
+| --- | --- | --- | --- | --- |
+| `playMML(mml, options)` | 不要 | 非対応 | `MmlPlayback` | 楽器・ドラムの MML ヘッドレス再生。軽量内蔵シンセで BGM シームレスループや Cues 同期イベントを発火。 |
+| `playSingingMML(mml, options)` | 不要 | **対応** | `Promise<MmlPlayback>` | 歌声付き MML のヘッドレス再生。画面なしで `.koe` / `klatt` 歌声モデルをプリロードし、伴奏と同期再生。 |
+| `playChords(chordStr, options)` | 不要 | 非対応 | `MmlPlayback` | コード進行のヘッドレス再生。`"\| C \| G \| Am \| F \|"` などの文字列からアルペジオ等の伴奏音を鳴らす。 |
+| `playNote(options)` | 不要 | 非対応 | `void` | 簡易単音発音。SE や音高確認のためのテスト発音。 |
+| `mountMmlPlayer(target, mml, options)` | **必要** | **対応** | `MmlPlayerInstance` | 再生専用 UI ビュー。トークン帯のハイライト、オートスクロール、歌声キャラクター表示を含む埋め込みプレイヤー。 |
+| `mountChordPlayer(target, chordStr, options)` | **必要** | 非対応 | `MmlPlayerInstance` | コード進行再生専用 UI コンポーネント。コードネーム表示と試聴操作。 |
+| `createDtmStudio()` / `mountEditor` | **必要** | **対応** | `DtmStudio` / `DawInstance` | フル機能ピアノロールエディタ UI。SoundFont 演奏、マウス打ち込み編集、歌声合成、録音機能を提供。 |
 
 ---
 
@@ -235,7 +252,28 @@ const bgm = playMML(mml, {
 });
 ```
 
-### 2. コード進行ヘッドレス再生 (`playChords`)
+### 2. 歌声付き MML ヘッドレス再生 (`playSingingMML`)
+
+歌声トラック（`@@n`）を含む MML を画面なしで再生するための関数です。歌声モデル（`klatt` または UTAU `.koe` 音源）の非同期プリロード・頭出し合成を行ってから再生を開始するため、`Promise<MmlPlayback>` を返します。
+
+```ts
+import { playSingingMML } from "@onjmin/dtm";
+
+const bgm = await playSingingMML("@@klatt カエルのウタガ;\nt120 o4 c d e f;", {
+  loop: true,               // シームレスループ対応（伴奏と歌声が同期して永久ループ）
+  volume: 80,
+  voiceWorkerUrl: "./voice-worker.js", // オプション（Worker を指定するとメインスレッドの負荷を軽減）
+});
+
+bgm.setVolume(50);   // 再生中も音量を即時反映
+bgm.stop();          // 停止
+bgm.destroy();       // 停止＋モデルと AudioContext の解放
+```
+
+- 楽器・ドラムの再生機能に加えて、`@@n` トラックの歌声を自動でロード・ストリーミング再生します。
+- `loop: true` や特定範囲の `loop` 指定時も、伴奏と歌声がピッタリ同期してシームレスにループします。
+
+### 3. コード進行ヘッドレス再生 (`playChords`)
 
 コード進行テキストを渡して、伴奏パターン（軽量シンセ）のみをヘッドレスで鳴らすための関数です。
 
@@ -261,8 +299,7 @@ chords.destroy(); // 停止＋AudioContextの解放
   - `"yatsume"`: 八つ目（特定のリズムパターン）
   - `"alternating"`: 交互に伴奏音を鳴らす
 
-> 歌声合成（`@@n` 歌詞トラック）はヘッドレス再生では未対応です（楽器・ドラムのみ）。
-> 歌声が必要なら `mountMmlPlayer` / `createDtmStudio` を使ってください。
+> 歌声合成（`@@n` 歌詞トラック）を含むヘッドレス再生には `playSingingMML` を使用してください。楽器・ドラムのみの軽量再生には `playMML` を使用できます。
 
 ---
 

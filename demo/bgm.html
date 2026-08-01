@@ -210,14 +210,14 @@
         <div class="game-win bg-pico-navy px-4 py-3 flex flex-col gap-3">
             <div class="flex items-center gap-3">
                 <span class="text-pico-orange text-xs uppercase tracking-widest shrink-0">► HEADLESS BGM PLAYER API</span>
-                <span class="text-pico-cyan text-xs font-pixel">playMML()</span>
+                <span class="text-pico-cyan text-xs font-pixel">playMML() / playSingingMML()</span>
             </div>
 
             <div class="text-[10px] text-pico-lavend bg-pico-black/40 p-2 border border-pico-cyan/20 leading-normal">
-                🎮 <span class="text-pico-white font-bold">ゲームにシームレスなBGMを組み込よう！</span><br>
-                このエリアでは、画面を使わずにBGMを裏側で再生するAPI <span class="text-pico-cyan">playMML()</span> の挙動をお試しいただけます。
+                🎮 <span class="text-pico-white font-bold">ゲームにシームレスなBGM（歌声付きも対応）を組み込もう！</span><br>
+                このエリアでは、画面を使わずにBGMを裏側で再生するAPI <span class="text-pico-cyan">playMML()</span> および歌声対応の <span class="text-pico-pink">playSingingMML()</span> の挙動をお試しいただけます。
                 「イントロ付きループ」や「小節/秒数指定でのループ境界制御」、「サビなど特定の瞬間を検知してゲーム内演出と同期させるイベント（Cues）」など、Webゲーム開発で大活躍する便利な機能を簡単にシミュレートできます。<br>
-                <span class="text-pico-yellow">💡 ※ 読み込み速度を爆速にするため、このデモでは軽量な内蔵シンセ（ピコピコ矩形波）で再生します。ゲーム本番では、好みの音源（SoundFontやWeb Audio音源など）へ自由に変更できます！</span>
+                <span class="text-pico-yellow">💡 ※ 読み込み速度を爆速にするため、このデモでは軽量な内蔵シンセ/ロボ声（klatt）で再生します。ゲーム本番では、好みの音源（SoundFontやUTAU .koe 音源など）へ自由に変更できます！</span>
             </div>
         </div>
 
@@ -227,6 +227,10 @@
             <div class="flex flex-col gap-2">
                 <div class="flex items-center justify-between">
                     <span class="text-pico-lavend text-xs">MML STRING:</span>
+                    <div class="flex gap-2">
+                        <button id="sample-instrument-btn" class="text-pico-cyan hover:text-pico-white text-[10px] underline cursor-pointer">LOAD BGM SAMPLE</button>
+                        <button id="sample-singing-btn" class="text-pico-pink hover:text-pico-white text-[10px] underline cursor-pointer">LOAD SINGING SAMPLE</button>
+                    </div>
                 </div>
                 <textarea id="headless-mml-input"
                     class="w-full h-24 p-2 bg-pico-black border-2 border-pico-gray text-pico-white font-mono text-xs focus:outline-none focus:border-pico-cyan"></textarea>
@@ -291,7 +295,11 @@
                 <div class="flex flex-col gap-2 shrink-0 justify-center">
                     <button id="headless-play-btn"
                         class="min-h-[40px] px-6 border-2 border-pico-orange bg-pico-black text-pico-orange text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
-                        ▶ PLAY BGM
+                        ▶ PLAY BGM (playMML)
+                    </button>
+                    <button id="headless-play-singing-btn"
+                        class="min-h-[40px] px-6 border-2 border-pico-pink bg-pico-black text-pico-pink text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+                        🎤 PLAY SINGING (playSingingMML)
                     </button>
                     <button id="headless-stop-btn"
                         class="min-h-[40px] px-6 border-2 border-pico-red bg-pico-black text-pico-red text-xs uppercase tracking-widest cursor-pointer font-pixel shadow-[3px_3px_0_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
@@ -454,18 +462,28 @@ playMML(mmlString, {
             ? 'http://localhost:40298/dist/index.mjs'
             : './index.mjs');
 
-        const { createDtmStudio, playMML, playNote, playChords, mountChordPlayer } = DTM;
+        const { createDtmStudio, playMML, playSingingMML, playNote, playChords, mountChordPlayer } = DTM;
 
         const studio = await createDtmStudio();
         window.studio = studio;
 
         const HEADLESS_SAMPLE_MML = `#drum=dance #volume=50;\n@0 t135 v100 o4e8 r8 e8 e8 g+8 r8 f+8 r8 c8 b8 b8 b8 g+8 r8 e8 g+8 >e8 r4 e8 e8 r8 d+8 c+8 <b8 >c+8 <b8 a8 g+8 r8 d8 r8 e8 e8 e8 e8 c+8 c+8 a8 f+8 g+8 f+8 e8 g+8 f+8 c8 g+8 f+8 e8 r8 e8 e8 c+8 r8 f+8 r8 g+8 f+8 e8 g+8 e8 r8 c+8 d+8;\n@1 t135 v100 o6e8 r1 r1 r1 r4 e8 b8 a24 b24 a24 g+8 f+8 g+8 r1 r1 r1 e8 f+8 g8 g+8 f+24 g+24 f+24 e8 g+8 e8;\n@2 t135 v100 o2f+8 >f+8 <f+8 >f+8 <f+8 >f+8 <f+8 >f+8 <g+8 >g+8 <g+8 >g+8 <g+8 >g+8 r16 <g+16 >g+8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <f+8 >f+8 <f+8 >f+8 <f+8 >f+8 <f+8 >f+8 <g+8 >g+8 <g+8 >g+8 <g+8 >g+8 <g+8 >g+8 <e8 >e8 <e8 >e8 <e8 >e8 <e8 >e8 <a8 >a8 <a8 >a8 <a8 >a8 <a8 >a8;\n@3 t135 v100 [o3f+o3ao4c+o4e]2 r2 [o3g+o4co4d+o4f+o5e]2 r2 [o3c+o3eo3g+o3b]2 r2 [o3eo3g+o3bo4d]2 r2 [o3f+o3ao4c+o4e]2 r2 [o3g+o4co4d+o4f+o5e]2 r2 [o3c+o3eo3g+o3b]2 r2 [o3f+o3ao4g+o4c+]2 [o4eo3ao3f+]2;\n#end;`;
+        const HEADLESS_SINGING_SAMPLE_MML = `@@klatt カエルのウタガ キコエテクカイ カエルのウタガ キコエテクカイ;\nt120 o4 c d e f e d c r e f g a g f e r c r c r c r c r c16c16d16d16e16e16f16f16 e d c;`;
+
         let activeHeadlessPlayback = null;
         let cueList = [
             { id: "intro_end", type: "step", val: 96 },
             { id: "chorus_start", type: "bar", val: 5 },
             { id: "bridge", type: "seconds", val: 12 }
         ];
+
+        document.getElementById("sample-instrument-btn")?.addEventListener("click", () => {
+            document.getElementById("headless-mml-input").value = HEADLESS_SAMPLE_MML;
+        });
+
+        document.getElementById("sample-singing-btn")?.addEventListener("click", () => {
+            document.getElementById("headless-mml-input").value = HEADLESS_SINGING_SAMPLE_MML;
+        });
 
         const consoleLog = (msg, className = "") => {
             const consoleEl = document.getElementById("headless-console");
@@ -550,16 +568,8 @@ playMML(mmlString, {
             input.style.opacity = enabled ? "1" : "0.4";
         });
 
-        document.getElementById("headless-play-btn").addEventListener("click", async () => {
-            if (activeHeadlessPlayback) {
-                activeHeadlessPlayback.destroy();
-                activeHeadlessPlayback = null;
-            }
-
-            const mml = document.getElementById("headless-mml-input").value || HEADLESS_SAMPLE_MML;
+        const getPlayOptions = () => {
             const vol = parseInt(document.getElementById("headless-vol").value);
-
-            // Resolve LoopConfig
             const loopEnabled = document.getElementById("headless-loop-enable").checked;
             let loopOption = false;
             if (loopEnabled) {
@@ -583,7 +593,6 @@ playMML(mmlString, {
                 };
             }
 
-            // Resolve cues
             const resolvedCues = cueList.filter(c => c.id.trim() !== "").map(c => {
                 const timeConfig = {};
                 timeConfig[c.type] = c.val;
@@ -593,6 +602,17 @@ playMML(mmlString, {
                 };
             });
 
+            return { vol, loopOption, resolvedCues };
+        };
+
+        document.getElementById("headless-play-btn").addEventListener("click", async () => {
+            if (activeHeadlessPlayback) {
+                activeHeadlessPlayback.destroy();
+                activeHeadlessPlayback = null;
+            }
+
+            const mml = document.getElementById("headless-mml-input").value || HEADLESS_SAMPLE_MML;
+            const { vol, loopOption, resolvedCues } = getPlayOptions();
             const useSF = document.getElementById("headless-sf-checkbox").checked;
             consoleLog(`Starting BGM (${useSF ? 'SoundFont' : 'Internal Synth'}). Loop: ${JSON.stringify(loopOption)}, Cues: ${resolvedCues.length} registered`, "text-pico-yellow");
 
@@ -622,6 +642,39 @@ playMML(mmlString, {
                 }
             } catch (err) {
                 consoleLog(`Error playing BGM: ${err.message}`, "text-pico-red");
+            }
+        });
+
+        document.getElementById("headless-play-singing-btn").addEventListener("click", async () => {
+            if (activeHeadlessPlayback) {
+                activeHeadlessPlayback.destroy();
+                activeHeadlessPlayback = null;
+            }
+
+            const mml = document.getElementById("headless-mml-input").value || HEADLESS_SINGING_SAMPLE_MML;
+            const { vol, loopOption, resolvedCues } = getPlayOptions();
+            consoleLog(`Starting Singing BGM (playSingingMML). Loop: ${JSON.stringify(loopOption)}, Cues: ${resolvedCues.length} registered`, "text-pico-pink font-bold");
+
+            try {
+                const audioContext = studio.audioContext;
+                if (audioContext.state === "suspended") {
+                    await audioContext.resume();
+                }
+                const playOpts = {
+                    volume: vol,
+                    loop: loopOption,
+                    cues: resolvedCues,
+                    onCue: (cueId) => {
+                        consoleLog(`CUE ACTIVATED: ${cueId}`, "text-pico-green font-bold");
+                    },
+                    onStop: () => {
+                        consoleLog("Singing BGM playback stopped.", "text-pico-red");
+                    },
+                    audioContext
+                };
+                activeHeadlessPlayback = await playSingingMML(mml, playOpts);
+            } catch (err) {
+                consoleLog(`Error playing Singing BGM: ${err.message}`, "text-pico-red");
             }
         });
 

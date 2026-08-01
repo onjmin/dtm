@@ -1365,6 +1365,10 @@ export type StreamPlaybackOptions = {
 		note: StreamVoiceNote,
 		t0: number,
 	) => void;
+	/** シームレスループ用の1周の長さ（秒）。指定時は曲末に達したら音節インデックスを先頭に戻し内部オフセットへ加算する */
+	loopLengthSec?: number;
+	/** ループ再開位置（秒）。省略時は 0 */
+	loopStartSec?: number;
 };
 
 /**
@@ -1615,69 +1619,92 @@ export const createSingingVoices = (
 			forEachSungNote(track, (note, prevVowel) => {
 				items.push({ note, prevVowel });
 			});
+			if (items.length === 0) return;
 
 			const peak = Math.max(0.0001, track.volume);
+			const loopStartSec = opts?.loopStartSec ?? 0;
+			let loopOffsetSec = 0;
+			let pass = 0;
 
-			for (const { note, prevVowel } of items) {
-				if (session !== streamSession) return; // 中断
-				// 先読み上限を超えていれば、再生ヘッドが近づくまで待つ（合成を曲全体へ分散）。
-				// elapsed = ctx.currentTime - anchorTime が現在の再生位置（秒）。
-				while (
-					note.startSec - (ctx.currentTime - anchorTime) >
-					STREAM_LOOKAHEAD_SEC
-				) {
-					await new Promise((resolve) => setTimeout(resolve, STREAM_POLL_MS));
-					if (session !== streamSession) return;
-				}
-				// ソロ/ミュートをライブ判定。地平到達時点で対象外なら合成もスケジュールもしない。
-				if (opts?.isAudible && !opts.isAudible(track)) continue;
-				const t0 = anchorTime + note.startSec;
-
-				if (model.renderToCache && model.scheduleCached) {
-					const renderToCache = model.renderToCache;
-					const scheduleCached = model.scheduleCached;
-					// koe音源: 重い合成を await せずに非同期で走らせる。
-					// これにより、同じ先読み範囲にある後続の音符の合成リクエストも同時に Worker へ送信され、
-					// 特に和音などの同時発音における合成の遅延（スループットの頭打ち）を防ぐ。
-					void (async () => {
-						const key = await renderToCache(
-							note.syllable,
-							prevVowel,
-							note.pitch,
-							note.durationSec * 1000,
-						);
+			do {
+				for (const { note, prevVowel } of items) {
+					if (session !== streamSession) return; // 中断
+					if (pass > 0 && note.startSec < loopStartSec - 0.0001) {
+						continue;
+					}
+					if (
+						opts?.loopLengthSec &&
+						opts.loopLengthSec > 0 &&
+						note.startSec >= loopStartSec + opts.loopLengthSec - 0.0001
+					) {
+						continue;
+					}
+					const startSec = note.startSec + loopOffsetSec;
+					// 先読み上限を超えていれば、再生ヘッドが近づくまで待つ（合成を曲全体へ分散）。
+					// elapsed = ctx.currentTime - anchorTime が現在の再生位置（秒）。
+					while (
+						startSec - (ctx.currentTime - anchorTime) >
+						STREAM_LOOKAHEAD_SEC
+					) {
+						await new Promise((resolve) => setTimeout(resolve, STREAM_POLL_MS));
 						if (session !== streamSession) return;
-						if (key) {
-							// 予定時刻より50ms以上遅れて合成完了した場合は発音をスキップ（ミュート）して音ズレを防ぐ
-							const delay = ctx.currentTime - t0;
-							if (delay < 0.05) {
-								scheduleCached(key, t0, peak, track.pan);
-								opts?.onScheduled?.(track, note, t0);
-							} else {
-								console.warn(
-									`[dtm] Synthesizer late skip: ${note.syllable.kana} at ${note.startSec}s (delayed by ${delay.toFixed(3)}s)`,
-								);
-								opts?.onLateSkip?.(note, delay);
+					}
+					// ソロ/ミュートをライブ判定。地平到達時点で対象外なら合成もスケジュールもしない。
+					if (opts?.isAudible && !opts.isAudible(track)) continue;
+					const t0 = anchorTime + startSec;
+
+					if (model.renderToCache && model.scheduleCached) {
+						const renderToCache = model.renderToCache;
+						const scheduleCached = model.scheduleCached;
+						// koe音源: 重い合成を await せずに非同期で走らせる。
+						// これにより、同じ先読み範囲にある後続の音符の合成リクエストも同時に Worker へ送信され、
+						// 特に和音などの同時発音における合成の遅延（スループットの頭打ち）を防ぐ。
+						void (async () => {
+							const key = await renderToCache(
+								note.syllable,
+								prevVowel,
+								note.pitch,
+								note.durationSec * 1000,
+							);
+							if (session !== streamSession) return;
+							if (key) {
+								// 予定時刻より50ms以上遅れて合成完了した場合は発音をスキップ（ミュート）して音ズレを防ぐ
+								const delay = ctx.currentTime - t0;
+								if (delay < 0.05) {
+									scheduleCached(key, t0, peak, track.pan);
+									opts?.onScheduled?.(track, note, t0);
+								} else {
+									console.warn(
+										`[dtm] Synthesizer late skip: ${note.syllable.kana} at ${startSec}s (delayed by ${delay.toFixed(3)}s)`,
+									);
+									opts?.onLateSkip?.(note, delay);
+								}
 							}
-						}
-					})();
-				} else {
-					// klatt等（軽量・状態なし）: 絶対未来時刻へ直接スケジュール。
-					// await が無く同期で回るため、UI応答性のため1音ごとに制御を返す。
-					const when = t0 - ctx.currentTime;
-					model(note.syllable, {
-						trackId: "",
-						pitch: note.pitch,
-						velocity: 100,
-						volume: peak,
-						when,
-						duration: note.durationSec,
-						pan: track.pan,
-					});
-					opts?.onScheduled?.(track, note, t0);
-					await new Promise((resolve) => setTimeout(resolve, 0));
+						})();
+					} else {
+						// klatt等（軽量・状態なし）: 絶対未来時刻へ直接スケジュール。
+						// await が無く同期で回るため、UI応答性のため1音ごとに制御を返す。
+						const when = t0 - ctx.currentTime;
+						model(note.syllable, {
+							trackId: "",
+							pitch: note.pitch,
+							velocity: 100,
+							volume: peak,
+							when,
+							duration: note.durationSec,
+							pan: track.pan,
+						});
+						opts?.onScheduled?.(track, note, t0);
+						await new Promise((resolve) => setTimeout(resolve, 0));
+					}
 				}
-			}
+				if (opts?.loopLengthSec && opts.loopLengthSec > 0) {
+					loopOffsetSec += opts.loopLengthSec;
+					pass++;
+				} else {
+					break;
+				}
+			} while (session === streamSession);
 		};
 
 		// 全トラックを同時に走らせる（待たない）。各ループが別ワーカーを並列に駆動する。
