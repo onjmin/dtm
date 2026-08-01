@@ -77,6 +77,8 @@ export type PlayMmlOptions = {
 	onStop?: () => void;
 	/** 再生中のステップ更新（1/192小節ごと）時のコールバック */
 	onTick?: (step: number) => void;
+	/** 再生開始位置（ステップ単位）。指定すると途中から再生する。 */
+	startStep?: number;
 };
 
 export type MmlPlayback = {
@@ -159,7 +161,7 @@ export const playPlacements = (
 	const seq = createSequencer({
 		getTracks: () => seqTracks,
 		getBpm: () => bpm,
-		getPlayStartStep: () => 0,
+		getPlayStartStep: () => options.startStep ?? 0,
 		getDrumPattern: () => drumPattern,
 		getSoloTrackId: () => null,
 		getLoop: () => options.loop ?? false,
@@ -210,7 +212,7 @@ export const playPlacements = (
 		if (ctx.state === "suspended") resumes.push(ctx.resume());
 		if (resumes.length > 0) await Promise.all(resumes);
 		if (!playing) return; // 待機中に stop されていたら起動しない
-		seq.start(0);
+		seq.start(options.startStep ?? 0);
 	})();
 
 	const stop = (): void => {

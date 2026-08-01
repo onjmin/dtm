@@ -157,7 +157,7 @@ export const playSingingMML = async (
 	const seq = createSequencer({
 		getTracks: () => seqTracks,
 		getBpm: () => bpm,
-		getPlayStartStep: () => 0,
+		getPlayStartStep: () => options.startStep ?? 0,
 		getDrumPattern: () => drumPattern,
 		getSoloTrackId: () => null,
 		getLoop: () => options.loop ?? false,
@@ -276,7 +276,7 @@ export const playSingingMML = async (
 				);
 			}
 
-			const streamTracks = buildStreamTracks(0);
+			const streamTracks = buildStreamTracks(options.startStep ?? 0);
 			await voices.loadModels(streamTracks.map((t) => t.model));
 			if (!playing || destroyed) {
 				return playback;
@@ -323,14 +323,14 @@ export const playSingingMML = async (
 				loopLengthSec = (loopEndStep - loopStartStep) * secondsPerStep;
 			}
 
-			seq.start(0);
+			seq.start(options.startStep ?? 0);
 			voices.setVolume((trackVolume / 100) * (masterVolume / 100));
 			voices.startStream(streamTracks, seq.getStartTime(), {
 				loopLengthSec,
 				loopStartSec,
 			});
 		} else {
-			seq.start(0);
+			seq.start(options.startStep ?? 0);
 		}
 	} catch (err) {
 		stop();
