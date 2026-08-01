@@ -35,6 +35,9 @@ import { DEFAULT_BPM } from "./types";
 
 const STEPS_PER_BAR = 192;
 
+/** trackIndex → DAWと同じ trackId 文字列。studio.ts の楽器解決と合わせるために必要。 */
+const TRACK_ID_BY_INDEX = ["melody", "submelody", "bass", "chord"] as const;
+
 export type PlayMmlOptions = {
 	/** ループ設定（true=全体ループ、LoopConfig=特定範囲ループ、false/省略=ループなし） */
 	loop?: boolean | LoopConfig;
@@ -134,7 +137,11 @@ export const playPlacements = (
 				pitch: p.pitch,
 				velocity: p.velocity,
 			}));
-		return { id: String(index), volume: masterVolume, notes };
+		return {
+			id: TRACK_ID_BY_INDEX[index] ?? `t${index}`,
+			volume: masterVolume,
+			notes,
+		};
 	});
 
 	// ── AudioContext / 発音器 ──

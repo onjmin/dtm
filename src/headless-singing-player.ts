@@ -37,6 +37,9 @@ import {
 const STEPS_PER_BEAT = 48;
 const STEPS_PER_BAR = 192;
 
+/** trackIndex → DAWと同じ trackId 文字列。studio.ts の楽器解決と合わせるために必要。 */
+const TRACK_ID_BY_INDEX = ["melody", "submelody", "bass", "chord"] as const;
+
 export type PlaySingingMmlOptions = PlayMmlOptions & {
 	/**
 	 * 歌声合成 Worker（`voice-worker.js`）のURL。利用側がホストして渡す。
@@ -101,7 +104,7 @@ export const playSingingMML = async (
 				velocity: p.velocity,
 			}));
 		return {
-			id: String(index),
+			id: TRACK_ID_BY_INDEX[index] ?? `t${index}`,
 			volume: (trackVolume / 100) * masterVolume,
 			notes,
 		};
@@ -122,7 +125,9 @@ export const playSingingMML = async (
 
 	const buildStreamTracks = (fromStep: number): StreamVoiceTrack[] =>
 		[...lyricTracks.entries()].map(([index, lt]) => {
-			const seqTrack = seqTracks.find((t) => Number(t.id) === index);
+			const seqTrack = seqTracks.find(
+				(t) => t.id === (TRACK_ID_BY_INDEX[index] ?? `t${index}`),
+			);
 			const sorted = [...(seqTrack?.notes ?? [])].sort(
 				(a, b) => a.startStep - b.startStep,
 			);
@@ -141,7 +146,7 @@ export const playSingingMML = async (
 				});
 			}
 			return {
-				id: String(index),
+				id: TRACK_ID_BY_INDEX[index] ?? `t${index}`,
 				model: lt.model,
 				volume: vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME),
 				pan: panToStereo(lt.pan ?? DEFAULT_PAN),
@@ -160,7 +165,11 @@ export const playSingingMML = async (
 		onCue: options.onCue,
 		getAudioTime: () => ctx.currentTime,
 		onPlayNote: (e) => {
-			const trackIdx = Number(e.trackId);
+			// trackId は名前付き文字列（"melody" 等）なので、逆引きでインデックスを得る。
+			const namedIdx = TRACK_ID_BY_INDEX.indexOf(
+				e.trackId as (typeof TRACK_ID_BY_INDEX)[number],
+			);
+			const trackIdx = namedIdx >= 0 ? namedIdx : Number(e.trackId);
 			if (lyricTracks.has(trackIdx)) return;
 			options.onPlayNote?.(e);
 			synth?.playNote(e);
