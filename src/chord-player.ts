@@ -62,10 +62,11 @@ const parseToneMeta = (chords: string): string | null => {
 };
 
 /**
- * 入力文字列から `#metronome` または `#metronome=on` メタ行を読み取る。
+ * 入力文字列から `#metronome=off` メタ行を読み取る。
+ * 未指定時はデフォルトでメトロノームON。
  */
 const parseMetronomeMeta = (chords: string): boolean => {
-	return /^#\s*metronome(?:\s*=\s*on)?\s*$/im.test(chords);
+	return !/^#\s*metronome\s*=\s*off\s*$/im.test(chords);
 };
 
 /**
