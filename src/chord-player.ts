@@ -1375,9 +1375,10 @@ export const mountChordPlayer = (
 		// タイミングをユーザー操作コールスタック内に収めるため）
 		ownCtx ??= options.audioContext ? null : new AudioContext();
 		const ctx = options.audioContext ?? (ownCtx as AudioContext);
-		
+
 		// ユーザー操作の同期スタック内で resume を呼び出す（Safari等への対応）
-		const resumePromise = ctx.state === "suspended" ? ctx.resume() : Promise.resolve();
+		const resumePromise =
+			ctx.state === "suspended" ? ctx.resume() : Promise.resolve();
 
 		const cutGain = ctx.createGain();
 		cutGain.connect(ctx.destination);
@@ -1395,15 +1396,16 @@ export const mountChordPlayer = (
 		const myAbortId = ++loadAbortId;
 		setLoadingUI(true);
 
-		const wafPromise = (activeGmName && !_wafCache.has(activeGmName))
-			? loadWafFont(ctx, activeGmName)
-			: Promise.resolve(null);
+		const wafPromise =
+			activeGmName && !_wafCache.has(activeGmName)
+				? loadWafFont(ctx, activeGmName)
+				: Promise.resolve(null);
 
 		Promise.all([resumePromise, wafPromise]).then(() => {
 			if (loadAbortId !== myAbortId) return; // stop/seek でキャンセルされた
 			setLoadingUI(false);
 			startPlayback();
-			
+
 			// 初回 AudioContext 確保後に残り2楽器もバックグラウンドプリロード
 			preloadInstruments();
 		});
