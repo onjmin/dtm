@@ -1375,6 +1375,10 @@ export const mountChordPlayer = (
 		// タイミングをユーザー操作コールスタック内に収めるため）
 		ownCtx ??= options.audioContext ? null : new AudioContext();
 		const ctx = options.audioContext ?? (ownCtx as AudioContext);
+		
+		// ユーザー操作の同期スタック内で resume を呼び出す（Safari等への対応）
+		const resumePromise = ctx.state === "suspended" ? ctx.resume() : Promise.resolve();
+
 		const cutGain = ctx.createGain();
 		cutGain.connect(ctx.destination);
 		activeCut = { gain: cutGain, ctx };
@@ -1388,21 +1392,21 @@ export const mountChordPlayer = (
 			playInternal(startIdx, ctx, cutGain);
 		};
 
-		// WAF 音源が未ロードならスピナーを出してロード完了を待つ
-		if (activeGmName && !_wafCache.has(activeGmName)) {
-			const myAbortId = ++loadAbortId;
-			setLoadingUI(true);
-			loadWafFont(ctx, activeGmName).then(() => {
-				if (loadAbortId !== myAbortId) return; // stop/seek でキャンセルされた
-				setLoadingUI(false);
-				startPlayback();
-			});
-		} else {
-			// すでにキャッシュ済み（または square = WAF なし）は即時再生
+		const myAbortId = ++loadAbortId;
+		setLoadingUI(true);
+
+		const wafPromise = (activeGmName && !_wafCache.has(activeGmName))
+			? loadWafFont(ctx, activeGmName)
+			: Promise.resolve(null);
+
+		Promise.all([resumePromise, wafPromise]).then(() => {
+			if (loadAbortId !== myAbortId) return; // stop/seek でキャンセルされた
+			setLoadingUI(false);
 			startPlayback();
-		}
-		// 初回 AudioContext 確保後に残り2楽器もバックグラウンドプリロード
-		preloadInstruments();
+			
+			// 初回 AudioContext 確保後に残り2楽器もバックグラウンドプリロード
+			preloadInstruments();
+		});
 	};
 
 	/** 指定コードから再生し直す（停止中なら再生開始）。前の音は即座に切る */
