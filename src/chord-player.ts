@@ -485,19 +485,19 @@ export const mountChordPlayer = (
 	const ctrlBar = doc.createElement("div");
 	ctrlBar.className = "dtm-cp-ctrl";
 
-	// 再生/停止ボタン — 既存DAWと同じ .dtm-play クラス + icon() SVG
+	// 再生/停止ボタン — 既存DAW/MMLプレイヤーと同じ .dtm-player-play クラス + icon() SVG
 	const playBtn = doc.createElement("button");
 	playBtn.type = "button";
-	playBtn.className = "dtm-play";
+	playBtn.className = "dtm-player-play";
 
 	const setPlayBtnStyle = (playing: boolean) => {
 		if (playing) {
-			playBtn.classList.add("dtm-play--stop");
-			playBtn.innerHTML = icon("pause", 14);
+			playBtn.classList.add("dtm-player-play--stop");
+			playBtn.innerHTML = icon("pause", 12);
 			playBtn.title = "PAUSE";
 		} else {
-			playBtn.classList.remove("dtm-play--stop");
-			playBtn.innerHTML = icon("play", 14);
+			playBtn.classList.remove("dtm-player-play--stop");
+			playBtn.innerHTML = icon("play", 12);
 			playBtn.title = "PLAY";
 		}
 	};
@@ -511,7 +511,7 @@ export const mountChordPlayer = (
 		isLoading = loading;
 		playBtn.disabled = loading;
 		if (loading) {
-			playBtn.classList.remove("dtm-play--stop");
+			playBtn.classList.remove("dtm-player-play--stop");
 			playBtn.innerHTML = '<span class="dtm-cp-spinner"></span>';
 			playBtn.title = "Loading...";
 		} else {
@@ -1606,11 +1606,7 @@ export const mountChordPlayer = (
 			animation: dtm-cp-spin 0.7s linear infinite;
 			vertical-align: middle;
 		}
-		/* コード進行プレイヤーのPLAYボタンは通常のDAWより小さめでよい */
-		.dtm-cp-ctrl .dtm-play {
-			width: 24px;
-			height: 24px;
-		}
+
 		/* 楽器選択プルダウン（省スペースでスマホでも隠れない） */
 		.dtm-cp-instr-select {
 			background: rgba(255,255,255,0.06);

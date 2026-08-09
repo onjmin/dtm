@@ -1367,6 +1367,9 @@ export const DAW_CSS = `
   flex-wrap: wrap;
   gap: 8px;
 }
+.dtm-cp-ctrl .dtm-player-more-container {
+  margin-left: auto;
+}
 
 /* ループ切替ボタン */
 .dtm-cp-loop {
