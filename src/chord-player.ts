@@ -375,6 +375,8 @@ export const mountChordPlayer = (
 
 	let bpm = options.bpm ?? parseBpmMeta(chords) ?? 120;
 	let activeIndex = -1;
+	/** シークバーをドラッグ中かどうか（ドラッグ中は再生tickによる位置上書きを止める） */
+	let isSeeking = false;
 	let activePlayback: MmlPlayback | null = null;
 	let isPlaying = false;
 	let masterVolume = options.volume ?? 80;
@@ -476,8 +478,8 @@ export const mountChordPlayer = (
 	const setPlayBtnStyle = (playing: boolean) => {
 		if (playing) {
 			playBtn.classList.add("dtm-play--stop");
-			playBtn.innerHTML = icon("stop", 14);
-			playBtn.title = "STOP";
+			playBtn.innerHTML = icon("pause", 14);
+			playBtn.title = "PAUSE";
 		} else {
 			playBtn.classList.remove("dtm-play--stop");
 			playBtn.innerHTML = icon("play", 14);
@@ -605,9 +607,30 @@ export const mountChordPlayer = (
 	});
 	updateInstrButtons();
 
-	// 時間表示（右寄せ）
-	const timeSpan = doc.createElement("span");
-	timeSpan.className = "dtm-cp-time";
+	ctrlBar.appendChild(playBtn);
+	ctrlBar.appendChild(loopBtn);
+	ctrlBar.appendChild(metroBtn);
+	ctrlBar.appendChild(bpmGroup);
+	ctrlBar.appendChild(instrGroup);
+
+	// ── シークバー（MML再生専用プレイヤーと同じ .dtm-player-seek-row 構成） ──
+	const seekRow = doc.createElement("div");
+	seekRow.className = "dtm-player-seek-row";
+
+	const seekInput = doc.createElement("input");
+	seekInput.type = "range";
+	seekInput.className = "dtm-player-seek";
+	seekInput.min = "0";
+	seekInput.max = String(Math.max(0.01, totalSec));
+	seekInput.step = "0.01";
+	seekInput.value = "0";
+	seekInput.disabled = chordEvents.length === 0;
+
+	const timeEl = doc.createElement("span");
+	timeEl.className = "dtm-player-time";
+	timeEl.textContent = "0:00 / 0:00";
+
+	seekRow.append(seekInput, timeEl);
 
 	const formatTime = (sec: number) => {
 		const m = Math.floor(sec / 60);
@@ -615,16 +638,26 @@ export const mountChordPlayer = (
 		return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 	};
 	const updateTimeDisplay = (currentSec: number) => {
-		timeSpan.textContent = `${formatTime(currentSec)} / ${formatTime(totalSec)}`;
+		timeEl.textContent = `${formatTime(currentSec)} / ${formatTime(totalSec)}`;
 	};
 	updateTimeDisplay(0);
 
-	ctrlBar.appendChild(playBtn);
-	ctrlBar.appendChild(loopBtn);
-	ctrlBar.appendChild(metroBtn);
-	ctrlBar.appendChild(bpmGroup);
-	ctrlBar.appendChild(instrGroup);
-	ctrlBar.appendChild(timeSpan);
+	// 再生済み区間をYouTube風に色塗りするための --fill 更新
+	const syncSeekFill = (): void => {
+		const max = Number(seekInput.max) || 1;
+		const pct = (Number(seekInput.value) / max) * 100;
+		seekInput.style.setProperty("--fill", `${pct}%`);
+	};
+	syncSeekFill();
+
+	/** 再生中の tick／再生開始などから位置表示をまとめて更新する */
+	const updateSeekUI = (sec: number): void => {
+		updateTimeDisplay(sec);
+		if (!isSeeking) {
+			seekInput.value = String(Math.max(0, Math.min(totalSec, sec)));
+			syncSeekFill();
+		}
+	};
 
 	// ── Context Menu (コード進行を表示 / コード進行とは / 埋め込む / コード進行コピー) ──
 	const menuContainer = doc.createElement("div");
@@ -664,6 +697,7 @@ export const mountChordPlayer = (
 
 	ctrlBar.appendChild(menuContainer);
 	container.appendChild(ctrlBar);
+	container.appendChild(seekRow);
 
 	// Context menu handlers
 	const toggleMenu = (show?: boolean): void => {
@@ -954,7 +988,9 @@ export const mountChordPlayer = (
 					chordEvents[chordEvents.length - 1].duration
 				: 0;
 		bpmInput.value = String(bpm);
-		updateTimeDisplay(isPlaying ? playOffsetSec : 0);
+		seekInput.max = String(Math.max(0.01, totalSec));
+		seekInput.disabled = chordEvents.length === 0;
+		updateSeekUI(isPlaying ? playOffsetSec : 0);
 		if (isPlaying) seekTo(Math.max(0, activeIndex));
 	};
 
@@ -1008,21 +1044,6 @@ export const mountChordPlayer = (
 		}
 	};
 	// AudioContext はユーザー操作後に生成されるため、preload は play() 初回呼び出し後に委ねる
-
-	// ── プログレスバー（クリックでシーク） ──
-	const progress = doc.createElement("div");
-	progress.className = "dtm-cp-progress";
-	progress.title = "クリックでシーク";
-	const progressFill = doc.createElement("div");
-	progressFill.className = "dtm-cp-progress-fill";
-	progress.appendChild(progressFill);
-	container.appendChild(progress);
-
-	const setProgress = (ratio: number) => {
-		const clamped = Math.max(0, Math.min(1, ratio));
-		progressFill.style.width = `${clamped * 100}%`;
-		progressFill.classList.toggle("dtm-cp-progress-fill--on", clamped > 0);
-	};
 
 	// ── スクロールエリア ──
 	const scrollArea = doc.createElement("div");
@@ -1359,8 +1380,7 @@ export const mountChordPlayer = (
 				const currentSec = playOffsetSec + rel;
 				currentPlaySec = currentSec;
 				updateActiveIndex(getActiveIndexBySec(currentSec));
-				updateTimeDisplay(Math.min(currentSec, totalSec));
-				setProgress(totalSec > 0 ? currentSec / totalSec : 0);
+				updateSeekUI(Math.min(currentSec, totalSec));
 			},
 			onStop: () => {
 				handlePlaybackStop();
@@ -1396,8 +1416,7 @@ export const mountChordPlayer = (
 			isPlaying = true;
 			setPlayBtnStyle(true);
 			updateActiveIndex(startIdx);
-			updateTimeDisplay(playOffsetSec);
-			setProgress(totalSec > 0 ? playOffsetSec / totalSec : 0);
+			updateSeekUI(playOffsetSec);
 			playInternal(startIdx, ctx, cutGain);
 		};
 
@@ -1437,13 +1456,19 @@ export const mountChordPlayer = (
 		play(idx);
 	};
 
-	progress.addEventListener("click", (ev) => {
+	seekInput.addEventListener("pointerdown", () => {
+		isSeeking = true;
+	});
+	seekInput.addEventListener("input", () => {
+		updateTimeDisplay(Number(seekInput.value));
+		syncSeekFill();
+	});
+	seekInput.addEventListener("change", () => {
+		isSeeking = false;
 		if (totalSec <= 0) return;
-		const rect = progress.getBoundingClientRect();
-		if (rect.width <= 0) return;
-		const sec = ((ev.clientX - rect.left) / rect.width) * totalSec;
+		const sec = Number(seekInput.value);
 		const idx = getActiveIndexBySec(sec);
-		seekTo(idx >= 0 ? idx : 0);
+		seekTo(idx >= 0 ? idx : Math.max(0, chordEvents.length - 1));
 	});
 
 	const stop = () => {
@@ -1467,16 +1492,34 @@ export const mountChordPlayer = (
 		isPlaying = false;
 		setPlayBtnStyle(false);
 		updateActiveIndex(-1);
-		updateTimeDisplay(0);
-		setProgress(0);
+		updateSeekUI(0);
+		options.onStop?.();
+	};
+
+	// 一時停止。stop() と異なり再生位置はリセットせず、次の再生でその位置から再開する
+	// （MML再生専用プレイヤーの再生⇔一時停止ボタンと同じ挙動）。
+	const pause = () => {
+		if (isLoading) {
+			++loadAbortId;
+			setLoadingUI(false);
+			killSound();
+			return;
+		}
+		if (!isPlaying) return;
+		activePlayback?.destroy();
+		activePlayback = null;
+		stopMetronome();
+		killSound();
+		isPlaying = false;
+		setPlayBtnStyle(false);
 		options.onStop?.();
 	};
 
 	playBtn.addEventListener("click", () => {
 		if (isPlaying) {
-			stop();
+			pause();
 		} else {
-			play();
+			play(Math.max(0, activeIndex));
 		}
 	});
 

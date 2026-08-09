@@ -1017,6 +1017,14 @@ export const mountMmlPlayer = (
 	seekRow.append(seekInput, timeEl);
 	root.appendChild(seekRow);
 
+	// 再生済み区間をYouTube風に色塗りするための --fill 更新（seekInput.value 変更のたびに呼ぶ）
+	const syncSeekFill = (): void => {
+		const max = Number(seekInput.max) || 1;
+		const pct = (Number(seekInput.value) / max) * 100;
+		seekInput.style.setProperty("--fill", `${pct}%`);
+	};
+	syncSeekFill();
+
 	const formatTime = (step: number): string => {
 		const totalSec = Math.max(0, step * secondsPerStep);
 		const m = Math.floor(totalSec / 60);
@@ -1303,6 +1311,7 @@ export const mountMmlPlayer = (
 		if (!isSeeking) {
 			seekInput.value = String(Math.min(maxStep, Math.max(0, intStep)));
 			updateTimeLabel(intStep);
+			syncSeekFill();
 		}
 		const chordName = stepChords[intStep] ?? "";
 		if (chordEl.textContent !== chordName) {
@@ -1331,6 +1340,7 @@ export const mountMmlPlayer = (
 		chordEl.textContent = "";
 		seekInput.value = "0";
 		updateTimeLabel(0);
+		syncSeekFill();
 		for (const view of laneViews) {
 			for (const t of view.tokens) t.el.classList.remove("is-active");
 			view.lane.scrollLeft = 0;
@@ -1569,6 +1579,7 @@ export const mountMmlPlayer = (
 	});
 	seekInput.addEventListener("input", () => {
 		renderPlayhead(Number(seekInput.value));
+		syncSeekFill();
 	});
 	seekInput.addEventListener("change", () => {
 		isSeeking = false;

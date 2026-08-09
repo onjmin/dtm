@@ -1011,6 +1011,7 @@ export const DAW_CSS = `
   gap: 8px;
 }
 .dtm-player-seek {
+  --fill: 0%;
   flex: 1 1 auto;
   min-width: 0;
   height: 12px;
@@ -1021,15 +1022,26 @@ export const DAW_CSS = `
   appearance: none;
 }
 .dtm-player-seek:disabled { cursor: default; opacity: 0.4; }
+/* 再生済み区間をYouTube風に色塗りする（--fill は再生位置に応じてJSから設定） */
 .dtm-player-seek::-webkit-slider-runnable-track {
   height: 6px;
-  background: var(--dtm-border2);
+  background: linear-gradient(
+    to right,
+    var(--dtm-primary) var(--fill),
+    var(--dtm-border2) var(--fill)
+  );
   border: 2px solid var(--c-black);
 }
 .dtm-player-seek::-moz-range-track {
   height: 6px;
   background: var(--dtm-border2);
   border: 2px solid var(--c-black);
+}
+.dtm-player-seek::-moz-range-progress {
+  height: 6px;
+  background: var(--dtm-primary);
+  border: 2px solid var(--c-black);
+  border-right: none;
 }
 .dtm-player-seek::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -1328,18 +1340,19 @@ export const DAW_CSS = `
 }
 
 /* ─── コード進行プレイヤー ─── */
+/* MML再生専用プレイヤー（.dtm-player）と枠デザインを揃える */
 .dtm-chord-player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dtm-gap);
+  padding: var(--dtm-gap);
   font-family: var(--dtm-font);
   font-size: 13px;
   letter-spacing: .06em;
   color: var(--dtm-text);
-  background: var(--dtm-surface);
-  border: 2px solid var(--c-black);
-  box-shadow:
-    inset 0 0 0 2px var(--c-black),
-    0 0 0 2px var(--dtm-border),
-    4px 4px 0 var(--c-black);
-  overflow: hidden;
+  background: var(--dtm-deep);
+  border: 2px solid var(--dtm-border2);
+  box-shadow: 4px 4px 0 var(--c-black);
   image-rendering: pixelated;
   -webkit-font-smoothing: none;
 }
@@ -1347,15 +1360,12 @@ export const DAW_CSS = `
 .dtm-chord-player *::before,
 .dtm-chord-player *::after { box-sizing: border-box; }
 
-/* コントロールバー */
+/* コントロールバー — MML再生専用プレイヤーの .dtm-player-head と揃える */
 .dtm-cp-ctrl {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--dtm-gap);
-  padding: 6px 8px;
-  background: var(--dtm-deep);
-  border-bottom: 2px solid var(--c-black);
+  gap: 8px;
 }
 
 /* ループ切替ボタン */
@@ -1380,38 +1390,13 @@ export const DAW_CSS = `
   box-shadow: 2px 2px 0 var(--c-black);
 }
 
-/* メタ情報 (BPM / 時間) */
+/* メタ情報 (BPM) */
 .dtm-cp-meta {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .12em;
   color: var(--dtm-muted);
 }
-.dtm-cp-time {
-  margin-left: auto;
-  font-size: 11px;
-  font-family: var(--dtm-font);
-  color: var(--dtm-muted);
-  letter-spacing: .1em;
-}
-
-/* プログレスバー — ドット絵風のセグメント塗り。クリックでシーク */
-.dtm-cp-progress {
-  height: 14px;
-  background: var(--dtm-deep);
-  border-bottom: 2px solid var(--c-black);
-  cursor: pointer;
-}
-.dtm-cp-progress-fill {
-  height: 100%;
-  width: 0%;
-  background: repeating-linear-gradient(
-    90deg,
-    var(--dtm-primary) 0, var(--dtm-primary) 6px,
-    var(--c-navy) 6px, var(--c-navy) 8px
-  );
-}
-.dtm-cp-progress-fill--on { border-right: 2px solid var(--c-white); }
 
 /* スクロールエリア */
 .dtm-cp-scroll {
