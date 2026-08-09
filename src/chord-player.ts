@@ -85,6 +85,19 @@ const parseBpmMeta = (chords: string): number | null => {
 };
 
 /**
+ * 入力文字列から `#loop=on|off`（または `1|0` / `true|false`）メタ行を読み取る。
+ * 埋め込みプレイヤーは再生専用で編集UIを持たないため、
+ * ループをかけたい場合はこのメタ行をコード進行文字列側で指定する。
+ * 未指定・無効値の場合は null を返す。
+ */
+const parseLoopMeta = (chords: string): boolean | null => {
+	const m = chords.match(/^#\s*loop\s*=\s*(on|off|1|0|true|false)\s*$/im);
+	if (!m) return null;
+	const v = m[1].toLowerCase();
+	return v === "on" || v === "1" || v === "true";
+};
+
+/**
  * GM楽器名 → 4桁インスツルメントキー（例: "Acoustic Grand Piano" → "0000"）
  * buildNameToKeyMapping() は静的データを同期パースするため、実際には常に即解決する。
  */
@@ -184,6 +197,8 @@ export type MountChordPlayerOptions = {
 	volume?: number;
 	/** BPM 既定120 */
 	bpm?: number;
+	/** ループ再生（既定オフ）。#loop=on メタ行でも指定可 */
+	loop?: boolean;
 	/** スタジオインスタンス（DtmStudio）。指定時は高品質SoundFontが使われます */
 	studio?: any;
 	/** 再生終了時コールバック */
@@ -383,7 +398,7 @@ export const mountChordPlayer = (
 	let isLoading = false;
 	/** インクリメントして進行中ロードを「キャンセル」する */
 	let loadAbortId = 0;
-	let loopEnabled = false;
+	let loopEnabled = options.loop ?? parseLoopMeta(chords) ?? false;
 	let metronomeEnabled = parseMetronomeMeta(chords);
 	/** 再生開始位置（秒）。途中再生時に onTick の step を絶対時刻へ換算する */
 	let playOffsetSec = 0;
@@ -509,7 +524,8 @@ export const mountChordPlayer = (
 	loopBtn.type = "button";
 	loopBtn.className = "dtm-cp-loop";
 	loopBtn.innerHTML = icon("loop", 12);
-	loopBtn.title = "LOOP OFF";
+	loopBtn.title = loopEnabled ? "LOOP ON" : "LOOP OFF";
+	loopBtn.classList.toggle("dtm-cp-loop--on", loopEnabled);
 	loopBtn.addEventListener("click", () => {
 		loopEnabled = !loopEnabled;
 		loopBtn.classList.toggle("dtm-cp-loop--on", loopEnabled);
