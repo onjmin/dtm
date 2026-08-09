@@ -396,6 +396,10 @@ export type DtmStudio = {
 		target: HTMLElement,
 		options: ModeSwitchOptions,
 	) => ModeSwitchInstance;
+	/** マスタ音量を 0-100 で変更する。 */
+	setMasterVolume: (volume: number) => void;
+	/** マスタ音量を 0-100 で変更する（`setMasterVolume` のエイリアス）。 */
+	setVolume: (volume: number) => void;
 	/** AudioContext を閉じ、生成物を破棄する。 */
 	dispose: () => void;
 };
@@ -422,7 +426,7 @@ export const createDtmStudio = async (
 	masterGain.connect(audioCtx.destination);
 	const drumGain = audioCtx.createGain();
 	drumGain.gain.value = options.drumVolume ?? 1;
-	drumGain.connect(audioCtx.destination);
+	drumGain.connect(masterGain);
 
 	const resumeAudio = (): Promise<void> => {
 		// Safari は new AudioContext() 直後に state が "running" と報告するが、
@@ -1440,6 +1444,11 @@ export const createDtmStudio = async (
 		void audioCtx.close();
 	};
 
+	const setMasterVolume = (volume: number): void => {
+		const g = Math.max(0, Math.min(100, volume)) / 100;
+		masterGain.gain.setValueAtTime(g, audioCtx.currentTime);
+	};
+
 	return {
 		audioContext: audioCtx,
 		singingVoices,
@@ -1456,6 +1465,8 @@ export const createDtmStudio = async (
 		defaultPreset,
 		mountPresetSelect,
 		mountModeSwitch,
+		setMasterVolume,
+		setVolume: setMasterVolume,
 		dispose,
 	};
 };

@@ -1211,7 +1211,7 @@ export const mountChordPlayer = (
 				// ビート1拍目（小節頭）はキック、それ以外はハイハット
 				const isDownbeat = beat % 4 === 0;
 				const pitch = isDownbeat ? DRUM_KEYS.kick : DRUM_KEYS.hihatClosed;
-				const velocity = isDownbeat ? 0.7 : 0.45;
+				const velocity = (isDownbeat ? 0.7 : 0.45) * (masterVolume / 100);
 
 				// WAFドラム音があれば使う、なければオシレータシンセで代替
 				const wafDrum = _drumCache.get(pitch);
