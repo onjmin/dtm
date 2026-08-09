@@ -66,6 +66,7 @@ const bgm = playMML("@0 t120 o5 l8 ccggaag4 ffeeddc4", {
   volume: 70,
 });
 bgm.setVolume(50);
+```
 
 ```ts
 const chordPlayer = studio.mountChordPlayer(chordEl, "| C | G | Am | F |", {
@@ -87,7 +88,7 @@ chordPlayer.setVolume(65);
 | `playChords(chordStr, options)` | 不要 | 非対応 | `MmlPlayback` | コード進行のヘッドレス再生。`"\| C \| G \| Am \| F \|"` などの文字列からアルペジオ等の伴奏音を鳴らす。 |
 | `playNote(options)` | 不要 | 非対応 | `void` | 簡易単音発音。SE や音高確認のためのテスト発音。 |
 | `mountMmlPlayer(target, mml, options)` | **必要** | **対応** | `MmlPlayerInstance` | 再生専用 UI ビュー。トークン帯のハイライト、オートスクロール、歌声キャラクター表示を含む埋め込みプレイヤー。 |
-| `mountChordPlayer(target, chordStr, options)` | **必要** | 非対応 | `MmlPlayerInstance` | コード進行再生専用 UI コンポーネント。コードネーム表示と試聴操作。 |
+| `mountChordPlayer(target, chordStr, options)` | **必要** | 非対応 | `ChordPlayerInstance` | コード進行再生専用 UI コンポーネント。コードネーム表示と試聴操作。 |
 | `createDtmStudio()` / `mountEditor` | **必要** | **対応** | `DtmStudio` / `DawInstance` | フル機能ピアノロールエディタ UI。SoundFont 演奏、マウス打ち込み編集、歌声合成、録音機能を提供。 |
 
 ---
@@ -345,7 +346,7 @@ const cp = mountChordPlayer(document.getElementById("chord-app"), "| C | G | Am 
 
 - モデルに `klatt` を指定すると内蔵フォルマント合成（音源ロード不要）。
 - 内蔵 UTAU 音源（@onjmin/koe）キーワード:
-  `tsukuyomi` / `rino` / `roze` / `ruko_male` / `ruko_female` / `teto` / `shiyo`。
+  `tsukuyomi` / `rino` / `roze` / `ruko_male` / `ruko_female` / `teto` / `shiyo` / `rei` / `mgroid` / `motroid` / `nynroid`。
 - `createDtmStudio` を使えば歌声は自動で配線されます。低レベル API で使う場合は
   `createSingingVoices` の戻り値を `mountDAW` / `mountMmlPlayer` の `singingVoices` に渡してください。
 

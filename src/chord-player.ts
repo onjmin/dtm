@@ -70,6 +70,21 @@ const parseMetronomeMeta = (chords: string): boolean => {
 };
 
 /**
+ * 入力文字列から `#bpm=<数値>` メタ行を読み取る。
+ * コード進行データ自体にBPMを埋め込めるようにするためのもの
+ * （埋め込みプレイヤーは再生専用で編集UIを持たないため、
+ * BPMを変えたい場合はこのメタ行をコード進行文字列側で指定する）。
+ * 未指定・範囲外の場合は null を返す。
+ */
+const parseBpmMeta = (chords: string): number | null => {
+	const m = chords.match(/^#\s*bpm\s*=\s*(\d+)\s*$/im);
+	if (!m) return null;
+	const val = Number.parseInt(m[1], 10);
+	if (Number.isNaN(val)) return null;
+	return Math.max(40, Math.min(240, val));
+};
+
+/**
  * GM楽器名 → 4桁インスツルメントキー（例: "Acoustic Grand Piano" → "0000"）
  * buildNameToKeyMapping() は静的データを同期パースするため、実際には常に即解決する。
  */
@@ -358,7 +373,7 @@ export const mountChordPlayer = (
 	const doc = target.ownerDocument;
 	injectStyles(doc);
 
-	let bpm = options.bpm ?? 120;
+	let bpm = options.bpm ?? parseBpmMeta(chords) ?? 120;
 	let activeIndex = -1;
 	let activePlayback: MmlPlayback | null = null;
 	let isPlaying = false;
@@ -557,21 +572,10 @@ export const mountChordPlayer = (
 		{ key: "strings", label: "Strings", emoji: "🎻" },
 	];
 
-	const instrGroup = doc.createElement("div");
-	instrGroup.className = "dtm-cp-instr-group";
-
-	const instrBtns = new Map<string, HTMLButtonElement>();
-
-	const updateInstrButtons = () => {
-		for (const { key } of INSTRUMENT_DEFS) {
-			instrBtns
-				.get(key)
-				?.classList.toggle(
-					"dtm-cp-instr-btn--active",
-					key === activeInstrumentKey,
-				);
-		}
-	};
+	// 横幅に収まるよう、ボタン列ではなくプルダウン（select）で楽器選択を行う。
+	const instrGroup = doc.createElement("select");
+	instrGroup.className = "dtm-cp-instr-select";
+	instrGroup.title = "楽器";
 
 	const switchInstrument = (key: "piano" | "guitar" | "strings") => {
 		if (activeInstrumentKey === key) return;
@@ -585,16 +589,20 @@ export const mountChordPlayer = (
 		}
 	};
 
-	for (const { key, label, emoji } of INSTRUMENT_DEFS) {
-		const btn = doc.createElement("button");
-		btn.type = "button";
-		btn.className = "dtm-cp-instr-btn";
-		btn.textContent = `${emoji} ${label}`;
-		btn.title = label;
-		btn.addEventListener("click", () => switchInstrument(key));
-		instrGroup.appendChild(btn);
-		instrBtns.set(key, btn);
+	const updateInstrButtons = () => {
+		instrGroup.value = activeInstrumentKey;
+	};
+
+	for (const { key, label } of INSTRUMENT_DEFS) {
+		const opt = doc.createElement("option");
+		opt.value = key;
+		opt.textContent = label;
+		instrGroup.appendChild(opt);
 	}
+	instrGroup.addEventListener("change", () => {
+		const key = instrGroup.value as "piano" | "guitar" | "strings";
+		switchInstrument(key);
+	});
 	updateInstrButtons();
 
 	// 時間表示（右寄せ）
@@ -1539,32 +1547,31 @@ export const mountChordPlayer = (
 			animation: dtm-cp-spin 0.7s linear infinite;
 			vertical-align: middle;
 		}
-		/* 楽器トグルボタン群 */
-		.dtm-cp-instr-group {
-			display: flex;
-			gap: 2px;
+		/* コード進行プレイヤーのPLAYボタンは通常のDAWより小さめでよい */
+		.dtm-cp-ctrl .dtm-play {
+			width: 24px;
+			height: 24px;
+		}
+		/* 楽器選択プルダウン（省スペースでスマホでも隠れない） */
+		.dtm-cp-instr-select {
+			background: rgba(255,255,255,0.06);
 			border: 1px solid rgba(255,255,255,0.15);
 			border-radius: 4px;
-			overflow: hidden;
-		}
-		.dtm-cp-instr-btn {
-			background: rgba(255,255,255,0.06);
-			border: none;
-			color: rgba(255,255,255,0.5);
-			font-size: 11px;
-			padding: 2px 7px;
-			cursor: pointer;
-			transition: background 0.15s, color 0.15s;
-			white-space: nowrap;
-		}
-		.dtm-cp-instr-btn:hover {
-			background: rgba(255,255,255,0.14);
 			color: rgba(255,255,255,0.85);
+			font-size: 11px;
+			font-family: inherit;
+			padding: 2px 4px;
+			cursor: pointer;
+			max-width: 62px;
+			flex-shrink: 1;
+			min-width: 0;
 		}
-		.dtm-cp-instr-btn--active {
-			background: var(--dtm-primary, #29adff) !important;
-			color: #000 !important;
-			font-weight: bold;
+		.dtm-cp-instr-select:hover {
+			background: rgba(255,255,255,0.14);
+		}
+		.dtm-cp-instr-select option {
+			background: #1a1a2e;
+			color: #fff;
 		}
 		/* BPM widget styles */
 		.dtm-cp-bpm-group {

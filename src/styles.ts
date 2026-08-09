@@ -1351,6 +1351,7 @@ export const DAW_CSS = `
 .dtm-cp-ctrl {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--dtm-gap);
   padding: 6px 8px;
   background: var(--dtm-deep);
