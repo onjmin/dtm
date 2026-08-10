@@ -244,6 +244,17 @@ type DisplayLine = {
 const BAR_SEP = /[|lｌ→]/;
 
 /**
+ * 全角英数記号を半角へ変換する（@onjmin/chord-parser 内部の toHan と同じ変換）。
+ * parseChords は内部でこの正規化を行ってから区切り文字（| など）を判定するため、
+ * 表示側（buildDisplayLines）でも同じ正規化をしないと、全角の「｜」などが
+ * 区切り文字として認識されず、小節の見た目が実際の再生とズレる。
+ */
+const toHalfWidth = (str: string): string =>
+	str
+		.replace(/[！-～]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 65248))
+		.replace(/　/g, " ");
+
+/**
  * parseChords でイベントを生成しないシンボル（表示はするが eventCounter は進めない）
  *   = … 直前コードの継続（duration 拡張）
  *   _ … 休符（last = null）
@@ -258,7 +269,7 @@ const buildDisplayLines = (
 	chords: string,
 	eventsCount: number,
 ): DisplayLine[] => {
-	const rawLines = chords
+	const rawLines = toHalfWidth(chords)
 		.split("\n")
 		.map((l) => l.trim())
 		.filter((l) => l);
