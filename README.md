@@ -77,6 +77,31 @@ chordPlayer.setVolume(65);
 
 ---
 
+## 録音・動画エンコード用音声ストリームの取得 (`MediaStream`)
+
+動画ファイル（MP4 / WebM）としてのエクスポートや録音（`MediaRecorder`）を行う場合、`studio` から音声トラックや `MediaStream` を直感的に取得できます。
+
+```ts
+const studio = await createDtmStudio();
+
+// 1. 録音・録画用 Audio MediaStreamTrack の取得
+const audioTrack = studio.getAudioStreamTrack();
+
+// 2. Canvas 映像トラックと合成して MediaRecorder へ渡す
+const canvasStream = canvas.captureStream(30);
+const combinedStream = new MediaStream([
+  ...canvasStream.getVideoTracks(),
+  audioTrack,
+]);
+
+const recorder = new MediaRecorder(combinedStream, { mimeType: "video/mp4" });
+recorder.start();
+```
+
+また、`createDtmStudio({ destination })` に `MediaStreamAudioDestinationNode` や自前の `GainNode` を直接渡すことも可能です。`studio.masterGain` を参照して自作の Web Audio エフェクトやミキサーにルーティングすることもできます。
+
+---
+
 ## 再生機能・API 一覧
 
 用途や UI の有無、歌声対応の有無に応じた各種再生関数が用意されています。

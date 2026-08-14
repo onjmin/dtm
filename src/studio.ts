@@ -179,6 +179,11 @@ export type DtmStudioOptions = {
 	/** ドラム音量 0-1。既定 1。 */
 	drumVolume?: number;
 	/**
+	 * 最終出力先の AudioNode。未指定時は audioCtx.destination（スピーカー）。
+	 * MediaStreamAudioDestinationNode や GainNode を指定できます。
+	 */
+	destination?: AudioNode;
+	/**
 	 * 歌声合成ワーカー（voice-worker.js）のURL。
 	 * 既定はパッケージ同梱の dist/voice-worker.js。
 	 * `null` を渡すとワーカーを使わず klatt のみ（koe音源はメインスレッド合成）。
@@ -320,6 +325,18 @@ export type ModeSwitchInstance = {
 export type DtmStudio = {
 	/** 内部で使用している AudioContext。 */
 	audioContext: AudioContext;
+	/** マスターゲインノード（全音色の最終出力先）。 */
+	masterGain: GainNode;
+	/**
+	 * 録画・録音用の MediaStreamAudioDestinationNode を生成/取得する。
+	 * masterGain が接続され、その stream から音声トラックを取得できます。
+	 */
+	createMediaStreamDestination: () => MediaStreamAudioDestinationNode;
+	/**
+	 * 録画・録音用の Audio MediaStreamTrack を取得する。
+	 * MediaRecorder のストリーム合成（canvas + audio）に使えます。
+	 */
+	getAudioStreamTrack: () => MediaStreamTrack;
 	/** 歌声合成ヘルパ（klatt + koe音源）。 */
 	singingVoices: SingingVoices;
 	/** 編集UI（mountDAW）を音・歌声込みでマウントする。 */
@@ -1449,8 +1466,25 @@ export const createDtmStudio = async (
 		masterGain.gain.setValueAtTime(g, audioCtx.currentTime);
 	};
 
+	let recordDestNode: MediaStreamAudioDestinationNode | null = null;
+
+	const createMediaStreamDestination = (): MediaStreamAudioDestinationNode => {
+		if (!recordDestNode) {
+			recordDestNode = audioCtx.createMediaStreamDestination();
+			masterGain.connect(recordDestNode);
+		}
+		return recordDestNode;
+	};
+
+	const getAudioStreamTrack = (): MediaStreamTrack => {
+		return createMediaStreamDestination().stream.getAudioTracks()[0];
+	};
+
 	return {
 		audioContext: audioCtx,
+		masterGain,
+		createMediaStreamDestination,
+		getAudioStreamTrack,
 		singingVoices,
 		mountEditor,
 		mountPlayer,
