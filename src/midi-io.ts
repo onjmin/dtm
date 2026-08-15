@@ -323,6 +323,16 @@ export const extractMidiPlacements = (
 		}
 	}
 
+	if (placements.length > 0) {
+		const minStartStep = Math.min(...placements.map((p) => p.startStep));
+		const stepsPerBar = STEPS_PER_BEAT * 4;
+		const emptyBars = Math.floor(minStartStep / stepsPerBar);
+		if (emptyBars > 0) {
+			const shift = emptyBars * stepsPerBar;
+			for (const p of placements) p.startStep -= shift;
+		}
+	}
+
 	return { placements, bpm };
 };
 
@@ -430,6 +440,15 @@ export const extractMidiPlacementsByTrack = (
 			});
 		}
 	});
+	if (placements.length > 0) {
+		const minStartStep = Math.min(...placements.map((p) => p.startStep));
+		const stepsPerBar = STEPS_PER_BEAT * 4;
+		const emptyBars = Math.floor(minStartStep / stepsPerBar);
+		if (emptyBars > 0) {
+			const shift = emptyBars * stepsPerBar;
+			for (const p of placements) p.startStep -= shift;
+		}
+	}
 
 	return { placements, bpm };
 };
@@ -592,6 +611,14 @@ export const extractMidiDrumPattern = (midi: unknown): string => {
 
 	rawNotes.sort((a, b) => a.step - b.step);
 	const stepsPerBar = STEPS_PER_BEAT * 4;
+
+	if (rawNotes.length > 0) {
+		const emptyBars = Math.floor(rawNotes[0].step / stepsPerBar);
+		if (emptyBars > 0) {
+			const shift = emptyBars * stepsPerBar;
+			for (const note of rawNotes) note.step -= shift;
+		}
+	}
 
 	// 各ノート（step位置、音高、ベロシティ）がどの小節に出現するかを記録
 	const noteRanges: Record<string, number[]> = {};
