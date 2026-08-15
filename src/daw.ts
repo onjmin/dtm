@@ -1698,6 +1698,15 @@ export const mountDAW = (
 		playbackState = "paused";
 		updateTransport();
 	};
+	// koe音源（歌唱モデル）変更時、再生中なら停止→再ロード→同じ位置から再開する。
+	// play() が streamTracks を再構築し、loadModels で新モデルを取得してから
+	// pausedPlayStep の続きを鳴らすため、楽器変更（applyPreset）と同じ挙動になる。
+	const reloadVoicesForModel = (model: string): void => {
+		const voices = options.singingVoices;
+		if (!voices || !model || playbackState !== "playing") return;
+		pause();
+		void play();
+	};
 	const stop = (): void => {
 		sequencer.stop();
 		options.singingVoices?.stopStream();
@@ -2075,6 +2084,7 @@ export const mountDAW = (
 				syncInstDisabled();
 				syncVelocityDisabled();
 				fireLyricsChange(active);
+				reloadVoicesForModel(active.lyricModel);
 			});
 			lyricCustomGuide.addEventListener("click", () => {
 				showModal("カスタム音声(.koe)の使い方", KOE_INFO_HTML);
@@ -2120,6 +2130,7 @@ export const mountDAW = (
 				fireLyricsChange(active);
 				// プルダウンへ新キーを反映し、選択状態でパネルを再描画する
 				updateTrackPanel();
+				reloadVoicesForModel(key);
 			});
 			lyricOctaveSel.addEventListener("change", () => {
 				active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
