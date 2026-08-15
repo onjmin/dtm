@@ -1,4 +1,8 @@
-import { DRUM_KEYS, type DrumPattern, type DrumPatternDef } from "./drum-config";
+import {
+	DRUM_KEYS,
+	type DrumPattern,
+	type DrumPatternDef,
+} from "./drum-config";
 
 export type SongDrumInstruction = {
 	ranges: [number, number][]; // [startBar, endBar]
@@ -8,7 +12,10 @@ export type SongDrumInstruction = {
 
 export type SongDrumPattern = SongDrumInstruction[];
 
-export const SONG_DRUM_PATTERNS: Record<string, DrumPatternDef<SongDrumPattern>> = {
+export const SONG_DRUM_PATTERNS: Record<
+	string,
+	DrumPatternDef<SongDrumPattern>
+> = {
 	sample_song: {
 		label: "サンプル曲",
 		pattern: [

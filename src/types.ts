@@ -320,7 +320,8 @@ export type DawOptions = {
 	/** ドラムパターン辞書。既定は DRUM_PATTERNS */
 	drumPatterns?: Record<
 		string,
-		import("./drum-config").AnyDrumPattern | import("./drum-config").DrumPatternDef
+		| import("./drum-config").AnyDrumPattern
+		| import("./drum-config").DrumPatternDef
 	>;
 	/** 歌唱合成の先読みや制御を行うヘルパ（.koe音源の再生前プリロードに使用） */
 	singingVoices?: SingingVoices;

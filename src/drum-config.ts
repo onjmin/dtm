@@ -42,7 +42,10 @@ export const normalizeDrumPatterns = (
 ): Record<string, DrumPatternDef> => {
 	const normalized: Record<string, DrumPatternDef> = {};
 	for (const [k, v] of Object.entries(patterns)) {
-		if (Array.isArray(v) || (v && Array.isArray((v as any).pattern) === false && Array.isArray(v))) {
+		if (
+			Array.isArray(v) ||
+			(v && Array.isArray((v as any).pattern) === false && Array.isArray(v))
+		) {
 			normalized[k] = { label: k, pattern: v as any };
 		} else {
 			normalized[k] = v as DrumPatternDef;
@@ -59,7 +62,11 @@ export const resolveDrumPattern = (
 	const def = dict[name];
 	if (!def) return null;
 	const patternObj = def.pattern;
-	if (Array.isArray(patternObj) && patternObj.length > 0 && "ranges" in patternObj[0]) {
+	if (
+		Array.isArray(patternObj) &&
+		patternObj.length > 0 &&
+		"ranges" in patternObj[0]
+	) {
 		const songDef = patternObj as SongDrumPattern;
 		const instructions = songDef.filter((i) =>
 			i.ranges.some(([s, e]) => currentBar >= s && currentBar <= e),
@@ -70,15 +77,15 @@ export const resolveDrumPattern = (
 				const loopLengthBars =
 					i.patternBars ?? Math.max(1, Math.ceil((maxStep + 1) / 192));
 
-				const range = i.ranges.find(([s, e]) => currentBar >= s && currentBar <= e);
+				const range = i.ranges.find(
+					([s, e]) => currentBar >= s && currentBar <= e,
+				);
 				const startBar = range ? range[0] : 1;
 				const barInLoop = (currentBar - startBar) % loopLengthBars;
 				const stepOffset = barInLoop * 192;
 
 				return i.pattern
-					.filter(
-						(p) => p.step >= stepOffset && p.step < stepOffset + 192,
-					)
+					.filter((p) => p.step >= stepOffset && p.step < stepOffset + 192)
 					.map((p) => ({ ...p, step: p.step - stepOffset }));
 			});
 		}

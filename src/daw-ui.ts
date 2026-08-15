@@ -72,7 +72,9 @@ export type DawUIRefs = {
 	exportMidiBtn: HTMLButtonElement;
 	midiDrumExportBtn: HTMLButtonElement;
 	midiDrumExportRow: HTMLElement;
-	midiDrumExportText: HTMLTextAreaElement;
+	midiDrumExportStatus: HTMLElement;
+	midiDrumExportText: HTMLElement;
+	midiDrumExportCopyBtn: HTMLButtonElement;
 	generateMmlBtn: HTMLButtonElement;
 	decomposeChordToggle: HTMLInputElement;
 	ignoreChordHeavyToggle: HTMLInputElement;
@@ -242,8 +244,12 @@ export const buildUI = (
         <button class="dtm-btn dtm-btn--success" data-dtm="midi-load" style="flex-shrink:0">読込</button>
         <button class="dtm-btn dtm-btn--accent" data-dtm="midi-drum-export" style="flex-shrink:0" title="ドラムトラックをJSON化">ドラム抽出</button>
       </div>
-      <div class="dtm-row dtm-hidden" data-dtm="midi-drum-export-row">
-        <textarea class="dtm-input dtm-grow" data-dtm="midi-drum-export-text" rows="10" readonly></textarea>
+      <div class="dtm-output dtm-hidden" data-dtm="midi-drum-export-row">
+        <p class="dtm-label" data-dtm="midi-drum-export-status"></p>
+        <div class="dtm-output-row">
+          <pre><code data-dtm="midi-drum-export-text"></code></pre>
+          <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="midi-drum-export-copy" title="コピー">${icon("copy")}</button>
+        </div>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
       <div class="dtm-row" style="flex-wrap:nowrap">
@@ -412,7 +418,9 @@ export const buildUI = (
 		exportMidiBtn: sel("export-midi"),
 		midiDrumExportBtn: sel("midi-drum-export"),
 		midiDrumExportRow: sel("midi-drum-export-row"),
+		midiDrumExportStatus: sel("midi-drum-export-status"),
 		midiDrumExportText: sel("midi-drum-export-text"),
+		midiDrumExportCopyBtn: sel("midi-drum-export-copy") as HTMLButtonElement,
 		generateMmlBtn: sel("generate-mml"),
 		decomposeChordToggle: sel<HTMLInputElement>("decompose-chord"),
 		ignoreChordHeavyToggle: sel<HTMLInputElement>("ignore-chord-heavy"),

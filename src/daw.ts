@@ -9,7 +9,11 @@ import { GM_INSTRUMENT_NAMES } from "./audio-config";
 import { type ChordPlayerInstance, mountChordPlayer } from "./chord-player";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import { buildUI } from "./daw-ui";
-import { DRUM_PATTERNS, normalizeDrumPatterns, resolveDrumPattern } from "./drum-config";
+import {
+	DRUM_PATTERNS,
+	normalizeDrumPatterns,
+	resolveDrumPattern,
+} from "./drum-config";
 import { icon } from "./icons";
 import { INSTRUMENT_PRESETS } from "./instrument-presets";
 import {
@@ -3334,15 +3338,23 @@ export const mountDAW = (
 			const midi = await options.parseMidi(new Uint8Array(buffer));
 			const json = extractMidiDrumPattern(midi);
 			refs.midiDrumExportRow.classList.remove("dtm-hidden");
-			refs.midiDrumExportText.value = json;
-			// Automatically select the text for easy copying
-			refs.midiDrumExportText.select();
+			refs.midiDrumExportText.textContent = json;
+			refs.midiDrumExportStatus.textContent = `出力: ${json.length}文字`;
 		} catch (e) {
 			console.error(e);
 			alert("MIDIドラムパターンの抽出に失敗しました。");
 		} finally {
 			overlay?.remove();
 		}
+	});
+
+	refs.midiDrumExportCopyBtn.addEventListener("click", () => {
+		navigator.clipboard?.writeText(refs.midiDrumExportText.textContent ?? "");
+		refs.midiDrumExportCopyBtn.classList.add("dtm-btn--success");
+		setTimeout(
+			() => refs.midiDrumExportCopyBtn.classList.remove("dtm-btn--success"),
+			1200,
+		);
 	});
 
 	/** コード進行検索キャッシュ（ページリロードまで保持） */

@@ -9,7 +9,7 @@
  * exportMIDI を移植・整理したもの。
  */
 
-import type { DrumPattern } from "./drum-config";
+import { DRUM_KEYS, type DrumPattern } from "./drum-config";
 import type { Note } from "./types";
 import { DEFAULT_VELOCITY } from "./types";
 
@@ -694,5 +694,27 @@ export const extractMidiDrumPattern = (midi: unknown): string => {
 		return a.ranges[0][0] - b.ranges[0][0];
 	});
 
-	return JSON.stringify(instructions, null, "\t");
+	const pitchToDrumKey = Object.entries(DRUM_KEYS).reduce(
+		(acc, [key, val]) => {
+			acc[val] = `DRUM_KEYS.${key}`;
+			return acc;
+		},
+		{} as Record<number, string>,
+	);
+
+	const instructionStrings = instructions.map((inst) => {
+		const rangesStr = `[${inst.ranges.map((r: number[]) => `[${r[0]}, ${r[1]}]`).join(", ")}]`;
+		const patternLines = inst.pattern
+			.map((n: any) => {
+				const pitchStr = pitchToDrumKey[n.pitch] ?? n.pitch;
+				return `\t\t\t\t\t{ step: ${n.step}, pitch: ${pitchStr}, velocity: ${n.velocity} },`;
+			})
+			.join("\n");
+
+		return `\t\t\t// prettier-ignore\n\t\t\t{\n\t\t\t\tranges: ${rangesStr},\n\t\t\t\tpattern: [\n${patternLines}\n\t\t\t\t],\n\t\t\t}`;
+	});
+
+	const patternStr = `[\n${instructionStrings.join(",\n")}\n\t\t]`;
+
+	return `\textracted_song: {\n\t\tlabel: "抽出ドラム",\n\t\tpattern: ${patternStr}\n\t},`;
 };
