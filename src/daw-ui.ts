@@ -48,6 +48,7 @@ export type DawUIRefs = {
 	trackBody: HTMLElement;
 	// drum
 	drumSelect: HTMLSelectElement;
+	drumFontSelect: HTMLSelectElement;
 	drumVolume: HTMLInputElement;
 	drumVolumeLabel: HTMLElement;
 	// io
@@ -70,6 +71,7 @@ export type DawUIRefs = {
 	macroMono: HTMLButtonElement;
 	// output
 	exportMidiBtn: HTMLButtonElement;
+	exportDrumJsonBtn: HTMLButtonElement;
 	midiDrumExportBtn: HTMLButtonElement;
 	midiDrumExportRow: HTMLElement;
 	midiDrumExportStatus: HTMLElement;
@@ -223,6 +225,24 @@ export const buildUI = (
       <div class="dtm-row">
         <span class="dtm-label">リズム</span>
         <select class="dtm-select" data-dtm="drum-select">${drumOptions}</select>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">音源</span>
+        <select class="dtm-select" data-dtm="drum-font-select">
+          ${[
+						"Chaos_sf2_file",
+						"FluidR3_GM_sf2_file",
+						"JCLive_sf2_file",
+						"SBLive_sf2",
+					]
+						.flatMap((font) =>
+							[0, 11, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(
+								(id) =>
+									`<option value="${font}:${id}">${font} (${id})</option>`,
+							),
+						)
+						.join("")}
+        </select>
       </div>
       <div class="dtm-row">
         <span class="dtm-label">音量</span>
@@ -397,6 +417,7 @@ export const buildUI = (
 		trackTabs: sel("track-tabs"),
 		trackBody: sel("track-body"),
 		drumSelect: sel("drum-select"),
+		drumFontSelect: sel("drum-font-select"),
 		drumVolume: sel("drum-volume"),
 		drumVolumeLabel: sel("drum-volume-label"),
 		midiInput: sel("midi-input"),
@@ -421,6 +442,7 @@ export const buildUI = (
 		midiDrumExportStatus: sel("midi-drum-export-status"),
 		midiDrumExportText: sel("midi-drum-export-text"),
 		midiDrumExportCopyBtn: sel("midi-drum-export-copy") as HTMLButtonElement,
+		exportDrumJsonBtn: sel("export-drum-json"),
 		generateMmlBtn: sel("generate-mml"),
 		decomposeChordToggle: sel<HTMLInputElement>("decompose-chord"),
 		ignoreChordHeavyToggle: sel<HTMLInputElement>("ignore-chord-heavy"),

@@ -24,11 +24,11 @@ import {
 import { buildChordPlacements } from "./chords";
 import { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 import {
-	DRUM_FONT,
-	DRUM_PATTERNS as DEFAULT_DRUM_PATTERNS,
-	getDrumPatternKeys,
 	type AnyDrumPattern,
+	DRUM_PATTERNS as DEFAULT_DRUM_PATTERNS,
+	DRUM_FONT,
 	type DrumPatternDef,
+	getDrumPatternKeys,
 } from "./drum-config";
 import {
 	type MmlPlayback,
@@ -511,18 +511,27 @@ export const createDtmStudio = async (
 	});
 
 	// ドラム音源の遅延ロード状態管理
-	const loadedDrumKeys = new Set<number>();
-	const loadRequiredDrums = async (keys: number[]): Promise<void> => {
-		const newKeys = keys.filter((k) => !loadedDrumKeys.has(k));
+	const loadedDrumKeys = new Map<string, Set<number>>();
+	const loadRequiredDrums = async (
+		keys: number[],
+		drumFontStr: string = "FluidR3_GM_sf2_file:0",
+	): Promise<void> => {
+		const [font, id] = drumFontStr.split(":");
+		let set = loadedDrumKeys.get(drumFontStr);
+		if (!set) {
+			set = new Set<number>();
+			loadedDrumKeys.set(drumFontStr, set);
+		}
+		const newKeys = keys.filter((k) => !set.has(k));
 		if (newKeys.length === 0) return;
 		try {
 			await sfDrum.load({
 				ctx: audioCtx,
-				font: DRUM_FONT,
-				id: "0",
+				font,
+				id: id || "0",
 				keys: newKeys,
 			});
-			for (const k of newKeys) loadedDrumKeys.add(k);
+			for (const k of newKeys) set.add(k);
 		} catch (e) {
 			console.error("[dtm] ドラム音源の読み込みに失敗", e);
 		}
@@ -863,7 +872,7 @@ export const createDtmStudio = async (
 			onResumeAudio: async () => {
 				await resumeAudio();
 				if (daw) {
-					await loadRequiredDrums(daw.getUsedDrumKeys());
+					await loadRequiredDrums(daw.getUsedDrumKeys(), daw.getDrumFont());
 				}
 				await dawOverrides.onResumeAudio?.();
 			},
@@ -880,7 +889,7 @@ export const createDtmStudio = async (
 			// dawOverrides で上書きされないよう、スプレッドの後に配置して合成する
 			onDrumChange: (name) => {
 				if (daw) {
-					void loadRequiredDrums(daw.getUsedDrumKeys());
+					void loadRequiredDrums(daw.getUsedDrumKeys(), daw.getDrumFont());
 				}
 				dawOverrides.onDrumChange?.(name);
 			},
@@ -1163,6 +1172,7 @@ export const createDtmStudio = async (
 								options.drumPatterns ??
 								DEFAULT_DRUM_PATTERNS,
 						),
+						meta.drumFont || "FluidR3_GM_sf2_file:0",
 					);
 				}
 				await opts.onResumeAudio?.();

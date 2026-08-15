@@ -587,27 +587,12 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
  * MIDIからドラムトラック(Ch.10)を抽出し、動的計画法(DP)を用いて
  * 最もコンパクトな SongDrumInstruction[] のJSON文字列を生成する。
  */
-export const extractMidiDrumPattern = (midi: unknown): string => {
-	const { tracks, division } = midi as MidiData;
-	const ticksPerBeat = division;
-	const rawNotes: { step: number; pitch: number; velocity: number }[] = [];
-
-	for (const track of tracks) {
-		let currentTime = 0;
-		for (const event of track) {
-			currentTime += event.delta;
-			if (event.channel === 9 && event.noteOn && event.noteOn.velocity > 0) {
-				const step = Math.round((currentTime * STEPS_PER_BEAT) / ticksPerBeat);
-				rawNotes.push({
-					step,
-					pitch: event.noteOn.noteNumber,
-					velocity: Math.round((event.noteOn.velocity / 127) * 10) / 10,
-				});
-			}
-		}
-	}
-
-	if (rawNotes.length === 0) return "[]";
+export const extractDrumPatternFromNotes = (
+	rawNotes: { step: number; pitch: number; velocity: number }[],
+	drumFont: string = "FluidR3_GM_sf2_file:0",
+): { json: string; patternDef: import("./drum-config").DrumPatternDef } => {
+	if (rawNotes.length === 0)
+		return { json: "[]", patternDef: { label: "抽出ドラム", pattern: [] } };
 
 	rawNotes.sort((a, b) => a.step - b.step);
 	const stepsPerBar = STEPS_PER_BEAT * 4;
@@ -716,5 +701,41 @@ export const extractMidiDrumPattern = (midi: unknown): string => {
 
 	const patternStr = `[\n${instructionStrings.join(",\n")}\n\t\t]`;
 
-	return `\textracted_song: {\n\t\tlabel: "抽出ドラム",\n\t\tpattern: ${patternStr}\n\t},`;
+	const json = `\textracted_song: {\n\t\tlabel: "抽出ドラム",\n\t\tfont: "${drumFont}",\n\t\tpattern: ${patternStr}\n\t},`;
+
+	const patternDef: import("./drum-config").DrumPatternDef = {
+		label: "抽出ドラム",
+		pattern: instructions,
+	};
+
+	return { json, patternDef };
+};
+
+/**
+ * MIDIからドラムトラック(Ch.10)を抽出し、動的計画法(DP)を用いて
+ * 最もコンパクトな SongDrumInstruction[] のJSON文字列を生成する。
+ */
+export const extractMidiDrumPattern = (
+	midi: unknown,
+	drumFont: string = "FluidR3_GM_sf2_file:0",
+): { json: string; patternDef: import("./drum-config").DrumPatternDef } => {
+	const { tracks, division } = midi as MidiData;
+	const ticksPerBeat = division;
+	const rawNotes: { step: number; pitch: number; velocity: number }[] = [];
+
+	for (const track of tracks) {
+		let currentTime = 0;
+		for (const event of track) {
+			currentTime += event.delta;
+			if (event.channel === 9 && event.noteOn && event.noteOn.velocity > 0) {
+				const step = Math.round((currentTime * STEPS_PER_BEAT) / ticksPerBeat);
+				rawNotes.push({
+					step,
+					pitch: event.noteOn.noteNumber,
+					velocity: Math.round((event.noteOn.velocity / 127) * 10) / 10,
+				});
+			}
+		}
+	}
+	return extractDrumPatternFromNotes(rawNotes, drumFont);
 };

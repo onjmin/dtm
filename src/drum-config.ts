@@ -6,45 +6,21 @@
 export const DRUM_FONT = "FluidR3_GM_sf2_file";
 
 export const DRUM_KEYS = {
-	kick: 36,
-	snare: 38,
-	clap: 39,
-	rimshot: 37,
-	hihatClosed: 42,
-	hihatPedal: 44,
-	hihatOpen: 46,
-	tomLow: 45,
-	tomMid: 47,
-	tomHigh: 50,
-	crash: 49,
-	ride: 51,
-	splash: 55,
-	tambourine: 54,
 	bassDrum1: 36,
 	acousticSnare: 38,
 	handClap: 39,
 	sideStick: 37,
 	closedHihat: 42,
+	pedalHihat: 44,
 	openHihat: 46,
-	openCuica: 79,
-	muteTriangle: 80,
-	openTriangle: 81,
-	// --- GS/XG Extended Keys (82-87) ---
-	shaker: 82,
-	jingleBell: 83,
-	belltree: 84,
-	castanets: 85,
-	muteSurdo: 86,
-	openSurdo: 87,
+	lowTom: 45,
+	lowMidTom: 47,
+	highTom: 50,
+	crashCymbal1: 49,
+	rideCymbal1: 51,
+	splashCymbal: 55,
+	tambourine: 54,
 } as const;
-
-/**
- * FluidR3_GM などの標準フォントに含まれない拡張キー用の代替URLマップ。
- * ユーザーが意識せずとも、ここで定義された非対応音源が自動的に導入・利用されます。
- */
-export const DRUM_CUSTOM_URLS: Record<number, string> = {
-	// 例: 27: "https://your-custom-host/high_q.js"
-};
 
 export type DrumPattern = {
 	step: number;
@@ -115,53 +91,6 @@ export const resolveDrumPattern = (
 		}
 	}
 	return (patternObj as DrumPattern) ?? null;
-};
-
-export const getDrumPatternKeys = (
-	name: string,
-	dict: Record<string, AnyDrumPattern | DrumPatternDef>,
-): number[] => {
-	if (!name || name === "none" || !dict) return [];
-	const rawDef = dict[name];
-	if (!rawDef) return [];
-
-	let patternObj: AnyDrumPattern;
-	if (
-		typeof rawDef === "object" &&
-		rawDef !== null &&
-		"pattern" in rawDef &&
-		!Array.isArray(rawDef)
-	) {
-		patternObj = (rawDef as DrumPatternDef).pattern;
-	} else {
-		patternObj = rawDef as AnyDrumPattern;
-	}
-
-	if (!Array.isArray(patternObj) || patternObj.length === 0) return [];
-
-	const keys = new Set<number>();
-
-	if ("ranges" in patternObj[0]) {
-		const songDef = patternObj as SongDrumPattern;
-		for (const inst of songDef) {
-			if (Array.isArray(inst.pattern)) {
-				for (const item of inst.pattern) {
-					if (typeof item.pitch === "number") {
-						keys.add(item.pitch);
-					}
-				}
-			}
-		}
-	} else {
-		const drumDef = patternObj as DrumPattern;
-		for (const item of drumDef) {
-			if (typeof item.pitch === "number") {
-				keys.add(item.pitch);
-			}
-		}
-	}
-
-	return Array.from(keys);
 };
 
 export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
@@ -298,4 +227,29 @@ export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
 			{ step: 168, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
 		],
 	},
+};
+
+export const getDrumPatternKeys = (
+	name: string,
+	dict: Record<string, AnyDrumPattern | DrumPatternDef>,
+): number[] => {
+	const normalizedDict = normalizeDrumPatterns(dict);
+	const def = normalizedDict[name];
+	if (!def) return [];
+	const patternObj = def.pattern;
+	const keys = new Set<number>();
+
+	if (
+		Array.isArray(patternObj) &&
+		patternObj.length > 0 &&
+		"ranges" in patternObj[0]
+	) {
+		const songDef = patternObj as any;
+		for (const i of songDef) {
+			for (const p of i.pattern) keys.add(p.pitch);
+		}
+	} else if (Array.isArray(patternObj)) {
+		for (const p of patternObj as any) keys.add(p.pitch);
+	}
+	return Array.from(keys);
 };

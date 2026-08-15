@@ -39,6 +39,7 @@ import {
 import {
 	analyzeMidiTracks,
 	exportMIDI as exportMIDIBlob,
+	extractDrumPatternFromNotes,
 	extractMidiDrumPattern,
 	extractMidiPlacements,
 	extractMidiPlacementsByTrack,
@@ -509,6 +510,8 @@ export const mountDAW = (
 	options.singingVoices?.setVolume(masterVolume / 100);
 	let drumVolume = options.drumVolume ?? 80;
 	let currentDrumPattern = refs.drumSelect.value;
+	let currentDrumFont = options.drumFont ?? "FluidR3_GM_sf2_file:0";
+	refs.drumFontSelect.value = currentDrumFont;
 	// MML出力の先頭に埋め込む楽器プリセット名（トップレベル宣言。空なら宣言なし）
 	let currentInstrument = "";
 	let activeTrackId = options.initialActiveTrack ?? trackConfigs[0].id;
@@ -2502,6 +2505,11 @@ export const mountDAW = (
 				currentInstrument = meta.instrument;
 				options.onInstrumentChange?.(meta.instrument);
 			}
+			if (meta.drumFont) {
+				currentDrumFont = meta.drumFont;
+				refs.drumFontSelect.value = meta.drumFont;
+				options.onDrumFontChange?.(meta.drumFont);
+			}
 			if (meta.drum && drumPatterns[meta.drum]) {
 				currentDrumPattern = meta.drum;
 				refs.drumSelect.value = meta.drum;
@@ -3337,15 +3345,82 @@ export const mountDAW = (
 			overlay = showLoadingOverlay(target);
 			const buffer = await file.arrayBuffer();
 			const midi = await options.parseMidi(new Uint8Array(buffer));
-			const json = extractMidiDrumPattern(midi);
+			const { json, patternDef } = extractMidiDrumPattern(
+				midi,
+				currentDrumFont,
+			);
 			refs.midiDrumExportRow.classList.remove("dtm-hidden");
 			refs.midiDrumExportText.textContent = json;
 			refs.midiDrumExportStatus.textContent = `出力: ${json.length}文字`;
+
+			// daw インスタンスにパターンを追加し、自動選択
+			drumPatterns["_extracted_midi"] = patternDef;
+			let option = refs.drumSelect.querySelector(
+				`option[value="_extracted_midi"]`,
+			) as HTMLOptionElement | null;
+			if (!option) {
+				option = document.createElement("option");
+				option.value = "_extracted_midi";
+				refs.drumSelect.appendChild(option);
+			}
+			option.textContent = patternDef.label;
+
+			currentDrumPattern = "_extracted_midi";
+			refs.drumSelect.value = "_extracted_midi";
+			options.onDrumChange?.("_extracted_midi");
 		} catch (e) {
 			console.error(e);
 			alert("MIDIドラムパターンの抽出に失敗しました。");
 		} finally {
 			overlay?.remove();
+		}
+	});
+
+	refs.exportDrumJsonBtn.addEventListener("click", () => {
+		try {
+			const rawNotes: { step: number; pitch: number; velocity: number }[] = [];
+			for (const t of trackStates) {
+				for (const n of t.core.getNotes()) {
+					rawNotes.push({
+						step: n.startStep,
+						pitch: n.pitch,
+						velocity:
+							Math.round(
+								(((n.velocity ?? DEFAULT_VELOCITY) * (t.volume ?? 100)) /
+									100 /
+									127) *
+									10,
+							) / 10 || 0.8,
+					});
+				}
+			}
+			const { json, patternDef } = extractDrumPatternFromNotes(
+				rawNotes,
+				currentDrumFont,
+			);
+			refs.midiDrumExportRow.classList.remove("dtm-hidden");
+			refs.midiDrumExportText.textContent = json;
+			refs.midiDrumExportStatus.textContent = `出力: ${json.length}文字`;
+
+			drumPatterns["_extracted_midi"] = patternDef;
+			let option = refs.drumSelect.querySelector(
+				`option[value="_extracted_midi"]`,
+			) as HTMLOptionElement | null;
+			if (!option) {
+				option = document.createElement("option");
+				option.value = "_extracted_midi";
+				refs.drumSelect.appendChild(option);
+			}
+			option.textContent = patternDef.label;
+
+			currentDrumPattern = "_extracted_midi";
+			refs.drumSelect.value = "_extracted_midi";
+			options.onDrumChange?.("_extracted_midi");
+
+			alert("現在のトラックをドラムパターンとして抽出しました。");
+		} catch (e) {
+			console.error(e);
+			alert("ドラムパターンの抽出に失敗しました。");
 		}
 	});
 
@@ -3915,6 +3990,27 @@ export const mountDAW = (
 		},
 		getDrum: () => currentDrumPattern,
 		getUsedDrumKeys: () => getDrumPatternKeys(currentDrumPattern, drumPatterns),
+		getDrumFont: () => currentDrumFont,
+		setDrumFont: (fontId: string) => {
+			currentDrumFont = fontId;
+			refs.drumFontSelect.value = fontId;
+			options.onDrumFontChange?.(fontId);
+		},
+		addDrumPattern: (
+			name: string,
+			pattern: import("./drum-config").DrumPatternDef,
+		) => {
+			drumPatterns[name] = pattern;
+			let option = refs.drumSelect.querySelector(
+				`option[value="${name}"]`,
+			) as HTMLOptionElement | null;
+			if (!option) {
+				option = document.createElement("option");
+				option.value = name;
+				refs.drumSelect.appendChild(option);
+			}
+			option.textContent = pattern.label;
+		},
 		setDrum: (name: string) => {
 			// "none"（ドラムなし）も有効な選択肢。それ以外は既知のパターンのみ受け付ける
 			if (name !== "none" && !drumPatterns[name]) return;

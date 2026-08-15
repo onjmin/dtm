@@ -323,6 +323,10 @@ export type DawOptions = {
 		| import("./drum-config").AnyDrumPattern
 		| import("./drum-config").DrumPatternDef
 	>;
+	/** ドラム音源が変更されたときのコールバック（font:id形式） */
+	onDrumFontChange?: (fontId: string) => void;
+	/** 初期ドラム音源（font:id形式）。既定は "FluidR3_GM_sf2_file:0" */
+	drumFont?: string;
 	/** 歌唱合成の先読みや制御を行うヘルパ（.koe音源の再生前プリロードに使用） */
 	singingVoices?: SingingVoices;
 	/**
@@ -369,6 +373,15 @@ export type DawInstance = {
 	getUsedDrumKeys: () => number[];
 	/** ドラムパターンを設定する（未知のキーは無視）。選択UIにも反映する。 */
 	setDrum: (name: string) => void;
+	/** 指定したドラムパターンを追加し、利用可能にする */
+	addDrumPattern: (
+		name: string,
+		pattern: import("./drum-config").DrumPatternDef,
+	) => void;
+	/** 現在のドラム音源（font:id）を返す */
+	getDrumFont: () => string;
+	/** ドラム音源を設定する（font:id） */
+	setDrumFont: (fontId: string) => void;
 	/** 現在の表示・出力設定を返す（永続化の保存用）。 */
 	getViewState: () => DawViewState;
 	/** 表示・出力設定を復元する（指定したキーのみ反映。UIにも反映する）。 */

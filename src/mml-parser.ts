@@ -42,6 +42,8 @@ export type MmlMeta = {
 	instrument?: string;
 	/** ドラムパターン名（DRUM_PATTERNS のキー） */
 	drum?: string;
+	/** ドラムフォント名 */
+	drumFont?: string;
 	/** 全体音量（0-100等） */
 	volume?: number;
 	/** ドラム音量（0-100等） */
@@ -55,8 +57,9 @@ export type MmlMeta = {
 	trackInstruments?: Record<number, string>;
 };
 
-/** `#inst=...` `#drum=...` `#volume=...` `#drumvolume=...` `#mode=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
-const META_DIRECTIVE = /#(inst|drum|volume|drumvolume|mode)=([\w-]+)/gi;
+/** `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
+const META_DIRECTIVE =
+	/#(inst|drum|drumfont|volume|drumvolume|mode)=([\w-]+)/gi;
 
 /** `#t<n>inst=<GM楽器名>` にマッチする（値は`;` `#` 改行以外の任意文字） */
 const TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
@@ -68,6 +71,7 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 		const key = m[1].toLowerCase();
 		if (key === "inst") meta.instrument = m[2];
 		else if (key === "drum") meta.drum = m[2];
+		else if (key === "drumfont") meta.drumFont = m[2];
 		else if (key === "volume") {
 			const v = Number.parseInt(m[2], 10);
 			if (!Number.isNaN(v)) meta.volume = v;
@@ -100,6 +104,7 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	const parts: string[] = [];
 	if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
 	if (meta.drum) parts.push(`#drum=${meta.drum}`);
+	if (meta.drumFont) parts.push(`#drumfont=${meta.drumFont}`);
 	if (meta.volume !== undefined) parts.push(`#volume=${meta.volume}`);
 	if (meta.drumVolume !== undefined)
 		parts.push(`#drumvolume=${meta.drumVolume}`);
