@@ -14,7 +14,13 @@ import {
 	detectProgression,
 	type TimedNote,
 } from "@onjmin/chord-parser";
-import { DRUM_PATTERNS, type DrumPattern } from "./drum-config";
+import {
+	DRUM_PATTERNS,
+	normalizeDrumPatterns,
+	resolveDrumPattern,
+	type AnyDrumPattern,
+	type DrumPatternDef,
+} from "./drum-config";
 import { icon } from "./icons";
 import {
 	createSingingVoices,
@@ -31,6 +37,7 @@ import {
 import { MML_INFO_HTML } from "./mml-info";
 import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
+import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import { createSynth, type Synth } from "./synth";
 import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
@@ -57,7 +64,7 @@ export type MmlPlayerOptions = {
 	 */
 	onPlayDrum?: (e: PlayDrumEvent) => void;
 	/** ドラムパターン辞書。`#drum=<キー>` の解決に使う。既定 DRUM_PATTERNS */
-	drumPatterns?: Record<string, DrumPattern>;
+	drumPatterns?: Record<string, AnyDrumPattern | DrumPatternDef>;
 	/** 再生クロック秒。既定は内蔵synthの AudioContext.currentTime もしくは performance.now()/1000 */
 	getAudioTime?: () => number;
 	/** 初回再生時に呼ばれる（AudioContext.resume 等に使う） */
@@ -342,10 +349,13 @@ export const mountMmlPlayer = (
 	);
 	const bpm = parsedBpm ?? options.defaultBpm ?? DEFAULT_BPM;
 	// トップレベル宣言: ドラムパターンを解決（曲全体に効く。トラックとは1対1でない）
-	const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
-	const drumPattern: DrumPattern | null = meta.drum
-		? (drumPatternDict[meta.drum] ?? null)
-		: null;
+	const drumPatternDict = {
+		...DRUM_PATTERNS,
+		...SONG_DRUM_PATTERNS,
+		...normalizeDrumPatterns(options.drumPatterns ?? {}),
+	};
+	const drumPatternName = meta.drum ?? "none";
+
 	const trackVolume = meta.volume ?? options.volume ?? 100;
 	let masterVolume = options.masterVolume ?? 100;
 	const drumVolume = meta.drumVolume ?? 80;
@@ -1352,7 +1362,8 @@ export const mountMmlPlayer = (
 		getTracks: () => seqTracks,
 		getBpm: () => bpm,
 		getPlayStartStep: () => 0,
-		getDrumPattern: () => drumPattern,
+		getDrumPattern: (currentBar) =>
+			resolveDrumPattern(drumPatternName, drumPatternDict, currentBar),
 		getSoloTrackId: () => null,
 		getAudioTime,
 		onPlayNote: (e) => {

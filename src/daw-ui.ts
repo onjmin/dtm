@@ -70,6 +70,9 @@ export type DawUIRefs = {
 	macroMono: HTMLButtonElement;
 	// output
 	exportMidiBtn: HTMLButtonElement;
+	midiDrumExportBtn: HTMLButtonElement;
+	midiDrumExportRow: HTMLElement;
+	midiDrumExportText: HTMLTextAreaElement;
 	generateMmlBtn: HTMLButtonElement;
 	decomposeChordToggle: HTMLInputElement;
 	ignoreChordHeavyToggle: HTMLInputElement;
@@ -95,7 +98,7 @@ const q = <T extends HTMLElement>(root: HTMLElement, sel: string): T =>
 
 export type BuildUIOptions = {
 	tracks: TrackConfig[];
-	drumPatternNames: string[];
+	drumPatterns: { value: string; label: string }[];
 	defaultDrumPattern: string;
 	defaultBpm: number;
 	showMidi: boolean;
@@ -111,7 +114,7 @@ export const buildUI = (
 	options: BuildUIOptions,
 ): DawUIRefs => {
 	const {
-		drumPatternNames,
+		drumPatterns,
 		defaultDrumPattern,
 		defaultBpm,
 		showMidi,
@@ -120,9 +123,9 @@ export const buildUI = (
 
 	const drumOptions = [`<option value="none">なし</option>`]
 		.concat(
-			drumPatternNames.map(
-				(name) =>
-					`<option value="${name}" ${name === defaultDrumPattern ? "selected" : ""}>${name}</option>`,
+			drumPatterns.map(
+				(p) =>
+					`<option value="${p.value}" ${p.value === defaultDrumPattern ? "selected" : ""}>${p.label}</option>`,
 			),
 		)
 		.join("");
@@ -237,6 +240,10 @@ export const buildUI = (
         </div>
         <input type="file" class="dtm-input dtm-grow" accept=".mid,.midi" data-dtm="midi-input" style="min-width:0">
         <button class="dtm-btn dtm-btn--success" data-dtm="midi-load" style="flex-shrink:0">読込</button>
+        <button class="dtm-btn dtm-btn--accent" data-dtm="midi-drum-export" style="flex-shrink:0" title="ドラムトラックをJSON化">ドラム抽出</button>
+      </div>
+      <div class="dtm-row dtm-hidden" data-dtm="midi-drum-export-row">
+        <textarea class="dtm-input dtm-grow" data-dtm="midi-drum-export-text" rows="10" readonly></textarea>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
       <div class="dtm-row" style="flex-wrap:nowrap">
@@ -403,6 +410,9 @@ export const buildUI = (
 		macroHarmonic: sel("macro-harmonic"),
 		macroMono: sel("macro-mono"),
 		exportMidiBtn: sel("export-midi"),
+		midiDrumExportBtn: sel("midi-drum-export"),
+		midiDrumExportRow: sel("midi-drum-export-row"),
+		midiDrumExportText: sel("midi-drum-export-text"),
 		generateMmlBtn: sel("generate-mml"),
 		decomposeChordToggle: sel<HTMLInputElement>("decompose-chord"),
 		ignoreChordHeavyToggle: sel<HTMLInputElement>("ignore-chord-heavy"),

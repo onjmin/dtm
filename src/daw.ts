@@ -9,7 +9,7 @@ import { GM_INSTRUMENT_NAMES } from "./audio-config";
 import { type ChordPlayerInstance, mountChordPlayer } from "./chord-player";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import { buildUI } from "./daw-ui";
-import { DRUM_PATTERNS } from "./drum-config";
+import { DRUM_PATTERNS, normalizeDrumPatterns, resolveDrumPattern } from "./drum-config";
 import { icon } from "./icons";
 import { INSTRUMENT_PRESETS } from "./instrument-presets";
 import {
@@ -34,6 +34,7 @@ import {
 import {
 	analyzeMidiTracks,
 	exportMIDI as exportMIDIBlob,
+	extractMidiDrumPattern,
 	extractMidiPlacements,
 	extractMidiPlacementsByTrack,
 	isPlausibleMidiTranscription,
@@ -57,6 +58,7 @@ import {
 	setDrawOffset,
 } from "./renderer";
 import { createSequencer, type Sequencer } from "./sequencer";
+import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import type {
 	CustomVocalDef,
@@ -452,7 +454,13 @@ export const mountDAW = (
 		options.mode ??
 		(trackConfigs.length > TRACKS_SIMPLE.length ? "advanced" : "simple");
 	const isAdvanced = mode === "advanced";
-	const drumPatterns = options.drumPatterns ?? DRUM_PATTERNS;
+	const userPatterns = normalizeDrumPatterns(options.drumPatterns ?? {});
+
+	const drumPatterns = {
+		...DRUM_PATTERNS,
+		...SONG_DRUM_PATTERNS,
+		...userPatterns,
+	};
 	const showMidi = !!options.parseMidi;
 	const showChord = !isAdvanced;
 	const midiSearchClient = options.midiSearch
@@ -462,7 +470,10 @@ export const mountDAW = (
 
 	const refs = buildUI(target, {
 		tracks: trackConfigs,
-		drumPatternNames: Object.keys(drumPatterns),
+		drumPatterns: Object.entries(drumPatterns).map(([key, def]) => ({
+			value: key,
+			label: def.label,
+		})),
 		defaultDrumPattern: drumPatterns.dance
 			? "dance"
 			: (Object.keys(drumPatterns)[0] ?? "none"),
@@ -1520,7 +1531,8 @@ export const mountDAW = (
 			})),
 		getBpm: () => bpm,
 		getPlayStartStep: () => playStartStep,
-		getDrumPattern: () => drumPatterns[currentDrumPattern] ?? null,
+		getDrumPattern: (currentBar) =>
+			resolveDrumPattern(currentDrumPattern, drumPatterns, currentBar),
 		getSoloTrackId: () => (isSolo ? activeTrackId : null),
 		getAudioTime,
 		onPlayNote: (e) => {
@@ -2700,7 +2712,8 @@ export const mountDAW = (
 				notes: t.core.getNotes(),
 				volume: t.volume,
 			})),
-			drumPattern: drumPatterns[currentDrumPattern],
+			getDrumPattern: (currentBar) =>
+				resolveDrumPattern(currentDrumPattern, drumPatterns, currentBar),
 			drumVolume,
 			bpm,
 			stepsPerBar: renderConfig.stepsPerBar,
@@ -3307,6 +3320,30 @@ export const mountDAW = (
 		count: number;
 		renderResults: (container: HTMLElement) => void;
 	} | null = null;
+
+	refs.midiDrumExportBtn.addEventListener("click", async () => {
+		const file = refs.midiInput.files?.[0];
+		if (!file || !options.parseMidi) {
+			alert("MIDIファイルを選択してください。");
+			return;
+		}
+		let overlay: { remove: () => void } | null = null;
+		try {
+			overlay = showLoadingOverlay(target);
+			const buffer = await file.arrayBuffer();
+			const midi = await options.parseMidi(new Uint8Array(buffer));
+			const json = extractMidiDrumPattern(midi);
+			refs.midiDrumExportRow.classList.remove("dtm-hidden");
+			refs.midiDrumExportText.value = json;
+			// Automatically select the text for easy copying
+			refs.midiDrumExportText.select();
+		} catch (e) {
+			console.error(e);
+			alert("MIDIドラムパターンの抽出に失敗しました。");
+		} finally {
+			overlay?.remove();
+		}
+	});
 
 	/** コード進行検索キャッシュ（ページリロードまで保持） */
 	let chordSearchCache: {

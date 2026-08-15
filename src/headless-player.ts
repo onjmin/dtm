@@ -20,9 +20,16 @@
  */
 
 import { buildChordPlacements, type ChordPatternType } from "./chords";
-import { DRUM_PATTERNS, type DrumPattern } from "./drum-config";
+import {
+	DRUM_PATTERNS,
+	normalizeDrumPatterns,
+	resolveDrumPattern,
+	type AnyDrumPattern,
+	type DrumPatternDef,
+} from "./drum-config";
 import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";
+import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { createSynth, type Synth } from "./synth";
 import type {
 	LoopConfig,
@@ -57,8 +64,8 @@ export type PlayMmlOptions = {
 	volume?: number;
 	/** BPM未検出時のフォールバック。既定120 */
 	defaultBpm?: number;
-	/** ドラムパターン辞書。`#drum=<キー>` の解決に使う。既定 DRUM_PATTERNS */
-	drumPatterns?: Record<string, DrumPattern>;
+	/** ドラムパターン辞書。既定は DRUM_PATTERNS */
+	drumPatterns?: Record<string, AnyDrumPattern | DrumPatternDef>;
 	/** 内蔵 square synth を使うか。既定は onPlayNote 未指定なら true */
 	synth?: boolean;
 	/** メロディックノートの発音要求（自前シンセに繋ぐ）。 */
@@ -116,10 +123,12 @@ export const playPlacements = (
 	options: PlayPlacementsOptions,
 ): MmlPlayback => {
 	const bpm = options.bpm;
-	const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
-	const drumPattern: DrumPattern | null = options.metaDrum
-		? (drumPatternDict[options.metaDrum] ?? null)
-		: null;
+	const drumPatternDict = {
+		...DRUM_PATTERNS,
+		...SONG_DRUM_PATTERNS,
+		...normalizeDrumPatterns(options.drumPatterns ?? {}),
+	};
+	const drumPatternName = options.metaDrum ?? "none";
 
 	let masterVolume = options.metaVolume ?? options.volume ?? 100;
 	const drumVolume = options.metaDrumVolume ?? 80;
@@ -162,7 +171,8 @@ export const playPlacements = (
 		getTracks: () => seqTracks,
 		getBpm: () => bpm,
 		getPlayStartStep: () => options.startStep ?? 0,
-		getDrumPattern: () => drumPattern,
+		getDrumPattern: (currentBar) =>
+			resolveDrumPattern(drumPatternName, drumPatternDict, currentBar),
 		getSoloTrackId: () => null,
 		getLoop: () => options.loop ?? false,
 		cues: options.cues,

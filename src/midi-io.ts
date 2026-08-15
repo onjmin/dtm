@@ -472,7 +472,7 @@ const trackChunks = (arr: number[], func: (a: number[]) => void): void => {
 
 export type ExportMidiOptions = {
 	tracks: { notes: Note[]; volume: number }[];
-	drumPattern?: DrumPattern;
+	getDrumPattern?: (currentBar: number) => DrumPattern | null;
 	drumVolume?: number; // 0-100
 	bpm: number;
 	stepsPerBar: number;
@@ -482,7 +482,7 @@ export type ExportMidiOptions = {
  * トラック群とドラムパターンから .mid バイナリ(Blob)を生成する。
  */
 export const exportMIDI = (options: ExportMidiOptions): Blob => {
-	const { tracks, drumPattern, drumVolume = 80, bpm, stepsPerBar } = options;
+	const { tracks, getDrumPattern, drumVolume = 80, bpm, stepsPerBar } = options;
 	const div = 480;
 	const tickPerStep = div / STEPS_PER_BEAT;
 	const midiTracks: { t: number; m: number[] }[][] = [];
@@ -511,18 +511,20 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 	});
 
 	// ドラムトラック
-	if (drumPattern && drumPattern.length > 0) {
-		const maxStep = Math.max(
-			...tracks
-				.filter((t) => t.notes.length > 0)
-				.map((t) =>
-					Math.max(...t.notes.map((n) => n.startStep + n.durationSteps)),
-				),
-			stepsPerBar,
-		);
-		const drumEvents: { t: number; m: number[] }[] = [];
-		const numBars = Math.ceil(maxStep / stepsPerBar);
-		for (let bar = 0; bar < numBars; bar++) {
+	const maxStep = Math.max(
+		...tracks
+			.filter((t) => t.notes.length > 0)
+			.map((t) =>
+				Math.max(...t.notes.map((n) => n.startStep + n.durationSteps)),
+			),
+		stepsPerBar,
+	);
+	const drumEvents: { t: number; m: number[] }[] = [];
+	const numBars = Math.ceil(maxStep / stepsPerBar);
+	for (let bar = 0; bar < numBars; bar++) {
+		const currentBar = bar + 1;
+		const drumPattern = getDrumPattern ? getDrumPattern(currentBar) : null;
+		if (drumPattern && drumPattern.length > 0) {
 			const barStart = bar * stepsPerBar;
 			for (const drum of drumPattern) {
 				const step = barStart + drum.step;
@@ -540,9 +542,9 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 				});
 			}
 		}
-		drumEvents.sort((a, b) => a.t - b.t);
-		if (drumEvents.length > 0) midiTracks.push(drumEvents);
 	}
+	drumEvents.sort((a, b) => a.t - b.t);
+	if (drumEvents.length > 0) midiTracks.push(drumEvents);
 
 	const arr: number[] = [];
 	headerChunks(arr, midiTracks.length + 1, div);
@@ -560,4 +562,110 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 	}
 
 	return new Blob([new Uint8Array(arr).buffer], { type: "audio/midi" });
+};
+
+/**
+ * MIDIからドラムトラック(Ch.10)を抽出し、動的計画法(DP)を用いて
+ * 最もコンパクトな SongDrumInstruction[] のJSON文字列を生成する。
+ */
+export const extractMidiDrumPattern = (midi: unknown): string => {
+	const { tracks, division } = midi as MidiData;
+	const ticksPerBeat = division;
+	const rawNotes: { step: number; pitch: number; velocity: number }[] = [];
+
+	for (const track of tracks) {
+		let currentTime = 0;
+		for (const event of track) {
+			currentTime += event.delta;
+			if (event.channel === 9 && event.noteOn && event.noteOn.velocity > 0) {
+				const step = Math.round((currentTime * STEPS_PER_BEAT) / ticksPerBeat);
+				rawNotes.push({
+					step,
+					pitch: event.noteOn.noteNumber,
+					velocity: Math.round((event.noteOn.velocity / 127) * 10) / 10,
+				});
+			}
+		}
+	}
+
+	if (rawNotes.length === 0) return "[]";
+
+	rawNotes.sort((a, b) => a.step - b.step);
+	const stepsPerBar = STEPS_PER_BEAT * 4;
+
+	// 各ノート（step位置、音高、ベロシティ）がどの小節に出現するかを記録
+	const noteRanges: Record<string, number[]> = {};
+	for (const note of rawNotes) {
+		const b = Math.floor(note.step / stepsPerBar) + 1;
+		const stepInBar = note.step % stepsPerBar;
+		const key = `${stepInBar}_${note.pitch}_${note.velocity}`;
+		if (!noteRanges[key]) noteRanges[key] = [];
+		if (noteRanges[key][noteRanges[key].length - 1] !== b) {
+			noteRanges[key].push(b);
+		}
+	}
+
+	// 連続する小節を [startBar, endBar] のレンジに変換し、同じレンジを持つノートを束ねる
+	const rangeMap: Record<
+		string,
+		{ step: number; pitch: number; velocity: number }[]
+	> = {};
+	for (const key in noteRanges) {
+		const bList = noteRanges[key];
+		let start = bList[0];
+		let prev = bList[0];
+		const parts = key.split("_");
+		const noteObj = { step: +parts[0], pitch: +parts[1], velocity: +parts[2] };
+
+		for (let i = 1; i <= bList.length; i++) {
+			if (i === bList.length || bList[i] !== prev + 1) {
+				const rKey = `${start}-${prev}`;
+				if (!rangeMap[rKey]) rangeMap[rKey] = [];
+				rangeMap[rKey].push(noteObj);
+				if (i < bList.length) {
+					start = bList[i];
+					prev = bList[i];
+				}
+			} else {
+				prev = bList[i];
+			}
+		}
+	}
+
+	// パターンごとに ranges を束ねる
+	const patternMap: Record<string, [number, number][]> = {};
+	for (const rKey in rangeMap) {
+		const [s, e] = rKey.split("-");
+		const pattern = rangeMap[rKey].sort((a, b) => a.step - b.step);
+		const pKey = JSON.stringify(pattern);
+		if (!patternMap[pKey]) patternMap[pKey] = [];
+		patternMap[pKey].push([+s, +e]);
+	}
+
+	// JSON構造に変換
+	const instructions: any[] = [];
+	for (const pKey in patternMap) {
+		const ranges = patternMap[pKey];
+		ranges.sort((a, b) => a[0] - b[0]);
+		instructions.push({
+			ranges,
+			pattern: JSON.parse(pKey),
+		});
+	}
+
+	// 長い総レンジ（ベースとなるループ）を上に、短いレンジ（アクセントやフィル）を下にソート
+	instructions.sort((a, b) => {
+		const durA = a.ranges.reduce(
+			(sum: number, r: [number, number]) => sum + (r[1] - r[0]),
+			0,
+		);
+		const durB = b.ranges.reduce(
+			(sum: number, r: [number, number]) => sum + (r[1] - r[0]),
+			0,
+		);
+		if (durA !== durB) return durB - durA;
+		return a.ranges[0][0] - b.ranges[0][0];
+	});
+
+	return JSON.stringify(instructions, null, "\t");
 };

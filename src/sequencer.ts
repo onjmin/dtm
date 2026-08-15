@@ -35,7 +35,7 @@ export type SequencerOptions = {
 	getTracks: () => SequencerTrack[];
 	getBpm: () => number;
 	getPlayStartStep: () => number;
-	getDrumPattern: () => DrumPattern | null;
+	getDrumPattern: (currentBar: number) => DrumPattern | null;
 	/** ソロ対象トラックID（null=ソロ無効） */
 	getSoloTrackId: () => string | null;
 	/**
@@ -256,10 +256,11 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		}
 
 		// ドラム（小節ループ）。実際の音量スケールは onPlayDrum 側で適用する。
-		const pattern = options.getDrumPattern();
+		const { stepsPerBar } = options;
+		const currentStep = getWrappedPlayStep(time, sps);
+		const currentBar = Math.floor(currentStep / stepsPerBar) + 1;
+		const pattern = options.getDrumPattern(currentBar);
 		if (pattern && pattern.length > 0) {
-			const { stepsPerBar } = options;
-			const currentStep = getWrappedPlayStep(time, sps);
 			const currentStepInBar = currentStep % stepsPerBar;
 			const nextStep = currentStepInBar + 4;
 			const crossedBar = currentStepInBar < 4;
@@ -349,7 +350,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		stop();
 		fromStepValue = fromStep ?? options.getPlayStartStep();
 		buildTimeline(fromStepValue);
-		if (timeline.length === 0 && !options.getDrumPattern()?.length) return;
+		if (timeline.length === 0 && !options.getDrumPattern(1)?.length) return;
 		active = true;
 		startTime = options.getAudioTime() + START_DELAY;
 

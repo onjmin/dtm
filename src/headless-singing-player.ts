@@ -7,7 +7,13 @@
  * DOM を抜いたもの」。
  */
 
-import { DRUM_PATTERNS, type DrumPattern } from "./drum-config";
+import {
+	DRUM_PATTERNS,
+	normalizeDrumPatterns,
+	resolveDrumPattern,
+	type AnyDrumPattern,
+	type DrumPatternDef,
+} from "./drum-config";
 import type { MmlPlayback, PlayMmlOptions } from "./headless-player";
 import {
 	createSingingVoices,
@@ -25,8 +31,9 @@ import {
 	resolveLoopPoint,
 	type SequencerTrack,
 } from "./sequencer";
+import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { createSynth, type Synth } from "./synth";
-import type { Note } from "./types";
+import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 import {
 	DEFAULT_BPM,
 	DEFAULT_GATE,
@@ -79,10 +86,12 @@ export const playSingingMML = async (
 	const bpm = parsedBpm ?? options.defaultBpm ?? DEFAULT_BPM;
 	const secondsPerStep = 60 / bpm / STEPS_PER_BEAT;
 
-	const drumPatternDict = options.drumPatterns ?? DRUM_PATTERNS;
-	const drumPattern: DrumPattern | null = meta.drum
-		? (drumPatternDict[meta.drum] ?? null)
-		: null;
+	const drumPatternDict = {
+		...DRUM_PATTERNS,
+		...SONG_DRUM_PATTERNS,
+		...normalizeDrumPatterns(options.drumPatterns ?? {}),
+	};
+	const drumPatternName = meta.drum ?? "none";
 
 	const drumVolume = meta.drumVolume ?? 80;
 	const trackVolume = meta.volume ?? 100;
@@ -158,7 +167,8 @@ export const playSingingMML = async (
 		getTracks: () => seqTracks,
 		getBpm: () => bpm,
 		getPlayStartStep: () => options.startStep ?? 0,
-		getDrumPattern: () => drumPattern,
+		getDrumPattern: (currentBar) =>
+			resolveDrumPattern(drumPatternName, drumPatternDict, currentBar),
 		getSoloTrackId: () => null,
 		getLoop: () => options.loop ?? false,
 		cues: options.cues,
