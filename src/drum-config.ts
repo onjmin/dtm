@@ -30,6 +30,7 @@ export type DrumPattern = {
 
 export type DrumPatternDef<T = AnyDrumPattern> = {
 	label: string;
+	font?: string;
 	pattern: T;
 };
 

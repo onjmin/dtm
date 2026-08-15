@@ -900,12 +900,10 @@ export const createDtmStudio = async (
 					const wasPlaying = daw.getPlaybackState() === "playing";
 					if (wasPlaying) daw.pause();
 					daw.setLoading?.(true);
-					void loadRequiredDrums(daw.getUsedDrumKeys(), fontId).finally(
-						() => {
-							daw.setLoading?.(false);
-							if (wasPlaying) daw.play();
-						},
-					);
+					void loadRequiredDrums(daw.getUsedDrumKeys(), fontId).finally(() => {
+						daw.setLoading?.(false);
+						if (wasPlaying) daw.play();
+					});
 				}
 				dawOverrides.onDrumFontChange?.(fontId);
 			},

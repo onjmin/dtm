@@ -3220,7 +3220,8 @@ export const mountDAW = (
 	const applyExtractedDrumPattern = (
 		patternDef: import("./drum-config").DrumPatternDef,
 	): void => {
-		extractedMidiDrum = patternDef.pattern as import("./song-drum-config").SongDrumPattern;
+		extractedMidiDrum =
+			patternDef.pattern as import("./song-drum-config").SongDrumPattern;
 		drumPatterns["_extracted_midi"] = patternDef;
 		let option = refs.drumSelect.querySelector(
 			`option[value="_extracted_midi"]`,
