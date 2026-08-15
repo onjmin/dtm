@@ -711,7 +711,7 @@ export const extractMidiDrumPattern = (midi: unknown): string => {
 			})
 			.join("\n");
 
-		return `\t\t\t// prettier-ignore\n\t\t\t{\n\t\t\t\tranges: ${rangesStr},\n\t\t\t\tpattern: [\n${patternLines}\n\t\t\t\t],\n\t\t\t}`;
+		return `\t\t\t{\n\t\t\t\tranges: ${rangesStr},\n\t\t\t\tpattern: [\n${patternLines}\n\t\t\t\t],\n\t\t\t}`;
 	});
 
 	const patternStr = `[\n${instructionStrings.join(",\n")}\n\t\t]`;
