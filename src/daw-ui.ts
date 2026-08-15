@@ -71,12 +71,11 @@ export type DawUIRefs = {
 	macroMono: HTMLButtonElement;
 	// output
 	exportMidiBtn: HTMLButtonElement;
-	exportDrumJsonBtn: HTMLButtonElement;
-	midiDrumExportBtn: HTMLButtonElement;
-	midiDrumExportRow: HTMLElement;
-	midiDrumExportStatus: HTMLElement;
-	midiDrumExportText: HTMLElement;
-	midiDrumExportCopyBtn: HTMLButtonElement;
+	drumJsonExportBtn: HTMLButtonElement;
+	drumJsonOutput: HTMLElement;
+	drumJsonStatus: HTMLElement;
+	drumJsonText: HTMLElement;
+	drumJsonCopyBtn: HTMLButtonElement;
 	generateMmlBtn: HTMLButtonElement;
 	decomposeChordToggle: HTMLInputElement;
 	ignoreChordHeavyToggle: HTMLInputElement;
@@ -262,14 +261,6 @@ export const buildUI = (
         </div>
         <input type="file" class="dtm-input dtm-grow" accept=".mid,.midi" data-dtm="midi-input" style="min-width:0">
         <button class="dtm-btn dtm-btn--success" data-dtm="midi-load" style="flex-shrink:0">読込</button>
-        <button class="dtm-btn dtm-btn--accent" data-dtm="midi-drum-export" style="flex-shrink:0" title="ドラムトラックをJSON化">ドラム抽出</button>
-      </div>
-      <div class="dtm-output dtm-hidden" data-dtm="midi-drum-export-row">
-        <p class="dtm-label" data-dtm="midi-drum-export-status"></p>
-        <div class="dtm-output-row">
-          <pre><code data-dtm="midi-drum-export-text"></code></pre>
-          <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="midi-drum-export-copy" title="コピー">${icon("copy")}</button>
-        </div>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
       <div class="dtm-row" style="flex-wrap:nowrap">
@@ -327,6 +318,9 @@ export const buildUI = (
         <button class="dtm-btn dtm-btn--accent" data-dtm="export-midi">MIDI出力</button>
         <button class="dtm-btn dtm-btn--success" data-dtm="generate-mml">MML生成</button>
       </div>
+      <div class="dtm-row">
+        <button class="dtm-btn dtm-btn--primary" data-dtm="drum-json-export" title="読み込んだMIDIのドラム定義をJSON出力">ドラムJSON出力</button>
+      </div>
       <label class="dtm-checkbox-label">
         <input type="checkbox" class="dtm-checkbox" data-dtm="decompose-chord">
         <span>和音分解モード（単音トラックに最適分割）</span>
@@ -346,6 +340,13 @@ export const buildUI = (
           <option value="64">64小節</option>
           <option value="128">128小節</option>
         </select>
+      </div>
+      <div class="dtm-output dtm-hidden" data-dtm="drum-json-output">
+        <p class="dtm-label" data-dtm="drum-json-status"></p>
+        <div class="dtm-output-row">
+          <pre class="dtm-output-scroll"><code data-dtm="drum-json-text"></code></pre>
+          <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="drum-json-copy" title="コピー">${icon("copy")}</button>
+        </div>
       </div>
       <div class="dtm-output dtm-hidden" data-dtm="output-container">
         <p class="dtm-label" data-dtm="output-status"></p>
@@ -437,12 +438,11 @@ export const buildUI = (
 		macroHarmonic: sel("macro-harmonic"),
 		macroMono: sel("macro-mono"),
 		exportMidiBtn: sel("export-midi"),
-		midiDrumExportBtn: sel("midi-drum-export"),
-		midiDrumExportRow: sel("midi-drum-export-row"),
-		midiDrumExportStatus: sel("midi-drum-export-status"),
-		midiDrumExportText: sel("midi-drum-export-text"),
-		midiDrumExportCopyBtn: sel("midi-drum-export-copy") as HTMLButtonElement,
-		exportDrumJsonBtn: sel("export-drum-json"),
+		drumJsonExportBtn: sel("drum-json-export"),
+		drumJsonOutput: sel("drum-json-output"),
+		drumJsonStatus: sel("drum-json-status"),
+		drumJsonText: sel("drum-json-text"),
+		drumJsonCopyBtn: sel("drum-json-copy") as HTMLButtonElement,
 		generateMmlBtn: sel("generate-mml"),
 		decomposeChordToggle: sel<HTMLInputElement>("decompose-chord"),
 		ignoreChordHeavyToggle: sel<HTMLInputElement>("ignore-chord-heavy"),

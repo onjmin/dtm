@@ -38,8 +38,8 @@ import {
 } from "./macros";
 import {
 	analyzeMidiTracks,
+	buildDrumPatternJson,
 	exportMIDI as exportMIDIBlob,
-	extractDrumPatternFromNotes,
 	extractMidiDrumPattern,
 	extractMidiPlacements,
 	extractMidiPlacementsByTrack,
@@ -2935,6 +2935,10 @@ export const mountDAW = (
 			currentDrumPattern = refs.drumSelect.value;
 			options.onDrumChange?.(currentDrumPattern);
 		});
+		refs.drumFontSelect.addEventListener("change", () => {
+			currentDrumFont = refs.drumFontSelect.value;
+			options.onDrumFontChange?.(currentDrumFont);
+		});
 		refs.drumVolume.addEventListener("input", () => {
 			drumVolume = Number.parseInt(refs.drumVolume.value, 10) || 0;
 			refs.drumVolumeLabel.textContent = `${drumVolume}%`;
@@ -3198,6 +3202,28 @@ export const mountDAW = (
 
 	let pendingMidi: unknown = null;
 	let detectedTracks: ReturnType<typeof analyzeMidiTracks> = [];
+	// MIDI選択時に自動抽出したドラム定義（ドラムJSON出力で現在の音源と併せて再生成する）
+	let extractedMidiDrum: import("./song-drum-config").SongDrumPattern | null =
+		null;
+	// 抽出したドラムパターンを DAW に追加し、自動選択する
+	const applyExtractedDrumPattern = (
+		patternDef: import("./drum-config").DrumPatternDef,
+	): void => {
+		extractedMidiDrum = patternDef.pattern as import("./song-drum-config").SongDrumPattern;
+		drumPatterns["_extracted_midi"] = patternDef;
+		let option = refs.drumSelect.querySelector(
+			`option[value="_extracted_midi"]`,
+		) as HTMLOptionElement | null;
+		if (!option) {
+			option = document.createElement("option");
+			option.value = "_extracted_midi";
+			refs.drumSelect.appendChild(option);
+		}
+		option.textContent = patternDef.label;
+		currentDrumPattern = "_extracted_midi";
+		refs.drumSelect.value = "_extracted_midi";
+		options.onDrumChange?.("_extracted_midi");
+	};
 	const wireMidi = (): void => {
 		refs.midiInput.addEventListener("change", async () => {
 			const file = refs.midiInput.files?.[0];
@@ -3207,6 +3233,16 @@ export const mountDAW = (
 			const buffer = new Uint8Array(await file.arrayBuffer());
 			pendingMidi = await options.parseMidi(buffer);
 			detectedTracks = analyzeMidiTracks(pendingMidi);
+			// MIDI選択時にドラムパターンを自動抽出し、自動選択する
+			try {
+				const { patternDef } = extractMidiDrumPattern(
+					pendingMidi,
+					currentDrumFont,
+				);
+				applyExtractedDrumPattern(patternDef);
+			} catch (e) {
+				console.error(e);
+			}
 			refs.midiTrackSelection.innerHTML = `<span class="dtm-label">トラック</span>`;
 			detectedTracks.forEach((t, i) => {
 				const btn = document.createElement("button");
@@ -3334,101 +3370,22 @@ export const mountDAW = (
 		renderResults: (container: HTMLElement) => void;
 	} | null = null;
 
-	refs.midiDrumExportBtn.addEventListener("click", async () => {
-		const file = refs.midiInput.files?.[0];
-		if (!file || !options.parseMidi) {
+	refs.drumJsonExportBtn.addEventListener("click", () => {
+		if (!extractedMidiDrum) {
 			alert("MIDIファイルを選択してください。");
 			return;
 		}
-		let overlay: { remove: () => void } | null = null;
-		try {
-			overlay = showLoadingOverlay(target);
-			const buffer = await file.arrayBuffer();
-			const midi = await options.parseMidi(new Uint8Array(buffer));
-			const { json, patternDef } = extractMidiDrumPattern(
-				midi,
-				currentDrumFont,
-			);
-			refs.midiDrumExportRow.classList.remove("dtm-hidden");
-			refs.midiDrumExportText.textContent = json;
-			refs.midiDrumExportStatus.textContent = `出力: ${json.length}文字`;
-
-			// daw インスタンスにパターンを追加し、自動選択
-			drumPatterns["_extracted_midi"] = patternDef;
-			let option = refs.drumSelect.querySelector(
-				`option[value="_extracted_midi"]`,
-			) as HTMLOptionElement | null;
-			if (!option) {
-				option = document.createElement("option");
-				option.value = "_extracted_midi";
-				refs.drumSelect.appendChild(option);
-			}
-			option.textContent = patternDef.label;
-
-			currentDrumPattern = "_extracted_midi";
-			refs.drumSelect.value = "_extracted_midi";
-			options.onDrumChange?.("_extracted_midi");
-		} catch (e) {
-			console.error(e);
-			alert("MIDIドラムパターンの抽出に失敗しました。");
-		} finally {
-			overlay?.remove();
-		}
+		const json = buildDrumPatternJson(extractedMidiDrum, currentDrumFont);
+		refs.drumJsonOutput.classList.remove("dtm-hidden");
+		refs.drumJsonText.textContent = json;
+		refs.drumJsonStatus.textContent = `出力: ${json.length}文字`;
 	});
 
-	refs.exportDrumJsonBtn.addEventListener("click", () => {
-		try {
-			const rawNotes: { step: number; pitch: number; velocity: number }[] = [];
-			for (const t of trackStates) {
-				for (const n of t.core.getNotes()) {
-					rawNotes.push({
-						step: n.startStep,
-						pitch: n.pitch,
-						velocity:
-							Math.round(
-								(((n.velocity ?? DEFAULT_VELOCITY) * (t.volume ?? 100)) /
-									100 /
-									127) *
-									10,
-							) / 10 || 0.8,
-					});
-				}
-			}
-			const { json, patternDef } = extractDrumPatternFromNotes(
-				rawNotes,
-				currentDrumFont,
-			);
-			refs.midiDrumExportRow.classList.remove("dtm-hidden");
-			refs.midiDrumExportText.textContent = json;
-			refs.midiDrumExportStatus.textContent = `出力: ${json.length}文字`;
-
-			drumPatterns["_extracted_midi"] = patternDef;
-			let option = refs.drumSelect.querySelector(
-				`option[value="_extracted_midi"]`,
-			) as HTMLOptionElement | null;
-			if (!option) {
-				option = document.createElement("option");
-				option.value = "_extracted_midi";
-				refs.drumSelect.appendChild(option);
-			}
-			option.textContent = patternDef.label;
-
-			currentDrumPattern = "_extracted_midi";
-			refs.drumSelect.value = "_extracted_midi";
-			options.onDrumChange?.("_extracted_midi");
-
-			alert("現在のトラックをドラムパターンとして抽出しました。");
-		} catch (e) {
-			console.error(e);
-			alert("ドラムパターンの抽出に失敗しました。");
-		}
-	});
-
-	refs.midiDrumExportCopyBtn.addEventListener("click", () => {
-		navigator.clipboard?.writeText(refs.midiDrumExportText.textContent ?? "");
-		refs.midiDrumExportCopyBtn.classList.add("dtm-btn--success");
+	refs.drumJsonCopyBtn.addEventListener("click", () => {
+		navigator.clipboard?.writeText(refs.drumJsonText.textContent ?? "");
+		refs.drumJsonCopyBtn.classList.add("dtm-btn--success");
 		setTimeout(
-			() => refs.midiDrumExportCopyBtn.classList.remove("dtm-btn--success"),
+			() => refs.drumJsonCopyBtn.classList.remove("dtm-btn--success"),
 			1200,
 		);
 	});

@@ -679,6 +679,25 @@ export const extractDrumPatternFromNotes = (
 		return a.ranges[0][0] - b.ranges[0][0];
 	});
 
+	const json = buildDrumPatternJson(instructions, drumFont);
+
+	const patternDef: import("./drum-config").DrumPatternDef = {
+		label: "抽出ドラム",
+		pattern: instructions,
+	};
+
+	return { json, patternDef };
+};
+
+/**
+ * 抽出済みドラム定義（SongDrumInstruction[]）と音源を
+ * `extracted_song: { label, font, pattern }` 形式の文字列に組み立てる。
+ * コピー＆ペーストできるよう JSON 生成ロジックを分離したもの。
+ */
+export const buildDrumPatternJson = (
+	instructions: import("./song-drum-config").SongDrumPattern,
+	drumFont: string,
+): string => {
 	const pitchToDrumKey = Object.entries(DRUM_KEYS).reduce(
 		(acc, [key, val]) => {
 			acc[val] = `DRUM_KEYS.${key}`;
@@ -701,14 +720,7 @@ export const extractDrumPatternFromNotes = (
 
 	const patternStr = `[\n${instructionStrings.join(",\n")}\n\t\t]`;
 
-	const json = `\textracted_song: {\n\t\tlabel: "抽出ドラム",\n\t\tfont: "${drumFont}",\n\t\tpattern: ${patternStr}\n\t},`;
-
-	const patternDef: import("./drum-config").DrumPatternDef = {
-		label: "抽出ドラム",
-		pattern: instructions,
-	};
-
-	return { json, patternDef };
+	return `\textracted_song: {\n\t\tlabel: "抽出ドラム",\n\t\tfont: "${drumFont}",\n\t\tpattern: ${patternStr}\n\t},`;
 };
 
 /**

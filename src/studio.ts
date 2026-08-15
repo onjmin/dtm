@@ -523,8 +523,9 @@ export const createDtmStudio = async (
 			loadedDrumKeys.set(drumFontStr, set);
 		}
 		const newKeys = keys.filter((k) => !set.has(k));
-		if (newKeys.length === 0) return;
 		try {
+			// キャッシュ済みでも sfDrum.font を指定音源へ切り替えるため常に load を呼ぶ。
+			// sfDrum.load は未読込キーのみ取得し、読込済みならマップ切り替えだけ行う。
 			await sfDrum.load({
 				ctx: audioCtx,
 				font,
@@ -892,6 +893,21 @@ export const createDtmStudio = async (
 					void loadRequiredDrums(daw.getUsedDrumKeys(), daw.getDrumFont());
 				}
 				dawOverrides.onDrumChange?.(name);
+			},
+			// ドラム音源変更も楽器変更と同じく、再生中なら停止→ロード→再開する
+			onDrumFontChange: (fontId) => {
+				if (daw) {
+					const wasPlaying = daw.getPlaybackState() === "playing";
+					if (wasPlaying) daw.pause();
+					daw.setLoading?.(true);
+					void loadRequiredDrums(daw.getUsedDrumKeys(), fontId).finally(
+						() => {
+							daw.setLoading?.(false);
+							if (wasPlaying) daw.play();
+						},
+					);
+				}
+				dawOverrides.onDrumFontChange?.(fontId);
 			},
 		};
 

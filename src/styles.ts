@@ -549,6 +549,7 @@ export const DAW_CSS = `
 }
 .dtm-output-row { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; }
 .dtm-output-row pre { flex: 1; }
+.dtm-output-scroll { max-height: 240px; overflow-y: auto; }
 
 /* ─── ローディングオーバーレイ ─── */
 .dtm-overlay {
