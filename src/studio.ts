@@ -23,7 +23,13 @@ import {
 } from "./chord-player";
 import { buildChordPlacements } from "./chords";
 import { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
-import { DRUM_FONT, DRUM_KEYS } from "./drum-config";
+import {
+	DRUM_FONT,
+	DRUM_PATTERNS as DEFAULT_DRUM_PATTERNS,
+	getDrumPatternKeys,
+	type AnyDrumPattern,
+	type DrumPatternDef,
+} from "./drum-config";
 import {
 	type MmlPlayback,
 	type PlayChordsOptions,
@@ -216,6 +222,8 @@ export type DtmStudioOptions = {
 	};
 	/** MIDI検索クライアントの設定（未指定なら検索UI非表示）。 */
 	midiSearch?: import("./midi-search").MidiSearchConfig;
+	/** ドラムパターン辞書。 */
+	drumPatterns?: Record<string, AnyDrumPattern | DrumPatternDef>;
 };
 
 /** 編集UIのマウント時オプション（DawOptions を一部上書きできる）。 */
@@ -502,19 +510,24 @@ export const createDtmStudio = async (
 		sfList.onload(() => resolve());
 	});
 
-	// ドラム音源ロード（GMキー一式）。
-	const drumReady = (async () => {
+	// ドラム音源の遅延ロード状態管理
+	const loadedDrumKeys = new Set<number>();
+	const loadRequiredDrums = async (keys: number[]): Promise<void> => {
+		const newKeys = keys.filter((k) => !loadedDrumKeys.has(k));
+		if (newKeys.length === 0) return;
 		try {
 			await sfDrum.load({
 				ctx: audioCtx,
 				font: DRUM_FONT,
 				id: "0",
-				keys: Object.values(DRUM_KEYS),
+				keys: newKeys,
 			});
+			for (const k of newKeys) loadedDrumKeys.add(k);
 		} catch (e) {
 			console.error("[dtm] ドラム音源の読み込みに失敗", e);
 		}
-	})();
+	};
+	const drumReady = Promise.resolve();
 
 	let nameToKey: Record<string, string> = {};
 	// URLエンコーダがスペースを除去した楽器名を正規の GM 名へ逆引きする
@@ -843,9 +856,17 @@ export const createDtmStudio = async (
 			await loadInstrument(key);
 		};
 
+		let daw: DawInstance;
+
 		const base: DawOptions = {
 			getAudioTime: () => audioCtx.currentTime,
-			onResumeAudio: resumeAudio,
+			onResumeAudio: async () => {
+				await resumeAudio();
+				if (daw) {
+					await loadRequiredDrums(daw.getUsedDrumKeys());
+				}
+				await dawOverrides.onResumeAudio?.();
+			},
 			onPlayNote: playNote,
 			onPlayDrum: playDrum,
 			singingVoices,
@@ -856,11 +877,18 @@ export const createDtmStudio = async (
 				externalOnTrackInstrumentChange?.(idx, name);
 			},
 			...dawOverrides,
+			// dawOverrides で上書きされないよう、スプレッドの後に配置して合成する
+			onDrumChange: (name) => {
+				if (daw) {
+					void loadRequiredDrums(daw.getUsedDrumKeys());
+				}
+				dawOverrides.onDrumChange?.(name);
+			},
 		};
 
 		// 先に DAW を組む。buildUI が target.innerHTML を総入れ替えするため、
 		// プリセット選択UIの差し込みは mountDAW の「後」でなければ消えてしまう。
-		const daw = mountDAW(target, base);
+		daw = mountDAW(target, base);
 		mountedEditors.push(daw);
 
 		// プリセット選択UI（任意）。DAW の先頭へ差し込み、配線は mountPresetSelect に委ねる。
@@ -1125,7 +1153,20 @@ export const createDtmStudio = async (
 		};
 		const player = mountMmlPlayer(target, mml, {
 			getAudioTime: () => audioCtx.currentTime,
-			onResumeAudio: resumeAudio,
+			onResumeAudio: async () => {
+				await resumeAudio();
+				if (meta.drum) {
+					await loadRequiredDrums(
+						getDrumPatternKeys(
+							meta.drum,
+							opts.drumPatterns ??
+								options.drumPatterns ??
+								DEFAULT_DRUM_PATTERNS,
+						),
+					);
+				}
+				await opts.onResumeAudio?.();
+			},
 			onPlayNote: playPlayerNote,
 			onPlayDrum: playDrum,
 			singingVoices,
@@ -1221,7 +1262,20 @@ export const createDtmStudio = async (
 			synth: false,
 			onPlayNote: playPlayerNote,
 			onPlayDrum: playDrum,
-			onResumeAudio: resumeAudio,
+			onResumeAudio: async () => {
+				await resumeAudio();
+				if (meta.drum) {
+					await loadRequiredDrums(
+						getDrumPatternKeys(
+							meta.drum,
+							opts.drumPatterns ??
+								options.drumPatterns ??
+								DEFAULT_DRUM_PATTERNS,
+						),
+					);
+				}
+				await opts.onResumeAudio?.();
+			},
 		});
 	};
 
@@ -1308,7 +1362,20 @@ export const createDtmStudio = async (
 			singingVoices,
 			onPlayNote: playPlayerNote,
 			onPlayDrum: playDrum,
-			onResumeAudio: resumeAudio,
+			onResumeAudio: async () => {
+				await resumeAudio();
+				if (meta.drum) {
+					await loadRequiredDrums(
+						getDrumPatternKeys(
+							meta.drum,
+							opts.drumPatterns ??
+								options.drumPatterns ??
+								DEFAULT_DRUM_PATTERNS,
+						),
+					);
+				}
+				await opts.onResumeAudio?.();
+			},
 		});
 	};
 

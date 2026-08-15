@@ -20,7 +20,31 @@ export const DRUM_KEYS = {
 	ride: 51,
 	splash: 55,
 	tambourine: 54,
+	bassDrum1: 36,
+	acousticSnare: 38,
+	handClap: 39,
+	sideStick: 37,
+	closedHihat: 42,
+	openHihat: 46,
+	openCuica: 79,
+	muteTriangle: 80,
+	openTriangle: 81,
+	// --- GS/XG Extended Keys (82-87) ---
+	shaker: 82,
+	jingleBell: 83,
+	belltree: 84,
+	castanets: 85,
+	muteSurdo: 86,
+	openSurdo: 87,
 } as const;
+
+/**
+ * FluidR3_GM などの標準フォントに含まれない拡張キー用の代替URLマップ。
+ * ユーザーが意識せずとも、ここで定義された非対応音源が自動的に導入・利用されます。
+ */
+export const DRUM_CUSTOM_URLS: Record<number, string> = {
+	// 例: 27: "https://your-custom-host/high_q.js"
+};
 
 export type DrumPattern = {
 	step: number;
@@ -93,15 +117,62 @@ export const resolveDrumPattern = (
 	return (patternObj as DrumPattern) ?? null;
 };
 
+export const getDrumPatternKeys = (
+	name: string,
+	dict: Record<string, AnyDrumPattern | DrumPatternDef>,
+): number[] => {
+	if (!name || name === "none" || !dict) return [];
+	const rawDef = dict[name];
+	if (!rawDef) return [];
+
+	let patternObj: AnyDrumPattern;
+	if (
+		typeof rawDef === "object" &&
+		rawDef !== null &&
+		"pattern" in rawDef &&
+		!Array.isArray(rawDef)
+	) {
+		patternObj = (rawDef as DrumPatternDef).pattern;
+	} else {
+		patternObj = rawDef as AnyDrumPattern;
+	}
+
+	if (!Array.isArray(patternObj) || patternObj.length === 0) return [];
+
+	const keys = new Set<number>();
+
+	if ("ranges" in patternObj[0]) {
+		const songDef = patternObj as SongDrumPattern;
+		for (const inst of songDef) {
+			if (Array.isArray(inst.pattern)) {
+				for (const item of inst.pattern) {
+					if (typeof item.pitch === "number") {
+						keys.add(item.pitch);
+					}
+				}
+			}
+		}
+	} else {
+		const drumDef = patternObj as DrumPattern;
+		for (const item of drumDef) {
+			if (typeof item.pitch === "number") {
+				keys.add(item.pitch);
+			}
+		}
+	}
+
+	return Array.from(keys);
+};
+
 export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
 	// 4つ打ち：より重厚に。1拍目の頭にだけ軽くオープンハイハットを混ぜるのもアリ
 	"4beat": {
 		label: "4つ打ち",
 		pattern: [
-			{ step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-			{ step: 48, pitch: DRUM_KEYS.kick, velocity: 0.9 },
-			{ step: 96, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-			{ step: 144, pitch: DRUM_KEYS.kick, velocity: 0.9 },
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 48, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 144, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
 		],
 	},
 
@@ -109,19 +180,19 @@ export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
 	"8beat": {
 		label: "8ビート",
 		pattern: [
-			{ step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-			{ step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-			{ step: 24, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
-			{ step: 48, pitch: DRUM_KEYS.snare, velocity: 1.0 },
-			{ step: 48, pitch: DRUM_KEYS.clap, velocity: 0.6 },
-			{ step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-			{ step: 72, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
-			{ step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 },
-			{ step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-			{ step: 120, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
-			{ step: 144, pitch: DRUM_KEYS.snare, velocity: 1.0 },
-			{ step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-			{ step: 168, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 0, pitch: DRUM_KEYS.closedHihat, velocity: 0.8 },
+			{ step: 24, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+			{ step: 48, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 48, pitch: DRUM_KEYS.handClap, velocity: 0.6 },
+			{ step: 48, pitch: DRUM_KEYS.closedHihat, velocity: 0.8 },
+			{ step: 72, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 96, pitch: DRUM_KEYS.closedHihat, velocity: 0.8 },
+			{ step: 120, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+			{ step: 144, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 144, pitch: DRUM_KEYS.closedHihat, velocity: 0.8 },
+			{ step: 168, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
 		],
 	},
 
@@ -129,27 +200,27 @@ export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
 	"16beat": {
 		label: "16ビート",
 		pattern: [
-			{ step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-			{ step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-			{ step: 12, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-			{ step: 24, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-			{ step: 36, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-			{ step: 48, pitch: DRUM_KEYS.snare, velocity: 1.0 },
-			{ step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-			{ step: 60, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-			{ step: 72, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-			{ step: 84, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-			{ step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 },
-			{ step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-			{ step: 108, pitch: DRUM_KEYS.kick, velocity: 0.7 },
-			{ step: 108, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-			{ step: 120, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-			{ step: 132, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-			{ step: 144, pitch: DRUM_KEYS.snare, velocity: 1.0 },
-			{ step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-			{ step: 156, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-			{ step: 168, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-			{ step: 180, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 0, pitch: DRUM_KEYS.closedHihat, velocity: 0.8 },
+			{ step: 12, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 24, pitch: DRUM_KEYS.closedHihat, velocity: 0.6 },
+			{ step: 36, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 48, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 48, pitch: DRUM_KEYS.closedHihat, velocity: 0.8 },
+			{ step: 60, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 72, pitch: DRUM_KEYS.closedHihat, velocity: 0.6 },
+			{ step: 84, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 96, pitch: DRUM_KEYS.closedHihat, velocity: 0.8 },
+			{ step: 108, pitch: DRUM_KEYS.bassDrum1, velocity: 0.7 },
+			{ step: 108, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 120, pitch: DRUM_KEYS.closedHihat, velocity: 0.6 },
+			{ step: 132, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 144, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 144, pitch: DRUM_KEYS.closedHihat, velocity: 0.8 },
+			{ step: 156, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 168, pitch: DRUM_KEYS.closedHihat, velocity: 0.6 },
+			{ step: 180, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
 		],
 	},
 
@@ -157,18 +228,18 @@ export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
 	shuffle: {
 		label: "シャッフル",
 		pattern: [
-			{ step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-			{ step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-			{ step: 32, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
-			{ step: 48, pitch: DRUM_KEYS.snare, velocity: 1.0 },
-			{ step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-			{ step: 80, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
-			{ step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 },
-			{ step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-			{ step: 128, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
-			{ step: 144, pitch: DRUM_KEYS.snare, velocity: 1.0 },
-			{ step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.8 },
-			{ step: 176, pitch: DRUM_KEYS.hihatClosed, velocity: 0.5 },
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 0, pitch: DRUM_KEYS.closedHihat, velocity: 0.8 },
+			{ step: 32, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+			{ step: 48, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 48, pitch: DRUM_KEYS.closedHihat, velocity: 0.8 },
+			{ step: 80, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 96, pitch: DRUM_KEYS.closedHihat, velocity: 0.8 },
+			{ step: 128, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+			{ step: 144, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 144, pitch: DRUM_KEYS.closedHihat, velocity: 0.8 },
+			{ step: 176, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
 		],
 	},
 
@@ -176,16 +247,16 @@ export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
 	dance: {
 		label: "ダンス/EDM",
 		pattern: [
-			{ step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-			{ step: 24, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
-			{ step: 48, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-			{ step: 48, pitch: DRUM_KEYS.clap, velocity: 1.0 },
-			{ step: 72, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
-			{ step: 96, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-			{ step: 120, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
-			{ step: 144, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-			{ step: 144, pitch: DRUM_KEYS.clap, velocity: 1.0 },
-			{ step: 168, pitch: DRUM_KEYS.hihatOpen, velocity: 0.7 },
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 24, pitch: DRUM_KEYS.openHihat, velocity: 0.7 },
+			{ step: 48, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 48, pitch: DRUM_KEYS.handClap, velocity: 1.0 },
+			{ step: 72, pitch: DRUM_KEYS.openHihat, velocity: 0.7 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 120, pitch: DRUM_KEYS.openHihat, velocity: 0.7 },
+			{ step: 144, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 144, pitch: DRUM_KEYS.handClap, velocity: 1.0 },
+			{ step: 168, pitch: DRUM_KEYS.openHihat, velocity: 0.7 },
 		],
 	},
 
@@ -193,19 +264,19 @@ export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
 	bossa: {
 		label: "ボサノバ/チル",
 		pattern: [
-			{ step: 0, pitch: DRUM_KEYS.kick, velocity: 0.9 },
-			{ step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-			{ step: 24, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-			{ step: 48, pitch: DRUM_KEYS.rimshot, velocity: 0.8 },
-			{ step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-			{ step: 72, pitch: DRUM_KEYS.kick, velocity: 0.7 },
-			{ step: 72, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-			{ step: 96, pitch: DRUM_KEYS.kick, velocity: 0.9 },
-			{ step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-			{ step: 120, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
-			{ step: 144, pitch: DRUM_KEYS.rimshot, velocity: 0.8 },
-			{ step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.6 },
-			{ step: 168, pitch: DRUM_KEYS.hihatClosed, velocity: 0.4 },
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 0, pitch: DRUM_KEYS.closedHihat, velocity: 0.6 },
+			{ step: 24, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 48, pitch: DRUM_KEYS.sideStick, velocity: 0.8 },
+			{ step: 48, pitch: DRUM_KEYS.closedHihat, velocity: 0.6 },
+			{ step: 72, pitch: DRUM_KEYS.bassDrum1, velocity: 0.7 },
+			{ step: 72, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 96, pitch: DRUM_KEYS.closedHihat, velocity: 0.6 },
+			{ step: 120, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 144, pitch: DRUM_KEYS.sideStick, velocity: 0.8 },
+			{ step: 144, pitch: DRUM_KEYS.closedHihat, velocity: 0.6 },
+			{ step: 168, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
 		],
 	},
 
@@ -213,17 +284,17 @@ export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
 	disco: {
 		label: "ファンク/ディスコ",
 		pattern: [
-			{ step: 0, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-			{ step: 0, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 0, pitch: DRUM_KEYS.closedHihat, velocity: 0.7 },
 			{ step: 24, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
-			{ step: 48, pitch: DRUM_KEYS.snare, velocity: 1.0 },
-			{ step: 48, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
+			{ step: 48, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 48, pitch: DRUM_KEYS.closedHihat, velocity: 0.7 },
 			{ step: 72, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
-			{ step: 96, pitch: DRUM_KEYS.kick, velocity: 1.0 },
-			{ step: 96, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 96, pitch: DRUM_KEYS.closedHihat, velocity: 0.7 },
 			{ step: 120, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
-			{ step: 144, pitch: DRUM_KEYS.snare, velocity: 1.0 },
-			{ step: 144, pitch: DRUM_KEYS.hihatClosed, velocity: 0.7 },
+			{ step: 144, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 144, pitch: DRUM_KEYS.closedHihat, velocity: 0.7 },
 			{ step: 168, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
 		],
 	},

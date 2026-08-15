@@ -1,6 +1,7 @@
 /**
  * @credits rpgen3 https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont_drum.mjs (MIT)
  */
+import { DRUM_CUSTOM_URLS } from "../drum-config";
 import { SoundFont } from "./SoundFont";
 
 const touch = <K, V>(map: Map<K, V>, key: K, ctor: new () => V): V => {
@@ -31,22 +32,32 @@ export const SoundFont_drum = new (class {
 			Map,
 		) as Map<number, SoundFont>;
 		if (!map.size) {
-			for (const [pitch, sf] of await Promise.all(
+			const results = await Promise.all(
 				[...keys].map(async (key) => {
 					const fontName = `${key}_${id}_${font}`;
-					return [
-						Number(key),
-						await SoundFont.load({
+					try {
+						const sf = await SoundFont.load({
 							ctx,
 							fontName: `_drum_${fontName}`,
-							url: `https://surikov.github.io/webaudiofontdata/sound/128${fontName}.js`,
+							url:
+								DRUM_CUSTOM_URLS[Number(key)] ??
+								`https://surikov.github.io/webaudiofontdata/sound/128${fontName}.js`,
 							isDrum: true,
 							pitchs: [key],
-						}),
-					] as [number, SoundFont];
+						});
+						return [Number(key), sf] as const;
+					} catch (e) {
+						console.warn(
+							`[dtm] ドラムキー ${key} のロードをスキップしました`,
+							e,
+						);
+						return null;
+					}
 				}),
-			))
-				map.set(pitch, sf);
+			);
+			for (const res of results) {
+				if (res) map.set(res[0], res[1]);
+			}
 		}
 		this.font = map;
 	}

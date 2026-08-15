@@ -1221,7 +1221,7 @@ export const mountChordPlayer = (
 			if (beatAbsSec >= now - 0.01) {
 				// ビート1拍目（小節頭）はキック、それ以外はハイハット
 				const isDownbeat = beat % 4 === 0;
-				const pitch = isDownbeat ? DRUM_KEYS.kick : DRUM_KEYS.hihatClosed;
+				const pitch = isDownbeat ? DRUM_KEYS.bassDrum1 : DRUM_KEYS.closedHihat;
 				const velocity = (isDownbeat ? 0.7 : 0.45) * (masterVolume / 100);
 
 				// WAFドラム音があれば使う、なければオシレータシンセで代替
@@ -1283,7 +1283,7 @@ export const mountChordPlayer = (
 		}
 
 		// Preload drum WAF in background; synth fallback handles beats until they are cached
-		for (const p of [DRUM_KEYS.kick, DRUM_KEYS.hihatClosed]) {
+		for (const p of [DRUM_KEYS.bassDrum1, DRUM_KEYS.closedHihat]) {
 			if (!_drumCache.has(p)) loadDrumFont(ctx, p);
 		}
 

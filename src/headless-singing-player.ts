@@ -8,11 +8,11 @@
  */
 
 import {
+	type AnyDrumPattern,
 	DRUM_PATTERNS,
+	type DrumPatternDef,
 	normalizeDrumPatterns,
 	resolveDrumPattern,
-	type AnyDrumPattern,
-	type DrumPatternDef,
 } from "./drum-config";
 import type { MmlPlayback, PlayMmlOptions } from "./headless-player";
 import {

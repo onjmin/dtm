@@ -15,11 +15,11 @@ import {
 	type TimedNote,
 } from "@onjmin/chord-parser";
 import {
+	type AnyDrumPattern,
 	DRUM_PATTERNS,
+	type DrumPatternDef,
 	normalizeDrumPatterns,
 	resolveDrumPattern,
-	type AnyDrumPattern,
-	type DrumPatternDef,
 } from "./drum-config";
 import { icon } from "./icons";
 import {

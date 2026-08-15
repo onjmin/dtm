@@ -21,11 +21,11 @@
 
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import {
+	type AnyDrumPattern,
 	DRUM_PATTERNS,
+	type DrumPatternDef,
 	normalizeDrumPatterns,
 	resolveDrumPattern,
-	type AnyDrumPattern,
-	type DrumPatternDef,
 } from "./drum-config";
 import { parseMML } from "./mml-parser";
 import { createSequencer, type SequencerTrack } from "./sequencer";

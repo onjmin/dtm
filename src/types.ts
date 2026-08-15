@@ -365,6 +365,8 @@ export type DawInstance = {
 	setInstrument: (name: string) => void;
 	/** 現在のドラムパターン名を返す（永続化の保存用）。 */
 	getDrum: () => string;
+	/** 現在のドラムパターンで使用されているキー一覧を返す */
+	getUsedDrumKeys: () => number[];
 	/** ドラムパターンを設定する（未知のキーは無視）。選択UIにも反映する。 */
 	setDrum: (name: string) => void;
 	/** 現在の表示・出力設定を返す（永続化の保存用）。 */

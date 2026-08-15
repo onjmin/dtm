@@ -11,6 +11,7 @@ import { buildChordPlacements, type ChordPatternType } from "./chords";
 import { buildUI } from "./daw-ui";
 import {
 	DRUM_PATTERNS,
+	getDrumPatternKeys,
 	normalizeDrumPatterns,
 	resolveDrumPattern,
 } from "./drum-config";
@@ -2514,7 +2515,7 @@ export const mountDAW = (
 			if (meta.drumVolume !== undefined) {
 				drumVolume = meta.drumVolume;
 				refs.drumVolume.value = String(meta.drumVolume);
-				refs.drumVolumeLabel.textContent = `${meta.drumVolume}%`;
+				refs.drumVolumeLabel.textContent = `${drumVolume}%`;
 			}
 		}
 		// トラック個別楽器を復元する（URLエンコーダがスペースを除去するため正規化して復元）
@@ -3913,6 +3914,7 @@ export const mountDAW = (
 			currentInstrument = name;
 		},
 		getDrum: () => currentDrumPattern,
+		getUsedDrumKeys: () => getDrumPatternKeys(currentDrumPattern, drumPatterns),
 		setDrum: (name: string) => {
 			// "none"（ドラムなし）も有効な選択肢。それ以外は既知のパターンのみ受け付ける
 			if (name !== "none" && !drumPatterns[name]) return;
