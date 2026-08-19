@@ -36,6 +36,7 @@ import {
 	applyMonophonic,
 	generateRandomPattern,
 	shiftNotes,
+	transposeNotes,
 } from "./macros";
 import {
 	analyzeMidiTracks,
@@ -140,6 +141,17 @@ const VIBRATO_INFO_HTML = `
 </div>
 `;
 
+const OCTAVE_DOUBLE_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>ONにすると、このトラックの各音節を1オクターブ下（控えめな音量）で同時に重ねて発音します。声に厚み・パワーを足す「オクターブダブリング」という定番のボーカル加工です。</p>
+  <h4>使いどころ</h4>
+  <p>サビの決めのフレーズ、ロボット的/ダークな質感の演出、ユニゾンハーモニーなどでよく使われます。曲全体に掛けっぱなしにすると常にくどい印象になりやすいので、トラックを分けて使いたい箇所だけに絞るのがおすすめです。</p>
+  <h4>他の設定との兼ね合い</h4>
+  <p>重ねる声にも同じビブラート/ジェンダー/ブレシネス/リバーブ送り/ディレイ送りの設定がそのまま適用されます。音量比・音程差（1オクターブ固定）は調整できません。合成が単純に2倍走るため、音数の多いトラックではやや重くなります。</p>
+</div>
+`;
+
 const GENDER_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>何をする設定か</h4>
@@ -205,6 +217,28 @@ const MASTER_DELAY_INFO_HTML = `
   <p>リバーブは拡散した残響で空間全体に薄く掛けるのが基本ですが、ディレイはハッキリ聞こえる繰り返しなので「ここぞ」という場面（リードボーカルの語尾、ギターソロ、シンセのフレーズ等）にワンポイントで使うのが定番です。バッキング全体に強く掛けるとリズムが濁ります。</p>
   <h4>各トラックの「ディレイ送り」との関係</h4>
   <p>リバーブと同じ二段構えです。歌詞トラック個別の「ディレイ送り」が0%ならこのマスタの値を上げても無音、逆にこのマスタが0%ならどのトラックの送り量を上げても効果が出ません。</p>
+</div>
+`;
+
+const FADE_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>曲の頭で音量0%から徐々に上げる「フェードイン」、曲の終わりで音量を0%まで徐々に下げる「フェードアウト」を設定します。0秒でフェードなしです。</p>
+  <h4>いつ効くか</h4>
+  <p>フェードインは曲の先頭（0小節目）から再生したときだけ掛かります。途中の小節から再生・シークした場合は掛かりません。フェードアウトは、今ノートが置かれている範囲の終端に向けて自動的に掛かります（ノートを足せば終端も伸びます）。</p>
+  <h4>使いどころ</h4>
+  <p>編集中はほとんど意識しませんが、書き出して人に聴かせる・配信する段になると、曲の出入りが唐突だと素人っぽく聞こえがちです。数秒のフェードを入れるだけで仕上がりの印象が変わります。</p>
+</div>
+`;
+
+const TRANSPOSE_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>全トラックのノートを選んだ半音数だけ一括で移調します。歌詞トラックの歌声もノートのピッチに追従するため、ボーカルも一緒に移調されます。</p>
+  <h4>使いどころ</h4>
+  <p>「歌ってみたら音域が高すぎた/低すぎた」というときの調整定番です。ボーカルの声域に合わせて曲全体のキーを上げ下げできます。</p>
+  <h4>注意</h4>
+  <p>ノートデータを直接書き換える操作です（元に戻すには「元に戻す」ボタンを使ってください）。MIDIノート範囲（0-127）を超える音は範囲内にクランプされます。</p>
 </div>
 `;
 
@@ -591,6 +625,8 @@ type TrackState = {
 	vocalGender: number;
 	/** ブレシネス（息成分）0-100。既定50（無変化）。koe音源限定 */
 	vocalBreathiness: number;
+	/** オクターブダブル ON/OFF。ONで1オクターブ下を控えめな音量で重ねて厚みを足す。既定false */
+	vocalOctaveDouble: boolean;
 	/** トラック個別の楽器名（GM楽器名）。空文字でプリセット適用 */
 	trackInstrument: string;
 	/**
@@ -669,6 +705,10 @@ export const mountDAW = (
 	refs.delayAmount.value = String(options.delayAmount ?? 0);
 	refs.delayAmountLabel.textContent = `${options.delayAmount ?? 0}%`;
 	refs.delayDivision.value = options.delayDivision ?? "8";
+	refs.fadeIn.value = String(options.fadeInSec ?? 0);
+	refs.fadeInLabel.textContent = `${(options.fadeInSec ?? 0).toFixed(1)}s`;
+	refs.fadeOut.value = String(options.fadeOutSec ?? 0);
+	refs.fadeOutLabel.textContent = `${(options.fadeOutSec ?? 0).toFixed(1)}s`;
 	refs.drumVolume.value = String(options.drumVolume ?? 80);
 	refs.drumVolumeLabel.textContent = `${options.drumVolume ?? 80}%`;
 
@@ -692,6 +732,8 @@ export const mountDAW = (
 	let reverbPreDelay = options.reverbPreDelay ?? DEFAULT_REVERB_PREDELAY_MS;
 	let delayAmount = options.delayAmount ?? 0;
 	let delayDivision: DelayDivision = options.delayDivision ?? "8";
+	let fadeInSec = options.fadeInSec ?? 0;
+	let fadeOutSec = options.fadeOutSec ?? 0;
 	// 音割れ検知バッジの購読解除（wireEvents内で購読、destroyで解除するため外側で保持）
 	let unsubscribeClip: (() => void) | undefined;
 	options.onReverbChange?.(reverbAmount);
@@ -816,6 +858,7 @@ export const mountDAW = (
 			vocalDelay: t.vocalDelay,
 			vocalGender: t.vocalGender,
 			vocalBreathiness: t.vocalBreathiness,
+			vocalOctaveDouble: t.vocalOctaveDouble,
 		};
 		if (lyricsDebounceTimer) clearTimeout(lyricsDebounceTimer);
 		lyricsDebounceTimer = setTimeout(() => {
@@ -895,6 +938,7 @@ export const mountDAW = (
 				vocalDelay: 0,
 				vocalGender: 50,
 				vocalBreathiness: 50,
+				vocalOctaveDouble: false,
 				trackInstrument: "",
 				trackCompression: 0,
 				trackWidth: 100,
@@ -926,6 +970,7 @@ export const mountDAW = (
 				delay: t.vocalDelay,
 				gender: t.vocalGender,
 				breathiness: t.vocalBreathiness,
+				octaveDouble: t.vocalOctaveDouble,
 				syllables,
 			});
 		});
@@ -940,16 +985,20 @@ export const mountDAW = (
 	// ============================================================
 	// 描画
 	// ============================================================
-	const getMaxNoteStep = (): number => {
+	/** 全トラックを通した最後のノートの終端ステップ（余白なし）。フェードアウトの終端計算に使う。 */
+	const getSongEndStepExact = (): number => {
 		let maxEndStep = 0;
 		for (const t of trackStates) {
 			for (const n of t.core.getNotes()) {
 				const end = n.startStep + n.durationSteps;
-				if (end > maxEndStep) {
-					maxEndStep = end;
-				}
+				if (end > maxEndStep) maxEndStep = end;
 			}
 		}
+		return maxEndStep;
+	};
+
+	const getMaxNoteStep = (): number => {
+		const maxEndStep = getSongEndStepExact();
 		if (maxEndStep === 0) {
 			return renderConfig.stepsPerBar * 4;
 		}
@@ -1908,6 +1957,7 @@ export const mountDAW = (
 						delaySend: (lt.delay ?? 0) / 100,
 						gender: (lt.gender ?? 50) / 100,
 						breathiness: (lt.breathiness ?? 50) / 100,
+						octaveDouble: lt.octaveDouble,
 						notes,
 					};
 				})
@@ -1951,6 +2001,33 @@ export const mountDAW = (
 		}
 		playbackState = "playing";
 		sequencer.start(fromStep);
+
+		// フェードイン/アウトのスケジュール。フェードインは曲頭（fromStep===0）から
+		// 再生したときだけ、フェードアウトは現在のノート終端に向けて掛ける。
+		{
+			const anchor = sequencer.getStartTime();
+			const secondsPerStepFade = 60 / bpm / 48;
+			const params: import("./types").FadeScheduleParams = {};
+			if (fadeInSec > 0 && fromStep === 0) {
+				params.fadeInStartAt = anchor;
+				params.fadeInEndAt = anchor + fadeInSec;
+			}
+			if (fadeOutSec > 0) {
+				const endStep = getSongEndStepExact();
+				const totalDurationSec = (endStep - fromStep) * secondsPerStepFade;
+				if (totalDurationSec > 0) {
+					const fadeOutEndAt = anchor + totalDurationSec;
+					const earliestStart = params.fadeInEndAt ?? anchor;
+					params.fadeOutEndAt = fadeOutEndAt;
+					params.fadeOutStartAt = Math.max(
+						fadeOutEndAt - fadeOutSec,
+						earliestStart,
+					);
+				}
+			}
+			options.onScheduleFade?.(params);
+		}
+
 		// 楽器と同じアンカー（開始時刻）で歌声の先読みストリーミングを開始する。
 		// ソロはライブ判定（楽器側＝シーケンサの getSoloTrackId と同じ基準）で渡す。
 		if (streaming && voices) {
@@ -1970,6 +2047,7 @@ export const mountDAW = (
 		sequencer.stop();
 		options.singingVoices?.stopStream();
 		clearSoundTimers();
+		options.onScheduleFade?.(null);
 		playbackState = "paused";
 		updateTransport();
 	};
@@ -1986,6 +2064,7 @@ export const mountDAW = (
 		sequencer.stop();
 		options.singingVoices?.stopStream();
 		clearSoundTimers();
+		options.onScheduleFade?.(null);
 		playbackState = "stopped";
 		currentPlayStep = 0;
 		updateTransport();
@@ -2321,6 +2400,12 @@ export const mountDAW = (
             </span>
             <button class="dtm-infobtn" data-dtm="lyric-vibrato-info" title="自動ビブラートの解説">${icon("info", 12)}</button>
           </div>
+          <div class="dtm-row">
+            <span class="dtm-label" style="display:inline-flex;align-items:center;gap:2px">
+              <input type="checkbox" data-dtm="lyric-octave-double" aria-label="オクターブダブル">オクターブダブル
+            </span>
+            <button class="dtm-infobtn" data-dtm="lyric-octave-double-info" title="オクターブダブルの解説">${icon("info", 12)}</button>
+          </div>
         </details>
         <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）"></textarea>
       </div>`;
@@ -2411,6 +2496,15 @@ export const mountDAW = (
 			) as HTMLButtonElement;
 			lyricVibratoInfo.addEventListener("click", () => {
 				showModal("自動ビブラート解説", VIBRATO_INFO_HTML);
+			});
+			const lyricOctaveDouble = lyricDiv.querySelector(
+				'[data-dtm="lyric-octave-double"]',
+			) as HTMLInputElement;
+			const lyricOctaveDoubleInfo = lyricDiv.querySelector(
+				'[data-dtm="lyric-octave-double-info"]',
+			) as HTMLButtonElement;
+			lyricOctaveDoubleInfo.addEventListener("click", () => {
+				showModal("オクターブダブル解説", OCTAVE_DOUBLE_INFO_HTML);
 			});
 			const lyricTerms = lyricDiv.querySelector(
 				'[data-dtm="lyric-terms"]',
@@ -2504,6 +2598,7 @@ export const mountDAW = (
 			lyricBreathiness.value = String(active.vocalBreathiness);
 			lyricBreathinessLabel.textContent = `${active.vocalBreathiness}`;
 			lyricVibrato.checked = active.vocalVibrato;
+			lyricOctaveDouble.checked = active.vocalOctaveDouble;
 			const updateLyricCount = (): void => {
 				const n = normalizeLyrics(lyricInput.value).length;
 				lyricCount.textContent = active.lyricModel && n > 0 ? `${n}音節` : "";
@@ -2638,6 +2733,10 @@ export const mountDAW = (
 			});
 			lyricVibrato.addEventListener("change", () => {
 				active.vocalVibrato = lyricVibrato.checked;
+				fireLyricsChange(active);
+			});
+			lyricOctaveDouble.addEventListener("change", () => {
+				active.vocalOctaveDouble = lyricOctaveDouble.checked;
 				fireLyricsChange(active);
 			});
 			lyricInput.addEventListener("input", () => {
@@ -2840,6 +2939,8 @@ export const mountDAW = (
 				reverbPreDelay: reverbPreDelay,
 				delay: delayAmount,
 				delayDivision: delayDivision,
+				fadeIn: Math.round(fadeInSec * 10),
+				fadeOut: Math.round(fadeOutSec * 10),
 				mode: mode,
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
@@ -2861,6 +2962,8 @@ export const mountDAW = (
 				reverbPreDelay: reverbPreDelay,
 				delay: delayAmount,
 				delayDivision: delayDivision,
+				fadeIn: Math.round(fadeInSec * 10),
+				fadeOut: Math.round(fadeOutSec * 10),
 				mode: mode,
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
@@ -2934,6 +3037,7 @@ export const mountDAW = (
 				del: t.vocalDelay,
 				gen: t.vocalGender,
 				bre: t.vocalBreathiness,
+				dbl: t.vocalOctaveDouble,
 			}))
 			.filter(
 				(x) => x.model.length > 0 && x.text.length > 0 && x.notes.length > 0,
@@ -2949,6 +3053,7 @@ export const mountDAW = (
 					x.del === 0 ? "" : `e${x.del}`,
 					x.gen === 50 ? "" : `g${x.gen}`,
 					x.bre === 50 ? "" : `h${x.bre}`,
+					x.dbl ? "w1" : "",
 				]
 					.filter((s) => s.length > 0)
 					.join(" ");
@@ -3147,6 +3252,16 @@ export const mountDAW = (
 				refs.delayDivision.value = delayDivision;
 				options.onDelayDivisionChange?.(delayDivision);
 			}
+			if (meta.fadeIn !== undefined) {
+				fadeInSec = meta.fadeIn / 10;
+				refs.fadeIn.value = String(fadeInSec);
+				refs.fadeInLabel.textContent = `${fadeInSec.toFixed(1)}s`;
+			}
+			if (meta.fadeOut !== undefined) {
+				fadeOutSec = meta.fadeOut / 10;
+				refs.fadeOut.value = String(fadeOutSec);
+				refs.fadeOutLabel.textContent = `${fadeOutSec.toFixed(1)}s`;
+			}
 		}
 		// トラック個別楽器を復元する（URLエンコーダがスペースを除去するため正規化して復元）
 		trackStates.forEach((t, i) => {
@@ -3211,6 +3326,7 @@ export const mountDAW = (
 			active.vocalDelay = 0;
 			active.vocalGender = 50;
 			active.vocalBreathiness = 50;
+			active.vocalOctaveDouble = false;
 		} else {
 			for (const t of trackStates) {
 				t.lyrics = "";
@@ -3224,6 +3340,7 @@ export const mountDAW = (
 				t.vocalDelay = 0;
 				t.vocalGender = 50;
 				t.vocalBreathiness = 50;
+				t.vocalOctaveDouble = false;
 			}
 		}
 		lyrics?.forEach((lt) => {
@@ -3241,6 +3358,7 @@ export const mountDAW = (
 			t.vocalDelay = lt.delay ?? 0;
 			t.vocalGender = lt.gender ?? 50;
 			t.vocalBreathiness = lt.breathiness ?? 50;
+			t.vocalOctaveDouble = lt.octaveDouble ?? false;
 		});
 		// 注意: p.velocity は generateMML がトラック全体に単一の v ヘッダーしか出力しないため、
 		// そのトラックの「ベロシティ」スライダー値（上で trackVelocity から t.volume へ復元済み）が
@@ -3340,6 +3458,7 @@ export const mountDAW = (
 			active.vocalDelay = 0;
 			active.vocalGender = 50;
 			active.vocalBreathiness = 50;
+			active.vocalOctaveDouble = false;
 		} else {
 			clearAll();
 			for (const t of trackStates) t.core.setLoadMode(true);
@@ -3356,6 +3475,7 @@ export const mountDAW = (
 				t.vocalDelay = 0;
 				t.vocalGender = 50;
 				t.vocalBreathiness = 50;
+				t.vocalOctaveDouble = false;
 			}
 		}
 
@@ -3650,6 +3770,17 @@ export const mountDAW = (
 		});
 		refs.delayAmountInfoBtn.addEventListener("click", () => {
 			showModal("マスタディレイの解説", MASTER_DELAY_INFO_HTML);
+		});
+		refs.fadeIn.addEventListener("input", () => {
+			fadeInSec = Number.parseFloat(refs.fadeIn.value) || 0;
+			refs.fadeInLabel.textContent = `${fadeInSec.toFixed(1)}s`;
+		});
+		refs.fadeOut.addEventListener("input", () => {
+			fadeOutSec = Number.parseFloat(refs.fadeOut.value) || 0;
+			refs.fadeOutLabel.textContent = `${fadeOutSec.toFixed(1)}s`;
+		});
+		refs.fadeInfoBtn.addEventListener("click", () => {
+			showModal("フェードイン/アウトの解説", FADE_INFO_HTML);
 		});
 		refs.autoMasterInfoBtn.addEventListener("click", () => {
 			showModal("おまかせマスタリング解説", AUTO_MASTER_INFO_HTML);
@@ -3965,6 +4096,19 @@ export const mountDAW = (
 				redrawAll();
 			}),
 		);
+		refs.transposeApplyBtn.addEventListener("click", () =>
+			overlayDuring(() => {
+				transposeNotes(
+					trackStates.map((t) => t.core),
+					Number.parseInt(refs.transposeSelect.value, 10) || 0,
+				);
+				redrawAll();
+				updateUndoRedo();
+			}),
+		);
+		refs.transposeInfoBtn.addEventListener("click", () => {
+			showModal("移調の解説", TRANSPOSE_INFO_HTML);
+		});
 
 		if (showMidi) wireMidi();
 		if (showMidiSearch) wireMidiSearch();
@@ -4893,6 +5037,7 @@ export const mountDAW = (
 			t.vocalDelay = data.vocalDelay ?? 0;
 			t.vocalGender = data.vocalGender ?? 50;
 			t.vocalBreathiness = data.vocalBreathiness ?? 50;
+			t.vocalOctaveDouble = data.vocalOctaveDouble ?? false;
 		},
 		applyTrackInstrument: (
 			trackIndex: number,

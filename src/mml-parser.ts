@@ -61,6 +61,14 @@ export type MmlMeta = {
 	delay?: number;
 	/** マスタディレイの音価（"4"|"8"|"8d"|"16"）。`#delaydiv=` で埋め込む。省略時は"8"。 */
 	delayDivision?: string;
+	/**
+	 * 曲頭のフェードイン長を10倍した整数（秒 → 0〜100）。`#fadein=` で埋め込む。省略時は0。
+	 */
+	fadeIn?: number;
+	/**
+	 * 曲尾のフェードアウト長を10倍した整数（秒 → 0〜100）。`#fadeout=` で埋め込む。省略時は0。
+	 */
+	fadeOut?: number;
 	/** DAWの動作モード（simple | advanced） */
 	mode?: "simple" | "advanced";
 	/**
@@ -88,7 +96,7 @@ export type MmlMeta = {
 
 /** `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
 const META_DIRECTIVE =
-	/#(inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|mode)=([\w-]+)/gi;
+	/#(inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|fadein|fadeout|mode)=([\w-]+)/gi;
 
 /** `#t<n>inst=<GM楽器名>` にマッチする（値は`;` `#` 改行以外の任意文字） */
 const TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
@@ -134,6 +142,12 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 			if (!Number.isNaN(dv)) meta.delay = clamp(dv, 0, 100);
 		} else if (key === "delaydiv") {
 			if (["4", "8", "8d", "16"].includes(m[2])) meta.delayDivision = m[2];
+		} else if (key === "fadein") {
+			const fi = Number.parseInt(m[2], 10);
+			if (!Number.isNaN(fi)) meta.fadeIn = clamp(fi, 0, 100);
+		} else if (key === "fadeout") {
+			const fo = Number.parseInt(m[2], 10);
+			if (!Number.isNaN(fo)) meta.fadeOut = clamp(fo, 0, 100);
 		} else if (key === "mode") {
 			if (m[2] === "simple" || m[2] === "advanced") {
 				meta.mode = m[2];
@@ -221,6 +235,10 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 		parts.push(`#delay=${meta.delay}`);
 	if (meta.delayDivision && meta.delayDivision !== "8")
 		parts.push(`#delaydiv=${meta.delayDivision}`);
+	if (meta.fadeIn !== undefined && meta.fadeIn !== 0)
+		parts.push(`#fadein=${meta.fadeIn}`);
+	if (meta.fadeOut !== undefined && meta.fadeOut !== 0)
+		parts.push(`#fadeout=${meta.fadeOut}`);
 	if (meta.mode) parts.push(`#mode=${meta.mode}`);
 	if (meta.trackInstruments) {
 		for (const [idx, name] of Object.entries(meta.trackInstruments)) {

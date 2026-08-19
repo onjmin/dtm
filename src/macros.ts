@@ -175,3 +175,21 @@ export const shiftNotes = (cores: MMLCore[], shiftSteps: number): void => {
 		}
 	}
 };
+
+/**
+ * 全トラックのノートを一括で移調する（半音単位）。歌唱ピッチもノート由来なので、
+ * 歌詞トラックの歌声も一緒に移調される。MIDI範囲(0-127)を超える場合はクランプする
+ * （音域外に飛んで無音・破綻するのを防ぐ）。
+ */
+export const transposeNotes = (cores: MMLCore[], semitones: number): void => {
+	if (semitones === 0) return;
+	for (const core of cores) {
+		const notes = [...core.getNotes()];
+		for (const note of notes) {
+			const newPitch = Math.max(0, Math.min(127, note.pitch + semitones));
+			if (newPitch !== note.pitch) {
+				core.moveNote(note.id, note.startStep, newPitch);
+			}
+		}
+	}
+};

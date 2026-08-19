@@ -78,6 +78,7 @@ import type {
 	DawInstance,
 	DawMode,
 	DawOptions,
+	FadeScheduleParams,
 	PlayDrumEvent,
 	PlayNoteEvent,
 	TrackConfig,
@@ -207,6 +208,10 @@ export type DtmStudioOptions = {
 	delayAmount?: number;
 	/** マスタディレイの音価（既定 "8" = 8分音符）。 */
 	delayDivision?: DelayDivision;
+	/** 曲頭のフェードイン長（秒）。既定0（フェードなし）。 */
+	fadeInSec?: number;
+	/** 曲尾のフェードアウト長（秒）。既定0（フェードなし）。 */
+	fadeOutSec?: number;
 	/**
 	 * 最終出力先の AudioNode。未指定時は audioCtx.destination（スピーカー）。
 	 * MediaStreamAudioDestinationNode や GainNode を指定できます。
@@ -552,7 +557,37 @@ export const createDtmStudio = async (
 	safetyLimiter.attack.value = 0.001;
 	safetyLimiter.release.value = 0.1;
 	finalMix.connect(safetyLimiter);
-	safetyLimiter.connect(options.destination ?? audioCtx.destination);
+
+	// 曲頭/曲尾のフェード。安全リミッターの後段（最後）に置き、他のどの処理よりも
+	// 優先して音量0まで落とせるようにする。既定は常に1（フェードなし）。
+	const fadeGain = audioCtx.createGain();
+	fadeGain.gain.value = 1;
+	safetyLimiter.connect(fadeGain);
+	fadeGain.connect(options.destination ?? audioCtx.destination);
+
+	/**
+	 * 1回の play() で使うフェードスケジュールを適用する。null で解除（音量1へ即戻す）。
+	 * pause/stop 時に必ず null を渡してもらう想定 — 途中で止めた場合に半端な音量や
+	 * 予約済みランプが残らないようにするため。
+	 */
+	const scheduleFade = (params: FadeScheduleParams | null): void => {
+		fadeGain.gain.cancelScheduledValues(audioCtx.currentTime);
+		if (!params) {
+			fadeGain.gain.setValueAtTime(1, audioCtx.currentTime);
+			return;
+		}
+		const { fadeInStartAt, fadeInEndAt, fadeOutStartAt, fadeOutEndAt } = params;
+		if (fadeInStartAt !== undefined && fadeInEndAt !== undefined) {
+			fadeGain.gain.setValueAtTime(0, fadeInStartAt);
+			fadeGain.gain.linearRampToValueAtTime(1, fadeInEndAt);
+		} else {
+			fadeGain.gain.setValueAtTime(1, audioCtx.currentTime);
+		}
+		if (fadeOutStartAt !== undefined && fadeOutEndAt !== undefined) {
+			fadeGain.gain.setValueAtTime(1, fadeOutStartAt);
+			fadeGain.gain.linearRampToValueAtTime(0, fadeOutEndAt);
+		}
+	};
 
 	// クリップ検知メーター。安全リミッターの「手前」（finalMix）を監視するので、
 	// リミッターが常に守ってくれていても「素材自体は限界に来ている」を警告できる。
@@ -1024,6 +1059,9 @@ export const createDtmStudio = async (
 			delayDivision: options.delayDivision,
 			onDelayDivisionChange: (division) => delayBus.setDivision(division),
 			onBpmChange: (bpm) => delayBus.setBpm(bpm),
+			fadeInSec: options.fadeInSec,
+			fadeOutSec: options.fadeOutSec,
+			onScheduleFade: scheduleFade,
 			onTrackCompressionChange: (trackId, amount) =>
 				getChannelStrip(trackId).setCompression(amount),
 			onTrackWidthChange: (trackId, width) =>

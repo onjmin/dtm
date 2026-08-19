@@ -59,6 +59,7 @@ export type LyricSyncData = {
 	vocalDelay?: number;
 	vocalGender?: number;
 	vocalBreathiness?: number;
+	vocalOctaveDouble?: boolean;
 };
 
 /** パッチ送受信用ノートデータ（ローカルIDを持たない）。 */
@@ -247,6 +248,13 @@ export type LyricTrack = {
 	 * MMLでは `@@n klatt h70 …` のように h トークンで付与する。
 	 */
 	breathiness?: number;
+	/**
+	 * オクターブダブル ON/OFF。既定false。
+	 * ONにすると各音節を1オクターブ下（控えめな音量）で同時に重ねて発音し、声に厚みを足す
+	 * （オクターブユニゾン/ダブリング）。
+	 * MMLでは `@@n klatt w1 …` のように w トークンで付与する。
+	 */
+	octaveDouble?: boolean;
 	/** 正規化済み音節列 */
 	syllables: LyricSyllable[];
 	/**
@@ -276,6 +284,21 @@ export type PlayDrumEvent = {
 
 // 注入されるMIDIバイナリ解析関数
 export type ParseMidiFn = (bytes: Uint8Array) => unknown | Promise<unknown>;
+
+/**
+ * 1回の play() 呼び出しで使うフェードのスケジュール（絶対 AudioContext 時刻、秒）。
+ * いずれも未指定ならそちらのフェードは掛けない（曲頭から再生していない/フェード長0等）。
+ */
+export type FadeScheduleParams = {
+	/** フェードイン開始時刻（通常は再生アンカー時刻と同じ）。 */
+	fadeInStartAt?: number;
+	/** フェードイン完了時刻（この時刻に音量1へ到達）。 */
+	fadeInEndAt?: number;
+	/** フェードアウト開始時刻（この時刻までは音量1を維持）。 */
+	fadeOutStartAt?: number;
+	/** フェードアウト完了時刻（この時刻に音量0へ到達、通常は曲の終端）。 */
+	fadeOutEndAt?: number;
+};
 
 /**
  * 永続化対象の表示・出力設定。利用側がブラウザ再訪時に復元する用途に使う。
@@ -348,6 +371,16 @@ export type DawOptions = {
 	 * テンポ同期エフェクト（ディレイ等）が実時間へ再計算するために使う。
 	 */
 	onBpmChange?: (bpm: number) => void;
+	/** 曲頭のフェードイン長（秒）。既定0（フェードなし）。範囲0〜10。 */
+	fadeInSec?: number;
+	/** 曲尾のフェードアウト長（秒）。既定0（フェードなし）。範囲0〜10。 */
+	fadeOutSec?: number;
+	/**
+	 * play() のたびに、今回の再生で使うフェードのスケジュール（絶対 AudioContext 時刻）を
+	 * 通知する。`params` が null ならフェードを解除し音量を1へ戻す（pause/stop時）。
+	 * 実際のゲイン自動化は呼び出し側（studio）が担う。
+	 */
+	onScheduleFade?: (params: FadeScheduleParams | null) => void;
 	/**
 	 * 表示・出力設定（ズーム / 和音分解モード / 和音伴奏トラック無視）が変化したときに呼ばれる。
 	 * 利用側が選択状態を永続化する用途に使う。

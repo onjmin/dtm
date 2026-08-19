@@ -57,6 +57,11 @@ export type DawUIRefs = {
 	delayAmountLabel: HTMLElement;
 	delayAmountInfoBtn: HTMLButtonElement;
 	delayDivision: HTMLSelectElement;
+	fadeIn: HTMLInputElement;
+	fadeInLabel: HTMLElement;
+	fadeOut: HTMLInputElement;
+	fadeOutLabel: HTMLElement;
+	fadeInfoBtn: HTMLButtonElement;
 	autoMasterBtn: HTMLButtonElement;
 	autoMasterInfoBtn: HTMLButtonElement;
 	trackTabs: HTMLElement;
@@ -79,6 +84,9 @@ export type DawUIRefs = {
 	applyActiveOnly: HTMLInputElement;
 	shiftSelect: HTMLSelectElement;
 	shiftApplyBtn: HTMLButtonElement;
+	transposeSelect: HTMLSelectElement;
+	transposeApplyBtn: HTMLButtonElement;
+	transposeInfoBtn: HTMLButtonElement;
 	// macros
 	macroClear: HTMLButtonElement;
 	macroRandom: HTMLButtonElement;
@@ -268,6 +276,17 @@ export const buildUI = (
         </select>
         <button class="dtm-infobtn" data-dtm="delay-amount-info" title="マスタディレイの解説">${icon("info", 12)}</button>
       </div>
+      <div class="dtm-row">
+        <span class="dtm-label">フェードイン</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="fade-in" value="0" min="0" max="10" step="0.5" aria-label="曲頭のフェードイン長（秒）">
+        <span class="dtm-label" data-dtm="fade-in-label">0.0s</span>
+        <button class="dtm-infobtn" data-dtm="fade-info" title="フェードイン/アウトの解説">${icon("info", 12)}</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">フェードアウト</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="fade-out" value="0" min="0" max="10" step="0.5" aria-label="曲尾のフェードアウト長（秒）">
+        <span class="dtm-label" data-dtm="fade-out-label">0.0s</span>
+      </div>
     </div>
   </details>
 
@@ -354,6 +373,25 @@ export const buildUI = (
           <option value="192">+1小節</option>
         </select>
         <button class="dtm-btn dtm-btn--primary" data-dtm="shift-apply">適用</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">移調</span>
+        <select class="dtm-select" data-dtm="transpose-select" aria-label="移調する半音数">
+          <option value="-12">-1oct</option>
+          <option value="-7">-5th</option>
+          <option value="-5">-4th</option>
+          <option value="-3">-3半音</option>
+          <option value="-2">-2半音</option>
+          <option value="-1">-1半音</option>
+          <option value="1">+1半音</option>
+          <option value="2">+2半音</option>
+          <option value="3">+3半音</option>
+          <option value="5">+4th</option>
+          <option value="7">+5th</option>
+          <option value="12">+1oct</option>
+        </select>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="transpose-apply">適用</button>
+        <button class="dtm-infobtn" data-dtm="transpose-info" title="移調の解説">${icon("info", 12)}</button>
       </div>
       <div class="dtm-row">
         <button class="dtm-btn dtm-btn--danger" data-dtm="macro-clear">全消去</button>
@@ -480,6 +518,11 @@ export const buildUI = (
 		delayAmountLabel: sel("delay-amount-label"),
 		delayAmountInfoBtn: sel("delay-amount-info"),
 		delayDivision: sel("delay-division"),
+		fadeIn: sel("fade-in"),
+		fadeInLabel: sel("fade-in-label"),
+		fadeOut: sel("fade-out"),
+		fadeOutLabel: sel("fade-out-label"),
+		fadeInfoBtn: sel("fade-info"),
 		autoMasterBtn: sel("auto-master"),
 		autoMasterInfoBtn: sel("auto-master-info"),
 		trackTabs: sel("track-tabs"),
@@ -500,6 +543,9 @@ export const buildUI = (
 		applyActiveOnly: sel("apply-active-only"),
 		shiftSelect: sel("shift-select"),
 		shiftApplyBtn: sel("shift-apply"),
+		transposeSelect: sel("transpose-select"),
+		transposeApplyBtn: sel("transpose-apply"),
+		transposeInfoBtn: sel("transpose-info"),
 		macroClear: sel("macro-clear"),
 		macroRandom: sel("macro-random"),
 		macroHarmonic: sel("macro-harmonic"),

@@ -307,12 +307,13 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		let delay = 0; // 省略時はディレイセンドOFF（マスタディレイが掛からない）
 		let gender = 50; // 省略時は無変化（中央）
 		let breathiness = 50; // 省略時は無変化（中央）
+		let octaveDouble = false; // 省略時はオクターブダブルOFF
 
 		// モデル名は英字・アンダースコア始まりで、2文字目以降は数字も許す
 		// （カスタムボーカルのキー custom1 等）。`v100` 等のパラメータトークンは
-		// 先読みの [vqpobrghe]-?\d で区切るため誤って取り込まない。
+		// 先読みの [vqpobrghew]-?\d で区切るため誤って取り込まない。
 		const modelMatch = rest.match(
-			/^([a-z_][a-z0-9_]*?)(?=(?:[vqpobrghe]-?\d)|[^a-z0-9_]|$)(?::(\d+))?/i,
+			/^([a-z_][a-z0-9_]*?)(?=(?:[vqpobrghew]-?\d)|[^a-z0-9_]|$)(?::(\d+))?/i,
 		);
 		let model = "";
 		const metaTokens: string[] = [];
@@ -390,6 +391,13 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 				rest = rest.substring(eMatch[0].length).trim();
 				continue;
 			}
+			const wMatch = rest.match(/^w([01])/i);
+			if (wMatch) {
+				octaveDouble = wMatch[1] === "1";
+				metaTokens.push(wMatch[0]);
+				rest = rest.substring(wMatch[0].length).trim();
+				continue;
+			}
 			break;
 		}
 
@@ -413,6 +421,7 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 			delay,
 			gender,
 			breathiness,
+			octaveDouble,
 			syllables,
 			metaText: metaTokens.join(" "),
 			...(lineBreaks.length > 0 ? { lineBreaks } : {}),
@@ -1535,6 +1544,11 @@ export type StreamVoiceTrack = {
 	 * — klattフォールバックには効かない。
 	 */
 	breathiness?: number;
+	/**
+	 * オクターブダブル ON/OFF。既定false。ONにすると各音節を1オクターブ下（控えめな音量）で
+	 * 同時に重ねて発音し、声に厚みを足す（オクターブユニゾン/ダブリング）。
+	 */
+	octaveDouble?: boolean;
 	/** 発音順（startSec昇順）の歌唱ノート列。 */
 	notes: StreamVoiceNote[];
 };
@@ -1638,6 +1652,14 @@ const STREAM_LOOKAHEAD_SEC = 1.5;
 
 /** 先読み上限に達したときの再ポーリング間隔（ミリ秒）。 */
 const STREAM_POLL_MS = 100;
+
+/** オクターブダブルで重ねる声の音程差（半音）。-12 = 1オクターブ下。 */
+const OCTAVE_DOUBLE_SEMITONES = -12;
+/**
+ * オクターブダブルで重ねる声の音量係数。原音より控えめにして「重ねてる」感を
+ * 出しつつ、原音を喰わないようにする。
+ */
+const OCTAVE_DOUBLE_PEAK_SCALE = 0.6;
 
 export type SingingVoicesOptions = {
 	/** 追加・上書きするkoe音源カタログ（キーワード → .koe URL または Blob） */
@@ -1794,6 +1816,7 @@ export const createSingingVoices = (
 			model: VoiceModel;
 			note: StreamVoiceNote;
 			prevVowel: string;
+			pitch: number;
 			vibrato?: boolean;
 			expr?: VoiceExpression;
 		}[] = [];
@@ -1809,7 +1832,25 @@ export const createSingingVoices = (
 			forEachSungNote(track, (note, prevVowel) => {
 				if (n >= count && note.startSec >= STREAM_LOOKAHEAD_SEC) return;
 				n++;
-				tasks.push({ model: m, note, prevVowel, vibrato: track.vibrato, expr });
+				tasks.push({
+					model: m,
+					note,
+					prevVowel,
+					pitch: note.pitch,
+					vibrato: track.vibrato,
+					expr,
+				});
+				// オクターブダブル時は重ねる声も先読みしておく。
+				if (track.octaveDouble) {
+					tasks.push({
+						model: m,
+						note,
+						prevVowel,
+						pitch: note.pitch + OCTAVE_DOUBLE_SEMITONES,
+						vibrato: track.vibrato,
+						expr,
+					});
+				}
 			});
 		}
 
@@ -1826,7 +1867,7 @@ export const createSingingVoices = (
 			await (task.model.renderToCache?.(
 				task.note.syllable,
 				task.prevVowel,
-				task.note.pitch,
+				task.pitch,
 				task.note.durationSec * 1000,
 				task.vibrato,
 				task.expr,
@@ -1892,69 +1933,86 @@ export const createSingingVoices = (
 					if (opts?.isAudible && !opts.isAudible(track)) continue;
 					const t0 = anchorTime + startSec;
 
-					if (model.renderToCache && model.scheduleCached) {
-						const renderToCache = model.renderToCache;
-						const scheduleCached = model.scheduleCached;
-						// koe音源: 重い合成を await せずに非同期で走らせる。
-						// これにより、同じ先読み範囲にある後続の音符の合成リクエストも同時に Worker へ送信され、
-						// 特に和音などの同時発音における合成の遅延（スループットの頭打ち）を防ぐ。
-						void (async () => {
-							const key = await renderToCache(
-								note.syllable,
-								prevVowel,
-								note.pitch,
-								note.durationSec * 1000,
-								track.vibrato,
-								{ gender: track.gender, breathiness: track.breathiness },
-							);
-							if (session !== streamSession) return;
-							if (key) {
-								// 予定時刻より50ms以上遅れて合成完了した場合は発音をスキップ（ミュート）して音ズレを防ぐ
-								const delay = ctx.currentTime - t0;
-								if (delay < 0.05) {
-									const dest = options.getTrackDestination?.(track.id ?? "");
-									// dest（チャンネルストリップ直結）は共有masterGainを経由しない
-									// ため、マスタ音量係数をここで peak に掛けて再現する。
-									const effPeak = dest ? peak * masterVolumeScalar : peak;
-									scheduleCached(
-										key,
-										t0,
-										effPeak,
-										track.pan,
-										track.reverbSend,
-										track.delaySend,
-										dest,
-									);
-									opts?.onScheduled?.(track, note, t0);
-								} else {
-									console.warn(
-										`[dtm] Synthesizer late skip: ${note.syllable.kana} at ${startSec}s (delayed by ${delay.toFixed(3)}s)`,
-									);
-									opts?.onLateSkip?.(note, delay);
+					// 1音を指定ピッチ・音量係数で合成→スケジュールする。オクターブダブル時は
+					// 同じ音節をもう1声（-12半音・控えめな音量）重ねるため、通常発声とは
+					// 独立に呼び出せる関数へ切り出している。
+					const dispatchNote = (pitch: number, peakScale: number): void => {
+						if (model.renderToCache && model.scheduleCached) {
+							const renderToCache = model.renderToCache;
+							const scheduleCached = model.scheduleCached;
+							// koe音源: 重い合成を await せずに非同期で走らせる。
+							// これにより、同じ先読み範囲にある後続の音符の合成リクエストも同時に Worker へ送信され、
+							// 特に和音などの同時発音における合成の遅延（スループットの頭打ち）を防ぐ。
+							void (async () => {
+								const key = await renderToCache(
+									note.syllable,
+									prevVowel,
+									pitch,
+									note.durationSec * 1000,
+									track.vibrato,
+									{ gender: track.gender, breathiness: track.breathiness },
+								);
+								if (session !== streamSession) return;
+								if (key) {
+									// 予定時刻より50ms以上遅れて合成完了した場合は発音をスキップ（ミュート）して音ズレを防ぐ
+									const delay = ctx.currentTime - t0;
+									if (delay < 0.05) {
+										const dest = options.getTrackDestination?.(track.id ?? "");
+										// dest（チャンネルストリップ直結）は共有masterGainを経由しない
+										// ため、マスタ音量係数をここで peak に掛けて再現する。
+										const effPeak =
+											(dest ? peak * masterVolumeScalar : peak) * peakScale;
+										scheduleCached(
+											key,
+											t0,
+											effPeak,
+											track.pan,
+											track.reverbSend,
+											track.delaySend,
+											dest,
+										);
+										opts?.onScheduled?.(track, note, t0);
+									} else {
+										console.warn(
+											`[dtm] Synthesizer late skip: ${note.syllable.kana} at ${startSec}s (delayed by ${delay.toFixed(3)}s)`,
+										);
+										opts?.onLateSkip?.(note, delay);
+									}
 								}
-							}
-						})();
-					} else {
-						// klatt等（軽量・状態なし）: 絶対未来時刻へ直接スケジュール。
-						// await が無く同期で回るため、UI応答性のため1音ごとに制御を返す。
-						const when = t0 - ctx.currentTime;
-						const dest = options.getTrackDestination?.(track.id ?? "");
-						// dest（チャンネルストリップ直結）は共有masterGainを経由しないため、
-						// マスタ音量係数をここで peak に掛けて再現する。
-						const effPeak = dest ? peak * masterVolumeScalar : peak;
-						model(note.syllable, {
-							trackId: track.id ?? "",
-							pitch: note.pitch,
-							velocity: 100,
-							volume: effPeak,
-							when,
-							duration: note.durationSec,
-							pan: track.pan,
-							reverbSend: track.reverbSend,
-							delaySend: track.delaySend,
-							destination: dest,
-						});
-						opts?.onScheduled?.(track, note, t0);
+							})();
+						} else {
+							// klatt等（軽量・状態なし）: 絶対未来時刻へ直接スケジュール。
+							const when = t0 - ctx.currentTime;
+							const dest = options.getTrackDestination?.(track.id ?? "");
+							// dest（チャンネルストリップ直結）は共有masterGainを経由しないため、
+							// マスタ音量係数をここで peak に掛けて再現する。
+							const effPeak =
+								(dest ? peak * masterVolumeScalar : peak) * peakScale;
+							model(note.syllable, {
+								trackId: track.id ?? "",
+								pitch,
+								velocity: 100,
+								volume: effPeak,
+								when,
+								duration: note.durationSec,
+								pan: track.pan,
+								reverbSend: track.reverbSend,
+								delaySend: track.delaySend,
+								destination: dest,
+							});
+							opts?.onScheduled?.(track, note, t0);
+						}
+					};
+
+					dispatchNote(note.pitch, 1);
+					if (track.octaveDouble) {
+						dispatchNote(
+							note.pitch + OCTAVE_DOUBLE_SEMITONES,
+							OCTAVE_DOUBLE_PEAK_SCALE,
+						);
+					}
+					// klatt等（軽量・状態なし）はawaitが無く同期で回るため、UI応答性のため1音ごとに制御を返す。
+					if (!(model.renderToCache && model.scheduleCached)) {
 						await new Promise((resolve) => setTimeout(resolve, 0));
 					}
 				}
