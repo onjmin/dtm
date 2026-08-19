@@ -15,6 +15,7 @@ export type DawUIRefs = {
 	prevBarBtn: HTMLButtonElement;
 	nextBarBtn: HTMLButtonElement;
 	soloCheckbox: HTMLInputElement;
+	clipBadge: HTMLButtonElement;
 	// tools
 	toolPen: HTMLButtonElement;
 	toolSelect: HTMLButtonElement;
@@ -46,6 +47,9 @@ export type DawUIRefs = {
 	masterVolumeLabel: HTMLElement;
 	reverbAmount: HTMLInputElement;
 	reverbAmountLabel: HTMLElement;
+	reverbAmountInfoBtn: HTMLButtonElement;
+	autoMasterBtn: HTMLButtonElement;
+	autoMasterInfoBtn: HTMLButtonElement;
 	trackTabs: HTMLElement;
 	trackBody: HTMLElement;
 	// drum
@@ -144,6 +148,7 @@ export const buildUI = (
       <button class="dtm-iconbtn" data-dtm="next-bar" title="1小節後">${icon("chevronRight")}</button>
       <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>ソロ</span></label>
       <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
+      <button class="dtm-clip-badge dtm-hidden" data-dtm="clip-badge" title="音割れ検知（クリックで消す）">CLIP</button>
       <span class="dtm-grow"></span>
       <span class="dtm-label">BPM</span>
       <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
@@ -181,18 +186,8 @@ export const buildUI = (
   <div class="dtm-hscroll" data-dtm="hscroll"><div class="dtm-hscroll-thumb" data-dtm="hscroll-thumb"></div></div>
 
   <details class="dtm-panel" open>
-    <summary>トラック設定</summary>
+    <summary>個別トラック設定</summary>
     <div class="dtm-panel-body">
-      <div class="dtm-row">
-        <span class="dtm-label">全体音量</span>
-        <input type="range" class="dtm-range dtm-grow" data-dtm="master-volume" value="50" min="0" max="100">
-        <span class="dtm-label" data-dtm="master-volume-label">50%</span>
-      </div>
-      <div class="dtm-row">
-        <span class="dtm-label">リバーブ</span>
-        <input type="range" class="dtm-range dtm-grow" data-dtm="reverb-amount" value="0" min="0" max="100" aria-label="マスタリバーブ（全トラックへ一律に掛かる残響）" title="リバーブ">
-        <span class="dtm-label" data-dtm="reverb-amount-label">0%</span>
-      </div>
       <div class="dtm-track-body" data-dtm="track-body"></div>
     </div>
   </details>
@@ -221,6 +216,29 @@ export const buildUI = (
       <div class="dtm-row dtm-hidden" data-dtm="bg-opacity-row">
         <span class="dtm-label">背景不透明度</span>
         <input type="range" min="0" max="100" value="40" data-dtm="bg-opacity" class="dtm-slider">
+      </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel" open>
+    <summary>全体トラック設定</summary>
+    <div class="dtm-panel-body">
+      <div data-dtm="preset-select-slot"></div>
+      <div class="dtm-row">
+        <span class="dtm-label">全体音量</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="master-volume" value="50" min="0" max="100">
+        <span class="dtm-label" data-dtm="master-volume-label">50%</span>
+      </div>
+      <div class="dtm-row">
+        <button class="dtm-btn dtm-btn--ghost dtm-btn--xs" data-dtm="auto-master" title="音圧・ステレオ幅・リバーブを商業曲寄りの値に一括設定します">おまかせマスタリング</button>
+        <button class="dtm-infobtn" data-dtm="auto-master-info" title="おまかせマスタリングの解説">${icon("info", 12)}</button>
+        <span class="dtm-grow"></span>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">リバーブ</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="reverb-amount" value="0" min="0" max="100" aria-label="マスタリバーブ（全トラックへ一律に掛かる残響）">
+        <span class="dtm-label" data-dtm="reverb-amount-label">0%</span>
+        <button class="dtm-infobtn" data-dtm="reverb-amount-info" title="マスタリバーブの解説">${icon("info", 12)}</button>
       </div>
     </div>
   </details>
@@ -396,6 +414,7 @@ export const buildUI = (
 		prevBarBtn: sel("prev-bar"),
 		nextBarBtn: sel("next-bar"),
 		soloCheckbox: sel("solo"),
+		clipBadge: sel("clip-badge"),
 		toolPen: sel("tool-pen"),
 		toolSelect: sel("tool-select"),
 		toolEraser: sel("tool-eraser"),
@@ -424,6 +443,9 @@ export const buildUI = (
 		masterVolumeLabel: sel("master-volume-label"),
 		reverbAmount: sel("reverb-amount"),
 		reverbAmountLabel: sel("reverb-amount-label"),
+		reverbAmountInfoBtn: sel("reverb-amount-info"),
+		autoMasterBtn: sel("auto-master"),
+		autoMasterInfoBtn: sel("auto-master-info"),
 		trackTabs: sel("track-tabs"),
 		trackBody: sel("track-body"),
 		drumSelect: sel("drum-select"),

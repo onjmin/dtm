@@ -161,6 +161,8 @@ export const playSingingMML = async (
 				pan: panToStereo(lt.pan ?? DEFAULT_PAN),
 				vibrato: lt.vibrato,
 				reverbSend: (lt.reverb ?? 0) / 100,
+				gender: (lt.gender ?? 50) / 100,
+				breathiness: (lt.breathiness ?? 50) / 100,
 				notes,
 			};
 		});

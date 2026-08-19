@@ -48,6 +48,8 @@ export type MmlMeta = {
 	volume?: number;
 	/** ドラム音量（0-100等） */
 	drumVolume?: number;
+	/** マスタリバーブの掛かり具合 0-100（全トラック共通、`#reverb=` で埋め込む） */
+	reverb?: number;
 	/** DAWの動作モード（simple | advanced） */
 	mode?: "simple" | "advanced";
 	/**
@@ -55,14 +57,30 @@ export type MmlMeta = {
 	 * 省略されたトラックはプリセットが適用される。
 	 */
 	trackInstruments?: Record<number, string>;
+	/**
+	 * トラックごとのコンプレッサー（音圧強化）量 0-100。`#t<n>comp=<値>` で埋め込む。
+	 * 省略されたトラックは0（実質無圧縮）。ボーカル・楽器どちらのトラックにも掛かる
+	 * チャンネルストリップ共通のパラメータ（歌詞トラック固有の `r`/`g`/`h` とは別軸）。
+	 */
+	trackCompression?: Record<number, number>;
+	/**
+	 * トラックごとのステレオ幅 0-200。`#t<n>width=<値>` で埋め込む。省略時は100（原音のまま）。
+	 */
+	trackWidth?: Record<number, number>;
 };
 
 /** `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
 const META_DIRECTIVE =
-	/#(inst|drum|drumfont|volume|drumvolume|mode)=([\w-]+)/gi;
+	/#(inst|drum|drumfont|volume|drumvolume|reverb|mode)=([\w-]+)/gi;
 
 /** `#t<n>inst=<GM楽器名>` にマッチする（値は`;` `#` 改行以外の任意文字） */
 const TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
+
+/** `#t<n>comp=<0-100>` にマッチする（トラック単位コンプレッサー量） */
+const TRACK_COMP_DIRECTIVE = /#t(\d+)comp=(\d+)/gi;
+
+/** `#t<n>width=<0-200>` にマッチする（トラック単位ステレオ幅） */
+const TRACK_WIDTH_DIRECTIVE = /#t(\d+)width=(\d+)/gi;
 
 /** MMLからトップレベル宣言を抽出する */
 export const parseMmlMeta = (mml: string): MmlMeta => {
@@ -78,6 +96,9 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 		} else if (key === "drumvolume") {
 			const dv = Number.parseInt(m[2], 10);
 			if (!Number.isNaN(dv)) meta.drumVolume = dv;
+		} else if (key === "reverb") {
+			const rv = Number.parseInt(m[2], 10);
+			if (!Number.isNaN(rv)) meta.reverb = clamp(rv, 0, 100);
 		} else if (key === "mode") {
 			if (m[2] === "simple" || m[2] === "advanced") {
 				meta.mode = m[2];
@@ -92,12 +113,32 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 			meta.trackInstruments[idx] = name;
 		}
 	}
+	for (const m of mml.matchAll(TRACK_COMP_DIRECTIVE)) {
+		const idx = Number.parseInt(m[1], 10);
+		const val = clamp(Number.parseInt(m[2], 10), 0, 100);
+		if (!Number.isNaN(idx) && !Number.isNaN(val)) {
+			meta.trackCompression ??= {};
+			meta.trackCompression[idx] = val;
+		}
+	}
+	for (const m of mml.matchAll(TRACK_WIDTH_DIRECTIVE)) {
+		const idx = Number.parseInt(m[1], 10);
+		const val = clamp(Number.parseInt(m[2], 10), 0, 200);
+		if (!Number.isNaN(idx) && !Number.isNaN(val)) {
+			meta.trackWidth ??= {};
+			meta.trackWidth[idx] = val;
+		}
+	}
 	return meta;
 };
 
 /** MMLからトップレベル宣言を取り除く（ノート解析が誤解釈しないように） */
 export const stripMmlMeta = (mml: string): string =>
-	mml.replace(META_DIRECTIVE, "").replace(TRACK_INST_DIRECTIVE, "");
+	mml
+		.replace(META_DIRECTIVE, "")
+		.replace(TRACK_INST_DIRECTIVE, "")
+		.replace(TRACK_COMP_DIRECTIVE, "")
+		.replace(TRACK_WIDTH_DIRECTIVE, "");
 
 /** メタ情報を `#inst=… #drum=… #volume=… #mode=…` のMML宣言文字列へ直列化する（空なら空文字） */
 export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
@@ -108,10 +149,22 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	if (meta.volume !== undefined) parts.push(`#volume=${meta.volume}`);
 	if (meta.drumVolume !== undefined)
 		parts.push(`#drumvolume=${meta.drumVolume}`);
+	if (meta.reverb !== undefined && meta.reverb !== 0)
+		parts.push(`#reverb=${meta.reverb}`);
 	if (meta.mode) parts.push(`#mode=${meta.mode}`);
 	if (meta.trackInstruments) {
 		for (const [idx, name] of Object.entries(meta.trackInstruments)) {
 			if (name) parts.push(`#t${idx}inst=${name}`);
+		}
+	}
+	if (meta.trackCompression) {
+		for (const [idx, val] of Object.entries(meta.trackCompression)) {
+			if (val !== 0) parts.push(`#t${idx}comp=${val}`);
+		}
+	}
+	if (meta.trackWidth) {
+		for (const [idx, val] of Object.entries(meta.trackWidth)) {
+			if (val !== 100) parts.push(`#t${idx}width=${val}`);
 		}
 	}
 	return parts.join(space);

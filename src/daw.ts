@@ -122,10 +122,92 @@ const CHORD_INFO_HTML = `
 
 const VIBRATO_INFO_HTML = `
 <div class="dtm-modal-body-content">
-  <h4>自動ビブラートとは</h4>
+  <h4>何をする設定か</h4>
   <p>ONにすると、一定の長さ（約0.35秒）以上の音符（ロングトーン）にだけ、自動でピッチが小刻みに揺れる歌唱表現（ビブラート）が掛かります。</p>
-  <p style="margin-top:4px;"><small>短い音符には掛かりません。1周期も揺れきらないうちに次の音へ移ってしまい、ビブラートというより単なる音程のブレとして不自然に聞こえるためです。</small></p>
-  <p style="margin-top:4px;"><small>速さ・深さは調整できません（歌として破綻しにくい控えめな量に固定しています）。曲や箇所ごとに掛けたい/掛けたくないがある場合は、トラックを分けて歌詞を書いてください。</small></p>
+  <h4>短い音符に掛からない理由</h4>
+  <p>1周期も揺れきらないうちに次の音へ移ってしまい、ビブラートというより単なる音程のブレとして不自然に聞こえるためです。</p>
+  <h4>他の設定との兼ね合い</h4>
+  <p>ピッチを揺らす効果なので、声質そのものを変えるジェンダー/ブレシネスとは独立して組み合わせられます。速さ・深さは調整できません（歌として破綻しにくい控えめな量に固定）。曲や箇所ごとに掛けたい/掛けたくないがある場合は、トラックを分けて歌詞を書いてください。</p>
+</div>
+`;
+
+const GENDER_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>ピッチ（音の高さ）はそのままに、声の太さ/細さ（フォルマント＝声道の共鳴、年齢・性別感の印象）だけを動かします。50が無変化、50未満で低め/太め（大人びる）、50超で高め/細め（若く/明るく）に寄ります。</p>
+  <h4>オクターブシフトとの違い</h4>
+  <p>オクターブは音程そのものを上下させますが、ジェンダーは音程を変えずに声色だけを動かします。「高い声のまま大人びさせる」「低い声のまま若々しくする」といった、音程と声質を別々に調整したいときに使います。</p>
+  <h4>他の設定との兼ね合い</h4>
+  <p>ブレシネスと組み合わせて声のキャラクターを作ります（例: 低め+息多めで渋い/大人っぽい印象、高め+息少なめで元気/若々しい印象）。koe音源（UTAU由来の.koe音源）限定の効果で、klatt（内蔵の簡易合成）では変化しません。</p>
+</div>
+`;
+
+const BREATHINESS_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>息成分の量です。50が無変化、大きいほど息っぽく（ささやき寄り）、小さいほど芯のある声になります。</p>
+  <h4>上げすぎるとどうなるか</h4>
+  <p>ロングトーンで音程感が薄れて聞こえます（息の音がピッチ感を隠すため）。囁くようなバラード表現には効果的ですが、上げすぎるとメロディが伝わりにくくなります。</p>
+  <h4>他の設定との兼ね合い</h4>
+  <p>自動ビブラートと組み合わせると、揺れながら息っぽい、よりエモーショナルな表現になりやすいです。koe音源（UTAU由来の.koe音源）限定の効果で、klatt（内蔵の簡易合成）では変化しません。</p>
+</div>
+`;
+
+const LYRIC_REVERB_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>このボーカルトラックから、曲全体に掛かる「マスタリバーブ」へどれだけ音を送るかを決めます（0で送らない＝ドライ、100で目一杯送る）。</p>
+  <h4>マスタの「リバーブ」つまみとの関係（重要）</h4>
+  <p>トラック設定パネルにあるマスタの「リバーブ」つまみが0%だと、ここをいくら上げても無音のままです。「送り量（このトラックがどれだけ提供するか）」と「マスタの残響設定（実際にどんな響きが掛かるか）」の二段構えになっているためです。両方を確認してください。</p>
+  <h4>掛けすぎるとどうなるか</h4>
+  <p>残響で音が滲み、歌詞が聞き取りにくくなります。ドライなボーカルは「近い」「前に出る」印象、リバーブたっぷりのボーカルは「奥行きがある」「幻想的」な印象になります。表現したい距離感に合わせて調整してください。</p>
+</div>
+`;
+
+const MASTER_REVERB_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>曲全体に一律で掛かる残響（部屋鳴り・空間の響き）です。0%で完全にドライ（響きなし）、上げるほど広い空間で鳴っているような奥行きが出ます。</p>
+  <h4>各トラックの「リバーブ送り」との関係（重要）</h4>
+  <p>歌詞トラックにはそれぞれ「リバーブ送り」という個別のつまみがあり、そちらが0%のトラックはこのマスタの値をいくら上げても無音のままです。逆にこのマスタが0%なら、どのトラックの送り量を上げても効果が出ません。「マスタ＝残響の質と量そのもの」「トラック送り＝そのトラックをどれだけ混ぜるか」という二段構えです。楽器トラックには現状センド機能が無いため、常に一律で掛かります。</p>
+  <h4>掛けすぎるとどうなるか</h4>
+  <p>ミックス全体の輪郭がぼやけ、遠く・こもった印象になります。10〜30%程度を出発点に、曲のジャンルや空間の広さのイメージに合わせて調整するのがおすすめです。</p>
+</div>
+`;
+
+const TRACK_COMPRESSION_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>このトラックにコンプレッサーを掛け、音量の大小差を縮めて「前に出る」「聞こえやすい」音にします。市販曲のマスタリングやミックスで定番の処理です。0で無圧縮、100に近づくほど強く圧縮されます。</p>
+  <h4>掛けすぎるとどうなるか</h4>
+  <p>強弱の表情（ダイナミクス）が失われて単調に聞こえます。ボーカルやリード楽器は控えめ（20〜40程度）、ドラムやベースはやや強め、が一般的な目安です。</p>
+  <h4>他の設定との兼ね合い</h4>
+  <p>マスタの「安全リミッター」（常時ON、[reverb]パネルの外側で自動的に働く保険）とは別物です。あちらは音割れを物理的に防ぐための最終防衛ラインで、常に控えめに動いています。こちらのコンプレッサーは音作り（表現）のための処理で、トラックごとに好きなだけ強く/弱く掛けられます。「おまかせマスタリング」は全トラック一律35%を当てるだけなので、ボーカルなど目立たせたいパートは後で個別に下げると輪郭が出やすくなります。</p>
+</div>
+`;
+
+const TRACK_WIDTH_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>左右の広がりを調整します。100が原音のまま、0で完全モノラル（左右が同じ音）、100を超えると左右の違いが誇張されて広く聞こえます。</p>
+  <h4>「定位（パン）」との違い</h4>
+  <p>定位は「音をどこに置くか」（左寄り/中央/右寄り）、ステレオ幅は「その音自体がどれだけ広がって聞こえるか」で、役割が異なります。両方を強く使うと定位がぼやけて曖昧になりがちです。</p>
+  <h4>広げすぎるとどうなるか</h4>
+  <p>スマホのスピーカー1個など、モノラルに近い環境で再生すると音が薄く/位相が乱れて聞こえることがあります（左右の差分を誇張しているため、足し合わせると打ち消し合う成分が増える）。主旋律やボーカルは中央付近で狭め、パッドやシンセの装飾パートは広げる、というのがミックスの定石です。</p>
+</div>
+`;
+
+const AUTO_MASTER_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>おまかせマスタリングとは</h4>
+  <p>市販曲でよく使われる値を目安に、以下をまとめて設定するボタンです。</p>
+  <ul>
+    <li>マスタリバーブ: 20%</li>
+    <li>全トラックの音圧強化: 35%</li>
+    <li>全トラックのステレオ幅: 115%（わずかに広げる）</li>
+    <li>歌詞のあるトラック: 自動ビブラートON、リバーブ送り25%</li>
+  </ul>
+  <p style="margin-top:4px;"><small>「いい感じの初期値」を一括で当てるだけで、曲や好みに応じた微調整までは行いません。既存の設定は上書きされるので、気に入らなければ各スライダーから個別に戻してください。</small></p>
 </div>
 `;
 
@@ -451,8 +533,19 @@ type TrackState = {
 	vocalVibrato: boolean;
 	/** このトラックのマスタリバーブへのセンド量 0-100。既定0（掛からない） */
 	vocalReverb: number;
+	/** フォルマント/ジェンダーファクター 0-100。既定50（無変化）。koe音源限定 */
+	vocalGender: number;
+	/** ブレシネス（息成分）0-100。既定50（無変化）。koe音源限定 */
+	vocalBreathiness: number;
 	/** トラック個別の楽器名（GM楽器名）。空文字でプリセット適用 */
 	trackInstrument: string;
+	/**
+	 * このトラックのコンプレッサー（音圧強化）量 0-100。既定0（無圧縮）。
+	 * ボーカル・楽器を問わずトラック全体に掛かる（歌詞トラック固有のvocalGender等とは別軸）。
+	 */
+	trackCompression: number;
+	/** このトラックのステレオ幅 0-200。既定100（原音のまま）。 */
+	trackWidth: number;
 };
 
 /**
@@ -524,6 +617,8 @@ export const mountDAW = (
 	let masterVolume = options.masterVolume ?? 50;
 	options.singingVoices?.setVolume(masterVolume / 100);
 	let reverbAmount = options.reverbAmount ?? 0;
+	// 音割れ検知バッジの購読解除（wireEvents内で購読、destroyで解除するため外側で保持）
+	let unsubscribeClip: (() => void) | undefined;
 	options.onReverbChange?.(reverbAmount);
 	let drumVolume = options.drumVolume ?? 80;
 	let currentDrumPattern = refs.drumSelect.value;
@@ -639,6 +734,8 @@ export const mountDAW = (
 			vocalOctave: t.vocalOctave,
 			vocalVibrato: t.vocalVibrato,
 			vocalReverb: t.vocalReverb,
+			vocalGender: t.vocalGender,
+			vocalBreathiness: t.vocalBreathiness,
 		};
 		if (lyricsDebounceTimer) clearTimeout(lyricsDebounceTimer);
 		lyricsDebounceTimer = setTimeout(() => {
@@ -715,7 +812,11 @@ export const mountDAW = (
 				vocalOctave: 0,
 				vocalVibrato: false,
 				vocalReverb: 0,
+				vocalGender: 50,
+				vocalBreathiness: 50,
 				trackInstrument: "",
+				trackCompression: 0,
+				trackWidth: 100,
 			};
 		});
 	};
@@ -738,6 +839,8 @@ export const mountDAW = (
 				octave: t.vocalOctave,
 				vibrato: t.vocalVibrato,
 				reverb: t.vocalReverb,
+				gender: t.vocalGender,
+				breathiness: t.vocalBreathiness,
 				syllables,
 			});
 		});
@@ -1717,6 +1820,8 @@ export const mountDAW = (
 						pan: panToStereo(lt.pan ?? DEFAULT_PAN),
 						vibrato: lt.vibrato,
 						reverbSend: (lt.reverb ?? 0) / 100,
+						gender: (lt.gender ?? 50) / 100,
+						breathiness: (lt.breathiness ?? 50) / 100,
 						notes,
 					};
 				})
@@ -1842,7 +1947,22 @@ export const mountDAW = (
         <span class="dtm-label">ベロシティ</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="track-vol" min="0" max="127" value="${active.volume}">
         <span class="dtm-label" data-dtm="track-vol-label">${active.volume}</span>
-      </div>`;
+      </div>
+      <details class="dtm-advanced" data-dtm="track-fx-advanced">
+        <summary>詳細設定（音圧・ステレオ幅）</summary>
+        <div class="dtm-row">
+          <span class="dtm-label">音圧強化</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="track-comp" min="0" max="100" aria-label="このトラックのコンプレッサー量（音圧強化）">
+          <span class="dtm-label" data-dtm="track-comp-label"></span>
+          <button class="dtm-infobtn" data-dtm="track-comp-info" title="音圧強化の解説">${icon("info", 12)}</button>
+        </div>
+        <div class="dtm-row">
+          <span class="dtm-label">ステレオ幅</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="track-width" min="0" max="200" aria-label="このトラックのステレオ幅（100=原音、0=モノラル）">
+          <span class="dtm-label" data-dtm="track-width-label"></span>
+          <button class="dtm-infobtn" data-dtm="track-width-info" title="ステレオ幅の解説">${icon("info", 12)}</button>
+        </div>
+      </details>`;
 		const volInput = refs.trackBody.querySelector(
 			'[data-dtm="track-vol"]',
 		) as HTMLInputElement;
@@ -1863,6 +1983,50 @@ export const mountDAW = (
 				: "";
 		};
 		syncVelocityDisabled();
+
+		// トラック単位チャンネルストリップ（音圧強化・ステレオ幅）。ボーカル・楽器問わず
+		// このトラックの発音全体に掛かる（歌詞トラック固有のジェンダー/ブレシネスとは別軸）。
+		const trackCompInput = refs.trackBody.querySelector(
+			'[data-dtm="track-comp"]',
+		) as HTMLInputElement;
+		const trackCompLabel = refs.trackBody.querySelector(
+			'[data-dtm="track-comp-label"]',
+		) as HTMLElement;
+		const trackWidthInput = refs.trackBody.querySelector(
+			'[data-dtm="track-width"]',
+		) as HTMLInputElement;
+		const trackWidthLabel = refs.trackBody.querySelector(
+			'[data-dtm="track-width-label"]',
+		) as HTMLElement;
+		const trackCompInfo = refs.trackBody.querySelector(
+			'[data-dtm="track-comp-info"]',
+		) as HTMLButtonElement;
+		const trackWidthInfo = refs.trackBody.querySelector(
+			'[data-dtm="track-width-info"]',
+		) as HTMLButtonElement;
+		trackCompInput.value = String(active.trackCompression);
+		trackCompLabel.textContent = `${active.trackCompression}%`;
+		trackWidthInput.value = String(active.trackWidth);
+		trackWidthLabel.textContent = `${active.trackWidth}%`;
+		trackCompInput.addEventListener("input", () => {
+			active.trackCompression = Number.parseInt(trackCompInput.value, 10);
+			trackCompLabel.textContent = `${active.trackCompression}%`;
+			options.onTrackCompressionChange?.(
+				active.config.id,
+				active.trackCompression,
+			);
+		});
+		trackWidthInput.addEventListener("input", () => {
+			active.trackWidth = Number.parseInt(trackWidthInput.value, 10);
+			trackWidthLabel.textContent = `${active.trackWidth}%`;
+			options.onTrackWidthChange?.(active.config.id, active.trackWidth);
+		});
+		trackCompInfo.addEventListener("click", () => {
+			showModal("音圧強化の解説", TRACK_COMPRESSION_INFO_HTML);
+		});
+		trackWidthInfo.addEventListener("click", () => {
+			showModal("ステレオ幅の解説", TRACK_WIDTH_INFO_HTML);
+		});
 
 		// 楽器個別選択（デフォルト＝プリセット or GM楽器名指定）
 		const instRow = document.createElement("div");
@@ -1936,17 +2100,6 @@ export const mountDAW = (
         <span class="dtm-label">♪ UTAU</span>
         <select class="dtm-select" data-dtm="lyric-model" aria-label="歌唱モデル"></select>
         <img class="dtm-lyric-icon dtm-hidden" data-dtm="lyric-icon" width="20" height="20" alt="" draggable="false">
-        <select class="dtm-select" data-dtm="lyric-octave" aria-label="オクターブ（音源の得意音域に合わせる）" title="オクターブ">
-          <option value="2">+2 oct</option>
-          <option value="1">+1 oct</option>
-          <option value="0">±0 oct</option>
-          <option value="-1">-1 oct</option>
-          <option value="-2">-2 oct</option>
-        </select>
-        <label class="dtm-label" style="display:inline-flex;align-items:center;gap:2px;white-space:nowrap" title="ロングトーンに自動でビブラートを掛けます">
-          <input type="checkbox" data-dtm="lyric-vibrato" aria-label="自動ビブラート">ビブラート
-        </label>
-        <button class="dtm-infobtn" data-dtm="lyric-vibrato-info" title="自動ビブラートの解説">${icon("info", 12)}</button>
         <span class="dtm-label dtm-grow" data-dtm="lyric-count" style="text-align:right"></span>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="lyric-terms" style="font-size:10px;gap:4px;color:var(--dtm-warn)">
@@ -1972,16 +2125,48 @@ export const mountDAW = (
           <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="歌唱の声量（100=等倍、100超でブースト、既定200）">
           <span class="dtm-label" data-dtm="lyric-vol-label"></span>
         </div>
-        <div class="dtm-row">
-          <span class="dtm-label">定位</span>
-          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-pan" min="0" max="127" aria-label="歌唱のステレオ定位（左右）">
-          <span class="dtm-label" data-dtm="lyric-pan-label"></span>
-        </div>
-        <div class="dtm-row">
-          <span class="dtm-label">リバーブ送り</span>
-          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-reverb" min="0" max="100" aria-label="このトラックからマスタリバーブへ送る量（マスタのリバーブつまみが0%だと無音）" title="マスタリバーブへのセンド量">
-          <span class="dtm-label" data-dtm="lyric-reverb-label"></span>
-        </div>
+        <details class="dtm-advanced" data-dtm="lyric-advanced">
+          <summary>詳細設定</summary>
+          <div class="dtm-row">
+            <span class="dtm-label">オクターブ</span>
+            <select class="dtm-select" data-dtm="lyric-octave" aria-label="オクターブ（音源の得意音域に合わせる）" title="オクターブ">
+              <option value="2">+2 oct</option>
+              <option value="1">+1 oct</option>
+              <option value="0">±0 oct</option>
+              <option value="-1">-1 oct</option>
+              <option value="-2">-2 oct</option>
+            </select>
+          </div>
+          <div class="dtm-row">
+            <span class="dtm-label">定位</span>
+            <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-pan" min="0" max="127" aria-label="歌唱のステレオ定位（左右）">
+            <span class="dtm-label" data-dtm="lyric-pan-label"></span>
+          </div>
+          <div class="dtm-row">
+            <span class="dtm-label">リバーブ送り</span>
+            <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-reverb" min="0" max="100" aria-label="このトラックからマスタリバーブへ送る量（マスタのリバーブつまみが0%だと無音）">
+            <span class="dtm-label" data-dtm="lyric-reverb-label"></span>
+            <button class="dtm-infobtn" data-dtm="lyric-reverb-info" title="リバーブ送りの解説">${icon("info", 12)}</button>
+          </div>
+          <div class="dtm-row">
+            <span class="dtm-label">ジェンダー</span>
+            <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-gender" min="0" max="100" aria-label="フォルマント/ジェンダーファクター（koe音源限定）">
+            <span class="dtm-label" data-dtm="lyric-gender-label"></span>
+            <button class="dtm-infobtn" data-dtm="lyric-gender-info" title="ジェンダーの解説">${icon("info", 12)}</button>
+          </div>
+          <div class="dtm-row">
+            <span class="dtm-label">ブレシネス</span>
+            <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-breathiness" min="0" max="100" aria-label="ブレシネス（息成分、koe音源限定）">
+            <span class="dtm-label" data-dtm="lyric-breathiness-label"></span>
+            <button class="dtm-infobtn" data-dtm="lyric-breathiness-info" title="ブレシネスの解説">${icon("info", 12)}</button>
+          </div>
+          <div class="dtm-row">
+            <span class="dtm-label" style="display:inline-flex;align-items:center;gap:2px">
+              <input type="checkbox" data-dtm="lyric-vibrato" aria-label="自動ビブラート">ビブラート
+            </span>
+            <button class="dtm-infobtn" data-dtm="lyric-vibrato-info" title="自動ビブラートの解説">${icon("info", 12)}</button>
+          </div>
+        </details>
         <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）"></textarea>
       </div>`;
 			refs.trackBody.appendChild(lyricDiv);
@@ -2021,6 +2206,36 @@ export const mountDAW = (
 			const lyricReverbLabel = lyricDiv.querySelector(
 				'[data-dtm="lyric-reverb-label"]',
 			) as HTMLElement;
+			const lyricReverbInfo = lyricDiv.querySelector(
+				'[data-dtm="lyric-reverb-info"]',
+			) as HTMLButtonElement;
+			lyricReverbInfo.addEventListener("click", () => {
+				showModal("リバーブ送りの解説", LYRIC_REVERB_INFO_HTML);
+			});
+			const lyricGender = lyricDiv.querySelector(
+				'[data-dtm="lyric-gender"]',
+			) as HTMLInputElement;
+			const lyricGenderLabel = lyricDiv.querySelector(
+				'[data-dtm="lyric-gender-label"]',
+			) as HTMLElement;
+			const lyricGenderInfo = lyricDiv.querySelector(
+				'[data-dtm="lyric-gender-info"]',
+			) as HTMLButtonElement;
+			lyricGenderInfo.addEventListener("click", () => {
+				showModal("ジェンダーの解説", GENDER_INFO_HTML);
+			});
+			const lyricBreathiness = lyricDiv.querySelector(
+				'[data-dtm="lyric-breathiness"]',
+			) as HTMLInputElement;
+			const lyricBreathinessLabel = lyricDiv.querySelector(
+				'[data-dtm="lyric-breathiness-label"]',
+			) as HTMLElement;
+			const lyricBreathinessInfo = lyricDiv.querySelector(
+				'[data-dtm="lyric-breathiness-info"]',
+			) as HTMLButtonElement;
+			lyricBreathinessInfo.addEventListener("click", () => {
+				showModal("ブレシネスの解説", BREATHINESS_INFO_HTML);
+			});
 			const lyricVibrato = lyricDiv.querySelector(
 				'[data-dtm="lyric-vibrato"]',
 			) as HTMLInputElement;
@@ -2115,6 +2330,10 @@ export const mountDAW = (
 			lyricPanLabel.textContent = fmtPan(active.vocalPan);
 			lyricReverb.value = String(active.vocalReverb);
 			lyricReverbLabel.textContent = `${active.vocalReverb}%`;
+			lyricGender.value = String(active.vocalGender);
+			lyricGenderLabel.textContent = `${active.vocalGender}`;
+			lyricBreathiness.value = String(active.vocalBreathiness);
+			lyricBreathinessLabel.textContent = `${active.vocalBreathiness}`;
 			lyricVibrato.checked = active.vocalVibrato;
 			const updateLyricCount = (): void => {
 				const n = normalizeLyrics(lyricInput.value).length;
@@ -2170,9 +2389,10 @@ export const mountDAW = (
 				}
 			};
 			const syncLyricVisibility = (): void => {
+				// 声量・詳細設定（オクターブ/定位/ビブラート/リバーブ送り/ジェンダー/ブレシネス）・
+				// 歌詞欄は歌うときだけ意味を持つので、モデル「なし」ではまとめて隠す
+				// （lyricBody 1箇所で切り替えれば、中の項目を増やしても隠し忘れが起きない）。
 				lyricBody.style.display = active.lyricModel ? "" : "none";
-				// オクターブは歌うときだけ意味を持つので、モデル「なし」では隠す
-				lyricOctaveSel.style.display = active.lyricModel ? "" : "none";
 				updateLyricCount();
 				syncLyricTerms();
 				syncLyricIcon();
@@ -2278,6 +2498,16 @@ export const mountDAW = (
 			lyricReverb.addEventListener("input", () => {
 				active.vocalReverb = Number.parseInt(lyricReverb.value, 10);
 				lyricReverbLabel.textContent = `${active.vocalReverb}%`;
+				fireLyricsChange(active);
+			});
+			lyricGender.addEventListener("input", () => {
+				active.vocalGender = Number.parseInt(lyricGender.value, 10);
+				lyricGenderLabel.textContent = `${active.vocalGender}`;
+				fireLyricsChange(active);
+			});
+			lyricBreathiness.addEventListener("input", () => {
+				active.vocalBreathiness = Number.parseInt(lyricBreathiness.value, 10);
+				lyricBreathinessLabel.textContent = `${active.vocalBreathiness}`;
 				fireLyricsChange(active);
 			});
 		}
@@ -2390,24 +2620,38 @@ export const mountDAW = (
 
 		// トラック個別楽器（空＝デフォルト/プリセットは出力しない）
 		const trackInstrumentsForMeta: Record<number, string> = {};
+		const trackCompressionForMeta: Record<number, number> = {};
+		const trackWidthForMeta: Record<number, number> = {};
 		trackStates.forEach((t, i) => {
 			if (t.trackInstrument) trackInstrumentsForMeta[i] = t.trackInstrument;
+			if (t.trackCompression !== 0)
+				trackCompressionForMeta[i] = t.trackCompression;
+			if (t.trackWidth !== 100) trackWidthForMeta[i] = t.trackWidth;
 		});
 		const trackInstMeta =
 			Object.keys(trackInstrumentsForMeta).length > 0
 				? trackInstrumentsForMeta
 				: undefined;
+		const trackCompMeta =
+			Object.keys(trackCompressionForMeta).length > 0
+				? trackCompressionForMeta
+				: undefined;
+		const trackWidthMeta =
+			Object.keys(trackWidthForMeta).length > 0 ? trackWidthForMeta : undefined;
 
-		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量・モード）。トラックとは1対1でなく曲全体に効く。
-		// 既定/未設定（楽器=空, ドラム="none"）の項目は出力しない。
+		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量・リバーブ・モード）。
+		// トラックとは1対1でなく曲全体に効く。既定/未設定（楽器=空, ドラム="none"）の項目は出力しない。
 		const metaLineFull = formatMmlMeta(
 			{
 				instrument: currentInstrument || undefined,
 				drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
 				volume: masterVolume,
 				drumVolume: drumVolume,
+				reverb: reverbAmount,
 				mode: mode,
 				trackInstruments: trackInstMeta,
+				trackCompression: trackCompMeta,
+				trackWidth: trackWidthMeta,
 			},
 			" ",
 		);
@@ -2417,8 +2661,11 @@ export const mountDAW = (
 				drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
 				volume: masterVolume,
 				drumVolume: drumVolume,
+				reverb: reverbAmount,
 				mode: mode,
 				trackInstruments: trackInstMeta,
+				trackCompression: trackCompMeta,
+				trackWidth: trackWidthMeta,
 			},
 			"",
 		);
@@ -2482,6 +2729,8 @@ export const mountDAW = (
 				oct: t.vocalOctave,
 				vib: t.vocalVibrato,
 				rev: t.vocalReverb,
+				gen: t.vocalGender,
+				bre: t.vocalBreathiness,
 			}))
 			.filter(
 				(x) => x.model.length > 0 && x.text.length > 0 && x.notes.length > 0,
@@ -2494,6 +2743,8 @@ export const mountDAW = (
 					x.oct === 0 ? "" : `o${x.oct}`,
 					x.vib ? "b1" : "",
 					x.rev === 0 ? "" : `r${x.rev}`,
+					x.gen === 50 ? "" : `g${x.gen}`,
+					x.bre === 50 ? "" : `h${x.bre}`,
 				]
 					.filter((s) => s.length > 0)
 					.join(" ");
@@ -2660,6 +2911,12 @@ export const mountDAW = (
 				refs.drumVolume.value = String(meta.drumVolume);
 				refs.drumVolumeLabel.textContent = `${drumVolume}%`;
 			}
+			if (meta.reverb !== undefined) {
+				reverbAmount = meta.reverb;
+				refs.reverbAmount.value = String(meta.reverb);
+				refs.reverbAmountLabel.textContent = `${meta.reverb}%`;
+				options.onReverbChange?.(meta.reverb);
+			}
 		}
 		// トラック個別楽器を復元する（URLエンコーダがスペースを除去するため正規化して復元）
 		trackStates.forEach((t, i) => {
@@ -2668,6 +2925,20 @@ export const mountDAW = (
 			if (t.trackInstrument !== name) {
 				t.trackInstrument = name;
 				options.onTrackInstrumentChange?.(i, name);
+			}
+		});
+		// トラック個別の音圧強化・ステレオ幅を復元する
+		trackStates.forEach((t, i) => {
+			if (applyActiveOnly && i !== activeTrackIndex) return;
+			const comp = meta.trackCompression?.[i] ?? 0;
+			if (t.trackCompression !== comp) {
+				t.trackCompression = comp;
+				options.onTrackCompressionChange?.(t.config.id, comp);
+			}
+			const width = meta.trackWidth?.[i] ?? 100;
+			if (t.trackWidth !== width) {
+				t.trackWidth = width;
+				options.onTrackWidthChange?.(t.config.id, width);
 			}
 		});
 		// トラックごとの v（ベロシティ）を復元する（GUIのベロシティスライダーに反映）
@@ -2692,6 +2963,8 @@ export const mountDAW = (
 			active.vocalOctave = 0;
 			active.vocalVibrato = false;
 			active.vocalReverb = 0;
+			active.vocalGender = 50;
+			active.vocalBreathiness = 50;
 		} else {
 			for (const t of trackStates) {
 				t.lyrics = "";
@@ -2702,6 +2975,8 @@ export const mountDAW = (
 				t.vocalOctave = 0;
 				t.vocalVibrato = false;
 				t.vocalReverb = 0;
+				t.vocalGender = 50;
+				t.vocalBreathiness = 50;
 			}
 		}
 		lyrics?.forEach((lt) => {
@@ -2716,6 +2991,8 @@ export const mountDAW = (
 			t.vocalOctave = lt.octave ?? 0;
 			t.vocalVibrato = lt.vibrato ?? false;
 			t.vocalReverb = lt.reverb ?? 0;
+			t.vocalGender = lt.gender ?? 50;
+			t.vocalBreathiness = lt.breathiness ?? 50;
 		});
 		// 注意: p.velocity は generateMML がトラック全体に単一の v ヘッダーしか出力しないため、
 		// そのトラックの「ベロシティ」スライダー値（上で trackVelocity から t.volume へ復元済み）が
@@ -2812,6 +3089,8 @@ export const mountDAW = (
 			active.vocalOctave = 0;
 			active.vocalVibrato = false;
 			active.vocalReverb = 0;
+			active.vocalGender = 50;
+			active.vocalBreathiness = 50;
 		} else {
 			clearAll();
 			for (const t of trackStates) t.core.setLoadMode(true);
@@ -2825,6 +3104,8 @@ export const mountDAW = (
 				t.vocalOctave = 0;
 				t.vocalVibrato = false;
 				t.vocalReverb = 0;
+				t.vocalGender = 50;
+				t.vocalBreathiness = 50;
 			}
 		}
 
@@ -2992,6 +3273,15 @@ export const mountDAW = (
 			redrawAll();
 		});
 
+		// 音割れ検知バッジ。マスタの安全リミッター手前が閾値を超えたら表示し、
+		// クリックで手動リセットできる（自動でも一定時間で消える）。
+		unsubscribeClip = options.clipMeter?.onClipChange((clipping) => {
+			refs.clipBadge.classList.toggle("dtm-hidden", !clipping);
+		});
+		refs.clipBadge.addEventListener("click", () => {
+			options.clipMeter?.reset();
+		});
+
 		refs.toolPen.addEventListener("click", () => setToolMode("pen"));
 		refs.toolSelect.addEventListener("click", () => setToolMode("select"));
 		refs.toolEraser.addEventListener("click", () => setToolMode("eraser"));
@@ -3080,6 +3370,34 @@ export const mountDAW = (
 			reverbAmount = Number.parseInt(refs.reverbAmount.value, 10) || 0;
 			refs.reverbAmountLabel.textContent = `${reverbAmount}%`;
 			options.onReverbChange?.(reverbAmount);
+		});
+		refs.reverbAmountInfoBtn.addEventListener("click", () => {
+			showModal("マスタリバーブの解説", MASTER_REVERB_INFO_HTML);
+		});
+		refs.autoMasterInfoBtn.addEventListener("click", () => {
+			showModal("おまかせマスタリング解説", AUTO_MASTER_INFO_HTML);
+		});
+		refs.autoMasterBtn.addEventListener("click", () => {
+			// マスタリバーブ
+			reverbAmount = 20;
+			refs.reverbAmount.value = "20";
+			refs.reverbAmountLabel.textContent = "20%";
+			options.onReverbChange?.(20);
+
+			for (const t of trackStates) {
+				// 音圧強化・ステレオ幅は全トラック共通
+				t.trackCompression = 35;
+				t.trackWidth = 115;
+				options.onTrackCompressionChange?.(t.config.id, 35);
+				options.onTrackWidthChange?.(t.config.id, 115);
+				// 歌詞のあるトラックだけビブラート・リバーブ送りを底上げする
+				if (t.lyricModel) {
+					t.vocalVibrato = true;
+					t.vocalReverb = 25;
+					fireLyricsChange(t);
+				}
+			}
+			updateTrackPanel();
 		});
 		refs.drumSelect.addEventListener("change", () => {
 			currentDrumPattern = refs.drumSelect.value;
@@ -4231,6 +4549,8 @@ export const mountDAW = (
 			t.vocalOctave = data.vocalOctave;
 			t.vocalVibrato = data.vocalVibrato ?? false;
 			t.vocalReverb = data.vocalReverb ?? 0;
+			t.vocalGender = data.vocalGender ?? 50;
+			t.vocalBreathiness = data.vocalBreathiness ?? 50;
 		},
 		applyTrackInstrument: (
 			trackIndex: number,
@@ -4263,6 +4583,7 @@ export const mountDAW = (
 		destroy: () => {
 			sequencer.stop();
 			options.singingVoices?.stopStream();
+			unsubscribeClip?.();
 			resizeObserver.disconnect();
 			document.removeEventListener("pointermove", onPointerMove);
 			document.removeEventListener("pointerup", onPointerUp);

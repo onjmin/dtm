@@ -16,12 +16,14 @@
 
 import { parseArrayBuffer } from "midi-json-parser";
 import { buildNameToKeyMapping } from "./audio-config";
+import { type ChannelStrip, createChannelStrip } from "./channel-strip";
 import {
 	type ChordPlayerInstance,
 	type MountChordPlayerOptions,
 	mountChordPlayer,
 } from "./chord-player";
 import { buildChordPlacements } from "./chords";
+import { createClipMeter } from "./clip-meter";
 import { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 import {
 	type AnyDrumPattern,
@@ -453,7 +455,6 @@ export const createDtmStudio = async (
 		options.audioContext ?? new AudioContext({ sampleRate: 44100 });
 	const masterGain = audioCtx.createGain();
 	masterGain.gain.value = options.masterVolume ?? 1;
-	masterGain.connect(audioCtx.destination);
 	const drumGain = audioCtx.createGain();
 	drumGain.gain.value = options.drumVolume ?? 1;
 	drumGain.connect(masterGain);
@@ -467,7 +468,6 @@ export const createDtmStudio = async (
 	reverbWetGain.gain.value = reverbAmountToGain(options.reverbAmount ?? 0);
 	masterGain.connect(reverbConvolver);
 	reverbConvolver.connect(reverbWetGain);
-	reverbWetGain.connect(audioCtx.destination);
 
 	/** マスタリバーブの掛かり具合を 0-100 で設定する。急な変化によるクリックを避けて滑らかに遷移する。 */
 	const setReverbAmount = (amount: number): void => {
@@ -476,6 +476,40 @@ export const createDtmStudio = async (
 			audioCtx.currentTime,
 			0.02,
 		);
+	};
+
+	// ── 最終段: ドライ＋ウェットの合流点 → 常時ONの安全リミッター → 実出力 ──
+	// 編集中に音が突然大きくなって耳やスピーカーを傷めることがないよう、ユーザー設定に
+	// 関わらず常にここでピークを抑える（0dBFS付近のブリックウォール）。トラック単位の
+	// コンプレッサー（音圧強化、任意）とは別物 — こちらは「保険」であって表現ではない。
+	const finalMix = audioCtx.createGain();
+	masterGain.connect(finalMix);
+	reverbWetGain.connect(finalMix);
+
+	const safetyLimiter = audioCtx.createDynamicsCompressor();
+	safetyLimiter.threshold.value = -1;
+	safetyLimiter.knee.value = 0;
+	safetyLimiter.ratio.value = 20;
+	safetyLimiter.attack.value = 0.001;
+	safetyLimiter.release.value = 0.1;
+	finalMix.connect(safetyLimiter);
+	safetyLimiter.connect(options.destination ?? audioCtx.destination);
+
+	// クリップ検知メーター。安全リミッターの「手前」（finalMix）を監視するので、
+	// リミッターが常に守ってくれていても「素材自体は限界に来ている」を警告できる。
+	const clipMeter = createClipMeter(audioCtx, finalMix);
+
+	// ── トラック単位チャンネルストリップ（コンプレッサー＋ステレオワイド）──
+	// ボーカル・楽器を問わず、trackId ごとに1本ずつ遅延生成してキャッシュする。
+	// 各トラックの発音は masterGain に直結せず、まずこのストリップを通す。
+	const channelStrips = new Map<string, ChannelStrip>();
+	const getChannelStrip = (trackId: string): ChannelStrip => {
+		let strip = channelStrips.get(trackId);
+		if (!strip) {
+			strip = createChannelStrip(audioCtx, masterGain);
+			channelStrips.set(trackId, strip);
+		}
+		return strip;
 	};
 
 	const resumeAudio = (): Promise<void> => {
@@ -529,6 +563,10 @@ export const createDtmStudio = async (
 		// ボーカルトラック個別のリバーブセンド（`r`トークン）先。マスタリバーブの
 		// Convolver 入力へ直接センドする（masterGain 経由のドライ段は素通り）。
 		reverbBus: reverbConvolver,
+		// トラック単位チャンネルストリップ（コンプレッサー/ステレオワイド）の入口。
+		// 楽器と同じ getChannelStrip キャッシュを共有するので、演奏トラックと歌詞トラックが
+		// 同じ trackId を指していれば同じ処理が掛かる。
+		getTrackDestination: (trackId) => getChannelStrip(trackId).input,
 	});
 
 	// ── SoundFont（楽器）ロード ──
@@ -860,7 +898,7 @@ export const createDtmStudio = async (
 			if (!sfInst) return;
 			sfInst.play({
 				ctx: audioCtx,
-				destination: masterGain,
+				destination: getChannelStrip(e.trackId).input,
 				pitch: e.pitch,
 				volume: e.volume,
 				when: e.when,
@@ -916,6 +954,11 @@ export const createDtmStudio = async (
 			},
 			reverbAmount: options.reverbAmount,
 			onReverbChange: setReverbAmount,
+			onTrackCompressionChange: (trackId, amount) =>
+				getChannelStrip(trackId).setCompression(amount),
+			onTrackWidthChange: (trackId, width) =>
+				getChannelStrip(trackId).setWidth(width),
+			clipMeter,
 			...dawOverrides,
 			// dawOverrides で上書きされないよう、スプレッドの後に配置して合成する
 			onDrumChange: (name) => {
@@ -944,23 +987,29 @@ export const createDtmStudio = async (
 		daw = mountDAW(target, base);
 		mountedEditors.push(daw);
 
-		// プリセット選択UI（任意）。DAW の先頭へ差し込み、配線は mountPresetSelect に委ねる。
-		// 同じ target への再マウントで重複しないよう、既存分は破棄する。
+		// プリセット選択UI（任意）。「全体トラック設定」パネル内の専用スロットへ差し込み、
+		// 配線は mountPresetSelect に委ねる。同じ target への再マウントで重複しないよう、
+		// 既存分は破棄する。スロットが無い（古いUI等）場合は従来どおり DAW の先頭へ差し込む。
 		const wantPresetUI = presetUI ?? features.presetUI;
 		// ローディングの暗幕はコンポーネント全体ではなくピアノロールだけに被せる。
 		// buildUI 直後なので roll 要素は存在し、楽器変更では再マウントされない（＝寿命中有効）。
 		const rollEl = target.querySelector<HTMLElement>('[data-dtm="roll"]');
+		const presetSlot = target.querySelector<HTMLElement>(
+			'[data-dtm="preset-select-slot"]',
+		);
 		if (wantPresetUI) {
 			editorPresetSelects.get(target)?.destroy();
-			presetSelect = mountPresetSelect(target, {
+			presetSelect = mountPresetSelect(presetSlot ?? target, {
 				getDaw: () => daw,
 				getTrackIds: () => trackIds,
 				value: initialPreset,
 				loadingTarget: rollEl ?? target,
-				position: "prepend",
-				// 楽器変更時、このエディタの発音解決が使うプリセットも追従させる。
+				position: presetSlot ? "append" : "prepend",
+				// 楽器変更時、このエディタの発音解決が使うプリセットも追従させ、
+				// 外部の onInstrumentChange（呼び出し側の永続化フック等）へも通知する。
+				// #inst= 付きMML読込時の通知経路（handleInstrumentChange）と揃える。
 				onChange: (key) => {
-					editorPreset = key;
+					handleInstrumentChange(key);
 				},
 			});
 			editorPresetSelects.set(target, presetSelect);
@@ -1197,7 +1246,7 @@ export const createDtmStudio = async (
 			if (!sfInst) return;
 			sfInst.play({
 				ctx: audioCtx,
-				destination: masterGain,
+				destination: getChannelStrip(e.trackId).input,
 				pitch: e.pitch,
 				volume: e.volume,
 				when: e.when,
@@ -1301,7 +1350,7 @@ export const createDtmStudio = async (
 			if (!sfInst) return;
 			sfInst.play({
 				ctx: audioCtx,
-				destination: masterGain,
+				destination: getChannelStrip(e.trackId).input,
 				pitch: e.pitch,
 				volume: e.volume,
 				when: e.when,
@@ -1400,7 +1449,7 @@ export const createDtmStudio = async (
 			if (!sfInst) return;
 			sfInst.play({
 				ctx: audioCtx,
-				destination: masterGain,
+				destination: getChannelStrip(e.trackId).input,
 				pitch: e.pitch,
 				volume: e.volume,
 				when: e.when,
@@ -1443,7 +1492,7 @@ export const createDtmStudio = async (
 		if (!sfInst) return;
 		sfInst.play({
 			ctx: audioCtx,
-			destination: masterGain,
+			destination: getChannelStrip(e.trackId).input,
 			pitch: e.pitch,
 			volume: e.volume,
 			when: e.when,
@@ -1520,7 +1569,7 @@ export const createDtmStudio = async (
 			if (!sfInst) return;
 			sfInst.play({
 				ctx: audioCtx,
-				destination: masterGain,
+				destination: getChannelStrip("chord").input,
 				pitch: e.pitch,
 				volume: e.volume,
 				when: e.when,
@@ -1579,6 +1628,9 @@ export const createDtmStudio = async (
 		mountedPlayers.length = 0;
 		mountedChordPlayers.length = 0;
 		mountedEditors.length = 0;
+		clipMeter.dispose();
+		for (const strip of channelStrips.values()) strip.dispose();
+		channelStrips.clear();
 		void audioCtx.close();
 	};
 

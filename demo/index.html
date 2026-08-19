@@ -269,18 +269,11 @@
     </header>
 
     <!-- ════ コントロールバー ════ -->
+    <!-- 楽器選択は内蔵のプリセット選択UI（DAW内「全体トラック設定」パネル）に一本化したため、
+         このデモ独自の #preset は廃止した。 -->
     <div class="max-w-4xl mx-auto px-3 pt-4 flex flex-col gap-2">
 
-        <!-- 楽器選択 -->
-        <div class="game-win bg-pico-navy px-4 py-3">
-            <div class="flex flex-wrap items-center gap-3">
-                <span class="text-pico-pink text-xs uppercase tracking-widest shrink-0">► INSTRUMENT</span>
-                <select id="preset" class="game-win grow min-h-[40px] px-3 bg-pico-black text-pico-white font-pixel text-sm
-                           tracking-wide uppercase border-0 focus:outline-none cursor-pointer">
-                </select>
-                <span class="text-pico-orange text-xs font-pixel shrink-0" id="loading" style="display:none"></span>
-            </div>
-        </div>
+        <span class="text-pico-orange text-xs font-pixel px-1" id="loading" style="display:none"></span>
 
         <!-- モード切替 -->
         <div class="game-win bg-pico-navy px-4 py-3">
@@ -420,28 +413,22 @@
 
         const loadingEl = document.getElementById('loading');
         const appEl = document.getElementById('app');
-        const presetSelect = document.getElementById('preset');
 
         // 初期ロード中はヘッダのloading欄にも表示
         loadingEl.textContent = '準備中...';
         loadingEl.style.display = '';
 
-        // 楽器プリセットのドロップダウンを構築（保存値があれば初期選択に使う）
-        for (const [key, preset] of Object.entries(INSTRUMENT_PRESETS)) {
-            const opt = document.createElement('option');
-            opt.value = key; opt.textContent = preset.displayName;
-            presetSelect.appendChild(opt);
-        }
         const savedInstrument = readStored(INSTRUMENT_STORAGE_KEY);
         const defaultPreset = (savedInstrument && INSTRUMENT_PRESETS[savedInstrument]) ? savedInstrument : 'retro_game';
-        presetSelect.value = defaultPreset;
+        // 現在選択中のプリセット。内蔵プリセット選択UI（DAW側）が真実の値を持つため、
+        // このデモ側は onInstrumentChange 経由で受け取った値をここへ反映するだけ。
+        let currentPreset = defaultPreset;
 
         // ════ ここが主役: 関数1つで AudioContext・SoundFont(楽器/ドラム)・歌声・録音・MIDI・コードを一括配線 ════
         // 楽器/ドラムのSoundFontはCDNから動的import、歌声ワーカーは同梱 dist/voice-worker.js を自動解決する。
-        // このデモは自前の #preset を使うため、内蔵のプリセット選択UIは無効化している。
+        // 楽器プリセットの選択UIは内蔵のもの（features.presetUI、既定true）をそのまま使う。
         const studio = await createDtmStudio({
             defaultPreset,
-            features: { presetUI: false },
             midiSearch: { apiKey: '114514', baseUrl: isLocal ? location.origin : null },
 
         });
@@ -453,11 +440,13 @@
         let currentMode = readSavedMode();
         let daw = null;
 
-        // ── 楽器プリセット変更（再生中なら一旦停止→ロード→同じ位置から再開）──
+        // ── 楽器プリセット変更の通知を受けて永続化する ──
+        // 内蔵プリセット選択UIの変更・MML読込時の #inst= のどちらもこの一本の経路で届く。
+        // ソート済み・ロード済みの状態を再度読み込むだけの MML #inst= 経由の場合はここで
+        // 明示的に loadPreset するが、内蔵UI操作時はDAW側で既にロード済みなので二重にはならない
+        // （loadPreset はキャッシュ済みSoundFontを再フェッチしない）。
         const selectInstrumentPreset = async (v) => {
-            if (presetSelect.value !== v) {
-                presetSelect.value = v;
-            }
+            currentPreset = v;
             writeStored(INSTRUMENT_STORAGE_KEY, v);
             if (daw) {
                 daw.setInstrument(v); // MML出力の先頭に #inst= を埋め込む（再生専用ビューが音源解決に使う）
@@ -477,10 +466,6 @@
             }
         };
 
-        presetSelect.addEventListener('change', () => {
-            selectInstrumentPreset(presetSelect.value).catch(console.error);
-        });
-
         // 保存済みドラムパターンを（再）マウント後のDAWへ復元する（"なし"はMMLに乗らないため明示復元）。
         const restoreDrum = () => {
             const saved = readStored(DRUM_STORAGE_KEY);
@@ -492,7 +477,7 @@
             daw = studio.mountEditor(appEl, {
                 mode,
                 tracks: tracksFor(mode),
-                preset: presetSelect.value,
+                preset: currentPreset,
                 initialMML: mml || undefined,
                 defaultBpm: 120,
                 skipConsent: true,

@@ -31,6 +31,10 @@ export type VoiceWorkerRenderReq = {
 	durationMs: number;
 	/** 自動ビブラートを掛けるか（呼び出し側で長さ閾値判定済み）。 */
 	vibrato?: boolean;
+	/** フォルマント/ジェンダーファクター 0-1（既定0.5）。 */
+	gender?: number;
+	/** ブレシネス（息成分）0-1（既定0.5）。 */
+	breathiness?: number;
 };
 
 export type VoiceWorkerInbound = VoiceWorkerInit | VoiceWorkerRenderReq;

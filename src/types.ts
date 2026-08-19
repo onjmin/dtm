@@ -1,3 +1,4 @@
+import type { ClipMeter } from "./clip-meter";
 import type { SingingVoices } from "./lyrics";
 import type { MidiSearchConfig } from "./midi-search";
 
@@ -54,6 +55,8 @@ export type LyricSyncData = {
 	vocalOctave: number;
 	vocalVibrato?: boolean;
 	vocalReverb?: number;
+	vocalGender?: number;
+	vocalBreathiness?: number;
 };
 
 /** パッチ送受信用ノートデータ（ローカルIDを持たない）。 */
@@ -151,6 +154,11 @@ export type PlayNoteEvent = {
 	 * 反映する。合成側はドライ経路とは別にこの割合だけリバーブバスへ送ればよい。
 	 */
 	reverbSend?: number;
+	/**
+	 * 発音先の上書き（未指定なら合成側の既定destinationへ）。トラック単位チャンネルストリップ
+	 * （コンプレッサー/ステレオワイド）の入口ノードを渡すことを想定。
+	 */
+	destination?: AudioNode;
 };
 
 // ============================================================
@@ -212,6 +220,19 @@ export type LyricTrack = {
 	 * MMLでは `@@n klatt r50 …` のように r トークンで付与する。
 	 */
 	reverb?: number;
+	/**
+	 * フォルマント/ジェンダーファクター 0-100。既定50（無変化）。
+	 * ピッチはそのままに声の太さ/細さ（年齢・性別感）だけを動かす。
+	 * 50未満で低め/太め（大人びる）、50超で高め/細め（若く/明るく）に寄る。
+	 * MMLでは `@@n klatt g30 …` のように g トークンで付与する。
+	 */
+	gender?: number;
+	/**
+	 * ブレシネス（息成分）0-100。既定50（無変化）。大きいほど息っぽく（ささやき寄り）、
+	 * 小さいほど芯のある声になる。
+	 * MMLでは `@@n klatt h70 …` のように h トークンで付与する。
+	 */
+	breathiness?: number;
 	/** 正規化済み音節列 */
 	syllables: LyricSyllable[];
 	/**
@@ -295,6 +316,14 @@ export type DawOptions = {
 		instrumentName: string,
 	) => void;
 	/**
+	 * トラック単位のコンプレッサー（音圧強化）量 0-100 が変化したときに呼ばれる。
+	 * `trackId` は演奏トラックのID（歌詞トラックと同じIDを共有していれば同じ処理が掛かる）。
+	 * 実際の音声処理は呼び出し側（studio）が担う。
+	 */
+	onTrackCompressionChange?: (trackId: string, amount: number) => void;
+	/** トラック単位のステレオ幅 0-200 が変化したときに呼ばれる。 */
+	onTrackWidthChange?: (trackId: string, width: number) => void;
+	/**
 	 * 表示・出力設定（ズーム / 和音分解モード / 和音伴奏トラック無視）が変化したときに呼ばれる。
 	 * 利用側が選択状態を永続化する用途に使う。
 	 */
@@ -357,6 +386,11 @@ export type DawOptions = {
 	drumFont?: string;
 	/** 歌唱合成の先読みや制御を行うヘルパ（.koe音源の再生前プリロードに使用） */
 	singingVoices?: SingingVoices;
+	/**
+	 * 編集中の音割れ検知メーター（マスタの安全リミッター手前を監視）。
+	 * 渡すとDAW UIにクリップ警告バッジを表示できる。studio.mountEditor が自動的に渡す。
+	 */
+	clipMeter?: ClipMeter;
 	/**
 	 * 静的に登録するカスタムボーカル定義の配列。
 	 * MML 中の `@@key icon_url koe_url` 宣言行と同等だが、コードから直接渡せる。

@@ -649,6 +649,23 @@ export const DAW_CSS = `
 @keyframes dtm-blink { 0%,100%{opacity:1} 50%{opacity:0} }
 .dtm-blink { animation: dtm-blink 1s steps(1) infinite; }
 
+/* ─── 音割れ検知バッジ ─── クリップ発生中だけ表示される警告ボタン。クリックで消せる。 */
+.dtm-clip-badge {
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 2px solid var(--c-black);
+  background: var(--dtm-danger);
+  color: var(--c-white);
+  font-family: var(--dtm-font);
+  font-size: 10px;
+  letter-spacing: .1em;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px var(--dtm-danger), 2px 2px 0 var(--c-black);
+  animation: dtm-blink .5s steps(1) infinite;
+}
+.dtm-clip-badge:active { transform: translate(2px,2px); box-shadow: none; }
+
 /* ─── インフォボタン ─── */
 .dtm-infobtn {
   display: inline-flex;
@@ -924,6 +941,37 @@ export const DAW_CSS = `
   object-fit: cover;
   image-rendering: pixelated;
 }
+/* 歌詞トラックの「詳細設定」— 常用しないパラメータ（オクターブ/定位/リバーブ送り/
+   ジェンダー/ブレシネス/ビブラート）を畳んでおく軽量な details。dtm-panel ほど
+   仰々しくせず、控えめな仕切り線＋小さい▶マーカーだけ付ける。 */
+.dtm-advanced {
+  border-top: 1px dashed var(--dtm-border2);
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dtm-advanced > summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: .08em;
+  color: var(--dtm-text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 2px solid var(--dtm-border2);
+  background: var(--dtm-deep);
+  box-shadow: 2px 2px 0 var(--c-black);
+  width: fit-content;
+}
+.dtm-advanced > summary:active { transform: translate(2px,2px); box-shadow: none; }
+.dtm-advanced > summary::-webkit-details-marker { display: none; }
+.dtm-advanced > summary::before { content: "▶"; font-size: 9px; color: var(--dtm-accent); }
+.dtm-advanced[open] > summary::before { content: "▼"; }
+.dtm-advanced[open] > summary { border-color: var(--dtm-primary); color: var(--dtm-primary); }
 
 /* ─── 広幅拡張 ─── */
 @media (min-width: 768px) {

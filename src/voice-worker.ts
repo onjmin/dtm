@@ -47,6 +47,8 @@ const renderAlias = async (
 	pitch: number,
 	durationMs: number,
 	vibrato?: boolean,
+	gender?: number,
+	breathiness?: number,
 ): Promise<Rendered | null> => {
 	if (!bank) return null;
 	const pcm = await getPcm(alias);
@@ -61,6 +63,8 @@ const renderAlias = async (
 			pitch: vibrato ? vibratoPitchCurve(targetHz, lead.preMs) : targetHz,
 			durationMs,
 			...lead,
+			gender,
+			breathiness,
 		});
 		if (audio) return { pcm: audio, preSec: lead.preMs / 1000, rate: 1 };
 	}
@@ -96,9 +100,16 @@ wself.onmessage = async (ev) => {
 		return;
 	}
 	if (msg.type === "render") {
-		const { id, alias, pitch, durationMs, vibrato } = msg;
+		const { id, alias, pitch, durationMs, vibrato, gender, breathiness } = msg;
 		try {
-			const out = await renderAlias(alias, pitch, durationMs, vibrato);
+			const out = await renderAlias(
+				alias,
+				pitch,
+				durationMs,
+				vibrato,
+				gender,
+				breathiness,
+			);
 			if (out) {
 				wself.postMessage(
 					{
