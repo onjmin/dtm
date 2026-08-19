@@ -488,9 +488,11 @@ export const createDtmStudio = async (
 	drumGain.gain.value = options.drumVolume ?? 1;
 	drumGain.connect(masterGain);
 
-	// ── マスタリバーブ（send/return）── masterGain の並列センドとして接続する。
-	// 個々の楽器/歌声の接続（→masterGain）には一切手を加えず、全トラックへ一律で掛かる。
-	// masterGain → preDelay → convolver(Decay) → wetGain(Mix) → finalMix
+	// ── マスタリバーブ（send/return）── 全トラック一律の強制センドではなく、
+	// トラックごとの個別センド量（チャンネルストリップの reverbSend、歌詞トラックは
+	// vocalReverb）の合算だけが reverbPreDelay に入る。声だけ・特定トラックだけに
+	// リバーブを掛ける（他は掛けない）ことができるようにするための構成。
+	// [各トラックのセンド] → preDelay → convolver(Decay) → wetGain(Mix) → finalMix
 	let reverbDecaySec = options.reverbDecay ?? DEFAULT_REVERB_DECAY_SEC;
 	const reverbPreDelay = audioCtx.createDelay(MAX_REVERB_PREDELAY_MS / 1000);
 	reverbPreDelay.delayTime.value =
@@ -500,7 +502,6 @@ export const createDtmStudio = async (
 	reverbConvolver.normalize = true;
 	const reverbWetGain = audioCtx.createGain();
 	reverbWetGain.gain.value = reverbAmountToGain(options.reverbAmount ?? 0);
-	masterGain.connect(reverbPreDelay);
 	reverbPreDelay.connect(reverbConvolver);
 	reverbConvolver.connect(reverbWetGain);
 
@@ -600,7 +601,9 @@ export const createDtmStudio = async (
 	const getChannelStrip = (trackId: string): ChannelStrip => {
 		let strip = channelStrips.get(trackId);
 		if (!strip) {
-			strip = createChannelStrip(audioCtx, masterGain);
+			strip = createChannelStrip(audioCtx, masterGain, {
+				reverbBus: reverbPreDelay,
+			});
 			channelStrips.set(trackId, strip);
 		}
 		return strip;
@@ -655,7 +658,8 @@ export const createDtmStudio = async (
 		voicebanks,
 		worldlineScriptUrl: options.worldlineScriptUrl,
 		// ボーカルトラック個別のリバーブセンド（`r`トークン）先。マスタリバーブの
-		// Convolver 入力へ直接センドする（masterGain 経由のドライ段は素通り）。
+		// Convolver 入力へ直接センドする（PreDelayは経由しない。チャンネルストリップの
+		// reverbSend とは別経路の、音節単位でより細かく制御できるセンド）。
 		reverbBus: reverbConvolver,
 		// ボーカルトラック個別のディレイセンド（`e`トークン）先。
 		delayBus: delayBus.input,
@@ -1066,6 +1070,8 @@ export const createDtmStudio = async (
 				getChannelStrip(trackId).setCompression(amount),
 			onTrackWidthChange: (trackId, width) =>
 				getChannelStrip(trackId).setWidth(width),
+			onTrackReverbSendChange: (trackId, amount) =>
+				getChannelStrip(trackId).setReverbSend(amount),
 			onTrackEqLowChange: (trackId, db) =>
 				getChannelStrip(trackId).setEqLow(db),
 			onTrackEqMidChange: (trackId, db) =>

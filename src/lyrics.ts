@@ -20,6 +20,7 @@ import type {
 	CustomVocalDef,
 	LyricSyllable,
 	LyricTrack,
+	OctaveUnisonMode,
 	PlayNoteEvent,
 } from "./types";
 import { DEFAULT_GATE, DEFAULT_PAN, DEFAULT_VOCAL_VOLUME } from "./types";
@@ -31,7 +32,7 @@ import type {
 	VoiceWorkerRenderReq,
 } from "./voice-worker-types";
 
-export type { LyricSyllable, LyricTrack } from "./types";
+export type { LyricSyllable, LyricTrack, OctaveUnisonMode } from "./types";
 export { VIBRATO_MIN_SEC } from "./vibrato";
 
 /** かな → [子音, 母音] のローマ字対応表（清音・濁音・半濁音・撥音） */
@@ -307,7 +308,7 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		let delay = 0; // 省略時はディレイセンドOFF（マスタディレイが掛からない）
 		let gender = 50; // 省略時は無変化（中央）
 		let breathiness = 50; // 省略時は無変化（中央）
-		let octaveDouble = false; // 省略時はオクターブダブルOFF
+		let octaveUnison: OctaveUnisonMode = "none"; // 省略時はオクターブユニゾンなし
 
 		// モデル名は英字・アンダースコア始まりで、2文字目以降は数字も許す
 		// （カスタムボーカルのキー custom1 等）。`v100` 等のパラメータトークンは
@@ -391,9 +392,12 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 				rest = rest.substring(eMatch[0].length).trim();
 				continue;
 			}
-			const wMatch = rest.match(/^w([01])/i);
+			const wMatch = rest.match(/^w([0-3])/i);
 			if (wMatch) {
-				octaveDouble = wMatch[1] === "1";
+				// 0=none 1=down（旧オクターブダブル、後方互換） 2=up 3=both
+				octaveUnison = (["none", "down", "up", "both"] as const)[
+					Number.parseInt(wMatch[1], 10)
+				];
 				metaTokens.push(wMatch[0]);
 				rest = rest.substring(wMatch[0].length).trim();
 				continue;
@@ -421,7 +425,7 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 			delay,
 			gender,
 			breathiness,
-			octaveDouble,
+			octaveUnison,
 			syllables,
 			metaText: metaTokens.join(" "),
 			...(lineBreaks.length > 0 ? { lineBreaks } : {}),
@@ -1545,10 +1549,10 @@ export type StreamVoiceTrack = {
 	 */
 	breathiness?: number;
 	/**
-	 * オクターブダブル ON/OFF。既定false。ONにすると各音節を1オクターブ下（控えめな音量）で
-	 * 同時に重ねて発音し、声に厚みを足す（オクターブユニゾン/ダブリング）。
+	 * オクターブユニゾン。各音節をもう1声、1オクターブ上/下（控えめな音量）で重ねて発音し、
+	 * 声に厚み（下）または煌びやかさ（上）を足す。既定 "none"（重ねない）。
 	 */
-	octaveDouble?: boolean;
+	octaveUnison?: OctaveUnisonMode;
 	/** 発音順（startSec昇順）の歌唱ノート列。 */
 	notes: StreamVoiceNote[];
 };
@@ -1653,13 +1657,25 @@ const STREAM_LOOKAHEAD_SEC = 1.5;
 /** 先読み上限に達したときの再ポーリング間隔（ミリ秒）。 */
 const STREAM_POLL_MS = 100;
 
-/** オクターブダブルで重ねる声の音程差（半音）。-12 = 1オクターブ下。 */
-const OCTAVE_DOUBLE_SEMITONES = -12;
 /**
- * オクターブダブルで重ねる声の音量係数。原音より控えめにして「重ねてる」感を
+ * オクターブユニゾンで重ねる声の音量係数。原音より控えめにして「重ねてる」感を
  * 出しつつ、原音を喰わないようにする。
  */
-const OCTAVE_DOUBLE_PEAK_SCALE = 0.6;
+const OCTAVE_UNISON_PEAK_SCALE = 0.6;
+
+/** `octaveUnison` から、原音に対して重ねる声のピッチオフセット（半音）の一覧を求める。 */
+const octaveUnisonOffsets = (mode: OctaveUnisonMode | undefined): number[] => {
+	switch (mode) {
+		case "down":
+			return [-12];
+		case "up":
+			return [12];
+		case "both":
+			return [-12, 12];
+		default:
+			return [];
+	}
+};
 
 export type SingingVoicesOptions = {
 	/** 追加・上書きするkoe音源カタログ（キーワード → .koe URL または Blob） */
@@ -1840,13 +1856,13 @@ export const createSingingVoices = (
 					vibrato: track.vibrato,
 					expr,
 				});
-				// オクターブダブル時は重ねる声も先読みしておく。
-				if (track.octaveDouble) {
+				// オクターブユニゾン有効時は重ねる声も先読みしておく。
+				for (const offset of octaveUnisonOffsets(track.octaveUnison)) {
 					tasks.push({
 						model: m,
 						note,
 						prevVowel,
-						pitch: note.pitch + OCTAVE_DOUBLE_SEMITONES,
+						pitch: note.pitch + offset,
 						vibrato: track.vibrato,
 						expr,
 					});
@@ -1933,8 +1949,8 @@ export const createSingingVoices = (
 					if (opts?.isAudible && !opts.isAudible(track)) continue;
 					const t0 = anchorTime + startSec;
 
-					// 1音を指定ピッチ・音量係数で合成→スケジュールする。オクターブダブル時は
-					// 同じ音節をもう1声（-12半音・控えめな音量）重ねるため、通常発声とは
+					// 1音を指定ピッチ・音量係数で合成→スケジュールする。オクターブユニゾン有効時は
+					// 同じ音節をもう1声（±12半音・控えめな音量）重ねるため、通常発声とは
 					// 独立に呼び出せる関数へ切り出している。
 					const dispatchNote = (pitch: number, peakScale: number): void => {
 						if (model.renderToCache && model.scheduleCached) {
@@ -2005,11 +2021,8 @@ export const createSingingVoices = (
 					};
 
 					dispatchNote(note.pitch, 1);
-					if (track.octaveDouble) {
-						dispatchNote(
-							note.pitch + OCTAVE_DOUBLE_SEMITONES,
-							OCTAVE_DOUBLE_PEAK_SCALE,
-						);
+					for (const offset of octaveUnisonOffsets(track.octaveUnison)) {
+						dispatchNote(note.pitch + offset, OCTAVE_UNISON_PEAK_SCALE);
 					}
 					// klatt等（軽量・状態なし）はawaitが無く同期で回るため、UI応答性のため1音ごとに制御を返す。
 					if (!(model.renderToCache && model.scheduleCached)) {

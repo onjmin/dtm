@@ -1,8 +1,11 @@
 /**
- * トラック単位の「チャンネルストリップ」— コンプレッサー（音圧強化）とステレオワイド。
+ * トラック単位の「チャンネルストリップ」— コンプレッサー（音圧強化）・ステレオワイド・
+ * マスタリバーブへの個別センド。
  *
  * ボーカル・楽器を問わず、各トラックの発音はこのストリップの `input` へ接続してから
  * 共通のマスタへ送る想定（`input → compressor → M/Sワイド → destination`）。
+ * `reverbBus` を渡すと、M/Sワイド後の信号を `reverbSend`(0-100) の量だけ並列でそこへも送る
+ * （トラックごとにリバーブの掛かり具合を個別制御するため。ドライ経路とは別処理）。
  * どちらも生のパラメータ（threshold/ratio/M-S係数）をUIに出さず、0-100の単一の
  * 「量」つまみへ丸めて提供する（DTMエディタ側の思想: 難しいパラメータは単純化する）。
  */
@@ -18,6 +21,13 @@ export type ChannelStripOptions = {
 	eqMid?: number;
 	/** 高域（シェルフ, ~5000Hz）のゲイン -12〜+12dB。既定0（無変化）。 */
 	eqHigh?: number;
+	/**
+	 * マスタリバーブへのセンド量 0-100。既定0（センドしない＝このトラックにリバーブが掛からない）。
+	 * `reverbBus` 未指定時は無視される。
+	 */
+	reverbSend?: number;
+	/** リバーブセンドの接続先（マスタリバーブのPreDelay入力等）。未指定なら `reverbSend` は無効。 */
+	reverbBus?: AudioNode;
 };
 
 export type ChannelStrip = {
@@ -33,6 +43,8 @@ export type ChannelStrip = {
 	setCompression: (amount: number) => void;
 	/** ステレオ幅を 0-200 でリアルタイムに変更する。 */
 	setWidth: (width: number) => void;
+	/** マスタリバーブへのセンド量を 0-100 でリアルタイムに変更する。 */
+	setReverbSend: (amount: number) => void;
 	/** ノードを切断して破棄する。 */
 	dispose: () => void;
 };
@@ -163,9 +175,15 @@ export const createChannelStrip = (
 	setWidth(options.width ?? 100);
 
 	// input → EQ(低→中→高) → compressor → M/Sワイド → destination
+	//                                                  └→ reverbSendGain → reverbBus（並列センド、任意）
 	eqHigh.connect(compressor);
 	compressor.connect(splitter);
 	merger.connect(destination);
+
+	const reverbSendGain = ctx.createGain();
+	reverbSendGain.gain.value = clamp(options.reverbSend ?? 0, 0, 100) / 100;
+	merger.connect(reverbSendGain);
+	if (options.reverbBus) reverbSendGain.connect(options.reverbBus);
 
 	return {
 		input,
@@ -192,6 +210,13 @@ export const createChannelStrip = (
 		},
 		setCompression: applyCompression,
 		setWidth,
+		setReverbSend: (amount) => {
+			reverbSendGain.gain.setTargetAtTime(
+				clamp(amount, 0, 100) / 100,
+				ctx.currentTime,
+				0.02,
+			);
+		},
 		dispose: () => {
 			input.disconnect();
 			eqLow.disconnect();
@@ -208,6 +233,7 @@ export const createChannelStrip = (
 			outL.disconnect();
 			outR.disconnect();
 			merger.disconnect();
+			reverbSendGain.disconnect();
 		},
 	};
 };

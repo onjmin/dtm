@@ -164,7 +164,7 @@ export const playSingingMML = async (
 				delaySend: (lt.delay ?? 0) / 100,
 				gender: (lt.gender ?? 50) / 100,
 				breathiness: (lt.breathiness ?? 50) / 100,
-				octaveDouble: lt.octaveDouble,
+				octaveUnison: lt.octaveUnison,
 				notes,
 			};
 		});

@@ -84,6 +84,7 @@ import type {
 	DawViewState,
 	LyricTrack,
 	Note,
+	OctaveUnisonMode,
 	PlaybackState,
 	RenderConfig,
 	ToolMode,
@@ -141,14 +142,24 @@ const VIBRATO_INFO_HTML = `
 </div>
 `;
 
-const OCTAVE_DOUBLE_INFO_HTML = `
+/** オクターブユニゾンのMMLトークン（`w0`=none 省略可, `w1`=down, `w2`=up, `w3`=both）。 */
+const OCTAVE_UNISON_TOKEN: Record<OctaveUnisonMode, string> = {
+	none: "",
+	down: "w1",
+	up: "w2",
+	both: "w3",
+};
+
+const OCTAVE_UNISON_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>何をする設定か</h4>
-  <p>ONにすると、このトラックの各音節を1オクターブ下（控えめな音量）で同時に重ねて発音します。声に厚み・パワーを足す「オクターブダブリング」という定番のボーカル加工です。</p>
+  <p>このトラックの各音節に、もう1声を1オクターブ上/下/両方（控えめな音量）で同時に重ねて発音します。声に厚み・パワーを足す「オクターブユニゾン（ダブリング）」という定番のボーカル加工です。</p>
+  <h4>下・上・両方の違い</h4>
+  <p>「下」は声に重み・パワーを足す定番の使い方（ロック/EDMのバッキング等）。「上」は太さではなく煌びやかさ・可憐さを足す使い方（アニソン/ハモリ等）。「両方」は上下同時に重ねる特殊な効果で、キャラクター性を強く出したいときに。</p>
   <h4>使いどころ</h4>
   <p>サビの決めのフレーズ、ロボット的/ダークな質感の演出、ユニゾンハーモニーなどでよく使われます。曲全体に掛けっぱなしにすると常にくどい印象になりやすいので、トラックを分けて使いたい箇所だけに絞るのがおすすめです。</p>
   <h4>他の設定との兼ね合い</h4>
-  <p>重ねる声にも同じビブラート/ジェンダー/ブレシネス/リバーブ送り/ディレイ送りの設定がそのまま適用されます。音量比・音程差（1オクターブ固定）は調整できません。合成が単純に2倍走るため、音数の多いトラックではやや重くなります。</p>
+  <p>重ねる声にも同じビブラート/ジェンダー/ブレシネス/リバーブ送り/ディレイ送りの設定がそのまま適用されます。音量比・音程差（1オクターブ固定）は調整できません。「両方」は合成が3倍走るため、音数の多いトラックではやや重くなります。</p>
 </div>
 `;
 
@@ -272,6 +283,17 @@ const TRACK_WIDTH_INFO_HTML = `
   <p>定位は「音をどこに置くか」（左寄り/中央/右寄り）、ステレオ幅は「その音自体がどれだけ広がって聞こえるか」で、役割が異なります。両方を強く使うと定位がぼやけて曖昧になりがちです。</p>
   <h4>広げすぎるとどうなるか</h4>
   <p>スマホのスピーカー1個など、モノラルに近い環境で再生すると音が薄く/位相が乱れて聞こえることがあります（左右の差分を誇張しているため、足し合わせると打ち消し合う成分が増える）。主旋律やボーカルは中央付近で狭め、パッドやシンセの装飾パートは広げる、というのがミックスの定石です。</p>
+</div>
+`;
+
+const TRACK_REVERBSEND_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>このトラックの音を、マスタリバーブ（[reverb]パネルのDecay/Pre Delay/Mix）へどれだけ送るかを 0-100% で決めます。0なら送らない＝このトラックにはリバーブが掛かりません。</p>
+  <h4>「声だけリバーブ」を作るには</h4>
+  <p>リバーブは全トラックへ一律で掛かるわけではなく、この送り量で個別に決まります。ボーカルのトラックだけ送り量を上げ、他の楽器トラックは0のままにすれば、声だけにリバーブを掛けられます。低域の楽器（ベース・キック等）は送らない、ボーカルやパッドは多めに送る、というのがミックスの定石です。</p>
+  <h4>[reverb]パネルのMixとの関係</h4>
+  <p>Mixは「送られてきた音をどれだけ返すか」という全体の返り量です。各トラックの送り量が0なら、Mixを上げても何も返ってきません。まずこのトラックの送り量を決めてから、Mixで全体の掛かり具合を微調整してください。</p>
 </div>
 `;
 
@@ -625,8 +647,11 @@ type TrackState = {
 	vocalGender: number;
 	/** ブレシネス（息成分）0-100。既定50（無変化）。koe音源限定 */
 	vocalBreathiness: number;
-	/** オクターブダブル ON/OFF。ONで1オクターブ下を控えめな音量で重ねて厚みを足す。既定false */
-	vocalOctaveDouble: boolean;
+	/**
+	 * オクターブユニゾン。もう1声、1オクターブ上/下/両方（控えめな音量）で重ねて発音する。
+	 * 既定"none"（重ねない）。
+	 */
+	vocalOctaveUnison: OctaveUnisonMode;
 	/** トラック個別の楽器名（GM楽器名）。空文字でプリセット適用 */
 	trackInstrument: string;
 	/**
@@ -636,6 +661,12 @@ type TrackState = {
 	trackCompression: number;
 	/** このトラックのステレオ幅 0-200。既定100（原音のまま）。 */
 	trackWidth: number;
+	/**
+	 * このトラックのマスタリバーブへのセンド量 0-100。既定0（掛からない）。
+	 * ボーカル・楽器を問わずトラック全体に掛かる（歌詞トラック固有の vocalReverb とは別軸で、
+	 * 両方とも同じマスタリバーブへ加算的に送られる）。
+	 */
+	trackReverbSend: number;
 	/** このトラックのEQ低域（シェルフ）ゲイン -12〜+12dB。既定0（無変化）。 */
 	trackEqLow: number;
 	/** このトラックのEQ中域（ピーキング）ゲイン -12〜+12dB。既定0（無変化）。 */
@@ -858,7 +889,7 @@ export const mountDAW = (
 			vocalDelay: t.vocalDelay,
 			vocalGender: t.vocalGender,
 			vocalBreathiness: t.vocalBreathiness,
-			vocalOctaveDouble: t.vocalOctaveDouble,
+			vocalOctaveUnison: t.vocalOctaveUnison,
 		};
 		if (lyricsDebounceTimer) clearTimeout(lyricsDebounceTimer);
 		lyricsDebounceTimer = setTimeout(() => {
@@ -938,10 +969,11 @@ export const mountDAW = (
 				vocalDelay: 0,
 				vocalGender: 50,
 				vocalBreathiness: 50,
-				vocalOctaveDouble: false,
+				vocalOctaveUnison: "none",
 				trackInstrument: "",
 				trackCompression: 0,
 				trackWidth: 100,
+				trackReverbSend: 0,
 				trackEqLow: 0,
 				trackEqMid: 0,
 				trackEqHigh: 0,
@@ -970,7 +1002,7 @@ export const mountDAW = (
 				delay: t.vocalDelay,
 				gender: t.vocalGender,
 				breathiness: t.vocalBreathiness,
-				octaveDouble: t.vocalOctaveDouble,
+				octaveUnison: t.vocalOctaveUnison,
 				syllables,
 			});
 		});
@@ -1957,7 +1989,7 @@ export const mountDAW = (
 						delaySend: (lt.delay ?? 0) / 100,
 						gender: (lt.gender ?? 50) / 100,
 						breathiness: (lt.breathiness ?? 50) / 100,
-						octaveDouble: lt.octaveDouble,
+						octaveUnison: lt.octaveUnison,
 						notes,
 					};
 				})
@@ -2143,6 +2175,12 @@ export const mountDAW = (
           <span class="dtm-label" data-dtm="track-width-label"></span>
           <button class="dtm-infobtn" data-dtm="track-width-info" title="ステレオ幅の解説">${icon("info", 12)}</button>
         </div>
+        <div class="dtm-row">
+          <span class="dtm-label">リバーブ送り</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="track-reverb-send" min="0" max="100" aria-label="このトラックのマスタリバーブへの送り量（0=掛からない）">
+          <span class="dtm-label" data-dtm="track-reverb-send-label"></span>
+          <button class="dtm-infobtn" data-dtm="track-reverb-send-info" title="リバーブ送りの解説">${icon("info", 12)}</button>
+        </div>
       </details>`;
 		const volInput = refs.trackBody.querySelector(
 			'[data-dtm="track-vol"]',
@@ -2254,6 +2292,29 @@ export const mountDAW = (
 		});
 		trackWidthInfo.addEventListener("click", () => {
 			showModal("ステレオ幅の解説", TRACK_WIDTH_INFO_HTML);
+		});
+
+		const trackReverbSendInput = refs.trackBody.querySelector(
+			'[data-dtm="track-reverb-send"]',
+		) as HTMLInputElement;
+		const trackReverbSendLabel = refs.trackBody.querySelector(
+			'[data-dtm="track-reverb-send-label"]',
+		) as HTMLElement;
+		const trackReverbSendInfo = refs.trackBody.querySelector(
+			'[data-dtm="track-reverb-send-info"]',
+		) as HTMLButtonElement;
+		trackReverbSendInput.value = String(active.trackReverbSend);
+		trackReverbSendLabel.textContent = `${active.trackReverbSend}%`;
+		trackReverbSendInput.addEventListener("input", () => {
+			active.trackReverbSend = Number.parseInt(trackReverbSendInput.value, 10);
+			trackReverbSendLabel.textContent = `${active.trackReverbSend}%`;
+			options.onTrackReverbSendChange?.(
+				active.config.id,
+				active.trackReverbSend,
+			);
+		});
+		trackReverbSendInfo.addEventListener("click", () => {
+			showModal("リバーブ送りの解説", TRACK_REVERBSEND_INFO_HTML);
 		});
 
 		// 楽器個別選択（デフォルト＝プリセット or GM楽器名指定）
@@ -2401,10 +2462,14 @@ export const mountDAW = (
             <button class="dtm-infobtn" data-dtm="lyric-vibrato-info" title="自動ビブラートの解説">${icon("info", 12)}</button>
           </div>
           <div class="dtm-row">
-            <span class="dtm-label" style="display:inline-flex;align-items:center;gap:2px">
-              <input type="checkbox" data-dtm="lyric-octave-double" aria-label="オクターブダブル">オクターブダブル
-            </span>
-            <button class="dtm-infobtn" data-dtm="lyric-octave-double-info" title="オクターブダブルの解説">${icon("info", 12)}</button>
+            <span class="dtm-label">オクターブユニゾン</span>
+            <select class="dtm-select dtm-grow" data-dtm="lyric-octave-unison" aria-label="オクターブユニゾン（もう1声を上/下に重ねる）">
+              <option value="none">なし</option>
+              <option value="down">下 (-1oct)</option>
+              <option value="up">上 (+1oct)</option>
+              <option value="both">上下両方</option>
+            </select>
+            <button class="dtm-infobtn" data-dtm="lyric-octave-unison-info" title="オクターブユニゾンの解説">${icon("info", 12)}</button>
           </div>
         </details>
         <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）"></textarea>
@@ -2497,14 +2562,14 @@ export const mountDAW = (
 			lyricVibratoInfo.addEventListener("click", () => {
 				showModal("自動ビブラート解説", VIBRATO_INFO_HTML);
 			});
-			const lyricOctaveDouble = lyricDiv.querySelector(
-				'[data-dtm="lyric-octave-double"]',
-			) as HTMLInputElement;
-			const lyricOctaveDoubleInfo = lyricDiv.querySelector(
-				'[data-dtm="lyric-octave-double-info"]',
+			const lyricOctaveUnison = lyricDiv.querySelector(
+				'[data-dtm="lyric-octave-unison"]',
+			) as HTMLSelectElement;
+			const lyricOctaveUnisonInfo = lyricDiv.querySelector(
+				'[data-dtm="lyric-octave-unison-info"]',
 			) as HTMLButtonElement;
-			lyricOctaveDoubleInfo.addEventListener("click", () => {
-				showModal("オクターブダブル解説", OCTAVE_DOUBLE_INFO_HTML);
+			lyricOctaveUnisonInfo.addEventListener("click", () => {
+				showModal("オクターブユニゾン解説", OCTAVE_UNISON_INFO_HTML);
 			});
 			const lyricTerms = lyricDiv.querySelector(
 				'[data-dtm="lyric-terms"]',
@@ -2598,7 +2663,7 @@ export const mountDAW = (
 			lyricBreathiness.value = String(active.vocalBreathiness);
 			lyricBreathinessLabel.textContent = `${active.vocalBreathiness}`;
 			lyricVibrato.checked = active.vocalVibrato;
-			lyricOctaveDouble.checked = active.vocalOctaveDouble;
+			lyricOctaveUnison.value = active.vocalOctaveUnison;
 			const updateLyricCount = (): void => {
 				const n = normalizeLyrics(lyricInput.value).length;
 				lyricCount.textContent = active.lyricModel && n > 0 ? `${n}音節` : "";
@@ -2735,8 +2800,8 @@ export const mountDAW = (
 				active.vocalVibrato = lyricVibrato.checked;
 				fireLyricsChange(active);
 			});
-			lyricOctaveDouble.addEventListener("change", () => {
-				active.vocalOctaveDouble = lyricOctaveDouble.checked;
+			lyricOctaveUnison.addEventListener("change", () => {
+				active.vocalOctaveUnison = lyricOctaveUnison.value as OctaveUnisonMode;
 				fireLyricsChange(active);
 			});
 			lyricInput.addEventListener("input", () => {
@@ -2895,6 +2960,7 @@ export const mountDAW = (
 		const trackInstrumentsForMeta: Record<number, string> = {};
 		const trackCompressionForMeta: Record<number, number> = {};
 		const trackWidthForMeta: Record<number, number> = {};
+		const trackReverbSendForMeta: Record<number, number> = {};
 		const trackEqLowForMeta: Record<number, number> = {};
 		const trackEqMidForMeta: Record<number, number> = {};
 		const trackEqHighForMeta: Record<number, number> = {};
@@ -2903,6 +2969,8 @@ export const mountDAW = (
 			if (t.trackCompression !== 0)
 				trackCompressionForMeta[i] = t.trackCompression;
 			if (t.trackWidth !== 100) trackWidthForMeta[i] = t.trackWidth;
+			if (t.trackReverbSend !== 0)
+				trackReverbSendForMeta[i] = t.trackReverbSend;
 			if (t.trackEqLow !== 0) trackEqLowForMeta[i] = t.trackEqLow;
 			if (t.trackEqMid !== 0) trackEqMidForMeta[i] = t.trackEqMid;
 			if (t.trackEqHigh !== 0) trackEqHighForMeta[i] = t.trackEqHigh;
@@ -2917,6 +2985,10 @@ export const mountDAW = (
 				: undefined;
 		const trackWidthMeta =
 			Object.keys(trackWidthForMeta).length > 0 ? trackWidthForMeta : undefined;
+		const trackReverbSendMeta =
+			Object.keys(trackReverbSendForMeta).length > 0
+				? trackReverbSendForMeta
+				: undefined;
 		const trackEqLowMeta =
 			Object.keys(trackEqLowForMeta).length > 0 ? trackEqLowForMeta : undefined;
 		const trackEqMidMeta =
@@ -2945,6 +3017,7 @@ export const mountDAW = (
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
+				trackReverbSend: trackReverbSendMeta,
 				trackEqLow: trackEqLowMeta,
 				trackEqMid: trackEqMidMeta,
 				trackEqHigh: trackEqHighMeta,
@@ -2968,6 +3041,7 @@ export const mountDAW = (
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
+				trackReverbSend: trackReverbSendMeta,
 				trackEqLow: trackEqLowMeta,
 				trackEqMid: trackEqMidMeta,
 				trackEqHigh: trackEqHighMeta,
@@ -3037,7 +3111,7 @@ export const mountDAW = (
 				del: t.vocalDelay,
 				gen: t.vocalGender,
 				bre: t.vocalBreathiness,
-				dbl: t.vocalOctaveDouble,
+				uni: t.vocalOctaveUnison,
 			}))
 			.filter(
 				(x) => x.model.length > 0 && x.text.length > 0 && x.notes.length > 0,
@@ -3053,7 +3127,7 @@ export const mountDAW = (
 					x.del === 0 ? "" : `e${x.del}`,
 					x.gen === 50 ? "" : `g${x.gen}`,
 					x.bre === 50 ? "" : `h${x.bre}`,
-					x.dbl ? "w1" : "",
+					OCTAVE_UNISON_TOKEN[x.uni],
 				]
 					.filter((s) => s.length > 0)
 					.join(" ");
@@ -3285,6 +3359,11 @@ export const mountDAW = (
 				t.trackWidth = width;
 				options.onTrackWidthChange?.(t.config.id, width);
 			}
+			const reverbSend = meta.trackReverbSend?.[i] ?? 0;
+			if (t.trackReverbSend !== reverbSend) {
+				t.trackReverbSend = reverbSend;
+				options.onTrackReverbSendChange?.(t.config.id, reverbSend);
+			}
 			const eqLow = meta.trackEqLow?.[i] ?? 0;
 			if (t.trackEqLow !== eqLow) {
 				t.trackEqLow = eqLow;
@@ -3326,7 +3405,7 @@ export const mountDAW = (
 			active.vocalDelay = 0;
 			active.vocalGender = 50;
 			active.vocalBreathiness = 50;
-			active.vocalOctaveDouble = false;
+			active.vocalOctaveUnison = "none";
 		} else {
 			for (const t of trackStates) {
 				t.lyrics = "";
@@ -3340,7 +3419,7 @@ export const mountDAW = (
 				t.vocalDelay = 0;
 				t.vocalGender = 50;
 				t.vocalBreathiness = 50;
-				t.vocalOctaveDouble = false;
+				t.vocalOctaveUnison = "none";
 			}
 		}
 		lyrics?.forEach((lt) => {
@@ -3358,7 +3437,7 @@ export const mountDAW = (
 			t.vocalDelay = lt.delay ?? 0;
 			t.vocalGender = lt.gender ?? 50;
 			t.vocalBreathiness = lt.breathiness ?? 50;
-			t.vocalOctaveDouble = lt.octaveDouble ?? false;
+			t.vocalOctaveUnison = lt.octaveUnison ?? "none";
 		});
 		// 注意: p.velocity は generateMML がトラック全体に単一の v ヘッダーしか出力しないため、
 		// そのトラックの「ベロシティ」スライダー値（上で trackVelocity から t.volume へ復元済み）が
@@ -3458,7 +3537,7 @@ export const mountDAW = (
 			active.vocalDelay = 0;
 			active.vocalGender = 50;
 			active.vocalBreathiness = 50;
-			active.vocalOctaveDouble = false;
+			active.vocalOctaveUnison = "none";
 		} else {
 			clearAll();
 			for (const t of trackStates) t.core.setLoadMode(true);
@@ -3475,7 +3554,7 @@ export const mountDAW = (
 				t.vocalDelay = 0;
 				t.vocalGender = 50;
 				t.vocalBreathiness = 50;
-				t.vocalOctaveDouble = false;
+				t.vocalOctaveUnison = "none";
 			}
 		}
 
@@ -3837,6 +3916,13 @@ export const mountDAW = (
 				t.trackWidth = 115;
 				options.onTrackCompressionChange?.(t.config.id, comp);
 				options.onTrackWidthChange?.(t.config.id, 115);
+				// リバーブは声だけ／楽器だけ、と偏らせず全体に軽く馴染ませる。ボーカルは
+				// vocalReverb（音節単位の専用センド）に任せ、ここでは楽器トラックだけ控えめに送る
+				// （0だと「おまかせ」でMixを上げても楽器に何も掛からず不自然なため）。
+				if (!t.lyricModel) {
+					t.trackReverbSend = 15;
+					options.onTrackReverbSendChange?.(t.config.id, 15);
+				}
 				// 歌詞のあるトラックだけビブラート・リバーブ送りを底上げする。
 				// メインボーカルは前に出したいのでリバーブ控えめ、副ボーカルは奥に置いて馴染ませる。
 				if (t.lyricModel) {
@@ -5037,7 +5123,7 @@ export const mountDAW = (
 			t.vocalDelay = data.vocalDelay ?? 0;
 			t.vocalGender = data.vocalGender ?? 50;
 			t.vocalBreathiness = data.vocalBreathiness ?? 50;
-			t.vocalOctaveDouble = data.vocalOctaveDouble ?? false;
+			t.vocalOctaveUnison = data.vocalOctaveUnison ?? "none";
 		},
 		applyTrackInstrument: (
 			trackIndex: number,

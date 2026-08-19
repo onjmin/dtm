@@ -123,6 +123,34 @@ const LYRIC_MODEL_LABELS: Record<string, string> = {
 let activeBalloonEl: HTMLElement | null = null;
 let activeBalloonTimer: ReturnType<typeof setTimeout> | null = null;
 
+// 吹き出しは投稿カード等の overflow:hidden な祖先に切り抜かれないよう、
+// アイコンの子要素ではなく doc.body 直下に fixed 配置する。
+// そのため表示のたびにアンカー（絵文字アイコン）の画面座標を計算して追従させる必要がある。
+const balloonAnchors = new WeakMap<HTMLElement, HTMLElement>();
+
+const positionBalloon = (balloonEl: HTMLElement): void => {
+	const anchor = balloonAnchors.get(balloonEl);
+	if (!anchor) return;
+	const rect = anchor.getBoundingClientRect();
+	balloonEl.style.left = `${rect.left + rect.width / 2}px`;
+	balloonEl.style.top = `${rect.top - 6}px`;
+};
+
+let balloonListenersBound = false;
+/** 吹き出し表示中にスクロール／リサイズされてもアンカーに追従させる（全プレイヤー共通で1回だけ登録） */
+const ensureBalloonListeners = (): void => {
+	if (balloonListenersBound || typeof window === "undefined") return;
+	balloonListenersBound = true;
+	const reposition = (): void => {
+		if (activeBalloonEl) positionBalloon(activeBalloonEl);
+	};
+	window.addEventListener("scroll", reposition, {
+		capture: true,
+		passive: true,
+	});
+	window.addEventListener("resize", reposition, { passive: true });
+};
+
 const hideActiveBalloon = (): void => {
 	if (activeBalloonEl) {
 		activeBalloonEl.classList.remove("dtm-player-balloon--visible");
@@ -135,6 +163,7 @@ const hideActiveBalloon = (): void => {
 };
 
 const showBalloon = (balloonEl: HTMLElement): void => {
+	positionBalloon(balloonEl);
 	if (activeBalloonEl === balloonEl) {
 		if (activeBalloonTimer) {
 			clearTimeout(activeBalloonTimer);
@@ -480,6 +509,8 @@ export const mountMmlPlayer = (
 	const doc = target.ownerDocument ?? document;
 	const root = doc.createElement("div");
 	root.className = "dtm-daw dtm-player";
+	// このプレイヤーが body 直下に生やした吹き出し要素（destroy 時にまとめて除去する）
+	const playerBalloons: HTMLElement[] = [];
 
 	const head = doc.createElement("div");
 	head.className = "dtm-player-head";
@@ -893,7 +924,12 @@ export const mountMmlPlayer = (
 		balloon.className = "dtm-player-balloon";
 		const modelKey = lt.model.toLowerCase();
 		balloon.textContent = LYRIC_MODEL_LABELS[modelKey] ?? lt.model;
-		em.appendChild(balloon);
+		// em の子ではなく body 直下に置く（overflow:hidden な祖先によるクリップを回避）。
+		// 位置は showBalloon/positionBalloon が getBoundingClientRect で追従させる。
+		balloonAnchors.set(balloon, em);
+		doc.body.appendChild(balloon);
+		playerBalloons.push(balloon);
+		ensureBalloonListeners();
 
 		em.addEventListener("mouseenter", () => {
 			showBalloon(balloon);
@@ -1458,7 +1494,7 @@ export const mountMmlPlayer = (
 				delaySend: (lt.delay ?? 0) / 100,
 				gender: (lt.gender ?? 50) / 100,
 				breathiness: (lt.breathiness ?? 50) / 100,
-				octaveDouble: lt.octaveDouble,
+				octaveUnison: lt.octaveUnison,
 				notes,
 			};
 		});
@@ -1619,9 +1655,10 @@ export const mountMmlPlayer = (
 		}
 		for (const t of blinkTimers) clearTimeout(t);
 		clearJumpTimers();
-		if (activeBalloonEl && root.contains(activeBalloonEl)) {
+		if (activeBalloonEl && playerBalloons.includes(activeBalloonEl)) {
 			hideActiveBalloon();
 		}
+		for (const balloon of playerBalloons) balloon.remove();
 		root.remove();
 		consentOverlayEl?.remove();
 		closeInfoModal();

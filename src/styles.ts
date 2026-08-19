@@ -1208,11 +1208,14 @@ export const DAW_CSS = `
   user-select: none;
 }
 .dtm-player-balloon {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 100;
+  /* body 直下に生成され、JS(positionBalloon)が毎回 left/top をアンカーの画面座標で
+     設定する。overflow:hidden な祖先（投稿カード等）にクリップされないよう fixed で浮かせる。
+     top はアンカー上端-6px、transform で自身の左下角をその点に合わせる。 */
+  position: fixed;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -100%);
+  z-index: 1000;
   display: none;
   pointer-events: none;
   font-family: var(--dtm-font);
@@ -1241,8 +1244,8 @@ export const DAW_CSS = `
   animation: dtm-balloon-fade-in 0.1s steps(2);
 }
 @keyframes dtm-balloon-fade-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  from { opacity: 0; transform: translate(-50%, -100%) translateY(4px); }
+  to { opacity: 1; transform: translate(-50%, -100%) translateY(0); }
 }
 @keyframes dtm-emoji-jump {
   0%   { transform: translateY(0); }

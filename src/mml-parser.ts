@@ -86,6 +86,12 @@ export type MmlMeta = {
 	 * トラックごとのステレオ幅 0-200。`#t<n>width=<値>` で埋め込む。省略時は100（原音のまま）。
 	 */
 	trackWidth?: Record<number, number>;
+	/**
+	 * トラックごとのマスタリバーブへのセンド量 0-100。`#t<n>rev=<値>` で埋め込む。
+	 * 省略時は0（センドしない＝掛からない）。楽器・歌詞トラックどちらにも掛かる
+	 * チャンネルストリップ共通のパラメータ（歌詞トラック固有の `vocalReverb`/`r`トークンとは別軸）。
+	 */
+	trackReverbSend?: Record<number, number>;
 	/** トラックごとのEQ低域ゲイン -12〜+12dB。`#t<n>eqlo=<値>` で埋め込む。省略時は0（無変化）。 */
 	trackEqLow?: Record<number, number>;
 	/** トラックごとのEQ中域ゲイン -12〜+12dB。`#t<n>eqmid=<値>` で埋め込む。省略時は0（無変化）。 */
@@ -106,6 +112,9 @@ const TRACK_COMP_DIRECTIVE = /#t(\d+)comp=(\d+)/gi;
 
 /** `#t<n>width=<0-200>` にマッチする（トラック単位ステレオ幅） */
 const TRACK_WIDTH_DIRECTIVE = /#t(\d+)width=(\d+)/gi;
+
+/** `#t<n>rev=<0-100>` にマッチする（トラック単位マスタリバーブセンド量） */
+const TRACK_REVERBSEND_DIRECTIVE = /#t(\d+)rev=(\d+)/gi;
 
 /** `#t<n>eqlo=<-12〜12>` にマッチする（トラック単位EQ低域、符号付き） */
 const TRACK_EQLOW_DIRECTIVE = /#t(\d+)eqlo=(-?\d+)/gi;
@@ -178,6 +187,14 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 			meta.trackWidth[idx] = val;
 		}
 	}
+	for (const m of mml.matchAll(TRACK_REVERBSEND_DIRECTIVE)) {
+		const idx = Number.parseInt(m[1], 10);
+		const val = clamp(Number.parseInt(m[2], 10), 0, 100);
+		if (!Number.isNaN(idx) && !Number.isNaN(val)) {
+			meta.trackReverbSend ??= {};
+			meta.trackReverbSend[idx] = val;
+		}
+	}
 	for (const m of mml.matchAll(TRACK_EQLOW_DIRECTIVE)) {
 		const idx = Number.parseInt(m[1], 10);
 		const val = clamp(Number.parseInt(m[2], 10), -12, 12);
@@ -212,6 +229,7 @@ export const stripMmlMeta = (mml: string): string =>
 		.replace(TRACK_INST_DIRECTIVE, "")
 		.replace(TRACK_COMP_DIRECTIVE, "")
 		.replace(TRACK_WIDTH_DIRECTIVE, "")
+		.replace(TRACK_REVERBSEND_DIRECTIVE, "")
 		.replace(TRACK_EQLOW_DIRECTIVE, "")
 		.replace(TRACK_EQMID_DIRECTIVE, "")
 		.replace(TRACK_EQHIGH_DIRECTIVE, "");
@@ -253,6 +271,11 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	if (meta.trackWidth) {
 		for (const [idx, val] of Object.entries(meta.trackWidth)) {
 			if (val !== 100) parts.push(`#t${idx}width=${val}`);
+		}
+	}
+	if (meta.trackReverbSend) {
+		for (const [idx, val] of Object.entries(meta.trackReverbSend)) {
+			if (val !== 0) parts.push(`#t${idx}rev=${val}`);
 		}
 	}
 	if (meta.trackEqLow) {

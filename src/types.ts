@@ -59,7 +59,7 @@ export type LyricSyncData = {
 	vocalDelay?: number;
 	vocalGender?: number;
 	vocalBreathiness?: number;
-	vocalOctaveDouble?: boolean;
+	vocalOctaveUnison?: OctaveUnisonMode;
 };
 
 /** パッチ送受信用ノートデータ（ローカルIDを持たない）。 */
@@ -183,6 +183,15 @@ export type LyricSyllable = {
 	vowel: string;
 };
 
+/**
+ * オクターブユニゾンの重ね方。
+ * - "none": 重ねない（既定）
+ * - "down": 1オクターブ下をもう1声重ねる（声に厚み・重みを足す）
+ * - "up"  : 1オクターブ上をもう1声重ねる（煌びやかさ・可憐さを足す）
+ * - "both": 上下両方を重ねる
+ */
+export type OctaveUnisonMode = "none" | "down" | "up" | "both";
+
 // 1本の歌詞トラック（@@n model[:volume] lyrics）
 export type LyricTrack = {
 	/** 対応する演奏トラックID（@n の n） */
@@ -249,12 +258,12 @@ export type LyricTrack = {
 	 */
 	breathiness?: number;
 	/**
-	 * オクターブダブル ON/OFF。既定false。
-	 * ONにすると各音節を1オクターブ下（控えめな音量）で同時に重ねて発音し、声に厚みを足す
-	 * （オクターブユニゾン/ダブリング）。
-	 * MMLでは `@@n klatt w1 …` のように w トークンで付与する。
+	 * オクターブユニゾン。既定"none"。
+	 * "down"/"up"/"both" にすると各音節をもう1オクターブ上/下/両方（控えめな音量）で
+	 * 同時に重ねて発音し、声に厚み（down）や煌びやかさ（up）を足す。
+	 * MMLでは `@@n klatt w1 …`（0=none,1=down,2=up,3=both）のように w トークンで付与する。
 	 */
-	octaveDouble?: boolean;
+	octaveUnison?: OctaveUnisonMode;
 	/** 正規化済み音節列 */
 	syllables: LyricSyllable[];
 	/**
@@ -360,6 +369,12 @@ export type DawOptions = {
 	onTrackCompressionChange?: (trackId: string, amount: number) => void;
 	/** トラック単位のステレオ幅 0-200 が変化したときに呼ばれる。 */
 	onTrackWidthChange?: (trackId: string, width: number) => void;
+	/**
+	 * トラック単位のマスタリバーブへのセンド量 0-100 が変化したときに呼ばれる。
+	 * 楽器・歌詞トラックを問わず掛かる（歌詞トラック固有の `vocalReverb`/`r`トークンとは別軸で、
+	 * 両方が同じマスタリバーブへ加算的に送られる）。既定0（センドしない＝リバーブが掛からない）。
+	 */
+	onTrackReverbSendChange?: (trackId: string, amount: number) => void;
 	/** トラック単位EQの低域（シェルフ）ゲイン -12〜+12dB が変化したときに呼ばれる。 */
 	onTrackEqLowChange?: (trackId: string, db: number) => void;
 	/** トラック単位EQの中域（ピーキング）ゲイン -12〜+12dB が変化したときに呼ばれる。 */
