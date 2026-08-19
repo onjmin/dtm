@@ -57,6 +57,7 @@ import {
 	type MmlPlayerOptions,
 	mountMmlPlayer,
 } from "./mml-player";
+import { createReverbImpulse, reverbAmountToGain } from "./reverb";
 import { SoundFont } from "./sf/SoundFont";
 import { SoundFont_drum } from "./sf/SoundFont_drum";
 import { SoundFont_list } from "./sf/SoundFont_list";
@@ -184,6 +185,8 @@ export type DtmStudioOptions = {
 	masterVolume?: number;
 	/** ドラム音量 0-1。既定 1。 */
 	drumVolume?: number;
+	/** マスタリバーブの掛かり具合 0-100。既定0（オフ）。全トラックへ一律で掛かる。 */
+	reverbAmount?: number;
 	/**
 	 * 最終出力先の AudioNode。未指定時は audioCtx.destination（スピーカー）。
 	 * MediaStreamAudioDestinationNode や GainNode を指定できます。
@@ -425,6 +428,8 @@ export type DtmStudio = {
 	setMasterVolume: (volume: number) => void;
 	/** マスタ音量を 0-100 で変更する（`setMasterVolume` のエイリアス）。 */
 	setVolume: (volume: number) => void;
+	/** マスタリバーブの掛かり具合を 0-100 で変更する。 */
+	setReverbAmount: (amount: number) => void;
 	/** AudioContext を閉じ、生成物を破棄する。 */
 	dispose: () => void;
 };
@@ -452,6 +457,26 @@ export const createDtmStudio = async (
 	const drumGain = audioCtx.createGain();
 	drumGain.gain.value = options.drumVolume ?? 1;
 	drumGain.connect(masterGain);
+
+	// ── マスタリバーブ（send/return）── masterGain の並列センドとして接続する。
+	// 個々の楽器/歌声の接続（→masterGain）には一切手を加えず、全トラックへ一律で掛かる。
+	const reverbConvolver = audioCtx.createConvolver();
+	reverbConvolver.buffer = createReverbImpulse(audioCtx);
+	reverbConvolver.normalize = true;
+	const reverbWetGain = audioCtx.createGain();
+	reverbWetGain.gain.value = reverbAmountToGain(options.reverbAmount ?? 0);
+	masterGain.connect(reverbConvolver);
+	reverbConvolver.connect(reverbWetGain);
+	reverbWetGain.connect(audioCtx.destination);
+
+	/** マスタリバーブの掛かり具合を 0-100 で設定する。急な変化によるクリックを避けて滑らかに遷移する。 */
+	const setReverbAmount = (amount: number): void => {
+		reverbWetGain.gain.setTargetAtTime(
+			reverbAmountToGain(amount),
+			audioCtx.currentTime,
+			0.02,
+		);
+	};
 
 	const resumeAudio = (): Promise<void> => {
 		// Safari は new AudioContext() 直後に state が "running" と報告するが、
@@ -501,6 +526,9 @@ export const createDtmStudio = async (
 		voiceWorkerUrl,
 		voicebanks,
 		worldlineScriptUrl: options.worldlineScriptUrl,
+		// ボーカルトラック個別のリバーブセンド（`r`トークン）先。マスタリバーブの
+		// Convolver 入力へ直接センドする（masterGain 経由のドライ段は素通り）。
+		reverbBus: reverbConvolver,
 	});
 
 	// ── SoundFont（楽器）ロード ──
@@ -886,6 +914,8 @@ export const createDtmStudio = async (
 				void handleTrackInstrumentChange(idx, name);
 				externalOnTrackInstrumentChange?.(idx, name);
 			},
+			reverbAmount: options.reverbAmount,
+			onReverbChange: setReverbAmount,
 			...dawOverrides,
 			// dawOverrides で上書きされないよう、スプレッドの後に配置して合成する
 			onDrumChange: (name) => {
@@ -1592,6 +1622,7 @@ export const createDtmStudio = async (
 		mountModeSwitch,
 		setMasterVolume,
 		setVolume: setMasterVolume,
+		setReverbAmount,
 		dispose,
 	};
 };

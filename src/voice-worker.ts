@@ -10,6 +10,7 @@
  */
 
 import { leadInFromEntry, VoiceBank, Worldline } from "@onjmin/koe";
+import { vibratoPitchCurve } from "./vibrato";
 import type {
 	VoiceWorkerInbound,
 	VoiceWorkerOutbound,
@@ -45,6 +46,7 @@ const renderAlias = async (
 	alias: string,
 	pitch: number,
 	durationMs: number,
+	vibrato?: boolean,
 ): Promise<Rendered | null> => {
 	if (!bank) return null;
 	const pcm = await getPcm(alias);
@@ -56,7 +58,7 @@ const renderAlias = async (
 	if (worldline) {
 		const audio = worldline.renderNote({
 			pcm,
-			pitch: targetHz,
+			pitch: vibrato ? vibratoPitchCurve(targetHz, lead.preMs) : targetHz,
 			durationMs,
 			...lead,
 		});
@@ -94,9 +96,9 @@ wself.onmessage = async (ev) => {
 		return;
 	}
 	if (msg.type === "render") {
-		const { id, alias, pitch, durationMs } = msg;
+		const { id, alias, pitch, durationMs, vibrato } = msg;
 		try {
-			const out = await renderAlias(alias, pitch, durationMs);
+			const out = await renderAlias(alias, pitch, durationMs, vibrato);
 			if (out) {
 				wself.postMessage(
 					{

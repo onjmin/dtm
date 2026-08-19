@@ -159,6 +159,8 @@ export const playSingingMML = async (
 				model: lt.model,
 				volume: vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME),
 				pan: panToStereo(lt.pan ?? DEFAULT_PAN),
+				vibrato: lt.vibrato,
+				reverbSend: (lt.reverb ?? 0) / 100,
 				notes,
 			};
 		});

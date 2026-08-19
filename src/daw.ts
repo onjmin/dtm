@@ -120,6 +120,15 @@ const CHORD_INFO_HTML = `
 </div>
 `;
 
+const VIBRATO_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>自動ビブラートとは</h4>
+  <p>ONにすると、一定の長さ（約0.35秒）以上の音符（ロングトーン）にだけ、自動でピッチが小刻みに揺れる歌唱表現（ビブラート）が掛かります。</p>
+  <p style="margin-top:4px;"><small>短い音符には掛かりません。1周期も揺れきらないうちに次の音へ移ってしまい、ビブラートというより単なる音程のブレとして不自然に聞こえるためです。</small></p>
+  <p style="margin-top:4px;"><small>速さ・深さは調整できません（歌として破綻しにくい控えめな量に固定しています）。曲や箇所ごとに掛けたい/掛けたくないがある場合は、トラックを分けて歌詞を書いてください。</small></p>
+</div>
+`;
+
 const MIDI_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>1. MIDIファイルとは</h4>
@@ -438,6 +447,10 @@ type TrackState = {
 	vocalPan: number;
 	/** 歌唱のオクターブシフト -2〜+2（音源の得意音域に合わせてピッチを上下）。既定0 */
 	vocalOctave: number;
+	/** 自動ビブラート ON/OFF。ONでも一定長以上のロングトーンにだけ適用される。既定false */
+	vocalVibrato: boolean;
+	/** このトラックのマスタリバーブへのセンド量 0-100。既定0（掛からない） */
+	vocalReverb: number;
 	/** トラック個別の楽器名（GM楽器名）。空文字でプリセット適用 */
 	trackInstrument: string;
 };
@@ -490,6 +503,8 @@ export const mountDAW = (
 	});
 	refs.masterVolume.value = String(options.masterVolume ?? 50);
 	refs.masterVolumeLabel.textContent = `${options.masterVolume ?? 50}%`;
+	refs.reverbAmount.value = String(options.reverbAmount ?? 0);
+	refs.reverbAmountLabel.textContent = `${options.reverbAmount ?? 0}%`;
 	refs.drumVolume.value = String(options.drumVolume ?? 80);
 	refs.drumVolumeLabel.textContent = `${options.drumVolume ?? 80}%`;
 
@@ -508,6 +523,8 @@ export const mountDAW = (
 	let bpm = options.defaultBpm ?? DEFAULT_BPM;
 	let masterVolume = options.masterVolume ?? 50;
 	options.singingVoices?.setVolume(masterVolume / 100);
+	let reverbAmount = options.reverbAmount ?? 0;
+	options.onReverbChange?.(reverbAmount);
 	let drumVolume = options.drumVolume ?? 80;
 	let currentDrumPattern = refs.drumSelect.value;
 	let currentDrumFont = options.drumFont ?? "FluidR3_GM_sf2_file:0";
@@ -620,6 +637,8 @@ export const mountDAW = (
 			vocalGate: t.vocalGate,
 			vocalPan: t.vocalPan,
 			vocalOctave: t.vocalOctave,
+			vocalVibrato: t.vocalVibrato,
+			vocalReverb: t.vocalReverb,
 		};
 		if (lyricsDebounceTimer) clearTimeout(lyricsDebounceTimer);
 		lyricsDebounceTimer = setTimeout(() => {
@@ -694,6 +713,8 @@ export const mountDAW = (
 				vocalGate: 100,
 				vocalPan: 64,
 				vocalOctave: 0,
+				vocalVibrato: false,
+				vocalReverb: 0,
 				trackInstrument: "",
 			};
 		});
@@ -715,6 +736,8 @@ export const mountDAW = (
 				gate: t.vocalGate,
 				pan: t.vocalPan,
 				octave: t.vocalOctave,
+				vibrato: t.vocalVibrato,
+				reverb: t.vocalReverb,
 				syllables,
 			});
 		});
@@ -1692,6 +1715,8 @@ export const mountDAW = (
 						model: lt.model,
 						volume: vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME),
 						pan: panToStereo(lt.pan ?? DEFAULT_PAN),
+						vibrato: lt.vibrato,
+						reverbSend: (lt.reverb ?? 0) / 100,
 						notes,
 					};
 				})
@@ -1918,6 +1943,10 @@ export const mountDAW = (
           <option value="-1">-1 oct</option>
           <option value="-2">-2 oct</option>
         </select>
+        <label class="dtm-label" style="display:inline-flex;align-items:center;gap:2px;white-space:nowrap" title="ロングトーンに自動でビブラートを掛けます">
+          <input type="checkbox" data-dtm="lyric-vibrato" aria-label="自動ビブラート">ビブラート
+        </label>
+        <button class="dtm-infobtn" data-dtm="lyric-vibrato-info" title="自動ビブラートの解説">${icon("info", 12)}</button>
         <span class="dtm-label dtm-grow" data-dtm="lyric-count" style="text-align:right"></span>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="lyric-terms" style="font-size:10px;gap:4px;color:var(--dtm-warn)">
@@ -1947,6 +1976,11 @@ export const mountDAW = (
           <span class="dtm-label">定位</span>
           <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-pan" min="0" max="127" aria-label="歌唱のステレオ定位（左右）">
           <span class="dtm-label" data-dtm="lyric-pan-label"></span>
+        </div>
+        <div class="dtm-row">
+          <span class="dtm-label">リバーブ送り</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-reverb" min="0" max="100" aria-label="このトラックからマスタリバーブへ送る量（マスタのリバーブつまみが0%だと無音）" title="マスタリバーブへのセンド量">
+          <span class="dtm-label" data-dtm="lyric-reverb-label"></span>
         </div>
         <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）"></textarea>
       </div>`;
@@ -1981,6 +2015,21 @@ export const mountDAW = (
 			const lyricPanLabel = lyricDiv.querySelector(
 				'[data-dtm="lyric-pan-label"]',
 			) as HTMLElement;
+			const lyricReverb = lyricDiv.querySelector(
+				'[data-dtm="lyric-reverb"]',
+			) as HTMLInputElement;
+			const lyricReverbLabel = lyricDiv.querySelector(
+				'[data-dtm="lyric-reverb-label"]',
+			) as HTMLElement;
+			const lyricVibrato = lyricDiv.querySelector(
+				'[data-dtm="lyric-vibrato"]',
+			) as HTMLInputElement;
+			const lyricVibratoInfo = lyricDiv.querySelector(
+				'[data-dtm="lyric-vibrato-info"]',
+			) as HTMLButtonElement;
+			lyricVibratoInfo.addEventListener("click", () => {
+				showModal("自動ビブラート解説", VIBRATO_INFO_HTML);
+			});
 			const lyricTerms = lyricDiv.querySelector(
 				'[data-dtm="lyric-terms"]',
 			) as HTMLElement;
@@ -2064,6 +2113,9 @@ export const mountDAW = (
 			lyricVolLabel.textContent = String(active.vocalVolume);
 			lyricPan.value = String(active.vocalPan);
 			lyricPanLabel.textContent = fmtPan(active.vocalPan);
+			lyricReverb.value = String(active.vocalReverb);
+			lyricReverbLabel.textContent = `${active.vocalReverb}%`;
+			lyricVibrato.checked = active.vocalVibrato;
 			const updateLyricCount = (): void => {
 				const n = normalizeLyrics(lyricInput.value).length;
 				lyricCount.textContent = active.lyricModel && n > 0 ? `${n}音節` : "";
@@ -2195,6 +2247,10 @@ export const mountDAW = (
 				active.vocalOctave = Number.parseInt(lyricOctaveSel.value, 10);
 				fireLyricsChange(active);
 			});
+			lyricVibrato.addEventListener("change", () => {
+				active.vocalVibrato = lyricVibrato.checked;
+				fireLyricsChange(active);
+			});
 			lyricInput.addEventListener("input", () => {
 				active.lyrics = lyricInput.value;
 				updateLyricCount();
@@ -2217,6 +2273,11 @@ export const mountDAW = (
 				active.vocalPan = 64;
 				lyricPan.value = "64";
 				lyricPanLabel.textContent = fmtPan(64);
+				fireLyricsChange(active);
+			});
+			lyricReverb.addEventListener("input", () => {
+				active.vocalReverb = Number.parseInt(lyricReverb.value, 10);
+				lyricReverbLabel.textContent = `${active.vocalReverb}%`;
 				fireLyricsChange(active);
 			});
 		}
@@ -2419,6 +2480,8 @@ export const mountDAW = (
 				gate: t.vocalGate,
 				pan: t.vocalPan,
 				oct: t.vocalOctave,
+				vib: t.vocalVibrato,
+				rev: t.vocalReverb,
 			}))
 			.filter(
 				(x) => x.model.length > 0 && x.text.length > 0 && x.notes.length > 0,
@@ -2429,6 +2492,8 @@ export const mountDAW = (
 					x.gate === 100 ? "" : `q${x.gate}`,
 					x.pan === 64 ? "" : `p${x.pan}`,
 					x.oct === 0 ? "" : `o${x.oct}`,
+					x.vib ? "b1" : "",
+					x.rev === 0 ? "" : `r${x.rev}`,
 				]
 					.filter((s) => s.length > 0)
 					.join(" ");
@@ -2625,6 +2690,8 @@ export const mountDAW = (
 			active.vocalGate = 100;
 			active.vocalPan = 64;
 			active.vocalOctave = 0;
+			active.vocalVibrato = false;
+			active.vocalReverb = 0;
 		} else {
 			for (const t of trackStates) {
 				t.lyrics = "";
@@ -2633,6 +2700,8 @@ export const mountDAW = (
 				t.vocalGate = 100;
 				t.vocalPan = 64;
 				t.vocalOctave = 0;
+				t.vocalVibrato = false;
+				t.vocalReverb = 0;
 			}
 		}
 		lyrics?.forEach((lt) => {
@@ -2645,6 +2714,8 @@ export const mountDAW = (
 			t.vocalGate = lt.gate;
 			t.vocalPan = lt.pan;
 			t.vocalOctave = lt.octave ?? 0;
+			t.vocalVibrato = lt.vibrato ?? false;
+			t.vocalReverb = lt.reverb ?? 0;
 		});
 		// 注意: p.velocity は generateMML がトラック全体に単一の v ヘッダーしか出力しないため、
 		// そのトラックの「ベロシティ」スライダー値（上で trackVelocity から t.volume へ復元済み）が
@@ -2739,6 +2810,8 @@ export const mountDAW = (
 			active.vocalGate = 100;
 			active.vocalPan = 64;
 			active.vocalOctave = 0;
+			active.vocalVibrato = false;
+			active.vocalReverb = 0;
 		} else {
 			clearAll();
 			for (const t of trackStates) t.core.setLoadMode(true);
@@ -2750,6 +2823,8 @@ export const mountDAW = (
 				t.vocalGate = 100;
 				t.vocalPan = 64;
 				t.vocalOctave = 0;
+				t.vocalVibrato = false;
+				t.vocalReverb = 0;
 			}
 		}
 
@@ -3000,6 +3075,11 @@ export const mountDAW = (
 			masterVolume = Number.parseInt(refs.masterVolume.value, 10) || 0;
 			refs.masterVolumeLabel.textContent = `${masterVolume}%`;
 			options.singingVoices?.setVolume(masterVolume / 100);
+		});
+		refs.reverbAmount.addEventListener("input", () => {
+			reverbAmount = Number.parseInt(refs.reverbAmount.value, 10) || 0;
+			refs.reverbAmountLabel.textContent = `${reverbAmount}%`;
+			options.onReverbChange?.(reverbAmount);
 		});
 		refs.drumSelect.addEventListener("change", () => {
 			currentDrumPattern = refs.drumSelect.value;
@@ -4091,6 +4171,12 @@ export const mountDAW = (
 			refs.drumVolume.value = String(drumVolume);
 			refs.drumVolumeLabel.textContent = `${drumVolume}%`;
 		},
+		setReverbAmount: (amount: number) => {
+			reverbAmount = clamp(amount, 0, 100);
+			refs.reverbAmount.value = String(reverbAmount);
+			refs.reverbAmountLabel.textContent = `${reverbAmount}%`;
+			options.onReverbChange?.(reverbAmount);
+		},
 		applyPatch: (
 			trackId: string,
 			added: import("./types").NoteData[],
@@ -4143,6 +4229,8 @@ export const mountDAW = (
 			t.vocalGate = data.vocalGate;
 			t.vocalPan = data.vocalPan;
 			t.vocalOctave = data.vocalOctave;
+			t.vocalVibrato = data.vocalVibrato ?? false;
+			t.vocalReverb = data.vocalReverb ?? 0;
 		},
 		applyTrackInstrument: (
 			trackIndex: number,

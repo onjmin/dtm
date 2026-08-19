@@ -52,6 +52,8 @@ export type LyricSyncData = {
 	vocalGate: number;
 	vocalPan: number;
 	vocalOctave: number;
+	vocalVibrato?: boolean;
+	vocalReverb?: number;
 };
 
 /** パッチ送受信用ノートデータ（ローカルIDを持たない）。 */
@@ -144,6 +146,11 @@ export type PlayNoteEvent = {
 	syllable?: LyricSyllable;
 	/** syllable を歌う合成モデル名（"klatt" 等）。syllable とセットで届く */
 	voiceModel?: string;
+	/**
+	 * マスタリバーブへのセンド量 0-1（既定0）。歌詞トラックの個別リバーブ設定を
+	 * 反映する。合成側はドライ経路とは別にこの割合だけリバーブバスへ送ればよい。
+	 */
+	reverbSend?: number;
 };
 
 // ============================================================
@@ -191,6 +198,20 @@ export type LyricTrack = {
 	 * MMLでは `@@n klatt o-1 …` のように o トークンで付与する。
 	 */
 	octave?: number;
+	/**
+	 * 自動ビブラート ON/OFF。既定false。
+	 * ONでも全ノートに掛かるわけではなく、一定の長さ以上（ロングトーン）のノートにだけ
+	 * 自動で適用される（短い音符は1周期も揺れきらず不自然になるため対象外）。
+	 * MMLでは `@@n klatt b1 …` のように b トークンで付与する。
+	 */
+	vibrato?: boolean;
+	/**
+	 * このボーカルトラック個別のリバーブセンド量 0-100。既定0（マスタリバーブの影響を受けない）。
+	 * マスタリバーブのつまみ（全トラック共通の残響そのもの）とは別軸で、
+	 * 「このトラックをどれだけリバーブバスへ送るか」を個別に決める。
+	 * MMLでは `@@n klatt r50 …` のように r トークンで付与する。
+	 */
+	reverb?: number;
 	/** 正規化済み音節列 */
 	syllables: LyricSyllable[];
 	/**
@@ -304,6 +325,13 @@ export type DawOptions = {
 	masterVolume?: number;
 	/** ドラム音量 0-100。既定80。 */
 	drumVolume?: number;
+	/**
+	 * マスタリバーブの掛かり具合 0-100。既定0（オフ）。
+	 * 全トラック（楽器・歌唱とも）に一律で掛かるマスタエフェクト。
+	 */
+	reverbAmount?: number;
+	/** マスタリバーブのつまみが動かされたときに呼ばれる（0-100）。実際の音声処理は呼び出し側（studio）が担う。 */
+	onReverbChange?: (amount: number) => void;
 
 	// --- 注入される外部パーサ（任意） ---
 	parseMidi?: ParseMidiFn;
@@ -412,6 +440,8 @@ export type DawInstance = {
 	setVolume: (volume: number) => void;
 	/** ドラム音量を 0-100 で変更する。 */
 	setDrumVolume: (volume: number) => void;
+	/** マスタリバーブの掛かり具合を 0-100 で変更する。 */
+	setReverbAmount: (amount: number) => void;
 	/** リモートから受信したトラック個別楽器を適用する（`onTrackInstrumentChange` は発火しない）。 */
 	applyTrackInstrument: (trackIndex: number, instrumentName: string) => void;
 	/**

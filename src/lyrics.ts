@@ -23,6 +23,7 @@ import type {
 	PlayNoteEvent,
 } from "./types";
 import { DEFAULT_GATE, DEFAULT_PAN, DEFAULT_VOCAL_VOLUME } from "./types";
+import { VIBRATO_MIN_SEC, vibratoPitchCurve } from "./vibrato";
 import type {
 	VoiceWorkerInit,
 	VoiceWorkerOutbound,
@@ -31,6 +32,7 @@ import type {
 } from "./voice-worker-types";
 
 export type { LyricSyllable, LyricTrack } from "./types";
+export { VIBRATO_MIN_SEC } from "./vibrato";
 
 /** かな → [子音, 母音] のローマ字対応表（清音・濁音・半濁音・撥音） */
 const kanaTable: Record<string, [string, string]> = {
@@ -300,12 +302,14 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		let gate = 100; // 省略時のゲート（レガート）
 		let pan = 64; // 省略時の定位（中央）
 		let octave = 0; // 省略時のオクターブシフト（演奏ノートのピッチそのまま）
+		let vibrato = false; // 省略時は自動ビブラートOFF
+		let reverb = 0; // 省略時はリバーブセンドOFF（マスタリバーブが掛からない）
 
 		// モデル名は英字・アンダースコア始まりで、2文字目以降は数字も許す
 		// （カスタムボーカルのキー custom1 等）。`v100` 等のパラメータトークンは
-		// 先読みの [vqpo]-?\d で区切るため誤って取り込まない。
+		// 先読みの [vqpobr]-?\d で区切るため誤って取り込まない。
 		const modelMatch = rest.match(
-			/^([a-z_][a-z0-9_]*?)(?=(?:[vqpo]-?\d)|[^a-z0-9_]|$)(?::(\d+))?/i,
+			/^([a-z_][a-z0-9_]*?)(?=(?:[vqpobr]-?\d)|[^a-z0-9_]|$)(?::(\d+))?/i,
 		);
 		let model = "";
 		const metaTokens: string[] = [];
@@ -348,6 +352,20 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 				rest = rest.substring(oMatch[0].length).trim();
 				continue;
 			}
+			const bMatch = rest.match(/^b([01])/i);
+			if (bMatch) {
+				vibrato = bMatch[1] === "1";
+				metaTokens.push(bMatch[0]);
+				rest = rest.substring(bMatch[0].length).trim();
+				continue;
+			}
+			const rMatch = rest.match(/^r(\d+)/i);
+			if (rMatch) {
+				reverb = clamp(Number.parseInt(rMatch[1], 10), 0, 100);
+				metaTokens.push(rMatch[0]);
+				rest = rest.substring(rMatch[0].length).trim();
+				continue;
+			}
 			break;
 		}
 
@@ -366,6 +384,8 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 			gate,
 			pan,
 			octave,
+			vibrato,
+			reverb,
 			syllables,
 			metaText: metaTokens.join(" "),
 			...(lineBreaks.length > 0 ? { lineBreaks } : {}),
@@ -566,12 +586,19 @@ export type VoiceModel = {
 		prevVowel: string,
 		pitch: number,
 		durationMs: number,
+		vibrato?: boolean,
 	) => Promise<string | null>;
 	/**
 	 * {@link renderToCache} 済みのバッファを絶対時刻 t0（AudioContextクロック秒）へスケジュールする。
 	 * t0 は未来の任意時刻でよく、再生はオーディオスレッドが担うのでメインスレッドのもたつきに影響されない。
 	 */
-	scheduleCached?: (key: string, t0: number, peak: number, pan: number) => void;
+	scheduleCached?: (
+		key: string,
+		t0: number,
+		peak: number,
+		pan: number,
+		reverbSend?: number,
+	) => void;
 	/** スケジュール済みの発音をすべて即停止する（停止・一時停止・シーク時）。 */
 	stopAll?: () => void;
 };
@@ -602,6 +629,7 @@ const midiToFreq = (m: number): number => 440 * 2 ** ((m - 69) / 12);
 export const createKlattVoice = (
 	ctx: AudioContext,
 	destination: AudioNode,
+	reverbBus?: AudioNode,
 ): VoiceModel => {
 	// スケジュール済みの音源ノード。stopAll（停止/一時停止）で一括停止する。
 	const active = new Set<AudioScheduledSourceNode>();
@@ -628,6 +656,14 @@ export const createKlattVoice = (
 			panner.pan.value = Math.max(-1, Math.min(1, e.pan ?? 0));
 			panner.connect(destination);
 			out = panner;
+		}
+
+		// マスタリバーブへのセンド（koe音源側 schedule() と同じ考え方）。
+		let sendGain: GainNode | null = null;
+		if (reverbBus && e.reverbSend && e.reverbSend > 0 && panner) {
+			sendGain = ctx.createGain();
+			sendGain.gain.value = Math.max(0, Math.min(1, e.reverbSend));
+			panner.connect(sendGain).connect(reverbBus);
 		}
 
 		// 声門音源（倍音豊富なのこぎり波）
@@ -698,6 +734,7 @@ export const createKlattVoice = (
 			active.delete(osc);
 			osc.disconnect();
 			panner?.disconnect();
+			sendGain?.disconnect();
 		};
 	};
 
@@ -955,6 +992,12 @@ export type KoeVoiceOptions = {
 	 * 省略時は従来どおりメインスレッドで合成する（後方互換）。
 	 */
 	voiceWorkerUrl?: string;
+	/**
+	 * マスタリバーブのバス（センド先）。指定時のみ、ノートごとの `reverbSend` に応じて
+	 * ドライ経路とは別にこのノードへ送る。未指定ならリバーブ送りは常にスキップされる
+	 * （＝トラックごとの `r` トークンを書いてもリバーブが掛からない）。
+	 */
+	reverbBus?: AudioNode;
 };
 
 type RenderedNote = {
@@ -983,6 +1026,7 @@ type RenderBackend = {
 		alias: string,
 		pitch: number,
 		durationMs: number,
+		vibrato?: boolean,
 	) => Promise<BackendRender>;
 	/** 破棄（Worker終了など）。 */
 	dispose: () => void;
@@ -1013,6 +1057,7 @@ const createLocalBackend = async (
 		alias: string,
 		pitch: number,
 		durationMs: number,
+		vibrato?: boolean,
 	): Promise<BackendRender> => {
 		const pcm = await getPcm(alias);
 		if (!pcm || pcm.length === 0) return null;
@@ -1022,7 +1067,7 @@ const createLocalBackend = async (
 		if (worldline) {
 			const audio = worldline.renderNote({
 				pcm,
-				pitch: targetHz,
+				pitch: vibrato ? vibratoPitchCurve(targetHz, lead.preMs) : targetHz,
 				durationMs,
 				...lead,
 			});
@@ -1105,6 +1150,7 @@ const createWorkerBackend = async (
 		alias: string,
 		pitch: number,
 		durationMs: number,
+		vibrato?: boolean,
 	): Promise<BackendRender> =>
 		new Promise((resolve) => {
 			const id = ++reqId;
@@ -1121,6 +1167,7 @@ const createWorkerBackend = async (
 				alias,
 				pitch,
 				durationMs,
+				vibrato,
 			} satisfies VoiceWorkerRenderReq);
 		});
 
@@ -1176,23 +1223,29 @@ export const createKoeVoice = async (
 	// ストリーミング経路（renderToCache）は使わず、呼び出し側が母音を明示で渡す。
 	let prevVowel = "";
 
-	const keyOf = (alias: string, pitch: number, durationMs: number): string =>
-		`${alias}|${pitch}|${Math.round(durationMs / 10) * 10}`;
+	const keyOf = (
+		alias: string,
+		pitch: number,
+		durationMs: number,
+		vibrato?: boolean,
+	): string =>
+		`${alias}|${pitch}|${Math.round(durationMs / 10) * 10}${vibrato ? "|vib" : ""}`;
 
 	/** backend で合成 → AudioBuffer 化して renderCache へ積む。重複・同時要求はまとめる。 */
 	const renderInto = (
 		alias: string,
 		pitch: number,
 		durationMs: number,
+		vibrato?: boolean,
 	): Promise<RenderedNote | null> => {
-		const key = keyOf(alias, pitch, durationMs);
+		const key = keyOf(alias, pitch, durationMs, vibrato);
 		const existing = renderCache.get(key);
 		if (existing !== undefined) return Promise.resolve(existing);
 		const flying = inflight.get(key);
 		if (flying) return flying;
 
 		const p = (async () => {
-			const out = await backend.renderAlias(alias, pitch, durationMs);
+			const out = await backend.renderAlias(alias, pitch, durationMs, vibrato);
 			let rendered: RenderedNote | null = null;
 			if (out) {
 				const buf = ctx.createBuffer(1, out.pcm.length, KOE_SAMPLE_RATE);
@@ -1216,6 +1269,7 @@ export const createKoeVoice = async (
 		t0: number,
 		peak: number,
 		pan: number,
+		reverbSend = 0,
 	): void => {
 		// ステレオ定位（非対応環境では destination 直結）
 		let out: AudioNode = destination;
@@ -1225,6 +1279,15 @@ export const createKoeVoice = async (
 			panner.pan.value = Math.max(-1, Math.min(1, pan));
 			panner.connect(destination);
 			out = panner;
+		}
+
+		// マスタリバーブへのセンド（ドライ経路とは別に、パン後の信号を割合分だけ流す）。
+		// options.reverbBus が無い、またはこのトラックのセンド量が0ならスキップ。
+		let sendGain: GainNode | null = null;
+		if (options.reverbBus && reverbSend > 0 && panner) {
+			sendGain = ctx.createGain();
+			sendGain.gain.value = Math.max(0, Math.min(1, reverbSend));
+			panner.connect(sendGain).connect(options.reverbBus);
 		}
 
 		const src = ctx.createBufferSource();
@@ -1258,6 +1321,7 @@ export const createKoeVoice = async (
 			src.disconnect();
 			env.disconnect();
 			panner?.disconnect();
+			sendGain?.disconnect();
 		};
 	};
 
@@ -1279,11 +1343,17 @@ export const createKoeVoice = async (
 		const pan = e.pan ?? 0;
 		const durationMs = Math.max(60, e.duration * 1000);
 		void renderInto(alias, e.pitch, durationMs).then((r) => {
-			if (r) schedule(r, t0, peak, pan);
+			if (r) schedule(r, t0, peak, pan, e.reverbSend);
 		});
 	};
 
-	model.renderToCache = async (syllable, prevVowelArg, pitch, durationMs) => {
+	model.renderToCache = async (
+		syllable,
+		prevVowelArg,
+		pitch,
+		durationMs,
+		vibrato,
+	) => {
 		if (syllable.consonant === "Q" || syllable.vowel === "") return null;
 		const alias = resolveKoeAlias(
 			backend.hasAlias,
@@ -1294,13 +1364,15 @@ export const createKoeVoice = async (
 		);
 		if (!alias) return null;
 		const dMs = Math.max(60, durationMs);
-		const r = await renderInto(alias, pitch, dMs);
-		return r ? keyOf(alias, pitch, dMs) : null;
+		// 短いノートは1周期も揺れきらず不自然になるため、ここで最終的な適用可否を決める。
+		const vib = !!vibrato && dMs / 1000 >= VIBRATO_MIN_SEC;
+		const r = await renderInto(alias, pitch, dMs, vib);
+		return r ? keyOf(alias, pitch, dMs, vib) : null;
 	};
 
-	model.scheduleCached = (key, t0, peak, pan) => {
+	model.scheduleCached = (key, t0, peak, pan, reverbSend) => {
 		const r = renderCache.get(key);
-		if (r) schedule(r, t0, peak, pan);
+		if (r) schedule(r, t0, peak, pan, reverbSend);
 	};
 
 	model.stopAll = () => {
@@ -1344,6 +1416,17 @@ export type StreamVoiceTrack = {
 	volume: number;
 	/** ステレオ定位 -1〜+1。 */
 	pan: number;
+	/**
+	 * 自動ビブラート ON/OFF。ONでも全ノートには掛からず、{@link VIBRATO_MIN_SEC} 以上の
+	 * ロングトーンにだけ自動適用される（短い音符は不自然になるため対象外）。
+	 */
+	vibrato?: boolean;
+	/**
+	 * マスタリバーブへのセンド量 0-1。既定0（マスタリバーブが掛からない）。
+	 * マスタリバーブ自体のつまみ（残響の質・量）とは独立に、このトラックをどれだけ
+	 * リバーブバスへ送るかを個別に決める。
+	 */
+	reverbSend?: number;
 	/** 発音順（startSec昇順）の歌唱ノート列。 */
 	notes: StreamVoiceNote[];
 };
@@ -1461,6 +1544,13 @@ export type SingingVoicesOptions = {
 	 * 省略時は従来どおりメインスレッドで合成する。
 	 */
 	voiceWorkerUrl?: string;
+	/**
+	 * マスタリバーブのバス（センド先）。指定すると、各歌詞トラックの `reverb`（`r`トークン）
+	 * に応じて klatt/koe いずれの音源もこのノードへセンドできるようになる。未指定なら
+	 * トラック側で `r` を指定してもリバーブは掛からない（studio.ts がマスタの
+	 * Convolver 入力を渡す想定）。
+	 */
+	reverbBus?: AudioNode;
 };
 
 /** 内蔵フォルマント合成のモデル名（koe音源が見つからないときのフォールバック先） */
@@ -1490,7 +1580,7 @@ export const createSingingVoices = (
 	masterGain.connect(destination);
 
 	const loaded = new Map<string, VoiceModel>([
-		[FALLBACK_MODEL, createKlattVoice(ctx, masterGain)],
+		[FALLBACK_MODEL, createKlattVoice(ctx, masterGain, options.reverbBus)],
 	]);
 	const loading = new Map<string, Promise<VoiceModel | null>>();
 
@@ -1512,6 +1602,7 @@ export const createSingingVoices = (
 				worldlineScriptUrl: options.worldlineScriptUrl,
 				lightweight: options.lightweight,
 				voiceWorkerUrl: options.voiceWorkerUrl,
+				reverbBus: options.reverbBus,
 			}))()
 			.then((v) => {
 				loaded.set(m, v);
@@ -1571,6 +1662,7 @@ export const createSingingVoices = (
 			model: VoiceModel;
 			note: StreamVoiceNote;
 			prevVowel: string;
+			vibrato?: boolean;
 		}[] = [];
 
 		for (const track of tracks) {
@@ -1580,7 +1672,7 @@ export const createSingingVoices = (
 			forEachSungNote(track, (note, prevVowel) => {
 				if (n >= count && note.startSec >= STREAM_LOOKAHEAD_SEC) return;
 				n++;
-				tasks.push({ model: m, note, prevVowel });
+				tasks.push({ model: m, note, prevVowel, vibrato: track.vibrato });
 			});
 		}
 
@@ -1599,6 +1691,7 @@ export const createSingingVoices = (
 				task.prevVowel,
 				task.note.pitch,
 				task.note.durationSec * 1000,
+				task.vibrato,
 			) ?? Promise.resolve(null));
 			done++;
 			onProgress?.(done, total);
@@ -1673,13 +1766,14 @@ export const createSingingVoices = (
 								prevVowel,
 								note.pitch,
 								note.durationSec * 1000,
+								track.vibrato,
 							);
 							if (session !== streamSession) return;
 							if (key) {
 								// 予定時刻より50ms以上遅れて合成完了した場合は発音をスキップ（ミュート）して音ズレを防ぐ
 								const delay = ctx.currentTime - t0;
 								if (delay < 0.05) {
-									scheduleCached(key, t0, peak, track.pan);
+									scheduleCached(key, t0, peak, track.pan, track.reverbSend);
 									opts?.onScheduled?.(track, note, t0);
 								} else {
 									console.warn(
@@ -1701,6 +1795,7 @@ export const createSingingVoices = (
 							when,
 							duration: note.durationSec,
 							pan: track.pan,
+							reverbSend: track.reverbSend,
 						});
 						opts?.onScheduled?.(track, note, t0);
 						await new Promise((resolve) => setTimeout(resolve, 0));

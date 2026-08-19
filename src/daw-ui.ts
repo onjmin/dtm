@@ -44,6 +44,8 @@ export type DawUIRefs = {
 	// track panel
 	masterVolume: HTMLInputElement;
 	masterVolumeLabel: HTMLElement;
+	reverbAmount: HTMLInputElement;
+	reverbAmountLabel: HTMLElement;
 	trackTabs: HTMLElement;
 	trackBody: HTMLElement;
 	// drum
@@ -185,6 +187,11 @@ export const buildUI = (
         <span class="dtm-label">全体音量</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="master-volume" value="50" min="0" max="100">
         <span class="dtm-label" data-dtm="master-volume-label">50%</span>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">リバーブ</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="reverb-amount" value="0" min="0" max="100" aria-label="マスタリバーブ（全トラックへ一律に掛かる残響）" title="リバーブ">
+        <span class="dtm-label" data-dtm="reverb-amount-label">0%</span>
       </div>
       <div class="dtm-track-body" data-dtm="track-body"></div>
     </div>
@@ -415,6 +422,8 @@ export const buildUI = (
 		hScrollThumb: sel("hscroll-thumb"),
 		masterVolume: sel("master-volume"),
 		masterVolumeLabel: sel("master-volume-label"),
+		reverbAmount: sel("reverb-amount"),
+		reverbAmountLabel: sel("reverb-amount-label"),
 		trackTabs: sel("track-tabs"),
 		trackBody: sel("track-body"),
 		drumSelect: sel("drum-select"),

@@ -29,6 +29,8 @@ export type VoiceWorkerRenderReq = {
 	pitch: number;
 	/** 発音長（ms, 60未満は呼び出し側で丸め済み想定）。 */
 	durationMs: number;
+	/** 自動ビブラートを掛けるか（呼び出し側で長さ閾値判定済み）。 */
+	vibrato?: boolean;
 };
 
 export type VoiceWorkerInbound = VoiceWorkerInit | VoiceWorkerRenderReq;
