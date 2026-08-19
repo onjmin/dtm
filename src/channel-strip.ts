@@ -12,11 +12,23 @@ export type ChannelStripOptions = {
 	compression?: number;
 	/** ステレオ幅 0-200。既定100（原音のまま）。0で完全モノラル、200で誇張したワイド。 */
 	width?: number;
+	/** 低域（シェルフ, ~200Hz）のゲイン -12〜+12dB。既定0（無変化）。 */
+	eqLow?: number;
+	/** 中域（ピーキング, ~1000Hz）のゲイン -12〜+12dB。既定0（無変化）。 */
+	eqMid?: number;
+	/** 高域（シェルフ, ~5000Hz）のゲイン -12〜+12dB。既定0（無変化）。 */
+	eqHigh?: number;
 };
 
 export type ChannelStrip = {
 	/** このトラックの発音はここへ接続する。 */
 	input: AudioNode;
+	/** 低域シェルフのゲインを -12〜+12dB でリアルタイムに変更する。 */
+	setEqLow: (db: number) => void;
+	/** 中域ピーキングのゲインを -12〜+12dB でリアルタイムに変更する。 */
+	setEqMid: (db: number) => void;
+	/** 高域シェルフのゲインを -12〜+12dB でリアルタイムに変更する。 */
+	setEqHigh: (db: number) => void;
 	/** コンプレッサーの掛かり具合を 0-100 でリアルタイムに変更する。 */
 	setCompression: (amount: number) => void;
 	/** ステレオ幅を 0-200 でリアルタイムに変更する。 */
@@ -52,12 +64,42 @@ const compressionParams = (
 	};
 };
 
+/** EQの各帯域の中心/カットオフ周波数（Hz）。固定 — 一般用途で無難な値。 */
+const EQ_LOW_FREQ = 200;
+const EQ_MID_FREQ = 1000;
+const EQ_HIGH_FREQ = 5000;
+/** 中域ピーキングのQ（帯域幅）。固定。 */
+const EQ_MID_Q = 1.0;
+/** EQゲインの許容範囲（dB）。±12dBを超える極端な設定はミックスを破綻させやすいため制限する。 */
+const EQ_MAX_DB = 12;
+
 export const createChannelStrip = (
 	ctx: AudioContext,
 	destination: AudioNode,
 	options: ChannelStripOptions = {},
 ): ChannelStrip => {
 	const input = ctx.createGain(); // 発音の合流点（複数ソースの接続を受け付ける）
+
+	// ── EQ（3バンド: 低域シェルフ・中域ピーキング・高域シェルフ）──
+	// ミックスの定石通り、コンプレッサーより手前（EQ→コンプ→ステレオ幅）に置く。
+	// 不要な帯域を先に削ってからコンプを掛けることで、変な帯域を含めて丸ごと
+	// 潰してしまうのを防ぐ。
+	const eqLow = ctx.createBiquadFilter();
+	eqLow.type = "lowshelf";
+	eqLow.frequency.value = EQ_LOW_FREQ;
+	eqLow.gain.value = clamp(options.eqLow ?? 0, -EQ_MAX_DB, EQ_MAX_DB);
+	const eqMid = ctx.createBiquadFilter();
+	eqMid.type = "peaking";
+	eqMid.frequency.value = EQ_MID_FREQ;
+	eqMid.Q.value = EQ_MID_Q;
+	eqMid.gain.value = clamp(options.eqMid ?? 0, -EQ_MAX_DB, EQ_MAX_DB);
+	const eqHigh = ctx.createBiquadFilter();
+	eqHigh.type = "highshelf";
+	eqHigh.frequency.value = EQ_HIGH_FREQ;
+	eqHigh.gain.value = clamp(options.eqHigh ?? 0, -EQ_MAX_DB, EQ_MAX_DB);
+	input.connect(eqLow);
+	eqLow.connect(eqMid);
+	eqMid.connect(eqHigh);
 
 	// ── コンプレッサー ──
 	const compressor = ctx.createDynamicsCompressor();
@@ -120,17 +162,41 @@ export const createChannelStrip = (
 	};
 	setWidth(options.width ?? 100);
 
-	// input → compressor → M/Sワイド → destination
-	input.connect(compressor);
+	// input → EQ(低→中→高) → compressor → M/Sワイド → destination
+	eqHigh.connect(compressor);
 	compressor.connect(splitter);
 	merger.connect(destination);
 
 	return {
 		input,
+		setEqLow: (db) => {
+			eqLow.gain.setTargetAtTime(
+				clamp(db, -EQ_MAX_DB, EQ_MAX_DB),
+				ctx.currentTime,
+				0.02,
+			);
+		},
+		setEqMid: (db) => {
+			eqMid.gain.setTargetAtTime(
+				clamp(db, -EQ_MAX_DB, EQ_MAX_DB),
+				ctx.currentTime,
+				0.02,
+			);
+		},
+		setEqHigh: (db) => {
+			eqHigh.gain.setTargetAtTime(
+				clamp(db, -EQ_MAX_DB, EQ_MAX_DB),
+				ctx.currentTime,
+				0.02,
+			);
+		},
 		setCompression: applyCompression,
 		setWidth,
 		dispose: () => {
 			input.disconnect();
+			eqLow.disconnect();
+			eqMid.disconnect();
+			eqHigh.disconnect();
 			compressor.disconnect();
 			splitter.disconnect();
 			mid.disconnect();

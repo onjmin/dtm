@@ -3,6 +3,7 @@
  * すべて `dtm-` クラスでスタイル付けし、参照は data-dtm 属性経由で取得する。
  */
 
+import { DELAY_DIVISIONS } from "./delay";
 import { icon } from "./icons";
 import type { TrackConfig } from "./types";
 
@@ -48,6 +49,14 @@ export type DawUIRefs = {
 	reverbAmount: HTMLInputElement;
 	reverbAmountLabel: HTMLElement;
 	reverbAmountInfoBtn: HTMLButtonElement;
+	reverbDecay: HTMLInputElement;
+	reverbDecayLabel: HTMLElement;
+	reverbPreDelay: HTMLInputElement;
+	reverbPreDelayLabel: HTMLElement;
+	delayAmount: HTMLInputElement;
+	delayAmountLabel: HTMLElement;
+	delayAmountInfoBtn: HTMLButtonElement;
+	delayDivision: HTMLSelectElement;
 	autoMasterBtn: HTMLButtonElement;
 	autoMasterInfoBtn: HTMLButtonElement;
 	trackTabs: HTMLElement;
@@ -239,6 +248,25 @@ export const buildUI = (
         <input type="range" class="dtm-range dtm-grow" data-dtm="reverb-amount" value="0" min="0" max="100" aria-label="マスタリバーブ（全トラックへ一律に掛かる残響）">
         <span class="dtm-label" data-dtm="reverb-amount-label">0%</span>
         <button class="dtm-infobtn" data-dtm="reverb-amount-info" title="マスタリバーブの解説">${icon("info", 12)}</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">Decay</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="reverb-decay" value="22" min="3" max="40" step="1" aria-label="リバーブのDecay（残響の長さ、秒）">
+        <span class="dtm-label" data-dtm="reverb-decay-label">2.2s</span>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">Pre Delay</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="reverb-predelay" value="0" min="0" max="150" step="5" aria-label="リバーブのPre Delay（原音から残響が立ち上がるまでの遅延、ms）">
+        <span class="dtm-label" data-dtm="reverb-predelay-label">0ms</span>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">ディレイ</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="delay-amount" value="0" min="0" max="100" aria-label="マスタディレイ（テンポ同期したエコー）">
+        <span class="dtm-label" data-dtm="delay-amount-label">0%</span>
+        <select class="dtm-select" data-dtm="delay-division" aria-label="ディレイの音価（テンポに同期）">
+          ${DELAY_DIVISIONS.map((d) => `<option value="${d.value}">${d.label}</option>`).join("")}
+        </select>
+        <button class="dtm-infobtn" data-dtm="delay-amount-info" title="マスタディレイの解説">${icon("info", 12)}</button>
       </div>
     </div>
   </details>
@@ -444,6 +472,14 @@ export const buildUI = (
 		reverbAmount: sel("reverb-amount"),
 		reverbAmountLabel: sel("reverb-amount-label"),
 		reverbAmountInfoBtn: sel("reverb-amount-info"),
+		reverbDecay: sel("reverb-decay"),
+		reverbDecayLabel: sel("reverb-decay-label"),
+		reverbPreDelay: sel("reverb-predelay"),
+		reverbPreDelayLabel: sel("reverb-predelay-label"),
+		delayAmount: sel("delay-amount"),
+		delayAmountLabel: sel("delay-amount-label"),
+		delayAmountInfoBtn: sel("delay-amount-info"),
+		delayDivision: sel("delay-division"),
 		autoMasterBtn: sel("auto-master"),
 		autoMasterInfoBtn: sel("auto-master-info"),
 		trackTabs: sel("track-tabs"),

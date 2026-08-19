@@ -50,6 +50,17 @@ export type MmlMeta = {
 	drumVolume?: number;
 	/** マスタリバーブの掛かり具合 0-100（全トラック共通、`#reverb=` で埋め込む） */
 	reverb?: number;
+	/**
+	 * マスタリバーブのDecay（残響の長さ）を10倍した整数（0.3〜4.0秒 → 3〜40）。
+	 * `#reverbdecay=` で埋め込む。省略時は22（2.2秒）。
+	 */
+	reverbDecay?: number;
+	/** マスタリバーブのPre Delay（ms、0〜150）。`#reverbpredelay=` で埋め込む。省略時は0。 */
+	reverbPreDelay?: number;
+	/** マスタディレイの掛かり具合 0-100（全トラック共通、`#delay=` で埋め込む） */
+	delay?: number;
+	/** マスタディレイの音価（"4"|"8"|"8d"|"16"）。`#delaydiv=` で埋め込む。省略時は"8"。 */
+	delayDivision?: string;
 	/** DAWの動作モード（simple | advanced） */
 	mode?: "simple" | "advanced";
 	/**
@@ -67,11 +78,17 @@ export type MmlMeta = {
 	 * トラックごとのステレオ幅 0-200。`#t<n>width=<値>` で埋め込む。省略時は100（原音のまま）。
 	 */
 	trackWidth?: Record<number, number>;
+	/** トラックごとのEQ低域ゲイン -12〜+12dB。`#t<n>eqlo=<値>` で埋め込む。省略時は0（無変化）。 */
+	trackEqLow?: Record<number, number>;
+	/** トラックごとのEQ中域ゲイン -12〜+12dB。`#t<n>eqmid=<値>` で埋め込む。省略時は0（無変化）。 */
+	trackEqMid?: Record<number, number>;
+	/** トラックごとのEQ高域ゲイン -12〜+12dB。`#t<n>eqhi=<値>` で埋め込む。省略時は0（無変化）。 */
+	trackEqHigh?: Record<number, number>;
 };
 
 /** `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
 const META_DIRECTIVE =
-	/#(inst|drum|drumfont|volume|drumvolume|reverb|mode)=([\w-]+)/gi;
+	/#(inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|mode)=([\w-]+)/gi;
 
 /** `#t<n>inst=<GM楽器名>` にマッチする（値は`;` `#` 改行以外の任意文字） */
 const TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
@@ -81,6 +98,13 @@ const TRACK_COMP_DIRECTIVE = /#t(\d+)comp=(\d+)/gi;
 
 /** `#t<n>width=<0-200>` にマッチする（トラック単位ステレオ幅） */
 const TRACK_WIDTH_DIRECTIVE = /#t(\d+)width=(\d+)/gi;
+
+/** `#t<n>eqlo=<-12〜12>` にマッチする（トラック単位EQ低域、符号付き） */
+const TRACK_EQLOW_DIRECTIVE = /#t(\d+)eqlo=(-?\d+)/gi;
+/** `#t<n>eqmid=<-12〜12>` にマッチする（トラック単位EQ中域、符号付き） */
+const TRACK_EQMID_DIRECTIVE = /#t(\d+)eqmid=(-?\d+)/gi;
+/** `#t<n>eqhi=<-12〜12>` にマッチする（トラック単位EQ高域、符号付き） */
+const TRACK_EQHIGH_DIRECTIVE = /#t(\d+)eqhi=(-?\d+)/gi;
 
 /** MMLからトップレベル宣言を抽出する */
 export const parseMmlMeta = (mml: string): MmlMeta => {
@@ -99,6 +123,17 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 		} else if (key === "reverb") {
 			const rv = Number.parseInt(m[2], 10);
 			if (!Number.isNaN(rv)) meta.reverb = clamp(rv, 0, 100);
+		} else if (key === "reverbdecay") {
+			const rd = Number.parseInt(m[2], 10);
+			if (!Number.isNaN(rd)) meta.reverbDecay = clamp(rd, 3, 40);
+		} else if (key === "reverbpredelay") {
+			const rp = Number.parseInt(m[2], 10);
+			if (!Number.isNaN(rp)) meta.reverbPreDelay = clamp(rp, 0, 150);
+		} else if (key === "delay") {
+			const dv = Number.parseInt(m[2], 10);
+			if (!Number.isNaN(dv)) meta.delay = clamp(dv, 0, 100);
+		} else if (key === "delaydiv") {
+			if (["4", "8", "8d", "16"].includes(m[2])) meta.delayDivision = m[2];
 		} else if (key === "mode") {
 			if (m[2] === "simple" || m[2] === "advanced") {
 				meta.mode = m[2];
@@ -129,6 +164,30 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 			meta.trackWidth[idx] = val;
 		}
 	}
+	for (const m of mml.matchAll(TRACK_EQLOW_DIRECTIVE)) {
+		const idx = Number.parseInt(m[1], 10);
+		const val = clamp(Number.parseInt(m[2], 10), -12, 12);
+		if (!Number.isNaN(idx) && !Number.isNaN(val)) {
+			meta.trackEqLow ??= {};
+			meta.trackEqLow[idx] = val;
+		}
+	}
+	for (const m of mml.matchAll(TRACK_EQMID_DIRECTIVE)) {
+		const idx = Number.parseInt(m[1], 10);
+		const val = clamp(Number.parseInt(m[2], 10), -12, 12);
+		if (!Number.isNaN(idx) && !Number.isNaN(val)) {
+			meta.trackEqMid ??= {};
+			meta.trackEqMid[idx] = val;
+		}
+	}
+	for (const m of mml.matchAll(TRACK_EQHIGH_DIRECTIVE)) {
+		const idx = Number.parseInt(m[1], 10);
+		const val = clamp(Number.parseInt(m[2], 10), -12, 12);
+		if (!Number.isNaN(idx) && !Number.isNaN(val)) {
+			meta.trackEqHigh ??= {};
+			meta.trackEqHigh[idx] = val;
+		}
+	}
 	return meta;
 };
 
@@ -138,7 +197,10 @@ export const stripMmlMeta = (mml: string): string =>
 		.replace(META_DIRECTIVE, "")
 		.replace(TRACK_INST_DIRECTIVE, "")
 		.replace(TRACK_COMP_DIRECTIVE, "")
-		.replace(TRACK_WIDTH_DIRECTIVE, "");
+		.replace(TRACK_WIDTH_DIRECTIVE, "")
+		.replace(TRACK_EQLOW_DIRECTIVE, "")
+		.replace(TRACK_EQMID_DIRECTIVE, "")
+		.replace(TRACK_EQHIGH_DIRECTIVE, "");
 
 /** メタ情報を `#inst=… #drum=… #volume=… #mode=…` のMML宣言文字列へ直列化する（空なら空文字） */
 export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
@@ -151,6 +213,14 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 		parts.push(`#drumvolume=${meta.drumVolume}`);
 	if (meta.reverb !== undefined && meta.reverb !== 0)
 		parts.push(`#reverb=${meta.reverb}`);
+	if (meta.reverbDecay !== undefined && meta.reverbDecay !== 22)
+		parts.push(`#reverbdecay=${meta.reverbDecay}`);
+	if (meta.reverbPreDelay !== undefined && meta.reverbPreDelay !== 0)
+		parts.push(`#reverbpredelay=${meta.reverbPreDelay}`);
+	if (meta.delay !== undefined && meta.delay !== 0)
+		parts.push(`#delay=${meta.delay}`);
+	if (meta.delayDivision && meta.delayDivision !== "8")
+		parts.push(`#delaydiv=${meta.delayDivision}`);
 	if (meta.mode) parts.push(`#mode=${meta.mode}`);
 	if (meta.trackInstruments) {
 		for (const [idx, name] of Object.entries(meta.trackInstruments)) {
@@ -165,6 +235,21 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	if (meta.trackWidth) {
 		for (const [idx, val] of Object.entries(meta.trackWidth)) {
 			if (val !== 100) parts.push(`#t${idx}width=${val}`);
+		}
+	}
+	if (meta.trackEqLow) {
+		for (const [idx, val] of Object.entries(meta.trackEqLow)) {
+			if (val !== 0) parts.push(`#t${idx}eqlo=${val}`);
+		}
+	}
+	if (meta.trackEqMid) {
+		for (const [idx, val] of Object.entries(meta.trackEqMid)) {
+			if (val !== 0) parts.push(`#t${idx}eqmid=${val}`);
+		}
+	}
+	if (meta.trackEqHigh) {
+		for (const [idx, val] of Object.entries(meta.trackEqHigh)) {
+			if (val !== 0) parts.push(`#t${idx}eqhi=${val}`);
 		}
 	}
 	return parts.join(space);

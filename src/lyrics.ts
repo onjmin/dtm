@@ -304,14 +304,15 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		let octave = 0; // 省略時のオクターブシフト（演奏ノートのピッチそのまま）
 		let vibrato = false; // 省略時は自動ビブラートOFF
 		let reverb = 0; // 省略時はリバーブセンドOFF（マスタリバーブが掛からない）
+		let delay = 0; // 省略時はディレイセンドOFF（マスタディレイが掛からない）
 		let gender = 50; // 省略時は無変化（中央）
 		let breathiness = 50; // 省略時は無変化（中央）
 
 		// モデル名は英字・アンダースコア始まりで、2文字目以降は数字も許す
 		// （カスタムボーカルのキー custom1 等）。`v100` 等のパラメータトークンは
-		// 先読みの [vqpobrgh]-?\d で区切るため誤って取り込まない。
+		// 先読みの [vqpobrghe]-?\d で区切るため誤って取り込まない。
 		const modelMatch = rest.match(
-			/^([a-z_][a-z0-9_]*?)(?=(?:[vqpobrgh]-?\d)|[^a-z0-9_]|$)(?::(\d+))?/i,
+			/^([a-z_][a-z0-9_]*?)(?=(?:[vqpobrghe]-?\d)|[^a-z0-9_]|$)(?::(\d+))?/i,
 		);
 		let model = "";
 		const metaTokens: string[] = [];
@@ -382,6 +383,13 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 				rest = rest.substring(hMatch[0].length).trim();
 				continue;
 			}
+			const eMatch = rest.match(/^e(\d+)/i);
+			if (eMatch) {
+				delay = clamp(Number.parseInt(eMatch[1], 10), 0, 100);
+				metaTokens.push(eMatch[0]);
+				rest = rest.substring(eMatch[0].length).trim();
+				continue;
+			}
 			break;
 		}
 
@@ -402,6 +410,7 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 			octave,
 			vibrato,
 			reverb,
+			delay,
 			gender,
 			breathiness,
 			syllables,
@@ -629,6 +638,7 @@ export type VoiceModel = {
 		peak: number,
 		pan: number,
 		reverbSend?: number,
+		delaySend?: number,
 		destination?: AudioNode,
 	) => void;
 	/** スケジュール済みの発音をすべて即停止する（停止・一時停止・シーク時）。 */
@@ -662,6 +672,7 @@ export const createKlattVoice = (
 	ctx: AudioContext,
 	destination: AudioNode,
 	reverbBus?: AudioNode,
+	delayBus?: AudioNode,
 ): VoiceModel => {
 	// スケジュール済みの音源ノード。stopAll（停止/一時停止）で一括停止する。
 	const active = new Set<AudioScheduledSourceNode>();
@@ -693,12 +704,18 @@ export const createKlattVoice = (
 			out = panner;
 		}
 
-		// マスタリバーブへのセンド（koe音源側 schedule() と同じ考え方）。
-		let sendGain: GainNode | null = null;
+		// マスタリバーブ/ディレイへのセンド（koe音源側 schedule() と同じ考え方）。
+		let reverbSendGain: GainNode | null = null;
 		if (reverbBus && e.reverbSend && e.reverbSend > 0 && panner) {
-			sendGain = ctx.createGain();
-			sendGain.gain.value = Math.max(0, Math.min(1, e.reverbSend));
-			panner.connect(sendGain).connect(reverbBus);
+			reverbSendGain = ctx.createGain();
+			reverbSendGain.gain.value = Math.max(0, Math.min(1, e.reverbSend));
+			panner.connect(reverbSendGain).connect(reverbBus);
+		}
+		let delaySendGain: GainNode | null = null;
+		if (delayBus && e.delaySend && e.delaySend > 0 && panner) {
+			delaySendGain = ctx.createGain();
+			delaySendGain.gain.value = Math.max(0, Math.min(1, e.delaySend));
+			panner.connect(delaySendGain).connect(delayBus);
 		}
 
 		// 声門音源（倍音豊富なのこぎり波）
@@ -769,7 +786,8 @@ export const createKlattVoice = (
 			active.delete(osc);
 			osc.disconnect();
 			panner?.disconnect();
-			sendGain?.disconnect();
+			reverbSendGain?.disconnect();
+			delaySendGain?.disconnect();
 		};
 	};
 
@@ -1033,6 +1051,11 @@ export type KoeVoiceOptions = {
 	 * （＝トラックごとの `r` トークンを書いてもリバーブが掛からない）。
 	 */
 	reverbBus?: AudioNode;
+	/**
+	 * マスタディレイのバス（センド先）。指定時のみ、ノートごとの `delaySend` に応じて
+	 * ドライ経路とは別にこのノードへ送る。未指定ならディレイ送りは常にスキップされる。
+	 */
+	delayBus?: AudioNode;
 };
 
 type RenderedNote = {
@@ -1326,6 +1349,7 @@ export const createKoeVoice = async (
 		peak: number,
 		pan: number,
 		reverbSend = 0,
+		delaySend = 0,
 		destOverride?: AudioNode,
 	): void => {
 		// トラック単位チャンネルストリップの入口が指定されていればそちらへ。
@@ -1341,13 +1365,19 @@ export const createKoeVoice = async (
 			out = panner;
 		}
 
-		// マスタリバーブへのセンド（ドライ経路とは別に、パン後の信号を割合分だけ流す）。
-		// options.reverbBus が無い、またはこのトラックのセンド量が0ならスキップ。
-		let sendGain: GainNode | null = null;
+		// マスタリバーブ/ディレイへのセンド（ドライ経路とは別に、パン後の信号を割合分だけ流す）。
+		// 対応する options.xxxBus が無い、またはこのトラックのセンド量が0ならスキップ。
+		let reverbSendGain: GainNode | null = null;
 		if (options.reverbBus && reverbSend > 0 && panner) {
-			sendGain = ctx.createGain();
-			sendGain.gain.value = Math.max(0, Math.min(1, reverbSend));
-			panner.connect(sendGain).connect(options.reverbBus);
+			reverbSendGain = ctx.createGain();
+			reverbSendGain.gain.value = Math.max(0, Math.min(1, reverbSend));
+			panner.connect(reverbSendGain).connect(options.reverbBus);
+		}
+		let delaySendGain: GainNode | null = null;
+		if (options.delayBus && delaySend > 0 && panner) {
+			delaySendGain = ctx.createGain();
+			delaySendGain.gain.value = Math.max(0, Math.min(1, delaySend));
+			panner.connect(delaySendGain).connect(options.delayBus);
 		}
 
 		const src = ctx.createBufferSource();
@@ -1381,7 +1411,8 @@ export const createKoeVoice = async (
 			src.disconnect();
 			env.disconnect();
 			panner?.disconnect();
-			sendGain?.disconnect();
+			reverbSendGain?.disconnect();
+			delaySendGain?.disconnect();
 		};
 	};
 
@@ -1403,7 +1434,8 @@ export const createKoeVoice = async (
 		const pan = e.pan ?? 0;
 		const durationMs = Math.max(60, e.duration * 1000);
 		void renderInto(alias, e.pitch, durationMs).then((r) => {
-			if (r) schedule(r, t0, peak, pan, e.reverbSend, e.destination);
+			if (r)
+				schedule(r, t0, peak, pan, e.reverbSend, e.delaySend, e.destination);
 		});
 	};
 
@@ -1431,9 +1463,9 @@ export const createKoeVoice = async (
 		return r ? keyOf(alias, pitch, dMs, vib, expr) : null;
 	};
 
-	model.scheduleCached = (key, t0, peak, pan, reverbSend, dest) => {
+	model.scheduleCached = (key, t0, peak, pan, reverbSend, delaySend, dest) => {
 		const r = renderCache.get(key);
-		if (r) schedule(r, t0, peak, pan, reverbSend, dest);
+		if (r) schedule(r, t0, peak, pan, reverbSend, delaySend, dest);
 	};
 
 	model.stopAll = () => {
@@ -1488,6 +1520,11 @@ export type StreamVoiceTrack = {
 	 * リバーブバスへ送るかを個別に決める。
 	 */
 	reverbSend?: number;
+	/**
+	 * マスタディレイへのセンド量 0-1。既定0（ディレイが掛からない）。マスタディレイ自体の
+	 * つまみ（音価・掛かり具合）とは独立に、このトラックをどれだけディレイバスへ送るかを決める。
+	 */
+	delaySend?: number;
 	/**
 	 * フォルマント/ジェンダーファクター 0-1。既定0.5（無変化）。koe音源（Worldline）限定
 	 * — klattフォールバックには効かない。0.5未満で低め/太め、0.5超で高め/細めに寄る。
@@ -1623,6 +1660,12 @@ export type SingingVoicesOptions = {
 	 */
 	reverbBus?: AudioNode;
 	/**
+	 * マスタディレイのバス（センド先）。指定すると、各歌詞トラックの `delay`（`e`トークン）
+	 * に応じて klatt/koe いずれの音源もこのノードへセンドできるようになる。未指定なら
+	 * トラック側で `e` を指定してもディレイは掛からない。
+	 */
+	delayBus?: AudioNode;
+	/**
 	 * トラックID → チャンネルストリップ入口ノードの解決関数。指定すると、各トラックの
 	 * 発音は共有の `destination`（singingVoices内部マスタ）へ直結する代わりに、この
 	 * 関数が返すノードへ流れる（コンプレッサー/ステレオワイドを個別に掛けるため）。
@@ -1654,11 +1697,21 @@ export const createSingingVoices = (
 	let streamSession = 0;
 
 	// 全モデル共通のマスタ音量ゲイン。setVolume で常時ライブに変更できる。
+	// getTrackDestination 未指定時（destinationへ直結する notes）のフォールバック経路。
 	const masterGain = ctx.createGain();
 	masterGain.connect(destination);
+	// トラック単位チャンネルストリップへ直接ルーティングするノート（getTrackDestination
+	// が返す宛先を使うもの）は上の masterGain を経由しない（トラックを跨いで音が
+	// 合流してしまうため）。その代わり、スケジュール時点の peak にこの係数を掛けて
+	// 同じマスタ音量効果を再現する。setVolume が更新するたび、以降スケジュールされる
+	// ノートへ反映される（先読み秒数ぶんの遅延はあるが、実用上は十分ライブに追従する）。
+	let masterVolumeScalar = 1;
 
 	const loaded = new Map<string, VoiceModel>([
-		[FALLBACK_MODEL, createKlattVoice(ctx, masterGain, options.reverbBus)],
+		[
+			FALLBACK_MODEL,
+			createKlattVoice(ctx, masterGain, options.reverbBus, options.delayBus),
+		],
 	]);
 	const loading = new Map<string, Promise<VoiceModel | null>>();
 
@@ -1681,6 +1734,7 @@ export const createSingingVoices = (
 				lightweight: options.lightweight,
 				voiceWorkerUrl: options.voiceWorkerUrl,
 				reverbBus: options.reverbBus,
+				delayBus: options.delayBus,
 			}))()
 			.then((v) => {
 				loaded.set(m, v);
@@ -1858,13 +1912,18 @@ export const createSingingVoices = (
 								// 予定時刻より50ms以上遅れて合成完了した場合は発音をスキップ（ミュート）して音ズレを防ぐ
 								const delay = ctx.currentTime - t0;
 								if (delay < 0.05) {
+									const dest = options.getTrackDestination?.(track.id ?? "");
+									// dest（チャンネルストリップ直結）は共有masterGainを経由しない
+									// ため、マスタ音量係数をここで peak に掛けて再現する。
+									const effPeak = dest ? peak * masterVolumeScalar : peak;
 									scheduleCached(
 										key,
 										t0,
-										peak,
+										effPeak,
 										track.pan,
 										track.reverbSend,
-										options.getTrackDestination?.(track.id ?? ""),
+										track.delaySend,
+										dest,
 									);
 									opts?.onScheduled?.(track, note, t0);
 								} else {
@@ -1879,16 +1938,21 @@ export const createSingingVoices = (
 						// klatt等（軽量・状態なし）: 絶対未来時刻へ直接スケジュール。
 						// await が無く同期で回るため、UI応答性のため1音ごとに制御を返す。
 						const when = t0 - ctx.currentTime;
+						const dest = options.getTrackDestination?.(track.id ?? "");
+						// dest（チャンネルストリップ直結）は共有masterGainを経由しないため、
+						// マスタ音量係数をここで peak に掛けて再現する。
+						const effPeak = dest ? peak * masterVolumeScalar : peak;
 						model(note.syllable, {
 							trackId: track.id ?? "",
 							pitch: note.pitch,
 							velocity: 100,
-							volume: peak,
+							volume: effPeak,
 							when,
 							duration: note.durationSec,
 							pan: track.pan,
 							reverbSend: track.reverbSend,
-							destination: options.getTrackDestination?.(track.id ?? ""),
+							delaySend: track.delaySend,
+							destination: dest,
 						});
 						opts?.onScheduled?.(track, note, t0);
 						await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1918,7 +1982,9 @@ export const createSingingVoices = (
 	};
 
 	const setVolume: SingingVoices["setVolume"] = (gain) => {
-		masterGain.gain.value = Math.max(0, gain);
+		const g = Math.max(0, gain);
+		masterGain.gain.value = g;
+		masterVolumeScalar = g;
 	};
 
 	return {

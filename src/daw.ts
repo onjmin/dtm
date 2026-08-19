@@ -9,6 +9,7 @@ import { GM_INSTRUMENT_NAMES } from "./audio-config";
 import { type ChordPlayerInstance, mountChordPlayer } from "./chord-player";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import { buildUI } from "./daw-ui";
+import type { DelayDivision } from "./delay";
 import {
 	DRUM_PATTERNS,
 	getDrumPatternKeys,
@@ -63,6 +64,14 @@ import {
 	setBackgroundActive,
 	setDrawOffset,
 } from "./renderer";
+import {
+	DEFAULT_REVERB_DECAY_SEC,
+	DEFAULT_REVERB_PREDELAY_MS,
+	MAX_REVERB_DECAY_SEC,
+	MAX_REVERB_PREDELAY_MS,
+	MIN_REVERB_DECAY_SEC,
+	MIN_REVERB_PREDELAY_MS,
+} from "./reverb";
 import { createSequencer, type Sequencer } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
@@ -164,14 +173,49 @@ const LYRIC_REVERB_INFO_HTML = `
 </div>
 `;
 
-const MASTER_REVERB_INFO_HTML = `
+const LYRIC_DELAY_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>何をする設定か</h4>
-  <p>曲全体に一律で掛かる残響（部屋鳴り・空間の響き）です。0%で完全にドライ（響きなし）、上げるほど広い空間で鳴っているような奥行きが出ます。</p>
+  <p>このボーカルトラックから、曲全体に掛かる「マスタディレイ」へどれだけ音を送るかを決めます（0で送らない、100で目一杯送る）。</p>
+  <h4>マスタの「ディレイ」つまみとの関係（重要）</h4>
+  <p>マスタの「ディレイ」つまみが0%だと、ここをいくら上げても無音のままです。リバーブ送りと同じ二段構えです。</p>
+  <h4>使いどころ</h4>
+  <p>曲全体にうっすら掛けるリバーブと違い、ディレイはハッキリ聞こえる繰り返しなので、Aメロは0%・サビの語尾だけ送り量を上げる、といったメリハリのある使い方が効果的です。バッキング全体に強く掛けるとリズムが濁ります。</p>
+</div>
+`;
+
+const MASTER_REVERB_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>リバーブ（Mix）</h4>
+  <p>曲全体に一律で掛かる残響（部屋鳴り・空間の響き）の量です。0%で完全にドライ（響きなし）、上げるほど広い空間で鳴っているような奥行きが出ます。掛けすぎるとミックス全体の輪郭がぼやけ、遠く・こもった印象になります。10〜30%程度が出発点の目安です。</p>
+  <h4>Decay（残響の長さ）</h4>
+  <p>リバーブが鳴り続ける長さです。長いほど広いホールのような空間の印象になり、短いと狭い部屋のような密着感になります。目安として、速い曲では0.6〜1.4秒、遅い曲・バラードでは1.8〜4.0秒程度がよく使われます。</p>
+  <h4>Pre Delay（原音とリバーブの間隔）</h4>
+  <p>原音が鳴ってから残響が立ち上がるまでの遅延です。0msだと原音と残響が同時に始まり音像がぼやけがちですが、少し（数十ms程度）入れると原音の輪郭・アタック感を保ったまま奥行きを足せます。特にボーカルで効果的です。</p>
   <h4>各トラックの「リバーブ送り」との関係（重要）</h4>
-  <p>歌詞トラックにはそれぞれ「リバーブ送り」という個別のつまみがあり、そちらが0%のトラックはこのマスタの値をいくら上げても無音のままです。逆にこのマスタが0%なら、どのトラックの送り量を上げても効果が出ません。「マスタ＝残響の質と量そのもの」「トラック送り＝そのトラックをどれだけ混ぜるか」という二段構えです。楽器トラックには現状センド機能が無いため、常に一律で掛かります。</p>
-  <h4>掛けすぎるとどうなるか</h4>
-  <p>ミックス全体の輪郭がぼやけ、遠く・こもった印象になります。10〜30%程度を出発点に、曲のジャンルや空間の広さのイメージに合わせて調整するのがおすすめです。</p>
+  <p>歌詞トラックにはそれぞれ「リバーブ送り」という個別のつまみがあり、そちらが0%のトラックはこのマスタの値をいくら上げても無音のままです。逆にこのマスタのMixが0%なら、どのトラックの送り量を上げても効果が出ません。「マスタ＝残響の質・量・タイミングそのもの」「トラック送り＝そのトラックをどれだけ混ぜるか」という二段構えです。楽器トラックには現状センド機能が無いため、常に一律で掛かります。</p>
+</div>
+`;
+
+const MASTER_DELAY_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>離散したエコー（音の繰り返し）を付加します。曲のBPMに自動同期する音価（8分・付点8分など）を選んで使うのが基本で、無関係な秒数で鳴らすとリズムが崩れて聞こえます。</p>
+  <h4>リバーブとの違い</h4>
+  <p>リバーブは拡散した残響で空間全体に薄く掛けるのが基本ですが、ディレイはハッキリ聞こえる繰り返しなので「ここぞ」という場面（リードボーカルの語尾、ギターソロ、シンセのフレーズ等）にワンポイントで使うのが定番です。バッキング全体に強く掛けるとリズムが濁ります。</p>
+  <h4>各トラックの「ディレイ送り」との関係</h4>
+  <p>リバーブと同じ二段構えです。歌詞トラック個別の「ディレイ送り」が0%ならこのマスタの値を上げても無音、逆にこのマスタが0%ならどのトラックの送り量を上げても効果が出ません。</p>
+</div>
+`;
+
+const TRACK_EQ_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>このトラックの周波数帯域ごとの音量を調整します。低域・中域・高域の3バンド、それぞれ-12dB（削る）〜+12dB（持ち上げる）、0dBが無変化です。</p>
+  <h4>使いどころ（帯域の棲み分け）</h4>
+  <p>複数の音が同じ帯域で鳴っていると濁って聞こえます。例えば、ボーカルとリード楽器が中域でぶつかるなら片方の中域を軽く削る、ベースとバスドラムの低域がぶつかるなら片方だけ低域を削る、といった「帯域の交通整理」がEQの主な仕事です。</p>
+  <h4>他の設定との兼ね合い（順序が重要）</h4>
+  <p>このチャンネルストリップでは EQ → 音圧強化（コンプレッサー） → ステレオ幅 の順で処理されます。これは一般的なミックスの定石と同じです。不要な帯域（低域のこもり、耳障りな高域等）を先にEQで削ってからコンプレッサーを掛けると、コンプが本当に必要な音だけに反応するようになり、音圧強化の効きが良くなります。順序を変えることはできません。</p>
 </div>
 `;
 
@@ -200,14 +244,22 @@ const TRACK_WIDTH_INFO_HTML = `
 const AUTO_MASTER_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>おまかせマスタリングとは</h4>
-  <p>市販曲でよく使われる値を目安に、以下をまとめて設定するボタンです。</p>
+  <p>市販曲でよく使われる値を目安に、以下をまとめて設定するボタンです。曲のBPMを見て一部の値を自動調整します。</p>
   <ul>
-    <li>マスタリバーブ: 20%</li>
-    <li>全トラックの音圧強化: 35%</li>
+    <li>マスタリバーブ Mix: 20%</li>
+    <li>マスタリバーブ Decay: <strong>現在のBPMに応じて自動計算</strong>（速い曲ほど短く0.9秒寄り、遅い曲ほど長く3.0秒寄り）</li>
+    <li>マスタリバーブ Pre Delay: 20ms（原音の輪郭を保ったまま奥行きを足す定番値）</li>
+    <li>各トラックの音圧強化: 楽器35%・歌詞のあるトラックは25%（強く潰すと表情が失われるため控えめに）</li>
     <li>全トラックのステレオ幅: 115%（わずかに広げる）</li>
-    <li>歌詞のあるトラック: 自動ビブラートON、リバーブ送り25%</li>
+    <li>歌詞のあるトラック: 自動ビブラートON</li>
   </ul>
-  <p style="margin-top:4px;"><small>「いい感じの初期値」を一括で当てるだけで、曲や好みに応じた微調整までは行いません。既存の設定は上書きされるので、気に入らなければ各スライダーから個別に戻してください。</small></p>
+  <h4>メインボーカルの自動判定</h4>
+  <p>歌詞のあるトラックが複数ある場合（ハモリ・コーラス・掛け声等）、発音時間が最も長いトラックを「メインボーカル」とみなし、他とは違う扱いにします。</p>
+  <ul>
+    <li>メインボーカル: 音圧強化30%・リバーブ送り15%（前に出す）</li>
+    <li>それ以外のボーカル: 音圧強化25%・リバーブ送り30%（奥へ馴染ませる）</li>
+  </ul>
+  <p style="margin-top:4px;"><small>「前に出したい音はリバーブ少なめ、奥に置きたい音はリバーブ多め」という定石に基づいています。EQは曲・パートごとに何が濁っているか次第で自動化に向かないため対象外です。「いい感じの初期値」を一括で当てるだけで、曲や好みに応じた微調整までは行いません。既存の設定は上書きされるので、気に入らなければ各スライダーから個別に戻してください。</small></p>
 </div>
 `;
 
@@ -533,6 +585,8 @@ type TrackState = {
 	vocalVibrato: boolean;
 	/** このトラックのマスタリバーブへのセンド量 0-100。既定0（掛からない） */
 	vocalReverb: number;
+	/** このトラックのマスタディレイへのセンド量 0-100。既定0（掛からない） */
+	vocalDelay: number;
 	/** フォルマント/ジェンダーファクター 0-100。既定50（無変化）。koe音源限定 */
 	vocalGender: number;
 	/** ブレシネス（息成分）0-100。既定50（無変化）。koe音源限定 */
@@ -546,6 +600,12 @@ type TrackState = {
 	trackCompression: number;
 	/** このトラックのステレオ幅 0-200。既定100（原音のまま）。 */
 	trackWidth: number;
+	/** このトラックのEQ低域（シェルフ）ゲイン -12〜+12dB。既定0（無変化）。 */
+	trackEqLow: number;
+	/** このトラックのEQ中域（ピーキング）ゲイン -12〜+12dB。既定0（無変化）。 */
+	trackEqMid: number;
+	/** このトラックのEQ高域（シェルフ）ゲイン -12〜+12dB。既定0（無変化）。 */
+	trackEqHigh: number;
 };
 
 /**
@@ -598,6 +658,17 @@ export const mountDAW = (
 	refs.masterVolumeLabel.textContent = `${options.masterVolume ?? 50}%`;
 	refs.reverbAmount.value = String(options.reverbAmount ?? 0);
 	refs.reverbAmountLabel.textContent = `${options.reverbAmount ?? 0}%`;
+	{
+		const initDecay = options.reverbDecay ?? DEFAULT_REVERB_DECAY_SEC;
+		const initPreDelay = options.reverbPreDelay ?? DEFAULT_REVERB_PREDELAY_MS;
+		refs.reverbDecay.value = String(Math.round(initDecay * 10));
+		refs.reverbDecayLabel.textContent = `${initDecay.toFixed(1)}s`;
+		refs.reverbPreDelay.value = String(initPreDelay);
+		refs.reverbPreDelayLabel.textContent = `${initPreDelay}ms`;
+	}
+	refs.delayAmount.value = String(options.delayAmount ?? 0);
+	refs.delayAmountLabel.textContent = `${options.delayAmount ?? 0}%`;
+	refs.delayDivision.value = options.delayDivision ?? "8";
 	refs.drumVolume.value = String(options.drumVolume ?? 80);
 	refs.drumVolumeLabel.textContent = `${options.drumVolume ?? 80}%`;
 
@@ -617,9 +688,17 @@ export const mountDAW = (
 	let masterVolume = options.masterVolume ?? 50;
 	options.singingVoices?.setVolume(masterVolume / 100);
 	let reverbAmount = options.reverbAmount ?? 0;
+	let reverbDecay = options.reverbDecay ?? DEFAULT_REVERB_DECAY_SEC;
+	let reverbPreDelay = options.reverbPreDelay ?? DEFAULT_REVERB_PREDELAY_MS;
+	let delayAmount = options.delayAmount ?? 0;
+	let delayDivision: DelayDivision = options.delayDivision ?? "8";
 	// 音割れ検知バッジの購読解除（wireEvents内で購読、destroyで解除するため外側で保持）
 	let unsubscribeClip: (() => void) | undefined;
 	options.onReverbChange?.(reverbAmount);
+	options.onReverbDecayChange?.(reverbDecay);
+	options.onReverbPreDelayChange?.(reverbPreDelay);
+	options.onDelayChange?.(delayAmount);
+	options.onDelayDivisionChange?.(delayDivision);
 	let drumVolume = options.drumVolume ?? 80;
 	let currentDrumPattern = refs.drumSelect.value;
 	let currentDrumFont = options.drumFont ?? "FluidR3_GM_sf2_file:0";
@@ -734,6 +813,7 @@ export const mountDAW = (
 			vocalOctave: t.vocalOctave,
 			vocalVibrato: t.vocalVibrato,
 			vocalReverb: t.vocalReverb,
+			vocalDelay: t.vocalDelay,
 			vocalGender: t.vocalGender,
 			vocalBreathiness: t.vocalBreathiness,
 		};
@@ -812,11 +892,15 @@ export const mountDAW = (
 				vocalOctave: 0,
 				vocalVibrato: false,
 				vocalReverb: 0,
+				vocalDelay: 0,
 				vocalGender: 50,
 				vocalBreathiness: 50,
 				trackInstrument: "",
 				trackCompression: 0,
 				trackWidth: 100,
+				trackEqLow: 0,
+				trackEqMid: 0,
+				trackEqHigh: 0,
 			};
 		});
 	};
@@ -839,6 +923,7 @@ export const mountDAW = (
 				octave: t.vocalOctave,
 				vibrato: t.vocalVibrato,
 				reverb: t.vocalReverb,
+				delay: t.vocalDelay,
 				gender: t.vocalGender,
 				breathiness: t.vocalBreathiness,
 				syllables,
@@ -1820,6 +1905,7 @@ export const mountDAW = (
 						pan: panToStereo(lt.pan ?? DEFAULT_PAN),
 						vibrato: lt.vibrato,
 						reverbSend: (lt.reverb ?? 0) / 100,
+						delaySend: (lt.delay ?? 0) / 100,
 						gender: (lt.gender ?? 50) / 100,
 						breathiness: (lt.breathiness ?? 50) / 100,
 						notes,
@@ -1949,7 +2035,23 @@ export const mountDAW = (
         <span class="dtm-label" data-dtm="track-vol-label">${active.volume}</span>
       </div>
       <details class="dtm-advanced" data-dtm="track-fx-advanced">
-        <summary>詳細設定（音圧・ステレオ幅）</summary>
+        <summary>詳細設定（EQ・音圧・ステレオ幅）</summary>
+        <div class="dtm-row">
+          <span class="dtm-label">EQ低域</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="track-eq-low" min="-12" max="12" step="1" aria-label="このトラックのEQ低域ゲイン（dB）">
+          <span class="dtm-label" data-dtm="track-eq-low-label"></span>
+          <button class="dtm-infobtn" data-dtm="track-eq-info" title="EQの解説">${icon("info", 12)}</button>
+        </div>
+        <div class="dtm-row">
+          <span class="dtm-label">EQ中域</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="track-eq-mid" min="-12" max="12" step="1" aria-label="このトラックのEQ中域ゲイン（dB）">
+          <span class="dtm-label" data-dtm="track-eq-mid-label"></span>
+        </div>
+        <div class="dtm-row">
+          <span class="dtm-label">EQ高域</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="track-eq-high" min="-12" max="12" step="1" aria-label="このトラックのEQ高域ゲイン（dB）">
+          <span class="dtm-label" data-dtm="track-eq-high-label"></span>
+        </div>
         <div class="dtm-row">
           <span class="dtm-label">音圧強化</span>
           <input type="range" class="dtm-range dtm-grow" data-dtm="track-comp" min="0" max="100" aria-label="このトラックのコンプレッサー量（音圧強化）">
@@ -1984,8 +2086,55 @@ export const mountDAW = (
 		};
 		syncVelocityDisabled();
 
-		// トラック単位チャンネルストリップ（音圧強化・ステレオ幅）。ボーカル・楽器問わず
+		// トラック単位チャンネルストリップ（EQ・音圧強化・ステレオ幅）。ボーカル・楽器問わず
 		// このトラックの発音全体に掛かる（歌詞トラック固有のジェンダー/ブレシネスとは別軸）。
+		const trackEqLowInput = refs.trackBody.querySelector(
+			'[data-dtm="track-eq-low"]',
+		) as HTMLInputElement;
+		const trackEqLowLabel = refs.trackBody.querySelector(
+			'[data-dtm="track-eq-low-label"]',
+		) as HTMLElement;
+		const trackEqMidInput = refs.trackBody.querySelector(
+			'[data-dtm="track-eq-mid"]',
+		) as HTMLInputElement;
+		const trackEqMidLabel = refs.trackBody.querySelector(
+			'[data-dtm="track-eq-mid-label"]',
+		) as HTMLElement;
+		const trackEqHighInput = refs.trackBody.querySelector(
+			'[data-dtm="track-eq-high"]',
+		) as HTMLInputElement;
+		const trackEqHighLabel = refs.trackBody.querySelector(
+			'[data-dtm="track-eq-high-label"]',
+		) as HTMLElement;
+		const trackEqInfo = refs.trackBody.querySelector(
+			'[data-dtm="track-eq-info"]',
+		) as HTMLButtonElement;
+		const fmtDb = (db: number): string => (db > 0 ? `+${db}dB` : `${db}dB`);
+		trackEqLowInput.value = String(active.trackEqLow);
+		trackEqLowLabel.textContent = fmtDb(active.trackEqLow);
+		trackEqMidInput.value = String(active.trackEqMid);
+		trackEqMidLabel.textContent = fmtDb(active.trackEqMid);
+		trackEqHighInput.value = String(active.trackEqHigh);
+		trackEqHighLabel.textContent = fmtDb(active.trackEqHigh);
+		trackEqLowInput.addEventListener("input", () => {
+			active.trackEqLow = Number.parseInt(trackEqLowInput.value, 10);
+			trackEqLowLabel.textContent = fmtDb(active.trackEqLow);
+			options.onTrackEqLowChange?.(active.config.id, active.trackEqLow);
+		});
+		trackEqMidInput.addEventListener("input", () => {
+			active.trackEqMid = Number.parseInt(trackEqMidInput.value, 10);
+			trackEqMidLabel.textContent = fmtDb(active.trackEqMid);
+			options.onTrackEqMidChange?.(active.config.id, active.trackEqMid);
+		});
+		trackEqHighInput.addEventListener("input", () => {
+			active.trackEqHigh = Number.parseInt(trackEqHighInput.value, 10);
+			trackEqHighLabel.textContent = fmtDb(active.trackEqHigh);
+			options.onTrackEqHighChange?.(active.config.id, active.trackEqHigh);
+		});
+		trackEqInfo.addEventListener("click", () => {
+			showModal("EQ（イコライザー）の解説", TRACK_EQ_INFO_HTML);
+		});
+
 		const trackCompInput = refs.trackBody.querySelector(
 			'[data-dtm="track-comp"]',
 		) as HTMLInputElement;
@@ -2149,6 +2298,12 @@ export const mountDAW = (
             <button class="dtm-infobtn" data-dtm="lyric-reverb-info" title="リバーブ送りの解説">${icon("info", 12)}</button>
           </div>
           <div class="dtm-row">
+            <span class="dtm-label">ディレイ送り</span>
+            <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-delay" min="0" max="100" aria-label="このトラックからマスタディレイへ送る量（マスタのディレイつまみが0%だと無音）">
+            <span class="dtm-label" data-dtm="lyric-delay-label"></span>
+            <button class="dtm-infobtn" data-dtm="lyric-delay-info" title="ディレイ送りの解説">${icon("info", 12)}</button>
+          </div>
+          <div class="dtm-row">
             <span class="dtm-label">ジェンダー</span>
             <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-gender" min="0" max="100" aria-label="フォルマント/ジェンダーファクター（koe音源限定）">
             <span class="dtm-label" data-dtm="lyric-gender-label"></span>
@@ -2211,6 +2366,18 @@ export const mountDAW = (
 			) as HTMLButtonElement;
 			lyricReverbInfo.addEventListener("click", () => {
 				showModal("リバーブ送りの解説", LYRIC_REVERB_INFO_HTML);
+			});
+			const lyricDelay = lyricDiv.querySelector(
+				'[data-dtm="lyric-delay"]',
+			) as HTMLInputElement;
+			const lyricDelayLabel = lyricDiv.querySelector(
+				'[data-dtm="lyric-delay-label"]',
+			) as HTMLElement;
+			const lyricDelayInfo = lyricDiv.querySelector(
+				'[data-dtm="lyric-delay-info"]',
+			) as HTMLButtonElement;
+			lyricDelayInfo.addEventListener("click", () => {
+				showModal("ディレイ送りの解説", LYRIC_DELAY_INFO_HTML);
 			});
 			const lyricGender = lyricDiv.querySelector(
 				'[data-dtm="lyric-gender"]',
@@ -2330,6 +2497,8 @@ export const mountDAW = (
 			lyricPanLabel.textContent = fmtPan(active.vocalPan);
 			lyricReverb.value = String(active.vocalReverb);
 			lyricReverbLabel.textContent = `${active.vocalReverb}%`;
+			lyricDelay.value = String(active.vocalDelay);
+			lyricDelayLabel.textContent = `${active.vocalDelay}%`;
 			lyricGender.value = String(active.vocalGender);
 			lyricGenderLabel.textContent = `${active.vocalGender}`;
 			lyricBreathiness.value = String(active.vocalBreathiness);
@@ -2500,6 +2669,11 @@ export const mountDAW = (
 				lyricReverbLabel.textContent = `${active.vocalReverb}%`;
 				fireLyricsChange(active);
 			});
+			lyricDelay.addEventListener("input", () => {
+				active.vocalDelay = Number.parseInt(lyricDelay.value, 10);
+				lyricDelayLabel.textContent = `${active.vocalDelay}%`;
+				fireLyricsChange(active);
+			});
 			lyricGender.addEventListener("input", () => {
 				active.vocalGender = Number.parseInt(lyricGender.value, 10);
 				lyricGenderLabel.textContent = `${active.vocalGender}`;
@@ -2622,11 +2796,17 @@ export const mountDAW = (
 		const trackInstrumentsForMeta: Record<number, string> = {};
 		const trackCompressionForMeta: Record<number, number> = {};
 		const trackWidthForMeta: Record<number, number> = {};
+		const trackEqLowForMeta: Record<number, number> = {};
+		const trackEqMidForMeta: Record<number, number> = {};
+		const trackEqHighForMeta: Record<number, number> = {};
 		trackStates.forEach((t, i) => {
 			if (t.trackInstrument) trackInstrumentsForMeta[i] = t.trackInstrument;
 			if (t.trackCompression !== 0)
 				trackCompressionForMeta[i] = t.trackCompression;
 			if (t.trackWidth !== 100) trackWidthForMeta[i] = t.trackWidth;
+			if (t.trackEqLow !== 0) trackEqLowForMeta[i] = t.trackEqLow;
+			if (t.trackEqMid !== 0) trackEqMidForMeta[i] = t.trackEqMid;
+			if (t.trackEqHigh !== 0) trackEqHighForMeta[i] = t.trackEqHigh;
 		});
 		const trackInstMeta =
 			Object.keys(trackInstrumentsForMeta).length > 0
@@ -2638,6 +2818,14 @@ export const mountDAW = (
 				: undefined;
 		const trackWidthMeta =
 			Object.keys(trackWidthForMeta).length > 0 ? trackWidthForMeta : undefined;
+		const trackEqLowMeta =
+			Object.keys(trackEqLowForMeta).length > 0 ? trackEqLowForMeta : undefined;
+		const trackEqMidMeta =
+			Object.keys(trackEqMidForMeta).length > 0 ? trackEqMidForMeta : undefined;
+		const trackEqHighMeta =
+			Object.keys(trackEqHighForMeta).length > 0
+				? trackEqHighForMeta
+				: undefined;
 
 		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量・リバーブ・モード）。
 		// トラックとは1対1でなく曲全体に効く。既定/未設定（楽器=空, ドラム="none"）の項目は出力しない。
@@ -2648,10 +2836,17 @@ export const mountDAW = (
 				volume: masterVolume,
 				drumVolume: drumVolume,
 				reverb: reverbAmount,
+				reverbDecay: Math.round(reverbDecay * 10),
+				reverbPreDelay: reverbPreDelay,
+				delay: delayAmount,
+				delayDivision: delayDivision,
 				mode: mode,
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
+				trackEqLow: trackEqLowMeta,
+				trackEqMid: trackEqMidMeta,
+				trackEqHigh: trackEqHighMeta,
 			},
 			" ",
 		);
@@ -2662,10 +2857,17 @@ export const mountDAW = (
 				volume: masterVolume,
 				drumVolume: drumVolume,
 				reverb: reverbAmount,
+				reverbDecay: Math.round(reverbDecay * 10),
+				reverbPreDelay: reverbPreDelay,
+				delay: delayAmount,
+				delayDivision: delayDivision,
 				mode: mode,
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
+				trackEqLow: trackEqLowMeta,
+				trackEqMid: trackEqMidMeta,
+				trackEqHigh: trackEqHighMeta,
 			},
 			"",
 		);
@@ -2729,6 +2931,7 @@ export const mountDAW = (
 				oct: t.vocalOctave,
 				vib: t.vocalVibrato,
 				rev: t.vocalReverb,
+				del: t.vocalDelay,
 				gen: t.vocalGender,
 				bre: t.vocalBreathiness,
 			}))
@@ -2743,6 +2946,7 @@ export const mountDAW = (
 					x.oct === 0 ? "" : `o${x.oct}`,
 					x.vib ? "b1" : "",
 					x.rev === 0 ? "" : `r${x.rev}`,
+					x.del === 0 ? "" : `e${x.del}`,
 					x.gen === 50 ? "" : `g${x.gen}`,
 					x.bre === 50 ? "" : `h${x.bre}`,
 				]
@@ -2917,6 +3121,32 @@ export const mountDAW = (
 				refs.reverbAmountLabel.textContent = `${meta.reverb}%`;
 				options.onReverbChange?.(meta.reverb);
 			}
+			if (meta.reverbDecay !== undefined) {
+				reverbDecay = meta.reverbDecay / 10;
+				refs.reverbDecay.value = String(meta.reverbDecay);
+				refs.reverbDecayLabel.textContent = `${reverbDecay.toFixed(1)}s`;
+				options.onReverbDecayChange?.(reverbDecay);
+			}
+			if (meta.reverbPreDelay !== undefined) {
+				reverbPreDelay = meta.reverbPreDelay;
+				refs.reverbPreDelay.value = String(meta.reverbPreDelay);
+				refs.reverbPreDelayLabel.textContent = `${meta.reverbPreDelay}ms`;
+				options.onReverbPreDelayChange?.(reverbPreDelay);
+			}
+			if (meta.delay !== undefined) {
+				delayAmount = meta.delay;
+				refs.delayAmount.value = String(meta.delay);
+				refs.delayAmountLabel.textContent = `${meta.delay}%`;
+				options.onDelayChange?.(meta.delay);
+			}
+			if (
+				meta.delayDivision &&
+				["4", "8", "8d", "16"].includes(meta.delayDivision)
+			) {
+				delayDivision = meta.delayDivision as DelayDivision;
+				refs.delayDivision.value = delayDivision;
+				options.onDelayDivisionChange?.(delayDivision);
+			}
 		}
 		// トラック個別楽器を復元する（URLエンコーダがスペースを除去するため正規化して復元）
 		trackStates.forEach((t, i) => {
@@ -2939,6 +3169,21 @@ export const mountDAW = (
 			if (t.trackWidth !== width) {
 				t.trackWidth = width;
 				options.onTrackWidthChange?.(t.config.id, width);
+			}
+			const eqLow = meta.trackEqLow?.[i] ?? 0;
+			if (t.trackEqLow !== eqLow) {
+				t.trackEqLow = eqLow;
+				options.onTrackEqLowChange?.(t.config.id, eqLow);
+			}
+			const eqMid = meta.trackEqMid?.[i] ?? 0;
+			if (t.trackEqMid !== eqMid) {
+				t.trackEqMid = eqMid;
+				options.onTrackEqMidChange?.(t.config.id, eqMid);
+			}
+			const eqHigh = meta.trackEqHigh?.[i] ?? 0;
+			if (t.trackEqHigh !== eqHigh) {
+				t.trackEqHigh = eqHigh;
+				options.onTrackEqHighChange?.(t.config.id, eqHigh);
 			}
 		});
 		// トラックごとの v（ベロシティ）を復元する（GUIのベロシティスライダーに反映）
@@ -2963,6 +3208,7 @@ export const mountDAW = (
 			active.vocalOctave = 0;
 			active.vocalVibrato = false;
 			active.vocalReverb = 0;
+			active.vocalDelay = 0;
 			active.vocalGender = 50;
 			active.vocalBreathiness = 50;
 		} else {
@@ -2975,6 +3221,7 @@ export const mountDAW = (
 				t.vocalOctave = 0;
 				t.vocalVibrato = false;
 				t.vocalReverb = 0;
+				t.vocalDelay = 0;
 				t.vocalGender = 50;
 				t.vocalBreathiness = 50;
 			}
@@ -2991,6 +3238,7 @@ export const mountDAW = (
 			t.vocalOctave = lt.octave ?? 0;
 			t.vocalVibrato = lt.vibrato ?? false;
 			t.vocalReverb = lt.reverb ?? 0;
+			t.vocalDelay = lt.delay ?? 0;
 			t.vocalGender = lt.gender ?? 50;
 			t.vocalBreathiness = lt.breathiness ?? 50;
 		});
@@ -3089,6 +3337,7 @@ export const mountDAW = (
 			active.vocalOctave = 0;
 			active.vocalVibrato = false;
 			active.vocalReverb = 0;
+			active.vocalDelay = 0;
 			active.vocalGender = 50;
 			active.vocalBreathiness = 50;
 		} else {
@@ -3104,6 +3353,7 @@ export const mountDAW = (
 				t.vocalOctave = 0;
 				t.vocalVibrato = false;
 				t.vocalReverb = 0;
+				t.vocalDelay = 0;
 				t.vocalGender = 50;
 				t.vocalBreathiness = 50;
 			}
@@ -3162,6 +3412,7 @@ export const mountDAW = (
 		bpm = value;
 		refs.bpmInput.value = String(value);
 		for (const t of trackStates) t.core.setTempo(value);
+		options.onBpmChange?.(value);
 	};
 
 	// ============================================================
@@ -3374,26 +3625,92 @@ export const mountDAW = (
 		refs.reverbAmountInfoBtn.addEventListener("click", () => {
 			showModal("マスタリバーブの解説", MASTER_REVERB_INFO_HTML);
 		});
+		refs.reverbDecay.addEventListener("input", () => {
+			const raw = Number.parseInt(refs.reverbDecay.value, 10) || 22;
+			reverbDecay = Math.max(
+				MIN_REVERB_DECAY_SEC,
+				Math.min(MAX_REVERB_DECAY_SEC, raw / 10),
+			);
+			refs.reverbDecayLabel.textContent = `${reverbDecay.toFixed(1)}s`;
+			options.onReverbDecayChange?.(reverbDecay);
+		});
+		refs.reverbPreDelay.addEventListener("input", () => {
+			reverbPreDelay = Number.parseInt(refs.reverbPreDelay.value, 10) || 0;
+			refs.reverbPreDelayLabel.textContent = `${reverbPreDelay}ms`;
+			options.onReverbPreDelayChange?.(reverbPreDelay);
+		});
+		refs.delayAmount.addEventListener("input", () => {
+			delayAmount = Number.parseInt(refs.delayAmount.value, 10) || 0;
+			refs.delayAmountLabel.textContent = `${delayAmount}%`;
+			options.onDelayChange?.(delayAmount);
+		});
+		refs.delayDivision.addEventListener("change", () => {
+			delayDivision = refs.delayDivision.value as DelayDivision;
+			options.onDelayDivisionChange?.(delayDivision);
+		});
+		refs.delayAmountInfoBtn.addEventListener("click", () => {
+			showModal("マスタディレイの解説", MASTER_DELAY_INFO_HTML);
+		});
 		refs.autoMasterInfoBtn.addEventListener("click", () => {
 			showModal("おまかせマスタリング解説", AUTO_MASTER_INFO_HTML);
 		});
 		refs.autoMasterBtn.addEventListener("click", () => {
-			// マスタリバーブ
+			// マスタリバーブ（Mix・Decay・Pre Delay）
+			// Decayはテンポに応じて決める: 速い曲は短め(0.6〜1.4s目安)、遅い曲は長め(1.8〜4.0s目安)。
+			// BPM60を「遅い曲寄りの上限」、BPM180を「速い曲寄りの下限」とみなし線形補間する。
 			reverbAmount = 20;
 			refs.reverbAmount.value = "20";
 			refs.reverbAmountLabel.textContent = "20%";
 			options.onReverbChange?.(20);
 
+			const bpmT = clamp((bpm - 60) / (180 - 60), 0, 1);
+			reverbDecay = clamp(
+				3.0 - bpmT * (3.0 - 0.9),
+				MIN_REVERB_DECAY_SEC,
+				MAX_REVERB_DECAY_SEC,
+			);
+			refs.reverbDecay.value = String(Math.round(reverbDecay * 10));
+			refs.reverbDecayLabel.textContent = `${reverbDecay.toFixed(1)}s`;
+			options.onReverbDecayChange?.(reverbDecay);
+
+			// Pre Delayは原音の輪郭を保ったまま奥行きを足す定番の量（既定20ms）。
+			reverbPreDelay = 20;
+			refs.reverbPreDelay.value = "20";
+			refs.reverbPreDelayLabel.textContent = "20ms";
+			options.onReverbPreDelayChange?.(20);
+
+			// メインボーカル判定: 歌詞のあるトラックのうち、発音時間（ノートの合計durationSteps）が
+			// 最大のものを「メインボーカル」とみなす。ハモリ・コーラス・掛け声等の副トラックより
+			// 前に出したいので、そちらだけリバーブを控えめ・音圧強化をやや強めにして明瞭さを出す
+			// （「前に出したい→リバーブ少なめ」という定石。奥に置きたい副ボーカルは逆にリバーブ多め）。
+			let mainVocalId: string | null = null;
+			let mainVocalScore = -1;
 			for (const t of trackStates) {
-				// 音圧強化・ステレオ幅は全トラック共通
-				t.trackCompression = 35;
+				if (!t.lyricModel) continue;
+				const score = t.core
+					.getNotes()
+					.reduce((sum, n) => sum + n.durationSteps, 0);
+				if (score > mainVocalScore) {
+					mainVocalScore = score;
+					mainVocalId = t.config.id;
+				}
+			}
+
+			for (const t of trackStates) {
+				const isMainVocal = !!t.lyricModel && t.config.id === mainVocalId;
+				// 音圧強化・ステレオ幅は全トラック共通だが、歌詞のあるトラック（ボーカル）は
+				// 強く潰すと表情が失われるため控えめにする（一般的なミックスの目安に準拠）。
+				// メインボーカルだけは明瞭さを出すためやや強めに掛ける。
+				const comp = !t.lyricModel ? 35 : isMainVocal ? 30 : 25;
+				t.trackCompression = comp;
 				t.trackWidth = 115;
-				options.onTrackCompressionChange?.(t.config.id, 35);
+				options.onTrackCompressionChange?.(t.config.id, comp);
 				options.onTrackWidthChange?.(t.config.id, 115);
-				// 歌詞のあるトラックだけビブラート・リバーブ送りを底上げする
+				// 歌詞のあるトラックだけビブラート・リバーブ送りを底上げする。
+				// メインボーカルは前に出したいのでリバーブ控えめ、副ボーカルは奥に置いて馴染ませる。
 				if (t.lyricModel) {
 					t.vocalVibrato = true;
-					t.vocalReverb = 25;
+					t.vocalReverb = isMainVocal ? 15 : 30;
 					fireLyricsChange(t);
 				}
 			}
@@ -4495,6 +4812,30 @@ export const mountDAW = (
 			refs.reverbAmountLabel.textContent = `${reverbAmount}%`;
 			options.onReverbChange?.(reverbAmount);
 		},
+		setReverbDecay: (seconds: number) => {
+			reverbDecay = Math.max(
+				MIN_REVERB_DECAY_SEC,
+				Math.min(MAX_REVERB_DECAY_SEC, seconds),
+			);
+			refs.reverbDecay.value = String(Math.round(reverbDecay * 10));
+			refs.reverbDecayLabel.textContent = `${reverbDecay.toFixed(1)}s`;
+			options.onReverbDecayChange?.(reverbDecay);
+		},
+		setReverbPreDelay: (ms: number) => {
+			reverbPreDelay = Math.max(
+				MIN_REVERB_PREDELAY_MS,
+				Math.min(MAX_REVERB_PREDELAY_MS, ms),
+			);
+			refs.reverbPreDelay.value = String(reverbPreDelay);
+			refs.reverbPreDelayLabel.textContent = `${reverbPreDelay}ms`;
+			options.onReverbPreDelayChange?.(reverbPreDelay);
+		},
+		setDelayAmount: (amount: number) => {
+			delayAmount = clamp(amount, 0, 100);
+			refs.delayAmount.value = String(delayAmount);
+			refs.delayAmountLabel.textContent = `${delayAmount}%`;
+			options.onDelayChange?.(delayAmount);
+		},
 		applyPatch: (
 			trackId: string,
 			added: import("./types").NoteData[],
@@ -4549,6 +4890,7 @@ export const mountDAW = (
 			t.vocalOctave = data.vocalOctave;
 			t.vocalVibrato = data.vocalVibrato ?? false;
 			t.vocalReverb = data.vocalReverb ?? 0;
+			t.vocalDelay = data.vocalDelay ?? 0;
 			t.vocalGender = data.vocalGender ?? 50;
 			t.vocalBreathiness = data.vocalBreathiness ?? 50;
 		},

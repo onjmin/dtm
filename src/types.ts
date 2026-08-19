@@ -1,4 +1,5 @@
 import type { ClipMeter } from "./clip-meter";
+import type { DelayDivision } from "./delay";
 import type { SingingVoices } from "./lyrics";
 import type { MidiSearchConfig } from "./midi-search";
 
@@ -55,6 +56,7 @@ export type LyricSyncData = {
 	vocalOctave: number;
 	vocalVibrato?: boolean;
 	vocalReverb?: number;
+	vocalDelay?: number;
 	vocalGender?: number;
 	vocalBreathiness?: number;
 };
@@ -155,6 +157,11 @@ export type PlayNoteEvent = {
 	 */
 	reverbSend?: number;
 	/**
+	 * マスタディレイへのセンド量 0-1（既定0）。歌詞トラックの個別ディレイ送り設定を反映する。
+	 * リバーブと同じくドライ経路とは別にこの割合だけディレイバスへ送ればよい。
+	 */
+	delaySend?: number;
+	/**
 	 * 発音先の上書き（未指定なら合成側の既定destinationへ）。トラック単位チャンネルストリップ
 	 * （コンプレッサー/ステレオワイド）の入口ノードを渡すことを想定。
 	 */
@@ -220,6 +227,13 @@ export type LyricTrack = {
 	 * MMLでは `@@n klatt r50 …` のように r トークンで付与する。
 	 */
 	reverb?: number;
+	/**
+	 * このボーカルトラック個別のディレイセンド量 0-100。既定0（マスタディレイの影響を受けない）。
+	 * マスタディレイのつまみ（テンポ同期した音価・掛かり具合そのもの）とは別軸で、
+	 * 「このトラックをどれだけディレイバスへ送るか」を個別に決める。
+	 * MMLでは `@@n klatt e50 …` のように e トークンで付与する。
+	 */
+	delay?: number;
 	/**
 	 * フォルマント/ジェンダーファクター 0-100。既定50（無変化）。
 	 * ピッチはそのままに声の太さ/細さ（年齢・性別感）だけを動かす。
@@ -323,6 +337,17 @@ export type DawOptions = {
 	onTrackCompressionChange?: (trackId: string, amount: number) => void;
 	/** トラック単位のステレオ幅 0-200 が変化したときに呼ばれる。 */
 	onTrackWidthChange?: (trackId: string, width: number) => void;
+	/** トラック単位EQの低域（シェルフ）ゲイン -12〜+12dB が変化したときに呼ばれる。 */
+	onTrackEqLowChange?: (trackId: string, db: number) => void;
+	/** トラック単位EQの中域（ピーキング）ゲイン -12〜+12dB が変化したときに呼ばれる。 */
+	onTrackEqMidChange?: (trackId: string, db: number) => void;
+	/** トラック単位EQの高域（シェルフ）ゲイン -12〜+12dB が変化したときに呼ばれる。 */
+	onTrackEqHighChange?: (trackId: string, db: number) => void;
+	/**
+	 * BPMが変化したときに呼ばれる（MML読込・スライダー操作・MIDI取り込み等、経路に依らず単一の窓口）。
+	 * テンポ同期エフェクト（ディレイ等）が実時間へ再計算するために使う。
+	 */
+	onBpmChange?: (bpm: number) => void;
 	/**
 	 * 表示・出力設定（ズーム / 和音分解モード / 和音伴奏トラック無視）が変化したときに呼ばれる。
 	 * 利用側が選択状態を永続化する用途に使う。
@@ -361,6 +386,26 @@ export type DawOptions = {
 	reverbAmount?: number;
 	/** マスタリバーブのつまみが動かされたときに呼ばれる（0-100）。実際の音声処理は呼び出し側（studio）が担う。 */
 	onReverbChange?: (amount: number) => void;
+	/** マスタリバーブのDecay（残響の長さ、秒）。既定2.2、範囲0.3〜4.0。 */
+	reverbDecay?: number;
+	/** マスタリバーブのDecayが変化したときに呼ばれる（秒）。 */
+	onReverbDecayChange?: (seconds: number) => void;
+	/** マスタリバーブのPre Delay（原音から残響が立ち上がるまでの遅延、ms）。既定0、範囲0〜150。 */
+	reverbPreDelay?: number;
+	/** マスタリバーブのPre Delayが変化したときに呼ばれる（ms）。 */
+	onReverbPreDelayChange?: (ms: number) => void;
+	/**
+	 * マスタディレイの掛かり具合 0-100。既定0（オフ）。テンポに同期したエコー。
+	 * 全トラック共通のバス自体は用意されるが、実際に送る量はボーカルトラック個別の
+	 * ディレイ送り（`e`トークン）で決める（リバーブと同じ send/return の考え方）。
+	 */
+	delayAmount?: number;
+	/** マスタディレイのつまみが動かされたときに呼ばれる（0-100）。 */
+	onDelayChange?: (amount: number) => void;
+	/** マスタディレイの音価（既定 "8" = 8分音符）。曲のBPMに同期した実秒数へ変換される。 */
+	delayDivision?: DelayDivision;
+	/** マスタディレイの音価が変更されたときに呼ばれる。 */
+	onDelayDivisionChange?: (division: DelayDivision) => void;
 
 	// --- 注入される外部パーサ（任意） ---
 	parseMidi?: ParseMidiFn;
@@ -476,6 +521,12 @@ export type DawInstance = {
 	setDrumVolume: (volume: number) => void;
 	/** マスタリバーブの掛かり具合を 0-100 で変更する。 */
 	setReverbAmount: (amount: number) => void;
+	/** マスタリバーブのDecay（残響の長さ）を秒で変更する。 */
+	setReverbDecay: (seconds: number) => void;
+	/** マスタリバーブのPre Delayをmsで変更する。 */
+	setReverbPreDelay: (ms: number) => void;
+	/** マスタディレイの掛かり具合を 0-100 で変更する。 */
+	setDelayAmount: (amount: number) => void;
 	/** リモートから受信したトラック個別楽器を適用する（`onTrackInstrumentChange` は発火しない）。 */
 	applyTrackInstrument: (trackIndex: number, instrumentName: string) => void;
 	/**

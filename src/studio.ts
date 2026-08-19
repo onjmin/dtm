@@ -25,6 +25,7 @@ import {
 import { buildChordPlacements } from "./chords";
 import { createClipMeter } from "./clip-meter";
 import { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
+import { createDelayBus, type DelayDivision } from "./delay";
 import {
 	type AnyDrumPattern,
 	DRUM_PATTERNS as DEFAULT_DRUM_PATTERNS,
@@ -59,7 +60,16 @@ import {
 	type MmlPlayerOptions,
 	mountMmlPlayer,
 } from "./mml-player";
-import { createReverbImpulse, reverbAmountToGain } from "./reverb";
+import {
+	createReverbImpulse,
+	DEFAULT_REVERB_DECAY_SEC,
+	DEFAULT_REVERB_PREDELAY_MS,
+	MAX_REVERB_DECAY_SEC,
+	MAX_REVERB_PREDELAY_MS,
+	MIN_REVERB_DECAY_SEC,
+	MIN_REVERB_PREDELAY_MS,
+	reverbAmountToGain,
+} from "./reverb";
 import { SoundFont } from "./sf/SoundFont";
 import { SoundFont_drum } from "./sf/SoundFont_drum";
 import { SoundFont_list } from "./sf/SoundFont_list";
@@ -189,6 +199,14 @@ export type DtmStudioOptions = {
 	drumVolume?: number;
 	/** マスタリバーブの掛かり具合 0-100。既定0（オフ）。全トラックへ一律で掛かる。 */
 	reverbAmount?: number;
+	/** マスタリバーブのDecay（残響の長さ、秒）。既定2.2、範囲0.3〜4.0。 */
+	reverbDecay?: number;
+	/** マスタリバーブのPre Delay（ms）。既定0、範囲0〜150。 */
+	reverbPreDelay?: number;
+	/** マスタディレイの掛かり具合 0-100。既定0（オフ）。テンポに同期したエコー。 */
+	delayAmount?: number;
+	/** マスタディレイの音価（既定 "8" = 8分音符）。 */
+	delayDivision?: DelayDivision;
 	/**
 	 * 最終出力先の AudioNode。未指定時は audioCtx.destination（スピーカー）。
 	 * MediaStreamAudioDestinationNode や GainNode を指定できます。
@@ -432,6 +450,12 @@ export type DtmStudio = {
 	setVolume: (volume: number) => void;
 	/** マスタリバーブの掛かり具合を 0-100 で変更する。 */
 	setReverbAmount: (amount: number) => void;
+	/** マスタリバーブのDecay（残響の長さ）を秒で変更する。 */
+	setReverbDecay: (seconds: number) => void;
+	/** マスタリバーブのPre Delayをmsで変更する。 */
+	setReverbPreDelay: (ms: number) => void;
+	/** マスタディレイの掛かり具合を 0-100 で変更する。 */
+	setDelayAmount: (amount: number) => void;
 	/** AudioContext を閉じ、生成物を破棄する。 */
 	dispose: () => void;
 };
@@ -461,18 +485,45 @@ export const createDtmStudio = async (
 
 	// ── マスタリバーブ（send/return）── masterGain の並列センドとして接続する。
 	// 個々の楽器/歌声の接続（→masterGain）には一切手を加えず、全トラックへ一律で掛かる。
+	// masterGain → preDelay → convolver(Decay) → wetGain(Mix) → finalMix
+	let reverbDecaySec = options.reverbDecay ?? DEFAULT_REVERB_DECAY_SEC;
+	const reverbPreDelay = audioCtx.createDelay(MAX_REVERB_PREDELAY_MS / 1000);
+	reverbPreDelay.delayTime.value =
+		(options.reverbPreDelay ?? DEFAULT_REVERB_PREDELAY_MS) / 1000;
 	const reverbConvolver = audioCtx.createConvolver();
-	reverbConvolver.buffer = createReverbImpulse(audioCtx);
+	reverbConvolver.buffer = createReverbImpulse(audioCtx, reverbDecaySec);
 	reverbConvolver.normalize = true;
 	const reverbWetGain = audioCtx.createGain();
 	reverbWetGain.gain.value = reverbAmountToGain(options.reverbAmount ?? 0);
-	masterGain.connect(reverbConvolver);
+	masterGain.connect(reverbPreDelay);
+	reverbPreDelay.connect(reverbConvolver);
 	reverbConvolver.connect(reverbWetGain);
 
-	/** マスタリバーブの掛かり具合を 0-100 で設定する。急な変化によるクリックを避けて滑らかに遷移する。 */
+	/** マスタリバーブの掛かり具合（Mix）を 0-100 で設定する。急な変化によるクリックを避けて滑らかに遷移する。 */
 	const setReverbAmount = (amount: number): void => {
 		reverbWetGain.gain.setTargetAtTime(
 			reverbAmountToGain(amount),
+			audioCtx.currentTime,
+			0.02,
+		);
+	};
+	/**
+	 * マスタリバーブのDecay（残響の長さ、秒）を設定する。インパルス応答の再生成を伴うため
+	 * 連続的にドラッグされても毎フレーム重い処理が走らないよう、呼び出し側（daw.ts）は
+	 * スライダーの input イベントごとに呼ぶ想定 — 数秒分のノイズ生成程度は許容範囲の負荷。
+	 */
+	const setReverbDecay = (seconds: number): void => {
+		reverbDecaySec = Math.max(
+			MIN_REVERB_DECAY_SEC,
+			Math.min(MAX_REVERB_DECAY_SEC, seconds),
+		);
+		reverbConvolver.buffer = createReverbImpulse(audioCtx, reverbDecaySec);
+	};
+	/** マスタリバーブのPre Delay（原音からリバーブが立ち上がるまでの遅延、ms）を設定する。 */
+	const setReverbPreDelay = (ms: number): void => {
+		reverbPreDelay.delayTime.setTargetAtTime(
+			Math.max(MIN_REVERB_PREDELAY_MS, Math.min(MAX_REVERB_PREDELAY_MS, ms)) /
+				1000,
 			audioCtx.currentTime,
 			0.02,
 		);
@@ -485,6 +536,14 @@ export const createDtmStudio = async (
 	const finalMix = audioCtx.createGain();
 	masterGain.connect(finalMix);
 	reverbWetGain.connect(finalMix);
+
+	// ── マスタディレイ（send/return）── リバーブと同じ並列センド構成。
+	// テンポ同期のため、初期BPMを渡しておき setBpm で追従させる（DAWのBPM変更に連動）。
+	const delayBus = createDelayBus(audioCtx, finalMix, {
+		amount: options.delayAmount ?? 0,
+		division: options.delayDivision ?? "8",
+	});
+	const setDelayAmount = (amount: number): void => delayBus.setAmount(amount);
 
 	const safetyLimiter = audioCtx.createDynamicsCompressor();
 	safetyLimiter.threshold.value = -1;
@@ -563,6 +622,8 @@ export const createDtmStudio = async (
 		// ボーカルトラック個別のリバーブセンド（`r`トークン）先。マスタリバーブの
 		// Convolver 入力へ直接センドする（masterGain 経由のドライ段は素通り）。
 		reverbBus: reverbConvolver,
+		// ボーカルトラック個別のディレイセンド（`e`トークン）先。
+		delayBus: delayBus.input,
 		// トラック単位チャンネルストリップ（コンプレッサー/ステレオワイド）の入口。
 		// 楽器と同じ getChannelStrip キャッシュを共有するので、演奏トラックと歌詞トラックが
 		// 同じ trackId を指していれば同じ処理が掛かる。
@@ -954,10 +1015,25 @@ export const createDtmStudio = async (
 			},
 			reverbAmount: options.reverbAmount,
 			onReverbChange: setReverbAmount,
+			reverbDecay: options.reverbDecay,
+			onReverbDecayChange: setReverbDecay,
+			reverbPreDelay: options.reverbPreDelay,
+			onReverbPreDelayChange: setReverbPreDelay,
+			delayAmount: options.delayAmount,
+			onDelayChange: setDelayAmount,
+			delayDivision: options.delayDivision,
+			onDelayDivisionChange: (division) => delayBus.setDivision(division),
+			onBpmChange: (bpm) => delayBus.setBpm(bpm),
 			onTrackCompressionChange: (trackId, amount) =>
 				getChannelStrip(trackId).setCompression(amount),
 			onTrackWidthChange: (trackId, width) =>
 				getChannelStrip(trackId).setWidth(width),
+			onTrackEqLowChange: (trackId, db) =>
+				getChannelStrip(trackId).setEqLow(db),
+			onTrackEqMidChange: (trackId, db) =>
+				getChannelStrip(trackId).setEqMid(db),
+			onTrackEqHighChange: (trackId, db) =>
+				getChannelStrip(trackId).setEqHigh(db),
 			clipMeter,
 			...dawOverrides,
 			// dawOverrides で上書きされないよう、スプレッドの後に配置して合成する
@@ -1629,6 +1705,7 @@ export const createDtmStudio = async (
 		mountedChordPlayers.length = 0;
 		mountedEditors.length = 0;
 		clipMeter.dispose();
+		delayBus.dispose();
 		for (const strip of channelStrips.values()) strip.dispose();
 		channelStrips.clear();
 		void audioCtx.close();
@@ -1675,6 +1752,9 @@ export const createDtmStudio = async (
 		setMasterVolume,
 		setVolume: setMasterVolume,
 		setReverbAmount,
+		setReverbDecay,
+		setReverbPreDelay,
+		setDelayAmount,
 		dispose,
 	};
 };
