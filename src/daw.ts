@@ -973,6 +973,59 @@ export const mountDAW = (
 	let selectedOriginal: { id: number; startStep: number; pitch: number }[] = [];
 	let lastMultiPreviewPitch: number | null = null;
 
+	// 範囲選択/ドラッグ中に画面外へ出た場合の自動スクロール
+	const AUTO_SCROLL_MARGIN = 30; // 端からこの距離(px)以内でスクロール開始
+	const AUTO_SCROLL_MAX_SPEED = 22; // 1フレームあたりの最大スクロール量(px)
+	let autoScrollRAF: number | null = null;
+	let lastMoveEvent: PointerEvent | null = null;
+
+	const computeEdgeSpeed = (pos: number, size: number): number => {
+		if (pos < AUTO_SCROLL_MARGIN) {
+			const t = (AUTO_SCROLL_MARGIN - pos) / AUTO_SCROLL_MARGIN;
+			return -Math.ceil(t * AUTO_SCROLL_MAX_SPEED);
+		}
+		if (pos > size - AUTO_SCROLL_MARGIN) {
+			const t = (pos - (size - AUTO_SCROLL_MARGIN)) / AUTO_SCROLL_MARGIN;
+			return Math.ceil(t * AUTO_SCROLL_MAX_SPEED);
+		}
+		return 0;
+	};
+
+	const stopAutoScroll = (): void => {
+		if (autoScrollRAF !== null) {
+			cancelAnimationFrame(autoScrollRAF);
+			autoScrollRAF = null;
+		}
+		lastMoveEvent = null;
+	};
+
+	const autoScrollTick = (): void => {
+		autoScrollRAF = null;
+		if (!isSelecting || !lastMoveEvent) return;
+		const canvas = getGridCanvas();
+		const { x, y } = getGridPosition(lastMoveEvent);
+		const dx = computeEdgeSpeed(x, canvas.width);
+		const dy = computeEdgeSpeed(y, canvas.height);
+		if (dx !== 0 || dy !== 0) {
+			const maxOffsetX = getMaxOffsetX();
+			const maxOffsetY = getMaxOffsetY();
+			currentOffsetX = clamp(currentOffsetX + dx, 0, maxOffsetX);
+			currentOffsetY = clamp(currentOffsetY + dy, 0, maxOffsetY);
+			setDrawOffset(currentOffsetX, currentOffsetY);
+			onPointerMove(lastMoveEvent);
+		}
+		if (isSelecting) {
+			autoScrollRAF = requestAnimationFrame(autoScrollTick);
+		}
+	};
+
+	const ensureAutoScroll = (event: PointerEvent): void => {
+		lastMoveEvent = event;
+		if (autoScrollRAF === null) {
+			autoScrollRAF = requestAnimationFrame(autoScrollTick);
+		}
+	};
+
 	const playPreview = (pitch: number): void => {
 		if (isLoading) return;
 		options.onResumeAudio?.();
@@ -1185,6 +1238,7 @@ export const mountDAW = (
 		}
 
 		if (activeToolMode === "select" && isSelecting && selectionStart) {
+			ensureAutoScroll(event);
 			const { x, y, step, pitch } = getGridPosition(event);
 			if (dragMode === "rect") {
 				const rect = {
@@ -1204,11 +1258,12 @@ export const mountDAW = (
 					const nx = logicalX - offset.x;
 					const ny = logicalY - offset.y;
 					const nw = note.durationSteps * stepWidth;
+					// ノート全体が選択範囲内に完全に収まっている場合のみ選択対象とする
 					return (
-						rect.x < nx + nw &&
-						rect.x + rect.width > nx &&
-						rect.y < ny + keyHeight &&
-						rect.y + rect.height > ny
+						nx >= rect.x &&
+						nx + nw <= rect.x + rect.width &&
+						ny >= rect.y &&
+						ny + keyHeight <= rect.y + rect.height
 					);
 				});
 				redrawAll();
@@ -1272,8 +1327,12 @@ export const mountDAW = (
 			selectionStart = null;
 			hasDragged = false;
 			lastMultiPreviewPitch = null;
-			selectionRect = null;
+			// 矩形選択の枠線は選択状態を示す補助線として残す（移動ドラッグ時や未選択時は消す）
+			if (dragMode !== "rect" || selectedNotes.length === 0) {
+				selectionRect = null;
+			}
 			selectedOriginal = [];
+			stopAutoScroll();
 			redrawAll();
 		}
 	};
