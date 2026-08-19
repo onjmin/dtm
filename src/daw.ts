@@ -343,7 +343,7 @@ const LYRIC_MODEL_CATEGORIES = [
 	},
 	{
 		label: "おんJ",
-		models: ["roze", "shiyo", "rino", "uc"],
+		models: ["roze", "shiyo", "rino", "rino121", "uc"],
 	},
 	{
 		label: "一般",

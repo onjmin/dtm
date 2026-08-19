@@ -729,7 +729,8 @@ export const KOE_BASE_URL =
  */
 export const KOE_VOICEBANKS: Record<string, string> = {
 	tsukuyomi: "つくよみちゃん.koe",
-	rino: "春音リノver.1.1(226).koe",
+	rino: "春音リノver0.3.koe",
+	rino121: "春音リノver.1.1(226).koe",
 	roze: "束音ロゼver0.５1(多音階).koe",
 	ruko_male: "欲音ルコ♂連続音Ver.1.03.koe",
 	ruko_female: "欲音ルコ♀歌連続音普1.00.koe",
@@ -749,6 +750,7 @@ export const KOE_VOICEBANKS: Record<string, string> = {
 export const KOE_VOICEBANK_LABELS: Record<string, string> = {
 	tsukuyomi: "つくよみちゃん",
 	rino: "春音リノ",
+	rino121: "春音リノv1.2.1",
 	roze: "束音ロゼ",
 	ruko_male: "欲音ルコ♂",
 	ruko_female: "欲音ルコ♀",
@@ -769,6 +771,7 @@ export const VOICE_IMAGE_KEY: Record<string, string> = {
 	klatt: "puyuyu",
 	tsukuyomi: "tsukuyomi",
 	rino: "rino",
+	rino121: "rino",
 	roze: "roze",
 	ruko_male: "ruko",
 	ruko_female: "ruko",
@@ -787,6 +790,7 @@ export const VOICE_IMAGE_KEY: Record<string, string> = {
 export const KOE_VOICEBANK_TERMS: Record<string, string> = {
 	tsukuyomi: "https://tyc.rei-yumesaki.net/material/utau/terms/",
 	rino: "https://hatenakun1.github.io/halunelino/",
+	rino121: "https://harunerino.vercel.app/",
 	roze: "https://tabaneroze.ninja-web.net/terms-of-use.html",
 	ruko_male: "https://long-sleeper.net/index.php?id=22",
 	ruko_female: "https://long-sleeper.net/index.php?id=22",
