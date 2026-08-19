@@ -729,7 +729,7 @@ export const KOE_BASE_URL =
  */
 export const KOE_VOICEBANKS: Record<string, string> = {
 	tsukuyomi: "つくよみちゃん.koe",
-	rino: "春音リノver0.3.koe",
+	rino: "春音リノver.1.1(226).koe",
 	roze: "束音ロゼver0.５1(多音階).koe",
 	ruko_male: "欲音ルコ♂連続音Ver.1.03.koe",
 	ruko_female: "欲音ルコ♀歌連続音普1.00.koe",
@@ -739,6 +739,7 @@ export const KOE_VOICEBANKS: Record<string, string> = {
 	mgroid: "MGRoid_原音設定済み.koe",
 	motroid: "MOTRoid完全版V2.koe",
 	nynroid: "NYNRoidver1.4.koe",
+	uc: "UC.koe",
 };
 
 /**
@@ -757,6 +758,7 @@ export const KOE_VOICEBANK_LABELS: Record<string, string> = {
 	mgroid: "MGRoid",
 	motroid: "MOTRoid",
 	nynroid: "NYNRoid",
+	uc: "蓄音キリコ",
 };
 
 /**
@@ -776,6 +778,7 @@ export const VOICE_IMAGE_KEY: Record<string, string> = {
 	mgroid: "MGRoid",
 	motroid: "MOTRoid",
 	nynroid: "NYNRoid",
+	uc: "uc",
 };
 
 /**
@@ -793,6 +796,7 @@ export const KOE_VOICEBANK_TERMS: Record<string, string> = {
 	mgroid: "https://x.com/nisusansu/status/1048825378188353536",
 	motroid: "https://www.nicovideo.jp/watch/sm40031282",
 	nynroid: "https://www.bilibili.com/video/BV1V24y1a7qs",
+	uc: "https://chi9nekiriko.wixsite.com/home/%E5%88%A9%E7%94%A8%E8%A6%8F%E7%B4%84",
 };
 
 /** ファイル名（日本語可）を encodeURIComponent して .koe のフルURLにする */

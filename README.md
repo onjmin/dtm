@@ -371,7 +371,7 @@ const cp = mountChordPlayer(document.getElementById("chord-app"), "| C | G | Am 
 
 - モデルに `klatt` を指定すると内蔵フォルマント合成（音源ロード不要）。
 - 内蔵 UTAU 音源（@onjmin/koe）キーワード:
-  `tsukuyomi` / `rino` / `roze` / `ruko_male` / `ruko_female` / `teto` / `shiyo` / `rei` / `mgroid` / `motroid` / `nynroid`。
+  `tsukuyomi` / `rino` / `roze` / `uc` / `ruko_male` / `ruko_female` / `teto` / `shiyo` / `rei` / `mgroid` / `motroid` / `nynroid`。
 - `createDtmStudio` を使えば歌声は自動で配線されます。低レベル API で使う場合は
   `createSingingVoices` の戻り値を `mountDAW` / `mountMmlPlayer` の `singingVoices` に渡してください。
 
