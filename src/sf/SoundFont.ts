@@ -247,10 +247,12 @@ const adjustZone = async (
 					attackLength + loopLengthFrame * repeatCount + releaseLength;
 				let totalPeak = 0;
 				let loopPeak = 0;
-				if (oldBuf.numberOfChannels > 0) {
-					const ch0 = oldBuf.getChannelData(0);
-					for (let i = 0; i < ch0.length; i++) {
-						const abs = Math.abs(ch0[i]);
+				// 全チャンネルを見てピークを取る（ch0だけだとステレオでピークが
+				// 右chに寄っているサンプルの判定がずれるため）
+				for (let ch = 0; ch < oldBuf.numberOfChannels; ch++) {
+					const chData = oldBuf.getChannelData(ch);
+					for (let i = 0; i < chData.length; i++) {
+						const abs = Math.abs(chData[i]);
 						if (abs > totalPeak) totalPeak = abs;
 						if (i >= loopStartFrame && i < loopEndFrame) {
 							if (abs > loopPeak) loopPeak = abs;
@@ -259,15 +261,17 @@ const adjustZone = async (
 				}
 
 				// ゲイン補正倍率の計算
+				// 減衰系楽器（ピアノ・ギター・ベース等）はループ部分が静かいのが自然な
+				// 場合も多いため、完全に補正を切るのではなく控えめな目標値に留める。
+				// これにより「バグでたまたま無音に近いループ点を掴んだ」場合の
+				// 過度な音量低下は緩和しつつ、自然な減衰感は大きく損なわない。
+				const decay = isDecayInstrument(fontName);
+				const targetRatio = decay ? 0.4 : 0.75;
+				const maxMultiplier = decay ? 6.0 : 20.0;
 				let gainMultiplier = 1.0;
-				if (
-					!isDecayInstrument(fontName) &&
-					loopPeak > 0 &&
-					totalPeak > 0 &&
-					loopPeak < totalPeak * 0.8
-				) {
-					gainMultiplier = (totalPeak * 0.75) / loopPeak; // アタック（全体）ピークの75%を目標にする
-					if (gainMultiplier > 20.0) gainMultiplier = 20.0; // 過剰増幅によるクリップ防止
+				if (loopPeak > 0 && totalPeak > 0 && loopPeak < totalPeak * 0.8) {
+					gainMultiplier = (totalPeak * targetRatio) / loopPeak;
+					if (gainMultiplier > maxMultiplier) gainMultiplier = maxMultiplier; // 過剰増幅によるクリップ防止
 				}
 
 				try {

@@ -779,6 +779,9 @@ export const mountDAW = (
 	// MML出力の先頭に埋め込む楽器プリセット名（トップレベル宣言。空なら宣言なし）
 	let currentInstrument = "";
 	let activeTrackId = options.initialActiveTrack ?? trackConfigs[0].id;
+	// トラック切り替えでパネルを再構築しても開閉状態を維持するための「詳細設定」開閉フラグ
+	let trackFxAdvancedOpen = false;
+	let lyricAdvancedOpen = false;
 	let activeToolMode: ToolMode = "pen";
 	let currentInsertLength = 48;
 	let snapGridSteps = 12;
@@ -2145,7 +2148,7 @@ export const mountDAW = (
         <input type="range" class="dtm-range dtm-grow" data-dtm="track-vol" min="0" max="127" value="${active.volume}">
         <span class="dtm-label" data-dtm="track-vol-label">${active.volume}</span>
       </div>
-      <details class="dtm-advanced" data-dtm="track-fx-advanced">
+      <details class="dtm-advanced" data-dtm="track-fx-advanced" ${trackFxAdvancedOpen ? "open" : ""}>
         <summary>詳細設定（EQ・音圧・ステレオ幅）</summary>
         <div class="dtm-row">
           <span class="dtm-label">EQ低域</span>
@@ -2182,6 +2185,13 @@ export const mountDAW = (
           <button class="dtm-infobtn" data-dtm="track-reverb-send-info" title="リバーブ送りの解説">${icon("info", 12)}</button>
         </div>
       </details>`;
+		(
+			refs.trackBody.querySelector(
+				'[data-dtm="track-fx-advanced"]',
+			) as HTMLDetailsElement
+		).addEventListener("toggle", (e) => {
+			trackFxAdvancedOpen = (e.target as HTMLDetailsElement).open;
+		});
 		const volInput = refs.trackBody.querySelector(
 			'[data-dtm="track-vol"]',
 		) as HTMLInputElement;
@@ -2414,7 +2424,7 @@ export const mountDAW = (
           <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="歌唱の声量（100=等倍、100超でブースト、既定200）">
           <span class="dtm-label" data-dtm="lyric-vol-label"></span>
         </div>
-        <details class="dtm-advanced" data-dtm="lyric-advanced">
+        <details class="dtm-advanced" data-dtm="lyric-advanced" ${lyricAdvancedOpen ? "open" : ""}>
           <summary>詳細設定</summary>
           <div class="dtm-row">
             <span class="dtm-label">オクターブ</span>
@@ -2475,6 +2485,13 @@ export const mountDAW = (
         <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）"></textarea>
       </div>`;
 			refs.trackBody.appendChild(lyricDiv);
+			(
+				lyricDiv.querySelector(
+					'[data-dtm="lyric-advanced"]',
+				) as HTMLDetailsElement
+			).addEventListener("toggle", (e) => {
+				lyricAdvancedOpen = (e.target as HTMLDetailsElement).open;
+			});
 			const lyricModelSel = lyricDiv.querySelector(
 				'[data-dtm="lyric-model"]',
 			) as HTMLSelectElement;

@@ -19,6 +19,7 @@
  * 歌声が必要なら mountMmlPlayer / createDtmStudio を使う。
  */
 
+import { type ChannelStrip, createChannelStrip } from "./channel-strip";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import {
 	type AnyDrumPattern,
@@ -28,6 +29,13 @@ import {
 	resolveDrumPattern,
 } from "./drum-config";
 import { parseMML } from "./mml-parser";
+import {
+	createReverbImpulse,
+	DEFAULT_REVERB_DECAY_SEC,
+	DEFAULT_REVERB_PREDELAY_MS,
+	MAX_REVERB_PREDELAY_MS,
+	reverbAmountToGain,
+} from "./reverb";
 import { createSequencer, type SequencerTrack } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { createSynth, type Synth } from "./synth";
@@ -107,6 +115,24 @@ export type PlayPlacementsOptions = PlayMmlOptions & {
 	metaVolume?: number;
 	metaDrum?: string;
 	metaDrumVolume?: number;
+	/** マスタリバーブの掛かり具合 0-100（エディタの `#reverb=` 相当）。省略時0。 */
+	metaReverb?: number;
+	/** マスタリバーブのDecayを10倍した整数（3〜40 → 0.3〜4.0秒）。省略時22。 */
+	metaReverbDecay?: number;
+	/** マスタリバーブのPre Delay（ms）。省略時0。 */
+	metaReverbPreDelay?: number;
+	/** トラック（trackIndex）ごとのコンプレッサー量 0-100。 */
+	trackCompression?: Record<number, number>;
+	/** トラック（trackIndex）ごとのステレオ幅 0-200。 */
+	trackWidth?: Record<number, number>;
+	/** トラック（trackIndex）ごとのマスタリバーブへのセンド量 0-100。 */
+	trackReverbSend?: Record<number, number>;
+	/** トラック（trackIndex）ごとのEQ低域ゲイン -12〜+12dB。 */
+	trackEqLow?: Record<number, number>;
+	/** トラック（trackIndex）ごとのEQ中域ゲイン -12〜+12dB。 */
+	trackEqMid?: Record<number, number>;
+	/** トラック（trackIndex）ごとのEQ高域ゲイン -12〜+12dB。 */
+	trackEqHigh?: Record<number, number>;
 };
 
 /**
@@ -158,9 +184,74 @@ export const playPlacements = (
 	// ── AudioContext / 発音器 ──
 	const ownsCtx = !options.audioContext;
 	const ctx = options.audioContext ?? new AudioContext();
-	const destination = options.destination ?? ctx.destination;
+	const rawDestination = options.destination ?? ctx.destination;
 	const useSynth = options.synth ?? !options.onPlayNote;
-	const synth: Synth | null = useSynth ? createSynth(ctx, destination) : null;
+
+	// ── エフェクトチェーン（DAWエディタと同一構成をヘッドレスでも常時適用する）──
+	// [各トラックのチャンネルストリップ] → masterGain(ドライ) ─┐
+	//                     └→ reverbSend → preDelay → convolver → wetGain ─┴→ finalMix → destination
+	// 画面を持たないプレイヤーだが、エディタで聴いた音圧・EQ・リバーブ感をそのまま
+	// 再現するため、常にこのストリップを経由させる（bypassオプションは設けない）。
+	const finalMix = ctx.createGain();
+	const masterGain = ctx.createGain();
+	masterGain.connect(finalMix);
+
+	const reverbPreDelay = ctx.createDelay(MAX_REVERB_PREDELAY_MS / 1000);
+	reverbPreDelay.delayTime.value =
+		(options.metaReverbPreDelay ?? DEFAULT_REVERB_PREDELAY_MS) / 1000;
+	const reverbConvolver = ctx.createConvolver();
+	const reverbDecaySec =
+		(options.metaReverbDecay ?? 22) / 10 || DEFAULT_REVERB_DECAY_SEC;
+	reverbConvolver.buffer = createReverbImpulse(ctx, reverbDecaySec);
+	reverbConvolver.normalize = true;
+	const reverbWetGain = ctx.createGain();
+	reverbWetGain.gain.value = reverbAmountToGain(options.metaReverb ?? 0);
+	reverbPreDelay.connect(reverbConvolver);
+	reverbConvolver.connect(reverbWetGain);
+	reverbWetGain.connect(finalMix);
+
+	finalMix.connect(rawDestination);
+
+	// トラック単位チャンネルストリップ（コンプレッサー＋EQ＋ステレオワイド＋リバーブ送り）。
+	// trackIndex ごとに1本ずつ遅延生成してキャッシュする。
+	const channelStrips = new Map<number, ChannelStrip>();
+	const getChannelStrip = (index: number): ChannelStrip => {
+		let strip = channelStrips.get(index);
+		if (!strip) {
+			strip = createChannelStrip(ctx, masterGain, {
+				compression: options.trackCompression?.[index] ?? 0,
+				width: options.trackWidth?.[index] ?? 100,
+				eqLow: options.trackEqLow?.[index] ?? 0,
+				eqMid: options.trackEqMid?.[index] ?? 0,
+				eqHigh: options.trackEqHigh?.[index] ?? 0,
+				reverbSend: options.trackReverbSend?.[index] ?? 0,
+				reverbBus: reverbPreDelay,
+			});
+			channelStrips.set(index, strip);
+		}
+		return strip;
+	};
+
+	// 発音器はトラック（チャンネルストリップの入口）ごとに1つ持つ。ドラムはエディタと
+	// 同様にチャンネルストリップを経由せず masterGain へ直結する（EQ/リバーブ対象外）。
+	const synths = new Map<number, Synth>();
+	const getSynth = (index: number): Synth => {
+		let s = synths.get(index);
+		if (!s) {
+			s = createSynth(ctx, getChannelStrip(index).input);
+			synths.set(index, s);
+		}
+		return s;
+	};
+	const drumSynth: Synth | null = useSynth
+		? createSynth(ctx, masterGain)
+		: null;
+
+	// PlayNoteEvent.trackId ("melody"等) → trackIndex の逆引き（チャンネルストリップ選択用）。
+	const trackIndexById = new Map<string, number>();
+	trackIndices.forEach((idx) => {
+		trackIndexById.set(TRACK_ID_BY_INDEX[idx] ?? `t${idx}`, idx);
+	});
 
 	// 非アクティブ時の自動 suspend/resume は、自分の ctx を持つときだけ既定ON。
 	const pauseWhenHidden = options.pauseWhenHidden ?? ownsCtx;
@@ -180,12 +271,14 @@ export const playPlacements = (
 		getAudioTime: () => ctx.currentTime,
 		onPlayNote: (e) => {
 			options.onPlayNote?.(e);
-			synth?.playNote(e);
+			if (!useSynth) return;
+			const index = trackIndexById.get(e.trackId);
+			(index === undefined ? drumSynth : getSynth(index))?.playNote(e);
 		},
 		onPlayDrum: (e) => {
 			const velocity = e.velocity * (drumVolume / 100) * (masterVolume / 100);
 			options.onPlayDrum?.({ ...e, velocity });
-			synth?.playDrum({ ...e, velocity });
+			drumSynth?.playDrum({ ...e, velocity });
 		},
 		onTick: (step) => {
 			options.onTick?.(step);
@@ -245,6 +338,7 @@ export const playPlacements = (
 		if (pauseWhenHidden && typeof document !== "undefined") {
 			document.removeEventListener("visibilitychange", onVisibilityChange);
 		}
+		for (const strip of channelStrips.values()) strip.dispose();
 		if (ownsCtx) void ctx.close();
 	};
 
@@ -274,6 +368,15 @@ export const playMML = (
 		metaVolume: meta.volume,
 		metaDrum: meta.drum,
 		metaDrumVolume: meta.drumVolume,
+		metaReverb: meta.reverb,
+		metaReverbDecay: meta.reverbDecay,
+		metaReverbPreDelay: meta.reverbPreDelay,
+		trackCompression: meta.trackCompression,
+		trackWidth: meta.trackWidth,
+		trackReverbSend: meta.trackReverbSend,
+		trackEqLow: meta.trackEqLow,
+		trackEqMid: meta.trackEqMid,
+		trackEqHigh: meta.trackEqHigh,
 	});
 };
 
