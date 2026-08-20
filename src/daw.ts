@@ -369,10 +369,10 @@ const AUTO_MASTER_INFO_HTML = `
   <h4>メインボーカルの自動判定</h4>
   <p>歌詞のあるトラックが複数ある場合（ハモリ・コーラス・掛け声等）、発音時間が最も長いトラックを「メインボーカル」とみなし、他とは違う扱いにします。</p>
   <ul>
-    <li>メインボーカル: 音圧強化30%・リバーブ送り15%（前に出す）・定位は中央固定</li>
-    <li>それ以外のボーカル: 音圧強化25%・リバーブ送り30%（奥へ馴染ませる）・定位は左右へ交互に振ってダブリング感を出す</li>
+    <li>メインボーカル: 声量を既定の1.1倍（前に出す）・音圧強化30%・リバーブ送り25%・定位は中央固定</li>
+    <li>それ以外のボーカル（ハモリ・コーラス等）: 声量を既定の0.85倍を基準に、副ボーカルの本数が多いほどさらに絞る（重なって音圧が積み上がる分を等パワー則で相殺）・音圧強化25%・リバーブ送り45%（奥へ馴染ませる）・定位は左右へ交互に振ってダブリング感を出す</li>
   </ul>
-  <p style="margin-top:4px;"><small>「前に出したい音はリバーブ少なめ、奥に置きたい音はリバーブ多め」という定石に基づいています。「いい感じの初期値」を一括で当てるだけで、曲や好みに応じた微調整までは行いません。既存の設定は上書きされるので、気に入らなければ各スライダーから個別に戻してください。</small></p>
+  <p style="margin-top:4px;"><small>「前に出したい音は声量大きめ・リバーブ少なめ、奥に置きたい音は声量控えめ・リバーブ多め」という定石に基づいています。オクターブユニゾン（1オクターブ上/下を重ねて厚みを出す加工）はここでは自動適用しません — 声質を大きく変える演出目的の加工であり、曲によって合う/合わないが分かれる創作上の選択（バラードでは不自然になりやすい等）で、ミックスの是正とは性質が違うためです。使いたい場合は各ボーカルトラックの設定欄から個別に選んでください。「いい感じの初期値」を一括で当てるだけで、曲や好みに応じた微調整までは行いません。既存の設定は上書きされるので、気に入らなければ各スライダーから個別に戻してください。</small></p>
 </div>
 `;
 
@@ -4354,6 +4354,7 @@ export const mountDAW = (
 			// （「前に出したい→リバーブ少なめ」という定石。奥に置きたい副ボーカルは逆にリバーブ多め）。
 			let mainVocalId: string | null = null;
 			let mainVocalScore = -1;
+			let nonMainVocalCount = 0;
 			for (const t of trackStates) {
 				if (!t.lyricModel) continue;
 				const score = t.core
@@ -4363,6 +4364,9 @@ export const mountDAW = (
 					mainVocalScore = score;
 					mainVocalId = t.config.id;
 				}
+			}
+			for (const t of trackStates) {
+				if (t.lyricModel && t.config.id !== mainVocalId) nonMainVocalCount++;
 			}
 
 			// 楽器・音量の自動割り当て: 歌詞トラックを除く各トラックのノート（音高・タイミング・
@@ -4461,11 +4465,25 @@ export const mountDAW = (
 					t.trackDelaySend = delaySend;
 					options.onTrackDelaySendChange?.(t.config.id, delaySend);
 				}
-				// 歌詞のあるトラックだけビブラート・リバーブ送りを底上げする。
-				// メインボーカルは前に出したいのでリバーブ控えめ、副ボーカルは奥に置いて馴染ませる。
+				// 歌詞のあるトラックだけビブラート・声量・リバーブ送りを調整する。
+				// メインボーカルは主旋律として一番前に出したいので声量を上げ気味に、
+				// ハモリ・コーラス等の副ボーカルは奥へ引かせるため下げる（前に出したい音は
+				// 大きく・くっきり、奥に置きたい音は小さく・リバーブ多め、という定石）。
+				// 副ボーカルが複数（コーラスの厚み）あるほど、重なって音圧が積み上がる分
+				// 1トラックあたりは絞る（伴奏の和音を等パワー則で絞ったのと同じ考え方）。
 				if (t.lyricModel) {
 					t.vocalVibrato = true;
 					t.vocalReverb = isMainVocal ? 25 : 45;
+					t.vocalVolume = isMainVocal
+						? Math.round(DEFAULT_VOCAL_VOLUME * 1.1)
+						: clamp(
+								Math.round(
+									(DEFAULT_VOCAL_VOLUME * 0.85) /
+										Math.sqrt(Math.max(1, nonMainVocalCount)),
+								),
+								60,
+								MAX_VOCAL_VOLUME,
+							);
 					fireLyricsChange(t);
 				}
 			}
