@@ -97,6 +97,7 @@ export type DawUIRefs = {
 	macroMono: HTMLButtonElement;
 	// output
 	exportMidiBtn: HTMLButtonElement;
+	exportWavBtn: HTMLButtonElement;
 	drumJsonExportBtn: HTMLButtonElement;
 	drumJsonOutput: HTMLElement;
 	drumJsonStatus: HTMLElement;
@@ -417,6 +418,7 @@ export const buildUI = (
       <div class="dtm-row">
         <button class="dtm-btn dtm-btn--accent" data-dtm="export-midi">MIDI出力</button>
         <button class="dtm-btn dtm-btn--success" data-dtm="generate-mml">MML生成</button>
+        <button class="dtm-btn dtm-btn--primary dtm-hidden" data-dtm="export-wav">WAV書き出し</button>
       </div>
       <div class="dtm-row">
         <button class="dtm-btn dtm-btn--primary" data-dtm="drum-json-export" title="読み込んだMIDIのドラム定義をJSON出力">ドラムJSON出力</button>
@@ -563,6 +565,7 @@ export const buildUI = (
 		macroHarmonic: sel("macro-harmonic"),
 		macroMono: sel("macro-mono"),
 		exportMidiBtn: sel("export-midi"),
+		exportWavBtn: sel("export-wav") as HTMLButtonElement,
 		drumJsonExportBtn: sel("drum-json-export"),
 		drumJsonOutput: sel("drum-json-output"),
 		drumJsonStatus: sel("drum-json-status"),

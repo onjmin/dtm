@@ -348,6 +348,12 @@ export type DawOptions = {
 	onPlayDrum?: (e: PlayDrumEvent) => void;
 	/** 初回ユーザー操作時に呼ばれる（AudioContextのresume等に使う） */
 	onResumeAudio?: () => void | Promise<void>;
+	/**
+	 * 「MIDI / MML 出力」パネルの「WAV書き出し」ボタン押下時に呼ばれる。
+	 * 未指定ならボタン自体を表示しない（ライブラリは音を出さないため、書き出し処理は
+	 * AudioContextを持つ利用側 = createDtmStudio 等が担う）。
+	 */
+	onExportWav?: () => void | Promise<void>;
 	/** 再生の基準クロック秒。既定 performance.now()/1000。利用側は audioCtx.currentTime を返す */
 	getAudioTime?: () => number;
 	/**

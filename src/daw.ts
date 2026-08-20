@@ -4579,6 +4579,12 @@ export const mountDAW = (
 			a.click();
 			URL.revokeObjectURL(url);
 		});
+		if (options.onExportWav) {
+			refs.exportWavBtn.classList.remove("dtm-hidden");
+			refs.exportWavBtn.addEventListener("click", () => {
+				void options.onExportWav?.();
+			});
+		}
 		const copy = (text: string, btn: HTMLButtonElement): void => {
 			navigator.clipboard?.writeText(text);
 			btn.classList.add("dtm-btn--success");

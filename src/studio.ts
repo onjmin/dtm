@@ -73,9 +73,9 @@ import {
 	reverbAmountToGain,
 } from "./reverb";
 import { SoundFont } from "./sf/SoundFont";
-import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { SoundFont_drum } from "./sf/SoundFont_drum";
 import { SoundFont_list } from "./sf/SoundFont_list";
+import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { showLoadingOverlay } from "./styles";
 import type {
 	DawInstance,
@@ -87,6 +87,7 @@ import type {
 	TrackConfig,
 } from "./types";
 import { DEFAULT_BPM, DEFAULT_STEPS_PER_BAR } from "./types";
+import { concatFloat32, encodeWavPCM16 } from "./wav-export";
 
 // ── 外部エンジンの最小型（SoundFont / midi-parser）──
 type SoundFontInstance = {
@@ -382,6 +383,15 @@ export type DtmStudio = {
 	 * MediaRecorder のストリーム合成（canvas + audio）に使えます。
 	 */
 	getAudioStreamTrack: () => MediaStreamTrack;
+	/**
+	 * WAV書き出し用の録音を開始する（マスタバス最終段＝リバーブ/ディレイ/コンプ/
+	 * リミッター/フェード適用後のPCMをそのままタップする）。
+	 * 呼び出し側で再生（daw.play() 等）を開始し、曲が終わったら stopWavRecording を呼ぶ想定。
+	 * 実際の再生と同じ経路を録るため等速（曲の長さ分だけ実時間がかかる）。
+	 */
+	startWavRecording: () => void;
+	/** startWavRecording で開始した録音を止め、16bit PCM WAVのBlobを返す。 */
+	stopWavRecording: () => Promise<Blob>;
 	/** 歌声合成ヘルパ（klatt + koe音源）。 */
 	singingVoices: SingingVoices;
 	/** 編集UI（mountDAW）を音・歌声込みでマウントする。 */
@@ -1120,6 +1130,31 @@ export const createDtmStudio = async (
 			},
 			onPlayNote: playNote,
 			onPlayDrum: playDrum,
+			onExportWav: async () => {
+				if (!daw) return;
+				// 曲頭から書き出すため、再生中でも一旦止めて先頭（ループ開始位置）へ戻す。
+				daw.stop();
+				await resumeAudio();
+				startWavRecording();
+				await daw.play();
+				// 曲が最後まで鳴り終わって playbackState が "stopped" に戻るまで待つ
+				// （sequencer の onEnd → daw.stop 相当の内部処理と同じタイミング）。
+				await new Promise<void>((resolve) => {
+					const iv = setInterval(() => {
+						if (daw.getPlaybackState() !== "playing") {
+							clearInterval(iv);
+							resolve();
+						}
+					}, 200);
+				});
+				const blob = await stopWavRecording();
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement("a");
+				a.href = url;
+				a.download = "dtm.wav";
+				a.click();
+				URL.revokeObjectURL(url);
+			},
 			singingVoices,
 			parseMidi,
 			onInstrumentChange: handleInstrumentChange,
@@ -1849,11 +1884,64 @@ export const createDtmStudio = async (
 		return createMediaStreamDestination().stream.getAudioTracks()[0];
 	};
 
+	// ── WAV書き出し用の録音タップ ──
+	// fadeGain（マスタバス最終段＝リバーブ/ディレイ/グルーコンプ/安全リミッター/フェード
+	// すべて適用済み）から ScriptProcessorNode で生PCMを取り出す。実際の再生と全く同じ
+	// 経路を通った音をそのまま記録するので、書き出し専用の別ミックス経路を持たずに済む。
+	// 代わりに「等速（曲の長さ分だけ実時間がかかる）」書き出しになるトレードオフがある。
+	let wavTap: {
+		processor: ScriptProcessorNode;
+		silentSink: GainNode;
+		chunksL: Float32Array[];
+		chunksR: Float32Array[];
+	} | null = null;
+
+	const startWavRecording = (): void => {
+		if (wavTap) return;
+		const bufferSize = 4096;
+		const processor = audioCtx.createScriptProcessor(bufferSize, 2, 2);
+		const chunksL: Float32Array[] = [];
+		const chunksR: Float32Array[] = [];
+		processor.onaudioprocess = (e) => {
+			chunksL.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+			chunksR.push(
+				new Float32Array(
+					e.inputBuffer.getChannelData(
+						e.inputBuffer.numberOfChannels > 1 ? 1 : 0,
+					),
+				),
+			);
+		};
+		// ScriptProcessorNode はグラフ上で destination まで繋がっていないと
+		// onaudioprocess が発火しないブラウザがあるため、無音ゲイン経由で destination へ流す
+		// （fadeGain→destination の本来の音声出力を二重化しないよう gain=0 にする）。
+		const silentSink = audioCtx.createGain();
+		silentSink.gain.value = 0;
+		fadeGain.connect(processor);
+		processor.connect(silentSink);
+		silentSink.connect(audioCtx.destination);
+		wavTap = { processor, silentSink, chunksL, chunksR };
+	};
+
+	const stopWavRecording = async (): Promise<Blob> => {
+		if (!wavTap) throw new Error("[dtm] startWavRecording が呼ばれていません");
+		const { processor, silentSink, chunksL, chunksR } = wavTap;
+		fadeGain.disconnect(processor);
+		processor.disconnect(silentSink);
+		silentSink.disconnect(audioCtx.destination);
+		wavTap = null;
+		const left = concatFloat32(chunksL);
+		const right = concatFloat32(chunksR);
+		return encodeWavPCM16([left, right], audioCtx.sampleRate);
+	};
+
 	return {
 		audioContext: audioCtx,
 		masterGain,
 		createMediaStreamDestination,
 		getAudioStreamTrack,
+		startWavRecording,
+		stopWavRecording,
 		singingVoices,
 		mountEditor,
 		mountPlayer,
