@@ -32,6 +32,7 @@ import {
 	DRUM_FONT,
 	type DrumPatternDef,
 	getDrumPatternKeys,
+	normalizeDrumPatterns,
 } from "./drum-config";
 import {
 	type MmlPlayback,
@@ -71,6 +72,7 @@ import {
 	reverbAmountToGain,
 } from "./reverb";
 import { SoundFont } from "./sf/SoundFont";
+import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { SoundFont_drum } from "./sf/SoundFont_drum";
 import { SoundFont_list } from "./sf/SoundFont_list";
 import { showLoadingOverlay } from "./styles";
@@ -478,6 +480,17 @@ export const createDtmStudio = async (
 		presetUI: true,
 		...options.features,
 	};
+
+	// 汎用プリセット + 曲固有パターン(asayakeなど) + 利用側カスタムをマージした辞書。
+	// daw.ts / mml-player.ts / headless-player.ts の解決ロジックと同じ合成順にしないと、
+	// 編集画面では鳴るのに再生専用プレイヤーでは曲固有ドラムが無音になる（サンプル未ロード）。
+	const resolveDrumPatterns = (
+		custom?: Record<string, AnyDrumPattern | DrumPatternDef>,
+	) => ({
+		...DEFAULT_DRUM_PATTERNS,
+		...SONG_DRUM_PATTERNS,
+		...normalizeDrumPatterns(custom ?? {}),
+	});
 
 	// ── AudioContext とゲイン段 ──
 	const audioCtx =
@@ -1381,9 +1394,7 @@ export const createDtmStudio = async (
 					await loadRequiredDrums(
 						getDrumPatternKeys(
 							meta.drum,
-							opts.drumPatterns ??
-								options.drumPatterns ??
-								DEFAULT_DRUM_PATTERNS,
+							resolveDrumPatterns(opts.drumPatterns ?? options.drumPatterns),
 						),
 						meta.drumFont || "FluidR3_GM_sf2_file:0",
 					);
@@ -1491,9 +1502,7 @@ export const createDtmStudio = async (
 					await loadRequiredDrums(
 						getDrumPatternKeys(
 							meta.drum,
-							opts.drumPatterns ??
-								options.drumPatterns ??
-								DEFAULT_DRUM_PATTERNS,
+							resolveDrumPatterns(opts.drumPatterns ?? options.drumPatterns),
 						),
 					);
 				}
@@ -1591,9 +1600,7 @@ export const createDtmStudio = async (
 					await loadRequiredDrums(
 						getDrumPatternKeys(
 							meta.drum,
-							opts.drumPatterns ??
-								options.drumPatterns ??
-								DEFAULT_DRUM_PATTERNS,
+							resolveDrumPatterns(opts.drumPatterns ?? options.drumPatterns),
 						),
 					);
 				}
