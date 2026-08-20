@@ -3944,7 +3944,7 @@ export const mountDAW = (
 				// メインボーカルは前に出したいのでリバーブ控えめ、副ボーカルは奥に置いて馴染ませる。
 				if (t.lyricModel) {
 					t.vocalVibrato = true;
-					t.vocalReverb = isMainVocal ? 15 : 30;
+					t.vocalReverb = isMainVocal ? 25 : 45;
 					fireLyricsChange(t);
 				}
 			}

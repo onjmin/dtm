@@ -55,9 +55,10 @@ export const createReverbImpulse = (
 };
 
 /**
- * amount(0-100) → ウェットゲイン。上限を抑えて「掛けすぎ」を防ぐ
- * （フルスケールにすると歌詞の子音・アタックが埋もれて聞き取りにくくなるため）。
+ * amount(0-100) → ウェットゲイン。
+ * 「掛けすぎ」対策はここで天井を切るのではなく、各トラックのセンド量
+ * （channel-strip.ts の reverbSend / 歌詞トラックの vocalReverb）側で
+ * 個別に調整する（一般的なAuxセンド構成に合わせ、リターン側に上限は設けない）。
  */
-const REVERB_MAX_WET = 0.6;
 export const reverbAmountToGain = (amount: number): number =>
-	(Math.max(0, Math.min(100, amount)) / 100) * REVERB_MAX_WET;
+	Math.max(0, Math.min(100, amount)) / 100;
