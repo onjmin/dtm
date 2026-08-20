@@ -53,6 +53,7 @@ import {
 	createSingingVoices,
 	KOE_VOICEBANKS,
 	koeUrl,
+	panToStereo,
 	type SingingVoices,
 } from "./lyrics";
 import { parseMML, parseMmlMeta } from "./mml-parser";
@@ -208,6 +209,12 @@ export type DtmStudioOptions = {
 	reverbPreDelay?: number;
 	/** マスタディレイの掛かり具合 0-100。既定0（オフ）。テンポに同期したエコー。 */
 	delayAmount?: number;
+	/**
+	 * マスタバスの「グルーコンプレッサー」量 0-100。既定0（オフ）。
+	 * 全トラックの合流点（リバーブ・ディレイの戻りも含む）にまとめて軽く掛ける、
+	 * 表現目的の音楽的な圧縮（常時ONの安全リミッターとは別物）。
+	 */
+	masterCompression?: number;
 	/** マスタディレイの音価（既定 "8" = 8分音符）。 */
 	delayDivision?: DelayDivision;
 	/** 曲頭のフェードイン長（秒）。既定0（フェードなし）。 */
@@ -463,6 +470,8 @@ export type DtmStudio = {
 	setReverbPreDelay: (ms: number) => void;
 	/** マスタディレイの掛かり具合を 0-100 で変更する。 */
 	setDelayAmount: (amount: number) => void;
+	/** マスタバスのグルーコンプレッサー量を 0-100 で変更する。 */
+	setMasterCompression: (amount: number) => void;
 	/** AudioContext を閉じ、生成物を破棄する。 */
 	dispose: () => void;
 };
@@ -564,13 +573,62 @@ export const createDtmStudio = async (
 	});
 	const setDelayAmount = (amount: number): void => delayBus.setAmount(amount);
 
+	// ── マスタバスの「グルーコンプレッサー」── 全トラックの合流点（リバーブ・ディレイの
+	// 戻りも含む finalMix）にまとめて軽く掛ける、表現目的の音楽的な圧縮。上の安全リミッター
+	// とは別物で、既定0（オフ）＝ユーザー（または「おまかせ」）が能動的に選ぶ効果。
+	// 「グルー(接着剤)」の名の通り、各トラックの頭をわずかに均して一体感・音圧感を出す。
+	const glueComp = audioCtx.createDynamicsCompressor();
+	glueComp.knee.value = 6; // ソフトニー固定（急に掛かり始めるとポンピングが目立つため）
+	const glueMakeup = audioCtx.createGain();
+	finalMix.connect(glueComp);
+	glueComp.connect(glueMakeup);
+
+	/**
+	 * グルーコンプの掛かり具合（0-100）→ DynamicsCompressorNode パラメータ。
+	 * トラック単位のコンプ（channel-strip.ts、最大12:1）より穏やかなレシオ（最大4:1）・
+	 * やや遅めのアタックにする（アタックを詰めすぎると各トラックのアタック感が潰れて
+	 * 団子になり「グルー」ではなく「圧殺」になるため）。0で実質バイパス
+	 * （threshold=0dB, ratio=1:1）。圧縮した分だけ聴感上小さくなるのを補うため、
+	 * 掛かり具合に応じて控えめなメイクアップゲイン（最大+2.5dB）を足す。
+	 */
+	const glueCompressionParams = (
+		amount: number,
+	): {
+		threshold: number;
+		ratio: number;
+		attack: number;
+		release: number;
+		makeupDb: number;
+	} => {
+		const t = Math.max(0, Math.min(100, amount)) / 100;
+		return {
+			threshold: 0 + (-18 - 0) * t,
+			ratio: 1 + (4 - 1) * t,
+			attack: 0.03 + (0.01 - 0.03) * t,
+			release: 0.3 + (0.15 - 0.3) * t,
+			makeupDb: 2.5 * t,
+		};
+	};
+	const applyGlueCompression = (amount: number): void => {
+		const p = glueCompressionParams(amount);
+		const now = audioCtx.currentTime;
+		glueComp.threshold.setValueAtTime(p.threshold, now);
+		glueComp.ratio.setValueAtTime(p.ratio, now);
+		glueComp.attack.setValueAtTime(p.attack, now);
+		glueComp.release.setValueAtTime(p.release, now);
+		glueMakeup.gain.setTargetAtTime(10 ** (p.makeupDb / 20), now, 0.02);
+	};
+	applyGlueCompression(options.masterCompression ?? 0);
+	const setMasterCompression = (amount: number): void =>
+		applyGlueCompression(amount);
+
 	const safetyLimiter = audioCtx.createDynamicsCompressor();
 	safetyLimiter.threshold.value = -1;
 	safetyLimiter.knee.value = 0;
 	safetyLimiter.ratio.value = 20;
 	safetyLimiter.attack.value = 0.001;
 	safetyLimiter.release.value = 0.1;
-	finalMix.connect(safetyLimiter);
+	glueMakeup.connect(safetyLimiter);
 
 	// 曲頭/曲尾のフェード。安全リミッターの後段（最後）に置き、他のどの処理よりも
 	// 優先して音量0まで落とせるようにする。既定は常に1（フェードなし）。
@@ -605,7 +663,10 @@ export const createDtmStudio = async (
 
 	// クリップ検知メーター。安全リミッターの「手前」（finalMix）を監視するので、
 	// リミッターが常に守ってくれていても「素材自体は限界に来ている」を警告できる。
-	const clipMeter = createClipMeter(audioCtx, finalMix);
+	// グルーコンプ通過後（安全リミッターの直前）を監視する。グルーコンプは意図的にピークを
+	// 抑える処理なので、その手前(finalMix)で測ると「素材は限界だがグルーコンプで既に収まって
+	// いる」ケースを誤検知してしまうため。
+	const clipMeter = createClipMeter(audioCtx, glueMakeup);
 
 	// ── トラック単位チャンネルストリップ（コンプレッサー＋ステレオワイド）──
 	// ボーカル・楽器を問わず、trackId ごとに1本ずつ遅延生成してキャッシュする。
@@ -616,6 +677,7 @@ export const createDtmStudio = async (
 		if (!strip) {
 			strip = createChannelStrip(audioCtx, masterGain, {
 				reverbBus: reverbPreDelay,
+				delayBus: delayBus.input,
 			});
 			channelStrips.set(trackId, strip);
 		}
@@ -1075,6 +1137,8 @@ export const createDtmStudio = async (
 			onDelayChange: setDelayAmount,
 			delayDivision: options.delayDivision,
 			onDelayDivisionChange: (division) => delayBus.setDivision(division),
+			masterCompression: options.masterCompression,
+			onMasterCompressionChange: setMasterCompression,
 			onBpmChange: (bpm) => delayBus.setBpm(bpm),
 			fadeInSec: options.fadeInSec,
 			fadeOutSec: options.fadeOutSec,
@@ -1085,12 +1149,16 @@ export const createDtmStudio = async (
 				getChannelStrip(trackId).setWidth(width),
 			onTrackReverbSendChange: (trackId, amount) =>
 				getChannelStrip(trackId).setReverbSend(amount),
+			onTrackDelaySendChange: (trackId, amount) =>
+				getChannelStrip(trackId).setDelaySend(amount),
 			onTrackEqLowChange: (trackId, db) =>
 				getChannelStrip(trackId).setEqLow(db),
 			onTrackEqMidChange: (trackId, db) =>
 				getChannelStrip(trackId).setEqMid(db),
 			onTrackEqHighChange: (trackId, db) =>
 				getChannelStrip(trackId).setEqHigh(db),
+			onTrackPanChange: (trackId, pan) =>
+				getChannelStrip(trackId).setPan(panToStereo(pan)),
 			clipMeter,
 			...dawOverrides,
 			// dawOverrides で上書きされないよう、スプレッドの後に配置して合成する
@@ -1806,6 +1874,7 @@ export const createDtmStudio = async (
 		setReverbDecay,
 		setReverbPreDelay,
 		setDelayAmount,
+		setMasterCompression,
 		dispose,
 	};
 };

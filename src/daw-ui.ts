@@ -46,6 +46,9 @@ export type DawUIRefs = {
 	// track panel
 	masterVolume: HTMLInputElement;
 	masterVolumeLabel: HTMLElement;
+	masterComp: HTMLInputElement;
+	masterCompLabel: HTMLElement;
+	masterCompInfoBtn: HTMLButtonElement;
 	reverbAmount: HTMLInputElement;
 	reverbAmountLabel: HTMLElement;
 	reverbAmountInfoBtn: HTMLButtonElement;
@@ -245,6 +248,12 @@ export const buildUI = (
         <span class="dtm-label">全体音量</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="master-volume" value="50" min="0" max="100">
         <span class="dtm-label" data-dtm="master-volume-label">50%</span>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">グルーコンプ</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="master-comp" value="0" min="0" max="100" aria-label="マスタバスのグルーコンプレッサー（全トラックをまとめて軽く圧縮し、一体感を出す）">
+        <span class="dtm-label" data-dtm="master-comp-label">0%</span>
+        <button class="dtm-infobtn" data-dtm="master-comp-info" title="グルーコンプの解説">${icon("info", 12)}</button>
       </div>
       <div class="dtm-row">
         <button class="dtm-btn dtm-btn--ghost dtm-btn--xs" data-dtm="auto-master" title="音圧・ステレオ幅・リバーブに加え、各トラックの楽器・音量も自動推定して一括設定します">おまかせマスタリング</button>
@@ -507,6 +516,9 @@ export const buildUI = (
 		hScrollThumb: sel("hscroll-thumb"),
 		masterVolume: sel("master-volume"),
 		masterVolumeLabel: sel("master-volume-label"),
+		masterComp: sel("master-comp"),
+		masterCompLabel: sel("master-comp-label"),
+		masterCompInfoBtn: sel("master-comp-info"),
 		reverbAmount: sel("reverb-amount"),
 		reverbAmountLabel: sel("reverb-amount-label"),
 		reverbAmountInfoBtn: sel("reverb-amount-info"),

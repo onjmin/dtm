@@ -297,6 +297,17 @@ const TRACK_WIDTH_INFO_HTML = `
 </div>
 `;
 
+const TRACK_PAN_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>このトラックを左右のどこに置くかを決めます。64が中央、0で左いっぱい、127で右いっぱいです。歌詞トラックの場合、ここは楽器としてのトラック全体の定位で、歌唱そのものの定位（下の「定位」欄・vocalPan）とは別に働き、両方が重なって最終的な位置になります。</p>
+  <h4>「ステレオ幅」との違い</h4>
+  <p>定位は「音をどこに置くか」（左寄り/中央/右寄り）、ステレオ幅は「その音自体がどれだけ広がって聞こえるか」で、役割が異なります。両方を強く使うと定位がぼやけて曖昧になりがちです。</p>
+  <h4>ミックスの定石</h4>
+  <p>主旋律・ボーカル・ベースなど曲の軸になるパートは中央付近に置き、ハモリ・カウンターメロディ・伴奏（コード/パッド）など彩りのパートを左右へ振り分けると、各パートの居場所が分かれて聞き取りやすくなります（特に低域は中央に集めるのが定石です — 左右に振ると位相干渉でモノラル再生時に低音が痩せることがあります）。</p>
+</div>
+`;
+
 const TRACK_REVERBSEND_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>何をする設定か</h4>
@@ -308,34 +319,60 @@ const TRACK_REVERBSEND_INFO_HTML = `
 </div>
 `;
 
+const TRACK_DELAYSEND_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>このトラックの音を、マスタディレイ（[delay]パネル）へどれだけ送るかを 0-100% で決めます。0なら送らない＝このトラックにはディレイが掛かりません。</p>
+  <h4>「低域には掛けない」が定石</h4>
+  <p>ディレイ（やまびこのような繰り返し）を低域に掛けると、繰り返しが重なってリズムが濁りやすいため、ベースなど低音パートは送らない（0のまま）のが定石です。リード楽器・ボーカルの語尾など、聞かせたいワンポイントだけに送るのが効果的です。</p>
+  <h4>[delay]パネルのMixとの関係</h4>
+  <p>[delay]パネルの掛かり具合が0%だと、ここをいくら上げても無音のままです。「送り量（このトラックがどれだけ提供するか）」と「マスタのディレイ設定（実際にどんな繰り返しが掛かるか）」の二段構えになっているためです。両方を確認してください。</p>
+</div>
+`;
+
+const MASTER_COMP_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>全トラックが合流した後（マスタリバーブ・マスタディレイの戻りも含む）にまとめて軽く掛ける、マスタバスの「グルー（接着剤）コンプレッサー」です。0%で無効、上げるほど各トラックの音量差が均され、バラバラに鳴っていたパートがひとまとまりの「バンド感」「一体感」を持って聞こえるようになります。</p>
+  <h4>常時ONの「安全リミッター」との違い</h4>
+  <p>音割れ検知バッジと連動する安全リミッターは、常にONで音割れを防ぐための保険です。こちらのグルーコンプは既定0（オフ）で、音を良くするための表現目的の処理です。掛かる順序はグルーコンプ→安全リミッターで、グルーコンプ通過後の信号を安全リミッター・音割れ検知メーターが監視します。</p>
+  <h4>トラック単位の「音圧強化」との違い</h4>
+  <p>各トラックの「音圧強化」（チャンネルストリップのコンプレッサー）は、そのトラック単体の粒立ちを揃えるためのものです。グルーコンプはそれとは別に、全トラックが混ざった後の「合奏」全体に対して掛かります。両方を強く掛けすぎるとダイナミクス（強弱の表情）が失われて単調になりやすいため、グルーコンプは控えめ（20〜40%程度）が出発点の目安です。</p>
+</div>
+`;
+
 const AUTO_MASTER_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>おまかせマスタリングとは</h4>
   <p>市販曲でよく使われる値を目安に、以下をまとめて設定するボタンです。曲のBPMを見て一部の値を自動調整します。</p>
+  <h4>ゲインステージング（実測ベースの音量調整）</h4>
+  <p>再生している間、裏でマスタのピークレベル（音割れ検知バッジと同じ実測値）を継続的に収集しています。合計2秒以上の再生実績が溜まっていれば、「おまかせ」実行時にその実測ピークを目標ヘッドルーム（-6dBFS付近）に収まるよう逆算して、マスタ音量を自動調整します。</p>
+  <p style="margin-top:4px;"><small>ノートのベロシティなど静的な情報だけでは、複数トラックが重なって実際にどれだけ音圧が積み上がるか（トラック単位の圧縮・EQ後の値も含む）は分かりません。実際に鳴らした音を測るのが最も確実なため、このボタンを押すたびに使うのではなく、ある程度編集して一度でも再生した後に押すと効果を発揮します。一度も再生していない・再生時間が短すぎる場合は判断材料が無いため、この項目はスキップされ他の値だけが適用されます。</small></p>
   <ul>
-    <li>マスタリバーブ Mix: 20%</li>
+    <li>マスタバス グルーコンプレッサー: 25%（各トラックの頭を軽く均して一体感を出す、控えめな量）</li>
+    <li>マスタリバーブ Mix: <strong>アレンジの密度（音の入っているトラック数）に応じて自動計算</strong>（2トラック以下で28%、8トラック以上で12%、その間は線形補間）</li>
     <li>マスタリバーブ Decay: <strong>現在のBPMに応じて自動計算</strong>（速い曲ほど短く0.9秒寄り、遅い曲ほど長く3.0秒寄り）</li>
     <li>マスタリバーブ Pre Delay: 20ms（原音の輪郭を保ったまま奥行きを足す定番値）</li>
-    <li>各トラックの音圧強化: 楽器35%・歌詞のあるトラックは25%（強く潰すと表情が失われるため控えめに）</li>
-    <li>全トラックのステレオ幅: 115%（わずかに広げる）</li>
+    <li>フェードアウト: 未設定（0秒）のときだけ1.5秒を補う（曲の終わりをぶつ切りにしない）。既に0秒以外の値が設定済みなら上書きしない</li>
     <li>歌詞のあるトラック: 自動ビブラートON</li>
   </ul>
-  <h4>楽器・音量の自動割り当て</h4>
-  <p>歌詞のないトラックは、置かれているノートの音高・タイミング・和音の厚みから役割を推定し、楽器と音量を自動で当てます。</p>
+  <p style="margin-top:4px;"><small>マスタリバーブMixを密度で決めるのは、「音数の多い厚いアレンジに残響を重ねすぎると濁る、音数の少ない隙間の多い編成には残響で空間を埋めると心地よい」というミキシングの定石に基づきます。</small></p>
+  <h4>楽器・音量・役割ごとのミックスの自動割り当て</h4>
+  <p>歌詞のないトラックは、置かれているノートの音高・タイミング・和音の厚みから役割（メロディ/サブメロ/ベース/伴奏）を推定し、楽器・音量に加えて音圧強化・ステレオ幅・定位・リバーブ送り・ディレイ送り・EQをまとめて役割相応の値へ設定します。</p>
   <ul>
-    <li><strong>低音域（C3未満）が中心</strong> → ベース楽器・音量85</li>
-    <li><strong>和音（同時発音）が多く音価も長い</strong> → 伴奏（コード/パッド）楽器・音量72</li>
-    <li><strong>単音で音数が少なく音価が長い</strong> → サブメロ（オブリガート寄り）楽器・音量92</li>
-    <li><strong>それ以外（単音で動きが多い）</strong> → メロディ楽器・音量100</li>
+    <li><strong>低音域（C3未満）が中心</strong> → ベース。基準音量85（低いほど底上げ、最大+12）、音圧強化40%（粒立ちを揃える）、ステレオ幅100%（広げない）、定位は中央固定、リバーブ送り5%（濁り防止）、ディレイ送り0%（低域には掛けない）、EQ低域+2dB／高域-3dB。</li>
+    <li><strong>和音（同時発音）が多く音価も長い</strong> → 伴奏（コード/パッド）。基準音量72（重なりの厚みぶんさらに下げる）、音圧強化25%（自然な強弱を残す）、ステレオ幅118%（空間を埋める）、定位は左右へ広めに振り分け、リバーブ送り22%、ディレイ送り0%、EQ低域-4dB（ベースの帯域を空ける）。</li>
+    <li><strong>単音で音数が少なく音価が長い</strong> → サブメロ（オブリガート寄り）。基準音量92、音圧強化32%、定位は左右へやや振り分け、リバーブ送り15%（メロディの一歩後ろへ）、ディレイ送り8%、EQ低域-3dB／高域+1dB。</li>
+    <li><strong>それ以外（単音で動きが多い）</strong> → メロディ。基準音量100、音圧強化35%、定位は中央固定、リバーブ送り12%（前に出す）、ディレイ送り15%（聞かせどころに薄く）、EQ低域-2dB／高域+2dB（抜け・プレゼンス）。</li>
   </ul>
-  <p style="margin-top:4px;"><small>楽器名は現在選択中の楽器プリセット（未選択ならグランドピアノ）から役割に対応するものを引きます。音の少ないトラック（無音）は判定できないため対象外です。あくまで自動推定なので、意図と違う場合は各トラックの「楽器」欄から個別に選び直してください。</small></p>
+  <p style="margin-top:4px;"><small>いずれも一般的なミキシングの経験則です。低域はモノラルに寄せる（ベースのステレオ幅・定位を中央固定にする）ことで位相干渉によるモノラル再生時の痩せを防ぎ、他パートはEQで低域を軽く削って周波数帯域をベースと住み分けます（frequency slotting）。曲の軸になるメロディ・ベースは中央、彩りのサブメロ・伴奏は左右へ散らして各パートの居場所を分けます（同じ役割のトラックが複数あるときは左右を交互に振り分けます）。ディレイは低域に掛けると繰り返しが重なりリズムが濁るため、ベース・伴奏には送りません（[delay]パネルの掛かり具合が既定0%＝オフなので、有効化するまでは無音）。楽器名は現在選択中の楽器プリセット（未選択ならグランドピアノ）から役割に対応するものを引きます。音の無いトラックは判定できないため対象外です。あくまで自動推定なので、意図と違う場合は各トラックの設定欄から個別に選び直してください。</small></p>
   <h4>メインボーカルの自動判定</h4>
   <p>歌詞のあるトラックが複数ある場合（ハモリ・コーラス・掛け声等）、発音時間が最も長いトラックを「メインボーカル」とみなし、他とは違う扱いにします。</p>
   <ul>
-    <li>メインボーカル: 音圧強化30%・リバーブ送り15%（前に出す）</li>
-    <li>それ以外のボーカル: 音圧強化25%・リバーブ送り30%（奥へ馴染ませる）</li>
+    <li>メインボーカル: 音圧強化30%・リバーブ送り15%（前に出す）・定位は中央固定</li>
+    <li>それ以外のボーカル: 音圧強化25%・リバーブ送り30%（奥へ馴染ませる）・定位は左右へ交互に振ってダブリング感を出す</li>
   </ul>
-  <p style="margin-top:4px;"><small>「前に出したい音はリバーブ少なめ、奥に置きたい音はリバーブ多め」という定石に基づいています。EQは曲・パートごとに何が濁っているか次第で自動化に向かないため対象外です。「いい感じの初期値」を一括で当てるだけで、曲や好みに応じた微調整までは行いません。既存の設定は上書きされるので、気に入らなければ各スライダーから個別に戻してください。</small></p>
+  <p style="margin-top:4px;"><small>「前に出したい音はリバーブ少なめ、奥に置きたい音はリバーブ多め」という定石に基づいています。「いい感じの初期値」を一括で当てるだけで、曲や好みに応じた微調整までは行いません。既存の設定は上書きされるので、気に入らなければ各スライダーから個別に戻してください。</small></p>
 </div>
 `;
 
@@ -644,12 +681,45 @@ type AutoRole = "melody" | "submelody" | "bass" | "chord";
 /** ピアノロールのステップ解像度（1拍=48ステップ、他ファイルのSTEPS_PER_BEATと同じ）。 */
 const AUTO_ROLE_STEPS_PER_BEAT = 48;
 
-/** 役割ごとの既定音量（ベロシティ）。TRACKS_SIMPLE の既定値に合わせた「前に出す順」の目安。 */
-const AUTO_ROLE_VOLUME: Record<AutoRole, number> = {
+/** 役割ごとの基準音量（ベロシティ、0-127）。TRACKS_SIMPLE の既定値に合わせた「前に出す順」の目安。 */
+const AUTO_ROLE_BASE_VOLUME: Record<AutoRole, number> = {
 	melody: 100,
 	submelody: 92,
 	bass: 85,
 	chord: 72,
+};
+
+/** classifyTrackRole が役割判定と音量計算の両方に使う、ノート列から算出した統計値。 */
+type AutoRoleStats = {
+	avgPitch: number;
+	avgDur: number;
+	/** 同一startStepの平均同時発音数（和音の厚み。単音のみなら1）。 */
+	avgPoly: number;
+	maxPoly: number;
+	notesPerBeat: number;
+};
+
+const computeAutoRoleStats = (
+	notes: Pick<Note, "pitch" | "startStep" | "durationSteps">[],
+): AutoRoleStats => {
+	const avgPitch = notes.reduce((s, n) => s + n.pitch, 0) / notes.length;
+	const avgDur = notes.reduce((s, n) => s + n.durationSteps, 0) / notes.length;
+
+	// 同一startStepの同時発音数（和音の厚み）
+	const byStart = new Map<number, number>();
+	for (const n of notes)
+		byStart.set(n.startStep, (byStart.get(n.startStep) ?? 0) + 1);
+	let maxPoly = 0;
+	for (const c of byStart.values()) if (c > maxPoly) maxPoly = c;
+	const avgPoly = notes.length / byStart.size;
+
+	// 単位時間あたりの音数（密度）。低いほど「動きの少ない」パート。
+	const minStart = Math.min(...notes.map((n) => n.startStep));
+	const maxEnd = Math.max(...notes.map((n) => n.startStep + n.durationSteps));
+	const spanBeats = Math.max(1, (maxEnd - minStart) / AUTO_ROLE_STEPS_PER_BEAT);
+	const notesPerBeat = notes.length / spanBeats;
+
+	return { avgPitch, avgDur, avgPoly, maxPoly, notesPerBeat };
 };
 
 /**
@@ -662,31 +732,102 @@ const AUTO_ROLE_VOLUME: Record<AutoRole, number> = {
  * - 単音で音数が少なく音価が長い → サブメロ（オブリガート寄り）
  * - それ以外（単音で音数が多い・音高が高め）→ メロディ
  */
-const classifyTrackRole = (
-	notes: Pick<Note, "pitch" | "startStep" | "durationSteps">[],
-): AutoRole => {
-	const avgPitch = notes.reduce((s, n) => s + n.pitch, 0) / notes.length;
-	if (avgPitch < 48) return "bass"; // C3未満 = 低音域
-
-	const avgDur = notes.reduce((s, n) => s + n.durationSteps, 0) / notes.length;
-
-	// 同一startStepの同時発音数（和音の厚み）
-	const byStart = new Map<number, number>();
-	for (const n of notes)
-		byStart.set(n.startStep, (byStart.get(n.startStep) ?? 0) + 1);
-	let maxPoly = 0;
-	for (const c of byStart.values()) if (c > maxPoly) maxPoly = c;
-	if (maxPoly >= 2 && avgDur >= AUTO_ROLE_STEPS_PER_BEAT) return "chord";
-
-	// 単位時間あたりの音数（密度）。低いほど「動きの少ない」パート。
-	const minStart = Math.min(...notes.map((n) => n.startStep));
-	const maxEnd = Math.max(...notes.map((n) => n.startStep + n.durationSteps));
-	const spanBeats = Math.max(1, (maxEnd - minStart) / AUTO_ROLE_STEPS_PER_BEAT);
-	const notesPerBeat = notes.length / spanBeats;
-	if (notesPerBeat < 1.2 && avgDur >= AUTO_ROLE_STEPS_PER_BEAT * 1.5)
+const classifyTrackRole = (stats: AutoRoleStats): AutoRole => {
+	if (stats.avgPitch < 48) return "bass"; // C3未満 = 低音域
+	if (stats.maxPoly >= 2 && stats.avgDur >= AUTO_ROLE_STEPS_PER_BEAT)
+		return "chord";
+	if (
+		stats.notesPerBeat < 1.2 &&
+		stats.avgDur >= AUTO_ROLE_STEPS_PER_BEAT * 1.5
+	)
 		return "submelody";
-
 	return "melody";
+};
+
+/**
+ * 役割の基準音量を、実際のノートの傾向に応じて微調整する（一般的なDTM/ミキシングの経験則）。
+ *
+ * - 和音（伴奏）は音を重ねるほど合成音圧が積み上がる。等パワー則（n音重ねると理論上√n倍）を
+ *   控えめに適用し、和音の厚み（平均同時発音数）に応じて下げる。厚いパッドほど1音あたりは
+ *   絞ったほうが、メロディを邪魔せず全体の音圧バランスが取れる。
+ * - ベースは低域ほど等ラウドネス曲線（Fletcher-Munson）の影響で同じ音量でも聴感上小さく
+ *   感じるため、音高が低いぶんだけ少し持ち上げて曲の土台としての存在感を保つ。
+ */
+const computeAutoRoleVolume = (
+	role: AutoRole,
+	stats: AutoRoleStats,
+): number => {
+	let vol = AUTO_ROLE_BASE_VOLUME[role];
+	if (role === "chord" && stats.avgPoly > 1) {
+		vol /= Math.sqrt(stats.avgPoly);
+	} else if (role === "bass") {
+		const depthSemitones = Math.max(0, 48 - stats.avgPitch); // C3からどれだけ低いか
+		vol += Math.min(12, depthSemitones * 0.5);
+	}
+	return clamp(Math.round(vol), 1, 127);
+};
+
+/**
+ * 役割ごとのチャンネルストリップ既定値（音圧強化・ステレオ幅・リバーブ送り・EQ低域/高域）。
+ * いずれも一般的なミキシングの定石に基づく:
+ *
+ * - ベースはステレオ幅を広げない（低域を広げると位相干渉でモノラル再生時に痩せる・
+ *   輪郭がぼやけるため「低域はモノラルに寄せる」が定石）。リバーブも掛けすぎると
+ *   低域が濁る（マッド）ため控えめ。他パートより強めに圧縮し粒立ちを揃え、
+ *   EQは低域を軽く持ち上げ・不要な高域を削ってスッキリさせる。
+ * - 伴奏（コード/パッド）は空間を埋める役割なのでステレオ幅・リバーブを最も広く/多くする。
+ *   反面、他パートの邪魔をしないよう圧縮は控えめ（自然な強弱を残す）にし、
+ *   低域はベースの帯域を空けるためにEQで削る（帯域の住み分け＝周波数のすみ分け）。
+ * - メロディ/サブメロは前に出したいぶんリバーブを控えめにし、EQの高域を少し持ち上げて
+ *   抜け・明瞭感（プレゼンス）を足す。低域は少し削ってベースとぶつからないようにする。
+ *   サブメロはメロディの一歩後ろに位置づけるため、圧縮を少し弱め・リバーブを少し多めにする。
+ * - ディレイ送りは「低域には掛けない」が定石（繰り返しが重なってリズムが濁るため）。
+ *   ベース・伴奏は0のままにし、聞かせどころになりやすいメロディ・サブメロにだけ薄く送る
+ *   （マスタディレイ自体が既定0=オフのため、ユーザーがディレイを有効にしたときだけ効く）。
+ */
+const AUTO_ROLE_MIX: Record<
+	AutoRole,
+	{
+		compression: number;
+		width: number;
+		reverbSend: number;
+		delaySend: number;
+		eqLow: number;
+		eqHigh: number;
+	}
+> = {
+	melody: {
+		compression: 35,
+		width: 115,
+		reverbSend: 12,
+		delaySend: 15,
+		eqLow: -2,
+		eqHigh: 2,
+	},
+	submelody: {
+		compression: 32,
+		width: 115,
+		reverbSend: 15,
+		delaySend: 8,
+		eqLow: -3,
+		eqHigh: 1,
+	},
+	chord: {
+		compression: 25,
+		width: 118,
+		reverbSend: 22,
+		delaySend: 0,
+		eqLow: -4,
+		eqHigh: 0,
+	},
+	bass: {
+		compression: 40,
+		width: 100,
+		reverbSend: 5,
+		delaySend: 0,
+		eqLow: 2,
+		eqHigh: -3,
+	},
 };
 
 type TrackState = {
@@ -746,6 +887,17 @@ type TrackState = {
 	trackEqMid: number;
 	/** このトラックのEQ高域（シェルフ）ゲイン -12〜+12dB。既定0（無変化）。 */
 	trackEqHigh: number;
+	/**
+	 * このトラック自体のステレオ定位 0-127（0=左, 64=中央, 127=右）。既定64（中央）。
+	 * 歌詞トラック固有の vocalPan（歌唱の定位）とは別軸で、楽器トラックにも掛かる。
+	 */
+	trackPan: number;
+	/**
+	 * このトラックのマスタディレイへのセンド量 0-100。既定0（掛からない）。
+	 * ボーカル・楽器を問わずトラック全体に掛かる（歌詞トラック固有の vocalDelay とは別軸で、
+	 * 両方とも同じマスタディレイへ加算的に送られる）。
+	 */
+	trackDelaySend: number;
 };
 
 /**
@@ -796,6 +948,8 @@ export const mountDAW = (
 	});
 	refs.masterVolume.value = String(options.masterVolume ?? 50);
 	refs.masterVolumeLabel.textContent = `${options.masterVolume ?? 50}%`;
+	refs.masterComp.value = String(options.masterCompression ?? 0);
+	refs.masterCompLabel.textContent = `${options.masterCompression ?? 0}%`;
 	refs.reverbAmount.value = String(options.reverbAmount ?? 0);
 	refs.reverbAmountLabel.textContent = `${options.reverbAmount ?? 0}%`;
 	{
@@ -836,15 +990,45 @@ export const mountDAW = (
 	let reverbPreDelay = options.reverbPreDelay ?? DEFAULT_REVERB_PREDELAY_MS;
 	let delayAmount = options.delayAmount ?? 0;
 	let delayDivision: DelayDivision = options.delayDivision ?? "8";
+	let masterCompression = options.masterCompression ?? 0;
 	let fadeInSec = options.fadeInSec ?? 0;
 	let fadeOutSec = options.fadeOutSec ?? 0;
 	// 音割れ検知バッジの購読解除（wireEvents内で購読、destroyで解除するため外側で保持）
 	let unsubscribeClip: (() => void) | undefined;
+	// 実測ゲインステージング用の裏収集: 再生中だけ options.clipMeter のピークレベルを
+	// 継続サンプリングし、観測された最大ピークと実再生時間を溜めておく。ノートの静的な
+	// 音量情報だけでは「実際にどれだけ音圧が積み上がって鳴っているか」（複数トラックの
+	// 重なり・圧縮後の値等）は分からないため、「おまかせ」実行時にこの実測データが
+	// 十分溜まっていれば、それを元にマスタ音量（ゲインステージング）を自動調整する。
+	let observedPeakMax = 0;
+	let observedPlayMs = 0;
+	let peakSampleRafId: number | null = null;
+	let peakSampleLastTs = 0;
+	/** これ未満の累計再生時間では実測データとして信頼しない（数音だけで判断しないため）。 */
+	const PEAK_SAMPLE_MIN_PLAY_MS = 2000;
+	const samplePeakTick = (ts: number): void => {
+		if (peakSampleLastTs) observedPlayMs += ts - peakSampleLastTs;
+		peakSampleLastTs = ts;
+		const peak = options.clipMeter?.getPeakLevel() ?? 0;
+		if (peak > observedPeakMax) observedPeakMax = peak;
+		peakSampleRafId = requestAnimationFrame(samplePeakTick);
+	};
+	const startPeakSampling = (): void => {
+		if (peakSampleRafId !== null || !options.clipMeter) return;
+		peakSampleLastTs = 0;
+		peakSampleRafId = requestAnimationFrame(samplePeakTick);
+	};
+	const stopPeakSampling = (): void => {
+		if (peakSampleRafId !== null) cancelAnimationFrame(peakSampleRafId);
+		peakSampleRafId = null;
+		peakSampleLastTs = 0;
+	};
 	options.onReverbChange?.(reverbAmount);
 	options.onReverbDecayChange?.(reverbDecay);
 	options.onReverbPreDelayChange?.(reverbPreDelay);
 	options.onDelayChange?.(delayAmount);
 	options.onDelayDivisionChange?.(delayDivision);
+	options.onMasterCompressionChange?.(masterCompression);
 	let drumVolume = options.drumVolume ?? 80;
 	let currentDrumPattern = refs.drumSelect.value;
 	let currentDrumFont = options.drumFont ?? "FluidR3_GM_sf2_file:0";
@@ -1055,6 +1239,8 @@ export const mountDAW = (
 				trackEqLow: 0,
 				trackEqMid: 0,
 				trackEqHigh: 0,
+				trackPan: 64,
+				trackDelaySend: 0,
 			};
 		});
 	};
@@ -2113,6 +2299,7 @@ export const mountDAW = (
 		}
 		playbackState = "playing";
 		sequencer.start(fromStep);
+		startPeakSampling();
 
 		// フェードイン/アウトのスケジュール。フェードインは曲頭（fromStep===0）から
 		// 再生したときだけ、フェードアウトは現在のノート終端に向けて掛ける。
@@ -2161,6 +2348,7 @@ export const mountDAW = (
 		clearSoundTimers();
 		options.onScheduleFade?.(null);
 		playbackState = "paused";
+		stopPeakSampling();
 		updateTransport();
 	};
 	// koe音源（歌唱モデル）変更時、再生中なら停止→再ロード→同じ位置から再開する。
@@ -2179,6 +2367,7 @@ export const mountDAW = (
 		options.onScheduleFade?.(null);
 		playbackState = "stopped";
 		currentPlayStep = 0;
+		stopPeakSampling();
 		updateTransport();
 		redrawAll();
 	};
@@ -2256,10 +2445,22 @@ export const mountDAW = (
           <button class="dtm-infobtn" data-dtm="track-width-info" title="ステレオ幅の解説">${icon("info", 12)}</button>
         </div>
         <div class="dtm-row">
+          <span class="dtm-label">定位</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="track-pan" min="0" max="127" aria-label="このトラックの左右の定位（64=中央、0=左いっぱい、127=右いっぱい）">
+          <span class="dtm-label" data-dtm="track-pan-label"></span>
+          <button class="dtm-infobtn" data-dtm="track-pan-info" title="定位の解説">${icon("info", 12)}</button>
+        </div>
+        <div class="dtm-row">
           <span class="dtm-label">リバーブ送り</span>
           <input type="range" class="dtm-range dtm-grow" data-dtm="track-reverb-send" min="0" max="100" aria-label="このトラックのマスタリバーブへの送り量（0=掛からない）">
           <span class="dtm-label" data-dtm="track-reverb-send-label"></span>
           <button class="dtm-infobtn" data-dtm="track-reverb-send-info" title="リバーブ送りの解説">${icon("info", 12)}</button>
+        </div>
+        <div class="dtm-row">
+          <span class="dtm-label">ディレイ送り</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="track-delay-send" min="0" max="100" aria-label="このトラックのマスタディレイへの送り量（0=掛からない）">
+          <span class="dtm-label" data-dtm="track-delay-send-label"></span>
+          <button class="dtm-infobtn" data-dtm="track-delay-send-info" title="ディレイ送りの解説">${icon("info", 12)}</button>
         </div>
       </details>`;
 		(
@@ -2381,6 +2582,28 @@ export const mountDAW = (
 			showModal("ステレオ幅の解説", TRACK_WIDTH_INFO_HTML);
 		});
 
+		const trackPanInput = refs.trackBody.querySelector(
+			'[data-dtm="track-pan"]',
+		) as HTMLInputElement;
+		const trackPanLabel = refs.trackBody.querySelector(
+			'[data-dtm="track-pan-label"]',
+		) as HTMLElement;
+		const trackPanInfo = refs.trackBody.querySelector(
+			'[data-dtm="track-pan-info"]',
+		) as HTMLButtonElement;
+		const fmtTrackPan = (pan: number): string =>
+			pan === 64 ? "C" : pan < 64 ? `L${64 - pan}` : `R${pan - 64}`;
+		trackPanInput.value = String(active.trackPan);
+		trackPanLabel.textContent = fmtTrackPan(active.trackPan);
+		trackPanInput.addEventListener("input", () => {
+			active.trackPan = Number.parseInt(trackPanInput.value, 10);
+			trackPanLabel.textContent = fmtTrackPan(active.trackPan);
+			options.onTrackPanChange?.(active.config.id, active.trackPan);
+		});
+		trackPanInfo.addEventListener("click", () => {
+			showModal("定位の解説", TRACK_PAN_INFO_HTML);
+		});
+
 		const trackReverbSendInput = refs.trackBody.querySelector(
 			'[data-dtm="track-reverb-send"]',
 		) as HTMLInputElement;
@@ -2402,6 +2625,26 @@ export const mountDAW = (
 		});
 		trackReverbSendInfo.addEventListener("click", () => {
 			showModal("リバーブ送りの解説", TRACK_REVERBSEND_INFO_HTML);
+		});
+
+		const trackDelaySendInput = refs.trackBody.querySelector(
+			'[data-dtm="track-delay-send"]',
+		) as HTMLInputElement;
+		const trackDelaySendLabel = refs.trackBody.querySelector(
+			'[data-dtm="track-delay-send-label"]',
+		) as HTMLElement;
+		const trackDelaySendInfo = refs.trackBody.querySelector(
+			'[data-dtm="track-delay-send-info"]',
+		) as HTMLButtonElement;
+		trackDelaySendInput.value = String(active.trackDelaySend);
+		trackDelaySendLabel.textContent = `${active.trackDelaySend}%`;
+		trackDelaySendInput.addEventListener("input", () => {
+			active.trackDelaySend = Number.parseInt(trackDelaySendInput.value, 10);
+			trackDelaySendLabel.textContent = `${active.trackDelaySend}%`;
+			options.onTrackDelaySendChange?.(active.config.id, active.trackDelaySend);
+		});
+		trackDelaySendInfo.addEventListener("click", () => {
+			showModal("ディレイ送りの解説", TRACK_DELAYSEND_INFO_HTML);
 		});
 
 		// 楽器個別選択（デフォルト＝プリセット or GM楽器名指定）
@@ -3083,6 +3326,8 @@ export const mountDAW = (
 		const trackEqLowForMeta: Record<number, number> = {};
 		const trackEqMidForMeta: Record<number, number> = {};
 		const trackEqHighForMeta: Record<number, number> = {};
+		const trackPanForMeta: Record<number, number> = {};
+		const trackDelaySendForMeta: Record<number, number> = {};
 		trackStates.forEach((t, i) => {
 			if (t.trackInstrument) trackInstrumentsForMeta[i] = t.trackInstrument;
 			if (t.trackCompression !== 0)
@@ -3093,6 +3338,8 @@ export const mountDAW = (
 			if (t.trackEqLow !== 0) trackEqLowForMeta[i] = t.trackEqLow;
 			if (t.trackEqMid !== 0) trackEqMidForMeta[i] = t.trackEqMid;
 			if (t.trackEqHigh !== 0) trackEqHighForMeta[i] = t.trackEqHigh;
+			if (t.trackPan !== 64) trackPanForMeta[i] = t.trackPan;
+			if (t.trackDelaySend !== 0) trackDelaySendForMeta[i] = t.trackDelaySend;
 		});
 		const trackInstMeta =
 			Object.keys(trackInstrumentsForMeta).length > 0
@@ -3116,6 +3363,12 @@ export const mountDAW = (
 			Object.keys(trackEqHighForMeta).length > 0
 				? trackEqHighForMeta
 				: undefined;
+		const trackPanMeta =
+			Object.keys(trackPanForMeta).length > 0 ? trackPanForMeta : undefined;
+		const trackDelaySendMeta =
+			Object.keys(trackDelaySendForMeta).length > 0
+				? trackDelaySendForMeta
+				: undefined;
 
 		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量・リバーブ・モード）。
 		// トラックとは1対1でなく曲全体に効く。既定/未設定（楽器=空, ドラム="none"）の項目は出力しない。
@@ -3130,6 +3383,7 @@ export const mountDAW = (
 				reverbPreDelay: reverbPreDelay,
 				delay: delayAmount,
 				delayDivision: delayDivision,
+				masterCompression: masterCompression,
 				fadeIn: Math.round(fadeInSec * 10),
 				fadeOut: Math.round(fadeOutSec * 10),
 				mode: mode,
@@ -3140,6 +3394,8 @@ export const mountDAW = (
 				trackEqLow: trackEqLowMeta,
 				trackEqMid: trackEqMidMeta,
 				trackEqHigh: trackEqHighMeta,
+				trackPan: trackPanMeta,
+				trackDelaySend: trackDelaySendMeta,
 			},
 			" ",
 		);
@@ -3154,6 +3410,7 @@ export const mountDAW = (
 				reverbPreDelay: reverbPreDelay,
 				delay: delayAmount,
 				delayDivision: delayDivision,
+				masterCompression: masterCompression,
 				fadeIn: Math.round(fadeInSec * 10),
 				fadeOut: Math.round(fadeOutSec * 10),
 				mode: mode,
@@ -3164,6 +3421,8 @@ export const mountDAW = (
 				trackEqLow: trackEqLowMeta,
 				trackEqMid: trackEqMidMeta,
 				trackEqHigh: trackEqHighMeta,
+				trackPan: trackPanMeta,
+				trackDelaySend: trackDelaySendMeta,
 			},
 			"",
 		);
@@ -3447,6 +3706,12 @@ export const mountDAW = (
 				refs.delayDivision.value = delayDivision;
 				options.onDelayDivisionChange?.(delayDivision);
 			}
+			if (meta.masterCompression !== undefined) {
+				masterCompression = meta.masterCompression;
+				refs.masterComp.value = String(meta.masterCompression);
+				refs.masterCompLabel.textContent = `${meta.masterCompression}%`;
+				options.onMasterCompressionChange?.(meta.masterCompression);
+			}
 			if (meta.fadeIn !== undefined) {
 				fadeInSec = meta.fadeIn / 10;
 				refs.fadeIn.value = String(fadeInSec);
@@ -3499,6 +3764,16 @@ export const mountDAW = (
 			if (t.trackEqHigh !== eqHigh) {
 				t.trackEqHigh = eqHigh;
 				options.onTrackEqHighChange?.(t.config.id, eqHigh);
+			}
+			const pan = meta.trackPan?.[i] ?? 64;
+			if (t.trackPan !== pan) {
+				t.trackPan = pan;
+				options.onTrackPanChange?.(t.config.id, pan);
+			}
+			const delaySend = meta.trackDelaySend?.[i] ?? 0;
+			if (t.trackDelaySend !== delaySend) {
+				t.trackDelaySend = delaySend;
+				options.onTrackDelaySendChange?.(t.config.id, delaySend);
 			}
 		});
 		// トラックごとの v（ベロシティ）を復元する（GUIのベロシティスライダーに反映）
@@ -3943,6 +4218,14 @@ export const mountDAW = (
 			refs.masterVolumeLabel.textContent = `${masterVolume}%`;
 			options.singingVoices?.setVolume(masterVolume / 100);
 		});
+		refs.masterComp.addEventListener("input", () => {
+			masterCompression = Number.parseInt(refs.masterComp.value, 10) || 0;
+			refs.masterCompLabel.textContent = `${masterCompression}%`;
+			options.onMasterCompressionChange?.(masterCompression);
+		});
+		refs.masterCompInfoBtn.addEventListener("click", () => {
+			showModal("グルーコンプの解説", MASTER_COMP_INFO_HTML);
+		});
 		refs.reverbAmount.addEventListener("input", () => {
 			reverbAmount = Number.parseInt(refs.reverbAmount.value, 10) || 0;
 			refs.reverbAmountLabel.textContent = `${reverbAmount}%`;
@@ -3992,14 +4275,53 @@ export const mountDAW = (
 			showModal("おまかせマスタリング解説", AUTO_MASTER_INFO_HTML);
 		});
 		refs.autoMasterBtn.addEventListener("click", () => {
+			// ゲインステージング（実測ベース）: 静的なノート情報だけでは「実際にどれだけ音圧が
+			// 積み上がって鳴っているか」（複数トラックの重なり・コンプ後の値等）は分からないため、
+			// 裏で溜めておいた実測ピーク（{@link startPeakSampling}）が十分あるときだけ、それを
+			// 目標ヘッドルームに収まるようマスタ音量へ逆算して反映する。一度も再生していない・
+			// 再生時間が短すぎる場合は判断材料が無いので触らない（下手に動かす方が危険なため）。
+			if (observedPlayMs >= PEAK_SAMPLE_MIN_PLAY_MS && observedPeakMax > 0) {
+				// 目標ピーク -6dBFS（≒0.5）。編集中の音源としては、この程度のヘッドルームを
+				// 残しておくと安全リミッターに頼りきりにならず、後段のマスタリング・書き出しでも
+				// 音割れしにくい。
+				const targetPeak = 0.5;
+				const scale = targetPeak / observedPeakMax;
+				const suggested = clamp(Math.round(masterVolume * scale), 10, 100);
+				if (suggested !== masterVolume) {
+					masterVolume = suggested;
+					refs.masterVolume.value = String(masterVolume);
+					refs.masterVolumeLabel.textContent = `${masterVolume}%`;
+					options.singingVoices?.setVolume(masterVolume / 100);
+				}
+				// 使い切ったら次の編集セッション分の実測を溜め直す（古いデータで判断し続けない）。
+				observedPeakMax = 0;
+				observedPlayMs = 0;
+			}
+
+			// マスタバスのグルーコンプレッサー: 各トラックの頭を軽く均して一体感を出す、
+			// 定番の「グルー」量（25%程度＝穏やかに掛かる程度）を既定にする。強く掛けすぎると
+			// ダイナミクスが失われるため、あくまで控えめな値にとどめる。
+			masterCompression = 25;
+			refs.masterComp.value = "25";
+			refs.masterCompLabel.textContent = "25%";
+			options.onMasterCompressionChange?.(25);
+
 			// マスタリバーブ（Mix・Decay・Pre Delay）
+			// Mixはアレンジの密度（実際に音が入っているトラック数）で決める: 音数が多い厚い
+			// アレンジほど残響を薄く（重ねすぎると濁るため）、音数が少ない隙間の多い編成ほど
+			// 残響で空間を埋める、というミキシングの定石。2トラック以下で28%、8トラック以上で
+			// 12%を目安に線形補間する。
+			const activeTrackCount = trackStates.filter(
+				(t) => t.core.getNotes().length > 0,
+			).length;
+			const densityT = clamp((activeTrackCount - 2) / (8 - 2), 0, 1);
+			reverbAmount = Math.round(28 - densityT * (28 - 12));
+			refs.reverbAmount.value = String(reverbAmount);
+			refs.reverbAmountLabel.textContent = `${reverbAmount}%`;
+			options.onReverbChange?.(reverbAmount);
+
 			// Decayはテンポに応じて決める: 速い曲は短め(0.6〜1.4s目安)、遅い曲は長め(1.8〜4.0s目安)。
 			// BPM60を「遅い曲寄りの上限」、BPM180を「速い曲寄りの下限」とみなし線形補間する。
-			reverbAmount = 20;
-			refs.reverbAmount.value = "20";
-			refs.reverbAmountLabel.textContent = "20%";
-			options.onReverbChange?.(20);
-
 			const bpmT = clamp((bpm - 60) / (180 - 60), 0, 1);
 			reverbDecay = clamp(
 				3.0 - bpmT * (3.0 - 0.9),
@@ -4015,6 +4337,16 @@ export const mountDAW = (
 			refs.reverbPreDelay.value = "20";
 			refs.reverbPreDelayLabel.textContent = "20ms";
 			options.onReverbPreDelayChange?.(20);
+
+			// フェードアウト: 曲の終わりをぶつ切りにしない、という仕上げの基本。0秒（未設定）の
+			// ときだけ、控えめな1.5秒を補う（明示的に0秒へ変更済み＝あえて唐突に終わらせたい、
+			// という意図の可能性があるため、それ以外の値は上書きしない）。フェードインは曲頭からの
+			// 再生時にしか掛からず気付きにくい割に効果も薄いため、ここでは対象にしない。
+			if (fadeOutSec === 0) {
+				fadeOutSec = 1.5;
+				refs.fadeOut.value = "1.5";
+				refs.fadeOutLabel.textContent = "1.5s";
+			}
 
 			// メインボーカル判定: 歌詞のあるトラックのうち、発音時間（ノートの合計durationSteps）が
 			// 最大のものを「メインボーカル」とみなす。ハモリ・コーラス・掛け声等の副トラックより
@@ -4040,36 +4372,94 @@ export const mountDAW = (
 			// advancedモード（15トラック1:1）ではここが唯一の「楽器を自動で当てる」経路になる。
 			const autoPreset =
 				INSTRUMENT_PRESETS[currentInstrument] ?? INSTRUMENT_PRESETS.piano;
+			// 判定できた役割をトラックIDごとに控えておき、下のチャンネルストリップ調整
+			// （圧縮・幅・リバーブ送り・EQ）でも使い回す。
+			const roleByTrackId = new Map<string, AutoRole>();
 			for (const t of trackStates) {
 				if (t.lyricModel) continue; // 歌声トラックは楽器を持たない
 				const notes = t.core.getNotes();
 				if (notes.length === 0) continue; // 音が無いトラックは判定不能なのでそのまま
-				const role = classifyTrackRole(notes);
+				const stats = computeAutoRoleStats(notes);
+				const role = classifyTrackRole(stats);
+				roleByTrackId.set(t.config.id, role);
 				const instName = autoPreset[role];
 				t.trackInstrument = instName;
 				const trackIndex = trackStates.indexOf(t);
 				options.onTrackInstrumentChange?.(trackIndex, instName);
-				const vol = AUTO_ROLE_VOLUME[role];
+				const vol = computeAutoRoleVolume(role, stats);
 				t.volume = vol;
 				t.core.setVolume(vol);
 			}
 
+			// 役割ごとのパン（左右定位）オフセット。中央からの±値で、同じ役割が複数
+			// トラックある場合（advancedモード等）は配列を巡回して左右へ振り分ける。
+			// メロディ・ベースは曲の軸になるパートなので中央に固定（低域は特に、左右へ
+			// 振ると位相干渉でモノラル再生時に痩せるため中央が定石）。サブメロ・伴奏は
+			// 左右へ散らして各パートの居場所を分け、聞き取りやすくする。
+			const AUTO_PAN_OFFSETS: Record<AutoRole, number[]> = {
+				melody: [0],
+				bass: [0],
+				submelody: [18, -18, 30, -30],
+				chord: [36, -36, 48, -48],
+			};
+			const panRoleCounter = new Map<AutoRole, number>();
+			let vocalSideCounter = 0;
 			for (const t of trackStates) {
 				const isMainVocal = !!t.lyricModel && t.config.id === mainVocalId;
-				// 音圧強化・ステレオ幅は全トラック共通だが、歌詞のあるトラック（ボーカル）は
+				const role = roleByTrackId.get(t.config.id);
+				const roleMix = role ? AUTO_ROLE_MIX[role] : undefined;
+				// パン: 楽器トラックは役割ベース、歌詞トラックはメインボーカルを中央に固定し、
+				// ハモリ/コーラス等の副ボーカルは左右へ軽く振ってダブリング感を出す定石。
+				let pan = 64;
+				if (t.lyricModel) {
+					pan = isMainVocal
+						? 64
+						: clamp(64 + (vocalSideCounter++ % 2 === 0 ? 22 : -22), 0, 127);
+				} else if (role) {
+					const offsets = AUTO_PAN_OFFSETS[role];
+					const n = panRoleCounter.get(role) ?? 0;
+					panRoleCounter.set(role, n + 1);
+					pan = clamp(64 + offsets[n % offsets.length], 0, 127);
+				}
+				t.trackPan = pan;
+				options.onTrackPanChange?.(t.config.id, pan);
+				// 音圧強化・ステレオ幅は役割ごとの定石値（{@link AUTO_ROLE_MIX}）を使う。
+				// 役割が判定できない（無音）トラックや歌詞トラックは、従来どおりの
+				// 一律値にフォールバックする。歌詞のあるトラック（ボーカル）は
 				// 強く潰すと表情が失われるため控えめにする（一般的なミックスの目安に準拠）。
 				// メインボーカルだけは明瞭さを出すためやや強めに掛ける。
-				const comp = !t.lyricModel ? 35 : isMainVocal ? 30 : 25;
+				const comp = t.lyricModel
+					? isMainVocal
+						? 30
+						: 25
+					: (roleMix?.compression ?? 35);
+				const width = t.lyricModel ? 115 : (roleMix?.width ?? 115);
 				t.trackCompression = comp;
-				t.trackWidth = 115;
+				t.trackWidth = width;
 				options.onTrackCompressionChange?.(t.config.id, comp);
-				options.onTrackWidthChange?.(t.config.id, 115);
+				options.onTrackWidthChange?.(t.config.id, width);
 				// リバーブは声だけ／楽器だけ、と偏らせず全体に軽く馴染ませる。ボーカルは
-				// vocalReverb（音節単位の専用センド）に任せ、ここでは楽器トラックだけ控えめに送る
-				// （0だと「おまかせ」でMixを上げても楽器に何も掛からず不自然なため）。
+				// vocalReverb（音節単位の専用センド）に任せ、ここでは楽器トラックだけ
+				// 役割ごとの送り量（伴奏は多め・ベースは少なめ）で送る（0だと「おまかせ」で
+				// Mixを上げても楽器に何も掛からず不自然なため）。
 				if (!t.lyricModel) {
-					t.trackReverbSend = 15;
-					options.onTrackReverbSendChange?.(t.config.id, 15);
+					const reverbSend = roleMix?.reverbSend ?? 15;
+					t.trackReverbSend = reverbSend;
+					options.onTrackReverbSendChange?.(t.config.id, reverbSend);
+					// EQ（低域/高域）: 帯域の住み分け（frequency slotting）。ベースは低域を
+					// 少し持ち上げ・高域を削り、他パートは低域を削ってベースの居場所を空け、
+					// メロディ系は高域を少し持ち上げて抜けを出す。役割不明時は無変化(0)のまま。
+					const eqLow = roleMix?.eqLow ?? 0;
+					const eqHigh = roleMix?.eqHigh ?? 0;
+					t.trackEqLow = eqLow;
+					t.trackEqHigh = eqHigh;
+					options.onTrackEqLowChange?.(t.config.id, eqLow);
+					options.onTrackEqHighChange?.(t.config.id, eqHigh);
+					// ディレイ送り: 低域には掛けない定石でベース・伴奏は0、メロディ/サブメロに
+					// だけ薄く送る（マスタディレイが既定オフのため、有効化したときだけ効く）。
+					const delaySend = roleMix?.delaySend ?? 0;
+					t.trackDelaySend = delaySend;
+					options.onTrackDelaySendChange?.(t.config.id, delaySend);
 				}
 				// 歌詞のあるトラックだけビブラート・リバーブ送りを底上げする。
 				// メインボーカルは前に出したいのでリバーブ控えめ、副ボーカルは奥に置いて馴染ませる。
@@ -5306,6 +5696,7 @@ export const mountDAW = (
 			sequencer.stop();
 			options.singingVoices?.stopStream();
 			unsubscribeClip?.();
+			stopPeakSampling();
 			resizeObserver.disconnect();
 			document.removeEventListener("pointermove", onPointerMove);
 			document.removeEventListener("pointerup", onPointerUp);

@@ -15,6 +15,11 @@ export type ChannelStripOptions = {
 	compression?: number;
 	/** ステレオ幅 0-200。既定100（原音のまま）。0で完全モノラル、200で誇張したワイド。 */
 	width?: number;
+	/**
+	 * ステレオ定位（パン） -1(左)〜+1(右)。既定0（中央）。
+	 * M/Sワイド処理の後段（destination直前）に掛ける、トラック全体の左右配置。
+	 */
+	pan?: number;
 	/** 低域（シェルフ, ~200Hz）のゲイン -12〜+12dB。既定0（無変化）。 */
 	eqLow?: number;
 	/** 中域（ピーキング, ~1000Hz）のゲイン -12〜+12dB。既定0（無変化）。 */
@@ -28,6 +33,13 @@ export type ChannelStripOptions = {
 	reverbSend?: number;
 	/** リバーブセンドの接続先（マスタリバーブのPreDelay入力等）。未指定なら `reverbSend` は無効。 */
 	reverbBus?: AudioNode;
+	/**
+	 * マスタディレイへのセンド量 0-100。既定0（センドしない＝このトラックにディレイが掛からない）。
+	 * `delayBus` 未指定時は無視される。
+	 */
+	delaySend?: number;
+	/** ディレイセンドの接続先（マスタディレイの入力等）。未指定なら `delaySend` は無効。 */
+	delayBus?: AudioNode;
 };
 
 export type ChannelStrip = {
@@ -45,6 +57,10 @@ export type ChannelStrip = {
 	setWidth: (width: number) => void;
 	/** マスタリバーブへのセンド量を 0-100 でリアルタイムに変更する。 */
 	setReverbSend: (amount: number) => void;
+	/** マスタディレイへのセンド量を 0-100 でリアルタイムに変更する。 */
+	setDelaySend: (amount: number) => void;
+	/** ステレオ定位を -1(左)〜+1(右) でリアルタイムに変更する。 */
+	setPan: (pan: number) => void;
 	/** ノードを切断して破棄する。 */
 	dispose: () => void;
 };
@@ -174,16 +190,34 @@ export const createChannelStrip = (
 	};
 	setWidth(options.width ?? 100);
 
-	// input → EQ(低→中→高) → compressor → M/Sワイド → destination
-	//                                                  └→ reverbSendGain → reverbBus（並列センド、任意）
+	// ── パン（左右定位）──
+	// M/Sワイドの後段、destination/リバーブセンドの直前に掛ける。ここに置くことで
+	// 幅を広げた音像ごと丸ごと左右へ動かせる（先にパンして後で幅を広げると、
+	// 片側に寄った音像がさらに片側だけ広がってしまい不自然になるため）。
+	// 非対応環境では destination 直結（中央）にフォールバックする。
+	const panner: StereoPannerNode | null =
+		typeof ctx.createStereoPanner === "function"
+			? ctx.createStereoPanner()
+			: null;
+	if (panner) panner.pan.value = clamp(options.pan ?? 0, -1, 1);
+	const panOut: AudioNode = panner ?? merger;
+
+	// input → EQ(低→中→高) → compressor → M/Sワイド → パン → destination
+	//                                                        └→ reverbSendGain → reverbBus（並列センド、任意）
 	eqHigh.connect(compressor);
 	compressor.connect(splitter);
-	merger.connect(destination);
+	if (panner) merger.connect(panner);
+	panOut.connect(destination);
 
 	const reverbSendGain = ctx.createGain();
 	reverbSendGain.gain.value = clamp(options.reverbSend ?? 0, 0, 100) / 100;
-	merger.connect(reverbSendGain);
+	panOut.connect(reverbSendGain);
 	if (options.reverbBus) reverbSendGain.connect(options.reverbBus);
+
+	const delaySendGain = ctx.createGain();
+	delaySendGain.gain.value = clamp(options.delaySend ?? 0, 0, 100) / 100;
+	panOut.connect(delaySendGain);
+	if (options.delayBus) delaySendGain.connect(options.delayBus);
 
 	return {
 		input,
@@ -217,6 +251,17 @@ export const createChannelStrip = (
 				0.02,
 			);
 		},
+		setDelaySend: (amount) => {
+			delaySendGain.gain.setTargetAtTime(
+				clamp(amount, 0, 100) / 100,
+				ctx.currentTime,
+				0.02,
+			);
+		},
+		setPan: (pan) => {
+			if (!panner) return; // 非対応環境ではパンできないので無視
+			panner.pan.setTargetAtTime(clamp(pan, -1, 1), ctx.currentTime, 0.02);
+		},
 		dispose: () => {
 			input.disconnect();
 			eqLow.disconnect();
@@ -233,7 +278,9 @@ export const createChannelStrip = (
 			outL.disconnect();
 			outR.disconnect();
 			merger.disconnect();
+			panner?.disconnect();
 			reverbSendGain.disconnect();
+			delaySendGain.disconnect();
 		},
 	};
 };

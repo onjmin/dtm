@@ -382,12 +382,24 @@ export type DawOptions = {
 	 * 両方が同じマスタリバーブへ加算的に送られる）。既定0（センドしない＝リバーブが掛からない）。
 	 */
 	onTrackReverbSendChange?: (trackId: string, amount: number) => void;
+	/**
+	 * トラック単位のマスタディレイへのセンド量 0-100 が変化したときに呼ばれる。
+	 * 楽器・歌詞トラックを問わず掛かる（歌詞トラック固有の `vocalDelay`/`d`トークンとは別軸で、
+	 * 両方が同じマスタディレイへ加算的に送られる）。既定0（センドしない＝ディレイが掛からない）。
+	 */
+	onTrackDelaySendChange?: (trackId: string, amount: number) => void;
 	/** トラック単位EQの低域（シェルフ）ゲイン -12〜+12dB が変化したときに呼ばれる。 */
 	onTrackEqLowChange?: (trackId: string, db: number) => void;
 	/** トラック単位EQの中域（ピーキング）ゲイン -12〜+12dB が変化したときに呼ばれる。 */
 	onTrackEqMidChange?: (trackId: string, db: number) => void;
 	/** トラック単位EQの高域（シェルフ）ゲイン -12〜+12dB が変化したときに呼ばれる。 */
 	onTrackEqHighChange?: (trackId: string, db: number) => void;
+	/**
+	 * トラック単位のステレオ定位（パン）0-127（64=中央、0=左いっぱい、127=右いっぱい）が
+	 * 変化したときに呼ばれる。歌詞トラック固有の `vocalPan`（歌唱の定位）とは別軸で、
+	 * 楽器トラック自体の左右配置を決める。
+	 */
+	onTrackPanChange?: (trackId: string, pan: number) => void;
 	/**
 	 * BPMが変化したときに呼ばれる（MML読込・スライダー操作・MIDI取り込み等、経路に依らず単一の窓口）。
 	 * テンポ同期エフェクト（ディレイ等）が実時間へ再計算するために使う。
@@ -461,6 +473,14 @@ export type DawOptions = {
 	delayDivision?: DelayDivision;
 	/** マスタディレイの音価が変更されたときに呼ばれる。 */
 	onDelayDivisionChange?: (division: DelayDivision) => void;
+	/**
+	 * マスタバスの「グルーコンプレッサー」量 0-100。既定0（オフ）。
+	 * 全トラックの合流点（リバーブ・ディレイの戻りも含む）にまとめて軽く掛ける、
+	 * 表現目的の音楽的な圧縮（常時ONの安全リミッターとは別物）。
+	 */
+	masterCompression?: number;
+	/** マスタバスのグルーコンプレッサー量のつまみが動かされたときに呼ばれる（0-100）。 */
+	onMasterCompressionChange?: (amount: number) => void;
 
 	// --- 注入される外部パーサ（任意） ---
 	parseMidi?: ParseMidiFn;

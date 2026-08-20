@@ -62,6 +62,11 @@ export type MmlMeta = {
 	/** マスタディレイの音価（"4"|"8"|"8d"|"16"）。`#delaydiv=` で埋め込む。省略時は"8"。 */
 	delayDivision?: string;
 	/**
+	 * マスタバスのグルーコンプレッサー量 0-100（全トラック共通、`#mastercomp=` で埋め込む）。
+	 * 省略時は0（オフ）。
+	 */
+	masterCompression?: number;
+	/**
 	 * 曲頭のフェードイン長を10倍した整数（秒 → 0〜100）。`#fadein=` で埋め込む。省略時は0。
 	 */
 	fadeIn?: number;
@@ -98,11 +103,22 @@ export type MmlMeta = {
 	trackEqMid?: Record<number, number>;
 	/** トラックごとのEQ高域ゲイン -12〜+12dB。`#t<n>eqhi=<値>` で埋め込む。省略時は0（無変化）。 */
 	trackEqHigh?: Record<number, number>;
+	/**
+	 * トラックごとのステレオ定位 0-127（64=中央）。`#t<n>pan=<値>` で埋め込む。省略時は64（中央）。
+	 * 歌詞トラック固有の `p`（歌唱の定位）とは別軸で、楽器トラック自体の左右配置を決める。
+	 */
+	trackPan?: Record<number, number>;
+	/**
+	 * トラックごとのマスタディレイへのセンド量 0-100。`#t<n>dly=<値>` で埋め込む。
+	 * 省略時は0（センドしない＝掛からない）。楽器・歌詞トラックどちらにも掛かる
+	 * チャンネルストリップ共通のパラメータ（歌詞トラック固有の `vocalDelay`/`d`トークンとは別軸）。
+	 */
+	trackDelaySend?: Record<number, number>;
 };
 
 /** `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
 const META_DIRECTIVE =
-	/#(inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|fadein|fadeout|mode)=([\w-]+)/gi;
+	/#(inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|mastercomp|fadein|fadeout|mode)=([\w-]+)/gi;
 
 /** `#t<n>inst=<GM楽器名>` にマッチする（値は`;` `#` 改行以外の任意文字） */
 const TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
@@ -122,6 +138,12 @@ const TRACK_EQLOW_DIRECTIVE = /#t(\d+)eqlo=(-?\d+)/gi;
 const TRACK_EQMID_DIRECTIVE = /#t(\d+)eqmid=(-?\d+)/gi;
 /** `#t<n>eqhi=<-12〜12>` にマッチする（トラック単位EQ高域、符号付き） */
 const TRACK_EQHIGH_DIRECTIVE = /#t(\d+)eqhi=(-?\d+)/gi;
+
+/** `#t<n>pan=<0-127>` にマッチする（トラック単位ステレオ定位） */
+const TRACK_PAN_DIRECTIVE = /#t(\d+)pan=(\d+)/gi;
+
+/** `#t<n>dly=<0-100>` にマッチする（トラック単位マスタディレイセンド量） */
+const TRACK_DELAYSEND_DIRECTIVE = /#t(\d+)dly=(\d+)/gi;
 
 /** MMLからトップレベル宣言を抽出する */
 export const parseMmlMeta = (mml: string): MmlMeta => {
@@ -151,6 +173,9 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 			if (!Number.isNaN(dv)) meta.delay = clamp(dv, 0, 100);
 		} else if (key === "delaydiv") {
 			if (["4", "8", "8d", "16"].includes(m[2])) meta.delayDivision = m[2];
+		} else if (key === "mastercomp") {
+			const mc = Number.parseInt(m[2], 10);
+			if (!Number.isNaN(mc)) meta.masterCompression = clamp(mc, 0, 100);
 		} else if (key === "fadein") {
 			const fi = Number.parseInt(m[2], 10);
 			if (!Number.isNaN(fi)) meta.fadeIn = clamp(fi, 0, 100);
@@ -219,6 +244,22 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 			meta.trackEqHigh[idx] = val;
 		}
 	}
+	for (const m of mml.matchAll(TRACK_PAN_DIRECTIVE)) {
+		const idx = Number.parseInt(m[1], 10);
+		const val = clamp(Number.parseInt(m[2], 10), 0, 127);
+		if (!Number.isNaN(idx) && !Number.isNaN(val)) {
+			meta.trackPan ??= {};
+			meta.trackPan[idx] = val;
+		}
+	}
+	for (const m of mml.matchAll(TRACK_DELAYSEND_DIRECTIVE)) {
+		const idx = Number.parseInt(m[1], 10);
+		const val = clamp(Number.parseInt(m[2], 10), 0, 100);
+		if (!Number.isNaN(idx) && !Number.isNaN(val)) {
+			meta.trackDelaySend ??= {};
+			meta.trackDelaySend[idx] = val;
+		}
+	}
 	return meta;
 };
 
@@ -232,7 +273,9 @@ export const stripMmlMeta = (mml: string): string =>
 		.replace(TRACK_REVERBSEND_DIRECTIVE, "")
 		.replace(TRACK_EQLOW_DIRECTIVE, "")
 		.replace(TRACK_EQMID_DIRECTIVE, "")
-		.replace(TRACK_EQHIGH_DIRECTIVE, "");
+		.replace(TRACK_EQHIGH_DIRECTIVE, "")
+		.replace(TRACK_PAN_DIRECTIVE, "")
+		.replace(TRACK_DELAYSEND_DIRECTIVE, "");
 
 /** メタ情報を `#inst=… #drum=… #volume=… #mode=…` のMML宣言文字列へ直列化する（空なら空文字） */
 export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
@@ -253,6 +296,8 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 		parts.push(`#delay=${meta.delay}`);
 	if (meta.delayDivision && meta.delayDivision !== "8")
 		parts.push(`#delaydiv=${meta.delayDivision}`);
+	if (meta.masterCompression !== undefined && meta.masterCompression !== 0)
+		parts.push(`#mastercomp=${meta.masterCompression}`);
 	if (meta.fadeIn !== undefined && meta.fadeIn !== 0)
 		parts.push(`#fadein=${meta.fadeIn}`);
 	if (meta.fadeOut !== undefined && meta.fadeOut !== 0)
@@ -291,6 +336,16 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	if (meta.trackEqHigh) {
 		for (const [idx, val] of Object.entries(meta.trackEqHigh)) {
 			if (val !== 0) parts.push(`#t${idx}eqhi=${val}`);
+		}
+	}
+	if (meta.trackPan) {
+		for (const [idx, val] of Object.entries(meta.trackPan)) {
+			if (val !== 64) parts.push(`#t${idx}pan=${val}`);
+		}
+	}
+	if (meta.trackDelaySend) {
+		for (const [idx, val] of Object.entries(meta.trackDelaySend)) {
+			if (val !== 0) parts.push(`#t${idx}dly=${val}`);
 		}
 	}
 	return parts.join(space);
