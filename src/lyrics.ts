@@ -31,6 +31,7 @@ import type {
 	VoiceWorkerRendered,
 	VoiceWorkerRenderReq,
 } from "./voice-worker-types";
+import { packCompositeAlias, unpackCompositeAlias } from "./voice-worker-types";
 
 export type { LyricSyllable, LyricTrack, OctaveUnisonMode } from "./types";
 export { VIBRATO_MIN_SEC } from "./vibrato";
@@ -1046,7 +1047,50 @@ const resolveKoeAlias = (
 		const hit = tryAlias(base);
 		if (hit) return hit;
 	}
+
+	// 子音単体＋母音単体エイリアスの合成フォールバック（例: 音源に "ka" が無くても
+	// "k" と "a" の単体データがあれば繋ぎ合わせて代用する）。多音階バンク（ピッチ接尾辞
+	// 付き）は組み合わせ爆発を避けるため非対応、bareエイリアスのみで試す。
+	if (cons && vow) {
+		const vowelAlias = tryAlias(vow) ?? tryAlias(`${pv} ${vow}`);
+		const consAlias = vowelAlias ? tryAlias(cons) : null;
+		if (vowelAlias && consAlias)
+			return packCompositeAlias(consAlias, vowelAlias);
+	}
 	return null;
+};
+
+/** 子音単体＋母音単体エイリアスを繋ぎ合わせる際のクロスフェード長（秒）。繋ぎ目のクリックを抑える。 */
+const COMPOSITE_SPLICE_XFADE_SEC = 0.005;
+
+/**
+ * 子音単体PCM＋母音単体PCMを1本のPCMへ繋ぎ合わせ、WORLD再合成へそのまま渡せる
+ * pre/consonant（ms）を計算する。境界を短くリニアクロスフェードして接続音のクリックを防ぐ。
+ * どちらかが空、またはクロスフェード幅を確保できないほど短ければ null。
+ */
+const spliceCompositePcm = (
+	consonantPcm: Float64Array,
+	vowelPcm: Float64Array,
+	sampleRate: number,
+): { pcm: Float64Array; preMs: number; consonantMs: number } | null => {
+	if (consonantPcm.length === 0 || vowelPcm.length === 0) return null;
+	const xfade = Math.min(
+		Math.floor(sampleRate * COMPOSITE_SPLICE_XFADE_SEC),
+		consonantPcm.length,
+		vowelPcm.length,
+	);
+	const pcm = new Float64Array(consonantPcm.length + vowelPcm.length - xfade);
+	pcm.set(consonantPcm, 0);
+	for (let i = 0; i < xfade; i++) {
+		const t = (i + 1) / (xfade + 1);
+		const idx = consonantPcm.length - xfade + i;
+		pcm[idx] = consonantPcm[idx] * (1 - t) + vowelPcm[i] * t;
+	}
+	pcm.set(vowelPcm.subarray(xfade), consonantPcm.length);
+	// 母音の立ち上がり（ビート位置）＝子音区間の直後。overlap相当は持たないので
+	// pre と consonant を同じ長さにし、子音全体が発音前リードとして再生されるようにする。
+	const consonantMs = ((consonantPcm.length - xfade / 2) / sampleRate) * 1000;
+	return { pcm, preMs: consonantMs, consonantMs };
 };
 
 /** koe音源の生成オプション */
@@ -1136,6 +1180,41 @@ const createLocalBackend = async (
 		return p;
 	};
 
+	/**
+	 * 音源に直接存在しない音節を、子音単体＋母音単体エイリアスを繋いだ合成PCMで代用する。
+	 * WORLD再合成必須（Worldline不可時の素片フォールバックには非対応 — 繋ぎ目のクリックを
+	 * ピッチシフトだけで誤魔化せないため）。
+	 */
+	const renderComposite = async (
+		consonantAlias: string,
+		vowelAlias: string,
+		pitch: number,
+		durationMs: number,
+		vibrato: boolean | undefined,
+		expr: VoiceExpression | undefined,
+	): Promise<BackendRender> => {
+		if (!worldline) return null;
+		const [consonantPcm, vowelPcm] = await Promise.all([
+			getPcm(consonantAlias),
+			getPcm(vowelAlias),
+		]);
+		if (!consonantPcm || !vowelPcm) return null;
+		const spliced = spliceCompositePcm(consonantPcm, vowelPcm, KOE_SAMPLE_RATE);
+		if (!spliced) return null;
+		const targetHz = midiToFreq(pitch);
+		const audio = worldline.renderNote({
+			pcm: spliced.pcm,
+			pitch: vibrato ? vibratoPitchCurve(targetHz, spliced.preMs) : targetHz,
+			durationMs,
+			preMs: spliced.preMs,
+			consonantMs: spliced.consonantMs,
+			gender: expr?.gender,
+			breathiness: expr?.breathiness,
+			tension: expr?.tension,
+		});
+		return audio ? { pcm: audio, preSec: spliced.preMs / 1000, rate: 1 } : null;
+	};
+
 	const renderAlias = async (
 		alias: string,
 		pitch: number,
@@ -1143,6 +1222,17 @@ const createLocalBackend = async (
 		vibrato?: boolean,
 		expr?: VoiceExpression,
 	): Promise<BackendRender> => {
+		const composite = unpackCompositeAlias(alias);
+		if (composite) {
+			return renderComposite(
+				composite[0],
+				composite[1],
+				pitch,
+				durationMs,
+				vibrato,
+				expr,
+			);
+		}
 		const pcm = await getPcm(alias);
 		if (!pcm || pcm.length === 0) return null;
 		const entry = bank.manifest.phonemes[alias];

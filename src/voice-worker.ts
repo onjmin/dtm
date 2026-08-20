@@ -15,6 +15,7 @@ import type {
 	VoiceWorkerInbound,
 	VoiceWorkerOutbound,
 } from "./voice-worker-types";
+import { unpackCompositeAlias } from "./voice-worker-types";
 
 const KOE_SAMPLE_RATE = 48000;
 const midiToFreq = (m: number): number => 440 * 2 ** ((m - 69) / 12);
@@ -42,6 +43,75 @@ const getPcm = (alias: string): Promise<Float64Array | null> => {
 
 type Rendered = { pcm: Float32Array; preSec: number; rate: number };
 
+/** 子音単体＋母音単体エイリアスを繋ぎ合わせる際のクロスフェード長（秒）。繋ぎ目のクリックを抑える。 */
+const COMPOSITE_SPLICE_XFADE_SEC = 0.005;
+
+/**
+ * 子音単体PCM＋母音単体PCMを1本のPCMへ繋ぎ合わせ、WORLD再合成へそのまま渡せる
+ * pre/consonant（ms）を計算する。境界を短くリニアクロスフェードして接続音のクリックを防ぐ。
+ * どちらかが空、またはクロスフェード幅を確保できないほど短ければ null。
+ */
+const spliceCompositePcm = (
+	consonantPcm: Float64Array,
+	vowelPcm: Float64Array,
+	sampleRate: number,
+): { pcm: Float64Array; preMs: number; consonantMs: number } | null => {
+	if (consonantPcm.length === 0 || vowelPcm.length === 0) return null;
+	const xfade = Math.min(
+		Math.floor(sampleRate * COMPOSITE_SPLICE_XFADE_SEC),
+		consonantPcm.length,
+		vowelPcm.length,
+	);
+	const pcm = new Float64Array(consonantPcm.length + vowelPcm.length - xfade);
+	pcm.set(consonantPcm, 0);
+	for (let i = 0; i < xfade; i++) {
+		const t = (i + 1) / (xfade + 1);
+		const idx = consonantPcm.length - xfade + i;
+		pcm[idx] = consonantPcm[idx] * (1 - t) + vowelPcm[i] * t;
+	}
+	pcm.set(vowelPcm.subarray(xfade), consonantPcm.length);
+	// 母音の立ち上がり（ビート位置）＝子音区間の直後。overlap相当は持たないので
+	// pre と consonant を同じ長さにし、子音全体が発音前リードとして再生されるようにする。
+	const consonantMs = ((consonantPcm.length - xfade / 2) / sampleRate) * 1000;
+	return { pcm, preMs: consonantMs, consonantMs };
+};
+
+/**
+ * 音源に直接存在しない音節を、子音単体＋母音単体エイリアスを繋いだ合成PCMで代用する。
+ * WORLD再合成必須（Worldline不可時の素片フォールバックには非対応）。
+ */
+const renderComposite = async (
+	consonantAlias: string,
+	vowelAlias: string,
+	pitch: number,
+	durationMs: number,
+	vibrato: boolean | undefined,
+	gender: number | undefined,
+	breathiness: number | undefined,
+	tension: number | undefined,
+): Promise<Rendered | null> => {
+	if (!worldline) return null;
+	const [consonantPcm, vowelPcm] = await Promise.all([
+		getPcm(consonantAlias),
+		getPcm(vowelAlias),
+	]);
+	if (!consonantPcm || !vowelPcm) return null;
+	const spliced = spliceCompositePcm(consonantPcm, vowelPcm, KOE_SAMPLE_RATE);
+	if (!spliced) return null;
+	const targetHz = midiToFreq(pitch);
+	const audio = worldline.renderNote({
+		pcm: spliced.pcm,
+		pitch: vibrato ? vibratoPitchCurve(targetHz, spliced.preMs) : targetHz,
+		durationMs,
+		preMs: spliced.preMs,
+		consonantMs: spliced.consonantMs,
+		gender,
+		breathiness,
+		tension,
+	});
+	return audio ? { pcm: audio, preSec: spliced.preMs / 1000, rate: 1 } : null;
+};
+
 const renderAlias = async (
 	alias: string,
 	pitch: number,
@@ -52,6 +122,19 @@ const renderAlias = async (
 	tension?: number,
 ): Promise<Rendered | null> => {
 	if (!bank) return null;
+	const composite = unpackCompositeAlias(alias);
+	if (composite) {
+		return renderComposite(
+			composite[0],
+			composite[1],
+			pitch,
+			durationMs,
+			vibrato,
+			gender,
+			breathiness,
+			tension,
+		);
+	}
 	const pcm = await getPcm(alias);
 	if (!pcm || pcm.length === 0) return null;
 	const entry = bank.manifest.phonemes[alias];
