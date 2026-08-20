@@ -247,7 +247,7 @@ export const buildUI = (
         <span class="dtm-label" data-dtm="master-volume-label">50%</span>
       </div>
       <div class="dtm-row">
-        <button class="dtm-btn dtm-btn--ghost dtm-btn--xs" data-dtm="auto-master" title="音圧・ステレオ幅・リバーブを商業曲寄りの値に一括設定します">おまかせマスタリング</button>
+        <button class="dtm-btn dtm-btn--ghost dtm-btn--xs" data-dtm="auto-master" title="音圧・ステレオ幅・リバーブに加え、各トラックの楽器・音量も自動推定して一括設定します">おまかせマスタリング</button>
         <button class="dtm-infobtn" data-dtm="auto-master-info" title="おまかせマスタリングの解説">${icon("info", 12)}</button>
         <span class="dtm-grow"></span>
       </div>

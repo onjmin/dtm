@@ -320,6 +320,15 @@ const AUTO_MASTER_INFO_HTML = `
     <li>全トラックのステレオ幅: 115%（わずかに広げる）</li>
     <li>歌詞のあるトラック: 自動ビブラートON</li>
   </ul>
+  <h4>楽器・音量の自動割り当て</h4>
+  <p>歌詞のないトラックは、置かれているノートの音高・タイミング・和音の厚みから役割を推定し、楽器と音量を自動で当てます。</p>
+  <ul>
+    <li><strong>低音域（C3未満）が中心</strong> → ベース楽器・音量85</li>
+    <li><strong>和音（同時発音）が多く音価も長い</strong> → 伴奏（コード/パッド）楽器・音量72</li>
+    <li><strong>単音で音数が少なく音価が長い</strong> → サブメロ（オブリガート寄り）楽器・音量92</li>
+    <li><strong>それ以外（単音で動きが多い）</strong> → メロディ楽器・音量100</li>
+  </ul>
+  <p style="margin-top:4px;"><small>楽器名は現在選択中の楽器プリセット（未選択ならグランドピアノ）から役割に対応するものを引きます。音の少ないトラック（無音）は判定できないため対象外です。あくまで自動推定なので、意図と違う場合は各トラックの「楽器」欄から個別に選び直してください。</small></p>
   <h4>メインボーカルの自動判定</h4>
   <p>歌詞のあるトラックが複数ある場合（ハモリ・コーラス・掛け声等）、発音時間が最も長いトラックを「メインボーカル」とみなし、他とは違う扱いにします。</p>
   <ul>
@@ -627,6 +636,57 @@ const normalizeInstrumentName = (name: string): string => {
 			(n) => n.replace(/\s+/g, "").toLowerCase() === stripped,
 		) ?? name
 	);
+};
+
+/** 演奏データから自動推定する役割。プリセット（{@link INSTRUMENT_PRESETS}）のキーと対応させる。 */
+type AutoRole = "melody" | "submelody" | "bass" | "chord";
+
+/** ピアノロールのステップ解像度（1拍=48ステップ、他ファイルのSTEPS_PER_BEATと同じ）。 */
+const AUTO_ROLE_STEPS_PER_BEAT = 48;
+
+/** 役割ごとの既定音量（ベロシティ）。TRACKS_SIMPLE の既定値に合わせた「前に出す順」の目安。 */
+const AUTO_ROLE_VOLUME: Record<AutoRole, number> = {
+	melody: 100,
+	submelody: 92,
+	bass: 85,
+	chord: 72,
+};
+
+/**
+ * ノート列（ピッチ・タイミング）から、このトラックの役割（メロディ/サブメロ/ベース/伴奏）を推定する。
+ * 「おまかせ」で楽器・音量を自動選択するための判定ロジック。ノートが無いトラックは呼び出し側でスキップする。
+ *
+ * 判定基準（音楽的な経験則）:
+ * - 平均音高が低い（C3未満）→ ベース
+ * - 同時発音（和音）が多く、音価も長め → 伴奏（コード/パッド）
+ * - 単音で音数が少なく音価が長い → サブメロ（オブリガート寄り）
+ * - それ以外（単音で音数が多い・音高が高め）→ メロディ
+ */
+const classifyTrackRole = (
+	notes: Pick<Note, "pitch" | "startStep" | "durationSteps">[],
+): AutoRole => {
+	const avgPitch = notes.reduce((s, n) => s + n.pitch, 0) / notes.length;
+	if (avgPitch < 48) return "bass"; // C3未満 = 低音域
+
+	const avgDur = notes.reduce((s, n) => s + n.durationSteps, 0) / notes.length;
+
+	// 同一startStepの同時発音数（和音の厚み）
+	const byStart = new Map<number, number>();
+	for (const n of notes)
+		byStart.set(n.startStep, (byStart.get(n.startStep) ?? 0) + 1);
+	let maxPoly = 0;
+	for (const c of byStart.values()) if (c > maxPoly) maxPoly = c;
+	if (maxPoly >= 2 && avgDur >= AUTO_ROLE_STEPS_PER_BEAT) return "chord";
+
+	// 単位時間あたりの音数（密度）。低いほど「動きの少ない」パート。
+	const minStart = Math.min(...notes.map((n) => n.startStep));
+	const maxEnd = Math.max(...notes.map((n) => n.startStep + n.durationSteps));
+	const spanBeats = Math.max(1, (maxEnd - minStart) / AUTO_ROLE_STEPS_PER_BEAT);
+	const notesPerBeat = notes.length / spanBeats;
+	if (notesPerBeat < 1.2 && avgDur >= AUTO_ROLE_STEPS_PER_BEAT * 1.5)
+		return "submelody";
+
+	return "melody";
 };
 
 type TrackState = {
@@ -3971,6 +4031,27 @@ export const mountDAW = (
 					mainVocalScore = score;
 					mainVocalId = t.config.id;
 				}
+			}
+
+			// 楽器・音量の自動割り当て: 歌詞トラックを除く各トラックのノート（音高・タイミング・
+			// 和音の厚み）から役割（メロディ/サブメロ/ベース/伴奏）を推定し、現在選択中の
+			// 楽器プリセット（未選択ならピアノ）からその役割に合う楽器名を引いて個別設定する。
+			// simpleモードは元々トラック＝役割が固定なので実質的に見た目は変わらないが、
+			// advancedモード（15トラック1:1）ではここが唯一の「楽器を自動で当てる」経路になる。
+			const autoPreset =
+				INSTRUMENT_PRESETS[currentInstrument] ?? INSTRUMENT_PRESETS.piano;
+			for (const t of trackStates) {
+				if (t.lyricModel) continue; // 歌声トラックは楽器を持たない
+				const notes = t.core.getNotes();
+				if (notes.length === 0) continue; // 音が無いトラックは判定不能なのでそのまま
+				const role = classifyTrackRole(notes);
+				const instName = autoPreset[role];
+				t.trackInstrument = instName;
+				const trackIndex = trackStates.indexOf(t);
+				options.onTrackInstrumentChange?.(trackIndex, instName);
+				const vol = AUTO_ROLE_VOLUME[role];
+				t.volume = vol;
+				t.core.setVolume(vol);
 			}
 
 			for (const t of trackStates) {
