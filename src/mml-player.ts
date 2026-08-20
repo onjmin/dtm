@@ -1494,6 +1494,7 @@ export const mountMmlPlayer = (
 				delaySend: (lt.delay ?? 0) / 100,
 				gender: (lt.gender ?? 50) / 100,
 				breathiness: (lt.breathiness ?? 50) / 100,
+				tension: (lt.tension ?? 50) / 100,
 				octaveUnison: lt.octaveUnison,
 				notes,
 			};

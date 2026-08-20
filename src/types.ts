@@ -59,6 +59,7 @@ export type LyricSyncData = {
 	vocalDelay?: number;
 	vocalGender?: number;
 	vocalBreathiness?: number;
+	vocalTension?: number;
 	vocalOctaveUnison?: OctaveUnisonMode;
 };
 
@@ -257,6 +258,12 @@ export type LyricTrack = {
 	 * MMLでは `@@n klatt h70 …` のように h トークンで付与する。
 	 */
 	breathiness?: number;
+	/**
+	 * テンション（張り/力強さ）0-100。既定50（無変化）。大きいほど張った・押した声
+	 * （こぶし寄り、力強く歌わせる）、小さいほど脱力・リラックス（ブレシネス寄り）になる。
+	 * MMLでは `@@n klatt t70 …` のように t トークンで付与する。
+	 */
+	tension?: number;
 	/**
 	 * オクターブユニゾン。既定"none"。
 	 * "down"/"up"/"both" にすると各音節をもう1オクターブ上/下/両方（控えめな音量）で

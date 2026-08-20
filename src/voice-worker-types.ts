@@ -35,6 +35,8 @@ export type VoiceWorkerRenderReq = {
 	gender?: number;
 	/** ブレシネス（息成分）0-1（既定0.5）。 */
 	breathiness?: number;
+	/** テンション（張り/力強さ、"こぶし"寄り）0-1（既定0.5）。 */
+	tension?: number;
 };
 
 export type VoiceWorkerInbound = VoiceWorkerInit | VoiceWorkerRenderReq;

@@ -49,6 +49,7 @@ const renderAlias = async (
 	vibrato?: boolean,
 	gender?: number,
 	breathiness?: number,
+	tension?: number,
 ): Promise<Rendered | null> => {
 	if (!bank) return null;
 	const pcm = await getPcm(alias);
@@ -65,6 +66,7 @@ const renderAlias = async (
 			...lead,
 			gender,
 			breathiness,
+			tension,
 		});
 		if (audio) return { pcm: audio, preSec: lead.preMs / 1000, rate: 1 };
 	}
@@ -100,7 +102,16 @@ wself.onmessage = async (ev) => {
 		return;
 	}
 	if (msg.type === "render") {
-		const { id, alias, pitch, durationMs, vibrato, gender, breathiness } = msg;
+		const {
+			id,
+			alias,
+			pitch,
+			durationMs,
+			vibrato,
+			gender,
+			breathiness,
+			tension,
+		} = msg;
 		try {
 			const out = await renderAlias(
 				alias,
@@ -109,6 +120,7 @@ wself.onmessage = async (ev) => {
 				vibrato,
 				gender,
 				breathiness,
+				tension,
 			);
 			if (out) {
 				wself.postMessage(

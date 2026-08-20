@@ -185,6 +185,17 @@ const BREATHINESS_INFO_HTML = `
 </div>
 `;
 
+const TENSION_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>声の張り／押し出しの強さです。50が無変化、大きいほど張った・押した声（「こぶし」寄り、力強く歌わせる）になり、小さいほど脱力したリラックスした声になります。</p>
+  <h4>ブレシネスとの違い</h4>
+  <p>ブレシネスは息成分の量（芯のある声⇔息っぽい声）を動かしますが、テンションは声帯の締まり・押しの強さ（脱力⇔張った声）を動かします。テンションを上げるとサビの力強さ、下げると穏やかな囁きに寄せた歌わせ方になります。</p>
+  <h4>他の設定との兼ね合い</h4>
+  <p>ブレシネスを下げつつテンションを上げると、より芯があり力強い歌声になります。逆にブレシネスを上げつつテンションを下げると、より脱力した息っぽい歌声になります。koe音源（UTAU由来の.koe音源）限定の効果で、klatt（内蔵の簡易合成）では変化しません。</p>
+</div>
+`;
+
 const LYRIC_REVERB_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>何をする設定か</h4>
@@ -647,6 +658,8 @@ type TrackState = {
 	vocalGender: number;
 	/** ブレシネス（息成分）0-100。既定50（無変化）。koe音源限定 */
 	vocalBreathiness: number;
+	/** テンション（張り/力強さ）0-100。既定50（無変化）。koe音源限定 */
+	vocalTension: number;
 	/**
 	 * オクターブユニゾン。もう1声、1オクターブ上/下/両方（控えめな音量）で重ねて発音する。
 	 * 既定"none"（重ねない）。
@@ -892,6 +905,7 @@ export const mountDAW = (
 			vocalDelay: t.vocalDelay,
 			vocalGender: t.vocalGender,
 			vocalBreathiness: t.vocalBreathiness,
+			vocalTension: t.vocalTension,
 			vocalOctaveUnison: t.vocalOctaveUnison,
 		};
 		if (lyricsDebounceTimer) clearTimeout(lyricsDebounceTimer);
@@ -972,6 +986,7 @@ export const mountDAW = (
 				vocalDelay: 0,
 				vocalGender: 50,
 				vocalBreathiness: 50,
+				vocalTension: 50,
 				vocalOctaveUnison: "none",
 				trackInstrument: "",
 				trackCompression: 0,
@@ -1005,6 +1020,7 @@ export const mountDAW = (
 				delay: t.vocalDelay,
 				gender: t.vocalGender,
 				breathiness: t.vocalBreathiness,
+				tension: t.vocalTension,
 				octaveUnison: t.vocalOctaveUnison,
 				syllables,
 			});
@@ -1992,6 +2008,7 @@ export const mountDAW = (
 						delaySend: (lt.delay ?? 0) / 100,
 						gender: (lt.gender ?? 50) / 100,
 						breathiness: (lt.breathiness ?? 50) / 100,
+						tension: (lt.tension ?? 50) / 100,
 						octaveUnison: lt.octaveUnison,
 						notes,
 					};
@@ -2466,6 +2483,12 @@ export const mountDAW = (
             <button class="dtm-infobtn" data-dtm="lyric-breathiness-info" title="ブレシネスの解説">${icon("info", 12)}</button>
           </div>
           <div class="dtm-row">
+            <span class="dtm-label">テンション</span>
+            <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-tension" min="0" max="100" aria-label="テンション（張り/力強さ、koe音源限定）">
+            <span class="dtm-label" data-dtm="lyric-tension-label"></span>
+            <button class="dtm-infobtn" data-dtm="lyric-tension-info" title="テンションの解説">${icon("info", 12)}</button>
+          </div>
+          <div class="dtm-row">
             <span class="dtm-label" style="display:inline-flex;align-items:center;gap:2px">
               <input type="checkbox" data-dtm="lyric-vibrato" aria-label="自動ビブラート">ビブラート
             </span>
@@ -2569,6 +2592,18 @@ export const mountDAW = (
 			) as HTMLButtonElement;
 			lyricBreathinessInfo.addEventListener("click", () => {
 				showModal("ブレシネスの解説", BREATHINESS_INFO_HTML);
+			});
+			const lyricTension = lyricDiv.querySelector(
+				'[data-dtm="lyric-tension"]',
+			) as HTMLInputElement;
+			const lyricTensionLabel = lyricDiv.querySelector(
+				'[data-dtm="lyric-tension-label"]',
+			) as HTMLElement;
+			const lyricTensionInfo = lyricDiv.querySelector(
+				'[data-dtm="lyric-tension-info"]',
+			) as HTMLButtonElement;
+			lyricTensionInfo.addEventListener("click", () => {
+				showModal("テンションの解説", TENSION_INFO_HTML);
 			});
 			const lyricVibrato = lyricDiv.querySelector(
 				'[data-dtm="lyric-vibrato"]',
@@ -2679,6 +2714,8 @@ export const mountDAW = (
 			lyricGenderLabel.textContent = `${active.vocalGender}`;
 			lyricBreathiness.value = String(active.vocalBreathiness);
 			lyricBreathinessLabel.textContent = `${active.vocalBreathiness}`;
+			lyricTension.value = String(active.vocalTension);
+			lyricTensionLabel.textContent = `${active.vocalTension}`;
 			lyricVibrato.checked = active.vocalVibrato;
 			lyricOctaveUnison.value = active.vocalOctaveUnison;
 			const updateLyricCount = (): void => {
@@ -2863,6 +2900,11 @@ export const mountDAW = (
 			lyricBreathiness.addEventListener("input", () => {
 				active.vocalBreathiness = Number.parseInt(lyricBreathiness.value, 10);
 				lyricBreathinessLabel.textContent = `${active.vocalBreathiness}`;
+				fireLyricsChange(active);
+			});
+			lyricTension.addEventListener("input", () => {
+				active.vocalTension = Number.parseInt(lyricTension.value, 10);
+				lyricTensionLabel.textContent = `${active.vocalTension}`;
 				fireLyricsChange(active);
 			});
 		}
@@ -3128,6 +3170,7 @@ export const mountDAW = (
 				del: t.vocalDelay,
 				gen: t.vocalGender,
 				bre: t.vocalBreathiness,
+				ten: t.vocalTension,
 				uni: t.vocalOctaveUnison,
 			}))
 			.filter(
@@ -3144,6 +3187,7 @@ export const mountDAW = (
 					x.del === 0 ? "" : `e${x.del}`,
 					x.gen === 50 ? "" : `g${x.gen}`,
 					x.bre === 50 ? "" : `h${x.bre}`,
+					x.ten === 50 ? "" : `t${x.ten}`,
 					OCTAVE_UNISON_TOKEN[x.uni],
 				]
 					.filter((s) => s.length > 0)
@@ -3422,6 +3466,7 @@ export const mountDAW = (
 			active.vocalDelay = 0;
 			active.vocalGender = 50;
 			active.vocalBreathiness = 50;
+			active.vocalTension = 50;
 			active.vocalOctaveUnison = "none";
 		} else {
 			for (const t of trackStates) {
@@ -3436,6 +3481,7 @@ export const mountDAW = (
 				t.vocalDelay = 0;
 				t.vocalGender = 50;
 				t.vocalBreathiness = 50;
+				t.vocalTension = 50;
 				t.vocalOctaveUnison = "none";
 			}
 		}
@@ -3454,6 +3500,8 @@ export const mountDAW = (
 			t.vocalDelay = lt.delay ?? 0;
 			t.vocalGender = lt.gender ?? 50;
 			t.vocalBreathiness = lt.breathiness ?? 50;
+			t.vocalTension = lt.tension ?? 50;
+			t.vocalTension = lt.tension ?? 50;
 			t.vocalOctaveUnison = lt.octaveUnison ?? "none";
 		});
 		// 注意: p.velocity は generateMML がトラック全体に単一の v ヘッダーしか出力しないため、
@@ -3554,6 +3602,7 @@ export const mountDAW = (
 			active.vocalDelay = 0;
 			active.vocalGender = 50;
 			active.vocalBreathiness = 50;
+			active.vocalTension = 50;
 			active.vocalOctaveUnison = "none";
 		} else {
 			clearAll();
@@ -3571,6 +3620,7 @@ export const mountDAW = (
 				t.vocalDelay = 0;
 				t.vocalGender = 50;
 				t.vocalBreathiness = 50;
+				t.vocalTension = 50;
 				t.vocalOctaveUnison = "none";
 			}
 		}
@@ -5140,6 +5190,7 @@ export const mountDAW = (
 			t.vocalDelay = data.vocalDelay ?? 0;
 			t.vocalGender = data.vocalGender ?? 50;
 			t.vocalBreathiness = data.vocalBreathiness ?? 50;
+			t.vocalTension = data.vocalTension ?? 50;
 			t.vocalOctaveUnison = data.vocalOctaveUnison ?? "none";
 		},
 		applyTrackInstrument: (

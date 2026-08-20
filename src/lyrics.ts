@@ -308,13 +308,14 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 		let delay = 0; // 省略時はディレイセンドOFF（マスタディレイが掛からない）
 		let gender = 50; // 省略時は無変化（中央）
 		let breathiness = 50; // 省略時は無変化（中央）
+		let tension = 50; // 省略時は無変化（中央）
 		let octaveUnison: OctaveUnisonMode = "none"; // 省略時はオクターブユニゾンなし
 
 		// モデル名は英字・アンダースコア始まりで、2文字目以降は数字も許す
 		// （カスタムボーカルのキー custom1 等）。`v100` 等のパラメータトークンは
 		// 先読みの [vqpobrghew]-?\d で区切るため誤って取り込まない。
 		const modelMatch = rest.match(
-			/^([a-z_][a-z0-9_]*?)(?=(?:[vqpobrghew]-?\d)|[^a-z0-9_]|$)(?::(\d+))?/i,
+			/^([a-z_][a-z0-9_]*?)(?=(?:[vqpobrghewt]-?\d)|[^a-z0-9_]|$)(?::(\d+))?/i,
 		);
 		let model = "";
 		const metaTokens: string[] = [];
@@ -385,6 +386,13 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 				rest = rest.substring(hMatch[0].length).trim();
 				continue;
 			}
+			const tMatch = rest.match(/^t(\d+)/i);
+			if (tMatch) {
+				tension = clamp(Number.parseInt(tMatch[1], 10), 0, 100);
+				metaTokens.push(tMatch[0]);
+				rest = rest.substring(tMatch[0].length).trim();
+				continue;
+			}
 			const eMatch = rest.match(/^e(\d+)/i);
 			if (eMatch) {
 				delay = clamp(Number.parseInt(eMatch[1], 10), 0, 100);
@@ -425,6 +433,7 @@ export const parseLyrics = (mml: string): Map<number, LyricTrack> => {
 			delay,
 			gender,
 			breathiness,
+			tension,
 			octaveUnison,
 			syllables,
 			metaText: metaTokens.join(" "),
@@ -619,6 +628,8 @@ export type VoiceExpression = {
 	gender?: number;
 	/** ブレシネス（息成分）。大きいほど息っぽく（ささやき寄り）。 */
 	breathiness?: number;
+	/** テンション（張り/力強さ）。大きいほど張った・押した声（こぶし寄り、力強く歌う）。 */
+	tension?: number;
 };
 
 /** 歌唱合成モデルの実装シグネチャ */
@@ -1145,6 +1156,7 @@ const createLocalBackend = async (
 				...lead,
 				gender: expr?.gender,
 				breathiness: expr?.breathiness,
+				tension: expr?.tension,
 			});
 			if (audio) return { pcm: audio, preSec: lead.preMs / 1000, rate: 1 };
 		}
@@ -1246,6 +1258,7 @@ const createWorkerBackend = async (
 				vibrato,
 				gender: expr?.gender,
 				breathiness: expr?.breathiness,
+				tension: expr?.tension,
 			} satisfies VoiceWorkerRenderReq);
 		});
 
@@ -1314,6 +1327,8 @@ export const createKoeVoice = async (
 			expr?.breathiness !== undefined
 				? `|h${Math.round(expr.breathiness * 100)}`
 				: ""
+		}${
+			expr?.tension !== undefined ? `|t${Math.round(expr.tension * 100)}` : ""
 		}`;
 
 	/** backend で合成 → AudioBuffer 化して renderCache へ積む。重複・同時要求はまとめる。 */
@@ -1548,6 +1563,11 @@ export type StreamVoiceTrack = {
 	 * — klattフォールバックには効かない。
 	 */
 	breathiness?: number;
+	/**
+	 * テンション（張り/力強さ、"こぶし"寄り）0-1。既定0.5（無変化）。koe音源（Worldline）限定
+	 * — klattフォールバックには効かない。
+	 */
+	tension?: number;
 	/**
 	 * オクターブユニゾン。各音節をもう1声、1オクターブ上/下（控えめな音量）で重ねて発音し、
 	 * 声に厚み（下）または煌びやかさ（上）を足す。既定 "none"（重ねない）。
@@ -1844,6 +1864,7 @@ export const createSingingVoices = (
 			const expr: VoiceExpression = {
 				gender: track.gender,
 				breathiness: track.breathiness,
+				tension: track.tension,
 			};
 			forEachSungNote(track, (note, prevVowel) => {
 				if (n >= count && note.startSec >= STREAM_LOOKAHEAD_SEC) return;
@@ -1966,7 +1987,11 @@ export const createSingingVoices = (
 									pitch,
 									note.durationSec * 1000,
 									track.vibrato,
-									{ gender: track.gender, breathiness: track.breathiness },
+									{
+										gender: track.gender,
+										breathiness: track.breathiness,
+										tension: track.tension,
+									},
 								);
 								if (session !== streamSession) return;
 								if (key) {
