@@ -26,13 +26,15 @@ export const DAW_CSS = `
    コントロールバー（.dtm-controlbar）にも供給する。mountPresetSelect /
    mountModeSwitch のUIは .dtm-daw の兄弟として置かれるため、ここで配らないと
    var(--dtm-*) が解決できず無装飾（白地・既定フォント）になってしまう。
-   再生専用ビューのモーダル／利用規約カバーは document.body 直下へ重ねるため、
-   .dtm-daw の外に出る。これらも同様にトークンを供給しないと黒地・白文字になる。 */
+   再生専用ビューのモーダル／利用規約カバー、歌声モデル名の吹き出し(.dtm-player-balloon)
+   は document.body 直下へ重ねるため、.dtm-daw の外に出る。これらも同様にトークンを
+   供給しないと無装飾（枠線なし・文字色不明の白い箱）になる。 */
 .dtm-daw,
 .dtm-controlbar,
 .dtm-modal-overlay,
 .dtm-consent-overlay,
-.dtm-chord-player {
+.dtm-chord-player,
+.dtm-player-balloon {
   /* PICO-8 16色パレットより */
   --c-black:   #000000;
   --c-navy:    #1d2b53;
