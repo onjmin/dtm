@@ -128,12 +128,30 @@ let activeBalloonTimer: ReturnType<typeof setTimeout> | null = null;
 // そのため表示のたびにアンカー（絵文字アイコン）の画面座標を計算して追従させる必要がある。
 const balloonAnchors = new WeakMap<HTMLElement, HTMLElement>();
 
+/**
+ * body 直下 fixed の吹き出しをビューポート内に収まるよう配置する。
+ * アイコンが画面上端に近い投稿では「アイコンの真上」に出すと吹き出し自体が
+ * ブラウザウィンドウの外（y<0）にはみ出して見切れるため、その場合はアイコンの
+ * 下に反転して出す。呼び出し前に一度 display させて実サイズを測ってから位置決めする
+ * （display:none のままだと offsetWidth/Height が 0 になり計算できない）。
+ */
 const positionBalloon = (balloonEl: HTMLElement): void => {
 	const anchor = balloonAnchors.get(balloonEl);
 	if (!anchor) return;
+	const win = balloonEl.ownerDocument?.defaultView ?? window;
 	const rect = anchor.getBoundingClientRect();
-	balloonEl.style.left = `${rect.left + rect.width / 2}px`;
-	balloonEl.style.top = `${rect.top - 6}px`;
+	const centerX = rect.left + rect.width / 2;
+	const balloonRect = balloonEl.getBoundingClientRect();
+	const showBelow = rect.top - balloonRect.height - 6 < 0;
+	balloonEl.classList.toggle("dtm-player-balloon--below", showBelow);
+	balloonEl.style.top = showBelow
+		? `${rect.bottom + 6}px`
+		: `${rect.top - 6}px`;
+	// 横方向もビューポート外に出ないようクランプする（吹き出し自体の半幅を考慮）
+	const halfWidth = balloonRect.width / 2 || 40;
+	const minX = halfWidth + 4;
+	const maxX = win.innerWidth - halfWidth - 4;
+	balloonEl.style.left = `${Math.min(Math.max(centerX, minX), maxX)}px`;
 };
 
 let balloonListenersBound = false;
@@ -163,6 +181,10 @@ const hideActiveBalloon = (): void => {
 };
 
 const showBalloon = (balloonEl: HTMLElement): void => {
+	// positionBalloon は自身の実寸（幅・高さ）でビューポート内クランプ／上下反転を判定するため、
+	// 先に display:block させてから測る（display:none のままだと 0x0 になり計算できない）。
+	// 同一タスク内でこの直後に正しい座標へ書き換えるのでチラつきは発生しない。
+	balloonEl.classList.add("dtm-player-balloon--visible");
 	positionBalloon(balloonEl);
 	if (activeBalloonEl === balloonEl) {
 		if (activeBalloonTimer) {
@@ -171,7 +193,6 @@ const showBalloon = (balloonEl: HTMLElement): void => {
 	} else {
 		hideActiveBalloon();
 		activeBalloonEl = balloonEl;
-		balloonEl.classList.add("dtm-player-balloon--visible");
 	}
 	activeBalloonTimer = setTimeout(() => {
 		hideActiveBalloon();
@@ -565,11 +586,9 @@ export const mountMmlPlayer = (
 		textSpan.textContent = "🥺";
 		em.appendChild(textSpan);
 
-		em.addEventListener("click", (e) => {
-			e.stopPropagation();
-			toggleMute(index);
-		});
-
+		// ミュート切り替えはレーンラベル（@N）側のみで行う。アイコン自体はタップ/ホバーで
+		// 吹き出し（歌声モデル名）を出すだけの表示用にする（モバイルにはホバーが無いため
+		// タップでも同じ動作にしないと吹き出しに到達できない）。
 		mmlHeader.appendChild(em);
 		emojiEls.push(em);
 		emojiByTrack.set(index, em);

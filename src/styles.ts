@@ -1239,13 +1239,32 @@ export const DAW_CSS = `
   border-right: 2px solid var(--c-black);
   border-bottom: 2px solid var(--c-black);
 }
+/* アイコンが画面上端に近く上に出す余白が無い場合は下に反転表示する（positionBalloon が付与） */
+.dtm-player-balloon--below {
+  transform: translate(-50%, 0);
+}
+.dtm-player-balloon--below::after {
+  bottom: auto;
+  top: -6px;
+  border-right: none;
+  border-bottom: none;
+  border-left: 2px solid var(--c-black);
+  border-top: 2px solid var(--c-black);
+}
 .dtm-player-balloon--visible {
   display: block;
   animation: dtm-balloon-fade-in 0.1s steps(2);
 }
+.dtm-player-balloon--below.dtm-player-balloon--visible {
+  animation-name: dtm-balloon-fade-in-below;
+}
 @keyframes dtm-balloon-fade-in {
   from { opacity: 0; transform: translate(-50%, -100%) translateY(4px); }
   to { opacity: 1; transform: translate(-50%, -100%) translateY(0); }
+}
+@keyframes dtm-balloon-fade-in-below {
+  from { opacity: 0; transform: translate(-50%, 0) translateY(-4px); }
+  to { opacity: 1; transform: translate(-50%, 0) translateY(0); }
 }
 @keyframes dtm-emoji-jump {
   0%   { transform: translateY(0); }
