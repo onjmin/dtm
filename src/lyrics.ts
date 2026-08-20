@@ -111,8 +111,11 @@ const kanaTable: Record<string, [string, string]> = {
 	ん: ["N", "N"],
 };
 
-/** 直前のかなと結合して1音節を成す「小さいかな」 */
-const SMALL_KANA = "ぁぃぅぇぉゃゅょっ";
+/**
+ * 直前のかなと結合して1音節を成す「小さいかな」（拗音・小さい母音）。
+ * 促音「っ」は sanitizeText の時点で除去済みのためここには現れない。
+ */
+const SMALL_KANA = "ぁぃぅぇぉゃゅょ";
 
 /** 母音文字（あ・い・う・え・お）。長音記号の置換先に使う */
 const VOWEL_KANA: Record<string, string> = {
@@ -124,20 +127,27 @@ const VOWEL_KANA: Record<string, string> = {
 };
 
 /**
- * カタカナをひらがなへ寄せ、ひらがな・長音記号以外を破棄する。
- * 仕様: ひらがな／カタカナ／長音記号（ー）のみ抽出。
+ * カタカナをひらがなへ寄せ、ひらがな以外を破棄する。
+ * 仕様: ひらがな／カタカナのみ抽出。
+ *
+ * 促音（っ）・長音記号（ー）は、それ単体の音声サンプルを持つUSTは通常存在しない
+ * （音源側に「っ」「ー」という発音は無い）ため、ここで丸ごと除去する。
+ * どちらも「無いもの」として扱い、除去した結果その音符には次の実在する
+ * かな（歌詞）が繰り上がって割り当てられる。
  */
 const sanitizeText = (text: string): string =>
 	text
 		.normalize("NFKC")
 		// カタカナ(ァ-ヶ)→ひらがなへ寄せる
 		.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
-		// ひらがな(ぁ-ゖ)と長音記号(ー)以外を破棄
-		.replace(/[^ぁ-ゖー]/g, "");
+		// 促音(っ)・長音記号(ー)を除去（音声サンプルが存在しないため）
+		.replace(/[っー]/g, "")
+		// ひらがな(ぁ-ゖ)以外を破棄
+		.replace(/[^ぁ-ゖ]/g, "");
 
 /**
  * 文字列を音節単位へ分解する。
- * 小さいかな（ぁぃぅぇぉゃゅょっ）は直前の文字と結合して1音節にする。
+ * 小さいかな（ぁぃぅぇぉゃゅょ）は直前の文字と結合して1音節にする。
  */
 const splitSyllables = (text: string): string[] => {
 	const result: string[] = [];
@@ -166,7 +176,11 @@ const kanaToVowel = (kana: string): string => {
 	return "";
 };
 
-/** 音節文字列を子音・母音へ分解する。長音記号は呼び出し側で解決する */
+/**
+ * 音節文字列を子音・母音へ分解する。
+ * 「ー」「っ」は sanitizeText で除去済みのため通常はここに来ないが、
+ * normalizeLyrics以外から直接呼ばれる可能性に備えて分岐は残す。
+ */
 const analyzeSyllable = (syllable: string): LyricSyllable => {
 	if (syllable === "ー") return { kana: syllable, consonant: "-", vowel: "-" };
 	if (syllable === "っ") return { kana: syllable, consonant: "Q", vowel: "" };
@@ -176,8 +190,9 @@ const analyzeSyllable = (syllable: string): LyricSyllable => {
 	const consonant = row ? row[0] : "";
 	let vowel = row ? row[1] : kanaToVowel(head);
 
-	// 拗音・小さい母音（2文字目）が母音を上書きする。促音(っ)は直前の母音を維持
-	if (syllable.length === 2 && syllable[1] !== "っ") {
+	// 拗音・小さい母音（2文字目）が母音を上書きする。促音(っ)は単独音節として
+	// 別分岐で処理されるため、ここに来る2文字音節は常に拗音・小さい母音の合体。
+	if (syllable.length === 2) {
 		const v = kanaToVowel(syllable[1]);
 		if (v) vowel = v;
 	}
@@ -215,7 +230,6 @@ export const normalizeLyrics = (text: string): LyricSyllable[] =>
 /**
  * 複数行に分かれた歌詞を1つの音節列へまとめ、改行位置を併せて返す。
  * lineBreaks には「直前に改行があった」音節のインデックスが入る（先頭行ぶんは含めない）。
- * 長音(ー)は行ごとに解決する（改行は自然なフレーズの切れ目なので前の母音は引き継がない）。
  */
 const normalizeLyricLines = (
 	lines: string[],
