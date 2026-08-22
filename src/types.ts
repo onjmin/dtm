@@ -594,9 +594,15 @@ export type DawInstance = {
 	) => void;
 	/** リモートから受信した歌詞・UTAU設定を適用する。 */
 	applyLyrics: (trackId: string, data: LyricSyncData) => void;
-	/** マスタ音量を 0-100 で変更する。 */
+	/**
+	 * このDAWインスタンス自身が持つ「曲自体の音量」（`#volume=`）を 0-100 で変更する。
+	 * `getMML()`で出力・`loadMML()`で復元される、曲データの一部として永続化される値。
+	 * `loadMML()` を呼ぶたびにそのMMLの `#volume=` で上書きされるため、リスナー側の
+	 * 音量の好みを別途乗せたい場合は代わりに `DtmStudio.setMasterVolume`
+	 * （`studio.masterGain`、曲データと無関係な出力段ゲイン）を使うこと。
+	 */
 	setMasterVolume: (volume: number) => void;
-	/** マスタ音量を 0-100 で変更する（`setMasterVolume` のエイリアス）。 */
+	/** `setMasterVolume` のエイリアス。 */
 	setVolume: (volume: number) => void;
 	/** ドラム音量を 0-100 で変更する。 */
 	setDrumVolume: (volume: number) => void;

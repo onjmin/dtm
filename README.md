@@ -75,6 +75,33 @@ const chordPlayer = studio.mountChordPlayer(chordEl, "| C | G | Am | F |", {
 chordPlayer.setVolume(65);
 ```
 
+### 「曲自体の音量」と「聴く人の音量」を分けて扱いたい場合
+
+上記の `masterVolume` / `volume` は**曲データが持つ音量**です（MML の `#volume=` と往復し、
+`daw.loadMML()` を呼ぶたびにそのMMLの値で上書きされます）。SNS のフィードのように、
+1つの `studio` を複数の投稿・複数の埋め込みプレイヤーで共有し、かつ「読者が自分の好みで
+サイト全体の音量を1つ調整したい」というケースでは、曲側の値をいじらずに
+`studio.setMasterVolume()` を使ってください。これは `studio.masterGain`（全ての
+`mountEditor` / `mountPlayer` / `mountChordPlayer` / `playSingingMML` インスタンスが
+最終的に合流する出力段の GainNode）を直接動かすため、曲データやモード切替・
+`loadMML()` の影響を一切受けません。
+
+```ts
+const studio = await createDtmStudio();
+
+// 読者側の「サイト全体の音量」— 曲を跨いで一度だけ管理すればよい
+studio.setMasterVolume(userPreferredVolume); // 0-100
+
+// 曲側の masterVolume/volume には触れない（#volume= が持つ作曲者の意図をそのまま尊重する）
+const daw = studio.mountEditor(editorEl, { initialMML: mml });
+const player = studio.mountPlayer(playerEl, mml);
+```
+
+`DawInstance.setMasterVolume` / `MmlPlayerOptions.masterVolume` と
+`DtmStudio.setMasterVolume` は同名ですが別物です。前者は「曲自体の音量」（`#volume=`
+と同期し、曲を読み込むたびに上書きされる）、後者は「聴く人の音量」（曲データと
+無関係に出力段へ一度だけ掛かる）という別レイヤーを担っています。
+
 ---
 
 ## 録音・動画エンコード用音声ストリームの取得 (`MediaStream`)

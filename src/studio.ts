@@ -198,9 +198,12 @@ const resolveDefaultVoiceWorkerUrl = (): string | undefined => {
 export type DtmStudioOptions = {
 	/** 既存の AudioContext を使う（未指定なら内部生成）。 */
 	audioContext?: AudioContext;
-	/** マスター音量 0-1（楽器・歌声）。既定 1。 */
+	/**
+	 * マスター音量 0-100（楽器・歌声）。既定100。
+	 * ライブラリ内の他の音量パラメータ（`setMasterVolume` 等）と同じ0-100スケール。
+	 */
 	masterVolume?: number;
-	/** ドラム音量 0-1。既定 1。 */
+	/** ドラム音量 0-100。既定100。 */
 	drumVolume?: number;
 	/** マスタリバーブの掛かり具合 0-100。既定0（オフ）。全トラックへ一律で掛かる。 */
 	reverbAmount?: number;
@@ -468,9 +471,18 @@ export type DtmStudio = {
 		target: HTMLElement,
 		options: ModeSwitchOptions,
 	) => ModeSwitchInstance;
-	/** マスタ音量を 0-100 で変更する。 */
+	/**
+	 * studio 全体（このstudioを共有する全ての mountEditor / mountPlayer / mountChordPlayer /
+	 * playSingingMML インスタンス）の出力段ゲインを 0-100 で変更する。
+	 *
+	 * これは「聴く人（リスナー）側の音量設定」用のノブで、曲データとは無関係に
+	 * オーディオグラフの最終段（`studio.masterGain`）に一度だけ掛かる。
+	 * `DawInstance.setMasterVolume` / `MmlPlayerOptions.masterVolume`（`#volume=`
+	 * と往復する“曲自体が持つ音量”）とは別物なので混同しないこと。
+	 * `daw.loadMML()` や `#volume=` の内容に一切影響されない。
+	 */
 	setMasterVolume: (volume: number) => void;
-	/** マスタ音量を 0-100 で変更する（`setMasterVolume` のエイリアス）。 */
+	/** `setMasterVolume` のエイリアス。 */
 	setVolume: (volume: number) => void;
 	/** マスタリバーブの掛かり具合を 0-100 で変更する。 */
 	setReverbAmount: (amount: number) => void;
@@ -515,9 +527,9 @@ export const createDtmStudio = async (
 	const audioCtx =
 		options.audioContext ?? new AudioContext({ sampleRate: 44100 });
 	const masterGain = audioCtx.createGain();
-	masterGain.gain.value = options.masterVolume ?? 1;
+	masterGain.gain.value = (options.masterVolume ?? 100) / 100;
 	const drumGain = audioCtx.createGain();
-	drumGain.gain.value = options.drumVolume ?? 1;
+	drumGain.gain.value = (options.drumVolume ?? 100) / 100;
 	drumGain.connect(masterGain);
 
 	// ── マスタリバーブ（send/return）── 全トラック一律の強制センドではなく、
