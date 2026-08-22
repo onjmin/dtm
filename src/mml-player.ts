@@ -71,7 +71,7 @@ export type MmlPlayerOptions = {
 	onResumeAudio?: () => void | Promise<void>;
 	/** 内蔵の簡易square-wave synthを使うか。既定は onPlayNote 未指定なら true */
 	synth?: boolean;
-	/** マスタ音量 0-100。既定100。 */
+	/** マスタ音量 0-100。既定50（DAW編集画面の全体音量スライダーの既定値に合わせている）。 */
 	masterVolume?: number;
 	/** BPM未検出時のフォールバック。既定120 */
 	defaultBpm?: number;
@@ -407,7 +407,7 @@ export const mountMmlPlayer = (
 	const drumPatternName = meta.drum ?? "none";
 
 	const trackVolume = meta.volume ?? options.volume ?? 100;
-	let masterVolume = options.masterVolume ?? 100;
+	let masterVolume = options.masterVolume ?? 50;
 	const drumVolume = meta.drumVolume ?? 80;
 	const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
 	const useSynth = options.synth ?? !options.onPlayNote;

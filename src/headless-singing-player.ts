@@ -97,6 +97,12 @@ export const playSingingMML = async (
 	const trackVolume = meta.volume ?? 100;
 	let masterVolume = options.volume ?? 100;
 
+	/** SequencerTrack.volume 用（0-100 スケール）。sequencer.ts 側で後から /100 される前提。 */
+	const trackVolumePercent = (): number => (trackVolume / 100) * masterVolume;
+	/** voices の gain / masterGain 用（0-1 スケール、AudioParam.gain.value に直結）。 */
+	const masterGainScalar = (): number =>
+		(trackVolume / 100) * (masterVolume / 100);
+
 	// placements を trackIndex ごとにまとめる
 	const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
 		(a, b) => a - b,
@@ -114,7 +120,7 @@ export const playSingingMML = async (
 			}));
 		return {
 			id: TRACK_ID_BY_INDEX[index] ?? `t${index}`,
-			volume: (trackVolume / 100) * masterVolume,
+			volume: trackVolumePercent(),
 			notes,
 		};
 	});
@@ -157,7 +163,9 @@ export const playSingingMML = async (
 			return {
 				id: TRACK_ID_BY_INDEX[index] ?? `t${index}`,
 				model: lt.model,
-				volume: vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME),
+				volume:
+					vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) *
+					masterGainScalar(),
 				pan: panToStereo(lt.pan ?? DEFAULT_PAN),
 				vibrato: lt.vibrato,
 				reverbSend: (lt.reverb ?? 0) / 100,
@@ -196,11 +204,7 @@ export const playSingingMML = async (
 			synth?.playNote(e);
 		},
 		onPlayDrum: (e) => {
-			const velocity =
-				e.velocity *
-				(drumVolume / 100) *
-				(trackVolume / 100) *
-				(masterVolume / 100);
+			const velocity = e.velocity * (drumVolume / 100) * masterGainScalar();
 			options.onPlayDrum?.({ ...e, velocity });
 			synth?.playDrum({ ...e, velocity });
 		},
@@ -238,9 +242,8 @@ export const playSingingMML = async (
 
 	const setVolume = (volume: number): void => {
 		masterVolume = volume;
-		const effectiveTrackVolume = (trackVolume / 100) * masterVolume;
-		for (const t of seqTracks) t.volume = effectiveTrackVolume;
-		voices?.setVolume((trackVolume / 100) * (masterVolume / 100));
+		for (const t of seqTracks) t.volume = trackVolumePercent();
+		voices?.setVolume(masterGainScalar());
 	};
 
 	const suspend = (): Promise<void> => ctx.suspend();
@@ -341,7 +344,7 @@ export const playSingingMML = async (
 			}
 
 			seq.start(options.startStep ?? 0);
-			voices.setVolume((trackVolume / 100) * (masterVolume / 100));
+			voices.setVolume(masterGainScalar());
 			voices.startStream(streamTracks, seq.getStartTime(), {
 				loopLengthSec,
 				loopStartSec,
