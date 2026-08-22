@@ -1032,6 +1032,21 @@ export const mountDAW = (
 	let currentDrumPattern = refs.drumSelect.value;
 	let currentDrumFont = options.drumFont ?? "FluidR3_GM_sf2_file:0";
 	refs.drumFontSelect.value = currentDrumFont;
+	/**
+	 * パターン定義側に推奨音源（DrumPatternDef.font）があれば採用する。
+	 * "海鬼月"などの楽曲プリセットはドラムキーが特定のサウンドフォント
+	 * （例: Chaos_sf2_file）前提で組まれているため、パターン選択時に
+	 * 音源側を追従させないと、無関係な音源のキーマップで誤って鳴ってしまう。
+	 * 明示的にユーザーや `#drumfont=` が音源を指定した場合はそちらを優先し、
+	 * ここは呼び出し側で「未指定のときだけ」呼ぶフォールバックとして使う。
+	 */
+	const applyDrumPatternFont = (name: string): void => {
+		const font = drumPatterns[name]?.font;
+		if (!font) return;
+		currentDrumFont = font;
+		refs.drumFontSelect.value = font;
+		options.onDrumFontChange?.(font);
+	};
 	// MML出力の先頭に埋め込む楽器プリセット名（トップレベル宣言。空なら宣言なし）
 	let currentInstrument = "";
 	let activeTrackId = options.initialActiveTrack ?? trackConfigs[0].id;
@@ -3375,6 +3390,7 @@ export const mountDAW = (
 			{
 				instrument: currentInstrument || undefined,
 				drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
+				drumFont: currentDrumFont,
 				volume: masterVolume,
 				drumVolume: drumVolume,
 				reverb: reverbAmount,
@@ -3402,6 +3418,7 @@ export const mountDAW = (
 			{
 				instrument: currentInstrument || undefined,
 				drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
+				drumFont: currentDrumFont,
 				volume: masterVolume,
 				drumVolume: drumVolume,
 				reverb: reverbAmount,
@@ -3662,6 +3679,9 @@ export const mountDAW = (
 				currentDrumPattern = meta.drum;
 				refs.drumSelect.value = meta.drum;
 				options.onDrumChange?.(meta.drum);
+				// 古いMML（#drumfont=を含まない）を読み込む場合のフォールバック。
+				// 明示的な #drumfont= があればそちらを優先し、ここでは上書きしない。
+				if (!meta.drumFont) applyDrumPatternFont(meta.drum);
 			}
 			if (meta.volume !== undefined) {
 				masterVolume = meta.volume;
@@ -3834,7 +3854,6 @@ export const mountDAW = (
 			t.vocalDelay = lt.delay ?? 0;
 			t.vocalGender = lt.gender ?? 50;
 			t.vocalBreathiness = lt.breathiness ?? 50;
-			t.vocalTension = lt.tension ?? 50;
 			t.vocalTension = lt.tension ?? 50;
 			t.vocalOctaveUnison = lt.octaveUnison ?? "none";
 		});
@@ -4516,6 +4535,7 @@ export const mountDAW = (
 		refs.drumSelect.addEventListener("change", () => {
 			currentDrumPattern = refs.drumSelect.value;
 			options.onDrumChange?.(currentDrumPattern);
+			applyDrumPatternFont(currentDrumPattern);
 		});
 		refs.drumFontSelect.addEventListener("change", () => {
 			currentDrumFont = refs.drumFontSelect.value;
@@ -5576,6 +5596,7 @@ export const mountDAW = (
 			currentDrumPattern = name;
 			refs.drumSelect.value = name;
 			options.onDrumChange?.(name);
+			applyDrumPatternFont(name);
 		},
 		getViewState,
 		setViewState: (state: Partial<DawViewState>) => {
