@@ -29,6 +29,8 @@
 		"check": "biome check src --write",
 		"prepublishOnly": "pnpm run build",
 		"patch": "pnpm version patch",
+		"minor": "pnpm version minor",
+        "major": "pnpm version major",
 		"publish-dangerous-dont-use-this-command": "pnpm publish --access public"
 	},
 	"files": [
