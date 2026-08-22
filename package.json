@@ -2,7 +2,7 @@
 	"author": "onjmin",
 	"license": "MIT",
 	"name": "@onjmin/dtm",
-	"version": "0.1.102",
+	"version": "1.0.0",
 	"description": "MMLを中間言語に用いた、モバイルファーストなDAW / ピアノロール打ち込みコンポーネント",
 	"homepage": "https://onjmin.github.io/dtm",
 	"repository": {
@@ -30,7 +30,7 @@
 		"prepublishOnly": "pnpm run build",
 		"patch": "pnpm version patch",
 		"minor": "pnpm version minor",
-        "major": "pnpm version major",
+		"major": "pnpm version major",
 		"publish-dangerous-dont-use-this-command": "pnpm publish --access public"
 	},
 	"files": [
