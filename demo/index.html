@@ -385,6 +385,9 @@
         </div>
     </footer>
 
+    <!-- 作業履歴（スナップショット）の永続化用。localStorage(5〜10MB/オリジン)は容量が
+         枯渇すると保存が無音で失敗するため、IndexedDBをlocalforage経由で使う。 -->
+    <script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
     <script type="module">
         // location.hostname 自体がローカルか、またはプライベートIPのレンジか
         const isLocal =
@@ -694,12 +697,42 @@
         });
 
         // ── 作業履歴（スナップショット）機能 ──
+        // IndexedDB (localforage) に保存する。旧バージョンは localStorage の固定キーに
+        // 保存していたため、IndexedDB側が空の場合に限り初回だけ移行する
+        // （旧キー自体は削除せずそのまま残す＝万一の際のバックアップにもなる）。
+        localforage.config({ name: 'dtm-demo', storeName: 'history' });
         const HISTORY_STORAGE_KEY = 'dtm-work-history';
         const MAX_HISTORY_ITEMS = 50;
         const SNAPSHOT_INTERVAL_MS = 1800000; // 30分ごとに変更を検知して保存
-        // ページリロード後も最新スナップショットと比較できるよう localStorage から初期化
-        const _initRaw = localStorage.getItem(HISTORY_STORAGE_KEY);
-        const _initHistory = _initRaw ? JSON.parse(_initRaw) : [];
+
+        const getStoredHistory = async () => {
+            try {
+                return (await localforage.getItem(HISTORY_STORAGE_KEY)) ?? [];
+            } catch (e) {
+                console.error('Failed to read history', e);
+                return [];
+            }
+        };
+
+        const migrateHistoryFromLocalStorageIfNeeded = async () => {
+            try {
+                const existing = await localforage.getItem(HISTORY_STORAGE_KEY);
+                if (existing) return; // 既にIndexedDB側にデータがあれば何もしない
+                const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+                if (!raw) return;
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    await localforage.setItem(HISTORY_STORAGE_KEY, parsed);
+                    console.log(`[dtm] Migrated ${parsed.length} history item(s) from localStorage to IndexedDB`);
+                }
+            } catch (e) {
+                console.error('Failed to migrate history from localStorage', e);
+            }
+        };
+        await migrateHistoryFromLocalStorageIfNeeded();
+
+        // ページリロード後も最新スナップショットと比較できるよう初期化
+        const _initHistory = await getStoredHistory();
         let lastSavedMml = _initHistory.length > 0 ? _initHistory[0].mml : initialMml;
 
         const isSimilarMml = (a, b) => {
@@ -724,7 +757,7 @@
             return dp[len2] <= 15;
         };
 
-        const saveSnapshot = (manual = false) => {
+        const saveSnapshot = async (manual = false) => {
             if (!daw) return false;
             if (!manual && gracePeriodActive) return false;
             const mmlData = daw.getMML();
@@ -743,13 +776,12 @@
             }
 
             try {
-                let history = [];
-                const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
-                if (raw) {
-                    history = JSON.parse(raw);
-                }
+                let history = await getStoredHistory();
                 // 同一MMLが連続して保存されるのを防ぐ
-                if (history.length > 0 && history[0].mml === full) return false;
+                if (history.length > 0 && history[0].mml === full) {
+                    if (manual) showHistoryToast('変更がありません。', 'text-pico-yellow');
+                    return false;
+                }
 
                 history.unshift({
                     timestamp: Date.now(),
@@ -759,19 +791,22 @@
                 if (history.length > MAX_HISTORY_ITEMS) {
                     history = history.slice(0, MAX_HISTORY_ITEMS);
                 }
-                localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+                await localforage.setItem(HISTORY_STORAGE_KEY, history);
                 lastSavedMml = full;
                 console.log('[dtm] snapshot saved at', new Date().toLocaleTimeString());
                 if (manual) showHistoryToast('スナップショットを保存しました。', 'text-pico-green');
                 return true;
             } catch (e) {
                 console.error('Failed to save snapshot', e);
+                // 容量オーバー等で保存に失敗した場合、手動保存では必ずユーザーへ知らせる
+                // （以前は無音で失敗しており、保存されたと誤解する事故があった）
+                if (manual) showHistoryToast('保存に失敗しました（ストレージの空き容量をご確認ください）。', 'text-pico-red');
                 return false;
             }
         };
 
         // 定期的にスナップショットを実行
-        setInterval(() => saveSnapshot(false), SNAPSHOT_INTERVAL_MS);
+        setInterval(() => { saveSnapshot(false); }, SNAPSHOT_INTERVAL_MS);
 
         // モーダルのDOM要素
         const historyBtn = document.getElementById('show-history-btn');
@@ -825,13 +860,7 @@
 
         const updateHistoryList = async (page = 0) => {
             historyList.innerHTML = '';
-            let history = [];
-            try {
-                const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
-                if (raw) history = JSON.parse(raw);
-            } catch (e) {
-                console.error(e);
-            }
+            const history = await getStoredHistory();
 
             if (history.length === 0) {
                 const p = document.createElement('p');
@@ -1061,39 +1090,38 @@
 
 
 
-        historyDeleteSelected.addEventListener('click', () => {
+        historyDeleteSelected.addEventListener('click', async () => {
             if (selectedHistoryIndices.size === 0) {
                 showHistoryToast('削除する項目を選択してください。', 'text-pico-orange');
                 return;
             }
-            if (confirm(`選択した ${selectedHistoryIndices.size} 件の履歴を削除しますか？`)) {
-                stopAllPreviews();
-                try {
-                    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
-                    if (raw) {
-                        let history = JSON.parse(raw);
-                        const indices = Array.from(selectedHistoryIndices).sort((a, b) => b - a);
-                        for (const idx of indices) {
-                            history.splice(idx, 1);
-                        }
-                        localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
-                    }
-                } catch (e) {
-                    console.error(e);
+            if (!confirm(`選択した ${selectedHistoryIndices.size} 件の履歴を削除しますか？`)) return;
+            stopAllPreviews();
+            let remaining = 0;
+            try {
+                const history = await getStoredHistory();
+                const indices = Array.from(selectedHistoryIndices).sort((a, b) => b - a);
+                for (const idx of indices) {
+                    history.splice(idx, 1);
                 }
-                selectedHistoryIndices.clear();
-                updateSelectionCountDisplay();
-                // 削除後に現在のページが空になった場合の対応
-                const newTotalPages = Math.ceil((JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) || '[]').length) / HISTORY_PAGE_SIZE);
-                if (historyCurrentPage >= newTotalPages && newTotalPages > 0) {
-                    historyCurrentPage = newTotalPages - 1;
-                }
-                updateHistoryList(historyCurrentPage);
+                await localforage.setItem(HISTORY_STORAGE_KEY, history);
+                remaining = history.length;
+            } catch (e) {
+                console.error(e);
+                showHistoryToast('削除に失敗しました。', 'text-pico-red');
             }
+            selectedHistoryIndices.clear();
+            updateSelectionCountDisplay();
+            // 削除後に現在のページが空になった場合の対応
+            const newTotalPages = Math.ceil(remaining / HISTORY_PAGE_SIZE);
+            if (historyCurrentPage >= newTotalPages && newTotalPages > 0) {
+                historyCurrentPage = newTotalPages - 1;
+            }
+            updateHistoryList(historyCurrentPage);
         });
 
-        historySaveCurrent.addEventListener('click', () => {
-            const saved = saveSnapshot(true);
+        historySaveCurrent.addEventListener('click', async () => {
+            const saved = await saveSnapshot(true);
             if (saved) {
                 selectedHistoryIndices.clear();
                 updateSelectionCountDisplay();
