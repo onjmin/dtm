@@ -30,6 +30,39 @@ export class SoundFont {
 	static fonts = new Map<string, SoundFont>();
 	static ch = -1;
 
+	// ── ヒューマナイズ（疑似ラウンドロビン）──
+	// サンプルを複数持たない代わりに、発音のたびピッチと音量をごく僅かにランダムへ
+	// ブレさせて「毎回寸分違わず同じ波形」という機械的な均一さを崩す。
+	/** 発音ごとのピッチ微揺らぎ幅（セント、±この値の範囲で一様乱数）。 */
+	static humanizeDetuneCents = 4;
+	/** 発音ごとの音量微揺らぎ幅（比率、0.06 = ±6%の範囲で一様乱数）。 */
+	static humanizeGainRatio = 0.06;
+
+	// ── ベロシティ→明るさ連動フィルタ ──
+	// volume は音量にしか効かず音色（明るさ）が変わらないのを補うため、
+	// ローパスのカットオフを volume に連動させる（弱いほど丸く、強いほど明るく）。
+	/** volume=0 のときのローパスカットオフ(Hz)。 */
+	static brightnessMinHz = 1200;
+	/** volume=1 のときのローパスカットオフ(Hz)。サンプルの帯域を実質塞がない値。 */
+	static brightnessMaxHz = 18000;
+	/** ベロシティ→明るさフィルタのQ値。共鳴が付かないButterworth特性。 */
+	static brightnessQ = Math.SQRT1_2;
+
+	// ── ロングトーン用ビブラート(ピッチLFO) ──
+	// 伸ばす音が完全に静止していると不自然に聞こえるため、一定長以上持続する
+	// 音符にだけ、発音直後フェードインしつつ穏やかなピッチ揺れを掛ける。
+	// 閾値・速さは歌声合成側の vibrato.ts (VIBRATO_MIN_SEC/VIBRATO_RATE_HZ) と
+	// 同じ考え方だが、MIDI楽器はここでは独立した定数として持つ
+	// （koeのCurveInput契約に縛られない汎用のWeb Audio LFOのため）。
+	/** ロングトーン判定の最短秒数。これ未満の音符にはビブラートを掛けない。 */
+	static longToneThresholdSec = 0.35;
+	/** ロングトーンビブラートの速さ(Hz)。 */
+	static vibratoRateHz = 5.5;
+	/** ロングトーンビブラートの深さ(セント)。歌声用(±35セント)より控えめ。 */
+	static vibratoDepthCents = 12;
+	/** ロングトーンビブラートのフェードイン秒数。発音直後は素直な音程を保つ。 */
+	static vibratoFadeSec = 0.2;
+
 	static toURL(fontName: string): string {
 		return `https://surikov.github.io/webaudiofontdata/sound/${fontName}.js`;
 	}
@@ -101,6 +134,7 @@ export class SoundFont {
 		const zone = zones.get(pitch);
 		if (!zone) return;
 		const src = ctx.createBufferSource();
+		const filter = ctx.createBiquadFilter();
 		const g = ctx.createGain();
 		const _when = when + ctx.currentTime;
 		const { buffer, _param } = zone;
@@ -108,12 +142,31 @@ export class SoundFont {
 		src.buffer = buffer;
 		src.playbackRate.setValueAtTime(_param.playbackRate, 0);
 		Object.assign(src, _param.src);
+
+		// ヒューマナイズ: 発音ごとにピッチと音量をごく僅かにランダムへブレさせる。
+		const humanizeCents =
+			(Math.random() * 2 - 1) * SoundFont.humanizeDetuneCents;
+		const humanizeGainMul =
+			1 + (Math.random() * 2 - 1) * SoundFont.humanizeGainRatio;
+		src.detune.setValueAtTime(humanizeCents, 0);
+		const effectiveVolume = volume * humanizeGainMul;
+
+		// ベロシティ(volume)→明るさ連動フィルタ: 弱いほど丸く、強いほど明るく。
+		filter.type = "lowpass";
+		const brightness = Math.max(0, Math.min(1, volume));
+		filter.frequency.setValueAtTime(
+			SoundFont.brightnessMinHz +
+				(SoundFont.brightnessMaxHz - SoundFont.brightnessMinHz) * brightness,
+			0,
+		);
+		filter.Q.setValueAtTime(SoundFont.brightnessQ, 0);
+
 		// Start with 0 volume at currentTime to avoid clicking on connection
 		g.gain.setValueAtTime(0, ctx.currentTime);
 		const attackTime = 0.005; // 5ms fade-in
 		const startGainTime = Math.max(ctx.currentTime, _when);
 		g.gain.setValueAtTime(0, startGainTime);
-		g.gain.linearRampToValueAtTime(volume, startGainTime + attackTime);
+		g.gain.linearRampToValueAtTime(effectiveVolume, startGainTime + attackTime);
 
 		const _duration = duration + SoundFont.afterTime;
 		const end =
@@ -125,17 +178,40 @@ export class SoundFont {
 					: Math.min(_duration, _param.max));
 
 		if (!isDrum) {
-			g.gain.setValueAtTime(volume, startGainTime + attackTime);
+			g.gain.setValueAtTime(effectiveVolume, startGainTime + attackTime);
 			g.gain.linearRampToValueAtTime(0, end);
 		}
 
-		src.connect(g).connect(destination);
+		src.connect(filter).connect(g).connect(destination);
+
+		// ロングトーン用ビブラート: 歌モノ以外のMIDI楽器は伸ばす音が完全に静止していた
+		// ため、一定長以上の音符にだけ発音直後フェードインしつつピッチLFOを掛ける。
+		let vibratoOsc: OscillatorNode | undefined;
+		let vibratoDepth: GainNode | undefined;
+		if (!isDrum && duration >= SoundFont.longToneThresholdSec) {
+			vibratoOsc = ctx.createOscillator();
+			vibratoOsc.type = "sine";
+			vibratoOsc.frequency.setValueAtTime(SoundFont.vibratoRateHz, 0);
+			vibratoDepth = ctx.createGain();
+			vibratoDepth.gain.setValueAtTime(0, startGainTime);
+			vibratoDepth.gain.linearRampToValueAtTime(
+				SoundFont.vibratoDepthCents,
+				startGainTime + SoundFont.vibratoFadeSec,
+			);
+			vibratoOsc.connect(vibratoDepth).connect(src.detune);
+			vibratoOsc.start(_when);
+			vibratoOsc.stop(end);
+		}
+
 		src.start(_when);
 		src.stop(end);
 
 		src.onended = () => {
 			src.disconnect();
+			filter.disconnect();
 			g.disconnect();
+			vibratoOsc?.disconnect();
+			vibratoDepth?.disconnect();
 		};
 	}
 }
