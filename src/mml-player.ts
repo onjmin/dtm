@@ -45,6 +45,7 @@ import {
 	DEFAULT_BPM,
 	DEFAULT_GATE,
 	DEFAULT_PAN,
+	DEFAULT_VELOCITY,
 	DEFAULT_VOCAL_VOLUME,
 } from "./types";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "./voice-images";
@@ -477,20 +478,30 @@ export const mountMmlPlayer = (
 	}
 	const seqTracks: SequencerTrack[] = trackIndices.map((index) => {
 		let id = 0;
-		const notes: Note[] = placements
-			.filter((p) => p.trackIndex === index)
-			.map((p) => ({
-				id: id++,
-				startStep: p.startStep,
-				durationSteps: p.durationSteps,
-				pitch: p.pitch,
-				velocity: p.velocity,
-			}));
-		// 注意: p が持つ velocity は各トラックの v ヘッダー（DAWの「ベロシティ」スライダー）が
-		// 全ノートへ均一にコピーされたもの。ここで trackVolume に加えてトラックごとの
-		// ベロシティも掛けると、同じ値を二重に乗算してしまう（音量が二乗的に変化する）ため、
-		// トラック間の音量差は note.velocity 側だけに任せ、volume は曲全体の値で揃える。
-		return { id: String(index), volume: trackVolume, notes };
+		const trackPlacements = placements.filter((p) => p.trackIndex === index);
+		// p が持つ velocity は各トラックの v ヘッダー（DAWの「ベロシティ」スライダー）が
+		// 全ノートへ均一にコピーされたもので、ノート個別の強弱ではない。
+		// エディタ（daw.ts）はMML読込時にこれをトラック音量側へ移し、ノートの velocity は
+		// 既定値へ戻している。ここでも同じ形へ揃える。
+		//
+		// 揃えないと、同じMMLでも PlayNoteEvent.velocity がエディタ（常に既定値）と
+		// 再生専用プレイヤー（v ヘッダー値）で食い違い、velocity を音量ではなく音色に使う
+		// 利用側（SoundFont のベロシティ→明るさ連動など）で音色だけがずれる。
+		// 音量は volume 側へ等価に移すので、最終的な発音音量は従来と変わらない
+		// （(trackVolume×v/既定velocity)/100 × 既定velocity/127 = trackVolume/100 × v/127）。
+		const headerVelocity = trackPlacements[0]?.velocity ?? DEFAULT_VELOCITY;
+		const notes: Note[] = trackPlacements.map((p) => ({
+			id: id++,
+			startStep: p.startStep,
+			durationSteps: p.durationSteps,
+			pitch: p.pitch,
+			velocity: DEFAULT_VELOCITY,
+		}));
+		return {
+			id: String(index),
+			volume: (trackVolume * headerVelocity) / DEFAULT_VELOCITY,
+			notes,
+		};
 	});
 
 	const colorOf = (index: number): string =>
