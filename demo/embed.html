@@ -240,7 +240,7 @@
                 // mountPlayer が #inst= から楽器プリセットを解決し、SoundFont・歌声を配線する
                 const studio = await createDtmStudio();
                 bootEl.style.display = 'none';
-                const player = studio.mountPlayer(playerEl, mml, { volume: 50 });
+                const player = studio.mountPlayer(playerEl, mml);
 
                 const volumeRow = document.getElementById('volume-row');
                 const volumeSlider = document.getElementById('volume-slider');

@@ -597,8 +597,10 @@
         let player = null;
         const mountPlayer = (mml, fromDaw = false) => {
             if (player) player.destroy();
-            // volume:50 はDAWの既定マスタ音量に合わせる係数（再生専用だけ音が倍近く大きくなるのを防ぐ）
-            const opts = { volume: 50, skipConsent: true };
+            // 音量はMMLの #volume= がそのまま効く（エディタと同じ解釈）。
+            // 以前ここで volume:50 を渡していたのは、再生専用だけ音量がずれるライブラリ側の
+            // 不具合を打ち消すためのもの。その不具合を直したので係数は不要（残すと今度は半分になる）。
+            const opts = { skipConsent: true };
             if (fromDaw) opts.getMml = () => daw.getMML().full;
             player = studio.mountPlayer(document.getElementById('player-app'), mml || SAMPLE_MML, opts);
             window.player = player;
@@ -985,7 +987,7 @@
                         playBtn.setAttribute('data-preview-active', 'true');
                         playerContainer.classList.remove('hidden');
 
-                        previewPlayer = studio.mountPlayer(playerAppDiv, item.mml, { volume: 50, skipConsent: true });
+                        previewPlayer = studio.mountPlayer(playerAppDiv, item.mml, { skipConsent: true });
                         previewPlayer.play();
 
                         playBtn.textContent = '停止';
