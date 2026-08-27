@@ -406,8 +406,13 @@ export const mountMmlPlayer = (
 	};
 	const drumPatternName = meta.drum ?? "none";
 
-	const trackVolume = meta.volume ?? options.volume ?? 100;
-	let masterVolume = options.masterVolume ?? 50;
+	// `#volume=`（meta.volume）は「曲全体の音量」なので、エディタ（daw.ts）と同じく
+	// masterVolume 側へ入れる。以前はこれを trackVolume 側へ入れており、masterVolume は
+	// 既定の50のまま据え置かれていた。その結果 `#volume=` を持つMMLでは
+	// トラック音量(meta.volume) × マスタ音量(50) と二段掛けになり、同じMMLでも
+	// 再生専用プレイヤーだけエディタのちょうど半分の音量で鳴っていた。
+	const trackVolume = options.volume ?? 100;
+	let masterVolume = meta.volume ?? options.masterVolume ?? 50;
 	const drumVolume = meta.drumVolume ?? 80;
 	const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
 	const useSynth = options.synth ?? !options.onPlayNote;
@@ -808,6 +813,9 @@ export const mountMmlPlayer = (
 					singingVoices: options.singingVoices,
 					drumPatterns: options.drumPatterns,
 					volume: trackVolume,
+					// 解説モーダル内の試聴サンプルも親と同じマスタ音量で鳴らす
+					// （サンプル側のMMLに `#volume=` があればそちらが優先される）。
+					masterVolume,
 					// 解説モーダル内の試聴サンプルは規約同意を要求しない。
 					skipConsent: true,
 					// 再帰的なモーダル生成を防ぐ。

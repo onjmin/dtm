@@ -56,7 +56,7 @@ import {
 	panToStereo,
 	type SingingVoices,
 } from "./lyrics";
-import { parseMML, parseMmlMeta } from "./mml-parser";
+import { type MmlMeta, parseMML, parseMmlMeta } from "./mml-parser";
 import {
 	type MmlPlayerInstance,
 	type MmlPlayerOptions,
@@ -706,6 +706,47 @@ export const createDtmStudio = async (
 			channelStrips.set(trackId, strip);
 		}
 		return strip;
+	};
+
+	/**
+	 * MMLメタのトラック別チャンネルストリップ設定（`#t<n>comp=` 等）を、そのトラックの
+	 * 発音先ストリップへ一度だけ適用するアプライヤを作る。
+	 *
+	 * エディタ（mountEditor）では daw.ts が `onTrackCompressionChange` 等を発火して
+	 * 同じ設定を反映するが、再生専用プレイヤー経路にはその配線が無く、ストリップが
+	 * 既定値（コンプ0・EQフラット・幅100・センド0・中央定位）のまま鳴っていた。
+	 * そのため同じMMLでもエディタと再生専用プレイヤーで音量・聴こえ方がずれていた。
+	 *
+	 * 適用はストリップ生成後の遅延実行（発音直前）にする。`getChannelStrip` が
+	 * trackId をキーに遅延生成する設計で、しかも trackId の表記が経路ごとに違う
+	 * （エディタは "melody"、再生専用ビューは数値文字列）ため、事前に一括適用しようと
+	 * すると実際に発音で使われるストリップとキーがずれて空振りするため。
+	 */
+	const createTrackStripApplier = (
+		meta: MmlMeta,
+	): ((stripId: string, trackIdx: number) => void) => {
+		const applied = new Set<string>();
+		return (stripId, trackIdx) => {
+			if (applied.has(stripId)) return;
+			applied.add(stripId);
+			const strip = getChannelStrip(stripId);
+			const comp = meta.trackCompression?.[trackIdx];
+			if (comp !== undefined) strip.setCompression(comp);
+			const width = meta.trackWidth?.[trackIdx];
+			if (width !== undefined) strip.setWidth(width);
+			const eqLow = meta.trackEqLow?.[trackIdx];
+			if (eqLow !== undefined) strip.setEqLow(eqLow);
+			const eqMid = meta.trackEqMid?.[trackIdx];
+			if (eqMid !== undefined) strip.setEqMid(eqMid);
+			const eqHigh = meta.trackEqHigh?.[trackIdx];
+			if (eqHigh !== undefined) strip.setEqHigh(eqHigh);
+			const reverbSend = meta.trackReverbSend?.[trackIdx];
+			if (reverbSend !== undefined) strip.setReverbSend(reverbSend);
+			const delaySend = meta.trackDelaySend?.[trackIdx];
+			if (delaySend !== undefined) strip.setDelaySend(delaySend);
+			const pan = meta.trackPan?.[trackIdx];
+			if (pan !== undefined) strip.setPan(panToStereo(pan));
+		};
 	};
 
 	const resumeAudio = (): Promise<void> => {
@@ -1477,8 +1518,11 @@ export const createDtmStudio = async (
 		// 再生専用ビューの @n（数値トラック）→ 役割 → このプリセットの楽器。
 		// per-track オーバーライドがあればそちらを優先する。
 		// ロード未完了の間は undefined（無音）になるだけで、別楽器で鳴ることはない。
+		const applyTrackStrip = createTrackStripApplier(meta);
+
 		const playPlayerNote = (e: PlayNoteEvent): void => {
 			const idx = Number(e.trackId);
+			applyTrackStrip(e.trackId, idx);
 			const overrideKey = playerTrackInstKeys.get(idx);
 			let sfInst: SoundFontInstance | undefined;
 			if (overrideKey) {
@@ -1580,8 +1624,11 @@ export const createDtmStudio = async (
 			loadPlayerTrackInstruments(),
 		]);
 
+		const applyTrackStrip = createTrackStripApplier(meta);
+
 		const playPlayerNote = (e: PlayNoteEvent): void => {
-			const { trackIdx, role } = resolveTrackIdxAndRole(e.trackId);
+			const { trackIdx } = resolveTrackIdxAndRole(e.trackId);
+			applyTrackStrip(e.trackId, trackIdx);
 			const overrideKey = playerTrackInstKeys.get(trackIdx);
 			let sfInst: SoundFontInstance | undefined;
 			if (overrideKey) {
@@ -1678,8 +1725,11 @@ export const createDtmStudio = async (
 			loadPlayerTrackInstruments(),
 		]);
 
+		const applyTrackStrip = createTrackStripApplier(meta);
+
 		const playPlayerNote = (e: PlayNoteEvent): void => {
-			const { trackIdx, role } = resolveTrackIdxAndRole(e.trackId);
+			const { trackIdx } = resolveTrackIdxAndRole(e.trackId);
+			applyTrackStrip(e.trackId, trackIdx);
 			const overrideKey = playerTrackInstKeys.get(trackIdx);
 			let sfInst: SoundFontInstance | undefined;
 			if (overrideKey) {
