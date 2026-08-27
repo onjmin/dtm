@@ -1308,6 +1308,7 @@ export const mountChordPlayer = (
 	 */
 	const wafPlayDynamic: WafPlayFn = ({
 		pitch,
+		velocity,
 		volume,
 		when,
 		duration,
@@ -1321,6 +1322,7 @@ export const mountChordPlayer = (
 				destination,
 				pitch,
 				volume: volume * 0.85,
+				velocity,
 				when,
 				duration,
 			});

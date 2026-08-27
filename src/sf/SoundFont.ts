@@ -39,14 +39,23 @@ export class SoundFont {
 	static humanizeGainRatio = 0.06;
 
 	// ── ベロシティ→明るさ連動フィルタ ──
-	// volume は音量にしか効かず音色（明るさ）が変わらないのを補うため、
-	// ローパスのカットオフを volume に連動させる（弱いほど丸く、強いほど明るく）。
-	/** volume=0 のときのローパスカットオフ(Hz)。 */
-	static brightnessMinHz = 1200;
-	/** volume=1 のときのローパスカットオフ(Hz)。サンプルの帯域を実質塞がない値。 */
-	static brightnessMaxHz = 18000;
+	// velocity は音量にしか効かず音色（明るさ）が変わらないのを補うため、
+	// ローパスのカットオフを velocity に連動させる（弱いほど丸く、強いほど明るく）。
+	// 連動元は必ず velocity であって volume ではない。volume には
+	// 「トラック音量フェーダー×velocity」が既に畳み込まれている（sequencer.ts参照）ため、
+	// volume を使うとフェーダーを下げただけで音色まで暗くなり、音量がゲインと音色へ
+	// 二重に効いてしまう。音量フェーダーは音色を変えてはならない。
+	/** velocity=0 のときのローパスカットオフ(Hz)。 */
+	static brightnessMinHz = 2400;
+	/** velocity=127 のときのローパスカットオフ(Hz)。サンプルの帯域を実質塞がない値。 */
+	static brightnessMaxHz = 20000;
 	/** ベロシティ→明るさフィルタのQ値。共鳴が付かないButterworth特性。 */
 	static brightnessQ = Math.SQRT1_2;
+	/**
+	 * この明るさ比率以上ならフィルタ自体を挿入しない。最強ベロシティの音は改修前と
+	 * 完全に同一の信号経路を通り、余計な音痩せや位相変化が起きないようにするため。
+	 */
+	static brightnessBypassAbove = 0.98;
 
 	// ── ロングトーン用ビブラート(ピッチLFO) ──
 	// 伸ばす音が完全に静止していると不自然に聞こえるため、一定長以上持続する
@@ -117,6 +126,7 @@ export class SoundFont {
 		destination,
 		pitch = 60,
 		volume = 1.0,
+		velocity,
 		when = 0.0,
 		duration = 1.0,
 	}: {
@@ -124,6 +134,12 @@ export class SoundFont {
 		destination?: AudioNode;
 		pitch?: number;
 		volume?: number;
+		/**
+		 * 元ノートのベロシティ 0-127。ベロシティ→明るさ連動にのみ使い、音量には影響しない
+		 * （音量は volume が担う）。未指定なら最強打として扱いフィルタを挿入しないので、
+		 * velocity を渡さない既存の呼び出し元は改修前と同じ信号経路のままになる。
+		 */
+		velocity?: number;
 		when?: number;
 		duration?: number;
 	} = {}): void {
@@ -134,7 +150,6 @@ export class SoundFont {
 		const zone = zones.get(pitch);
 		if (!zone) return;
 		const src = ctx.createBufferSource();
-		const filter = ctx.createBiquadFilter();
 		const g = ctx.createGain();
 		const _when = when + ctx.currentTime;
 		const { buffer, _param } = zone;
@@ -151,15 +166,24 @@ export class SoundFont {
 		src.detune.setValueAtTime(humanizeCents, 0);
 		const effectiveVolume = volume * humanizeGainMul;
 
-		// ベロシティ(volume)→明るさ連動フィルタ: 弱いほど丸く、強いほど明るく。
-		filter.type = "lowpass";
-		const brightness = Math.max(0, Math.min(1, volume));
-		filter.frequency.setValueAtTime(
-			SoundFont.brightnessMinHz +
-				(SoundFont.brightnessMaxHz - SoundFont.brightnessMinHz) * brightness,
-			0,
-		);
-		filter.Q.setValueAtTime(SoundFont.brightnessQ, 0);
+		// ベロシティ→明るさ連動フィルタ: 弱いほど丸く、強いほど明るく。
+		// 連動元は velocity のみ。volume（＝トラック音量フェーダー込み）は使わない。
+		// velocity 未指定の呼び出し元は最強打扱いにしてフィルタを挿入しない。
+		const brightness =
+			velocity === undefined ? 1 : Math.max(0, Math.min(1, velocity / 127));
+		const filter =
+			brightness >= SoundFont.brightnessBypassAbove
+				? undefined
+				: ctx.createBiquadFilter();
+		if (filter) {
+			filter.type = "lowpass";
+			filter.frequency.setValueAtTime(
+				SoundFont.brightnessMinHz +
+					(SoundFont.brightnessMaxHz - SoundFont.brightnessMinHz) * brightness,
+				0,
+			);
+			filter.Q.setValueAtTime(SoundFont.brightnessQ, 0);
+		}
 
 		// Start with 0 volume at currentTime to avoid clicking on connection
 		g.gain.setValueAtTime(0, ctx.currentTime);
@@ -182,7 +206,9 @@ export class SoundFont {
 			g.gain.linearRampToValueAtTime(0, end);
 		}
 
-		src.connect(filter).connect(g).connect(destination);
+		if (filter) src.connect(filter).connect(g);
+		else src.connect(g);
+		g.connect(destination);
 
 		// ロングトーン用ビブラート: 歌モノ以外のMIDI楽器は伸ばす音が完全に静止していた
 		// ため、一定長以上の音符にだけ発音直後フェードインしつつピッチLFOを掛ける。
@@ -208,7 +234,7 @@ export class SoundFont {
 
 		src.onended = () => {
 			src.disconnect();
-			filter.disconnect();
+			filter?.disconnect();
 			g.disconnect();
 			vibratoOsc?.disconnect();
 			vibratoDepth?.disconnect();

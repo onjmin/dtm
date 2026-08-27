@@ -96,6 +96,8 @@ type SoundFontInstance = {
 		destination: AudioNode;
 		pitch: number;
 		volume: number;
+		/** 元ノートのvelocity(0-127)。音量ではなく音色の明るさにだけ効く。 */
+		velocity?: number;
 		when: number;
 		duration: number;
 	}) => void;
@@ -1098,6 +1100,7 @@ export const createDtmStudio = async (
 				destination: getChannelStrip(e.trackId).input,
 				pitch: e.pitch,
 				volume: e.volume,
+				velocity: e.velocity,
 				when: e.when,
 				duration: e.duration,
 			});
@@ -1497,6 +1500,7 @@ export const createDtmStudio = async (
 				destination: getChannelStrip(e.trackId).input,
 				pitch: e.pitch,
 				volume: e.volume,
+				velocity: e.velocity,
 				when: e.when,
 				duration: e.duration,
 			});
@@ -1599,6 +1603,7 @@ export const createDtmStudio = async (
 				destination: getChannelStrip(e.trackId).input,
 				pitch: e.pitch,
 				volume: e.volume,
+				velocity: e.velocity,
 				when: e.when,
 				duration: e.duration,
 			});
@@ -1696,6 +1701,7 @@ export const createDtmStudio = async (
 				destination: getChannelStrip(e.trackId).input,
 				pitch: e.pitch,
 				volume: e.volume,
+				velocity: e.velocity,
 				when: e.when,
 				duration: e.duration,
 			});
@@ -1737,6 +1743,7 @@ export const createDtmStudio = async (
 			destination: getChannelStrip(e.trackId).input,
 			pitch: e.pitch,
 			volume: e.volume,
+			velocity: e.velocity,
 			when: e.when,
 			duration: e.duration,
 		});
@@ -1814,6 +1821,7 @@ export const createDtmStudio = async (
 				destination: getChannelStrip("chord").input,
 				pitch: e.pitch,
 				volume: e.volume,
+				velocity: e.velocity,
 				when: e.when,
 				duration: e.duration,
 			});
