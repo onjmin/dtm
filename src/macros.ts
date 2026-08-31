@@ -173,6 +173,9 @@ export const shiftNotes = (cores: MMLCore[], shiftSteps: number): void => {
 			if (newStart < 0) core.deleteNoteById(note.id);
 			else core.moveNote(note.id, newStart, note.pitch);
 		}
+		// moveNote は履歴を残さないため、シフト全体を1操作としてここで確定する。
+		// これが無いとシフト後のUndoが直前の編集まで巻き戻してしまう。
+		core.saveHistory();
 	}
 };
 
@@ -191,5 +194,7 @@ export const transposeNotes = (cores: MMLCore[], semitones: number): void => {
 				core.moveNote(note.id, note.startStep, newPitch);
 			}
 		}
+		// shiftNotes と同様、移調全体を1操作として履歴へ確定する。
+		core.saveHistory();
 	}
 };

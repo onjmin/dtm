@@ -225,6 +225,13 @@ export const createPianoRoll = (
 		}
 
 		if (dragState) {
+			// 移動・リサイズ中は履歴を残さない（moveNote/resizeNote は保存しない）ので、
+			// ドラッグ確定のここで1操作ぶんの履歴を確定させる。これが無いと
+			// ドラッグでの移動・長さ変更がUndoで戻せない。
+			if (hasDragged) {
+				if (dragState.mode === "move") core.moveNoteEnd(dragState.noteId);
+				else core.resizeNoteEnd(dragState.noteId);
+			}
 			dragState = null;
 			if (hasDragged) {
 				suppressClick = true;

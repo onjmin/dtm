@@ -47,7 +47,10 @@ export class LinkedList<T> {
 	 * Undo可能かチェック（カーソル移動なし）
 	 */
 	canUndo(): boolean {
-		return this.#cursor.prev?.value !== null;
+		const { prev } = this.#cursor;
+		// prev が無い（履歴の先頭）ときに `prev?.value` は undefined になるため、
+		// `!== null` だけだと「戻れる」と誤判定する。canRedo と同じ形で判定する。
+		return prev !== null && prev.value !== null;
 	}
 	/**
 	 * Redo可能かチェック（カーソル移動なし）

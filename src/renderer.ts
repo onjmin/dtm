@@ -300,7 +300,9 @@ export const drawGrid = (noteLengthSteps: number = 1): void => {
 	for (let y = startY; y < endY; y += keyHeight) {
 		const pitchIndex = keyCount - 1 - y / keyHeight;
 		const totalPitch = pitchIndex + pitchRangeStart;
-		const pitchMod12 = pitchIndex % 12;
+		// 黒鍵判定・C線は実音高(totalPitch)基準。drawKeyboard と揃えないと
+		// pitchRangeStart が12の倍数でないときグリッドの縞と鍵盤がずれる。
+		const pitchMod12 = totalPitch % 12;
 		const isBlackKey = blackKeyPitches.has(pitchMod12);
 		const isC = pitchMod12 === 0;
 		const octave = Math.floor(totalPitch / 12) - 1;

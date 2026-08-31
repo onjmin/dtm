@@ -24,6 +24,8 @@ const STEPS_PER_BEAT = 48;
 // renderNote の最大ブロック(~200ms)を十分上回る値にする。
 const PLAN_TIME = 0.5;
 const TICK_INTERVAL_MS = 20;
+/** ステップ位置の比較に使う許容誤差（浮動小数の丸め対策）。 */
+const STEP_EPSILON = 1e-4;
 
 export type SequencerTrack = {
 	id: string;
@@ -116,6 +118,11 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 	let loopDurationSec = 0;
 	let loopStartIndex = 0;
 	let loopBase = 0;
+
+	// ドラム関連の状態。drumCursor は「ここまで予約済み」の絶対ステップ位置（排他）、
+	// lastDrumStep は前ティックの再生位置（ループで巻き戻ったかの判定用）。
+	let drumCursor = 0;
+	let lastDrumStep = Number.NEGATIVE_INFINITY;
 
 	// キュー関連の状態
 	let lastPlayStep = 0;
@@ -256,29 +263,49 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		}
 
 		// ドラム（小節ループ）。実際の音量スケールは onPlayDrum 側で適用する。
+		//
+		// メロディックノートと同様に「どこまで予約したか」をカーソルで持ち、
+		// (drumCursor, drumScanTo] の半開区間だけを1回ずつ予約する。
+		// 以前は毎ティック「現在位置から4step先まで」の窓を丸ごと走査していたため、
+		// 窓幅(4step)がティック間隔(20ms)より広い通常のテンポでは同じ一打が2〜6回
+		// 重複して予約され、同じ時刻に音が重なって不自然に大きく鳴っていた
+		// （逆に極端な高速テンポでは窓がティック間隔より狭くなり打ち漏らしていた）。
 		const { stepsPerBar } = options;
 		const currentStep = getWrappedPlayStep(time, sps);
-		const currentBar = Math.floor(currentStep / stepsPerBar) + 1;
-		const pattern = options.getDrumPattern(currentBar);
-		if (pattern && pattern.length > 0) {
-			const currentStepInBar = currentStep % stepsPerBar;
-			const nextStep = currentStepInBar + 4;
-			const crossedBar = currentStepInBar < 4;
-
-			for (const drum of pattern) {
-				const shouldPlay =
-					(crossedBar && drum.step === 0) ||
-					(drum.step >= currentStepInBar && drum.step < nextStep);
-				if (!shouldPlay) continue;
-				const whenSeconds = (drum.step - currentStepInBar) * sps;
-				if (whenSeconds < -0.1 || whenSeconds > PLAN_TIME) continue;
-				options.onPlayDrum({
-					pitch: drum.pitch,
-					velocity: drum.velocity ?? 1.0,
-					when: Math.max(0, whenSeconds),
-					duration: 0.1,
-				});
+		// ループで先頭へ巻き戻ったらカーソルもループ先頭へ戻す
+		if (
+			isLooping &&
+			loopDurationSec > 0 &&
+			currentStep + STEP_EPSILON < lastDrumStep
+		) {
+			drumCursor = loopStartStep - STEP_EPSILON;
+		}
+		lastDrumStep = currentStep;
+		// 先読み量は音符と揃える（PLAN_TIME秒ぶん）。ループ時は末尾を越えない。
+		// ループ終端ちょうどにある一打は「次の周回の先頭」と同じ位置なので、
+		// 巻き戻り後に1回だけ予約されるようここでは含めない（含めると二度鳴る）。
+		let drumScanTo = currentStep + PLAN_TIME / sps;
+		if (isLooping && loopDurationSec > 0) {
+			drumScanTo = Math.min(drumScanTo, loopEndStep - STEP_EPSILON);
+		}
+		if (drumScanTo > drumCursor) {
+			const firstBar = Math.floor(Math.max(0, drumCursor) / stepsPerBar);
+			const lastBar = Math.floor(Math.max(0, drumScanTo) / stepsPerBar);
+			for (let bar = firstBar; bar <= lastBar; bar++) {
+				const pattern = options.getDrumPattern(bar + 1);
+				if (!pattern || pattern.length === 0) continue;
+				for (const drum of pattern) {
+					const absStep = bar * stepsPerBar + drum.step;
+					if (absStep <= drumCursor || absStep > drumScanTo) continue;
+					options.onPlayDrum({
+						pitch: drum.pitch,
+						velocity: drum.velocity ?? 1.0,
+						when: Math.max(0, (absStep - currentStep) * sps),
+						duration: 0.1,
+					});
+				}
 			}
+			drumCursor = drumScanTo;
 		}
 
 		// 再生中のキュー（イベント）監視・発火
@@ -365,6 +392,9 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		}
 
 		loopBase = 0;
+		// 再生開始位置ちょうどにあるドラムも1回予約されるよう、カーソルは僅かに手前へ置く
+		drumCursor = fromStepValue - STEP_EPSILON;
+		lastDrumStep = Number.NEGATIVE_INFINITY;
 		lastPlayStep = fromStepValue - 0.0001;
 		lastRealTime = -1;
 		lastAudioTime = -1;
