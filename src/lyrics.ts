@@ -869,7 +869,7 @@ export const KOE_VOICEBANKS: Record<string, string> = {
 	mgroid: "MGRoid_原音設定済み.koe",
 	motroid: "MOTRoid完全版V2.koe",
 	nynroid: "NYNRoidver1.4.koe",
-	uc: "蓄音キリコ （beta1.0）.koe",
+	uc: "蓄音キリコ （beta1.1）.koe",
 };
 
 /**
