@@ -375,38 +375,66 @@ export const DAW_CSS = `
   flex-basis: 100%;
   display: flex;
   flex-wrap: nowrap;
-  gap: 3px;
+  gap: 4px;
+  align-items: flex-end;
 }
 .dtm-pill {
   --dtm-pill-color: var(--dtm-primary);
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 1 1 0;
   min-width: 0;
-  height: 26px;
+  height: 24px;
   padding: 0;
   border: 2px solid var(--c-black);
-  background: color-mix(in srgb, var(--dtm-pill-color) 40%, black);
-  color: var(--c-white);
+  background: color-mix(in srgb, var(--dtm-pill-color) 22%, #0e121e);
+  color: color-mix(in srgb, var(--c-white) 60%, transparent);
   font-family: var(--dtm-font);
   font-size: 11px;
   font-weight: bold;
   cursor: pointer;
-  box-shadow: 2px 2px 0 var(--c-black);
-  opacity: 0.7;
+  box-shadow: 1px 1px 0 var(--c-black);
+  opacity: 0.55;
+  transition: opacity 120ms ease, background 120ms ease, transform 120ms ease;
 }
-/* アクティブ選択 = 不透明 + 金枠 */
+.dtm-pill:hover:not(.dtm-pill--active) {
+  opacity: 0.85;
+  background: color-mix(in srgb, var(--dtm-pill-color) 45%, #0e121e);
+  color: var(--c-white);
+}
+/* アクティブ選択 = 鮮明なトラック色 + ゴールド枠 + グロー + 上昇立体タブ表現 */
 .dtm-pill--active {
   opacity: 1;
+  height: 28px;
+  background: var(--dtm-pill-color);
+  color: #ffffff;
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
   border-color: var(--dtm-gold);
-  box-shadow: 0 0 0 1px var(--dtm-gold), 2px 2px 0 var(--c-black);
+  box-shadow:
+    0 0 0 1.5px var(--dtm-gold),
+    0 0 10px color-mix(in srgb, var(--dtm-pill-color) 70%, transparent),
+    2px 2px 0 var(--c-black);
+  z-index: 1;
+  transform: translateY(-2px);
 }
-.dtm-pill:not(.dtm-pill--active):active { transform: translate(2px,2px); box-shadow: none; }
+.dtm-pill--active::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 2px;
+  right: 2px;
+  height: 2px;
+  background: #ffffff;
+  border-radius: 1px;
+  opacity: 0.85;
+}
+.dtm-pill:not(.dtm-pill--active):active { transform: translate(1px,1px); box-shadow: none; }
 /* 再生中、実際に発音した瞬間だけ点灯（どのタブが今鳴っているか視覚的に分かるように） */
 .dtm-pill--sounding {
-  background: color-mix(in srgb, var(--dtm-pill-color) 85%, white);
-  transition: background 30ms linear;
+  filter: brightness(1.6);
+  transition: filter 30ms linear;
 }
 
 /* ─── ピアノロール（トラッカー風） ─── */
@@ -511,6 +539,49 @@ export const DAW_CSS = `
 .dtm-panel-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
 .dtm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .dtm-track-body { display: flex; flex-direction: column; gap: 10px; }
+
+/* ─── アクティブトラック情報バナー ─── */
+.dtm-active-track-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--dtm-track-color, var(--dtm-primary)) 16%, var(--dtm-deep));
+  border: 2px solid var(--c-black);
+  border-left: 5px solid var(--dtm-track-color, var(--dtm-primary));
+  box-shadow: 2px 2px 0 var(--c-black);
+  margin-bottom: 2px;
+}
+.dtm-active-track-badge {
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  font-weight: bold;
+  background: var(--dtm-track-color, var(--dtm-primary));
+  color: #ffffff;
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000;
+  padding: 2px 6px;
+  border: 1px solid var(--c-black);
+  border-radius: 2px;
+  letter-spacing: .06em;
+}
+.dtm-active-track-name {
+  font-family: var(--dtm-font);
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--c-white);
+  flex: 1 1 auto;
+}
+.dtm-active-track-pill {
+  font-family: var(--dtm-font);
+  font-size: 9px;
+  font-weight: bold;
+  letter-spacing: .08em;
+  padding: 2px 5px;
+  color: var(--dtm-gold);
+  border: 1px solid var(--dtm-gold);
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 2px;
+}
 
 /* ─── MML出力（CRTターミナル） ─── */
 .dtm-output {

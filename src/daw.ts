@@ -1388,15 +1388,27 @@ export const mountDAW = (
 		// 歌詞を重ねる対象（描画されたアクティブトラックのノート）。選択ハイライトに
 		// 塗り潰されないよう、文字は全ノートを描き終えてから最後に載せる。
 		let lyricTargetNotes: Note[] | null = null;
+		let activeTrackState: TrackState | null = null;
+
+		// 1. まず非アクティブトラックを背景として先に描画（アクティブトラックに被さらないようにする）
 		for (const t of trackStates) {
 			if (hiddenTracks.has(t.config.id)) continue;
 			if (isSolo && t.config.id !== activeTrackId) continue;
+			if (t.config.id === activeTrackId) {
+				activeTrackState = t;
+				continue;
+			}
 			const [r, g, b] = t.config.color;
-			const isActive = t.config.id === activeTrackId;
-			const a = isActive ? 1 : 0.3;
 			const notes = t.core.getNotes();
-			drawNotes(notes, [r, g, b, a]);
-			if (isActive) lyricTargetNotes = notes;
+			drawNotes(notes, [r, g, b, 1.0], false);
+		}
+
+		// 2. アクティブトラックを最前面に描画（立体エッジと鮮やかな発色）
+		if (activeTrackState) {
+			const [r, g, b] = activeTrackState.config.color;
+			const notes = activeTrackState.core.getNotes();
+			drawNotes(notes, [r, g, b, 1.0], true);
+			lyricTargetNotes = notes;
 		}
 		if (activeToolMode === "select" && selectionRect) {
 			const ctx = getGridContext();
@@ -2439,10 +2451,15 @@ export const mountDAW = (
 		trackPillEls.clear();
 		for (const [i, t] of trackStates.entries()) {
 			const [r, g, b] = t.config.color;
+			const isActive = t.config.id === activeTrackId;
 			const btn = document.createElement("button");
-			btn.className = `dtm-pill ${t.config.id === activeTrackId ? "dtm-pill--active" : ""}`;
+			btn.className = `dtm-pill ${isActive ? "dtm-pill--active" : ""}`;
 			btn.style.setProperty("--dtm-pill-color", `rgb(${r},${g},${b})`);
-			btn.title = t.config.name;
+			btn.title = `Track ${i + 1}: ${t.config.name}`;
+			btn.setAttribute(
+				"aria-label",
+				`Track ${i + 1}: ${t.config.name}${isActive ? " (選択中)" : ""}`,
+			);
 			btn.textContent = String(i + 1);
 			btn.addEventListener("click", () => switchTrack(t.config.id));
 			refs.trackTabs.appendChild(btn);
@@ -2450,7 +2467,26 @@ export const mountDAW = (
 		}
 		// ボディ
 		const active = getActive();
+		const activeIndex = trackStates.findIndex(
+			(t) => t.config.id === activeTrackId,
+		);
+		const [activeR, activeG, activeB] = active.config.color;
+
+		// 個別トラック設定パネルのタイトル（summary）に現在選択中のトラック情報を反映
+		const panelEl = refs.trackBody.closest<HTMLDetailsElement>(".dtm-panel");
+		if (panelEl) {
+			const summaryEl = panelEl.querySelector("summary");
+			if (summaryEl) {
+				summaryEl.textContent = `個別トラック設定（Track ${activeIndex + 1}: ${active.config.name}）`;
+			}
+		}
+
 		refs.trackBody.innerHTML = `
+      <div class="dtm-active-track-banner" style="--dtm-track-color: rgb(${activeR},${activeG},${activeB})">
+        <span class="dtm-active-track-badge">TRACK ${activeIndex + 1}</span>
+        <span class="dtm-active-track-name">${active.config.name}</span>
+        <span class="dtm-active-track-pill">ACTIVE</span>
+      </div>
       <div class="dtm-row">
         <span class="dtm-label">ベロシティ</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="track-vol" min="0" max="127" value="${active.volume}">

@@ -369,12 +369,19 @@ export const drawGrid = (noteLengthSteps: number = 1): void => {
 
 /**
  * 指定されたノートの配列を描画します。
+ * @param notes 描画対象のノートリスト
+ * @param color [r, g, b, a] のカラー値
+ * @param isActive アクティブトラックかどうか（アクティブ時は立体ハイライト・鮮明表示、非アクティブ時はゴースト表示）
  */
 export const drawNotes = (
 	notes: Note[],
 	color: number[] = [59, 130, 246, 1.0],
+	isActive: boolean = true,
 ): void => {
 	const { keyHeight, stepWidth, keyCount, pitchRangeStart } = g_config;
+	const canvasWidth = g_grid_canvas.width;
+	const canvasHeight = g_grid_canvas.height;
+	const [r, g, b, a] = color;
 
 	for (const note of notes) {
 		// ノートの論理座標とサイズを計算
@@ -388,18 +395,49 @@ export const drawNotes = (
 		const renderX = logicalX - g_draw_offset_x;
 		const renderY = logicalY - g_draw_offset_y;
 
-		// ベロシティに応じた不透明度 (0.5〜1.0)
-		const velocityOpacity =
-			note.velocity !== undefined ? 0.5 + (note.velocity / 127) * 0.5 : 1.0;
+		// 画面外のノートはスキップ（描画負荷軽減）
+		if (renderX + w < 0 || renderX > canvasWidth) continue;
+		if (renderY + h < 0 || renderY > canvasHeight) continue;
 
-		// colorは[r, g, b, a]の配列
-		const [r, g, b, a] = color;
-		const finalOpacity = a * velocityOpacity;
+		if (isActive) {
+			// アクティブトラック：鮮やかな色＋立体ハイライト＆シャドウ
+			const velocityOpacity =
+				note.velocity !== undefined ? 0.6 + (note.velocity / 127) * 0.4 : 1.0;
+			const finalOpacity = a * velocityOpacity;
 
-		g_grid_ctx.fillStyle = `rgba(${r},${g},${b},${finalOpacity})`;
+			// ノート本体塗り
+			g_grid_ctx.fillStyle = `rgba(${r},${g},${b},${finalOpacity})`;
+			g_grid_ctx.fillRect(renderX + 1, renderY + 1, w - 2, h - 2);
 
-		// 描画には renderX と renderY を使用
-		g_grid_ctx.fillRect(renderX + 1, renderY + 1, w - 2, h - 2);
+			// ノートエッジの立体感（上・左にハイライト、下・右にシャドウ）
+			if (w >= 4 && h >= 4) {
+				// 上辺ハイライト
+				g_grid_ctx.fillStyle = "rgba(255,255,255,0.4)";
+				g_grid_ctx.fillRect(renderX + 1, renderY + 1, w - 2, 1);
+				// 左端ハイライト（ノートオンの視認性向上）
+				g_grid_ctx.fillRect(renderX + 1, renderY + 1, 1, h - 2);
+
+				// 下辺シャドウ
+				g_grid_ctx.fillStyle = "rgba(0,0,0,0.45)";
+				g_grid_ctx.fillRect(renderX + 1, renderY + h - 2, w - 2, 1);
+				// 右端シャドウ
+				g_grid_ctx.fillRect(renderX + w - 2, renderY + 1, 1, h - 2);
+			}
+		} else {
+			// 非アクティブトラック：彩度を落とした半透明のゴースト表示（背景ガイド）
+			const velocityOpacity =
+				note.velocity !== undefined ? 0.7 + (note.velocity / 127) * 0.3 : 1.0;
+			const finalOpacity = Math.min(0.25, a * 0.22) * velocityOpacity;
+
+			// 彩度を少し落として落ち着いたトーンにする
+			const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+			const ghostR = Math.round(r * 0.6 + gray * 0.4);
+			const ghostG = Math.round(g * 0.6 + gray * 0.4);
+			const ghostB = Math.round(b * 0.6 + gray * 0.4);
+
+			g_grid_ctx.fillStyle = `rgba(${ghostR},${ghostG},${ghostB},${finalOpacity})`;
+			g_grid_ctx.fillRect(renderX + 1, renderY + 1, w - 2, h - 2);
+		}
 	}
 };
 
