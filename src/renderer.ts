@@ -404,6 +404,68 @@ export const drawNotes = (
 };
 
 /**
+ * ノートの上に歌詞（かな）を重ねて描画します。
+ *
+ * 音節の割り当ては発音側（StreamVoiceTrack の組み立て）と同じ規則で、
+ * startStep 昇順に並べたノートの i 番目へ syllables[i] を対応させます。
+ * 音節が足りないぶんのノートには何も描きません。
+ *
+ * 文字はノート矩形でクリップするため、隣のノートへはみ出しません。
+ */
+export const drawNoteLyrics = (notes: Note[], syllables: string[]): void => {
+	if (syllables.length === 0) return;
+
+	const { keyHeight, stepWidth, keyCount, pitchRangeStart } = g_config;
+	// 行が低すぎると文字が潰れて読めないので描かない（縦ズームを絞った状態）
+	if (keyHeight < 10) return;
+	const fontSize = Math.min(12, Math.floor(keyHeight * 0.85));
+
+	const sorted = [...notes].sort((a, b) => a.startStep - b.startStep);
+	const count = Math.min(sorted.length, syllables.length);
+
+	g_grid_ctx.save();
+	g_grid_ctx.font = `${fontSize}px 'k8x12',sans-serif`;
+	g_grid_ctx.textAlign = "left";
+	g_grid_ctx.textBaseline = "middle";
+	g_grid_ctx.lineWidth = 3;
+	g_grid_ctx.lineJoin = "round";
+
+	for (let i = 0; i < count; i++) {
+		const kana = syllables[i];
+		if (!kana) continue;
+
+		const note = sorted[i];
+		const renderX = note.startStep * stepWidth - g_draw_offset_x;
+		const renderY =
+			(keyCount - 1 - (note.pitch - pitchRangeStart)) * keyHeight -
+			g_draw_offset_y;
+		const w = note.durationSteps * stepWidth;
+
+		// 画面外・細すぎるノートはスキップ
+		if (w < 6) continue;
+		if (renderX + w < 0 || renderX > g_grid_canvas.width) continue;
+		if (renderY + keyHeight < 0 || renderY > g_grid_canvas.height) continue;
+
+		const textX = renderX + 2;
+		const textY = renderY + keyHeight / 2;
+
+		g_grid_ctx.save();
+		// ノート矩形の内側だけに描く（はみ出し防止）
+		g_grid_ctx.beginPath();
+		g_grid_ctx.rect(renderX + 1, renderY + 1, w - 2, keyHeight - 2);
+		g_grid_ctx.clip();
+		// 縁取り→本体の順に描いてノート色の上でも読めるようにする
+		g_grid_ctx.strokeStyle = "rgba(0,0,0,0.85)";
+		g_grid_ctx.strokeText(kana, textX, textY);
+		g_grid_ctx.fillStyle = "#fff1e8";
+		g_grid_ctx.fillText(kana, textX, textY);
+		g_grid_ctx.restore();
+	}
+
+	g_grid_ctx.restore();
+};
+
+/**
  * 選択範囲の四角形を描画します。
  */
 export const drawSelectionRect = (

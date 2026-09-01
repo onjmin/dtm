@@ -54,6 +54,7 @@ import { formatMmlMeta, parseMML } from "./mml-parser";
 import { mountMmlPlayer } from "./mml-player";
 import {
 	drawGrid,
+	drawNoteLyrics,
 	drawNotes,
 	drawSelectedNotes,
 	getDrawOffset,
@@ -1291,6 +1292,24 @@ export const mountDAW = (
 	const getActive = (): TrackState =>
 		trackStates.find((t) => t.config.id === activeTrackId) ?? trackStates[0];
 
+	// ピアノロールへ重ねる歌詞かな列のキャッシュ。redrawAll は再生中に毎フレーム走るので
+	// 同じ歌詞文字列に対して normalizeLyrics を繰り返さないようにする。
+	let lyricKanaCacheText = "";
+	let lyricKanaCache: string[] = [];
+
+	/** アクティブトラックの歌詞をノート表示用のかな列にする（歌わない設定なら空） */
+	const getActiveLyricKana = (): string[] => {
+		const t = getActive();
+		if (!t?.lyricModel.trim()) return []; // モデル「なし」＝歌わないので表示もしない
+		const text = t.lyrics.trim();
+		if (!text) return [];
+		if (text !== lyricKanaCacheText) {
+			lyricKanaCacheText = text;
+			lyricKanaCache = normalizeLyrics(text).map((sy) => sy.kana);
+		}
+		return lyricKanaCache;
+	};
+
 	let showModal: (title: string, bodyHTML: string) => void;
 
 	// ============================================================
@@ -1366,12 +1385,18 @@ export const mountDAW = (
 
 	const redrawAll = (): void => {
 		drawGrid(gridLineSteps);
+		// 歌詞を重ねる対象（描画されたアクティブトラックのノート）。選択ハイライトに
+		// 塗り潰されないよう、文字は全ノートを描き終えてから最後に載せる。
+		let lyricTargetNotes: Note[] | null = null;
 		for (const t of trackStates) {
 			if (hiddenTracks.has(t.config.id)) continue;
 			if (isSolo && t.config.id !== activeTrackId) continue;
 			const [r, g, b] = t.config.color;
-			const a = t.config.id === activeTrackId ? 1 : 0.3;
-			drawNotes(t.core.getNotes(), [r, g, b, a]);
+			const isActive = t.config.id === activeTrackId;
+			const a = isActive ? 1 : 0.3;
+			const notes = t.core.getNotes();
+			drawNotes(notes, [r, g, b, a]);
+			if (isActive) lyricTargetNotes = notes;
 		}
 		if (activeToolMode === "select" && selectionRect) {
 			const ctx = getGridContext();
@@ -1402,6 +1427,9 @@ export const mountDAW = (
 				1,
 			]);
 		}
+		// 歌詞はアクティブトラックのノートにだけ重ねる（全部出すと文字で埋もれる）
+		if (lyricTargetNotes)
+			drawNoteLyrics(lyricTargetNotes, getActiveLyricKana());
 		drawStartLine();
 		if (playbackState === "playing") drawPlayhead();
 		updateScrollbars();
@@ -3114,6 +3142,7 @@ export const mountDAW = (
 				syncLyricVisibility();
 				syncInstDisabled();
 				syncVelocityDisabled();
+				redrawAll(); // モデル「なし」への切り替えで歌詞表示も消す
 				fireLyricsChange(active);
 				reloadVoicesForModel(active.lyricModel);
 			});
@@ -3158,6 +3187,7 @@ export const mountDAW = (
 					label: existing?.label,
 				});
 				active.lyricModel = key;
+				redrawAll(); // ノート上の歌詞表示を追従させる
 				fireLyricsChange(active);
 				// プルダウンへ新キーを反映し、選択状態でパネルを再描画する
 				updateTrackPanel();
@@ -3178,6 +3208,7 @@ export const mountDAW = (
 			lyricInput.addEventListener("input", () => {
 				active.lyrics = lyricInput.value;
 				updateLyricCount();
+				redrawAll(); // ノート上の歌詞表示を追従させる
 				fireLyricsChange(active);
 			});
 			lyricVol.addEventListener("input", () => {
@@ -5732,6 +5763,7 @@ export const mountDAW = (
 			t.vocalBreathiness = data.vocalBreathiness ?? 50;
 			t.vocalTension = data.vocalTension ?? 50;
 			t.vocalOctaveUnison = data.vocalOctaveUnison ?? "none";
+			if (t.config.id === activeTrackId) redrawAll();
 		},
 		applyTrackInstrument: (
 			trackIndex: number,
