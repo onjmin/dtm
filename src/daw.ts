@@ -4178,15 +4178,12 @@ export const mountDAW = (
 			active.vocalOctaveUnison = "none";
 		} else {
 			clearAll();
-			// MIDIは原理的に12平均律しか表現できない。曲を丸ごと置き換えるこの経路では
-			// 残る音が無いので、曲の音律も12平均律へ戻す。31平均律のまま取り込むと、
-			// 取り込んだ素材を最大19.4セント狂わせるだけで得るものが無い。
-			//
-			// アクティブトラックのみの取り込み（上の分岐）では他トラックの音が残るため
-			// 切り替えない。そこで12へ倒すと既存の31平均律の音が最大48.4セント動いて
-			// 戻せなくなる。あちらは取り込むMIDI側を曲の音律へ丸める。
-			applyEdo(12);
-			refs.edoSelect.value = String(renderConfig.edo ?? 12);
+			// MIDIは原理的に12平均律しか表現できない値（ノート番号）で入ってくるが、
+			// 曲側の音律は変えない。既に31平均律の曲へ読み込む場合は31平均律のまま、
+			// 半音を最寄りの31平均律格子へ翻訳して取り込む（最大19.4セントの丸め）。
+			// 以前は取り込み時に強制的に12平均律へ戻していたが、それだと31平均律の
+			// 曲へMIDIを読み込むたびに音律ごと12へ巻き戻ってしまい、都度31へ戻す
+			// 手間が発生していた。
 			for (const t of trackStates) t.core.setLoadMode(true);
 			// MIDI入力には歌詞情報がないので全トラックの歌詞を初期化する
 			for (const t of trackStates) {
@@ -4488,12 +4485,24 @@ export const mountDAW = (
 					return;
 				}
 			}
-			applyEdo(next, { snap: true });
-			// 段数が変わるので、切替前に見ていた高さのまま留まらないよう中央へ寄せ直す
-			const first = getFirstDetectedPitch();
-			centerPitch(first ?? pitchV1ToUnits(48));
-			redrawAll();
-			updateUndoRedo();
+			overlayDuring(() => {
+				applyEdo(next, { snap: true });
+				// 31平均律は1オクターブの段数が12平均律の約2.58倍（31/12）になるので、
+				// 縦ズームをそのままにすると1段の高さが極端に潰れる／間延びする。
+				// 12→31は半分、31→12は倍に振り直し、見た目の1段の高さを揃える。
+				if (next === 31 && prev === 12) {
+					zoomY = Math.max(50, Math.round((zoomY / 2) / 25) * 25);
+				} else if (next === 12 && prev === 31) {
+					zoomY = Math.min(200, Math.round((zoomY * 2) / 25) * 25);
+				}
+				applyZoomY();
+				// 段数が変わるので、切替前に見ていた高さのまま留まらないよう中央へ寄せ直す
+				const first = getFirstDetectedPitch();
+				centerPitch(first ?? pitchV1ToUnits(48));
+				redrawAll();
+				updateUndoRedo();
+				notifyViewState();
+			});
 		});
 
 		refs.edoInfoBtn.addEventListener("click", () => {
