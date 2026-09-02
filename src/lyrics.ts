@@ -1627,7 +1627,10 @@ export const createKoeVoice = async (
 /** ストリーミング再生する歌唱ノート1つ（絶対時刻ベース）。 */
 export type StreamVoiceNote = {
 	syllable: LyricSyllable;
-	/** MIDIノート番号 */
+	/**
+	 * ピッチ。単位は units（1/372オクターブ）。koe は Hz を受けるので、
+	 * ここから直接 Hz へ変換して歌わせる（整数MIDIノートに丸めない）。
+	 */
 	pitch: number;
 	/** アンカー（再生開始時刻）からの相対秒。実発音時刻 = anchorTime + startSec。 */
 	startSec: number;

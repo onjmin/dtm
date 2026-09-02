@@ -12,7 +12,7 @@ import { copyToClipboard, encodeMml } from "./mml-player";
 import { SoundFont } from "./sf/SoundFont";
 import { injectStyles } from "./styles";
 import { createSynth } from "./synth";
-import { pitchV1ToUnits } from "./tuning";
+import { pitchV1ToUnits, unitsToMidiDetune } from "./tuning";
 import { DEFAULT_STEPS_PER_BAR } from "./types";
 
 /**
@@ -1294,7 +1294,8 @@ export const mountChordPlayer = (
 
 	/** WAF音源で発音する関数。ロード済みなら即使用、未ロードならオシレータシンセで代替。 */
 	type WafPlayFn = (e: {
-		pitch: number;
+		/** ピッチ。単位は units（1/372オクターブ）。 */
+		pitchUnits: number;
 		velocity: number;
 		volume: number;
 		when: number;
@@ -1308,7 +1309,7 @@ export const mountChordPlayer = (
 	 * WAFキャッシュにあれば使い、なければオシレータシンセで代替。
 	 */
 	const wafPlayDynamic: WafPlayFn = ({
-		pitch,
+		pitchUnits,
 		velocity,
 		volume,
 		when,
@@ -1318,10 +1319,14 @@ export const mountChordPlayer = (
 	}) => {
 		const waf = activeGmName ? _wafCache.get(activeGmName) : null;
 		if (waf) {
+			// SoundFont は整数MIDIノートのゾーンしか持たないため、最寄りのゾーンを鳴らして
+			// 残差を detune（セント）で補正する。units をそのまま渡すとゾーンが見つからず無音になる。
+			const { midi, detuneCents } = unitsToMidiDetune(pitchUnits);
 			waf.play({
 				ctx,
 				destination,
-				pitch,
+				pitch: midi,
+				detuneCents,
 				volume: volume * 0.85,
 				velocity,
 				when,
@@ -1331,7 +1336,7 @@ export const mountChordPlayer = (
 			const synth = createSynth(ctx, destination);
 			synth.playNote({
 				trackId: "chord",
-				pitchUnits: pitch,
+				pitchUnits,
 				velocity: 100,
 				volume,
 				when,
@@ -1392,7 +1397,7 @@ export const mountChordPlayer = (
 			synth: false,
 			onPlayNote: (e) => {
 				wafPlayDynamic({
-					pitch: e.pitchUnits,
+					pitchUnits: e.pitchUnits,
 					velocity: e.velocity,
 					volume: e.volume,
 					when: e.when,

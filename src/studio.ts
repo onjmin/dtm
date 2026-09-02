@@ -442,7 +442,8 @@ export type DtmStudio = {
 	playDrumEvent: (e: PlayDrumEvent) => void;
 	/** SoundFontを用いた単音再生を行う */
 	playNote: (options: {
-		pitch: number;
+		/** ピッチ。単位は units（1/372オクターブ）。`pitchV1ToUnits` でMIDI番号から変換できる。 */
+		pitchUnits: number;
 		volume?: number;
 		duration?: number;
 		instrument?: string;
@@ -1547,10 +1548,14 @@ export const createDtmStudio = async (
 				);
 			}
 			if (!sfInst) return;
+			// SoundFont は整数MIDIノートのゾーンしか持たない。最寄りのゾーンを鳴らして
+			// 残差を detune で補正する（units のままだとゾーンが無く無音になる）。
+			const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
 			sfInst.play({
 				ctx: audioCtx,
 				destination: getChannelStrip(e.trackId).input,
-				pitch: e.pitchUnits,
+				pitch: midi,
+				detuneCents,
 				volume: e.volume,
 				velocity: e.velocity,
 				when: e.when,
@@ -1653,10 +1658,14 @@ export const createDtmStudio = async (
 				);
 			}
 			if (!sfInst) return;
+			// SoundFont は整数MIDIノートのゾーンしか持たない。最寄りのゾーンを鳴らして
+			// 残差を detune で補正する（units をそのまま渡すとゾーンが無く無音になる）。
+			const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
 			sfInst.play({
 				ctx: audioCtx,
 				destination: getChannelStrip(e.trackId).input,
-				pitch: e.pitchUnits,
+				pitch: midi,
+				detuneCents,
 				volume: e.volume,
 				velocity: e.velocity,
 				when: e.when,
@@ -1754,10 +1763,14 @@ export const createDtmStudio = async (
 				);
 			}
 			if (!sfInst) return;
+			// SoundFont は整数MIDIノートのゾーンしか持たない。最寄りのゾーンを鳴らして
+			// 残差を detune で補正する（units をそのまま渡すとゾーンが無く無音になる）。
+			const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
 			sfInst.play({
 				ctx: audioCtx,
 				destination: getChannelStrip(e.trackId).input,
-				pitch: e.pitchUnits,
+				pitch: midi,
+				detuneCents,
 				volume: e.volume,
 				velocity: e.velocity,
 				when: e.when,
@@ -1796,10 +1809,14 @@ export const createDtmStudio = async (
 			sfInst = resolveSoundFont(defaultPreset, role, "simple");
 		}
 		if (!sfInst) return;
+		// SoundFont は整数MIDIノートのゾーンしか持たない。最寄りのゾーンを鳴らして
+		// 残差を detune で補正する（units をそのまま渡すとゾーンが無く無音になる）。
+		const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
 		sfInst.play({
 			ctx: audioCtx,
 			destination: getChannelStrip(e.trackId).input,
-			pitch: e.pitchUnits,
+			pitch: midi,
+			detuneCents,
 			volume: e.volume,
 			velocity: e.velocity,
 			when: e.when,
@@ -1812,7 +1829,8 @@ export const createDtmStudio = async (
 	};
 
 	const playNote = async (options: {
-		pitch: number;
+		/** ピッチ。単位は units（1/372オクターブ）。`pitchV1ToUnits` でMIDI番号から変換できる。 */
+		pitchUnits: number;
 		volume?: number;
 		duration?: number;
 		instrument?: string;
@@ -1834,10 +1852,14 @@ export const createDtmStudio = async (
 			await audioCtx.resume();
 		}
 
+		// SoundFont は整数MIDIノートのゾーンしか持たない。最寄りのゾーンを鳴らして
+		// 残差を detune で補正する（units をそのまま渡すとゾーンが無く無音になる）。
+		const { midi, detuneCents } = unitsToMidiDetune(options.pitchUnits);
 		sfInst.play({
 			ctx: audioCtx,
 			destination: masterGain,
-			pitch: options.pitch,
+			pitch: midi,
+			detuneCents,
 			volume: vol / 100,
 			when: 0,
 			duration: dur,
@@ -1874,10 +1896,14 @@ export const createDtmStudio = async (
 		const playPlayerNote = (e: PlayNoteEvent): void => {
 			const sfInst = resolveSoundFont(playerPreset, "chord");
 			if (!sfInst) return;
+			// SoundFont は整数MIDIノートのゾーンしか持たない。最寄りのゾーンを鳴らして
+			// 残差を detune で補正する（units のままだとゾーンが無く無音になる）。
+			const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
 			sfInst.play({
 				ctx: audioCtx,
 				destination: getChannelStrip("chord").input,
-				pitch: e.pitchUnits,
+				pitch: midi,
+				detuneCents,
 				volume: e.volume,
 				velocity: e.velocity,
 				when: e.when,
