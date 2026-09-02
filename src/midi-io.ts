@@ -10,6 +10,7 @@
  */
 
 import { DRUM_KEYS, type DrumPattern } from "./drum-config";
+import { unitsToMidiDetune } from "./tuning";
 import type { Note } from "./types";
 import { DEFAULT_VELOCITY } from "./types";
 
@@ -506,14 +507,49 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 	const tickPerStep = div / STEPS_PER_BEAT;
 	const midiTracks: { t: number; m: number[] }[][] = [];
 
-	tracks.forEach((track, ch) => {
+	// ── 微分音の書き出し（ピッチベンド多チャンネル方式）──
+	//
+	// MIDIのピッチベンドはチャンネル単位でノート単位ではないため、31平均律のように
+	// 整数MIDIノートへ乗らない音を出すには「同時に鳴るベンド値の種類だけチャンネルを
+	// 使い分ける」必要がある。ここでは曲全体で使われるベンド値を数え、1種類につき
+	// 1チャンネルを割り当てて曲頭で一度だけベンドを設定する。
+	//
+	// トラックの区別はMIDIのトラックチャンク側が担うので、チャンネルを転用しても
+	// トラックは混ざらない（dtmの書き出しはプログラムチェンジを出さないため、
+	// チャンネルに楽器の意味は乗っていない）。
+	//
+	// 使えるのはドラム(ch9)を除く15チャンネル。曲が15種類を超えるベンド値を使う場合は
+	// 頻度の低いものから最寄りの半音へ丸める（音は出るが微分音は失われる）。
+	const NOTE_CHANNELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15];
+	/** ベンドのレンジ（半音）。RPN 0,0 で明示するので受け側の既定に依存しない。 */
+	const BEND_RANGE_SEMITONES = 2;
+
+	const bendKey = (cents: number): number => Math.round(cents * 100);
+	const bendUse = new Map<number, number>();
+	for (const track of tracks) {
+		for (const n of track.notes) {
+			const { detuneCents } = unitsToMidiDetune(n.pitchUnits);
+			const k = bendKey(detuneCents);
+			bendUse.set(k, (bendUse.get(k) ?? 0) + 1);
+		}
+	}
+	// 使用頻度の高いベンド値から順にチャンネルを割り当てる
+	const bendChannel = new Map<number, number>();
+	const ordered = [...bendUse.entries()].sort((a, b) => b[1] - a[1]);
+	for (const [k] of ordered) {
+		if (bendChannel.size >= NOTE_CHANNELS.length) break;
+		bendChannel.set(k, NOTE_CHANNELS[bendChannel.size]);
+	}
+
+	tracks.forEach((track) => {
 		if (track.notes.length === 0) return;
-		// GMの打楽器チャンネル(9 = MIDI ch10)を避ける。index 9以降は1つ繰り上げて割り当てる。
-		// そのまま ch を使うと TRACK 10 のノートが打楽器chに化け、GM音源でドラム音になったり
-		// 取り込み側の ch9 スキップで消えたりする。
-		const channel = ch < 9 ? ch : (ch + 1) & 0x0f;
 		const events: { t: number; m: number[] }[] = [];
 		for (const n of track.notes) {
+			const { midi, detuneCents } = unitsToMidiDetune(n.pitchUnits);
+			const k = bendKey(detuneCents);
+			// 割り当てが溢れたベンド値は最寄りの半音へ丸めて鳴らす（ベンド0のチャンネル）
+			const channel = bendChannel.get(k) ?? bendChannel.get(0) ?? 0;
+			const note = Math.max(0, Math.min(127, midi));
 			const startTick = Math.round(n.startStep * tickPerStep);
 			const endTick = Math.round(
 				(n.startStep + (n.durationSteps || 1)) * tickPerStep,
@@ -522,12 +558,31 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 			const vel = Math.round(
 				((n.velocity ?? DEFAULT_VELOCITY) * (track.volume ?? 100)) / 100,
 			);
-			events.push({ t: startTick, m: [0x90 | channel, n.pitchUnits, vel] });
-			events.push({ t: endTick, m: [0x90 | channel, n.pitchUnits, 0] });
+			events.push({ t: startTick, m: [0x90 | channel, note, vel] });
+			events.push({ t: endTick, m: [0x90 | channel, note, 0] });
 		}
 		events.sort((a, b) => a.t - b.t);
 		midiTracks.push(events);
 	});
+
+	/** 各チャンネルのベンドレンジ設定(RPN)とベンド値を曲頭へ置くイベント列。 */
+	const bendSetup: { t: number; m: number[] }[] = [];
+	for (const [k, channel] of bendChannel) {
+		const cents = k / 100;
+		// RPN 0,0 = ピッチベンド感度。Data Entry で 2半音0セントに固定する。
+		bendSetup.push({ t: 0, m: [0xb0 | channel, 101, 0] });
+		bendSetup.push({ t: 0, m: [0xb0 | channel, 100, 0] });
+		bendSetup.push({ t: 0, m: [0xb0 | channel, 6, BEND_RANGE_SEMITONES] });
+		bendSetup.push({ t: 0, m: [0xb0 | channel, 38, 0] });
+		// RPN null（以降の Data Entry が誤って感度へ効かないようにする）
+		bendSetup.push({ t: 0, m: [0xb0 | channel, 101, 127] });
+		bendSetup.push({ t: 0, m: [0xb0 | channel, 100, 127] });
+		// ベンド値。中央8192、±(BEND_RANGE_SEMITONES × 100)セントで全可動域。
+		const raw =
+			8192 + Math.round((cents / (BEND_RANGE_SEMITONES * 100)) * 8192);
+		const v = Math.max(0, Math.min(16383, raw));
+		bendSetup.push({ t: 0, m: [0xe0 | channel, v & 0x7f, (v >> 7) & 0x7f] });
+	}
 
 	// ドラムトラック
 	const maxStep = Math.max(
@@ -569,6 +624,8 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 	headerChunks(arr, midiTracks.length + 1, div);
 	trackChunks(arr, (a) => {
 		a.push(0, 0xff, 0x51, 0x03, ...to3byte(Math.round(6e7 / bpm)));
+		// ベンドの初期設定は曲頭に一度だけ置けばよいのでテンポトラックへまとめる
+		for (const ev of bendSetup) a.push(0, ...ev.m);
 	});
 	for (const events of midiTracks) {
 		trackChunks(arr, (a) => {

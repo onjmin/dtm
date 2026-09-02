@@ -1,3 +1,4 @@
+import { UNITS_PER_OCTAVE, UNITS_PER_SEMITONE } from "./tuning";
 import { PITCH_RANGE_END, PITCH_RANGE_START } from "./types";
 /**
  * 打ち込み補助マクロ群。MMLCore を直接操作する。
@@ -17,14 +18,33 @@ const SCALES = [
 /**
  * アクティブトラックにスケールに沿ったランダムなノートを8小節分配置する。
  */
+/**
+ * 12平均律の半音 → 31平均律（ミーントーン）の度数。
+ * 三全音(6半音)だけは増4度(15)と減5度(16)に分かれるが、ここでは音階生成用なので
+ * 減5度側を採る（音階の第4音の変化としては増4度が普通だが、和音の質が分からない
+ * 文脈では慣習的に狭い側を選ぶ）。
+ */
+const MEANTONE_STEP_BY_SEMITONE = [0, 3, 5, 8, 10, 13, 16, 18, 21, 23, 26, 28];
+
 export const generateRandomPattern = (
 	core: MMLCore,
-	options: { stepsPerBar: number; startStep: number; pitchRangeStart: number },
+	options: {
+		stepsPerBar: number;
+		startStep: number;
+		pitchRangeStart: number;
+		/** 曲の音律。省略時は12平均律。 */
+		edo?: number;
+	},
 ): void => {
-	const { stepsPerBar, startStep, pitchRangeStart } = options;
+	const { stepsPerBar, startStep, pitchRangeStart, edo = 12 } = options;
 	const numBars = 8;
 	const noteLength = 24; // 8分音符
-	const basePitch = pitchRangeStart + 60;
+	// SCALES は12平均律の半音で書かれた音階なので、音律に応じた格子へ写す。
+	// 31平均律ではミーントーンの幹音間隔（全音5・半音3ステップ）でたどる。
+	const semitoneToStep = (semi: number): number =>
+		edo === 31 ? MEANTONE_STEP_BY_SEMITONE[semi] : semi;
+	const upr = UNITS_PER_OCTAVE / edo;
+	const basePitch = pitchRangeStart + 60 * UNITS_PER_SEMITONE;
 
 	const scale = SCALES[Math.floor(Math.random() * SCALES.length)];
 	const rootOffset = Math.floor(Math.random() * 12);
@@ -32,7 +52,8 @@ export const generateRandomPattern = (
 	const availablePitches: number[] = [];
 	for (let i = 0; i < 12; i++) {
 		const noteInOctave = (i - rootOffset + 12) % 12;
-		if (scale.includes(noteInOctave)) availablePitches.push(basePitch + i);
+		if (scale.includes(noteInOctave))
+			availablePitches.push(basePitch + semitoneToStep(i) * upr);
 	}
 
 	core.beginBatch();
@@ -83,7 +104,9 @@ export const applyHarmonicFilter = (
 			.getNotes()
 			.filter((n) => n.startStep >= start && n.startStep < end);
 		if (chordHere.length > 0) {
-			currentClasses = new Set(chordHere.map((n) => n.pitchUnits % 12));
+			currentClasses = new Set(
+				chordHere.map((n) => n.pitchUnits % UNITS_PER_OCTAVE),
+			);
 		} else if (isNewBar) {
 			currentClasses = new Set();
 		}
@@ -93,7 +116,7 @@ export const applyHarmonicFilter = (
 			.getNotes()
 			.filter((n) => n.startStep >= start && n.startStep < end);
 		for (const n of activeHere) {
-			if (!currentClasses.has(n.pitchUnits % 12))
+			if (!currentClasses.has(n.pitchUnits % UNITS_PER_OCTAVE))
 				targetCore.deleteNoteById(n.id);
 		}
 	}
@@ -129,7 +152,9 @@ export const applyMonophonic = (
 			.getNotes()
 			.filter((n) => n.startStep >= start && n.startStep < end);
 		if (chordHere.length > 0) {
-			currentClasses = new Set(chordHere.map((n) => n.pitchUnits % 12));
+			currentClasses = new Set(
+				chordHere.map((n) => n.pitchUnits % UNITS_PER_OCTAVE),
+			);
 		} else if (isNewBar) {
 			currentClasses = new Set();
 		}
@@ -140,7 +165,7 @@ export const applyMonophonic = (
 			.filter((n) => n.startStep >= start && n.startStep < end);
 
 		const filtered = activeHere.filter((n) =>
-			currentClasses.has(n.pitchUnits % 12),
+			currentClasses.has(n.pitchUnits % UNITS_PER_OCTAVE),
 		);
 		const filteredIds = new Set(filtered.map((n) => n.id));
 		for (const n of activeHere) {

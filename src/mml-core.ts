@@ -1,4 +1,5 @@
 import { LinkedList } from "./linked-list";
+import { UNITS_PER_SEMITONE } from "./tuning";
 import type {
 	AddNoteOptions,
 	CoreEventHandlers,
@@ -238,8 +239,11 @@ export class MMLCore {
 		if (!note) return;
 
 		const totalSteps = this.getMaxStep() + this.getConfig().stepsPerBar;
-		const pitchRangeStart = this.getConfig().pitchRangeStart;
-		const pitchRangeEnd = pitchRangeStart + this.getConfig().keyCount - 1;
+		const cfg = this.getConfig();
+		// keyCount は行数なので、units へ戻すには1行あたりのピッチ幅を掛ける。
+		const upr = cfg.unitsPerRow ?? UNITS_PER_SEMITONE;
+		const pitchRangeStart = cfg.pitchRangeStart;
+		const pitchRangeEnd = pitchRangeStart + (cfg.keyCount - 1) * upr;
 
 		const clampedPitch = Math.min(
 			Math.max(pitch, pitchRangeStart),

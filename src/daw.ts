@@ -86,6 +86,7 @@ import {
 	DEFAULT_VELOCITY,
 	DEFAULT_VOCAL_VOLUME,
 	KEY_COUNT,
+	keyCountFor,
 	MML_END_MARKER,
 	PITCH_RANGE_START,
 	unitsPerRow,
@@ -1005,6 +1006,21 @@ export const mountDAW = (
 	};
 
 	applyMasterVolume(masterVolume);
+
+	/**
+	 * 曲の音律を切り替える（`#edo=`）。
+	 *
+	 * 音律はノートの値には一切入らない（ピッチは絶対値の units）。変わるのは
+	 * 格子の刻みと綴りだけなので、ここでは描画設定を差し替えて描き直すだけでよい。
+	 * 音域は units で固定してあるため、段数は音律から導出される。
+	 */
+	const applyEdo = (edo: number): void => {
+		const next = edo === 31 ? 31 : 12;
+		if (renderConfig.edo === next) return;
+		renderConfig.edo = next;
+		renderConfig.unitsPerRow = unitsPerRow(next);
+		renderConfig.keyCount = keyCountFor(next);
+	};
 	let reverbAmount = options.reverbAmount ?? 0;
 	let reverbDecay = options.reverbDecay ?? DEFAULT_REVERB_DECAY_SEC;
 	let reverbPreDelay = options.reverbPreDelay ?? DEFAULT_REVERB_PREDELAY_MS;
@@ -1079,9 +1095,16 @@ export const mountDAW = (
 	let snapGridSteps = 12;
 	const gridLineSteps = 48;
 	let currentOffsetX = 0;
-	const _initPitch = options.initialScrollPitch ?? 48;
+	// initialScrollPitch は公開APIの都合でMIDIノート番号のまま受け取る。
+	// 内部表現(units)へ直してから行番号に変換する。
+	const _initPitch = pitchV1ToUnits(options.initialScrollPitch ?? 48);
 	let currentOffsetY =
-		(renderConfig.keyCount - 1 - _initPitch) * renderConfig.keyHeight - 215;
+		(renderConfig.keyCount -
+			1 -
+			(_initPitch - renderConfig.pitchRangeStart) /
+				(renderConfig.unitsPerRow ?? UNITS_PER_SEMITONE)) *
+			renderConfig.keyHeight -
+		215;
 	let playStartStep = 0;
 	let isSolo = false;
 	// loadMML で取り込んだ歌詞トラック（@@n）の同期コンダクタ。歌詞が無ければ空
@@ -3518,6 +3541,7 @@ export const mountDAW = (
 				fadeIn: Math.round(fadeInSec * 10),
 				fadeOut: Math.round(fadeOutSec * 10),
 				mode: mode,
+				edo: renderConfig.edo,
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
@@ -3546,6 +3570,7 @@ export const mountDAW = (
 				fadeIn: Math.round(fadeInSec * 10),
 				fadeOut: Math.round(fadeOutSec * 10),
 				mode: mode,
+				edo: renderConfig.edo,
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
@@ -3805,6 +3830,9 @@ export const mountDAW = (
 			if (meta.volume !== undefined) {
 				applyMasterVolume(meta.volume);
 			}
+			// 音律は曲単位。格子の段数・1段あたりのピッチ幅も連動して変わる
+			// （12平均律=128段 / 31平均律=328段。音域は units で固定なので変わらない）。
+			applyEdo(meta.edo ?? 12);
 			if (meta.drumVolume !== undefined) {
 				drumVolume = meta.drumVolume;
 				refs.drumVolume.value = String(meta.drumVolume);
@@ -4001,7 +4029,7 @@ export const mountDAW = (
 		if (firstPitch !== null) {
 			centerPitch(firstPitch);
 		} else {
-			centerPitch(48);
+			centerPitch(pitchV1ToUnits(48));
 		}
 		redrawAll();
 		updateTrackPanel(); // 読み込んだ歌詞を編集UIへ反映
@@ -4107,7 +4135,8 @@ export const mountDAW = (
 			if (applyActiveOnly && p.trackId !== activeTrackId) continue;
 			const t = trackStates.find((ts) => ts.config.id === p.trackId);
 			if (!t) continue;
-			t.core.addNote(p.startStep, p.pitch, {
+			// MIDIのピッチは半音（ノート番号）。内部表現の units へ変換する。
+			t.core.addNote(p.startStep, pitchV1ToUnits(p.pitch), {
 				noteLengthSteps: p.durationSteps,
 				velocity: p.velocity,
 			});
@@ -4124,7 +4153,7 @@ export const mountDAW = (
 		if (firstPitch !== null) {
 			centerPitch(firstPitch);
 		} else {
-			centerPitch(48);
+			centerPitch(pitchV1ToUnits(48));
 		}
 		redrawAll();
 		updateTrackPanel();
@@ -5860,7 +5889,11 @@ export const mountDAW = (
 			const canvas = renderer.getGridCanvas();
 			const x = step * renderConfig.stepWidth - currentOffsetX;
 			const y =
-				(renderConfig.keyCount - 1 - pitch) * renderConfig.keyHeight -
+				(renderConfig.keyCount -
+					1 -
+					(pitch - renderConfig.pitchRangeStart) /
+						(renderConfig.unitsPerRow ?? UNITS_PER_SEMITONE)) *
+					renderConfig.keyHeight -
 				currentOffsetY;
 			const onScreen =
 				x >= 0 && x <= canvas.width && y >= 0 && y <= canvas.height;

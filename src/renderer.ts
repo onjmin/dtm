@@ -1,9 +1,41 @@
-import { UNITS_PER_SEMITONE } from "./tuning";
+import { UNITS_PER_OCTAVE, UNITS_PER_SEMITONE } from "./tuning";
 import type { Note, RenderConfig } from "./types";
 
 const KEYBOARD_WIDTH = 60; // 鍵盤の固定幅
 const HEADER_HEIGHT = 20; // 💡 ヘッダーの固定高さ (px)
-const blackKeyPitches = new Set([1, 3, 6, 8, 10]);
+/**
+ * 幹音のオクターブ内位置（格子ステップ）。音律ごとに持つ。
+ * 幹音間の変化音の数が 12平均律 `1 1 0 1 1 1 0` に対し 31平均律 `4 4 2 4 4 4 2` と、
+ * 全音／半音の構造がそのまま拡大されるため、鍵盤のシルエットは両者で保存される。
+ */
+const NATURAL_STEPS: Record<number, number[]> = {
+	12: [0, 2, 4, 5, 7, 9, 11],
+	31: [0, 5, 10, 13, 18, 23, 28],
+};
+
+/** 鍵の階層。0=幹音（白鍵相当） 1=微分音（短い中間鍵） 2=クロマチック（黒鍵）。 */
+type KeyTier = 0 | 1 | 2;
+
+/**
+ * オクターブ内の格子ステップ → 鍵の階層。
+ *
+ * 最寄りの幹音からの距離で決める。クロマチック半音ぶん離れていれば黒鍵、
+ * それ未満なら微分音の中間鍵。12平均律ではクロマチック半音＝1ステップなので
+ * 階層1が出現せず、従来と同じ白鍵／黒鍵の2階層になる（見た目は不変）。
+ * 31平均律では 4つ空く区間が「短・長・長・短」、2つ空く区間が「短・短」となり、
+ * 両者が形で見分けられる。中央で隣り合う黒鍵2本は、12平均律の黒鍵1本が
+ * 分割鍵として割れたものにあたる。
+ */
+const keyTier = (step: number, edo: number): KeyTier => {
+	const naturals = NATURAL_STEPS[edo] ?? NATURAL_STEPS[12];
+	let best = edo;
+	for (const n of naturals) {
+		const d = Math.abs(step - n);
+		best = Math.min(best, d, edo - d);
+	}
+	if (best === 0) return 0;
+	return best >= (edo === 31 ? 2 : 1) ? 2 : 1;
+};
 const KEY_NAMES = [
 	"C",
 	"C#",
@@ -209,33 +241,48 @@ export const createRenderer = (
 	const drawKeyboard = (): void => {
 		g_key_ctx.clearRect(0, 0, g_key_canvas.width, g_key_canvas.height);
 
-		const { keyHeight, keyCount, pitchRangeStart } = g_config;
+		const {
+			keyHeight,
+			keyCount,
+			pitchRangeStart,
+			unitsPerRow: upr = UNITS_PER_SEMITONE,
+			edo = 12,
+		} = g_config;
 
 		const startY = Math.floor(g_draw_offset_y / keyHeight) * keyHeight;
 		const endY = g_draw_offset_y + g_key_canvas.height;
 
 		const WHITE_KEY = "#ccc8b4";
 		const BLACK_KEY = "#111111";
+		const MICRO_KEY = "#4a4a4a"; // 微分音の中間鍵（黒鍵より浅い）
 		const BK_EDGE = "#383838"; // 黒鍵右端のエッジ（立体感）
 		const WW_SEP = "#807a6a"; // 白白境界の区切り線
 		const BK_RATIO = 0.62; // 黒鍵の幅比率
+		const MICRO_RATIO = 0.45; // 中間鍵の幅比率（黒鍵より短い＝分割鍵の手前側）
 
 		for (let y = startY; y < endY; y += keyHeight) {
-			const pitchIndex = keyCount - 1 - y / keyHeight;
-			const totalPitch = pitchIndex + pitchRangeStart;
-			const pitchMod12 = totalPitch % 12;
-			const isBlackKey = blackKeyPitches.has(pitchMod12);
-			const octave = Math.floor(totalPitch / 12) - 1;
+			const rowIndex = keyCount - 1 - y / keyHeight;
+			const units = pitchRangeStart + rowIndex * upr;
+			const step = Math.round(
+				((((units % UNITS_PER_OCTAVE) + UNITS_PER_OCTAVE) % UNITS_PER_OCTAVE) /
+					upr) %
+					edo,
+			);
+			const tier = keyTier(step, edo);
+			const octave = Math.floor(units / UNITS_PER_OCTAVE) - 1;
 			const isC4Range = octave === 4;
 			const screenY = y - g_draw_offset_y;
-			const bkW = Math.floor(KEYBOARD_WIDTH * BK_RATIO);
+			const bkW = Math.floor(
+				KEYBOARD_WIDTH * (tier === 1 ? MICRO_RATIO : BK_RATIO),
+			);
 
-			if (isBlackKey) {
+			if (tier !== 0) {
 				// 右側（白鍵が奥に見える部分）
 				g_key_ctx.fillStyle = isC4Range ? "#d8d4be" : WHITE_KEY;
 				g_key_ctx.fillRect(0, screenY, KEYBOARD_WIDTH, keyHeight);
-				// 黒鍵本体
-				g_key_ctx.fillStyle = isC4Range ? "#1a1408" : BLACK_KEY;
+				// 鍵本体（階層2=黒鍵 / 階層1=微分音の中間鍵）
+				g_key_ctx.fillStyle =
+					tier === 1 ? MICRO_KEY : isC4Range ? "#1a1408" : BLACK_KEY;
 				g_key_ctx.fillRect(0, screenY, bkW, keyHeight);
 				// 黒鍵の右端エッジライン
 				g_key_ctx.strokeStyle = BK_EDGE;
@@ -249,7 +296,9 @@ export const createRenderer = (
 				g_key_ctx.fillStyle = isC4Range ? "#dedad0" : WHITE_KEY;
 				g_key_ctx.fillRect(0, screenY, KEYBOARD_WIDTH, keyHeight);
 				// 白白境界（F の下端 = E との境、C の下端 = 下オクターブ B との境）
-				if (pitchMod12 === 5 || pitchMod12 === 0) {
+				// 白白境界は幹音同士が隣接する12平均律だけの表現。31平均律では
+				// 幹音の間に必ず変化音が入るので描かない（方向の手がかりは鍵の長さが担う）。
+				if (edo === 12 && (step === 5 || step === 0)) {
 					g_key_ctx.strokeStyle = WW_SEP;
 					g_key_ctx.lineWidth = 1;
 					g_key_ctx.beginPath();
@@ -260,14 +309,13 @@ export const createRenderer = (
 			}
 
 			// オクターブ表記 (C のみ、白鍵の右寄り)
-			if (pitchMod12 === 0) {
-				const octave = Math.floor(totalPitch / 12) - 1;
+			if (step === 0) {
 				g_key_ctx.fillStyle = "#555040";
 				g_key_ctx.font = "10px 'k8x12',monospace";
 				g_key_ctx.textAlign = "right";
 				g_key_ctx.textBaseline = "bottom";
 				g_key_ctx.fillText(
-					`${KEY_NAMES[pitchMod12]}${octave}`,
+					`${KEY_NAMES[0]}${octave}`,
 					KEYBOARD_WIDTH - 4,
 					screenY + keyHeight - 2,
 				);
@@ -339,8 +387,15 @@ export const createRenderer = (
 
 		g_grid_ctx.clearRect(0, 0, g_grid_canvas.width, g_grid_canvas.height);
 
-		const { keyHeight, keyCount, stepWidth, stepsPerBar, pitchRangeStart } =
-			g_config;
+		const {
+			keyHeight,
+			keyCount,
+			stepWidth,
+			stepsPerBar,
+			pitchRangeStart,
+			unitsPerRow: upr = UNITS_PER_SEMITONE,
+			edo = 12,
+		} = g_config;
 
 		// --- 水平線 (ピッチ) の描画 ---
 		// Y座標の計算ロジックは前回と同じ (垂直スクロール)
@@ -348,27 +403,35 @@ export const createRenderer = (
 		const endY = g_draw_offset_y + g_grid_canvas.height;
 
 		for (let y = startY; y < endY; y += keyHeight) {
-			const pitchIndex = keyCount - 1 - y / keyHeight;
-			const totalPitch = pitchIndex + pitchRangeStart;
-			// 黒鍵判定・C線は実音高(totalPitch)基準。drawKeyboard と揃えないと
-			// pitchRangeStart が12の倍数でないときグリッドの縞と鍵盤がずれる。
-			const pitchMod12 = totalPitch % 12;
-			const isBlackKey = blackKeyPitches.has(pitchMod12);
-			const isC = pitchMod12 === 0;
-			const octave = Math.floor(totalPitch / 12) - 1;
+			const rowIndex = keyCount - 1 - y / keyHeight;
+			// 鍵の階層・C線は実音高(units)基準。drawKeyboard と同じ式で出さないと
+			// pitchRangeStart がオクターブ境界でないときグリッドの縞と鍵盤がずれる。
+			const units = pitchRangeStart + rowIndex * upr;
+			const step = Math.round(
+				((((units % UNITS_PER_OCTAVE) + UNITS_PER_OCTAVE) % UNITS_PER_OCTAVE) /
+					upr) %
+					edo,
+			);
+			const tier = keyTier(step, edo);
+			const isC = step === 0;
+			const octave = Math.floor(units / UNITS_PER_OCTAVE) - 1;
 			const isC4Range = octave === 4;
 
 			const screenY = y - g_draw_offset_y;
 
-			// 行ごとの背景（黒鍵: 暗め、白鍵: やや明るめでシマ模様）
+			// 行ごとの背景。鍵盤と同じ3階層（幹音 / 微分音 / クロマチック）で塗り分ける。
 			// カスタム背景が有効な場合は半透明にして背景画像を透過させる
 			g_grid_ctx.fillStyle = g_bg_active
-				? isBlackKey
+				? tier === 2
 					? "rgba(8,11,22,0.55)"
-					: "rgba(17,22,40,0.45)"
-				: isBlackKey
+					: tier === 1
+						? "rgba(12,16,30,0.5)"
+						: "rgba(17,22,40,0.45)"
+				: tier === 2
 					? "#080b16"
-					: "#111628";
+					: tier === 1
+						? "#0c101d"
+						: "#111628";
 			g_grid_ctx.fillRect(0, screenY, g_grid_canvas.width, keyHeight);
 
 			// C4〜B4帯のハイライトオーバーレイ

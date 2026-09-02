@@ -673,7 +673,8 @@ export type DawInstance = {
 	 */
 	setTrackAudible: (trackId: string, audible: boolean) => void;
 	/**
-	 * 指定ノート位置（step, pitch）のキャンバス上のピクセル座標を返す。
+	 * 指定ノート位置（step, pitchUnits）のキャンバス上のピクセル座標を返す。
+	 * `pitch` の単位は units（1/372オクターブ）。
 	 * 画面外の場合は onScreen=false と方角 side を返す。
 	 * 協力DAWでのカーソル表示に使う。
 	 */
