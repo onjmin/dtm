@@ -401,6 +401,28 @@ const MIDI_INFO_HTML = `
 </div>
 `;
 
+const EDO_INFO_HTML = `
+<div class="dtm-modal-section">
+  <p><strong>音律</strong>は1オクターブを何等分するかの設定です。曲全体に効きます（トラックごと・小節ごとには変えられません）。</p>
+  <p><strong>12平均律</strong>が通常のピアノと同じ調律です。<strong>31平均律</strong>は1オクターブを31等分し、ピアノには無い音（微分音）が使えます。</p>
+  <p style="margin-top:8px;"><strong>31平均律の特徴</strong></p>
+  <ul>
+    <li>長3度が純正にごく近く（誤差0.8セント）、<strong>和音が12平均律より綺麗に響きます</strong>。</li>
+    <li>ピアノに無い音が使えます。中立3度（長短どちらでもない3度）、自然7度（バーバーショップの響き）など。</li>
+    <li>C♯ と D♭ が<strong>別の音</strong>になります（12平均律では同じ音）。</li>
+  </ul>
+  <p style="margin-top:8px;"><strong>MMLでの書き方</strong></p>
+  <p><code>#edo=31</code> を宣言します。臨時記号は4つ使い分けます。</p>
+  <ul>
+    <li><code>#</code> … 半音上げ（2度）　<code>-</code> … 半音下げ（2度）</li>
+    <li><code>+</code> … 微分音1つ上げ（1度）　<code>_</code> … 微分音1つ下げ（1度）</li>
+  </ul>
+  <p>例: <code>#edo=31 @0 o4 c c+ c# d- d_ d;</code></p>
+  <p style="margin-top:8px;"><small>12平均律では4記号とも従来通りの意味（シャープ2つ・フラット2つ）になるので、既存の曲の解釈は変わりません。</small></p>
+  <p style="margin-top:8px;"><small>切り替えると、既存の音符は新しい音律の格子へ丸められます。12→31 は最大19セントの移動で元に戻せますが、<strong>31→12 は最大48セント動き、12平均律に無い音は失われます</strong>。</small></p>
+</div>
+`;
+
 const KOE_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>1. UTAU音源を .koe に変換する</h4>
@@ -1014,12 +1036,32 @@ export const mountDAW = (
 	 * 格子の刻みと綴りだけなので、ここでは描画設定を差し替えて描き直すだけでよい。
 	 * 音域は units で固定してあるため、段数は音律から導出される。
 	 */
-	const applyEdo = (edo: number): void => {
+	const applyEdo = (edo: number, opts?: { snap?: boolean }): void => {
 		const next = edo === 31 ? 31 : 12;
 		if (renderConfig.edo === next) return;
+		const upr = unitsPerRow(next);
 		renderConfig.edo = next;
-		renderConfig.unitsPerRow = unitsPerRow(next);
+		renderConfig.unitsPerRow = upr;
 		renderConfig.keyCount = keyCountFor(next);
+		if (!opts?.snap) return;
+		// 既存ノートを新しい格子へスナップする。
+		//
+		// 音律を切り替えたあと格子から外れたノートが残っていると、次の1音を置いた
+		// 瞬間に「12平均律と31平均律の音が同居する曲」になる。両者が一致するのは
+		// オクターブだけなので、これは音楽的に成立しない（長3度で12.9セント、
+		// 三全音で19.4セントずれる）。切替時は必ず全ノートを新しい格子へ丸める。
+		//
+		// 12→31 は最大19.4セント動くが元の位置へ完全に戻せる。
+		// 31→12 は最大48.4セント動き、中立3度のような31平均律固有の音は失われる。
+		for (const t of trackStates) {
+			t.core.beginBatch();
+			for (const note of [...t.core.getNotes()]) {
+				const snapped = Math.round(note.pitchUnits / upr) * upr;
+				if (snapped !== note.pitchUnits)
+					t.core.moveNote(note.id, note.startStep, snapped);
+			}
+			t.core.endBatch();
+		}
 	};
 	let reverbAmount = options.reverbAmount ?? 0;
 	let reverbDecay = options.reverbDecay ?? DEFAULT_REVERB_DECAY_SEC;
@@ -3832,7 +3874,9 @@ export const mountDAW = (
 			}
 			// 音律は曲単位。格子の段数・1段あたりのピッチ幅も連動して変わる
 			// （12平均律=128段 / 31平均律=328段。音域は units で固定なので変わらない）。
+			// MML読込は全ノートが差し替わるので再スナップは不要
 			applyEdo(meta.edo ?? 12);
+			refs.edoSelect.value = String(renderConfig.edo ?? 12);
 			if (meta.drumVolume !== undefined) {
 				drumVolume = meta.drumVolume;
 				refs.drumVolume.value = String(meta.drumVolume);
@@ -4236,19 +4280,25 @@ export const mountDAW = (
 	};
 
 	// Promise で yes/no を返す確認ダイアログ（wireEvents/wireMidi の両方から使う）
-	const showConfirmModal = (message: string): Promise<boolean> =>
+	const showConfirmModal = (
+		message: string,
+		opts?: { title?: string; yes?: string; no?: string },
+	): Promise<boolean> =>
 		new Promise((resolve) => {
+			const title = opts?.title ?? "モードの確認";
+			const yes = opts?.yes ?? "はい（上級者モードに切り替える）";
+			const no = opts?.no ?? "いいえ（このまま読み込む）";
 			const overlay = document.createElement("div");
 			overlay.className = "dtm-modal-overlay";
 			overlay.innerHTML = `
 				<div class="dtm-modal">
 					<div class="dtm-modal-header">
-						<span class="dtm-modal-title">モードの確認</span>
+						<span class="dtm-modal-title">${title}</span>
 					</div>
 					<div class="dtm-modal-body"><p>${message}</p></div>
 					<div class="dtm-confirm-footer">
-						<button class="dtm-btn dtm-btn--ghost dtm-confirm-no">いいえ（このまま読み込む）</button>
-						<button class="dtm-btn dtm-btn--primary dtm-confirm-yes">はい（上級者モードに切り替える）</button>
+						<button class="dtm-btn dtm-btn--ghost dtm-confirm-no">${no}</button>
+						<button class="dtm-btn dtm-btn--primary dtm-confirm-yes">${yes}</button>
 					</div>
 				</div>`;
 			const close = (result: boolean): void => {
@@ -4378,6 +4428,40 @@ export const mountDAW = (
 		// 和音分解モード / 和音伴奏トラック無視のチェック状態変化を通知（永続化用）
 		refs.decomposeChordToggle.addEventListener("change", notifyViewState);
 		refs.ignoreChordHeavyToggle.addEventListener("change", notifyViewState);
+
+		refs.edoSelect.addEventListener("change", async () => {
+			const next = Number.parseInt(refs.edoSelect.value, 10) === 31 ? 31 : 12;
+			const prev = renderConfig.edo ?? 12;
+			if (next === prev) return;
+			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
+			// 31→12 はノートが最大48.4セント動き、中立3度のような31平均律固有の音が
+			// 12平均律の隣の音に潰れて戻せない。ノートがあるときだけ確認を取る。
+			if (next === 12 && prev === 31 && hasNotes) {
+				const okToDrop = await showConfirmModal(
+					"31平均律から12平均律へ戻すと、音符が最大48セント（半音の約半分）動きます。<br>" +
+						"12平均律に無い音（中立3度など）は近い音に潰れ、<strong>元には戻せません</strong>。<br>切り替えますか？",
+					{
+						title: "音律の確認",
+						yes: "切り替える",
+						no: "やめる",
+					},
+				);
+				if (!okToDrop) {
+					refs.edoSelect.value = String(prev);
+					return;
+				}
+			}
+			applyEdo(next, { snap: true });
+			// 段数が変わるので、切替前に見ていた高さのまま留まらないよう中央へ寄せ直す
+			const first = getFirstDetectedPitch();
+			centerPitch(first ?? pitchV1ToUnits(48));
+			redrawAll();
+			updateUndoRedo();
+		});
+
+		refs.edoInfoBtn.addEventListener("click", () => {
+			showModal("音律の解説", EDO_INFO_HTML);
+		});
 
 		refs.masterVolume.addEventListener("input", () => {
 			applyMasterVolume(Number.parseInt(refs.masterVolume.value, 10) || 0);

@@ -115,6 +115,8 @@ export type DawUIRefs = {
 	copyMiniBtn: HTMLButtonElement;
 	// overlay
 	overlay: HTMLElement;
+	edoSelect: HTMLSelectElement;
+	edoInfoBtn: HTMLButtonElement;
 	// modal
 	mmlInfoBtn: HTMLButtonElement;
 	modalOverlay: HTMLElement;
@@ -245,6 +247,14 @@ export const buildUI = (
     <summary>全体トラック設定</summary>
     <div class="dtm-panel-body">
       <div data-dtm="preset-select-slot"></div>
+      <div class="dtm-row">
+        <span class="dtm-label">音律</span>
+        <select class="dtm-select dtm-grow" data-dtm="edo-select">
+          <option value="12">12平均律（通常）</option>
+          <option value="31">31平均律（微分音）</option>
+        </select>
+        <button class="dtm-iconbtn" data-dtm="edo-info" title="音律の解説">?</button>
+      </div>
       <div class="dtm-row">
         <span class="dtm-label">全体音量</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="master-volume" value="50" min="0" max="100">
@@ -583,6 +593,8 @@ export const buildUI = (
 		copyMiniBtn: sel("copy-mini"),
 		overlay: sel("overlay"),
 		mmlInfoBtn: sel("mml-info"),
+		edoSelect: sel("edo-select") as HTMLSelectElement,
+		edoInfoBtn: sel("edo-info") as HTMLButtonElement,
 		modalOverlay: sel("modal-overlay"),
 		modalTitle: sel("modal-title"),
 		modalBody: sel("modal-body"),
