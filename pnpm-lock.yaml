@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@onjmin/chord-parser':
-        specifier: 1.0.4
-        version: 1.0.4
+        specifier: 1.1.1
+        version: 1.1.1
       '@onjmin/koe':
         specifier: 1.0.5
         version: 1.0.5
@@ -610,8 +610,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@onjmin/chord-parser@1.0.4':
-    resolution: {integrity: sha512-ne/enObhLJgtgQttFk1WrclfWeDxUIpyQDp1GRqvp73AD+IuVgm67XJS10aIR9+lCuGRIW+CPrxZlUmLI3D6Eg==}
+  '@onjmin/chord-parser@1.1.1':
+    resolution: {integrity: sha512-nKp+oXxWGSajNOH+H7LRwcLL24GkiBTzk/V3mXkCfXZWvuRMjJuWdrowSNjGXJTXeIeLQIMO1PUE9+lx7wxOhg==}
 
   '@onjmin/koe@1.0.5':
     resolution: {integrity: sha512-LKC4OzZwXRkdVoW1PHrUysqjx0jxMUd+ZtsU/vvJ/d32OiFTaexA8WattxLLdMiuWXfZd3fB6vGsjXdoGG7aHQ==}
@@ -1512,7 +1512,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@onjmin/chord-parser@1.0.4': {}
+  '@onjmin/chord-parser@1.1.1': {}
 
   '@onjmin/koe@1.0.5':
     dependencies:
