@@ -33,6 +33,7 @@ import {
 } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { createSynth, type Synth } from "./synth";
+import { UNITS_PER_OCTAVE } from "./tuning";
 import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 import {
 	DEFAULT_BPM,
@@ -115,7 +116,7 @@ export const playSingingMML = async (
 				id: id++,
 				startStep: p.startStep,
 				durationSteps: p.durationSteps,
-				pitch: p.pitch,
+				pitchUnits: p.pitchUnits,
 				velocity: p.velocity,
 			}));
 		return {
@@ -147,7 +148,8 @@ export const playSingingMML = async (
 				(a, b) => a.startStep - b.startStep,
 			);
 			const gate = (lt.gate ?? DEFAULT_GATE) / 100;
-			const semis = (lt.octave ?? 0) * 12;
+			// オクターブシフトを units 換算でピッチへ加算（1オクターブ = 372 units）
+			const semis = (lt.octave ?? 0) * UNITS_PER_OCTAVE;
 			const count = Math.min(sorted.length, lt.syllables.length);
 			const notes: StreamVoiceNote[] = [];
 			for (let i = 0; i < count; i++) {
@@ -155,7 +157,7 @@ export const playSingingMML = async (
 				if (n.startStep < fromStep) continue;
 				notes.push({
 					syllable: lt.syllables[i],
-					pitch: n.pitch + semis,
+					pitch: n.pitchUnits + semis,
 					startSec: (n.startStep - fromStep) * secondsPerStep,
 					durationSec: n.durationSteps * secondsPerStep * gate,
 				});

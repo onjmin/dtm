@@ -522,8 +522,8 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 			const vel = Math.round(
 				((n.velocity ?? DEFAULT_VELOCITY) * (track.volume ?? 100)) / 100,
 			);
-			events.push({ t: startTick, m: [0x90 | channel, n.pitch, vel] });
-			events.push({ t: endTick, m: [0x90 | channel, n.pitch, 0] });
+			events.push({ t: startTick, m: [0x90 | channel, n.pitchUnits, vel] });
+			events.push({ t: endTick, m: [0x90 | channel, n.pitchUnits, 0] });
 		}
 		events.sort((a, b) => a.t - b.t);
 		midiTracks.push(events);

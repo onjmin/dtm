@@ -143,7 +143,7 @@ export const playPlacements = (
 		trackIndex: number;
 		startStep: number;
 		durationSteps: number;
-		pitch: number;
+		pitchUnits: number;
 		velocity: number;
 	}>,
 	options: PlayPlacementsOptions,
@@ -171,7 +171,7 @@ export const playPlacements = (
 				id: id++,
 				startStep: p.startStep,
 				durationSteps: p.durationSteps,
-				pitch: p.pitch,
+				pitchUnits: p.pitchUnits,
 				velocity: p.velocity,
 			}));
 		return {
@@ -383,7 +383,7 @@ export const playMML = (
 export type PlayNoteOptions = {
 	audioContext?: AudioContext;
 	destination?: AudioNode;
-	pitch: number;
+	pitchUnits: number;
 	volume?: number;
 	duration?: number;
 };
@@ -400,7 +400,7 @@ export const playNote = (options: PlayNoteOptions): void => {
 
 	synth.playNote({
 		trackId: "melody",
-		pitch: options.pitch,
+		pitchUnits: options.pitchUnits,
 		velocity: 100,
 		volume: vol / 100,
 		when: 0,
@@ -434,7 +434,7 @@ export const playChords = (
 		trackIndex: 3, // 伴奏トラック
 		startStep: p.startStep,
 		durationSteps: p.durationSteps,
-		pitch: p.pitch,
+		pitchUnits: p.pitchUnits,
 		velocity: p.velocity,
 	}));
 

@@ -696,7 +696,14 @@ const FORMANTS: Record<string, [number, number]> = {
 };
 
 /** MIDIノート番号 → 周波数(Hz) */
-const midiToFreq = (m: number): number => 440 * 2 ** ((m - 69) / 12);
+/**
+ * ピッチ(units) → 周波数(Hz)。単位は 1/372オクターブの整数（A4 = 2139 units = 440Hz）。
+ * koe/worldline は Hz を受けるので、31平均律の音もそのまま連続ピッチとして鳴る。
+ */
+const unitsToFreq = (units: number): number =>
+	440 * 2 ** ((units - 2139) / 372);
+/** units → MIDIノート番号（小数）。多音階音源の最寄りピッチ選択に使う。 */
+const unitsToMidiFloat = (units: number): number => units / 31;
 
 /**
  * klatt風フォルマント合成モデルを生成する。
@@ -760,7 +767,7 @@ export const createKlattVoice = (
 		// 声門音源（倍音豊富なのこぎり波）
 		const osc = ctx.createOscillator();
 		osc.type = "sawtooth";
-		osc.frequency.value = midiToFreq(e.pitch);
+		osc.frequency.value = unitsToFreq(e.pitchUnits);
 
 		const makeFormant = (
 			freq: number,
@@ -1215,7 +1222,7 @@ const createLocalBackend = async (
 		if (!consonantPcm || !vowelPcm) return null;
 		const spliced = spliceCompositePcm(consonantPcm, vowelPcm, KOE_SAMPLE_RATE);
 		if (!spliced) return null;
-		const targetHz = midiToFreq(pitch);
+		const targetHz = unitsToFreq(pitch);
 		const audio = worldline.renderNote({
 			pcm: spliced.pcm,
 			pitch: vibrato ? vibratoPitchCurve(targetHz, spliced.preMs) : targetHz,
@@ -1251,7 +1258,7 @@ const createLocalBackend = async (
 		if (!pcm || pcm.length === 0) return null;
 		const entry = bank.manifest.phonemes[alias];
 		const lead = leadInFromEntry(entry);
-		const targetHz = midiToFreq(pitch);
+		const targetHz = unitsToFreq(pitch);
 		if (worldline) {
 			const audio = worldline.renderNote({
 				pcm,
@@ -1557,7 +1564,7 @@ export const createKoeVoice = async (
 			backend.pitchTokens,
 			syllable,
 			prevVowel,
-			e.pitch,
+			unitsToMidiFloat(e.pitchUnits),
 		);
 		if (syllable.vowel && syllable.vowel !== "N") prevVowel = syllable.vowel;
 		if (!alias) return;
@@ -1565,7 +1572,7 @@ export const createKoeVoice = async (
 		const peak = Math.max(0.0001, e.volume);
 		const pan = e.pan ?? 0;
 		const durationMs = Math.max(60, e.duration * 1000);
-		void renderInto(alias, e.pitch, durationMs).then((r) => {
+		void renderInto(alias, e.pitchUnits, durationMs).then((r) => {
 			if (r)
 				schedule(r, t0, peak, pan, e.reverbSend, e.delaySend, e.destination);
 		});
@@ -2135,7 +2142,7 @@ export const createSingingVoices = (
 								(dest ? peak * masterVolumeScalar : peak) * peakScale;
 							model(note.syllable, {
 								trackId: track.id ?? "",
-								pitch,
+								pitchUnits: pitch,
 								velocity: 100,
 								volume: effPeak,
 								when,

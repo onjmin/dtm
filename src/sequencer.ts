@@ -173,7 +173,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 				maxEndStep = Math.max(maxEndStep, note.startStep + note.durationSteps);
 				timeline.push({
 					trackId: track.id,
-					pitch: note.pitch,
+					pitch: note.pitchUnits,
 					volume: track.volume / 100,
 					velocity: note.velocity ?? DEFAULT_PLAYBACK_VELOCITY,
 					when,
@@ -254,7 +254,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 				(trackVolumeMap.get(ev.trackId) ?? ev.volume * 100) / 100;
 			options.onPlayNote({
 				trackId: ev.trackId,
-				pitch: ev.pitch,
+				pitchUnits: ev.pitch,
 				velocity: ev.velocity,
 				volume: currentVolume * velocityVolume,
 				when: Math.max(0, _when),

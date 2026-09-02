@@ -18,7 +18,12 @@ import type {
 import { unpackCompositeAlias } from "./voice-worker-types";
 
 const KOE_SAMPLE_RATE = 48000;
-const midiToFreq = (m: number): number => 440 * 2 ** ((m - 69) / 12);
+/**
+ * ピッチ(units) → 周波数(Hz)。単位は 1/372オクターブの整数（A4 = 2139 units = 440Hz）。
+ * koe/worldline は Hz を受けるので、31平均律の音もそのまま連続ピッチとして鳴る。
+ */
+const unitsToFreq = (units: number): number =>
+	440 * 2 ** ((units - 2139) / 372);
 
 // DOM/WebWorker の lib 衝突を避けるため、必要な口だけを型付けして globalThis を使う。
 const wself = globalThis as unknown as {
@@ -98,7 +103,7 @@ const renderComposite = async (
 	if (!consonantPcm || !vowelPcm) return null;
 	const spliced = spliceCompositePcm(consonantPcm, vowelPcm, KOE_SAMPLE_RATE);
 	if (!spliced) return null;
-	const targetHz = midiToFreq(pitch);
+	const targetHz = unitsToFreq(pitch);
 	const audio = worldline.renderNote({
 		pcm: spliced.pcm,
 		pitch: vibrato ? vibratoPitchCurve(targetHz, spliced.preMs) : targetHz,
@@ -139,7 +144,7 @@ const renderAlias = async (
 	if (!pcm || pcm.length === 0) return null;
 	const entry = bank.manifest.phonemes[alias];
 	const lead = leadInFromEntry(entry);
-	const targetHz = midiToFreq(pitch);
+	const targetHz = unitsToFreq(pitch);
 
 	if (worldline) {
 		const audio = worldline.renderNote({

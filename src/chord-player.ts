@@ -12,6 +12,7 @@ import { copyToClipboard, encodeMml } from "./mml-player";
 import { SoundFont } from "./sf/SoundFont";
 import { injectStyles } from "./styles";
 import { createSynth } from "./synth";
+import { pitchV1ToUnits } from "./tuning";
 import { DEFAULT_STEPS_PER_BAR } from "./types";
 
 /**
@@ -1330,7 +1331,7 @@ export const mountChordPlayer = (
 			const synth = createSynth(ctx, destination);
 			synth.playNote({
 				trackId: "chord",
-				pitch,
+				pitchUnits: pitch,
 				velocity: 100,
 				volume,
 				when,
@@ -1355,7 +1356,7 @@ export const mountChordPlayer = (
 			trackIndex: number;
 			startStep: number;
 			durationSteps: number;
-			pitch: number;
+			pitchUnits: number;
 			velocity: number;
 		}> = [];
 
@@ -1376,7 +1377,8 @@ export const mountChordPlayer = (
 					trackIndex: 3,
 					startStep: whenStep,
 					durationSteps,
-					pitch: C3 + noteOffset,
+					// chord-parser の構成音は12平均律の半音。内部表現の units へ写す。
+					pitchUnits: pitchV1ToUnits(C3 + noteOffset),
 					velocity: 100,
 				});
 			}
@@ -1390,7 +1392,7 @@ export const mountChordPlayer = (
 			synth: false,
 			onPlayNote: (e) => {
 				wafPlayDynamic({
-					pitch: e.pitch,
+					pitch: e.pitchUnits,
 					velocity: e.velocity,
 					volume: e.volume,
 					when: e.when,

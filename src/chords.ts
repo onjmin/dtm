@@ -7,6 +7,7 @@
  */
 
 import { parseChord, parseChords } from "@onjmin/chord-parser";
+import { pitchV1ToUnits } from "./tuning";
 
 export type ChordPatternType =
 	| "block"
@@ -18,7 +19,11 @@ export type ChordPatternType =
 
 export type ChordPlacement = {
 	startStep: number;
-	pitch: number;
+	/**
+	 * 1/372オクターブ単位。chord-parser が返すのは12平均律の半音なので、
+	 * ここへ入れる時点で音律に応じた格子へ写している。
+	 */
+	pitchUnits: number;
 	durationSteps: number;
 	velocity: number;
 };
@@ -37,6 +42,15 @@ const C3 = 48;
 /**
  * コード進行 → 伴奏ノート配置。
  */
+/**
+ * 和音構成音の半音値 → units。
+ *
+ * chord-parser は12平均律の半音で構成音を返す。31平均律ではこれを五度連鎖経由で
+ * 度数へ写す必要があるが（長3度4半音→10度、完全5度7半音→18度）、綴りの情報が
+ * 要るため chord-parser 側の五度圏インデックス対応待ち。現状は12平均律のみ。
+ */
+const chordToneToUnits = (semitone: number): number => pitchV1ToUnits(semitone);
+
 export const buildChordPlacements = (
 	options: ApplyChordOptions,
 ): ChordPlacement[] => {
@@ -90,7 +104,7 @@ export const buildChordPlacements = (
 					for (const noteOffset of notes) {
 						placements.push({
 							startStep: chord.whenStep,
-							pitch: C3 + noteOffset + offset,
+							pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
 							durationSteps: noteLength,
 							velocity: 100,
 						});
@@ -100,7 +114,7 @@ export const buildChordPlacements = (
 					notes.forEach((noteOffset, i) => {
 						placements.push({
 							startStep: chord.whenStep + i * arpInterval,
-							pitch: C3 + noteOffset + offset,
+							pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
 							durationSteps: noteLength - i * arpInterval,
 							velocity: 100,
 						});
@@ -110,7 +124,7 @@ export const buildChordPlacements = (
 					notes.forEach((noteOffset, i) => {
 						placements.push({
 							startStep: chord.whenStep + i * arpInterval,
-							pitch: C3 + noteOffset + offset,
+							pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
 							durationSteps: Math.max(12, noteLength - i * arpInterval),
 							velocity: 100,
 						});
@@ -125,7 +139,7 @@ export const buildChordPlacements = (
 							for (const noteOffset of notes) {
 								placements.push({
 									startStep: syncopatedStep,
-									pitch: C3 + noteOffset + offset,
+									pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
 									durationSteps: Math.min(halfBeat, 12),
 									velocity: 100,
 								});
@@ -145,7 +159,7 @@ export const buildChordPlacements = (
 							for (const noteOffset of notes) {
 								placements.push({
 									startStep: noteStart,
-									pitch: C3 + noteOffset + offset,
+									pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
 									durationSteps: yatsumeLengthSteps,
 									velocity: 100,
 								});
@@ -157,7 +171,7 @@ export const buildChordPlacements = (
 						const stepOffset = i * Math.floor(stepsPerBar / 4);
 						placements.push({
 							startStep: chord.whenStep + stepOffset,
-							pitch: C3 + noteOffset + offset,
+							pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
 							durationSteps: Math.max(12, Math.floor(stepsPerBar / 4)),
 							velocity: 100,
 						});
@@ -181,7 +195,7 @@ export const buildChordPlacements = (
 				const stepOffset = i * 3;
 				placements.push({
 					startStep: startStep + stepOffset,
-					pitch: C3 + noteOffset + offset,
+					pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
 					durationSteps: chordLength - stepOffset,
 					velocity: 100,
 				});

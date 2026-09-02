@@ -127,6 +127,7 @@ export class SoundFont {
 		pitch = 60,
 		volume = 1.0,
 		velocity,
+		detuneCents = 0,
 		when = 0.0,
 		duration = 1.0,
 	}: {
@@ -140,6 +141,12 @@ export class SoundFont {
 		 * velocity を渡さない既存の呼び出し元は改修前と同じ信号経路のままになる。
 		 */
 		velocity?: number;
+		/**
+		 * ピッチの微調整（セント）。31平均律のように整数MIDIノート番号へ乗らない音高は、
+		 * 最寄りのゾーンを鳴らして残差をここで補正する。31平均律での残差は最大±48.4セントで、
+		 * detune の可動域に十分収まる。
+		 */
+		detuneCents?: number;
 		when?: number;
 		duration?: number;
 	} = {}): void {
@@ -163,7 +170,7 @@ export class SoundFont {
 			(Math.random() * 2 - 1) * SoundFont.humanizeDetuneCents;
 		const humanizeGainMul =
 			1 + (Math.random() * 2 - 1) * SoundFont.humanizeGainRatio;
-		src.detune.setValueAtTime(humanizeCents, 0);
+		src.detune.setValueAtTime(humanizeCents + detuneCents, 0);
 		const effectiveVolume = volume * humanizeGainMul;
 
 		// ベロシティ→明るさ連動フィルタ: 弱いほど丸く、強いほど明るく。

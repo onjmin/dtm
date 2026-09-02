@@ -77,6 +77,7 @@ import { SoundFont_drum } from "./sf/SoundFont_drum";
 import { SoundFont_list } from "./sf/SoundFont_list";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { showLoadingOverlay } from "./styles";
+import { unitsToMidiDetune } from "./tuning";
 import type {
 	DawInstance,
 	DawMode,
@@ -94,10 +95,13 @@ type SoundFontInstance = {
 	play: (o: {
 		ctx: AudioContext;
 		destination: AudioNode;
+		/** 最寄りの整数MIDIノート番号（ゾーン選択用）。 */
 		pitch: number;
 		volume: number;
 		/** 元ノートのvelocity(0-127)。音量ではなく音色の明るさにだけ効く。 */
 		velocity?: number;
+		/** pitch からの微調整（セント）。31平均律など整数ノートに乗らない音高用。 */
+		detuneCents?: number;
 		when: number;
 		duration: number;
 	}) => void;
@@ -1136,10 +1140,14 @@ export const createDtmStudio = async (
 				);
 			}
 			if (!sfInst) return;
+			// SoundFont は整数MIDIノートのゾーンしか持たないため、最寄りのゾーンを鳴らして
+			// 残差を detune（セント）で補正する。31平均律の音もこれで正確に鳴る。
+			const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
 			sfInst.play({
 				ctx: audioCtx,
 				destination: getChannelStrip(e.trackId).input,
-				pitch: e.pitch,
+				pitch: midi,
+				detuneCents,
 				volume: e.volume,
 				velocity: e.velocity,
 				when: e.when,
@@ -1542,7 +1550,7 @@ export const createDtmStudio = async (
 			sfInst.play({
 				ctx: audioCtx,
 				destination: getChannelStrip(e.trackId).input,
-				pitch: e.pitch,
+				pitch: e.pitchUnits,
 				volume: e.volume,
 				velocity: e.velocity,
 				when: e.when,
@@ -1648,7 +1656,7 @@ export const createDtmStudio = async (
 			sfInst.play({
 				ctx: audioCtx,
 				destination: getChannelStrip(e.trackId).input,
-				pitch: e.pitch,
+				pitch: e.pitchUnits,
 				volume: e.volume,
 				velocity: e.velocity,
 				when: e.when,
@@ -1749,7 +1757,7 @@ export const createDtmStudio = async (
 			sfInst.play({
 				ctx: audioCtx,
 				destination: getChannelStrip(e.trackId).input,
-				pitch: e.pitch,
+				pitch: e.pitchUnits,
 				volume: e.volume,
 				velocity: e.velocity,
 				when: e.when,
@@ -1791,7 +1799,7 @@ export const createDtmStudio = async (
 		sfInst.play({
 			ctx: audioCtx,
 			destination: getChannelStrip(e.trackId).input,
-			pitch: e.pitch,
+			pitch: e.pitchUnits,
 			volume: e.volume,
 			velocity: e.velocity,
 			when: e.when,
@@ -1856,7 +1864,7 @@ export const createDtmStudio = async (
 			trackIndex: 3, // 伴奏トラック
 			startStep: p.startStep,
 			durationSteps: p.durationSteps,
-			pitch: p.pitch,
+			pitchUnits: p.pitchUnits,
 			velocity: p.velocity,
 		}));
 
@@ -1869,7 +1877,7 @@ export const createDtmStudio = async (
 			sfInst.play({
 				ctx: audioCtx,
 				destination: getChannelStrip("chord").input,
-				pitch: e.pitch,
+				pitch: e.pitchUnits,
 				volume: e.volume,
 				velocity: e.velocity,
 				when: e.when,

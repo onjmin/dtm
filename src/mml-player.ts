@@ -40,6 +40,7 @@ import { createSequencer, type SequencerTrack } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import { createSynth, type Synth } from "./synth";
+import { UNITS_PER_OCTAVE, unitsToPitchV1 } from "./tuning";
 import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 import {
 	DEFAULT_BPM,
@@ -444,9 +445,14 @@ export const mountMmlPlayer = (
 		0,
 	);
 
-	// オクターブ情報を保持した MIDI ピッチで時刻付きノート化（最低音がベースになる）
+	// オクターブ情報を保持した MIDI ピッチで時刻付きノート化（最低音がベースになる）。
+	//
+	// chord-parser は12平均律の半音で解釈するため、ここで units から最寄りの半音へ丸める。
+	// 31平均律の曲では「12平均律で見たときのコード名」という近似になる。ミーントーン的な
+	// 和声（通常の三和音・七の和音）は丸めても正しく復元されるが、中立3度やスーパーメジャー
+	// のような31平均律固有の音程は別のコードとして誤認される。
 	const timedNotes: TimedNote[] = placements.map((p) => ({
-		pitch: p.pitch,
+		pitch: unitsToPitchV1(p.pitchUnits),
 		when: p.startStep * secondsPerStep,
 		duration: p.durationSteps * secondsPerStep,
 	}));
@@ -494,7 +500,7 @@ export const mountMmlPlayer = (
 			id: id++,
 			startStep: p.startStep,
 			durationSteps: p.durationSteps,
-			pitch: p.pitch,
+			pitchUnits: p.pitchUnits,
 			velocity: DEFAULT_VELOCITY,
 		}));
 		return {
@@ -1505,7 +1511,8 @@ export const mountMmlPlayer = (
 				(a, b) => a.startStep - b.startStep,
 			);
 			const gate = (lt.gate ?? DEFAULT_GATE) / 100;
-			const semis = (lt.octave ?? 0) * 12; // オクターブシフトを半音換算でピッチへ加算
+			// オクターブシフトを units 換算でピッチへ加算（1オクターブ = 372 units）
+			const semis = (lt.octave ?? 0) * UNITS_PER_OCTAVE;
 			const count = Math.min(sorted.length, lt.syllables.length);
 			const notes = [];
 			for (let i = 0; i < count; i++) {
@@ -1513,7 +1520,7 @@ export const mountMmlPlayer = (
 				if (n.startStep < fromStep) continue;
 				notes.push({
 					syllable: lt.syllables[i],
-					pitch: n.pitch + semis,
+					pitch: n.pitchUnits + semis,
 					startSec: (n.startStep - fromStep) * secondsPerStep,
 					durationSec: n.durationSteps * secondsPerStep * gate,
 				});

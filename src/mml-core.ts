@@ -1,6 +1,10 @@
 import { LinkedList } from "./linked-list";
-import { getRenderConfig } from "./renderer";
-import type { AddNoteOptions, CoreEventHandlers, Note } from "./types";
+import type {
+	AddNoteOptions,
+	CoreEventHandlers,
+	Note,
+	RenderConfig,
+} from "./types";
 import { DEFAULT_VELOCITY } from "./types";
 
 export const PITCH_MAP = [
@@ -19,6 +23,48 @@ export const PITCH_MAP = [
 ];
 
 /**
+ * 31平均律の綴り表（度数0〜30）。
+ *
+ * 五度連鎖の伝統的綴りを基本にしつつ、重複臨時記号（`##`／`--`）を要する度数だけ
+ * 微分音記号（`+`／`_`）の短縮形を採る。結果として全31度が2文字以内に収まる。
+ * どの綴りもオクターブを跨がないものを選んであるので、`o<n>` の直後に置ける
+ * （たとえば29度は `c-` ではなく `b+`。`c-` はCの2度下＝前オクターブになってしまう）。
+ */
+export const EDO31_NAMES = [
+	"c",
+	"c+",
+	"c#",
+	"d-",
+	"d_",
+	"d",
+	"d+",
+	"d#",
+	"e-",
+	"e_",
+	"e",
+	"f-",
+	"e#",
+	"f",
+	"f+",
+	"f#",
+	"g-",
+	"g_",
+	"g",
+	"g+",
+	"g#",
+	"a-",
+	"a_",
+	"a",
+	"a+",
+	"a#",
+	"b-",
+	"b_",
+	"b",
+	"b+",
+	"b#",
+];
+
+/**
  * ノートデータ管理とMML生成の責務を持つDOM非依存のコアロジック
  */
 export class MMLCore {
@@ -34,10 +80,17 @@ export class MMLCore {
 	private lastUndoTime: number = 0;
 	private static readonly UNDO_DEBOUNCE_MS = 100;
 	private toolMode: "pen" | "select" | "eraser" = "pen";
+	/** グリッド寸法の供給元（描画器ではなく呼び出し側が持つ設定を読む） */
+	private getConfig: () => RenderConfig;
 
-	constructor(handlers: CoreEventHandlers, volume: number = 80) {
+	constructor(
+		handlers: CoreEventHandlers,
+		volume: number = 80,
+		getConfig: () => RenderConfig,
+	) {
 		this.handlers = handlers;
 		this.volume = volume;
+		this.getConfig = getConfig;
 		this.lastHistorySnapshot = JSON.stringify(this.notes);
 		this.history.add([]);
 		this.generateAndNotify();
@@ -141,7 +194,7 @@ export class MMLCore {
 	 */
 	public addNote(step: number, pitch: number, options: AddNoteOptions): void {
 		const existingIndex = this.notes.findIndex(
-			(n) => n.startStep === step && n.pitch === pitch,
+			(n) => n.startStep === step && n.pitchUnits === pitch,
 		);
 
 		if (existingIndex === -1) {
@@ -149,7 +202,7 @@ export class MMLCore {
 				id: this.nextNoteId++,
 				startStep: step,
 				durationSteps: options.noteLengthSteps,
-				pitch: pitch,
+				pitchUnits: pitch,
 				velocity: options.velocity ?? DEFAULT_VELOCITY,
 			};
 			this.notes.push(newNote);
@@ -184,9 +237,9 @@ export class MMLCore {
 		const note = this.notes.find((target) => target.id === noteId);
 		if (!note) return;
 
-		const totalSteps = this.getMaxStep() + getRenderConfig().stepsPerBar;
-		const pitchRangeStart = getRenderConfig().pitchRangeStart;
-		const pitchRangeEnd = pitchRangeStart + getRenderConfig().keyCount - 1;
+		const totalSteps = this.getMaxStep() + this.getConfig().stepsPerBar;
+		const pitchRangeStart = this.getConfig().pitchRangeStart;
+		const pitchRangeEnd = pitchRangeStart + this.getConfig().keyCount - 1;
 
 		const clampedPitch = Math.min(
 			Math.max(pitch, pitchRangeStart),
@@ -198,7 +251,7 @@ export class MMLCore {
 		);
 
 		note.startStep = clampedStart;
-		note.pitch = clampedPitch;
+		note.pitchUnits = clampedPitch;
 		this.notes.sort((a, b) => a.startStep - b.startStep);
 
 		this.generateAndNotify();
@@ -258,7 +311,7 @@ export class MMLCore {
 	 * ただし、残りステップ(limit)は絶対に超えない。
 	 */
 	private stepsToMMLDuration(steps: number, limit: number): string {
-		const config = getRenderConfig();
+		const config = this.getConfig();
 		const total = config.stepsPerBar;
 
 		const candidates = [
@@ -300,7 +353,7 @@ export class MMLCore {
 	 * ギャップに収まる最大の音符を探す（減算アルゴリズム用）
 	 */
 	private findBestFitDuration(gap: number): { dur: number; steps: number } {
-		const config = getRenderConfig();
+		const config = this.getConfig();
 		const durations = [1, 2, 4, 8, 12, 16, 24, 32, 48, 64];
 
 		for (const d of durations) {
@@ -313,6 +366,17 @@ export class MMLCore {
 		return { dur: 64, steps: config.stepsPerBar / 64 };
 	}
 
+	/** ピッチ(units) → その音律での「オクターブ番号」と「音名」。 */
+	private spell(pitchUnits: number): { octave: number; name: string } {
+		const edo = this.getConfig().edo ?? 12;
+		const names = edo === 31 ? EDO31_NAMES : PITCH_MAP;
+		const octave = Math.floor(pitchUnits / 372) - 1;
+		// 負のピッチでも剰余が負にならないようにする
+		const within = ((pitchUnits % 372) + 372) % 372;
+		const step = Math.round(within / (372 / edo));
+		return { octave, name: names[step % edo] };
+	}
+
 	/**
 	 * ピッチからオクターブ最適化のある音名を取得
 	 */
@@ -320,8 +384,7 @@ export class MMLCore {
 		pitch: number,
 		lastOctave: number,
 	): { text: string; currentOctave: number } {
-		const octave = Math.floor(pitch / 12) - 1;
-		const name = PITCH_MAP[pitch % 12];
+		const { octave, name } = this.spell(pitch);
 
 		if (lastOctave === -1 || Math.abs(octave - lastOctave) >= 2) {
 			return { text: `o${octave}${name}`, currentOctave: octave };
@@ -348,7 +411,7 @@ export class MMLCore {
 	 * 各音符の長さを忠実に出力する（次の音符がなければ曲末まで伸ばせる）。
 	 */
 	private generateMML = (volumeOverride?: number): string => {
-		const config = getRenderConfig();
+		const config = this.getConfig();
 		const vol = volumeOverride ?? this.volume;
 
 		const header = `t${this.tempo} v${vol}`;
@@ -413,14 +476,13 @@ export class MMLCore {
 
 			if (notes.length > 1) {
 				const noteStrs = notes.map((n) => {
-					const oct = Math.floor(n.pitch / 12) - 1;
-					const name = PITCH_MAP[n.pitch % 12];
+					const { octave: oct, name } = this.spell(n.pitchUnits);
 					return `o${oct}${name}`;
 				});
 				segments.push(`[${noteStrs.join("")}]${durStr}`);
 			} else {
 				const { text, currentOctave } = this.getNoteWithOctave(
-					notes[0].pitch,
+					notes[0].pitchUnits,
 					lastOctave,
 				);
 				segments.push(`${text}${durStr}`);
@@ -461,7 +523,7 @@ export class MMLCore {
 	 * MMLの音長文字列（"4", "4.", "12"など）をステップ数に変換する
 	 */
 	private getStepFromDottedMML(durStr: string): number {
-		const config = getRenderConfig();
+		const config = this.getConfig();
 		const total = config.stepsPerBar; // 1小節の全ステップ数（例: 192）
 
 		// 付点があるかチェック
@@ -482,7 +544,7 @@ export class MMLCore {
  */
 export const decomposeToMonophonic = (notes: Note[]): Note[][] => {
 	const sorted = [...notes].sort(
-		(a, b) => a.startStep - b.startStep || a.pitch - b.pitch,
+		(a, b) => a.startStep - b.startStep || a.pitchUnits - b.pitchUnits,
 	);
 	const tracks: Note[][] = [];
 	const trackEnds: number[] = [];

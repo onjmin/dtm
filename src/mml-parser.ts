@@ -12,15 +12,16 @@ import { parseLyrics, stripCustomVocals, stripLyrics } from "./lyrics";
 import type { LyricTrack } from "./types";
 import { DEFAULT_STEPS_PER_BAR, MML_END_MARKER } from "./types";
 
-const PITCH_MAP: Record<string, number> = {
-	c: 0,
-	d: 2,
-	e: 4,
-	f: 5,
-	g: 7,
-	a: 9,
-	b: 11,
+/**
+ * 幹音のオクターブ内位置（格子ステップ）。音律ごとに持つ。
+ * 31平均律の `5 5 3 5 5 5 3` は、12平均律の `2 2 1 2 2 2 1` と同じ全音/半音の構造。
+ */
+const NATURAL_STEPS: Record<number, Record<string, number>> = {
+	12: { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 },
+	31: { c: 0, d: 5, e: 10, f: 13, g: 18, a: 23, b: 28 },
 };
+/** 幹音の文字かどうか（音律に依らず c-b の7文字）。 */
+const isNatural = (ch: string): boolean => Object.hasOwn(NATURAL_STEPS[12], ch);
 
 /**
  * 値を [lo, hi] にクリップする。範囲外の値でプレイヤーが暴走しないための保険。
@@ -77,6 +78,11 @@ export type MmlMeta = {
 	/** DAWの動作モード（simple | advanced） */
 	mode?: "simple" | "advanced";
 	/**
+	 * 曲全体の音律（1オクターブの分割数）。`#edo=31` で埋め込む。省略時は12（12平均律）。
+	 * 12と31のみ対応。音律は曲単位で、トラックや小節では変えられない。
+	 */
+	edo?: number;
+	/**
 	 * トラックごとの個別楽器名（GM楽器名）。`#t<n>inst=<名前>` で埋め込む。
 	 * 省略されたトラックはプリセットが適用される。
 	 */
@@ -118,7 +124,7 @@ export type MmlMeta = {
 
 /** `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア） */
 const META_DIRECTIVE =
-	/#(inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|mastercomp|fadein|fadeout|mode)=([\w-]+)/gi;
+	/#(inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|mastercomp|fadein|fadeout|mode|edo)=([\w-]+)/gi;
 
 /** `#t<n>inst=<GM楽器名>` にマッチする（値は`;` `#` 改行以外の任意文字） */
 const TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
@@ -186,6 +192,10 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 			if (m[2] === "simple" || m[2] === "advanced") {
 				meta.mode = m[2];
 			}
+		} else if (key === "edo") {
+			// 対応するのは12と31のみ。未知の値は無視して既定(12)のままにする。
+			const e = Number.parseInt(m[2], 10);
+			if (e === 12 || e === 31) meta.edo = e;
 		}
 	}
 	for (const m of mml.matchAll(TRACK_INST_DIRECTIVE)) {
@@ -303,6 +313,7 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	if (meta.fadeOut !== undefined && meta.fadeOut !== 0)
 		parts.push(`#fadeout=${meta.fadeOut}`);
 	if (meta.mode) parts.push(`#mode=${meta.mode}`);
+	if (meta.edo !== undefined && meta.edo !== 12) parts.push(`#edo=${meta.edo}`);
 	if (meta.trackInstruments) {
 		for (const [idx, name] of Object.entries(meta.trackInstruments)) {
 			if (name) parts.push(`#t${idx}inst=${name}`);
@@ -355,7 +366,8 @@ export type MMLNotePlacement = {
 	/** 0:melody 1:submelody 2:bass 3:chord */
 	trackIndex: number;
 	startStep: number;
-	pitch: number;
+	/** 1/372オクターブ単位（{@link Note.pitchUnits} と同じ）。 */
+	pitchUnits: number;
 	durationSteps: number;
 	/** v コマンドで指定されたベロシティ（0-127、既定100） */
 	velocity: number;
@@ -469,6 +481,13 @@ export const parseMML = (
 		.replace(/[\n\r]+/g, " ")
 		.trim();
 
+	// 音律（曲単位）。宣言が無ければ12平均律。
+	const edo = meta.edo === 31 ? 31 : 12;
+	const naturals = NATURAL_STEPS[edo];
+	const unitsPerStep = 372 / edo;
+	// クロマチック半音は何格子ステップか。12平均律では1、31平均律では2。
+	const chromaticStep = edo === 31 ? 2 : 1;
+
 	// 3. @(\d+) で分割
 	const parts = fullMML.split(/(@\d+)/).filter((p) => p.trim().length > 0);
 
@@ -532,6 +551,32 @@ export const parseMML = (
 				durationSteps: dur,
 				type,
 			});
+		};
+
+		/**
+		 * 音名の直後の臨時記号をすべて読み、格子ステップの増減を返す。
+		 *
+		 *   `#` `+`(12平均律) … クロマチック半音上げ
+		 *   `-`               … クロマチック半音下げ
+		 *   `+`(31平均律)     … 格子1ステップ上げ（微分音）
+		 *   `_`               … 格子1ステップ下げ（微分音）
+		 *
+		 * 12平均律ではクロマチック半音＝1格子ステップなので4記号すべてが従来の意味に潰れ、
+		 * 既存MMLの解釈は変わらない。記号は累積するので `c##` は+2（12平均律ならD）になる。
+		 * 以前は1個しか消費せず `c##` が `c#` になっていた。
+		 */
+		const readAccidentals = (): number => {
+			let delta = 0;
+			while (j < body.length) {
+				const a = body[j];
+				if (a === "#") delta += chromaticStep;
+				else if (a === "-") delta -= chromaticStep;
+				else if (a === "+") delta += edo === 31 ? 1 : chromaticStep;
+				else if (a === "_") delta -= edo === 31 ? 1 : chromaticStep;
+				else break;
+				j++;
+			}
+			return delta;
 		};
 
 		const parseLength = (): number => {
@@ -616,17 +661,11 @@ export const parseMML = (
 				const savedOctave = octave;
 				while (j < body.length && body[j] !== "]") {
 					const c = body[j];
-					if (Object.hasOwn(PITCH_MAP, c)) {
-						let pitch = PITCH_MAP[c];
+					if (isNatural(c)) {
+						let pitchSteps = naturals[c];
 						j++;
-						if (j < body.length && (body[j] === "#" || body[j] === "+")) {
-							pitch++;
-							j++;
-						} else if (j < body.length && body[j] === "-") {
-							pitch--;
-							j++;
-						}
-						chordNotes.push((octave + 1) * 12 + pitch);
+						pitchSteps += readAccidentals();
+						chordNotes.push((octave + 1) * 372 + pitchSteps * unitsPerStep);
 					} else if (c === ">") {
 						octave = Math.min(8, octave + 1);
 						j++;
@@ -653,7 +692,7 @@ export const parseMML = (
 					placements.push({
 						trackIndex,
 						startStep: currentStep,
-						pitch: p,
+						pitchUnits: p,
 						durationSteps: Math.max(1, steps),
 						velocity,
 					});
@@ -661,24 +700,18 @@ export const parseMML = (
 				pushTok("chord", currentStep, Math.max(1, steps), tokStart);
 				currentStep += steps;
 				octave = savedOctave;
-			} else if (Object.hasOwn(PITCH_MAP, ch)) {
+			} else if (isNatural(ch)) {
 				// 単音
-				let pitch = PITCH_MAP[ch];
+				let pitchSteps = naturals[ch];
 				j++;
-				if (j < body.length && (body[j] === "#" || body[j] === "+")) {
-					pitch++;
-					j++;
-				} else if (j < body.length && body[j] === "-") {
-					pitch--;
-					j++;
-				}
-				const midiPitch = (octave + 1) * 12 + pitch;
+				pitchSteps += readAccidentals();
+				const midiPitch = (octave + 1) * 372 + pitchSteps * unitsPerStep;
 				const steps = parseLength();
 				recordContributor();
 				placements.push({
 					trackIndex,
 					startStep: currentStep,
-					pitch: midiPitch,
+					pitchUnits: midiPitch,
 					durationSteps: Math.max(1, steps),
 					velocity,
 				});

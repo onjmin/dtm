@@ -1,3 +1,4 @@
+import { PITCH_RANGE_END, PITCH_RANGE_START } from "./types";
 /**
  * 打ち込み補助マクロ群。MMLCore を直接操作する。
  *
@@ -82,7 +83,7 @@ export const applyHarmonicFilter = (
 			.getNotes()
 			.filter((n) => n.startStep >= start && n.startStep < end);
 		if (chordHere.length > 0) {
-			currentClasses = new Set(chordHere.map((n) => n.pitch % 12));
+			currentClasses = new Set(chordHere.map((n) => n.pitchUnits % 12));
 		} else if (isNewBar) {
 			currentClasses = new Set();
 		}
@@ -92,7 +93,8 @@ export const applyHarmonicFilter = (
 			.getNotes()
 			.filter((n) => n.startStep >= start && n.startStep < end);
 		for (const n of activeHere) {
-			if (!currentClasses.has(n.pitch % 12)) targetCore.deleteNoteById(n.id);
+			if (!currentClasses.has(n.pitchUnits % 12))
+				targetCore.deleteNoteById(n.id);
 		}
 	}
 	targetCore.endBatch();
@@ -127,7 +129,7 @@ export const applyMonophonic = (
 			.getNotes()
 			.filter((n) => n.startStep >= start && n.startStep < end);
 		if (chordHere.length > 0) {
-			currentClasses = new Set(chordHere.map((n) => n.pitch % 12));
+			currentClasses = new Set(chordHere.map((n) => n.pitchUnits % 12));
 		} else if (isNewBar) {
 			currentClasses = new Set();
 		}
@@ -137,7 +139,9 @@ export const applyMonophonic = (
 			.getNotes()
 			.filter((n) => n.startStep >= start && n.startStep < end);
 
-		const filtered = activeHere.filter((n) => currentClasses.has(n.pitch % 12));
+		const filtered = activeHere.filter((n) =>
+			currentClasses.has(n.pitchUnits % 12),
+		);
 		const filteredIds = new Set(filtered.map((n) => n.id));
 		for (const n of activeHere) {
 			if (!filteredIds.has(n.id)) targetCore.deleteNoteById(n.id);
@@ -151,7 +155,7 @@ export const applyMonophonic = (
 		}
 		for (const notesAtTime of timeMap.values()) {
 			if (notesAtTime.length > 1) {
-				notesAtTime.sort((a, b) => b.pitch - a.pitch);
+				notesAtTime.sort((a, b) => b.pitchUnits - a.pitchUnits);
 				const [, ...others] = notesAtTime;
 				for (const on of others) targetCore.deleteNoteById(on.id);
 			}
@@ -171,7 +175,7 @@ export const shiftNotes = (cores: MMLCore[], shiftSteps: number): void => {
 		for (const note of notes) {
 			const newStart = note.startStep + shiftSteps;
 			if (newStart < 0) core.deleteNoteById(note.id);
-			else core.moveNote(note.id, newStart, note.pitch);
+			else core.moveNote(note.id, newStart, note.pitchUnits);
 		}
 		// moveNote は履歴を残さないため、シフト全体を1操作としてここで確定する。
 		// これが無いとシフト後のUndoが直前の編集まで巻き戻してしまう。
@@ -180,17 +184,25 @@ export const shiftNotes = (cores: MMLCore[], shiftSteps: number): void => {
 };
 
 /**
- * 全トラックのノートを一括で移調する（半音単位）。歌唱ピッチもノート由来なので、
- * 歌詞トラックの歌声も一緒に移調される。MIDI範囲(0-127)を超える場合はクランプする
- * （音域外に飛んで無音・破綻するのを防ぐ）。
+ * 全トラックのノートを一括で移調する。歌唱ピッチもノート由来なので、歌詞トラックの
+ * 歌声も一緒に移調される。音域（{@link PITCH_RANGE_START}〜{@link PITCH_RANGE_END}）を
+ * 超える場合はクランプする（音域外に飛んで無音・破綻するのを防ぐ）。
+ *
+ * 単位は「半音」ではなく**格子1ステップ**。12平均律では1ステップ＝1半音だが、
+ * 31平均律では1ステップ＝1度（≒38.7セント）になる。31平均律で「半音」は
+ * クロマチック半音（2度）とダイアトニック半音（3度）に分岐して一意に定まらないため、
+ * 画面の「移調」操作と同じ格子基準に揃えてある。
  */
-export const transposeNotes = (cores: MMLCore[], semitones: number): void => {
-	if (semitones === 0) return;
+export const transposeNotes = (cores: MMLCore[], steps: number): void => {
+	if (steps === 0) return;
 	for (const core of cores) {
 		const notes = [...core.getNotes()];
 		for (const note of notes) {
-			const newPitch = Math.max(0, Math.min(127, note.pitch + semitones));
-			if (newPitch !== note.pitch) {
+			const newPitch = Math.max(
+				PITCH_RANGE_START,
+				Math.min(PITCH_RANGE_END, note.pitchUnits + steps),
+			);
+			if (newPitch !== note.pitchUnits) {
 				core.moveNote(note.id, note.startStep, newPitch);
 			}
 		}

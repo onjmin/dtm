@@ -52,20 +52,7 @@ import { decomposeToMonophonic, isChordHeavyTrack, MMLCore } from "./mml-core";
 import { MML_INFO_HTML } from "./mml-info";
 import { formatMmlMeta, parseMML } from "./mml-parser";
 import { mountMmlPlayer } from "./mml-player";
-import {
-	drawGrid,
-	drawNoteLyrics,
-	drawNotes,
-	drawSelectedNotes,
-	getDrawOffset,
-	getGridCanvas,
-	getGridContext,
-	getGridPosition,
-	getHeaderCanvas,
-	init,
-	setBackgroundActive,
-	setDrawOffset,
-} from "./renderer";
+import { createRenderer, type Renderer } from "./renderer";
 import {
 	DEFAULT_REVERB_DECAY_SEC,
 	DEFAULT_REVERB_PREDELAY_MS,
@@ -77,6 +64,7 @@ import {
 import { createSequencer, type Sequencer } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
+import { pitchV1ToUnits, UNITS_PER_OCTAVE, UNITS_PER_SEMITONE } from "./tuning";
 import type {
 	CustomVocalDef,
 	DawInstance,
@@ -97,7 +85,10 @@ import {
 	DEFAULT_PAN,
 	DEFAULT_VELOCITY,
 	DEFAULT_VOCAL_VOLUME,
+	KEY_COUNT,
 	MML_END_MARKER,
+	PITCH_RANGE_START,
+	unitsPerRow,
 } from "./types";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "./voice-images";
 
@@ -700,9 +691,9 @@ type AutoRoleStats = {
 };
 
 const computeAutoRoleStats = (
-	notes: Pick<Note, "pitch" | "startStep" | "durationSteps">[],
+	notes: Pick<Note, "pitchUnits" | "startStep" | "durationSteps">[],
 ): AutoRoleStats => {
-	const avgPitch = notes.reduce((s, n) => s + n.pitch, 0) / notes.length;
+	const avgPitch = notes.reduce((s, n) => s + n.pitchUnits, 0) / notes.length;
 	const avgDur = notes.reduce((s, n) => s + n.durationSteps, 0) / notes.length;
 
 	// 同一startStepの同時発音数（和音の厚み）
@@ -973,18 +964,47 @@ export const mountDAW = (
 	// --- 描画設定 ---
 	const renderConfig: RenderConfig = {
 		stepsPerBar: 192,
-		keyCount: 128,
-		pitchRangeStart: 0,
+		keyCount: KEY_COUNT,
+		pitchRangeStart: PITCH_RANGE_START,
+		unitsPerRow: unitsPerRow(12),
+		edo: 12,
 		keyHeight: BASE_KEY_HEIGHT,
 		stepWidth: BASE_STEP_WIDTH * 2, // zoom100% 相当
 	};
+
+	// このエディタ専用の描画器。以前はモジュールグローバルだったため、同じページに
+	// 2つ目のエディタをマウントすると後勝ちでCanvasを奪われ、先にマウントした側の
+	// 描画が相手の画面へ流れ込んでいた。インスタンスで持つことで曲ごとに独立させる。
+	let renderer!: Renderer;
 
 	// --- 状態 ---
 	let zoomX = 100;
 	let zoomY = 100;
 	let bpm = options.defaultBpm ?? DEFAULT_BPM;
 	let masterVolume = options.masterVolume ?? 50;
-	options.singingVoices?.setVolume(masterVolume / 100);
+
+	/**
+	 * 「曲自体の音量」(`#volume=`) を変更する唯一の入口。
+	 *
+	 * `masterVolume` への直接代入は禁止。楽器音とドラムは発音のたびに masterVolume を
+	 * 読み直す（dispatchNote / sequencer の onPlayNote・onPlayDrum）ので代入するだけで
+	 * 反映されるが、歌声(koe)だけは SingingVoices が内部に別のゲインを持っているため
+	 * `setVolume` で通知しないと反映されない（共有 masterGain と、チャンネルストリップへ
+	 * 直結するノート用の masterVolumeScalar の2つ。lyrics.ts 参照）。
+	 *
+	 * この「代入したら setVolume も呼ぶ」という手作業の対応付けを代入箇所ごとに
+	 * 書いていたため、音量を変える経路を1つ増やすたびに呼び忘れて
+	 * 「歌にだけマスタ音量が効かない」バグが繰り返し再発していた。ここへ一本化して
+	 * 構造的に防ぐ。新しい経路を足すときも必ずこの関数を通すこと。
+	 */
+	const applyMasterVolume = (volume: number): void => {
+		masterVolume = clamp(Math.round(volume), 0, 100);
+		refs.masterVolume.value = String(masterVolume);
+		refs.masterVolumeLabel.textContent = `${masterVolume}%`;
+		options.singingVoices?.setVolume(masterVolume / 100);
+	};
+
+	applyMasterVolume(masterVolume);
 	let reverbAmount = options.reverbAmount ?? 0;
 	let reverbDecay = options.reverbDecay ?? DEFAULT_REVERB_DECAY_SEC;
 	let reverbPreDelay = options.reverbPreDelay ?? DEFAULT_REVERB_PREDELAY_MS;
@@ -1190,17 +1210,19 @@ export const mountDAW = (
 							if (!ready) return;
 							if (!suppressPatch && options.onNotesPatch) {
 								const prevByKey = new Map(
-									prevNotes.map((n) => [`${n.startStep}_${n.pitch}`, n]),
+									prevNotes.map((n) => [`${n.startStep}_${n.pitchUnits}`, n]),
 								);
 								const currByKey = new Map(
-									notes.map((n) => [`${n.startStep}_${n.pitch}`, n]),
+									notes.map((n) => [`${n.startStep}_${n.pitchUnits}`, n]),
 								);
 								// added は「新規ノート」に加え「同一キー(startStep,pitch)のまま
 								// durationSteps/velocity が変化したノート」も含める（リサイズ/ベロシティ同期）。
 								// 受信側 applyPatch は同一キーがあれば upsert（上書き）する。
 								const added = notes
 									.filter((n) => {
-										const prev = prevByKey.get(`${n.startStep}_${n.pitch}`);
+										const prev = prevByKey.get(
+											`${n.startStep}_${n.pitchUnits}`,
+										);
 										return (
 											!prev ||
 											prev.durationSteps !== n.durationSteps ||
@@ -1209,13 +1231,18 @@ export const mountDAW = (
 									})
 									.map((n) => ({
 										startStep: n.startStep,
-										pitch: n.pitch,
+										pitchUnits: n.pitchUnits,
 										durationSteps: n.durationSteps,
 										velocity: n.velocity,
 									}));
 								const removed = prevNotes
-									.filter((n) => !currByKey.has(`${n.startStep}_${n.pitch}`))
-									.map((n) => ({ startStep: n.startStep, pitch: n.pitch }));
+									.filter(
+										(n) => !currByKey.has(`${n.startStep}_${n.pitchUnits}`),
+									)
+									.map((n) => ({
+										startStep: n.startStep,
+										pitchUnits: n.pitchUnits,
+									}));
 								if (added.length > 0 || removed.length > 0) {
 									options.onNotesPatch(config.id, added, removed);
 								}
@@ -1229,6 +1256,7 @@ export const mountDAW = (
 						},
 					},
 					config.volume,
+					() => renderConfig,
 				),
 				volume: config.volume,
 				savedChordInput: "",
@@ -1339,7 +1367,7 @@ export const mountDAW = (
 	};
 
 	const getMaxOffsetX = (): number => {
-		const canvas = getGridCanvas();
+		const canvas = renderer.getGridCanvas();
 		const maxNoteStep = getMaxNoteStep();
 		const totalContentWidth = maxNoteStep * renderConfig.stepWidth;
 		return Math.max(0, totalContentWidth - canvas.width);
@@ -1347,12 +1375,12 @@ export const mountDAW = (
 
 	const getMaxOffsetY = (): number => {
 		const totalHeight = renderConfig.keyCount * renderConfig.keyHeight;
-		return Math.max(0, totalHeight - getGridCanvas().height);
+		return Math.max(0, totalHeight - renderer.getGridCanvas().height);
 	};
 
 	const drawStartLine = (): void => {
-		const ctx = getGridContext();
-		const canvas = getGridCanvas();
+		const ctx = renderer.getGridContext();
+		const canvas = renderer.getGridCanvas();
 		if (!ctx) return;
 		const x = playStartStep * renderConfig.stepWidth - currentOffsetX;
 		if (x < -10 || x > canvas.width + 10) return;
@@ -1368,8 +1396,8 @@ export const mountDAW = (
 	};
 
 	const drawPlayhead = (): void => {
-		const ctx = getGridContext();
-		const canvas = getGridCanvas();
+		const ctx = renderer.getGridContext();
+		const canvas = renderer.getGridCanvas();
 		if (!ctx) return;
 		const x = currentPlayStep * renderConfig.stepWidth - currentOffsetX;
 		if (x < 0 || x > canvas.width) return;
@@ -1384,7 +1412,7 @@ export const mountDAW = (
 	};
 
 	const redrawAll = (): void => {
-		drawGrid(gridLineSteps);
+		renderer.drawGrid(gridLineSteps);
 		// 歌詞を重ねる対象（描画されたアクティブトラックのノート）。選択ハイライトに
 		// 塗り潰されないよう、文字は全ノートを描き終えてから最後に載せる。
 		let lyricTargetNotes: Note[] | null = null;
@@ -1400,18 +1428,18 @@ export const mountDAW = (
 			}
 			const [r, g, b] = t.config.color;
 			const notes = t.core.getNotes();
-			drawNotes(notes, [r, g, b, 1.0], false);
+			renderer.drawNotes(notes, [r, g, b, 1.0], false);
 		}
 
 		// 2. アクティブトラックを最前面に描画（立体エッジと鮮やかな発色）
 		if (activeTrackState) {
 			const [r, g, b] = activeTrackState.config.color;
 			const notes = activeTrackState.core.getNotes();
-			drawNotes(notes, [r, g, b, 1.0], true);
+			renderer.drawNotes(notes, [r, g, b, 1.0], true);
 			lyricTargetNotes = notes;
 		}
 		if (activeToolMode === "select" && selectionRect) {
-			const ctx = getGridContext();
+			const ctx = renderer.getGridContext();
 			ctx.save();
 			ctx.strokeStyle = "#ffec27";
 			ctx.lineWidth = 2;
@@ -1434,14 +1462,14 @@ export const mountDAW = (
 		if (activeToolMode === "select" && selectedNotes.length > 0) {
 			const ids = new Set(selectedNotes.map((n) => n.id));
 			const active = getActive();
-			drawSelectedNotes(active.core.getNotes(), ids, [
+			renderer.drawSelectedNotes(active.core.getNotes(), ids, [
 				...active.config.color,
 				1,
 			]);
 		}
 		// 歌詞はアクティブトラックのノートにだけ重ねる（全部出すと文字で埋もれる）
 		if (lyricTargetNotes)
-			drawNoteLyrics(lyricTargetNotes, getActiveLyricKana());
+			renderer.drawNoteLyrics(lyricTargetNotes, getActiveLyricKana());
 		drawStartLine();
 		if (playbackState === "playing") drawPlayhead();
 		updateScrollbars();
@@ -1451,7 +1479,7 @@ export const mountDAW = (
 	// スクロールバー
 	// ============================================================
 	const updateScrollbars = (): void => {
-		const canvas = getGridCanvas();
+		const canvas = renderer.getGridCanvas();
 		const maxOffsetX = getMaxOffsetX();
 		const sbW = refs.hScroll.clientWidth;
 		if (maxOffsetX <= 0) {
@@ -1540,7 +1568,7 @@ export const mountDAW = (
 			const x = clamp(clientX - rect.left - thumbW / 2, 0, rect.width - thumbW);
 			const ratio = x / (rect.width - thumbW);
 			currentOffsetX = clamp(ratio * maxOffsetX, 0, maxOffsetX);
-			setDrawOffset(currentOffsetX, currentOffsetY);
+			renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 			redrawAll();
 		};
 		const moveV = (clientY: number): void => {
@@ -1551,7 +1579,7 @@ export const mountDAW = (
 			const y = clamp(clientY - rect.top - thumbH / 2, 0, rect.height - thumbH);
 			const ratio = y / (rect.height - thumbH);
 			currentOffsetY = clamp(ratio * maxOffset, 0, maxOffset);
-			setDrawOffset(currentOffsetX, currentOffsetY);
+			renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 			redrawAll();
 		};
 	};
@@ -1613,8 +1641,8 @@ export const mountDAW = (
 	const autoScrollTick = (): void => {
 		autoScrollRAF = null;
 		if (!isSelecting || !lastMoveEvent) return;
-		const canvas = getGridCanvas();
-		const { x, y } = getGridPosition(lastMoveEvent);
+		const canvas = renderer.getGridCanvas();
+		const { x, y } = renderer.getGridPosition(lastMoveEvent);
 		const dx = computeEdgeSpeed(x, canvas.width);
 		const dy = computeEdgeSpeed(y, canvas.height);
 		if (dx !== 0 || dy !== 0) {
@@ -1622,7 +1650,7 @@ export const mountDAW = (
 			const maxOffsetY = getMaxOffsetY();
 			currentOffsetX = clamp(currentOffsetX + dx, 0, maxOffsetX);
 			currentOffsetY = clamp(currentOffsetY + dy, 0, maxOffsetY);
-			setDrawOffset(currentOffsetX, currentOffsetY);
+			renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 			onPointerMove(lastMoveEvent);
 		}
 		if (isSelecting) {
@@ -1646,11 +1674,17 @@ export const mountDAW = (
 
 	const findActiveNoteAt = (x: number, y: number, margin = 0): Note | null => {
 		const active = getActive();
-		const { stepWidth, keyHeight, keyCount, pitchRangeStart } = renderConfig;
-		const offset = getDrawOffset();
+		const {
+			stepWidth,
+			keyHeight,
+			keyCount,
+			pitchRangeStart,
+			unitsPerRow: upr = UNITS_PER_SEMITONE,
+		} = renderConfig;
+		const offset = renderer.getDrawOffset();
 		for (const note of active.core.getNotes()) {
 			const logicalX = note.startStep * stepWidth;
-			const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+			const yIndex = keyCount - 1 - (note.pitchUnits - pitchRangeStart) / upr;
 			const logicalY = yIndex * keyHeight;
 			const w = note.durationSteps * stepWidth;
 			const renderX = logicalX - offset.x;
@@ -1677,7 +1711,7 @@ export const mountDAW = (
 			.some(
 				(n) =>
 					n.id !== excludeId &&
-					n.pitch === pitch &&
+					n.pitchUnits === pitch &&
 					step >= n.startStep &&
 					step < n.startStep + n.durationSteps,
 			);
@@ -1695,7 +1729,7 @@ export const mountDAW = (
 	const onGridPointerDown = (event: PointerEvent): void => {
 		event.preventDefault();
 		options.onResumeAudio?.();
-		const { x, y, step, pitch } = getGridPosition(event);
+		const { x, y, step, pitch } = renderer.getGridPosition(event);
 		const active = getActive();
 
 		if (activeToolMode === "eraser") {
@@ -1712,7 +1746,7 @@ export const mountDAW = (
 					selectedOriginal = selectedNotes.map((n) => ({
 						id: n.id,
 						startStep: n.startStep,
-						pitch: n.pitch,
+						pitch: n.pitchUnits,
 					}));
 					isSelecting = true;
 					dragMode = "move";
@@ -1731,7 +1765,7 @@ export const mountDAW = (
 					{
 						id: clicked.id,
 						startStep: clicked.startStep,
-						pitch: clicked.pitch,
+						pitch: clicked.pitchUnits,
 					},
 				];
 				isSelecting = true;
@@ -1752,9 +1786,9 @@ export const mountDAW = (
 		// ピクセルレベルのヒット判定（タッチ操作用のマージン付き）
 		const existing = findActiveNoteAt(x, y, TOUCH_HIT_MARGIN);
 		if (existing) {
-			playPreview(existing.pitch);
+			playPreview(existing.pitchUnits);
 			const { stepWidth } = renderConfig;
-			const offset = getDrawOffset();
+			const offset = renderer.getDrawOffset();
 			const renderX = existing.startStep * stepWidth - offset.x;
 			const w = existing.durationSteps * stepWidth;
 			if (x >= renderX + w - resizeHandleWidth && x <= renderX + w) {
@@ -1765,17 +1799,17 @@ export const mountDAW = (
 					dragOffsetPitch: 0,
 					startStep: existing.startStep,
 					durationSteps: existing.durationSteps,
-					lastPreviewPitch: existing.pitch,
+					lastPreviewPitch: existing.pitchUnits,
 				};
 			} else {
 				dragState = {
 					noteId: existing.id,
 					mode: "move",
 					dragOffsetStep: step - existing.startStep,
-					dragOffsetPitch: pitch - existing.pitch,
+					dragOffsetPitch: pitch - existing.pitchUnits,
 					startStep: existing.startStep,
 					durationSteps: existing.durationSteps,
-					lastPreviewPitch: existing.pitch,
+					lastPreviewPitch: existing.pitchUnits,
 				};
 			}
 			suppressClick = true;
@@ -1792,7 +1826,7 @@ export const mountDAW = (
 			.getNotes()
 			.some(
 				(n) =>
-					n.pitch === pitch &&
+					n.pitchUnits === pitch &&
 					newStart < n.startStep + n.durationSteps &&
 					newEnd > n.startStep,
 			);
@@ -1803,7 +1837,7 @@ export const mountDAW = (
 			playPreview(pitch);
 			const newNote = active.core
 				.getNotes()
-				.find((n) => n.startStep === snappedStep && n.pitch === pitch);
+				.find((n) => n.startStep === snappedStep && n.pitchUnits === pitch);
 			if (newNote) {
 				dragState = {
 					noteId: newNote.id,
@@ -1812,7 +1846,7 @@ export const mountDAW = (
 					dragOffsetPitch: 0,
 					startStep: newNote.startStep,
 					durationSteps: newNote.durationSteps,
-					lastPreviewPitch: newNote.pitch,
+					lastPreviewPitch: newNote.pitchUnits,
 				};
 				hasDragged = true;
 			}
@@ -1824,7 +1858,7 @@ export const mountDAW = (
 		const active = getActive();
 		if (activeToolMode === "pen") {
 			if (!dragState) return;
-			const { step, pitch } = getGridPosition(event);
+			const { step, pitch } = renderer.getGridPosition(event);
 			hasDragged = true;
 			if (dragState.mode === "move") {
 				const nextStart = step - dragState.dragOffsetStep;
@@ -1850,7 +1884,7 @@ export const mountDAW = (
 
 		if (activeToolMode === "select" && isSelecting && selectionStart) {
 			ensureAutoScroll(event);
-			const { x, y, step, pitch } = getGridPosition(event);
+			const { x, y, step, pitch } = renderer.getGridPosition(event);
 			if (dragMode === "rect") {
 				const rect = {
 					x: Math.min(x, selectionStart.x),
@@ -1859,12 +1893,18 @@ export const mountDAW = (
 					height: Math.abs(y - selectionStart.y),
 				};
 				selectionRect = rect;
-				const { stepWidth, keyHeight, keyCount, pitchRangeStart } =
-					renderConfig;
-				const offset = getDrawOffset();
+				const {
+					stepWidth,
+					keyHeight,
+					keyCount,
+					pitchRangeStart,
+					unitsPerRow: upr = UNITS_PER_SEMITONE,
+				} = renderConfig;
+				const offset = renderer.getDrawOffset();
 				selectedNotes = active.core.getNotes().filter((note) => {
 					const logicalX = note.startStep * stepWidth;
-					const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+					const yIndex =
+						keyCount - 1 - (note.pitchUnits - pitchRangeStart) / upr;
 					const logicalY = yIndex * keyHeight;
 					const nx = logicalX - offset.x;
 					const ny = logicalY - offset.y;
@@ -2064,7 +2104,7 @@ export const mountDAW = (
 			refs.bgOpacityRow.classList.add("dtm-hidden");
 		}
 		refs.bgRemoveBtn.classList.toggle("dtm-hidden", !blob);
-		setBackgroundActive(!!blob);
+		renderer.setBackgroundActive(!!blob);
 		redrawAll();
 	};
 
@@ -2074,20 +2114,21 @@ export const mountDAW = (
 	const setupCanvas = (): void => {
 		const w = refs.rollContainer.clientWidth || 800;
 		const h = refs.rollContainer.clientHeight || 450;
-		init(refs.wrapper, w, h, renderConfig);
+		renderer?.destroy();
+		renderer = createRenderer(refs.wrapper, w, h, renderConfig);
 
-		const gridCanvas = getGridCanvas();
+		const gridCanvas = renderer.getGridCanvas();
 		gridCanvas.addEventListener("pointerdown", onGridPointerDown);
 		gridCanvas.addEventListener("dblclick", (event) => {
 			event.preventDefault();
 			if (isActiveLocked()) return;
-			const { step, pitch } = getGridPosition(event);
+			const { step, pitch } = renderer.getGridPosition(event);
 			const active = getActive();
 			const note = active.core
 				.getNotes()
 				.find(
 					(n) =>
-						n.pitch === pitch &&
+						n.pitchUnits === pitch &&
 						step >= n.startStep &&
 						step < n.startStep + n.durationSteps,
 				);
@@ -2107,7 +2148,7 @@ export const mountDAW = (
 					0,
 					getMaxOffsetX(),
 				);
-				setDrawOffset(currentOffsetX, currentOffsetY);
+				renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 				redrawAll();
 			},
 			{ passive: false },
@@ -2119,7 +2160,7 @@ export const mountDAW = (
 			}
 		});
 
-		const headerCanvas = getHeaderCanvas();
+		const headerCanvas = renderer.getHeaderCanvas();
 		headerCanvas.addEventListener("click", (event) => {
 			if (playbackState === "playing") return;
 			const rect = headerCanvas.getBoundingClientRect();
@@ -2136,7 +2177,7 @@ export const mountDAW = (
 			redrawAll();
 		});
 
-		setDrawOffset(currentOffsetX, currentOffsetY);
+		renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 		redrawAll();
 	};
 
@@ -2144,7 +2185,7 @@ export const mountDAW = (
 	// ズーム
 	// ============================================================
 	const applyZoomX = (): void => {
-		const canvas = getGridCanvas();
+		const canvas = renderer.getGridCanvas();
 		const centerStep =
 			(currentOffsetX + canvas.width / 2) / renderConfig.stepWidth;
 		renderConfig.stepWidth = (BASE_STEP_WIDTH * (zoomX * 2)) / 100;
@@ -2154,11 +2195,11 @@ export const mountDAW = (
 			0,
 			getMaxOffsetX(),
 		);
-		setDrawOffset(currentOffsetX, currentOffsetY);
+		renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 		redrawAll();
 	};
 	const applyZoomY = (): void => {
-		const canvas = getGridCanvas();
+		const canvas = renderer.getGridCanvas();
 		const centerKey =
 			(currentOffsetY + canvas.height / 2) / renderConfig.keyHeight;
 		renderConfig.keyHeight = (BASE_KEY_HEIGHT * zoomY) / 100;
@@ -2168,7 +2209,7 @@ export const mountDAW = (
 			0,
 			getMaxOffsetY(),
 		);
-		setDrawOffset(currentOffsetX, currentOffsetY);
+		renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 		redrawAll();
 	};
 
@@ -2194,7 +2235,14 @@ export const mountDAW = (
 		duration: number,
 	): void => {
 		const volume = (trackVol / 100) * (velocity / 127) * (masterVolume / 100);
-		options.onPlayNote?.({ trackId, pitch, velocity, volume, when, duration });
+		options.onPlayNote?.({
+			trackId,
+			pitchUnits: pitch,
+			velocity,
+			volume,
+			when,
+			duration,
+		});
 	};
 
 	// ============================================================
@@ -2231,7 +2279,7 @@ export const mountDAW = (
 		},
 		onTick: (step) => {
 			currentPlayStep = step;
-			const canvas = getGridCanvas();
+			const canvas = renderer.getGridCanvas();
 			const visibleSteps = canvas.width / renderConfig.stepWidth;
 			const threshold =
 				currentOffsetX / renderConfig.stepWidth + visibleSteps - 4;
@@ -2243,7 +2291,7 @@ export const mountDAW = (
 					0,
 					getMaxOffsetX(),
 				);
-				setDrawOffset(currentOffsetX, currentOffsetY);
+				renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 			}
 			redrawAll();
 		},
@@ -2285,7 +2333,8 @@ export const mountDAW = (
 						(a, b) => a.startStep - b.startStep,
 					);
 					const gate = (lt.gate ?? DEFAULT_GATE) / 100;
-					const semis = (lt.octave ?? 0) * 12; // オクターブシフトを半音換算でピッチへ加算
+					// オクターブシフトを units 換算でピッチへ加算（1オクターブ = 372 units）
+					const semis = (lt.octave ?? 0) * UNITS_PER_OCTAVE;
 					const count = Math.min(sorted.length, lt.syllables.length);
 					const notes = [];
 					for (let i = 0; i < count; i++) {
@@ -2293,7 +2342,7 @@ export const mountDAW = (
 						if (n.startStep < fromStep) continue;
 						notes.push({
 							syllable: lt.syllables[i],
-							pitch: n.pitch + semis,
+							pitch: n.pitchUnits + semis,
 							startSec: (n.startStep - fromStep) * secondsPerStep,
 							durationSec: n.durationSteps * secondsPerStep * gate,
 						});
@@ -2343,13 +2392,13 @@ export const mountDAW = (
 
 		if (playbackState !== "paused") {
 			// 再生開始位置までスクロール
-			const canvas = getGridCanvas();
+			const canvas = renderer.getGridCanvas();
 			currentOffsetX = clamp(
 				playStartStep * renderConfig.stepWidth - canvas.width * 0.5,
 				0,
 				getMaxOffsetX(),
 			);
-			setDrawOffset(currentOffsetX, currentOffsetY);
+			renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 		}
 		playbackState = "playing";
 		sequencer.start(fromStep);
@@ -3669,21 +3718,24 @@ export const mountDAW = (
 			}
 		}
 		if (candidateNotes.length === 0) return null;
-		const sum = candidateNotes.reduce((acc, note) => acc + note.pitch, 0);
+		const sum = candidateNotes.reduce((acc, note) => acc + note.pitchUnits, 0);
 		return Math.round(sum / candidateNotes.length);
 	};
 
 	const centerPitch = (pitch: number): void => {
-		const canvas = getGridCanvas();
+		const canvas = renderer.getGridCanvas();
 		const yIndex =
-			renderConfig.keyCount - 1 - (pitch - renderConfig.pitchRangeStart);
+			renderConfig.keyCount -
+			1 -
+			(pitch - renderConfig.pitchRangeStart) /
+				(renderConfig.unitsPerRow ?? UNITS_PER_SEMITONE);
 		const logicalY = yIndex * renderConfig.keyHeight;
 		currentOffsetY = clamp(
 			logicalY - (canvas.height - renderConfig.keyHeight) / 2,
 			0,
 			getMaxOffsetY(),
 		);
-		setDrawOffset(currentOffsetX, currentOffsetY);
+		renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 	};
 
 	const clearAll = (): void => {
@@ -3751,9 +3803,7 @@ export const mountDAW = (
 				if (!meta.drumFont) applyDrumPatternFont(meta.drum);
 			}
 			if (meta.volume !== undefined) {
-				masterVolume = meta.volume;
-				refs.masterVolume.value = String(meta.volume);
-				refs.masterVolumeLabel.textContent = `${meta.volume}%`;
+				applyMasterVolume(meta.volume);
 			}
 			if (meta.drumVolume !== undefined) {
 				drumVolume = meta.drumVolume;
@@ -3934,7 +3984,7 @@ export const mountDAW = (
 			if (applyActiveOnly && p.trackIndex !== activeTrackIndex) continue;
 			const t = trackStates[p.trackIndex];
 			if (!t) continue;
-			t.core.addNote(p.startStep, p.pitch, {
+			t.core.addNote(p.startStep, p.pitchUnits, {
 				noteLengthSteps: p.durationSteps,
 				velocity: DEFAULT_VELOCITY,
 			});
@@ -3982,7 +4032,7 @@ export const mountDAW = (
 		chordTrack.core.clearNotesWithoutHistory();
 		chordTrack.core.beginBatch();
 		for (const p of placements) {
-			chordTrack.core.addNote(p.startStep, p.pitch, {
+			chordTrack.core.addNote(p.startStep, p.pitchUnits, {
 				noteLengthSteps: Math.max(1, p.durationSteps),
 				velocity: p.velocity,
 			});
@@ -4299,9 +4349,7 @@ export const mountDAW = (
 		refs.ignoreChordHeavyToggle.addEventListener("change", notifyViewState);
 
 		refs.masterVolume.addEventListener("input", () => {
-			masterVolume = Number.parseInt(refs.masterVolume.value, 10) || 0;
-			refs.masterVolumeLabel.textContent = `${masterVolume}%`;
-			options.singingVoices?.setVolume(masterVolume / 100);
+			applyMasterVolume(Number.parseInt(refs.masterVolume.value, 10) || 0);
 		});
 		refs.masterComp.addEventListener("input", () => {
 			masterCompression = Number.parseInt(refs.masterComp.value, 10) || 0;
@@ -4373,10 +4421,7 @@ export const mountDAW = (
 				const scale = targetPeak / observedPeakMax;
 				const suggested = clamp(Math.round(masterVolume * scale), 10, 100);
 				if (suggested !== masterVolume) {
-					masterVolume = suggested;
-					refs.masterVolume.value = String(masterVolume);
-					refs.masterVolumeLabel.textContent = `${masterVolume}%`;
-					options.singingVoices?.setVolume(masterVolume / 100);
+					applyMasterVolume(suggested);
 				}
 				// 使い切ったら次の編集セッション分の実測を溜め直す（古いデータで判断し続けない）。
 				observedPeakMax = 0;
@@ -4999,11 +5044,12 @@ export const mountDAW = (
 		const lines: string[] = [];
 		let i = 0;
 		for (const notes of byTrack.values()) {
+			// MIDI由来のピッチは半音（MIDIノート番号）。内部表現の units へ変換する。
 			const asNotes = notes.map((p) => ({
 				id: 0,
 				startStep: p.startStep,
 				durationSteps: p.durationSteps,
-				pitch: p.pitch,
+				pitchUnits: pitchV1ToUnits(p.pitch),
 				velocity: p.velocity,
 			}));
 			const mml = refCore.getMMLFromNotes(asNotes, tempo, 100).trim();
@@ -5513,12 +5559,12 @@ export const mountDAW = (
 				const newEnd = newStart + note.durationSteps;
 				const overlap = notes.some(
 					(ex) =>
-						ex.pitch === note.pitch &&
+						ex.pitchUnits === note.pitchUnits &&
 						newStart < ex.startStep + ex.durationSteps &&
 						newEnd > ex.startStep,
 				);
 				if (!overlap)
-					core.addNote(newStart, note.pitch, {
+					core.addNote(newStart, note.pitchUnits, {
 						noteLengthSteps: note.durationSteps,
 						velocity: note.velocity,
 					});
@@ -5611,13 +5657,13 @@ export const mountDAW = (
 		currentPlayStep = step;
 		playbackState = "paused";
 
-		const canvas = getGridCanvas();
+		const canvas = renderer.getGridCanvas();
 		currentOffsetX = clamp(
 			step * renderConfig.stepWidth - canvas.width * 0.5,
 			0,
 			getMaxOffsetX(),
 		);
-		setDrawOffset(currentOffsetX, currentOffsetY);
+		renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 
 		updateTransport();
 		redrawAll();
@@ -5694,16 +5740,10 @@ export const mountDAW = (
 		forcePauseAt,
 		setLoading,
 		setMasterVolume: (volume: number) => {
-			masterVolume = clamp(volume, 0, 100);
-			refs.masterVolume.value = String(masterVolume);
-			refs.masterVolumeLabel.textContent = `${masterVolume}%`;
-			options.singingVoices?.setVolume(masterVolume / 100);
+			applyMasterVolume(volume);
 		},
 		setVolume: (volume: number) => {
-			masterVolume = clamp(volume, 0, 100);
-			refs.masterVolume.value = String(masterVolume);
-			refs.masterVolumeLabel.textContent = `${masterVolume}%`;
-			options.singingVoices?.setVolume(masterVolume / 100);
+			applyMasterVolume(volume);
 		},
 		setDrumVolume: (volume: number) => {
 			drumVolume = clamp(volume, 0, 100);
@@ -5754,9 +5794,11 @@ export const mountDAW = (
 				// durationSteps/velocity の変更（リサイズ等）を確実に反映する。
 				const existing = track.core
 					.getNotes()
-					.find((e) => e.startStep === n.startStep && e.pitch === n.pitch);
+					.find(
+						(e) => e.startStep === n.startStep && e.pitchUnits === n.pitchUnits,
+					);
 				if (existing) track.core.deleteNoteById(existing.id);
-				track.core.addNote(n.startStep, n.pitch, {
+				track.core.addNote(n.startStep, n.pitchUnits, {
 					noteLengthSteps: n.durationSteps,
 					velocity: n.velocity,
 				});
@@ -5764,7 +5806,9 @@ export const mountDAW = (
 			for (const r of removed) {
 				const note = track.core
 					.getNotes()
-					.find((n) => n.startStep === r.startStep && n.pitch === r.pitch);
+					.find(
+						(n) => n.startStep === r.startStep && n.pitchUnits === r.pitchUnits,
+					);
 				if (note) track.core.deleteNoteById(note.id);
 			}
 			track.core.endBatch();
@@ -5813,7 +5857,7 @@ export const mountDAW = (
 			if (t.config.id === activeTrackId) updateTrackPanel();
 		},
 		noteToCanvas: (step: number, pitch: number) => {
-			const canvas = getGridCanvas();
+			const canvas = renderer.getGridCanvas();
 			const x = step * renderConfig.stepWidth - currentOffsetX;
 			const y =
 				(renderConfig.keyCount - 1 - pitch) * renderConfig.keyHeight -

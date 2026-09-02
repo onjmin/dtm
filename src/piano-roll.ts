@@ -1,17 +1,6 @@
 import { MMLCore } from "./mml-core";
-import {
-	drawGrid,
-	drawNotes,
-	drawSelectedNotes,
-	drawSelectionRect,
-	getDrawOffset,
-	getGridCanvas,
-	getGridPosition,
-	getRenderConfig,
-	init,
-	onClick,
-	setDrawOffset,
-} from "./renderer";
+import { createRenderer } from "./renderer";
+import { UNITS_PER_SEMITONE } from "./tuning";
 import type {
 	AddNoteOptions,
 	CoreEventHandlers,
@@ -60,7 +49,7 @@ export const createPianoRoll = (
 		noteLengthSteps = 1,
 	} = options;
 
-	init(mountTarget, width, height, config);
+	const renderer = createRenderer(mountTarget, width, height, config);
 
 	let currentNoteLengthSteps = noteLengthSteps;
 	let selectionRect: {
@@ -79,19 +68,23 @@ export const createPianoRoll = (
 	let selectedNotes: Note[] = [];
 	let copiedNotes: Note[] = [];
 
-	const core = new MMLCore({
-		onMMLGenerated: handlers.onMMLGenerated,
-		onNotesChanged: (notes) => {
-			handlers.onNotesChanged(notes);
+	const core = new MMLCore(
+		{
+			onMMLGenerated: handlers.onMMLGenerated,
+			onNotesChanged: (notes) => {
+				handlers.onNotesChanged(notes);
+			},
 		},
-	});
+		80,
+		() => config,
+	);
 
 	const getAddNoteOptions = (): AddNoteOptions => ({
 		noteLengthSteps: currentNoteLengthSteps,
 	});
 
 	let suppressClick = false;
-	onClick((step, pitch) => {
+	renderer.onClick((step, pitch) => {
 		if (suppressClick) {
 			suppressClick = false;
 			return;
@@ -107,7 +100,7 @@ export const createPianoRoll = (
 				(n) =>
 					n.startStep <= step &&
 					step < n.startStep + n.durationSteps &&
-					n.pitch === pitch,
+					n.pitchUnits === pitch,
 			);
 			if (note) {
 				core.deleteNoteById(note.id);
@@ -116,7 +109,7 @@ export const createPianoRoll = (
 		}
 	});
 
-	const gridCanvas = getGridCanvas();
+	const gridCanvas = renderer.getGridCanvas();
 	const resizeHandleWidth = 6;
 	let dragState: null | {
 		noteId: number;
@@ -130,13 +123,18 @@ export const createPianoRoll = (
 	let lastPreviewPitch: number | null = null; // 前回再生した試聴音のピッチ
 
 	const findNoteAtPosition = (x: number, y: number): Note | null => {
-		const { stepWidth, keyHeight, keyCount, pitchRangeStart } =
-			getRenderConfig();
-		const offset = getDrawOffset();
+		const {
+			stepWidth,
+			keyHeight,
+			keyCount,
+			pitchRangeStart,
+			unitsPerRow: upr = UNITS_PER_SEMITONE,
+		} = renderer.getRenderConfig();
+		const offset = renderer.getDrawOffset();
 
 		for (const note of core.getNotes()) {
 			const logicalX = note.startStep * stepWidth;
-			const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+			const yIndex = keyCount - 1 - (note.pitchUnits - pitchRangeStart) / upr;
 			const logicalY = yIndex * keyHeight;
 			const w = note.durationSteps * stepWidth;
 			const h = keyHeight;
@@ -158,7 +156,7 @@ export const createPianoRoll = (
 
 	const handlePointerMove = (e: MouseEvent | PointerEvent) => {
 		if (core.getToolMode() === "select" && isSelecting && selectionStart) {
-			const { x, y } = getGridPosition(e);
+			const { x, y } = renderer.getGridPosition(e);
 			const minX = Math.min(x, selectionStart.x);
 			const minY = Math.min(y, selectionStart.y);
 			const width = Math.abs(x - selectionStart.x);
@@ -171,7 +169,7 @@ export const createPianoRoll = (
 
 		if (!dragState) return;
 		hasDragged = true;
-		const { step, pitch } = getGridPosition(e);
+		const { step, pitch } = renderer.getGridPosition(e);
 
 		if (dragState.mode === "move") {
 			// 複数ノートのドラッグ移動
@@ -187,12 +185,12 @@ export const createPianoRoll = (
 
 				// 基準ノートからの相対的な移動量
 				const stepDelta = nextStart - baseNote.startStep;
-				const pitchDelta = nextPitch - baseNote.pitch;
+				const pitchDelta = nextPitch - baseNote.pitchUnits;
 
 				// 全選択ノートを同じ量だけ移動
 				for (const note of dragState.selectedNotes) {
 					const newStart = note.startStep + stepDelta;
-					const newPitch = note.pitch + pitchDelta;
+					const newPitch = note.pitchUnits + pitchDelta;
 					core.moveNote(note.id, newStart, newPitch);
 				}
 
@@ -248,7 +246,7 @@ export const createPianoRoll = (
 	};
 
 	gridCanvas.addEventListener("pointerdown", (e) => {
-		const { x, y, step, pitch } = getGridPosition(e);
+		const { x, y, step, pitch } = renderer.getGridPosition(e);
 		const currentMode = core.getToolMode();
 
 		if (currentMode === "select") {
@@ -263,7 +261,7 @@ export const createPianoRoll = (
 						noteId: clickedNote.id,
 						mode: "move",
 						dragOffsetStep: step - clickedNote.startStep,
-						dragOffsetPitch: pitch - clickedNote.pitch,
+						dragOffsetPitch: pitch - clickedNote.pitchUnits,
 						startStep: clickedNote.startStep,
 						selectedNotes: notesInRect, // 複数選択ノートを保存
 					};
@@ -284,11 +282,16 @@ export const createPianoRoll = (
 		const note = findNoteAtPosition(x, y);
 		if (!note) return;
 
-		const { stepWidth, keyHeight, keyCount, pitchRangeStart } =
-			getRenderConfig();
-		const offset = getDrawOffset();
+		const {
+			stepWidth,
+			keyHeight,
+			keyCount,
+			pitchRangeStart,
+			unitsPerRow: upr = UNITS_PER_SEMITONE,
+		} = renderer.getRenderConfig();
+		const offset = renderer.getDrawOffset();
 		const logicalX = note.startStep * stepWidth;
-		const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+		const yIndex = keyCount - 1 - (note.pitchUnits - pitchRangeStart) / upr;
 		const logicalY = yIndex * keyHeight;
 		const renderX = logicalX - offset.x;
 		const renderY = logicalY - offset.y;
@@ -314,7 +317,7 @@ export const createPianoRoll = (
 			noteId: note.id,
 			mode: "move",
 			dragOffsetStep: step - note.startStep,
-			dragOffsetPitch: pitch - note.pitch,
+			dragOffsetPitch: pitch - note.pitchUnits,
 			startStep: note.startStep,
 		};
 	});
@@ -327,32 +330,32 @@ export const createPianoRoll = (
 		"wheel",
 		(e) => {
 			e.preventDefault();
-			const configValues = getRenderConfig();
+			const configValues = renderer.getRenderConfig();
 			const gridHeight = gridCanvas.height;
 			const maxOffsetY = Math.max(
 				0,
 				configValues.keyCount * configValues.keyHeight - gridHeight,
 			);
-			const currentOffset = getDrawOffset();
+			const currentOffset = renderer.getDrawOffset();
 			const nextOffsetY = Math.min(
 				Math.max(currentOffset.y + e.deltaY, 0),
 				maxOffsetY,
 			);
-			setDrawOffset(currentOffset.x, nextOffsetY);
-			drawGrid();
-			drawNotes(core.getNotes());
+			renderer.setDrawOffset(currentOffset.x, nextOffsetY);
+			renderer.drawGrid();
+			renderer.drawNotes(core.getNotes());
 		},
 		{ passive: false },
 	);
 
 	const redraw = () => {
-		drawGrid();
-		drawNotes(core.getNotes());
+		renderer.drawGrid();
+		renderer.drawNotes(core.getNotes());
 		if (core.getToolMode() === "select") {
-			drawSelectionRect(selectionRect);
+			renderer.drawSelectionRect(selectionRect);
 			if (selectedNotes.length > 0) {
 				const selectedIds = new Set(selectedNotes.map((n) => n.id));
-				drawSelectedNotes(core.getNotes(), selectedIds);
+				renderer.drawSelectedNotes(core.getNotes(), selectedIds);
 			}
 		}
 	};
@@ -363,14 +366,19 @@ export const createPianoRoll = (
 		width: number;
 		height: number;
 	}): Note[] => {
-		const { stepWidth, keyHeight, keyCount, pitchRangeStart } =
-			getRenderConfig();
-		const offset = getDrawOffset();
+		const {
+			stepWidth,
+			keyHeight,
+			keyCount,
+			pitchRangeStart,
+			unitsPerRow: upr = UNITS_PER_SEMITONE,
+		} = renderer.getRenderConfig();
+		const offset = renderer.getDrawOffset();
 		const notes: Note[] = [];
 
 		for (const note of core.getNotes()) {
 			const logicalX = note.startStep * stepWidth;
-			const yIndex = keyCount - 1 - (note.pitch - pitchRangeStart);
+			const yIndex = keyCount - 1 - (note.pitchUnits - pitchRangeStart) / upr;
 			const logicalY = yIndex * keyHeight;
 			const noteRect = {
 				x: logicalX - offset.x,
@@ -425,7 +433,7 @@ export const createPianoRoll = (
 			const minStart = Math.min(...copiedNotes.map((n) => n.startStep));
 			copiedNotes.forEach((note) => {
 				const newStep = startStep + (note.startStep - minStart);
-				core.addNote(newStep, note.pitch, {
+				core.addNote(newStep, note.pitchUnits, {
 					noteLengthSteps: note.durationSteps,
 					velocity: note.velocity,
 				});

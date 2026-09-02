@@ -12,22 +12,60 @@ export const DEFAULT_PLAYBACK_VELOCITY = 127;
 export const DEFAULT_STEPS_PER_BAR = 192;
 export const MML_END_MARKER = "#end;";
 
+/**
+ * ピアノロールが扱う音域の下端・上端（両端含む）。音律に依らず固定で、MIDI 0-127 に相当する。
+ * 「音律を変えても鳴らせる音の高さの範囲は変わらない」を保証するための不変条件。
+ */
+export const PITCH_RANGE_START = 0;
+/** MIDI 127 相当。単位は 1/372オクターブ（127 × 31）。 */
+export const PITCH_RANGE_END = 3937;
+/**
+ * 1行が受け持つピッチ幅（units）。12平均律は1半音 = 31、31平均律は1度 = 12。
+ * 行数はここから導出されるので、12平均律で128行・31平均律で328行になる。
+ */
+export const unitsPerRow = (edo: number): number => 372 / edo;
+/** その音律での行数。音域と1行あたりのピッチ幅から導出する（直接指定しないこと）。 */
+export const keyCountFor = (edo: number): number =>
+	Math.floor((PITCH_RANGE_END - PITCH_RANGE_START) / unitsPerRow(edo)) + 1;
+/** 12平均律の行数（従来と同じ128）。 */
+export const KEY_COUNT = keyCountFor(12);
+
 // ノートデータ構造
 export type Note = {
 	id: number;
 	startStep: number;
 	durationSteps: number;
-	pitch: number;
+	/**
+	 * ピッチ。単位は **1/372オクターブの整数**（`tuning.ts` 参照）。
+	 * 12平均律の1半音 = 31、31平均律の1度 = 12。MIDIノート番号ではないので注意。
+	 * dtm 1.x の `pitch`（半音）から意味が変わっている。
+	 */
+	pitchUnits: number;
 	velocity?: number; // 0-127, 未設定の場合は100
 };
 
 // ピアノロールの描画とステップ計算に必要な設定
 export type RenderConfig = {
 	stepsPerBar: number;
+	/**
+	 * 行数。{@link KEY_COUNT} のように「音域 ÷ 1行あたりのピッチ幅」から導出した値を渡す。
+	 * 音律ごとに直接指定しないこと（31平均律で音域が勝手に縮む）。
+	 */
 	keyCount: number;
+	/** 音域の下端。単位は units（1/372オクターブ）。 */
 	pitchRangeStart: number;
+	/** 1行が受け持つ units。{@link unitsPerRow} から導出した値を渡す。省略時は31（12平均律）。 */
+	unitsPerRow?: number;
 	keyHeight: number;
 	stepWidth: number;
+	/**
+	 * 曲全体の音律（1オクターブの分割数）。省略時は12（12平均律）。
+	 *
+	 * 音律はデータにも音声経路にも入らず、格子・記譜・表示だけに効く編集上の概念なので、
+	 * 描画設定と同じ場所に置く。MMLCore も `getConfig()` 経由でここから音律を読み、
+	 * 綴り（`#`=2度 / `+`=1度 など）を切り替える。
+	 */
+	edo?: number;
 };
 
 // 外部イベント
@@ -66,15 +104,17 @@ export type LyricSyncData = {
 /** パッチ送受信用ノートデータ（ローカルIDを持たない）。 */
 export type NoteData = {
 	startStep: number;
-	pitch: number;
+	/** 1/372オクターブ単位。{@link Note.pitchUnits} と同じ。 */
+	pitchUnits: number;
 	durationSteps: number;
 	velocity?: number;
 };
 
-/** パッチ削除指定（startStep + pitch で音符を特定）。 */
+/** パッチ削除指定（startStep + pitchUnits で音符を特定）。 */
 export type NoteRemove = {
 	startStep: number;
-	pitch: number;
+	/** 1/372オクターブ単位。{@link Note.pitchUnits} と同じ。 */
+	pitchUnits: number;
 };
 
 // ピアノロール作成時のオプション
@@ -127,7 +167,13 @@ export type TrackConfig = {
 // 発音フックに渡すメロディックノートの情報
 export type PlayNoteEvent = {
 	trackId: string;
-	pitch: number;
+	/**
+	 * ピッチ。単位は 1/372オクターブの整数（{@link Note.pitchUnits} と同じ）。
+	 * 周波数へは `tuning.ts` の `unitsToHz`、SoundFont のような整数ゾーンの音源へは
+	 * `unitsToMidiDetune` を使う。{@link PlayDrumEvent.pitch} はGM打楽器のキー番号で
+	 * 音高ではないため、こちらとは別物。
+	 */
+	pitchUnits: number;
 	/** 元ノートのvelocity (0-127) */
 	velocity: number;
 	/** トラックvolume×velocityを反映した 0-1 程度の音量係数 */

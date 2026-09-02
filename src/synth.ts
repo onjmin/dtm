@@ -9,11 +9,15 @@
  * ミキサーへルーティングしたり、SE と AudioContext を共有したりできるようにするため。
  */
 
+import { unitsToHz } from "./tuning";
 import type { PlayDrumEvent, PlayNoteEvent } from "./types";
 
-/** MIDIピッチ番号 → 周波数(Hz)。A4(69)=440Hz 基準。 */
-export const freqFromPitch = (pitch: number): number =>
-	440 * 2 ** ((pitch - 69) / 12);
+/**
+ * ピッチ(units) → 周波数(Hz)。A4 = 2139 units = 440Hz 基準。
+ * 単位は 1/372オクターブの整数（`tuning.ts` 参照）。12平均律・31平均律とも同じ式で鳴る。
+ */
+export const freqFromPitch = (pitchUnits: number): number =>
+	unitsToHz(pitchUnits);
 
 export type Synth = {
 	/** メロディックノートを発音する（PlayNoteEvent.when は ctx.currentTime からの相対秒） */
@@ -64,7 +68,7 @@ export const createSynth = (
 		const osc = ctx.createOscillator();
 		const gain = ctx.createGain();
 		osc.type = wave;
-		osc.frequency.value = freqFromPitch(e.pitch);
+		osc.frequency.value = freqFromPitch(e.pitchUnits);
 		const t0 = ctx.currentTime + e.when;
 		const peak = Math.max(0.0001, 0.06 * e.volume * 1.5 * gainScale);
 		if (tone.decay) {
