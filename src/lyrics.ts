@@ -1592,7 +1592,10 @@ export const createKoeVoice = async (
 			backend.pitchTokens,
 			syllable,
 			prevVowelArg,
-			pitch,
+			// 多音階バンクのピッチトークン（"_G4" 等）は録音の音名なので、
+			// 最寄り選択はMIDIノート番号の尺度で行う。units のまま渡すと常に
+			// 最高音のトークンが選ばれてしまう。
+			unitsToMidiFloat(pitch),
 		);
 		if (!alias) return null;
 		const dMs = Math.max(60, durationMs);
@@ -1798,14 +1801,20 @@ const STREAM_POLL_MS = 100;
 const OCTAVE_UNISON_PEAK_SCALE = 0.6;
 
 /** `octaveUnison` から、原音に対して重ねる声のピッチオフセット（半音）の一覧を求める。 */
+/**
+ * オクターブユニゾンで重ねる声のピッチ差。単位は units（1/372オクターブ）。
+ * 1オクターブ = 372 units。半音の12ではないので注意（半音の値を足すと
+ * 0.4半音ほどずれた不協和な重ねになる）。
+ */
 const octaveUnisonOffsets = (mode: OctaveUnisonMode | undefined): number[] => {
+	const OCT = 372;
 	switch (mode) {
 		case "down":
-			return [-12];
+			return [-OCT];
 		case "up":
-			return [12];
+			return [OCT];
 		case "both":
-			return [-12, 12];
+			return [-OCT, OCT];
 		default:
 			return [];
 	}
