@@ -7,7 +7,7 @@
  */
 
 import { parseChord, parseChords } from "@onjmin/chord-parser";
-import { pitchV1ToUnits } from "./tuning";
+import { fifthToStep, UNITS_PER_OCTAVE } from "./tuning";
 
 export type ChordPatternType =
 	| "block"
@@ -30,6 +30,8 @@ export type ChordPlacement = {
 
 export type ApplyChordOptions = {
 	chordStr: string;
+	/** 曲の音律（1オクターブの分割数）。省略時は12平均律。 */
+	edo?: number;
 	patternType: ChordPatternType;
 	/** ルートのセミトーンシフト（0-11） */
 	rootShift: number;
@@ -43,18 +45,60 @@ const C3 = 48;
  * コード進行 → 伴奏ノート配置。
  */
 /**
- * 和音構成音の半音値 → units。
- *
- * chord-parser は12平均律の半音で構成音を返す。31平均律ではこれを五度連鎖経由で
- * 度数へ写す必要があるが（長3度4半音→10度、完全5度7半音→18度）、綴りの情報が
- * 要るため chord-parser 側の五度圏インデックス対応待ち。現状は12平均律のみ。
+ * 12平均律の半音 → 31平均律（ミーントーン）の度数。移調量の変換に使う。
+ * 三全音(6半音)だけは増4度(15)と減5度(16)に分かれるが、移調では和音の質が
+ * 分からないので狭い側（減5度）を採る。
  */
-const chordToneToUnits = (semitone: number): number => pitchV1ToUnits(semitone);
+const MEANTONE_STEP_BY_SEMITONE = [0, 3, 5, 8, 10, 13, 16, 18, 21, 23, 26, 28];
+
+/**
+ * 和音の構成音を units へ写す。
+ *
+ * chord-parser の `notes` は12平均律の半音、`noteFifths` は五度圏インデックス。
+ * 五度圏は綴りを保持しているので、31平均律でも増4度と減5度・C# と Db を
+ * 正しく区別して度数へ落とせる（`fifthToStep` 参照）。
+ *
+ * オクターブは半音側から、オクターブ内の位置は五度圏側から決める。両者を混ぜるのは
+ * 五度圏がオクターブ不変（音類しか表さない）ため。
+ */
+const chordToneToUnits = (
+	relSemitone: number,
+	relFifth: number,
+	rootSemitone: number,
+	rootFifth: number,
+	edo: 12 | 31,
+): number => {
+	const perStep = UNITS_PER_OCTAVE / edo;
+	// ルートの位置。移調はミーントーンの度数へ写してから足す。
+	const rootOct = Math.floor(rootSemitone / 12);
+	const rootWithin = ((rootSemitone % 12) + 12) % 12;
+	const rootStep =
+		edo === 31
+			? (fifthToStep(rootFifth, 31) +
+					MEANTONE_STEP_BY_SEMITONE[rootWithin] -
+					fifthToStep(rootFifth, 31) +
+					31) %
+				31
+			: rootWithin;
+	// ルートからの相対。オクターブ数は半音側、オクターブ内は五度圏側で決める。
+	const relWithin12 = ((relSemitone % 12) + 12) % 12;
+	const relOct = Math.round((relSemitone - relWithin12) / 12);
+	const relStep =
+		(fifthToStep(relFifth, edo) - fifthToStep(rootFifth, edo) + edo) % edo;
+	return (rootOct + relOct) * UNITS_PER_OCTAVE + (rootStep + relStep) * perStep;
+};
 
 export const buildChordPlacements = (
 	options: ApplyChordOptions,
 ): ChordPlacement[] => {
-	const { chordStr, patternType, rootShift, bpm, stepsPerBar } = options;
+	const {
+		chordStr,
+		patternType,
+		rootShift,
+		bpm,
+		stepsPerBar,
+		edo = 12,
+	} = options;
 
 	const placements: ChordPlacement[] = [];
 	if (!chordStr.trim()) return placements;
@@ -93,8 +137,23 @@ export const buildChordPlacements = (
 		for (const group of Object.values(chordGroups)) {
 			for (const chord of group) {
 				let notes: number[];
+				let toUnits: (relSemitone: number) => number;
 				try {
-					notes = [...parseChord(`${chord.key}${chord.chord}`).notes];
+					const parsed = parseChord(`${chord.key}${chord.chord}`);
+					notes = [...parsed.notes];
+					// notes と noteFifths は同じ並び。半音からオクターブ、五度圏から
+					// オクターブ内の位置を決めて units へ写す。
+					const fifthOf = new Map(
+						parsed.notes.map((n, i) => [n, parsed.noteFifths[i]]),
+					);
+					toUnits = (rel) =>
+						chordToneToUnits(
+							rel,
+							fifthOf.get(rel) ?? parsed.rootFifth,
+							C3 + offset,
+							parsed.rootFifth,
+							edo === 31 ? 31 : 12,
+						);
 				} catch {
 					continue;
 				}
@@ -104,7 +163,7 @@ export const buildChordPlacements = (
 					for (const noteOffset of notes) {
 						placements.push({
 							startStep: chord.whenStep,
-							pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
+							pitchUnits: toUnits(noteOffset),
 							durationSteps: noteLength,
 							velocity: 100,
 						});
@@ -114,7 +173,7 @@ export const buildChordPlacements = (
 					notes.forEach((noteOffset, i) => {
 						placements.push({
 							startStep: chord.whenStep + i * arpInterval,
-							pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
+							pitchUnits: toUnits(noteOffset),
 							durationSteps: noteLength - i * arpInterval,
 							velocity: 100,
 						});
@@ -124,7 +183,7 @@ export const buildChordPlacements = (
 					notes.forEach((noteOffset, i) => {
 						placements.push({
 							startStep: chord.whenStep + i * arpInterval,
-							pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
+							pitchUnits: toUnits(noteOffset),
 							durationSteps: Math.max(12, noteLength - i * arpInterval),
 							velocity: 100,
 						});
@@ -139,7 +198,7 @@ export const buildChordPlacements = (
 							for (const noteOffset of notes) {
 								placements.push({
 									startStep: syncopatedStep,
-									pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
+									pitchUnits: toUnits(noteOffset),
 									durationSteps: Math.min(halfBeat, 12),
 									velocity: 100,
 								});
@@ -159,7 +218,7 @@ export const buildChordPlacements = (
 							for (const noteOffset of notes) {
 								placements.push({
 									startStep: noteStart,
-									pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
+									pitchUnits: toUnits(noteOffset),
 									durationSteps: yatsumeLengthSteps,
 									velocity: 100,
 								});
@@ -171,7 +230,7 @@ export const buildChordPlacements = (
 						const stepOffset = i * Math.floor(stepsPerBar / 4);
 						placements.push({
 							startStep: chord.whenStep + stepOffset,
-							pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
+							pitchUnits: toUnits(noteOffset),
 							durationSteps: Math.max(12, Math.floor(stepsPerBar / 4)),
 							velocity: 100,
 						});
@@ -184,8 +243,21 @@ export const buildChordPlacements = (
 		const chordNames = chordStr.split(/[\s,]+/).filter((c) => c);
 		chordNames.forEach((chordName, barIndex) => {
 			let notes: number[];
+			let toUnits: (relSemitone: number) => number;
 			try {
-				notes = [...parseChord(chordName).notes];
+				const parsed = parseChord(chordName);
+				notes = [...parsed.notes];
+				const fifthOf = new Map(
+					parsed.notes.map((n, i) => [n, parsed.noteFifths[i]]),
+				);
+				toUnits = (rel) =>
+					chordToneToUnits(
+						rel,
+						fifthOf.get(rel) ?? parsed.rootFifth,
+						C3 + offset,
+						parsed.rootFifth,
+						edo === 31 ? 31 : 12,
+					);
 			} catch {
 				return;
 			}
@@ -195,7 +267,7 @@ export const buildChordPlacements = (
 				const stepOffset = i * 3;
 				placements.push({
 					startStep: startStep + stepOffset,
-					pitchUnits: chordToneToUnits(C3 + noteOffset + offset),
+					pitchUnits: toUnits(noteOffset),
 					durationSteps: chordLength - stepOffset,
 					velocity: 100,
 				});

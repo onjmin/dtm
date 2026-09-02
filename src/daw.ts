@@ -4051,6 +4051,8 @@ export const mountDAW = (
 		const chordTrack = trackStates.find((t) => t.config.id === "chord");
 		if (!chordTrack) return;
 		const placements = buildChordPlacements({
+			// 和音は五度連鎖経由で音律の格子へ写す（31平均律では長3度が10度になる）
+			edo: renderConfig.edo,
 			chordStr: active.savedChordInput,
 			patternType: active.savedChordPattern,
 			rootShift: active.savedChordRoot,
