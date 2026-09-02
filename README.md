@@ -48,6 +48,43 @@ unitsToMidiDetune(1968);     // { midi: 63, detuneCents: 48.39 }  … 31平均�
 > **`PlayDrumEvent.pitch` と `DRUM_KEYS` は変更していません。** これらは GM 打楽器のキー番号であって
 > 音高ではないため、units へ変換すると全ドラムが壊れます。
 
+### 単位はブランド型で区別されます
+
+`pitchUnits` の型は素の `number` ではなく **`Units`** です。MIDI ノート番号は **`MidiNote`** で、両者は互いに代入できません。
+
+```ts
+import { units, midiNote, pitchV1ToUnits, type Units } from "@onjmin/dtm";
+
+// ノートを手で組むとき
+const note = {
+  id: 0,
+  startStep: 0,
+  durationSteps: 48,
+  pitchUnits: pitchV1ToUnits(60),   // MIDI 60 (中央ド) から作る
+  velocity: 100,
+};
+
+// units を直接指定するとき
+const c4: Units = units(1860);      // 60 × 31
+
+// これはコンパイルエラーになる
+const bad: Units = 1860;            // Type 'number' is not assignable to type 'Units'
+```
+
+素の数値からは `units()` / `midiNote()` を通してください。これは手間ではなく、**「この数値の単位を確認した」という宣言**として機能します。
+
+なぜこうしたかというと、`Note.pitch` → `pitchUnits` の改名時に**単位の取り違えを 12 件作り込んだ**からです。すべて型チェックを通過していました。半音のつもりの閾値が units と比較される、units が SoundFont へ MIDI ノート番号として渡されて**楽器音が無音になる**、オクターブユニゾンに半音の 12 が足されて 0.4 半音ずれる、といった不具合が、目視の監査を 3 回重ねても毎回新しく見つかりました。型が同じ `number` である限りコンパイラは単位を一切検証しないためです。
+
+ブランド型はこれらを検出します。
+
+```
+units を SoundFont の pitch へ    → Units is not assignable to MidiNote
+units に半音の 12 を足す           → number is not assignable to Units
+MidiNote を units の関数へ         → MidiNote is not assignable to Units
+```
+
+ただし**比較演算だけは防げません**。`pitchUnits < 48` のような式は `number` 同士の比較として通ります。ピッチと数値を比べる箇所は、引き続き単位を目で確認してください。
+
 ### その他の破壊的変更
 
 | 1.x | 2.0.0 |
