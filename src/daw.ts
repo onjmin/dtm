@@ -88,6 +88,7 @@ import {
 	KEY_COUNT,
 	keyCountFor,
 	MML_END_MARKER,
+	PITCH_RANGE_END,
 	PITCH_RANGE_START,
 	unitsPerRow,
 } from "./types";
@@ -746,8 +747,12 @@ const computeAutoRoleStats = (
  * - 単音で音数が少なく音価が長い → サブメロ（オブリガート寄り）
  * - それ以外（単音で音数が多い・音高が高め）→ メロディ
  */
+/** ベース判定の音高しきい値。C3 (MIDI 48) を units で表したもの。 */
+const AUTO_ROLE_BASS_UNITS = 48 * UNITS_PER_SEMITONE;
+
 const classifyTrackRole = (stats: AutoRoleStats): AutoRole => {
-	if (stats.avgPitch < 48) return "bass"; // C3未満 = 低音域
+	// avgPitch は units（1/372オクターブ）。半音の数値と直接比べないこと。
+	if (stats.avgPitch < AUTO_ROLE_BASS_UNITS) return "bass"; // C3未満 = 低音域
 	if (stats.maxPoly >= 2 && stats.avgDur >= AUTO_ROLE_STEPS_PER_BEAT)
 		return "chord";
 	if (
@@ -775,7 +780,11 @@ const computeAutoRoleVolume = (
 	if (role === "chord" && stats.avgPoly > 1) {
 		vol /= Math.sqrt(stats.avgPoly);
 	} else if (role === "bass") {
-		const depthSemitones = Math.max(0, 48 - stats.avgPitch); // C3からどれだけ低いか
+		// avgPitch は units なので、半音へ直してから深さを測る
+		const depthSemitones = Math.max(
+			0,
+			(AUTO_ROLE_BASS_UNITS - stats.avgPitch) / UNITS_PER_SEMITONE,
+		); // C3からどれだけ低いか
 		vol += Math.min(12, depthSemitones * 0.5);
 	}
 	return clamp(Math.round(vol), 1, 127);
@@ -2007,7 +2016,8 @@ export const mountDAW = (
 						const orig = selectedOriginal.find((o) => o.id === note.id);
 						if (!orig) continue;
 						const newPitch = orig.pitch + deltaPitch;
-						if (newPitch >= 0 && newPitch < 128)
+						// units（1/372オクターブ）の音域で判定する。半音の 0-127 ではない。
+						if (newPitch >= PITCH_RANGE_START && newPitch <= PITCH_RANGE_END)
 							active.core.moveNote(
 								note.id,
 								orig.startStep + snappedDelta,
