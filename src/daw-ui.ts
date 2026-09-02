@@ -253,7 +253,7 @@ export const buildUI = (
           <option value="12">12平均律（通常）</option>
           <option value="31">31平均律（微分音）</option>
         </select>
-        <button class="dtm-iconbtn" data-dtm="edo-info" title="音律の解説">?</button>
+        <button class="dtm-infobtn" data-dtm="edo-info" title="音律の解説">${icon("info", 12)}</button>
       </div>
       <div class="dtm-row">
         <span class="dtm-label">全体音量</span>
