@@ -64,7 +64,13 @@ import {
 import { createSequencer, type Sequencer } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
-import { pitchV1ToUnits, UNITS_PER_OCTAVE, UNITS_PER_SEMITONE } from "./tuning";
+import {
+	pitchV1ToUnits,
+	UNITS_PER_OCTAVE,
+	UNITS_PER_SEMITONE,
+	type Units,
+	units,
+} from "./tuning";
 import type {
 	CustomVocalDef,
 	DawInstance,
@@ -1052,9 +1058,9 @@ export const mountDAW = (
 	 * 外れる。そのまま置くと12平均律と31平均律の音が同居してしまうので、入口で丸める。
 	 * 12→31 の方向なので移動量は最大19.4セントで、元の位置へも戻せる。
 	 */
-	const snapToEdoGrid = (units: number): number => {
+	const snapToEdoGrid = (u: Units): Units => {
 		const upr = renderConfig.unitsPerRow ?? UNITS_PER_SEMITONE;
-		return Math.round(units / upr) * upr;
+		return units(Math.round(u / upr) * upr);
 	};
 
 	const applyEdo = (edo: number, opts?: { snap?: boolean }): void => {
@@ -1077,7 +1083,7 @@ export const mountDAW = (
 		for (const t of trackStates) {
 			t.core.beginBatch();
 			for (const note of [...t.core.getNotes()]) {
-				const snapped = Math.round(note.pitchUnits / upr) * upr;
+				const snapped = units(Math.round(note.pitchUnits / upr) * upr);
 				if (snapped !== note.pitchUnits)
 					t.core.moveNote(note.id, note.startStep, snapped);
 			}
@@ -1695,7 +1701,7 @@ export const mountDAW = (
 		step: number;
 		pitch: number;
 	} | null = null;
-	let selectedOriginal: { id: number; startStep: number; pitch: number }[] = [];
+	let selectedOriginal: { id: number; startStep: number; pitch: Units }[] = [];
 	let lastMultiPreviewPitch: number | null = null;
 
 	// 範囲選択/ドラッグ中に画面外へ出た場合の自動スクロール
@@ -1751,7 +1757,7 @@ export const mountDAW = (
 		}
 	};
 
-	const playPreview = (pitch: number): void => {
+	const playPreview = (pitch: Units): void => {
 		if (isLoading) return;
 		options.onResumeAudio?.();
 		const active = getActive();
@@ -1788,7 +1794,7 @@ export const mountDAW = (
 
 	const hasNoteAt = (
 		step: number,
-		pitch: number,
+		pitch: Units,
 		excludeId: number,
 	): boolean => {
 		const active = getActive();
@@ -1950,7 +1956,7 @@ export const mountDAW = (
 				const nextStart = step - dragState.dragOffsetStep;
 				const snappedStart =
 					Math.round(nextStart / snapGridSteps) * snapGridSteps;
-				const nextPitch = pitch - dragState.dragOffsetPitch;
+				const nextPitch = units(pitch - dragState.dragOffsetPitch);
 				if (hasNoteAt(snappedStart, nextPitch, dragState.noteId)) return;
 				active.core.moveNote(dragState.noteId, snappedStart, nextPitch);
 				if (nextPitch !== dragState.lastPreviewPitch) {
@@ -2015,7 +2021,7 @@ export const mountDAW = (
 					for (const note of selectedNotes) {
 						const orig = selectedOriginal.find((o) => o.id === note.id);
 						if (!orig) continue;
-						const newPitch = orig.pitch + deltaPitch;
+						const newPitch = units(orig.pitch + deltaPitch);
 						// units（1/372オクターブ）の音域で判定する。半音の 0-127 ではない。
 						if (newPitch >= PITCH_RANGE_START && newPitch <= PITCH_RANGE_END)
 							active.core.moveNote(
@@ -2028,7 +2034,7 @@ export const mountDAW = (
 						const grab = selectedNotes[0];
 						const orig = selectedOriginal.find((o) => o.id === grab.id);
 						if (orig) {
-							const newGrab = orig.pitch + deltaPitch;
+							const newGrab = units(orig.pitch + deltaPitch);
 							if (
 								newGrab !== lastMultiPreviewPitch &&
 								newGrab >= 0 &&
@@ -2315,7 +2321,7 @@ export const mountDAW = (
 	// ============================================================
 	const dispatchNote = (
 		trackId: string,
-		pitch: number,
+		pitch: Units,
 		trackVol: number,
 		velocity: number,
 		when: number,
@@ -2429,7 +2435,7 @@ export const mountDAW = (
 						if (n.startStep < fromStep) continue;
 						notes.push({
 							syllable: lt.syllables[i],
-							pitch: n.pitchUnits + semis,
+							pitch: units(n.pitchUnits + semis),
 							startSec: (n.startStep - fromStep) * secondsPerStep,
 							durationSec: n.durationSteps * secondsPerStep * gate,
 						});
@@ -3793,7 +3799,7 @@ export const mountDAW = (
 		updateUndoRedo();
 	};
 
-	const getFirstDetectedPitch = (): number | null => {
+	const getFirstDetectedPitch = (): Units | null => {
 		let minStep = Number.MAX_SAFE_INTEGER;
 		let candidateNotes: Note[] = [];
 		for (const t of trackStates) {
@@ -3808,10 +3814,10 @@ export const mountDAW = (
 		}
 		if (candidateNotes.length === 0) return null;
 		const sum = candidateNotes.reduce((acc, note) => acc + note.pitchUnits, 0);
-		return Math.round(sum / candidateNotes.length);
+		return units(Math.round(sum / candidateNotes.length));
 	};
 
-	const centerPitch = (pitch: number): void => {
+	const centerPitch = (pitch: Units): void => {
 		const canvas = renderer.getGridCanvas();
 		const yIndex =
 			renderConfig.keyCount -
@@ -6003,7 +6009,7 @@ export const mountDAW = (
 			// アクティブトラックのパネルが表示中なら楽器プルダウンを更新
 			if (t.config.id === activeTrackId) updateTrackPanel();
 		},
-		noteToCanvas: (step: number, pitch: number) => {
+		noteToCanvas: (step: number, pitch: Units) => {
 			const canvas = renderer.getGridCanvas();
 			const x = step * renderConfig.stepWidth - currentOffsetX;
 			const y =

@@ -1,5 +1,5 @@
 import { LinkedList } from "./linked-list";
-import { UNITS_PER_SEMITONE } from "./tuning";
+import { UNITS_PER_SEMITONE, type Units, units } from "./tuning";
 import type {
 	AddNoteOptions,
 	CoreEventHandlers,
@@ -193,7 +193,7 @@ export class MMLCore {
 	 * @param pitch ピッチ番号
 	 * @param options ノート長などの設定
 	 */
-	public addNote(step: number, pitch: number, options: AddNoteOptions): void {
+	public addNote(step: number, pitch: Units, options: AddNoteOptions): void {
 		const existingIndex = this.notes.findIndex(
 			(n) => n.startStep === step && n.pitchUnits === pitch,
 		);
@@ -234,7 +234,7 @@ export class MMLCore {
 		return Math.ceil(maxRaw / stepsPer16th) * stepsPer16th;
 	}
 
-	public moveNote(noteId: number, startStep: number, pitch: number): void {
+	public moveNote(noteId: number, startStep: number, pitch: Units): void {
 		const note = this.notes.find((target) => target.id === noteId);
 		if (!note) return;
 
@@ -245,9 +245,8 @@ export class MMLCore {
 		const pitchRangeStart = cfg.pitchRangeStart;
 		const pitchRangeEnd = pitchRangeStart + (cfg.keyCount - 1) * upr;
 
-		const clampedPitch = Math.min(
-			Math.max(pitch, pitchRangeStart),
-			pitchRangeEnd,
+		const clampedPitch = units(
+			Math.min(Math.max(pitch, pitchRangeStart), pitchRangeEnd),
 		);
 		const clampedStart = Math.min(
 			Math.max(startStep, 0),

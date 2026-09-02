@@ -1,4 +1,9 @@
-import { UNITS_PER_OCTAVE, UNITS_PER_SEMITONE } from "./tuning";
+import {
+	UNITS_PER_OCTAVE,
+	UNITS_PER_SEMITONE,
+	type Units,
+	units,
+} from "./tuning";
 import { PITCH_RANGE_END, PITCH_RANGE_START } from "./types";
 /**
  * 打ち込み補助マクロ群。MMLCore を直接操作する。
@@ -49,11 +54,11 @@ export const generateRandomPattern = (
 	const scale = SCALES[Math.floor(Math.random() * SCALES.length)];
 	const rootOffset = Math.floor(Math.random() * 12);
 
-	const availablePitches: number[] = [];
+	const availablePitches: Units[] = [];
 	for (let i = 0; i < 12; i++) {
 		const noteInOctave = (i - rootOffset + 12) % 12;
 		if (scale.includes(noteInOctave))
-			availablePitches.push(basePitch + semitoneToStep(i) * upr);
+			availablePitches.push(units(basePitch + semitoneToStep(i) * upr));
 	}
 
 	core.beginBatch();
@@ -223,9 +228,11 @@ export const transposeNotes = (cores: MMLCore[], steps: number): void => {
 	for (const core of cores) {
 		const notes = [...core.getNotes()];
 		for (const note of notes) {
-			const newPitch = Math.max(
-				PITCH_RANGE_START,
-				Math.min(PITCH_RANGE_END, note.pitchUnits + steps),
+			const newPitch = units(
+				Math.max(
+					PITCH_RANGE_START,
+					Math.min(PITCH_RANGE_END, note.pitchUnits + steps),
+				),
 			);
 			if (newPitch !== note.pitchUnits) {
 				core.moveNote(note.id, note.startStep, newPitch);

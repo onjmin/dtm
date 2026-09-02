@@ -77,7 +77,7 @@ import { SoundFont_drum } from "./sf/SoundFont_drum";
 import { SoundFont_list } from "./sf/SoundFont_list";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { showLoadingOverlay } from "./styles";
-import { unitsToMidiDetune } from "./tuning";
+import { type Units, unitsToMidiDetune } from "./tuning";
 import type {
 	DawInstance,
 	DawMode,
@@ -443,7 +443,7 @@ export type DtmStudio = {
 	/** SoundFontを用いた単音再生を行う */
 	playNote: (options: {
 		/** ピッチ。単位は units（1/372オクターブ）。`pitchV1ToUnits` でMIDI番号から変換できる。 */
-		pitchUnits: number;
+		pitchUnits: Units;
 		volume?: number;
 		duration?: number;
 		instrument?: string;
@@ -1830,7 +1830,7 @@ export const createDtmStudio = async (
 
 	const playNote = async (options: {
 		/** ピッチ。単位は units（1/372オクターブ）。`pitchV1ToUnits` でMIDI番号から変換できる。 */
-		pitchUnits: number;
+		pitchUnits: Units;
 		volume?: number;
 		duration?: number;
 		instrument?: string;

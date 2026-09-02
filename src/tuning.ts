@@ -21,6 +21,36 @@
  * 「格子・記譜・表示」だけに効く編集上の概念で、`RenderConfig.edo` に置く。
  */
 
+/**
+ * ピッチの単位を型で区別するためのブランド。
+ *
+ * `Units` と `MidiNote` はどちらも実体は number だが、互いに代入できない。
+ * これは「半音の数値を units のつもりで使う」「units を SoundFont の
+ * MIDIノート番号として渡す」といった取り違えを**コンパイラに検出させる**ため。
+ * 単位の取り違えは型が同じ number である限り一切検出できず、実際に
+ * 「楽器音が無音」「オクターブユニゾンが0.4半音ずれる」「多音階音源のサンプル
+ * 選択が常に最高音になる」といった不具合を作り込んだ。
+ *
+ * 生の number から作るときは {@link units} / {@link midiNote} を通す。
+ * 変換は {@link midiToUnits} / {@link unitsToMidi} など、この module の関数に集約する。
+ */
+declare const UNITS_BRAND: unique symbol;
+declare const MIDI_BRAND: unique symbol;
+
+/** ピッチ。1/372オクターブの整数。 */
+export type Units = number & { readonly [UNITS_BRAND]: true };
+/** MIDIノート番号（半音）。0-127。SoundFont のゾーン選択やMIDI入出力で使う。 */
+export type MidiNote = number & { readonly [MIDI_BRAND]: true };
+
+/** 生の数値を units として扱う。単位が units であると確信できる箇所だけで使う。 */
+export const units = (n: number): Units => n as Units;
+/** 生の数値をMIDIノート番号として扱う。MIDI入出力の境界だけで使う。 */
+export const midiNote = (n: number): MidiNote => n as MidiNote;
+
+/** units 同士・units と生の差分の加算。結果も units。 */
+export const addUnits = (a: Units, delta: number): Units =>
+	(a + delta) as Units;
+
 /** 1オクターブあたりの units。12 × 31。 */
 export const UNITS_PER_OCTAVE = 372;
 /** 12平均律の1半音あたりの units。 */
@@ -31,7 +61,7 @@ export const UNITS_PER_EDO31_DEGREE = 372 / 31; // 12
 export const CENTS_PER_UNIT = 1200 / UNITS_PER_OCTAVE;
 
 /** A4 (MIDI 69) の units。周波数計算の基準。 */
-export const A4_UNITS = 69 * UNITS_PER_SEMITONE; // 2139
+export const A4_UNITS = (69 * UNITS_PER_SEMITONE) as Units; // 2139
 /** A4 の周波数(Hz)。 */
 export const A4_HZ = 440;
 
@@ -44,19 +74,19 @@ export const DEFAULT_EDO: Edo = 12;
 export const unitsPerStep = (edo: Edo): number => UNITS_PER_OCTAVE / edo;
 
 /** MIDIノート番号 → units。 */
-export const midiToUnits = (midi: number): number => midi * UNITS_PER_SEMITONE;
+export const midiToUnits = (midi: MidiNote | number): Units =>
+	(midi * UNITS_PER_SEMITONE) as Units;
 
 /**
  * units → MIDIノート番号（小数）。
  * 歌声合成（koe）は Hz を受けるためこの小数値をそのまま渡してよい。
  * SoundFont のように整数ゾーンしか持たない発音器は {@link unitsToMidiDetune} を使う。
  */
-export const unitsToMidi = (units: number): number =>
-	units / UNITS_PER_SEMITONE;
+export const unitsToMidi = (u: Units): number => u / UNITS_PER_SEMITONE;
 
 /** units → 周波数(Hz)。 */
-export const unitsToHz = (units: number): number =>
-	A4_HZ * 2 ** ((units - A4_UNITS) / UNITS_PER_OCTAVE);
+export const unitsToHz = (u: Units): number =>
+	A4_HZ * 2 ** ((u - A4_UNITS) / UNITS_PER_OCTAVE);
 
 /**
  * units → 「最寄りの整数MIDIノート番号 + セント補正」。
@@ -66,12 +96,12 @@ export const unitsToHz = (units: number): number =>
  * 31平均律での残差は最大 ±48.4 セントで、detune の可動域に十分収まる。
  */
 export const unitsToMidiDetune = (
-	units: number,
-): { midi: number; detuneCents: number } => {
-	const midi = Math.round(units / UNITS_PER_SEMITONE);
+	u: Units,
+): { midi: MidiNote; detuneCents: number } => {
+	const midi = Math.round(u / UNITS_PER_SEMITONE) as MidiNote;
 	return {
 		midi,
-		detuneCents: (units - midi * UNITS_PER_SEMITONE) * CENTS_PER_UNIT,
+		detuneCents: (u - midi * UNITS_PER_SEMITONE) * CENTS_PER_UNIT,
 	};
 };
 
@@ -174,9 +204,9 @@ export const fifthToUnits = (fifthIndex: number, edo: Edo): number =>
 export const PITCH_ENCODING_VERSION = 2;
 
 /** v1（半音）→ v2（units）。無損失。 */
-export const pitchV1ToUnits = (pitch: number): number =>
-	pitch * UNITS_PER_SEMITONE;
+export const pitchV1ToUnits = (pitch: number): Units =>
+	(pitch * UNITS_PER_SEMITONE) as Units;
 
 /** v2（units）→ v1（半音）。12平均律の曲でのみ無損失。 */
-export const unitsToPitchV1 = (units: number): number =>
-	Math.round(units / UNITS_PER_SEMITONE);
+export const unitsToPitchV1 = (u: Units): number =>
+	Math.round(u / UNITS_PER_SEMITONE);

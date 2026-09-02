@@ -39,6 +39,7 @@ import {
 import { createSequencer, type SequencerTrack } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { createSynth, type Synth } from "./synth";
+import type { Units } from "./tuning";
 import type {
 	LoopConfig,
 	Note,
@@ -143,7 +144,8 @@ export const playPlacements = (
 		trackIndex: number;
 		startStep: number;
 		durationSteps: number;
-		pitchUnits: number;
+		/** ピッチ。単位は units（1/372オクターブ）。 */
+		pitchUnits: Units;
 		velocity: number;
 	}>,
 	options: PlayPlacementsOptions,
@@ -383,7 +385,7 @@ export const playMML = (
 export type PlayNoteOptions = {
 	audioContext?: AudioContext;
 	destination?: AudioNode;
-	pitchUnits: number;
+	pitchUnits: Units;
 	volume?: number;
 	duration?: number;
 };

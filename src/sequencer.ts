@@ -7,6 +7,7 @@
  */
 
 import type { DrumPattern } from "./drum-config";
+import type { Units } from "./tuning";
 import type {
 	LoopConfig,
 	LoopPoint,
@@ -71,7 +72,8 @@ export type Sequencer = {
 
 type TimelineEvent = {
 	trackId: string;
-	pitch: number;
+	/** ピッチ。単位は units（1/372オクターブ）。 */
+	pitch: Units;
 	volume: number; // 0-1
 	velocity: number; // 0-127
 	when: number; // 秒（fromStep基準）

@@ -1,4 +1,9 @@
-import { UNITS_PER_OCTAVE, UNITS_PER_SEMITONE } from "./tuning";
+import {
+	UNITS_PER_OCTAVE,
+	UNITS_PER_SEMITONE,
+	type Units,
+	units,
+} from "./tuning";
 import type { Note, RenderConfig } from "./types";
 
 const KEYBOARD_WIDTH = 60; // 鍵盤の固定幅
@@ -83,11 +88,12 @@ export type Renderer = {
 	getXY: (e: MouseEvent | PointerEvent) => [number, number, number];
 	getGridPosition: (e: MouseEvent | PointerEvent) => {
 		step: number;
-		pitch: number;
+		/** ピッチ。単位は units（1/372オクターブ）。 */
+		pitch: Units;
 		x: number;
 		y: number;
 	};
-	onClick: (callback: (step: number, pitch: number) => void) => void;
+	onClick: (callback: (step: number, pitch: Units) => void) => void;
 	setDrawOffset: (x: number, y: number) => void;
 	/** Canvasをマウント先から取り外す。 */
 	destroy: () => void;
@@ -710,7 +716,7 @@ export const createRenderer = (
 
 	const getGridPosition = (
 		e: MouseEvent | PointerEvent,
-	): { step: number; pitch: number; x: number; y: number } => {
+	): { step: number; pitch: Units; x: number; y: number } => {
 		const [x, y] = getXY(e);
 		const {
 			keyCount,
@@ -722,7 +728,7 @@ export const createRenderer = (
 		const step = Math.floor((x + g_draw_offset_x) / stepWidth);
 		const absoluteY = y + g_draw_offset_y;
 		const yIndex = Math.floor(absoluteY / keyHeight);
-		const pitch = pitchRangeStart + (keyCount - 1 - yIndex) * upr;
+		const pitch = units(pitchRangeStart + (keyCount - 1 - yIndex) * upr);
 		return { step, pitch, x, y };
 	};
 
@@ -730,7 +736,7 @@ export const createRenderer = (
 	 * ユーザーのクリックイベントを抽象化し、グリッド座標をコールバックに渡します。
 	 * イベントリスナーをグリッドCanvasにのみ追加します。
 	 */
-	const onClick = (callback: (step: number, pitch: number) => void): void => {
+	const onClick = (callback: (step: number, pitch: Units) => void): void => {
 		g_grid_canvas.addEventListener(
 			"click",
 			(e) => {
@@ -751,7 +757,7 @@ export const createRenderer = (
 				// 垂直方向: クリック位置(y) + スクロールオフセット(g_draw_offset_y) で絶対Y座標を取得
 				const absoluteY = y + g_draw_offset_y;
 				const yIndex = Math.floor(absoluteY / keyHeight);
-				const pitch = pitchRangeStart + (keyCount - 1 - yIndex) * upr;
+				const pitch = units(pitchRangeStart + (keyCount - 1 - yIndex) * upr);
 
 				// 範囲チェック
 				if (pitch >= pitchRangeStart && pitch < pitchRangeStart + keyCount) {

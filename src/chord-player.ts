@@ -12,7 +12,7 @@ import { copyToClipboard, encodeMml } from "./mml-player";
 import { SoundFont } from "./sf/SoundFont";
 import { injectStyles } from "./styles";
 import { createSynth } from "./synth";
-import { pitchV1ToUnits, unitsToMidiDetune } from "./tuning";
+import { pitchV1ToUnits, type Units, unitsToMidiDetune } from "./tuning";
 import { DEFAULT_STEPS_PER_BAR } from "./types";
 
 /**
@@ -1295,7 +1295,7 @@ export const mountChordPlayer = (
 	/** WAF音源で発音する関数。ロード済みなら即使用、未ロードならオシレータシンセで代替。 */
 	type WafPlayFn = (e: {
 		/** ピッチ。単位は units（1/372オクターブ）。 */
-		pitchUnits: number;
+		pitchUnits: Units;
 		velocity: number;
 		volume: number;
 		when: number;
@@ -1361,7 +1361,8 @@ export const mountChordPlayer = (
 			trackIndex: number;
 			startStep: number;
 			durationSteps: number;
-			pitchUnits: number;
+			/** ピッチ。単位は units（1/372オクターブ）。 */
+			pitchUnits: Units;
 			velocity: number;
 		}> = [];
 

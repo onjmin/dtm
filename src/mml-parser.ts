@@ -9,6 +9,7 @@
  */
 
 import { parseLyrics, stripCustomVocals, stripLyrics } from "./lyrics";
+import { type Units, units } from "./tuning";
 import type { LyricTrack } from "./types";
 import { DEFAULT_STEPS_PER_BAR, MML_END_MARKER } from "./types";
 
@@ -367,7 +368,7 @@ export type MMLNotePlacement = {
 	trackIndex: number;
 	startStep: number;
 	/** 1/372オクターブ単位（{@link Note.pitchUnits} と同じ）。 */
-	pitchUnits: number;
+	pitchUnits: Units;
 	durationSteps: number;
 	/** v コマンドで指定されたベロシティ（0-127、既定100） */
 	velocity: number;
@@ -657,7 +658,7 @@ export const parseMML = (
 			} else if (ch === "[") {
 				// 和音
 				j++;
-				const chordNotes: number[] = [];
+				const chordNotes: Units[] = [];
 				const savedOctave = octave;
 				while (j < body.length && body[j] !== "]") {
 					const c = body[j];
@@ -665,7 +666,9 @@ export const parseMML = (
 						let pitchSteps = naturals[c];
 						j++;
 						pitchSteps += readAccidentals();
-						chordNotes.push((octave + 1) * 372 + pitchSteps * unitsPerStep);
+						chordNotes.push(
+							units((octave + 1) * 372 + pitchSteps * unitsPerStep),
+						);
 					} else if (c === ">") {
 						octave = Math.min(8, octave + 1);
 						j++;
@@ -705,7 +708,7 @@ export const parseMML = (
 				let pitchSteps = naturals[ch];
 				j++;
 				pitchSteps += readAccidentals();
-				const midiPitch = (octave + 1) * 372 + pitchSteps * unitsPerStep;
+				const midiPitch = units((octave + 1) * 372 + pitchSteps * unitsPerStep);
 				const steps = parseLength();
 				recordContributor();
 				placements.push({

@@ -16,6 +16,7 @@
  */
 
 import { leadInFromEntry, VoiceBank, Worldline } from "@onjmin/koe";
+import { type Units, units } from "./tuning";
 import type {
 	CustomVocalDef,
 	LyricSyllable,
@@ -1634,7 +1635,7 @@ export type StreamVoiceNote = {
 	 * ピッチ。単位は units（1/372オクターブ）。koe は Hz を受けるので、
 	 * ここから直接 Hz へ変換して歌わせる（整数MIDIノートに丸めない）。
 	 */
-	pitch: number;
+	pitch: Units;
 	/** アンカー（再生開始時刻）からの相対秒。実発音時刻 = anchorTime + startSec。 */
 	startSec: number;
 	/** ゲート適用済みの発音長（秒）。 */
@@ -2096,7 +2097,7 @@ export const createSingingVoices = (
 					// 1音を指定ピッチ・音量係数で合成→スケジュールする。オクターブユニゾン有効時は
 					// 同じ音節をもう1声（±12半音・控えめな音量）重ねるため、通常発声とは
 					// 独立に呼び出せる関数へ切り出している。
-					const dispatchNote = (pitch: number, peakScale: number): void => {
+					const dispatchNote = (pitch: Units, peakScale: number): void => {
 						if (model.renderToCache && model.scheduleCached) {
 							const renderToCache = model.renderToCache;
 							const scheduleCached = model.scheduleCached;
@@ -2170,7 +2171,7 @@ export const createSingingVoices = (
 
 					dispatchNote(note.pitch, 1);
 					for (const offset of octaveUnisonOffsets(track.octaveUnison)) {
-						dispatchNote(note.pitch + offset, OCTAVE_UNISON_PEAK_SCALE);
+						dispatchNote(units(note.pitch + offset), OCTAVE_UNISON_PEAK_SCALE);
 					}
 					// klatt等（軽量・状態なし）はawaitが無く同期で回るため、UI応答性のため1音ごとに制御を返す。
 					if (!(model.renderToCache && model.scheduleCached)) {

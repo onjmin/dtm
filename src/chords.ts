@@ -7,7 +7,7 @@
  */
 
 import { parseChord, parseChords } from "@onjmin/chord-parser";
-import { fifthToStep, UNITS_PER_OCTAVE } from "./tuning";
+import { fifthToStep, UNITS_PER_OCTAVE, type Units, units } from "./tuning";
 
 export type ChordPatternType =
 	| "block"
@@ -23,7 +23,7 @@ export type ChordPlacement = {
 	 * 1/372オクターブ単位。chord-parser が返すのは12平均律の半音なので、
 	 * ここへ入れる時点で音律に応じた格子へ写している。
 	 */
-	pitchUnits: number;
+	pitchUnits: Units;
 	durationSteps: number;
 	velocity: number;
 };
@@ -67,7 +67,7 @@ const chordToneToUnits = (
 	rootSemitone: number,
 	rootFifth: number,
 	edo: 12 | 31,
-): number => {
+): Units => {
 	const perStep = UNITS_PER_OCTAVE / edo;
 	// ルートの位置。移調はミーントーンの度数へ写してから足す。
 	const rootOct = Math.floor(rootSemitone / 12);
@@ -85,7 +85,9 @@ const chordToneToUnits = (
 	const relOct = Math.round((relSemitone - relWithin12) / 12);
 	const relStep =
 		(fifthToStep(relFifth, edo) - fifthToStep(rootFifth, edo) + edo) % edo;
-	return (rootOct + relOct) * UNITS_PER_OCTAVE + (rootStep + relStep) * perStep;
+	return units(
+		(rootOct + relOct) * UNITS_PER_OCTAVE + (rootStep + relStep) * perStep,
+	);
 };
 
 export const buildChordPlacements = (
@@ -137,7 +139,7 @@ export const buildChordPlacements = (
 		for (const group of Object.values(chordGroups)) {
 			for (const chord of group) {
 				let notes: number[];
-				let toUnits: (relSemitone: number) => number;
+				let toUnits: (relSemitone: number) => Units;
 				try {
 					const parsed = parseChord(`${chord.key}${chord.chord}`);
 					notes = [...parsed.notes];
@@ -243,7 +245,7 @@ export const buildChordPlacements = (
 		const chordNames = chordStr.split(/[\s,]+/).filter((c) => c);
 		chordNames.forEach((chordName, barIndex) => {
 			let notes: number[];
-			let toUnits: (relSemitone: number) => number;
+			let toUnits: (relSemitone: number) => Units;
 			try {
 				const parsed = parseChord(chordName);
 				notes = [...parsed.notes];

@@ -1,6 +1,6 @@
 import { MMLCore } from "./mml-core";
 import { createRenderer } from "./renderer";
-import { UNITS_PER_SEMITONE } from "./tuning";
+import { UNITS_PER_SEMITONE, units } from "./tuning";
 import type {
 	AddNoteOptions,
 	CoreEventHandlers,
@@ -190,7 +190,7 @@ export const createPianoRoll = (
 				// 全選択ノートを同じ量だけ移動
 				for (const note of dragState.selectedNotes) {
 					const newStart = note.startStep + stepDelta;
-					const newPitch = note.pitchUnits + pitchDelta;
+					const newPitch = units(note.pitchUnits + pitchDelta);
 					core.moveNote(note.id, newStart, newPitch);
 				}
 
@@ -205,7 +205,7 @@ export const createPianoRoll = (
 			}
 
 			const nextStart = step - dragState.dragOffsetStep;
-			const nextPitch = pitch - dragState.dragOffsetPitch;
+			const nextPitch = units(pitch - dragState.dragOffsetPitch);
 			core.moveNote(dragState.noteId, nextStart, nextPitch);
 			return;
 		}

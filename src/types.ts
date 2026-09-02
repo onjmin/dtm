@@ -2,6 +2,7 @@ import type { ClipMeter } from "./clip-meter";
 import type { DelayDivision } from "./delay";
 import type { SingingVoices } from "./lyrics";
 import type { MidiSearchConfig } from "./midi-search";
+import type { Units } from "./tuning";
 
 export const DEFAULT_VOCAL_VOLUME = 200;
 export const DEFAULT_BPM = 120;
@@ -40,7 +41,7 @@ export type Note = {
 	 * 12平均律の1半音 = 31、31平均律の1度 = 12。MIDIノート番号ではないので注意。
 	 * dtm 1.x の `pitch`（半音）から意味が変わっている。
 	 */
-	pitchUnits: number;
+	pitchUnits: Units;
 	velocity?: number; // 0-127, 未設定の場合は100
 };
 
@@ -105,7 +106,7 @@ export type LyricSyncData = {
 export type NoteData = {
 	startStep: number;
 	/** 1/372オクターブ単位。{@link Note.pitchUnits} と同じ。 */
-	pitchUnits: number;
+	pitchUnits: Units;
 	durationSteps: number;
 	velocity?: number;
 };
@@ -114,7 +115,7 @@ export type NoteData = {
 export type NoteRemove = {
 	startStep: number;
 	/** 1/372オクターブ単位。{@link Note.pitchUnits} と同じ。 */
-	pitchUnits: number;
+	pitchUnits: Units;
 };
 
 // ピアノロール作成時のオプション
@@ -173,7 +174,7 @@ export type PlayNoteEvent = {
 	 * `unitsToMidiDetune` を使う。{@link PlayDrumEvent.pitch} はGM打楽器のキー番号で
 	 * 音高ではないため、こちらとは別物。
 	 */
-	pitchUnits: number;
+	pitchUnits: Units;
 	/** 元ノートのvelocity (0-127) */
 	velocity: number;
 	/** トラックvolume×velocityを反映した 0-1 程度の音量係数 */
@@ -680,7 +681,7 @@ export type DawInstance = {
 	 */
 	noteToCanvas: (
 		step: number,
-		pitch: number,
+		pitch: Units,
 	) => {
 		x: number;
 		y: number;

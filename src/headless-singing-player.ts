@@ -33,7 +33,7 @@ import {
 } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { createSynth, type Synth } from "./synth";
-import { UNITS_PER_OCTAVE } from "./tuning";
+import { UNITS_PER_OCTAVE, units } from "./tuning";
 import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 import {
 	DEFAULT_BPM,
@@ -157,7 +157,7 @@ export const playSingingMML = async (
 				if (n.startStep < fromStep) continue;
 				notes.push({
 					syllable: lt.syllables[i],
-					pitch: n.pitchUnits + semis,
+					pitch: units(n.pitchUnits + semis),
 					startSec: (n.startStep - fromStep) * secondsPerStep,
 					durationSec: n.durationSteps * secondsPerStep * gate,
 				});

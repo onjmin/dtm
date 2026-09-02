@@ -9,14 +9,14 @@
  * ミキサーへルーティングしたり、SE と AudioContext を共有したりできるようにするため。
  */
 
-import { unitsToHz } from "./tuning";
+import { type Units, unitsToHz } from "./tuning";
 import type { PlayDrumEvent, PlayNoteEvent } from "./types";
 
 /**
  * ピッチ(units) → 周波数(Hz)。A4 = 2139 units = 440Hz 基準。
  * 単位は 1/372オクターブの整数（`tuning.ts` 参照）。12平均律・31平均律とも同じ式で鳴る。
  */
-export const freqFromPitch = (pitchUnits: number): number =>
+export const freqFromPitch = (pitchUnits: Units): number =>
 	unitsToHz(pitchUnits);
 
 export type Synth = {

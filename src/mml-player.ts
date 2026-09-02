@@ -40,7 +40,7 @@ import { createSequencer, type SequencerTrack } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import { createSynth, type Synth } from "./synth";
-import { UNITS_PER_OCTAVE, unitsToPitchV1 } from "./tuning";
+import { UNITS_PER_OCTAVE, units, unitsToPitchV1 } from "./tuning";
 import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 import {
 	DEFAULT_BPM,
@@ -1520,7 +1520,7 @@ export const mountMmlPlayer = (
 				if (n.startStep < fromStep) continue;
 				notes.push({
 					syllable: lt.syllables[i],
-					pitch: n.pitchUnits + semis,
+					pitch: units(n.pitchUnits + semis),
 					startSec: (n.startStep - fromStep) * secondsPerStep,
 					durationSec: n.durationSteps * secondsPerStep * gate,
 				});
