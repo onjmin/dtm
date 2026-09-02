@@ -1036,6 +1036,18 @@ export const mountDAW = (
 	 * 格子の刻みと綴りだけなので、ここでは描画設定を差し替えて描き直すだけでよい。
 	 * 音域は units で固定してあるため、段数は音律から導出される。
 	 */
+	/**
+	 * ピッチ(units)を現在の音律の格子へ丸める。
+	 *
+	 * MIDIは12平均律のノート番号しか持たないため、31平均律の曲へ取り込むと格子から
+	 * 外れる。そのまま置くと12平均律と31平均律の音が同居してしまうので、入口で丸める。
+	 * 12→31 の方向なので移動量は最大19.4セントで、元の位置へも戻せる。
+	 */
+	const snapToEdoGrid = (units: number): number => {
+		const upr = renderConfig.unitsPerRow ?? UNITS_PER_SEMITONE;
+		return Math.round(units / upr) * upr;
+	};
+
 	const applyEdo = (edo: number, opts?: { snap?: boolean }): void => {
 		const next = edo === 31 ? 31 : 12;
 		if (renderConfig.edo === next) return;
@@ -4181,8 +4193,8 @@ export const mountDAW = (
 			if (applyActiveOnly && p.trackId !== activeTrackId) continue;
 			const t = trackStates.find((ts) => ts.config.id === p.trackId);
 			if (!t) continue;
-			// MIDIのピッチは半音（ノート番号）。内部表現の units へ変換する。
-			t.core.addNote(p.startStep, pitchV1ToUnits(p.pitch), {
+			// MIDIのピッチは半音（ノート番号）。units へ変換し、現在の音律の格子へ丸める。
+			t.core.addNote(p.startStep, snapToEdoGrid(pitchV1ToUnits(p.pitch)), {
 				noteLengthSteps: p.durationSteps,
 				velocity: p.velocity,
 			});
@@ -4790,6 +4802,7 @@ export const mountDAW = (
 					stepsPerBar: renderConfig.stepsPerBar,
 					startStep: playStartStep,
 					pitchRangeStart: renderConfig.pitchRangeStart,
+					edo: renderConfig.edo,
 				});
 				redrawAll();
 			});
@@ -5164,7 +5177,7 @@ export const mountDAW = (
 				id: 0,
 				startStep: p.startStep,
 				durationSteps: p.durationSteps,
-				pitchUnits: pitchV1ToUnits(p.pitch),
+				pitchUnits: snapToEdoGrid(pitchV1ToUnits(p.pitch)),
 				velocity: p.velocity,
 			}));
 			const mml = refCore.getMMLFromNotes(asNotes, tempo, 100).trim();
