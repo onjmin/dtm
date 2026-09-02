@@ -4162,6 +4162,15 @@ export const mountDAW = (
 			active.vocalOctaveUnison = "none";
 		} else {
 			clearAll();
+			// MIDIは原理的に12平均律しか表現できない。曲を丸ごと置き換えるこの経路では
+			// 残る音が無いので、曲の音律も12平均律へ戻す。31平均律のまま取り込むと、
+			// 取り込んだ素材を最大19.4セント狂わせるだけで得るものが無い。
+			//
+			// アクティブトラックのみの取り込み（上の分岐）では他トラックの音が残るため
+			// 切り替えない。そこで12へ倒すと既存の31平均律の音が最大48.4セント動いて
+			// 戻せなくなる。あちらは取り込むMIDI側を曲の音律へ丸める。
+			applyEdo(12);
+			refs.edoSelect.value = String(renderConfig.edo ?? 12);
 			for (const t of trackStates) t.core.setLoadMode(true);
 			// MIDI入力には歌詞情報がないので全トラックの歌詞を初期化する
 			for (const t of trackStates) {
