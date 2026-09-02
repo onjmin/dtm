@@ -67,6 +67,8 @@ export {
 // UIユーティリティ
 export { DAW_CSS, injectStyles, showLoadingOverlay } from "./styles";
 export { createSynth, freqFromPitch, type Synth } from "./synth";
+// 音律とピッチの内部表現（units ⇄ Hz / MIDI、五度圏、協調編集のバージョン）
+export * from "./tuning";
 export type { NoteData, NoteRemove } from "./types";
 export * from "./types";
 export { VOICE_IMAGES } from "./voice-images";
