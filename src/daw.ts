@@ -4491,7 +4491,7 @@ export const mountDAW = (
 				// 縦ズームをそのままにすると1段の高さが極端に潰れる／間延びする。
 				// 12→31は半分、31→12は倍に振り直し、見た目の1段の高さを揃える。
 				if (next === 31 && prev === 12) {
-					zoomY = Math.max(50, Math.round((zoomY / 2) / 25) * 25);
+					zoomY = Math.max(50, Math.round(zoomY / 2 / 25) * 25);
 				} else if (next === 12 && prev === 31) {
 					zoomY = Math.min(200, Math.round((zoomY * 2) / 25) * 25);
 				}
