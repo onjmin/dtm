@@ -316,6 +316,8 @@ export const DAW_CSS = `
   border-color: var(--dtm-primary);
 }
 .dtm-input--num { width: 64px; text-align: center; font-size: 16px; }
+/* 他のコントロールと同じ行に置くプルダウン（楽器・歌唱モデル） */
+.dtm-select--half { flex: 1 1 120px; min-width: 0; max-width: 200px; }
 .dtm-textarea { width: 100%; min-height: 56px; resize: vertical; line-height: 1.7; }
 .dtm-textarea.dtm-grow { width: 0; }
 .dtm-range { height: var(--dtm-tap); accent-color: var(--dtm-primary); }
@@ -540,47 +542,10 @@ export const DAW_CSS = `
 .dtm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .dtm-track-body { display: flex; flex-direction: column; gap: 10px; }
 
-/* ─── アクティブトラック情報バナー ─── */
-.dtm-active-track-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: color-mix(in srgb, var(--dtm-track-color, var(--dtm-primary)) 16%, var(--dtm-deep));
-  border: 2px solid var(--c-black);
-  border-left: 5px solid var(--dtm-track-color, var(--dtm-primary));
-  box-shadow: 2px 2px 0 var(--c-black);
-  margin-bottom: 2px;
-}
-.dtm-active-track-badge {
-  font-family: var(--dtm-font);
-  font-size: 11px;
-  font-weight: bold;
+/* ─── アクティブトラック色（個別トラック設定パネルの左端ライン） ─── */
+.dtm-panel--track > summary::before,
+.dtm-panel--track[open] > summary::before {
   background: var(--dtm-track-color, var(--dtm-primary));
-  color: #ffffff;
-  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000;
-  padding: 2px 6px;
-  border: 1px solid var(--c-black);
-  border-radius: 2px;
-  letter-spacing: .06em;
-}
-.dtm-active-track-name {
-  font-family: var(--dtm-font);
-  font-size: 12px;
-  font-weight: bold;
-  color: var(--c-white);
-  flex: 1 1 auto;
-}
-.dtm-active-track-pill {
-  font-family: var(--dtm-font);
-  font-size: 9px;
-  font-weight: bold;
-  letter-spacing: .08em;
-  padding: 2px 5px;
-  color: var(--dtm-gold);
-  border: 1px solid var(--dtm-gold);
-  background: rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
 }
 
 /* ─── MML出力（CRTターミナル） ─── */
@@ -1016,10 +981,8 @@ export const DAW_CSS = `
 }
 /* 歌詞トラックの「詳細設定」— 常用しないパラメータ（オクターブ/定位/リバーブ送り/
    ジェンダー/ブレシネス/ビブラート）を畳んでおく軽量な details。dtm-panel ほど
-   仰々しくせず、控えめな仕切り線＋小さい▶マーカーだけ付ける。 */
+   仰々しくせず、小さい▶マーカーだけ付ける（仕切り線は高さを食うので置かない）。 */
 .dtm-advanced {
-  border-top: 1px dashed var(--dtm-border2);
-  padding-top: 6px;
   display: flex;
   flex-direction: column;
   gap: 6px;

@@ -2684,6 +2684,12 @@ export const mountDAW = (
 		// 個別トラック設定パネルのタイトル（summary）に現在選択中のトラック情報を反映
 		const panelEl = refs.trackBody.closest<HTMLDetailsElement>(".dtm-panel");
 		if (panelEl) {
+			// summaryの左端ラインをトラック色に染める（行を増やさずに色を示す）
+			panelEl.classList.add("dtm-panel--track");
+			panelEl.style.setProperty(
+				"--dtm-track-color",
+				`rgb(${activeR},${activeG},${activeB})`,
+			);
 			const summaryEl = panelEl.querySelector("summary");
 			if (summaryEl) {
 				summaryEl.textContent = `個別トラック設定（Track ${activeIndex + 1}: ${active.config.name}）`;
@@ -2691,12 +2697,7 @@ export const mountDAW = (
 		}
 
 		refs.trackBody.innerHTML = `
-      <div class="dtm-active-track-banner" style="--dtm-track-color: rgb(${activeR},${activeG},${activeB})">
-        <span class="dtm-active-track-badge">TRACK ${activeIndex + 1}</span>
-        <span class="dtm-active-track-name">${active.config.name}</span>
-        <span class="dtm-active-track-pill">ACTIVE</span>
-      </div>
-      <div class="dtm-row">
+      <div class="dtm-row" data-dtm="track-vol-row">
         <span class="dtm-label">ベロシティ</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="track-vol" min="0" max="127" value="${active.volume}">
         <span class="dtm-label" data-dtm="track-vol-label">${active.volume}</span>
@@ -2935,11 +2936,11 @@ export const mountDAW = (
 		});
 
 		// 楽器個別選択（デフォルト＝プリセット or GM楽器名指定）
-		const instRow = document.createElement("div");
-		instRow.className = "dtm-row";
-		instRow.innerHTML = `<span class="dtm-label">楽器</span>`;
+		const instLabel = document.createElement("span");
+		instLabel.className = "dtm-label";
+		instLabel.textContent = "楽器";
 		const instSel = document.createElement("select");
-		instSel.className = "dtm-select dtm-grow";
+		instSel.className = "dtm-select dtm-grow dtm-select--half";
 		const defaultOpt = document.createElement("option");
 		defaultOpt.value = "";
 		defaultOpt.textContent = "デフォルト（プリセット）";
@@ -2990,8 +2991,10 @@ export const mountDAW = (
 			const trackIndex = trackStates.indexOf(active);
 			options.onTrackInstrumentChange?.(trackIndex, active.trackInstrument);
 		});
-		instRow.appendChild(instSel);
-		refs.trackBody.appendChild(instRow);
+		// 楽器はベロシティと同じ行に並べる（行数を減らして歌詞欄をピアノロールへ寄せる）
+		(
+			refs.trackBody.querySelector('[data-dtm="track-vol-row"]') as HTMLElement
+		).prepend(instLabel, instSel);
 
 		// 歌詞エディタ（全トラック共通）。歌唱モデルのプルダウン既定「なし」が無効状態を兼ねる。
 		// モデルを選んだときだけ声量・歌詞欄を出す（使わないときは隠す）。@@n model[:声量] lyrics として往復。
@@ -3002,11 +3005,16 @@ export const mountDAW = (
 			lyricDiv.style.flexDirection = "column";
 			lyricDiv.style.alignItems = "stretch";
 			lyricDiv.innerHTML = `
-      <div class="dtm-row">
+      <div class="dtm-row" data-dtm="lyric-head">
         <span class="dtm-label">♪ UTAU</span>
-        <select class="dtm-select" data-dtm="lyric-model" aria-label="歌唱モデル"></select>
+        <select class="dtm-select dtm-select--half" data-dtm="lyric-model" aria-label="歌唱モデル"></select>
         <img class="dtm-lyric-icon dtm-hidden" data-dtm="lyric-icon" width="20" height="20" alt="" draggable="false">
-        <span class="dtm-label dtm-grow" data-dtm="lyric-count" style="text-align:right"></span>
+        <span class="dtm-label" data-dtm="lyric-count"></span>
+        <div class="dtm-row dtm-grow" data-dtm="lyric-vol-group">
+          <span class="dtm-label">声量</span>
+          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="歌唱の声量（100=等倍、100超でブースト、既定200）">
+          <span class="dtm-label" data-dtm="lyric-vol-label"></span>
+        </div>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="lyric-terms" style="font-size:10px;gap:4px;color:var(--dtm-warn)">
         <span>使用時には</span>
@@ -3026,11 +3034,6 @@ export const mountDAW = (
         </div>
       </div>
       <div class="dtm-row" data-dtm="lyric-body" style="flex-direction:column;align-items:stretch">
-        <div class="dtm-row">
-          <span class="dtm-label">声量</span>
-          <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="歌唱の声量（100=等倍、100超でブースト、既定200）">
-          <span class="dtm-label" data-dtm="lyric-vol-label"></span>
-        </div>
         <details class="dtm-advanced" data-dtm="lyric-advanced" ${lyricAdvancedOpen ? "open" : ""}>
           <summary>詳細設定</summary>
           <div class="dtm-row">
@@ -3120,6 +3123,10 @@ export const mountDAW = (
 			) as HTMLImageElement;
 			const lyricBody = lyricDiv.querySelector(
 				'[data-dtm="lyric-body"]',
+			) as HTMLElement;
+			// 声量はUTAUのプルダウンと同じ行に置いてあるので、lyricBodyとは別に開閉する
+			const lyricVolGroup = lyricDiv.querySelector(
+				'[data-dtm="lyric-vol-group"]',
 			) as HTMLElement;
 			const lyricInput = lyricDiv.querySelector(
 				'[data-dtm="lyric-input"]',
@@ -3375,7 +3382,9 @@ export const mountDAW = (
 				// 声量・詳細設定（オクターブ/定位/ビブラート/リバーブ送り/ジェンダー/ブレシネス）・
 				// 歌詞欄は歌うときだけ意味を持つので、モデル「なし」ではまとめて隠す
 				// （lyricBody 1箇所で切り替えれば、中の項目を増やしても隠し忘れが起きない）。
+				// 声量だけはUTAU行へ移したため、ここで一緒に切り替える。
 				lyricBody.style.display = active.lyricModel ? "" : "none";
+				lyricVolGroup.style.display = active.lyricModel ? "" : "none";
 				updateLyricCount();
 				syncLyricTerms();
 				syncLyricIcon();
