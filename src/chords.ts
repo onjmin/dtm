@@ -103,6 +103,42 @@ export const spelledToUnits = (
 	edo: 12 | 31,
 ): Units => chordToneToUnits(semitone, fifth, 0, edo);
 
+/**
+ * アルペジオの1周分の並び。
+ *
+ * 音数をそのまま1周にすると3和音で1周が3音になり、8分音符の格子に乗せても
+ * 小節（8音）と周期が噛み合わずリズムが崩れる。そこで音数を2の冪へ切り上げ、
+ * 足りない分は上のオクターブへ登り続けて埋める（3和音なら C E G C(8va)）。
+ */
+const arpSequence = (
+	notes: number[],
+): { relSemitone: number; octave: number }[] => {
+	let length = 1;
+	while (length < notes.length) length *= 2;
+	return Array.from({ length }, (_, i) => ({
+		relSemitone: notes[i % notes.length],
+		octave: Math.floor(i / notes.length),
+	}));
+};
+
+/**
+ * アルペジオの音符間隔。
+ *
+ * 「コードの長さ ÷ 音数」で割ると拍から外れた間隔になる（1小節192ステップの3和音なら
+ * 64ステップ ＝ 4分音符1.33個）ので、必ず8分音符か16分音符の格子に置く。
+ * 8分音符で1周が入り切らない短いコードだけ16分音符へ落とす。
+ */
+const arpIntervalSteps = (
+	stepsPerBar: number,
+	noteLength: number,
+	seqLength: number,
+): number => {
+	const eighth = Math.max(1, Math.round(stepsPerBar / 8));
+	const sixteenth = Math.max(1, Math.round(stepsPerBar / 16));
+	const interval = noteLength >= seqLength * eighth ? eighth : sixteenth;
+	return Math.max(1, Math.min(interval, noteLength));
+};
+
 export const buildChordPlacements = (
 	options: ApplyChordOptions,
 ): ChordPlacement[] => {
@@ -183,15 +219,28 @@ export const buildChordPlacements = (
 						});
 					}
 				} else if (patternType === "arpeggio") {
-					const arpInterval = Math.floor(noteLength / notes.length);
-					notes.forEach((noteOffset, i) => {
+					const seq = arpSequence(notes);
+					const arpInterval = arpIntervalSteps(
+						stepsPerBar,
+						noteLength,
+						seq.length,
+					);
+					const count = Math.max(1, Math.floor(noteLength / arpInterval));
+					for (let i = 0; i < count; i++) {
+						const tone = seq[i % seq.length];
+						const startStep = chord.whenStep + i * arpInterval;
 						placements.push({
-							startStep: chord.whenStep + i * arpInterval,
-							pitchUnits: toUnits(noteOffset),
-							durationSteps: noteLength - i * arpInterval,
+							startStep,
+							pitchUnits: units(
+								toUnits(tone.relSemitone) + tone.octave * UNITS_PER_OCTAVE,
+							),
+							durationSteps: Math.max(
+								1,
+								Math.min(arpInterval, chord.whenStep + noteLength - startStep),
+							),
 							velocity: 100,
 						});
-					});
+					}
 				} else if (patternType === "arpeggio-fast") {
 					const arpInterval = 6;
 					notes.forEach((noteOffset, i) => {
