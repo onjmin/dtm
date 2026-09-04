@@ -162,8 +162,26 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	);
 	check(
 		`${tag} 小節内の跳躍`,
-		song.stats.maxLeapSemitones <= 5,
+		song.stats.maxLeapSemitones <= 9,
 		`${song.stats.maxLeapSemitones}半音`,
+	);
+	// 跳躍が少なすぎるメロディは「音階の上をうろついているだけ」で印象に残らない。
+	// 多すぎると歌えない。初版はここが実測8%未満で、全曲がのっぺりしていた。
+	check(
+		`${tag} 跳躍の比率`,
+		song.stats.leapRatio >= 0.08 && song.stats.leapRatio <= 0.32,
+		`${(song.stats.leapRatio * 100).toFixed(1)}%`,
+	);
+	check(
+		`${tag} メロディの音域が1オクターブ以上`,
+		song.stats.melodyRange >= 12,
+		`${song.stats.melodyRange}半音`,
+	);
+	// サブメロが「同じ音を置いただけ」になっていないこと（対旋律の体を成すか）。
+	check(
+		`${tag} サブメロが動いている`,
+		song.stats.submelodyRange >= 5,
+		`${song.stats.submelodyRange}半音`,
 	);
 
 	// --- 構造 ---
@@ -288,6 +306,62 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 }
 
 // ============================================================
+// 2.5 曲どうしの違い（バリエーション）
+//
+//     品質基準を全部満たしていても「同じ設計図の上で音名だけが違う曲」は量産できる。
+//     実際、初版は 300曲を生成してもベースの配置が1種類・サブメロの配置も1種類しか
+//     出なかった。1曲だけ見ていては気づけない種類の劣化なので、まとめて測って落とす。
+// ============================================================
+
+console.log("● 曲どうしの違い");
+{
+	const N = 200;
+	const uniq = {
+		progression: new Set<string>(),
+		melody: new Set<string>(),
+		bass: new Set<string>(),
+		submelody: new Set<string>(),
+		firstNote: new Set<number>(),
+	};
+	for (let seed = 1; seed <= N; seed++) {
+		const song = composeSong({
+			stepsPerBar: STEPS_PER_BAR,
+			edo: 12,
+			random: seededRandom(seed * 7919),
+		});
+		/** 音高を抜いた「置き方」だけの指紋。ここが同じ曲は骨格が同じ。 */
+		const layout = (ns: typeof song.bass) =>
+			ns.map((n) => `${n.startStep}/${n.durationSteps}`).join(",");
+		uniq.progression.add(song.chordProgression);
+		uniq.melody.add(layout(song.melody));
+		uniq.bass.add(layout(song.bass));
+		uniq.submelody.add(layout(song.submelody));
+		uniq.firstNote.add(song.melody[0].pitchUnits);
+	}
+	const ratios: [string, number, number][] = [
+		["コード進行", uniq.progression.size, 0.5],
+		["メロディの配置", uniq.melody.size, 0.9],
+		["ベースの配置", uniq.bass.size, 0.2],
+		["サブメロの配置", uniq.submelody.size, 0.2],
+	];
+	for (const [name, size, min] of ratios) {
+		check(
+			`${name}の多様性`,
+			size / N >= min,
+			`${N}曲中 ${size}種（下限 ${Math.ceil(min * N)}種）`,
+		);
+	}
+	check(
+		"メロディの開始音がばらける",
+		uniq.firstNote.size >= 5,
+		`${uniq.firstNote.size}種`,
+	);
+	console.log(
+		`  ${N}曲: 進行${uniq.progression.size}種 / メロディ${uniq.melody.size}種 / ベース${uniq.bass.size}種 / サブメロ${uniq.submelody.size}種 / 開始音${uniq.firstNote.size}種`,
+	);
+}
+
+// ============================================================
 // 3. 31平均律でも成立するか
 // ============================================================
 
@@ -338,7 +412,7 @@ console.log(
 );
 console.log(`平均休符率     ${((restSum / SEEDS) * 100).toFixed(1)}%`);
 console.log(
-	`平均引き直し回数 ${(attemptsSum / SEEDS).toFixed(1)}回 / 上限60回`,
+	`平均引き直し回数 ${(attemptsSum / SEEDS).toFixed(1)}回 / 上限80回`,
 );
 console.log("");
 if (failures > 0) {

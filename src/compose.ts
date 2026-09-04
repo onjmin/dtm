@@ -10,29 +10,46 @@
  *
  * - 音価は4種類以上を混在させる。メロディの音価のシャノンエントロピーが
  *   {@link MIN_ENTROPY_BITS} を下回るものは「単調」とみなして採用しない。
- *   全部同じ音価（エントロピー0bit）は論外。
  * - 休符を全体の {@link MIN_REST_RATIO}〜{@link MAX_REST_RATIO} 程度入れる。
  * - **順番が本質**: ①コード進行を決める →②先に各小節のリズム型を、隣接小節で変化を
- *   つけて設計する →③その上に音を乗せる。「音を決めてから音価を機械的に均等割りする」
- *   手順は、テンプレート的なアルペジオを生む温床なので採らない。
- * - **短いモチーフを1つ作り、3種類の変形で展開する**（そのまま反復／音程を上げて発展＝
- *   セクエンツ／1オクターブ上げてクライマックス）。同じ型に別の音を当てはめるのではなく、
- *   同じアイデアを別の文脈で展開する、という質的に違う作り方。
- * - メロディは**順次進行（スケールワイズ）が基本**。跳躍はB部頭のクライマックス1箇所だけに
- *   限定し、それ以外は {@link MAX_LEAP_SEMITONES} 以内に収める。
- * - **緩急**をつける。休符・ロングトーンの「緩」と16分音符の「急」を意図的に対比させる。
- * - 三和音だけの単純ループを避け、7th・セカンダリドミナントを混ぜる。
+ *   つけて設計する →③その上に音を乗せる。
+ * - **短いモチーフを1つ作り、変形で展開する**（反復／セクエンツ／オクターブ上げ）。
+ * - **緩急**をつける。休符・ロングトーンの「緩」と16分音符の「急」を対比させる。
  *
- * ## 強拍に何を置くか
+ * ## 「どの曲も似ている」を潰すための設計
+ *
+ * 初版は品質基準こそ満たしていたが、**曲どうしの違い**が出ていなかった。300曲を生成して
+ * 測ったところ、ベースの配置は1種類（全曲同一）、サブメロの配置も1種類、メロディの
+ * 隣接音程は77%が2半音以内、16小節の役割配置は定数で固定——つまり「同じ設計図の上で
+ * 音名だけが違う曲」を量産していた。そこで次を曲ごとの引きに変えてある。
+ *
+ * - **曲の骨格をランダムに組む**。{@link SECTION_FORMS} から4セクションぶんを引く。
+ *   固定するのは「1小節目はモチーフ提示」「B部にクライマックスが1回」「16小節目は終止」
+ *   の3点だけで、残りの配置は曲ごとに変わる。
+ * - **メロディの書法を曲ごとに引く**（{@link MelodyStyle}）。走句の形・つなぎの形・
+ *   ロングトーンの形・終止形・モチーフの原型・跳躍の混ぜ具合を、曲ごとに選び直す。
+ * - **跳躍を積極的に使う**。順次進行だけのメロディは「歌いやすい」が「印象に残らない」。
+ *   跳躍が隣接音程に占める比率を {@link MIN_LEAP_RATIO}〜{@link MAX_LEAP_RATIO} に収め、
+ *   **跳躍の直後は反行の順次進行で埋める**（gap fill）という古典的な定石で歌える形に保つ。
+ * - **サブメロを対旋律にする**。初版は和音構成音を1小節に1〜2個置くだけで、旋律と
+ *   呼べる形をしていなかった。メロディと反行（contrary motion）する輪郭を持たせ、
+ *   置き方も曲ごとに変える。ただし**単音・低密度・長音価**という形は崩さない——
+ *   おまかせマスタリングの役割推定がこの3点でサブメロを判定するため。
+ * - **ベースに奏法を持たせる**。ルート4分打ち固定をやめ、オルタネイト／ウォーキング／
+ *   8分ドライブ／シンコペ等から曲ごとに引く。
+ *
+ * ## 強拍に何を置くか（重み3階層）
  *
  * 和音の構成音には重みがある（ルート・5度＝最重要／3度・7度＝重要／それ以外＝経過音）。
- * 強拍（小節頭と3拍目）では重みの高い音へ着地させ、弱拍は隣接音でつなぐ。これで
- * 「和音の上を適当に上下している」印象を避ける。{@link CHORD_TONE_WEIGHT} 参照。
+ * 強拍（小節頭と3拍目）では重みの高い音へ着地させ、弱拍は隣接音でつなぐ。
+ * さらに**その瞬間の和音によって、同じ音でも重要度が変わる**。半音上に和音構成音が
+ * 来るスケール音は「アボイドノート」として重み0とし、強拍・長い音価では使わない
+ * （弱拍の経過音としてだけ通す）。{@link toneWeight} 参照。
  */
 
 import { parseChord } from "@onjmin/chord-parser";
 import { type ChordPatternType, spelledToUnits } from "./chords";
-import type { Units } from "./tuning";
+import { UNITS_PER_SEMITONE, type Units } from "./tuning";
 
 // ============================================================
 // 品質基準（{@link ComposeStats} の受け入れ条件）
@@ -45,19 +62,28 @@ const MIN_VALUE_KINDS = 4;
 /** 休符が占めるステップ比率の下限・上限。 */
 const MIN_REST_RATIO = 0.03;
 const MAX_REST_RATIO = 0.08;
+/** 順次進行とみなす音程の上限（半音）。これを超えるものを「跳躍」と数える。 */
+const STEP_SEMITONES = 2;
 /**
- * 小節の中で許す隣接音の跳躍（半音）。これを超えるものは順次進行へ潰す。
- * 「順次進行または和音内の小さい跳躍」に収める、という基準の実装。
- */
-const MAX_LEAP_SEMITONES = 5;
-/**
- * 小節をまたぐときに許す跳躍（半音）。小節頭は和音の重要構成音へ着地させたいので、
- * 小節内より少しだけ広く取る（完全5度まではメロディとして自然に歌える範囲）。
+ * 許す跳躍の上限（半音）。長6度まで。初版はここが5（完全4度）で、しかも跳躍を
+ * ほとんど作らない書き方だったため、全曲が音階の上をうろつくだけになっていた。
  * クライマックスのオクターブ跳躍だけはこの制限を受けない。
  */
-const MAX_BAR_LEAP_SEMITONES = 7;
+const MAX_LEAP_SEMITONES = 9;
+/** 小節をまたぐときに許す跳躍（半音）。 */
+const MAX_BAR_LEAP_SEMITONES = 9;
+/**
+ * 跳躍が隣接音程に占める比率。低すぎると「のっぺり」、高すぎると「歌えない」。
+ * 実測で77%が2半音以内だった初版は、この下限にまるで届いていなかった。
+ */
+const MIN_LEAP_RATIO = 0.08;
+const MAX_LEAP_RATIO = 0.32;
+/** メロディが使う音域（半音）の下限。1オクターブは動かす。 */
+const MIN_MELODY_RANGE = 12;
+/** サブメロが使う音域（半音）の下限。0 だと「同じ音を置いただけ」になる。 */
+const MIN_SUBMELODY_RANGE = 5;
 /** 基準を満たす draw が出るまでの再試行回数。 */
-const MAX_ATTEMPTS = 60;
+const MAX_ATTEMPTS = 80;
 
 // ============================================================
 // 音価（1小節 = stepsPerBar。既定192ステップ ＝ 4分音符48ステップ）
@@ -124,6 +150,10 @@ const semitoneToDegree = (semi: number): number => {
 	return octave * 7 + best;
 };
 
+/** 音階上を `delta` 度動かす（半音でなく度数で動かすのでスケールから外れない）。 */
+const walk = (semi: number, delta: number): number =>
+	degreeToPitch(semitoneToDegree(semi) + delta).semi;
+
 // ============================================================
 // コード進行
 // ============================================================
@@ -140,6 +170,16 @@ const SECTION_A_PROGRESSIONS: string[][] = [
 	["C", "E7", "Am", "Am7"], // セカンダリドミナントでAmを強調
 	["Am", "F", "C", "G"], // 小室進行（イ短調寄り）
 	["Am", "Dm7", "G7", "CM7"], // マイナーからの循環
+	["C", "CM7", "F", "G"], // トニック保続からサブドミナントへ
+	["C", "G", "Am", "F"], // 4536の並べ替え
+	["Am", "Em", "F", "G"], // マイナーの順次感
+	["C", "Em7", "F", "G7"], // 1-3-4-5
+	["F", "Em7", "Dm7", "C"], // ベース下行
+	["Am", "G", "F", "E7"], // 下行クリシェ → ドミナント
+	["C", "A7", "Dm7", "G7"], // 循環（セカンダリドミナント入り）
+	["Am", "C", "F", "G"], // マイナー始まりの4536
+	["FM7", "G7", "CM7", "Am7"], // ジャズ寄りの2-5-1
+	["Dm7", "G7", "Em7", "Am7"], // 2-5-3-6
 ];
 
 /** B部（9〜12小節）の候補。A部と質感を変えるため、必ず別の進行から引く。 */
@@ -149,6 +189,37 @@ const SECTION_B_PROGRESSIONS: string[][] = [
 	["F", "Bm7-5", "E7", "Am"],
 	["FM7", "G", "Am", "D7"],
 	["Dm7", "E7", "Am", "A7"],
+	["F", "G", "C", "Am"],
+	["FM7", "Em7", "Dm7", "G7"],
+	["Bm7-5", "E7", "Am", "A7"],
+	["F", "C", "Dm7", "E7"],
+	["Dm7", "A7", "Dm7", "G7"],
+	["FM7", "E7", "Am", "G7"],
+	["Am7", "D7", "Dm7", "G7"], // ドッペルドミナント
+];
+
+/**
+ * A'（5〜8小節）の作り方。A部を土台に末尾だけドミナントへ差し替えて
+ * 「まだ続く」感じを出す。**必ず G か G7 で終える**（半終止）。
+ */
+const SECTION_A2_DERIVATIONS: ((a: string[]) => string[])[] = [
+	(a) => [a[0], a[1], a[2], "G7"],
+	(a) => [a[0], a[1], "Dm7", "G7"],
+	(a) => [a[0], a[1], a[2], "G"],
+	(a) => [a[0], "F", "Dm7", "G7"],
+	(a) => [a[0], a[2], "Am7", "G7"],
+];
+
+/**
+ * A''（13〜16小節）の作り方。**必ず主音（C か Am）へ着地させる**（全終止）。
+ * `tonic` は A部の始まりが Am 系かどうかで決める。
+ */
+const SECTION_A3_DERIVATIONS: ((a: string[], tonic: string) => string[])[] = [
+	(a, t) => [a[0], a[1], "G7", t],
+	(a, t) => [a[0], "Dm7", "G7", t],
+	(a, t) => [a[0], "F", "G7", t],
+	(a, t) => [a[0], a[1], "Em7", t],
+	(a, t) => [a[0], "FM7", "G7", t],
 ];
 
 /** 伴奏の奏法。曲ごとにランダムに引く。 */
@@ -163,7 +234,6 @@ const CHORD_PATTERNS: ChordPatternType[] = [
 /**
  * 和音構成音の重み。ルートからの音程（半音）で引く。
  * ルート・5度が最重要、3度・7度が重要、それ以外（テンション・経過音）は一般。
- * 強拍ではこの重みが高い音へ着地させる。
  */
 const CHORD_TONE_WEIGHT: Record<number, number> = {
 	0: 3, // ルート
@@ -194,6 +264,25 @@ const chordTones = (name: string): ChordTone[] => {
 	}
 };
 
+const pitchClass = (semi: number): number => ((semi % 12) + 12) % 12;
+
+/**
+ * **その瞬間の和音における、ある音の重要度**。同じ音でも和音が変われば重みが変わる、
+ * というのがこの関数の要点。
+ *
+ * - 和音構成音 … {@link CHORD_TONE_WEIGHT} の重み（3=ルート・5度／2=3度・7度／1=その他）
+ * - アボイドノート … **0**。半音上に和音構成音があるスケール音のこと（C の上の F など）。
+ *   強拍や長い音価で鳴らすと和音の響きを濁すので、弱拍の経過音としてしか通さない。
+ * - それ以外のスケール音 … 1（経過音として自由に使える）
+ */
+const toneWeight = (semi: number, tones: ChordTone[]): number => {
+	const pc = pitchClass(semi);
+	for (const t of tones) if (pitchClass(t.semi) === pc) return t.weight;
+	const above = (pc + 1) % 12;
+	for (const t of tones) if (pitchClass(t.semi) === above) return 0;
+	return 1;
+};
+
 // ============================================================
 // リズム型
 // ============================================================
@@ -212,6 +301,9 @@ const RHYTHM_CELLS: RhythmCell[] = [
 	{ value: [HALF, HALF], density: "sparse" },
 	{ value: [HALF, QUARTER, -QUARTER], density: "sparse" },
 	{ value: [DOT_HALF, -QUARTER], density: "sparse" },
+	{ value: [QUARTER, DOT_HALF], density: "sparse" },
+	{ value: [-QUARTER, DOT_HALF], density: "sparse" },
+	{ value: [HALF, -QUARTER, QUARTER], density: "sparse" },
 	// --- 中: 4分・8分が主体 ---
 	{ value: [QUARTER, QUARTER, HALF], density: "medium" },
 	{ value: [HALF, QUARTER, QUARTER], density: "medium" },
@@ -221,6 +313,12 @@ const RHYTHM_CELLS: RhythmCell[] = [
 	{ value: [EIGHTH, EIGHTH, QUARTER, DOT_QUARTER, EIGHTH], density: "medium" },
 	{ value: [DOT_QUARTER, EIGHTH, QUARTER, -QUARTER], density: "medium" },
 	{ value: [QUARTER, -EIGHTH, EIGHTH, QUARTER, QUARTER], density: "medium" },
+	{ value: [EIGHTH, QUARTER, EIGHTH, HALF], density: "medium" }, // 頭抜きシンコペ
+	{ value: [DOT_QUARTER, DOT_QUARTER, QUARTER], density: "medium" }, // 3+3+2
+	{ value: [QUARTER, DOT_QUARTER, EIGHTH, QUARTER], density: "medium" },
+	{ value: [EIGHTH, EIGHTH, EIGHTH, EIGHTH, HALF], density: "medium" },
+	{ value: [HALF, EIGHTH, EIGHTH, QUARTER], density: "medium" },
+	{ value: [-EIGHTH, EIGHTH, QUARTER, QUARTER, QUARTER], density: "medium" },
 	// --- 急: 16分の走句を含む ---
 	{
 		value: [SIXTEENTH, SIXTEENTH, SIXTEENTH, SIXTEENTH, QUARTER, HALF],
@@ -248,6 +346,36 @@ const RHYTHM_CELLS: RhythmCell[] = [
 		value: [QUARTER, SIXTEENTH, SIXTEENTH, SIXTEENTH, SIXTEENTH, HALF],
 		density: "dense",
 	},
+	{
+		value: [HALF, SIXTEENTH, SIXTEENTH, SIXTEENTH, SIXTEENTH, QUARTER],
+		density: "dense",
+	},
+	{
+		value: [
+			EIGHTH,
+			EIGHTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			QUARTER,
+			QUARTER,
+		],
+		density: "dense",
+	},
+	{
+		value: [
+			SIXTEENTH,
+			SIXTEENTH,
+			EIGHTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			EIGHTH,
+			QUARTER,
+			QUARTER,
+		],
+		density: "dense",
+	},
 ];
 
 /**
@@ -263,6 +391,14 @@ const MOTIF_CELLS: RhythmCell[] = [
 		value: [EIGHTH, EIGHTH, QUARTER, QUARTER, -EIGHTH, EIGHTH],
 		density: "medium",
 	},
+	{ value: [DOT_QUARTER, DOT_QUARTER, EIGHTH, EIGHTH], density: "medium" },
+	{ value: [EIGHTH, QUARTER, EIGHTH, QUARTER, QUARTER], density: "medium" },
+	{ value: [QUARTER, EIGHTH, EIGHTH, HALF], density: "medium" },
+	{
+		value: [-EIGHTH, EIGHTH, QUARTER, EIGHTH, EIGHTH, QUARTER],
+		density: "medium",
+	},
+	{ value: [HALF, EIGHTH, EIGHTH, QUARTER], density: "medium" },
 ];
 
 // ============================================================
@@ -270,13 +406,12 @@ const MOTIF_CELLS: RhythmCell[] = [
 // ============================================================
 
 /**
- * 各小節の役割。モチーフをどう扱うかで曲の記憶に残りやすさが決まるので、ここは
- * ランダムにせず固定の設計にしてある（ランダム性はモチーフ自体・リズム型・音の選び方に持たせる）。
+ * 各小節の役割。
  *
  * - `motif` … モチーフの原形。反復して記憶に残す。
- * - `sequence` … モチーフを音程ごと上下にずらす（セクエンツ）。同じ形が別の高さで出る。
+ * - `sequence` … モチーフを音程ごと上下にずらす（セクエンツ）。
  * - `climax` … モチーフを1オクターブ上げる。曲中で唯一の大跳躍を許す場所。
- * - `step` … 順次進行でつなぐ。
+ * - `step` … 順次進行と小さな跳躍でつなぐ。
  * - `run` … 16分の走句（急）。
  * - `hold` … ロングトーン・休符（緩）。
  * - `cadence` … 主音へ着地して終わる。
@@ -290,24 +425,95 @@ type BarRole =
 	| "hold"
 	| "cadence";
 
-/** 16小節の骨格。A(0-3) A'(4-7) B(8-11) A''(12-15)。 */
-const BAR_ROLES: BarRole[] = [
-	"motif", // 1  A: 主題提示
-	"step", // 2
-	"sequence", // 3  セクエンツで発展
-	"step", // 4
-	"motif", // 5  A': 主題の反復（記憶に残す）
-	"run", // 6  急
-	"sequence", // 7
-	"hold", // 8  緩（B部へのタメ）
-	"climax", // 9  B: オクターブ上のクライマックス
-	"run", // 10 急
-	"step", // 11
-	"hold", // 12 緩
-	"motif", // 13 A'': 主題の回帰
-	"step", // 14
-	"run", // 15 最後の盛り上げ
-	"cadence", // 16 主音へ着地
+/**
+ * 4小節セクションの型。初版はこれが16小節ぶんの定数1本だったため、
+ * **全曲がまったく同じドラマ展開**になっていた。曲ごとに引き直す。
+ *
+ * 固定するのは3点だけ——1小節目あたりでモチーフを提示する、B部にクライマックスが1回、
+ * 16小節目は終止。これらは「曲として成立させる」ための最低条件で、
+ * ここまでランダムにすると構成が破綻する。
+ */
+const SECTION_FORMS: Record<"a" | "a2" | "b" | "a3", BarRole[][]> = {
+	a: [
+		["motif", "step", "sequence", "step"],
+		["motif", "motif", "sequence", "hold"],
+		["motif", "run", "sequence", "step"],
+		["motif", "step", "motif", "run"],
+		["motif", "hold", "sequence", "run"],
+		["motif", "step", "step", "sequence"],
+		["motif", "sequence", "step", "hold"],
+	],
+	a2: [
+		["motif", "run", "sequence", "hold"],
+		["motif", "step", "run", "hold"],
+		["sequence", "motif", "run", "hold"],
+		["motif", "run", "step", "hold"],
+		["motif", "sequence", "run", "step"],
+		["sequence", "step", "motif", "run"],
+	],
+	b: [
+		["climax", "run", "step", "hold"],
+		["climax", "step", "run", "hold"],
+		["climax", "sequence", "run", "hold"],
+		["climax", "run", "sequence", "step"],
+		["hold", "climax", "run", "step"],
+		["step", "climax", "run", "hold"],
+		["climax", "hold", "run", "sequence"],
+	],
+	a3: [
+		["motif", "step", "run", "cadence"],
+		["motif", "sequence", "step", "cadence"],
+		["motif", "run", "step", "cadence"],
+		["motif", "step", "hold", "cadence"],
+		["motif", "motif", "run", "cadence"],
+		["sequence", "motif", "step", "cadence"],
+	],
+};
+
+// ============================================================
+// メロディの書法（曲ごとに引く）
+// ============================================================
+
+/** 走句（`run`）の形。初版は「音階を一直線に上る／下る」しか無かった。 */
+type RunShape = "scale" | "turn" | "broken" | "zigzag";
+/** つなぎ（`step`）の形。初版は「±1のコイントス」＝方向性のない酔歩だった。 */
+type StepShape = "arch" | "valley" | "ascend" | "descend" | "wave" | "pivot";
+/** ロングトーン（`hold`）の形。初版は同じ音の据え置きだけ。 */
+type HoldShape = "long" | "third" | "neighbor";
+/** 終止（`cadence`）の形。初版は「順次下降して主音」だけで、全曲の最後が同じ形だった。 */
+type CadenceShape = "descend" | "five-three-one" | "leap-up" | "hold-tonic";
+/** ベースの奏法。初版はルート4分打ちの1種類しか無かった。 */
+type BassStyle =
+	| "quarter"
+	| "alternate"
+	| "half"
+	| "eighth"
+	| "syncopated"
+	| "walking"
+	| "octave";
+/** サブメロの置き方。初版は「小節を等分して1〜2音」の1種類しか無かった。 */
+type SubStyle = "pad" | "half" | "answer" | "long-short" | "anticipate";
+
+/**
+ * モチーフの原型（音階の度数差の列）。初版はここが「±1／±2 の乱数の累積」だったため、
+ * どの曲のモチーフも似た形の酔歩になっていた。**輪郭に名前が付く形**を並べておき、
+ * 曲ごとに1本引く。
+ */
+const MOTIF_ARCHETYPES: number[][] = [
+	[0, 1, 2, 3, 2], // 上行して一歩戻る
+	[0, -1, -2, -3, -2], // 下行して一歩戻る
+	[0, 2, 1, 0, -1], // 跳ねてから埋める
+	[0, 4, 3, 2, 1], // 5度上へ跳んで順次下降（gap fill の教科書形）
+	[0, -4, -3, -2, -1], // 下へ跳んで順次上行
+	[0, 0, 1, 2, 1], // 同音反復から動き出す
+	[0, 1, 0, -1, 0], // 軸音まわりの揺れ
+	[0, 2, 4, 3, 2], // 分散和音風の上行
+	[0, -2, -1, 1, 0], // 沈んでから跳ね上がる
+	[0, 3, 2, 4, 3], // 二段跳び
+	[0, 1, 3, 2, 0], // アーチ
+	[0, -1, 1, -2, 0], // ジグザグ
+	[0, 5, 4, 2, 0], // 6度跳躍からの大きな下降
+	[0, 0, -1, -3, -2], // 反復してから落ちる
 ];
 
 // ============================================================
@@ -331,6 +537,12 @@ export type ComposeStats = {
 	restRatio: number;
 	/** クライマックスを除く隣接音の最大跳躍（半音）。 */
 	maxLeapSemitones: number;
+	/** 隣接音程のうち跳躍（3半音以上）が占める比率。低すぎると「のっぺり」。 */
+	leapRatio: number;
+	/** メロディが使った音域（半音）。 */
+	melodyRange: number;
+	/** サブメロが使った音域（半音）。小さいと旋律になっていない。 */
+	submelodyRange: number;
 	/** 実際に採用されるまでに引き直した回数。 */
 	attempts: number;
 };
@@ -390,7 +602,7 @@ const nearestChordTone = (
 	let bestDist = Number.POSITIVE_INFINITY;
 	for (const tone of pool) {
 		// 構成音は C からの絶対半音なので、オクターブを動かして目標に寄せる
-		const base = ((tone.semi % 12) + 12) % 12;
+		const base = pitchClass(tone.semi);
 		for (let oct = 0; oct <= 10; oct++) {
 			const semi = base + oct * 12;
 			const dist = Math.abs(semi - targetSemi);
@@ -408,7 +620,7 @@ const MELODY_LOW = 60;
 const MELODY_HIGH = 84;
 /** サブメロの音域。メロディの下・ベースの上に置く。 */
 const SUBMELODY_LOW = 55;
-const SUBMELODY_HIGH = 72;
+const SUBMELODY_HIGH = 74;
 /**
  * ベースの音域。**平均音高が C3(48) を下回るようにする**——おまかせマスタリングの
  * 役割推定がこのしきい値でベースを判定するため、ここを外すと楽器が当たらなくなる。
@@ -423,105 +635,230 @@ const clampSemi = (semi: number, low: number, high: number): number => {
 	return s;
 };
 
+/** 1音ぶんの置き場所。リズムが先に決まっているので、音はここへ乗せるだけ。 */
+type Slot = { isStrong: boolean; value: number; at: number };
+
+/** 曲ごとに引くメロディの書法。ここが曲どうしの違いの主な出どころ。 */
+type MelodyStyle = {
+	runShape: RunShape;
+	stepShape: StepShape;
+	holdShape: HoldShape;
+	cadenceShape: CadenceShape;
+	/** 弱拍で跳躍を混ぜる確率。 */
+	leapAffinity: number;
+	/** 強拍で着地させる構成音の重み下限（3=ルート/5度のみ、2=3度/7度も許す）。 */
+	barHeadWeight: 2 | 3;
+	bassStyle: BassStyle;
+	subStyle: SubStyle;
+	/** サブメロがメロディから何半音下を歌うか。 */
+	subInterval: number;
+};
+
 /**
- * 1小節分のメロディの音を決める。リズム（音価の並び）は既に決まっていて、そこへ音を
- * 乗せる、という順番を守る。
+ * 1小節分の「音の並び（度数）」を、役割と書法から作る。
+ * ここではまだ音域も跳躍制限も見ない——形を作るのが仕事で、
+ * 整えるのは {@link shapeBar} の役目。
  */
-const fillBarPitches = (
+const barDegrees = (
 	role: BarRole,
-	rhythm: number[],
+	slots: Slot[],
 	tones: ChordTone[],
+	style: MelodyStyle,
 	motifContour: number[],
-	prevSemi: number,
+	startDegree: number,
+	/** 直前の小節もモチーフだったときにずらす度数。同じ小節が2つ並ぶのを避ける。 */
+	repeatShift: number,
 	rnd: () => number,
 ): number[] => {
-	const noteCount = rhythm.filter((v) => v > 0).length;
-	const pitches: number[] = [];
-	// 小節頭は必ず重要構成音（ルート・5度）へ着地させる。ここが決まらないと
-	// 「和音の上を適当に上下している」印象になる。
-	const current = nearestChordTone(prevSemi, tones, 3).semi;
+	const noteCount = slots.length;
+	const out: number[] = [];
 
 	if (role === "motif" || role === "sequence" || role === "climax") {
-		// モチーフの輪郭（音階の度数差）をそのまま乗せる。sequence は音程ごと上へずらし、
-		// climax は1オクターブ上げる——「同じ型に別の音を当てはめる」のではなく
+		// モチーフの輪郭をそのまま乗せる。sequence は音程ごとずらし、climax は
+		// 1オクターブ上げる——「同じ型に別の音を当てはめる」のではなく
 		// 「同じアイデアを別の文脈で置き直す」のが狙い。
 		const shift =
-			role === "sequence" ? (rnd() < 0.5 ? 1 : 2) : role === "climax" ? 7 : 0;
-		const startDegree = semitoneToDegree(current) + shift;
-		for (let i = 0; i < noteCount; i++) {
-			const delta = motifContour[i % motifContour.length];
-			pitches.push(degreeToPitch(startDegree + delta).semi);
-		}
-	} else if (role === "run") {
-		// 走句: 音階を隣接音で駆け上がる／駆け下りる。跳躍を作らずに密度だけを上げる。
-		const dir = rnd() < 0.5 ? 1 : -1;
-		let degree = semitoneToDegree(current);
-		for (let i = 0; i < noteCount; i++) {
-			pitches.push(degreeToPitch(degree).semi);
-			degree += dir;
-		}
-	} else if (role === "hold") {
-		// 緩: 和音の色を出す3度・7度を長く伸ばす。
-		for (let i = 0; i < noteCount; i++) {
-			pitches.push(nearestChordTone(current, tones, 2).semi);
-		}
-	} else if (role === "cadence") {
-		// 終止: 主音（ハ長調のC）へ順次進行で降りて着地する。
-		const tonicDegree = semitoneToDegree(
-			clampSemi(60, MELODY_LOW, MELODY_HIGH),
-		);
-		let degree = tonicDegree + noteCount - 1;
-		for (let i = 0; i < noteCount; i++) {
-			pitches.push(degreeToPitch(degree).semi);
-			degree -= 1;
-		}
-	} else {
-		// 順次進行でつなぐ。強拍だけ構成音へ寄せ、弱拍は隣接音で埋める。
-		let degree = semitoneToDegree(current);
-		let elapsed = 0;
-		for (const value of rhythm) {
-			if (value < 0) {
-				elapsed += -value;
-				continue;
-			}
-			const isStrong = elapsed % HALF === 0;
-			if (isStrong) {
-				degree = semitoneToDegree(
-					nearestChordTone(degreeToPitch(degree).semi, tones, 3).semi,
-				);
-			} else {
-				degree += rnd() < 0.5 ? 1 : -1;
-			}
-			pitches.push(degreeToPitch(degree).semi);
-			elapsed += value;
-		}
-		while (pitches.length < noteCount) pitches.push(degreeToPitch(degree).semi);
+			(role === "sequence"
+				? pick([-2, -1, 1, 2, 3], rnd)
+				: role === "climax"
+					? 7
+					: 0) + repeatShift;
+		for (let i = 0; i < noteCount; i++)
+			out.push(startDegree + shift + motifContour[i % motifContour.length]);
+		return out;
 	}
 
-	// 音域へ畳み込み、クライマックス以外の跳躍を潰す。
-	const allowLeap = role === "climax";
+	if (role === "run") {
+		// 走句。密度を上げる場所なので、形の違いがそのまま曲の表情の違いになる。
+		const dir = rnd() < 0.5 ? 1 : -1;
+		if (style.runShape === "scale") {
+			for (let i = 0; i < noteCount; i++) out.push(startDegree + dir * i);
+		} else if (style.runShape === "turn") {
+			// 上って折り返す（またはその逆）。走句が一直線に飛んでいかない。
+			const peak = Math.ceil(noteCount / 2);
+			for (let i = 0; i < noteCount; i++)
+				out.push(startDegree + dir * (i < peak ? i : peak * 2 - i - 1));
+		} else if (style.runShape === "broken") {
+			// 分散和音の走句。3度・4度の跳躍が並ぶので順次進行の走句と質感が変わる。
+			const arp = tones
+				.map((t) => semitoneToDegree(clampSemi(t.semi, 60, 71)))
+				.sort((a, b) => a - b);
+			for (let i = 0; i < noteCount; i++) {
+				const oct = Math.floor(i / arp.length) * 7;
+				const idx =
+					dir > 0 ? i % arp.length : arp.length - 1 - (i % arp.length);
+				out.push(arp[idx] + dir * oct);
+			}
+		} else {
+			// ジグザグ。2つ進んで1つ戻る。
+			let d = 0;
+			for (let i = 0; i < noteCount; i++) {
+				out.push(startDegree + dir * d);
+				d += i % 3 === 2 ? -1 : 1;
+			}
+		}
+		return out;
+	}
+
+	if (role === "hold") {
+		for (let i = 0; i < noteCount; i++) {
+			if (style.holdShape === "long") out.push(startDegree);
+			// 3度下がって受け止める。ロングトーンでも動きが1つ入る。
+			else if (style.holdShape === "third")
+				out.push(startDegree - (i === 0 ? 0 : 2));
+			// 刺繍音。上隣へ寄って戻る。
+			else out.push(startDegree + (i % 3 === 1 ? 1 : 0));
+		}
+		return out;
+	}
+
+	if (role === "cadence") {
+		// 終止。主音（C）へ着地するのは共通で、そこへ至る形を曲ごとに変える。
+		const tonic = semitoneToDegree(clampSemi(72, MELODY_LOW, MELODY_HIGH));
+		for (let i = 0; i < noteCount; i++) {
+			if (style.cadenceShape === "descend") {
+				out.push(tonic + noteCount - 1 - i);
+			} else if (style.cadenceShape === "five-three-one") {
+				// ソ→ミ→ド。分散和音で降りる古典的な終止。
+				const shape = [4, 2, 0];
+				out.push(tonic + shape[Math.min(i, shape.length - 1)]);
+			} else if (style.cadenceShape === "leap-up") {
+				// 下からソ→ドへ跳ね上がって終わる。
+				out.push(i === noteCount - 1 ? tonic : tonic - 7 + Math.min(i, 4));
+			} else {
+				// 主音のロングトーン。手前に刺繍音を1つだけ置く。
+				out.push(i === 0 && noteCount > 1 ? tonic + 1 : tonic);
+			}
+		}
+		return out;
+	}
+
+	// step: つなぎ。曲の半分近くを占めるので、ここが酔歩だと曲全体が凡庸になる。
+	// 「どう動くか」の形（アーチ／下降／揺れ等）を曲ごとに決めてたどる。
+	const span = pick([2, 3, 4], rnd);
+	const dir =
+		style.stepShape === "descend"
+			? -1
+			: style.stepShape === "ascend"
+				? 1
+				: rnd() < 0.5
+					? 1
+					: -1;
+	for (let i = 0; i < noteCount; i++) {
+		const t = noteCount === 1 ? 0 : i / (noteCount - 1);
+		let d: number;
+		switch (style.stepShape) {
+			case "arch":
+				d = Math.round(Math.sin(t * Math.PI) * span);
+				break;
+			case "valley":
+				d = -Math.round(Math.sin(t * Math.PI) * span);
+				break;
+			case "ascend":
+			case "descend":
+				d = Math.round(t * span) * dir;
+				break;
+			case "wave":
+				d = Math.round(Math.sin(t * Math.PI * 2) * span) * dir;
+				break;
+			default: // pivot: 軸音のまわりを行き来する
+				d = [0, 1, 0, -1, 0, 2][i % 6];
+				break;
+		}
+		out.push(startDegree + d);
+	}
+
+	// 強拍は和音の重要構成音へ着地させる。ここで初めて「和音の上に乗った」音になる。
+	for (let i = 0; i < out.length; i++) {
+		if (!slots[i].isStrong) continue;
+		out[i] = semitoneToDegree(
+			nearestChordTone(degreeToPitch(out[i]).semi, tones, style.barHeadWeight)
+				.semi,
+		);
+	}
+
+	// 弱拍に跳躍を混ぜる。跳躍のないメロディは歌いやすいが印象に残らない。
+	// 直後は {@link shapeBar} の gap fill が反行の順次進行で埋める。
+	for (let i = 1; i < out.length - 1; i++) {
+		if (rnd() >= style.leapAffinity) continue;
+		if (slots[i].isStrong) continue;
+		out[i] = out[i - 1] + pick([-4, -3, -2, 2, 3, 4], rnd);
+	}
+	return out;
+};
+
+/**
+ * 度数の列を、実際に鳴らせる音の列へ整える。
+ *
+ * 1. 音域へ畳み込む
+ * 2. 小節またぎ／小節内の跳躍を上限で抑える
+ * 3. **跳躍の直後は反行の順次進行で埋める**（gap fill）
+ * 4. 強拍・長い音価にアボイドノートが来たら隣のスケール音へ逃がす
+ */
+const shapeBar = (
+	degrees: number[],
+	slots: Slot[],
+	tones: ChordTone[],
+	prevSemi: number,
+	opts: { allowLeap: boolean; allowArpeggio: boolean; quarterSteps: number },
+): number[] => {
 	const out: number[] = [];
 	let prev = prevSemi;
-	for (const raw of pitches) {
-		let semi = clampSemi(raw, MELODY_LOW, MELODY_HIGH);
-		if (
-			!allowLeap &&
-			out.length === 0 &&
-			Math.abs(semi - prev) > MAX_BAR_LEAP_SEMITONES
-		) {
-			// 小節をまたぐ跳躍もクライマックス以外では潰す
+	for (let i = 0; i < degrees.length; i++) {
+		let semi = clampSemi(
+			degreeToPitch(degrees[i]).semi,
+			MELODY_LOW,
+			MELODY_HIGH,
+		);
+		const limit = i === 0 ? MAX_BAR_LEAP_SEMITONES : MAX_LEAP_SEMITONES;
+		if (!opts.allowLeap && Math.abs(semi - prev) > limit) {
 			semi = clampSemi(
-				semi,
-				prev - MAX_BAR_LEAP_SEMITONES,
-				prev + MAX_BAR_LEAP_SEMITONES,
+				walk(prev, Math.sign(semi - prev) * 3),
+				MELODY_LOW,
+				MELODY_HIGH,
 			);
 		}
-		if (out.length > 0) {
-			const gap = semi - prev;
-			if (!allowLeap && Math.abs(gap) > MAX_LEAP_SEMITONES) {
-				semi = prev + Math.sign(gap) * MAX_LEAP_SEMITONES;
-				semi = clampSemi(semi, MELODY_LOW, MELODY_HIGH);
-			}
+		// gap fill: 直前が跳躍なら、この音は反行の順次進行で埋める
+		if (
+			!opts.allowArpeggio &&
+			i >= 2 &&
+			Math.abs(out[i - 1] - out[i - 2]) > STEP_SEMITONES
+		) {
+			const back = -Math.sign(out[i - 1] - out[i - 2]);
+			semi = clampSemi(walk(out[i - 1], back), MELODY_LOW, MELODY_HIGH);
+		}
+		// アボイドノートは強拍・長い音では鳴らさない。逃がす先は上下どちらでもよいが、
+		// **直前と同じ音になる方は選ばない**——ここで同音へ潰すと、せっかく作った
+		// モチーフの輪郭が「同じ音の連打」に化ける（実測で同音反復が16%まで膨らんだ）。
+		if (
+			toneWeight(semi, tones) === 0 &&
+			(slots[i].isStrong || slots[i].value >= opts.quarterSteps)
+		) {
+			const up = clampSemi(walk(semi, 1), MELODY_LOW, MELODY_HIGH);
+			const down = clampSemi(walk(semi, -1), MELODY_LOW, MELODY_HIGH);
+			const score = (s: number) =>
+				toneWeight(s, tones) * 2 + (i > 0 && s === prev ? -3 : 0);
+			semi = score(down) >= score(up) ? down : up;
 		}
 		out.push(semi);
 		prev = semi;
@@ -538,6 +875,9 @@ const draw = (
 	restSteps: number;
 	totalSteps: number;
 	maxLeap: number;
+	leapRatio: number;
+	melodyRange: number;
+	submelodyRange: number;
 } => {
 	const stepsPerBar = options.stepsPerBar;
 	const edo = options.edo === 31 ? 31 : 12;
@@ -545,34 +885,80 @@ const draw = (
 	const scaleStep = (v: number): number =>
 		Math.max(1, Math.round((Math.abs(v) * stepsPerBar) / BASE_STEPS_PER_BAR)) *
 		Math.sign(v);
+	const quarterSteps = scaleStep(QUARTER);
+	const strongStep = Math.max(1, Math.round(stepsPerBar / 2));
 
 	// --- ①コード進行を決める ---
 	const progA = pick(SECTION_A_PROGRESSIONS, rnd);
 	// B部はA部と質感を変えるのが役目なので、同じ進行を引いたら引き直す。
-	// 両方の候補に同じ進行が入っている（ある進行はA部としてもB部としても使える）ため、
-	// 独立に引くと B が A と丸ごと同じになり、コントラストが消えてしまう。
 	const progBPool = SECTION_B_PROGRESSIONS.filter(
 		(p) => p.join("|") !== progA.join("|"),
 	);
 	const progB = pick(progBPool, rnd);
-	// A' は A の終わりだけドミナントへ差し替えて「まだ続く」感じにし、
-	// A'' は主音へ落として終止させる。同じ4小節をただ4回繰り返さないための工夫。
-	const progA2 = [...progA.slice(0, 3), "G7"];
 	const tonic = progA[0].startsWith("Am") ? "Am" : "C";
-	const progA3 = [...progA.slice(0, 2), "G7", tonic];
+	const progA2 = pick(SECTION_A2_DERIVATIONS, rnd)(progA);
+	const progA3 = pick(SECTION_A3_DERIVATIONS, rnd)(progA, tonic);
 	const progression = [...progA, ...progA2, ...progB, ...progA3];
 	const chordProgression = progression.join("|");
 	const chordPattern = pick(CHORD_PATTERNS, rnd);
 
+	// --- 曲の骨格と書法を引く（ここが曲どうしの違いの出どころ） ---
+	const barRoles: BarRole[] = [
+		...pick(SECTION_FORMS.a, rnd),
+		...pick(SECTION_FORMS.a2, rnd),
+		...pick(SECTION_FORMS.b, rnd),
+		...pick(SECTION_FORMS.a3, rnd),
+	];
+	const style: MelodyStyle = {
+		runShape: pick<RunShape>(["scale", "turn", "broken", "zigzag"], rnd),
+		stepShape: pick<StepShape>(
+			["arch", "valley", "ascend", "descend", "wave", "pivot"],
+			rnd,
+		),
+		holdShape: pick<HoldShape>(["long", "third", "neighbor"], rnd),
+		cadenceShape: pick<CadenceShape>(
+			["descend", "five-three-one", "leap-up", "hold-tonic"],
+			rnd,
+		),
+		leapAffinity: 0.12 + rnd() * 0.28,
+		barHeadWeight: rnd() < 0.65 ? 3 : 2,
+		bassStyle: pick<BassStyle>(
+			[
+				"quarter",
+				"alternate",
+				"half",
+				"eighth",
+				"syncopated",
+				"walking",
+				"octave",
+			],
+			rnd,
+		),
+		subStyle: pick<SubStyle>(
+			["pad", "half", "answer", "long-short", "anticipate"],
+			rnd,
+		),
+		subInterval: pick([3, 4, 8, 9], rnd),
+	};
+
 	// --- ②リズム型を先に設計する ---
 	const motifCell = pick(MOTIF_CELLS, rnd);
+	// モチーフの反復にリズムの変奏を1種類だけ用意する（逆行）。合計は変わらないので
+	// 小節をはみ出さない。同じ形が3〜5回そのまま出ると耳が飽きる。
+	const motifRetro: RhythmCell = {
+		value: [...motifCell.value].reverse(),
+		density: motifCell.density,
+	};
+	const useRetro = rnd() < 0.6;
 	const barRhythms: number[][] = [];
 	let prevCell: RhythmCell | null = null;
+	let motifSeen = 0;
 	for (let bar = 0; bar < BARS; bar++) {
-		const role = BAR_ROLES[bar];
+		const role = barRoles[bar];
 		let cell: RhythmCell;
 		if (role === "motif" || role === "sequence" || role === "climax") {
-			cell = motifCell;
+			motifSeen++;
+			cell = useRetro && motifSeen % 3 === 2 ? motifRetro : motifCell;
 		} else {
 			const wanted =
 				role === "run" ? "dense" : role === "hold" ? "sparse" : "medium";
@@ -586,13 +972,13 @@ const draw = (
 	}
 
 	// --- ③その上に音を乗せる ---
-	// モチーフの輪郭（音階の度数差）。順次進行を基本にするため ±1 を厚くする。
+	// モチーフの輪郭は名前の付く形から引き、足りないぶんだけ曲ごとに伸ばす。
 	const motifNoteCount = motifCell.value.filter((v) => v > 0).length;
-	const motifContour: number[] = [0];
-	for (let i = 1; i < motifNoteCount; i++) {
-		const r = rnd();
-		const delta = r < 0.35 ? 1 : r < 0.7 ? -1 : r < 0.85 ? 2 : -2;
-		motifContour.push(motifContour[i - 1] + delta);
+	const archetype = pick(MOTIF_ARCHETYPES, rnd);
+	const motifContour: number[] = [];
+	for (let i = 0; i < motifNoteCount; i++) {
+		if (i < archetype.length) motifContour.push(archetype[i]);
+		else motifContour.push(motifContour[i - 1] + (rnd() < 0.5 ? 1 : -1));
 	}
 
 	const melody: ComposedNote[] = [];
@@ -601,118 +987,245 @@ const draw = (
 	const melodyDurations: number[] = [];
 	let restSteps = 0;
 	let maxLeap = 0;
-	let prevSemi = 72; // C5 から始める
+	let leaps = 0;
+	let intervals = 0;
+	// 開始音を曲ごとに変える。初版はここが 72 固定で、60%の曲が同じ音から始まっていた。
+	let prevSemi = pick([60, 64, 65, 67, 69, 72, 74, 76], rnd);
+
+	/** サブメロの置き方。単音・低密度・長音価という形は崩さずに、置き場所だけ変える。 */
+	const SUB_CELLS: Record<SubStyle, number[]> = {
+		pad: [WHOLE],
+		half: [HALF, HALF],
+		answer: [-HALF, HALF], // 前半休んでメロディに応える
+		"long-short": [DOT_HALF, QUARTER],
+		anticipate: [-QUARTER, DOT_QUARTER, DOT_QUARTER],
+	};
 
 	for (let bar = 0; bar < BARS; bar++) {
-		const role = BAR_ROLES[bar];
+		const role = barRoles[bar];
 		const barStart = bar * stepsPerBar;
 		const tones = chordTones(progression[bar]);
 		if (tones.length === 0) continue;
 		const rhythm = barRhythms[bar];
-		const pitches = fillBarPitches(
-			role,
-			rhythm,
-			tones,
-			motifContour,
+
+		// 音の位置と強拍かどうかを先に出す（リズムが先、音が後、という順番を守る）
+		const slots: Slot[] = [];
+		let scan = 0;
+		for (const value of rhythm) {
+			if (value > 0)
+				slots.push({ isStrong: scan % strongStep === 0, value, at: scan });
+			scan += Math.abs(value);
+		}
+		if (slots.length === 0) continue;
+
+		// 小節頭の着地点。曲ごとの重み下限で、ルート/5度固定になりすぎないようにする。
+		const headSemi = nearestChordTone(
 			prevSemi,
+			tones,
+			style.barHeadWeight,
+		).semi;
+		// モチーフ小節が2つ続くと、和音が同じなら音まで完全に同じ小節が並ぶ。
+		// 2度目は少しずらして「反復」ではなく「一歩進んだ反復」にする。
+		const prevRole = bar > 0 ? barRoles[bar - 1] : null;
+		const repeatShift =
+			role === "motif" &&
+			(prevRole === "motif" || prevRole === "sequence" || prevRole === "climax")
+				? pick([-2, -1, 1, 2], rnd)
+				: 0;
+		const degrees = barDegrees(
+			role,
+			slots,
+			tones,
+			style,
+			motifContour,
+			semitoneToDegree(headSemi),
+			repeatShift,
 			rnd,
 		);
+		const pitches = shapeBar(degrees, slots, tones, prevSemi, {
+			allowLeap: role === "climax",
+			allowArpeggio:
+				role === "climax" ||
+				(role === "run" && style.runShape === "broken") ||
+				(role === "cadence" && style.cadenceShape !== "descend"),
+			quarterSteps,
+		});
 
 		// メロディ
-		let cursor = 0;
-		let noteIndex = 0;
-		for (const value of rhythm) {
-			if (value < 0) {
-				restSteps += -value;
-				cursor += -value;
-				continue;
+		const barHead = pitches[0];
+		for (let i = 0; i < slots.length; i++) {
+			const semi = pitches[i];
+			if (role !== "climax") {
+				const gap = Math.abs(semi - prevSemi);
+				maxLeap = Math.max(maxLeap, gap);
+				intervals++;
+				if (gap > STEP_SEMITONES) leaps++;
 			}
-			const semi = pitches[noteIndex] ?? prevSemi;
-			// 跳躍の検算は小節内の隣接音だけを見る。小節またぎは
-			// MAX_BAR_LEAP_SEMITONES 側で別に抑えてある。
-			if (noteIndex > 0 && role !== "climax") {
-				maxLeap = Math.max(maxLeap, Math.abs(semi - prevSemi));
-			}
-			const { semi: s, fifth } = {
-				semi,
-				fifth: degreeToPitch(semitoneToDegree(semi)).fifth,
-			};
+			const slot = slots[i];
 			melody.push({
-				startStep: barStart + cursor,
-				pitchUnits: spelledToUnits(s, fifth, edo),
-				durationSteps: value,
-				// 小節頭は少し強く、16分の走句は少し弱く弾く（打ち込みの定石）。
-				velocity: cursor === 0 ? 112 : value <= scaleStep(SIXTEENTH) ? 88 : 100,
-			});
-			melodyDurations.push(value);
-			prevSemi = semi;
-			cursor += value;
-			noteIndex++;
-		}
-
-		// サブメロ: 和音の色を出す3度・7度を、1小節に1〜2音だけ長く置く。
-		// **単音で・音数が少なく・音価が長い**という形を守るのは、おまかせマスタリングの
-		// 役割推定が（同時発音数と音価と密度で）サブメロを判定するため。
-		// 和音になったり音数が増えたりすると「伴奏」と誤判定され、楽器が変わってしまう。
-		const subCount = role === "hold" || role === "cadence" ? 1 : 2;
-		const subLen = Math.floor(stepsPerBar / subCount);
-		for (let i = 0; i < subCount; i++) {
-			const target = clampSemi(prevSemi - 9, SUBMELODY_LOW, SUBMELODY_HIGH);
-			const tone = nearestChordTone(target, tones, 2);
-			submelody.push({
-				startStep: barStart + i * subLen,
-				pitchUnits: spelledToUnits(
-					clampSemi(tone.semi, SUBMELODY_LOW, SUBMELODY_HIGH),
-					tone.fifth,
-					edo,
-				),
-				durationSteps: subLen,
-				velocity: 88,
-			});
-		}
-
-		// ベース: ルート主体。小節ごとにリズムを変えて土台が単調にならないようにする。
-		const rootTone = tones[0];
-		const fifthTone = tones.find((t) => t.weight === 3 && t !== rootTone);
-		const rootSemi = clampSemi(rootTone.semi, BASS_LOW, BASS_HIGH);
-		const fifthSemi = fifthTone
-			? clampSemi(fifthTone.semi, BASS_LOW, BASS_HIGH)
-			: rootSemi;
-		const bassPattern =
-			role === "hold" || role === "cadence"
-				? [[rootSemi, WHOLE] as const]
-				: role === "run"
-					? ([
-							[rootSemi, EIGHTH],
-							[rootSemi, EIGHTH],
-							[fifthSemi, QUARTER],
-							[rootSemi, QUARTER],
-							[fifthSemi, QUARTER],
-						] as const)
-					: ([
-							[rootSemi, QUARTER],
-							[rootSemi, QUARTER],
-							[fifthSemi, QUARTER],
-							[rootSemi, QUARTER],
-						] as const);
-		let bassCursor = 0;
-		for (const [semi, value] of bassPattern) {
-			const len = scaleStep(value);
-			bass.push({
-				startStep: barStart + bassCursor,
+				startStep: barStart + slot.at,
 				pitchUnits: spelledToUnits(
 					semi,
-					semi === rootSemi
-						? rootTone.fifth
-						: (fifthTone?.fifth ?? rootTone.fifth),
+					degreeToPitch(semitoneToDegree(semi)).fifth,
 					edo,
 				),
+				durationSteps: slot.value,
+				// 小節頭は少し強く、16分の走句は少し弱く弾く（打ち込みの定石）。
+				velocity:
+					slot.at === 0 ? 112 : slot.value <= scaleStep(SIXTEENTH) ? 88 : 100,
+			});
+			melodyDurations.push(slot.value);
+			prevSemi = semi;
+		}
+		for (const value of rhythm) if (value < 0) restSteps += -value;
+
+		// --- サブメロ（対旋律） ---
+		// **単音で・音数が少なく・音価が長い**という形は崩さない。おまかせマスタリングの
+		// 役割推定が（同時発音数と音価と密度で）サブメロを判定するため、和音になったり
+		// 音数が増えたりすると「伴奏」と誤判定されて楽器が変わってしまう。
+		// その制約の中で、**メロディと反行する輪郭**を持たせて旋律の形にする。
+		const melodyRising = prevSemi >= barHead;
+		const subDir = melodyRising ? -1 : 1; // 反行（contrary motion）
+		const subCell =
+			role === "hold" || role === "cadence"
+				? [WHOLE]
+				: role === "run"
+					? [HALF, HALF]
+					: SUB_CELLS[style.subStyle];
+		let subCursor = 0;
+		let subIndex = 0;
+		let subSemi = clampSemi(
+			barHead - style.subInterval,
+			SUBMELODY_LOW,
+			SUBMELODY_HIGH,
+		);
+		for (const raw of subCell) {
+			const len = scaleStep(raw);
+			if (raw < 0) {
+				subCursor += -len;
+				continue;
+			}
+			// 2音目以降はメロディと反対方向へ1〜2度動かしてから、
+			// 和音の色を出す音（3度・7度）へ寄せる。
+			const wanted =
+				subIndex === 0
+					? subSemi
+					: walk(subSemi, subDir * (rnd() < 0.6 ? 1 : 2));
+			const tone = nearestChordTone(wanted, tones, 2);
+			subSemi = clampSemi(tone.semi, SUBMELODY_LOW, SUBMELODY_HIGH);
+			submelody.push({
+				startStep: barStart + subCursor,
+				pitchUnits: spelledToUnits(subSemi, tone.fifth, edo),
+				durationSteps: len,
+				velocity: subIndex === 0 ? 90 : 84,
+			});
+			subCursor += len;
+			subIndex++;
+		}
+
+		// --- ベース ---
+		// 初版はルート4分打ちの1形だけで、300曲すべて同じ配置になっていた。
+		// 曲ごとに奏法を引き、役割（緩急）でさらに切り替える。
+		const rootTone = tones[0];
+		const fifthTone = tones.find((t) => t.weight === 3 && t !== rootTone);
+		const thirdTone = tones.find((t) => t.weight === 2);
+		const R = clampSemi(rootTone.semi, BASS_LOW, BASS_HIGH);
+		const F = fifthTone ? clampSemi(fifthTone.semi, BASS_LOW, BASS_HIGH) : R;
+		const T = thirdTone ? clampSemi(thirdTone.semi, BASS_LOW, BASS_HIGH) : R;
+		const O = clampSemi(R + 12, BASS_LOW, BASS_HIGH);
+		// ウォーキングの経過音は「次の小節のルートの1つ下のスケール音」。
+		// 半音の経過音にしないのは、31平均律で綴りの決まらない音を出さないため。
+		const nextTones = chordTones(progression[(bar + 1) % BARS]);
+		const A = clampSemi(
+			walk(
+				nextTones[0] ? clampSemi(nextTones[0].semi, BASS_LOW, BASS_HIGH) : R,
+				-1,
+			),
+			BASS_LOW,
+			BASS_HIGH,
+		);
+		const BASS_CELLS: Record<BassStyle, [number, number][]> = {
+			quarter: [
+				[R, QUARTER],
+				[R, QUARTER],
+				[F, QUARTER],
+				[R, QUARTER],
+			],
+			alternate: [
+				[R, QUARTER],
+				[F, QUARTER],
+				[R, QUARTER],
+				[F, QUARTER],
+			],
+			half: [
+				[R, HALF],
+				[F, HALF],
+			],
+			eighth: [
+				[R, EIGHTH],
+				[R, EIGHTH],
+				[R, EIGHTH],
+				[R, EIGHTH],
+				[F, EIGHTH],
+				[F, EIGHTH],
+				[R, QUARTER],
+			],
+			syncopated: [
+				[R, DOT_QUARTER],
+				[R, EIGHTH],
+				[F, QUARTER],
+				[R, QUARTER],
+			],
+			walking: [
+				[R, QUARTER],
+				[T, QUARTER],
+				[F, QUARTER],
+				[A, QUARTER],
+			],
+			octave: [
+				[R, QUARTER],
+				[O, QUARTER],
+				[F, QUARTER],
+				[O, QUARTER],
+			],
+		};
+		const bassCell: [number, number][] =
+			role === "hold" || role === "cadence"
+				? [[R, WHOLE]]
+				: role === "run"
+					? BASS_CELLS[
+							style.bassStyle === "half" || style.bassStyle === "quarter"
+								? "eighth"
+								: style.bassStyle
+						]
+					: BASS_CELLS[style.bassStyle];
+		let bassCursor = 0;
+		for (const [semi, value] of bassCell) {
+			const len = scaleStep(value);
+			const fifth =
+				semi === R || semi === O
+					? rootTone.fifth
+					: semi === F
+						? (fifthTone?.fifth ?? rootTone.fifth)
+						: semi === T
+							? (thirdTone?.fifth ?? rootTone.fifth)
+							: degreeToPitch(semitoneToDegree(semi)).fifth;
+			bass.push({
+				startStep: barStart + bassCursor,
+				pitchUnits: spelledToUnits(semi, fifth, edo),
 				durationSteps: len,
 				velocity: bassCursor === 0 ? 108 : 96,
 			});
 			bassCursor += len;
 		}
 	}
+
+	/** ノート列が使った音域（半音）。 */
+	const range = (notes: ComposedNote[]): number => {
+		if (notes.length === 0) return 0;
+		const us = notes.map((n) => n.pitchUnits);
+		return (Math.max(...us) - Math.min(...us)) / UNITS_PER_SEMITONE;
+	};
 
 	return {
 		chordProgression,
@@ -724,6 +1237,9 @@ const draw = (
 		restSteps,
 		totalSteps: BARS * stepsPerBar,
 		maxLeap,
+		leapRatio: intervals === 0 ? 0 : leaps / intervals,
+		melodyRange: range(melody),
+		submelodyRange: range(submelody),
 	};
 };
 
@@ -747,6 +1263,9 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			entropy,
 			restRatio,
 			maxLeapSemitones: d.maxLeap,
+			leapRatio: d.leapRatio,
+			melodyRange: d.melodyRange,
+			submelodyRange: d.submelodyRange,
 			attempts: attempt,
 		};
 		const result: ComposeResult = {
@@ -762,7 +1281,11 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			valueKinds >= MIN_VALUE_KINDS &&
 			restRatio >= MIN_REST_RATIO &&
 			restRatio <= MAX_REST_RATIO &&
-			d.maxLeap <= MAX_LEAP_SEMITONES;
+			d.maxLeap <= MAX_LEAP_SEMITONES &&
+			d.leapRatio >= MIN_LEAP_RATIO &&
+			d.leapRatio <= MAX_LEAP_RATIO &&
+			d.melodyRange >= MIN_MELODY_RANGE &&
+			d.submelodyRange >= MIN_SUBMELODY_RANGE;
 		if (ok) return result;
 		// 基準を落としたときのための保険。エントロピーが一番高いものを残す。
 		if (entropy > bestScore) {
