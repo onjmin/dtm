@@ -15,6 +15,22 @@ export {
 	composeSong,
 	durationEntropy,
 } from "./compose";
+// 作曲の採点に使う目標帯（人間の曲から実測したもの）
+export { CORPUS_BANDS, CORPUS_SIZE } from "./compose-corpus";
+// 生成物の良さを測る指標（順序に依存する構造の指標・緊張カーブ・曲どうしの距離）
+export {
+	type Band,
+	band,
+	complementarity,
+	featureDistance,
+	featureVector,
+	type MetricNote,
+	type MetricOptions,
+	type StructureFeatures,
+	structureFeatures,
+	type TensionFeatures,
+	tensionFeatures,
+} from "./compose-metrics";
 export { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 export * from "./drum-config";
 // ヘッドレス再生（DOM非依存・BGM向け）＋ 内蔵synthプリミティブ

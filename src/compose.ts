@@ -45,45 +45,155 @@
  * さらに**その瞬間の和音によって、同じ音でも重要度が変わる**。半音上に和音構成音が
  * 来るスケール音は「アボイドノート」として重み0とし、強拍・長い音価では使わない
  * （弱拍の経過音としてだけ通す）。{@link toneWeight} 参照。
+ *
+ * ## 「基準を満たす」から「候補から選ぶ」へ
+ *
+ * ここまでの設計でも、**受け入れ基準そのものが曲の構造を測っていなかった**。
+ * 16小節の順番をシャッフルして曲を破壊しても、7項目のうち5つは値が1つも動かない。
+ * 順序を見ていたのは隣接2音までの2項目だけで、モチーフの配置も盛り上がりの位置も
+ * フレーズの呼応も評価対象外だった。しきい値をいくら引き直しても改善しようがない。
+ *
+ * そこで次の3点を変えてある。
+ *
+ * - **順序に依存する指標を作った**（{@link file://./compose-metrics.ts}）。
+ *   小節どうしの自己相似プロファイル、フレーズの息継ぎ、クライマックスの単峰性、
+ *   緊張カーブ、メロディとサブメロのコール&レスポンス。採点の重みは
+ *   {@link WEIGHTS} のとおり構造側へ半分以上を配分している。
+ * - **合否ではなく点数にした**。ハード制約（{@link HARD}）に触れたものだけを捨て、
+ *   残りは {@link DRAW_COUNT} 本の候補から**点数最大のものを選ぶ**。初版は
+ *   「しきい値を全部満たした最初の1本」を返していたので、構造が良くても休符率が
+ *   0.09なら捨てるし、しきい値さえ満たせば1本目で確定していた。
+ * - **しきい値を人間の曲から採った**（{@link CORPUS_BANDS}）。手で決めた定数をやめ、
+ *   実際のMIDIから同じ指標を抽出した分布の中央50%を満点にしている。
+ *   較正は `scripts/calibrate-corpus.ts`。
+ *
+ * さらに、指標に最適化した結果として全曲が同じ統計値へ寄るのを防ぐため、直近に作った
+ * 曲との距離を加点している（{@link ComposeOptions.recent}）。
+ *
+ * ## サブメロの制約が外れたこと
+ *
+ * サブメロは長らく「単音・低密度・長音価」の形しか書けなかった。おまかせマスタリングの
+ * 役割推定がその3点でサブメロを判定していたため、外すと伴奏と誤判定されて楽器が
+ * 変わってしまうからで、**ツールの都合が音楽を縛っていた**。`daw.ts` が simple モードで
+ * トラックIDをそのまま役割として使うようになった（推定はMIDI取り込みと advanced モード
+ * 専用に退いた）ので、この制約は無くなった。合いの手・ハモリ・対旋律・保続音を
+ * {@link SubStyle} として持たせてある。
  */
 
 import { parseChord } from "@onjmin/chord-parser";
 import { type ChordPatternType, spelledToUnits } from "./chords";
+import { CORPUS_BANDS, CORPUS_SIZE } from "./compose-corpus";
+import {
+	type Band,
+	band,
+	featureDistance,
+	featureVector,
+	type MetricNote,
+	type StructureFeatures,
+	structureFeatures,
+	type TensionFeatures,
+	tensionFeatures,
+} from "./compose-metrics";
 import { UNITS_PER_SEMITONE, type Units } from "./tuning";
 
 // ============================================================
-// 品質基準（{@link ComposeStats} の受け入れ条件）
+// 受け入れ基準
+//
+// 初版は「7項目すべてがしきい値内なら採用、1つでも外れたら破棄」という真偽値だった。
+// これには2つの欠陥があった。
+//
+// 1. **構造を測っていない。** 7項目のうち5つ（音価の種類数・エントロピー・休符率・
+//    メロディ音域・サブメロ音域）は順序非依存で、16小節の順番をシャッフルして曲を
+//    破壊しても値が1つも動かない。残る2つ（最大跳躍・跳躍率）も隣接2音までしか見ない。
+//    → {@link file://./compose-metrics.ts} に順序依存の指標を作り、ここで使う。
+// 2. **落とすことしかできない。** 構造が良くても休符率が0.09なら破棄されていた。
+//    → しきい値の合否を「ハード制約（常に間違いなもの）」だけに絞り、残りは
+//      台形の当てはめ（{@link band}）で連続的な点数にして**加重和の最大値を選ぶ**。
+//
+// しきい値そのものも手で決めた定数をやめ、人間が書いた曲から実測した分布
+// （{@link CORPUS_BANDS}）を目標帯にしている。
 // ============================================================
 
-/** メロディの音価のシャノンエントロピー下限（bit）。これを下回ると単調と判定する。 */
-const MIN_ENTROPY_BITS = 1.1;
-/** メロディの音価の種類数の下限。 */
-const MIN_VALUE_KINDS = 4;
-/** 休符が占めるステップ比率の下限・上限。 */
-const MIN_REST_RATIO = 0.03;
-const MAX_REST_RATIO = 0.08;
 /** 順次進行とみなす音程の上限（半音）。これを超えるものを「跳躍」と数える。 */
 const STEP_SEMITONES = 2;
 /**
- * 許す跳躍の上限（半音）。長6度まで。初版はここが5（完全4度）で、しかも跳躍を
- * ほとんど作らない書き方だったため、全曲が音階の上をうろつくだけになっていた。
- * クライマックスのオクターブ跳躍だけはこの制限を受けない。
+ * 許す跳躍の上限（半音）。クライマックスのオクターブ跳躍だけはこの制限を受けない。
+ *
+ * 初版はここが5（完全4度）で、しかも跳躍をほとんど作らない書き方だったため、
+ * 全曲が音階の上をうろつくだけになっていた。次に9（長6度）へ広げたが、人間の曲
+ * 180本を測ると**最大跳躍の p05 が9・p25〜p75 が12〜17半音**で、9で頭打ちにすると
+ * 目標帯の下限にすら届かない（採点0）ことが分かったので12（オクターブ）にした。
  */
-const MAX_LEAP_SEMITONES = 9;
+const MAX_LEAP_SEMITONES = 12;
 /** 小節をまたぐときに許す跳躍（半音）。 */
-const MAX_BAR_LEAP_SEMITONES = 9;
+const MAX_BAR_LEAP_SEMITONES = 12;
+
 /**
- * 跳躍が隣接音程に占める比率。低すぎると「のっぺり」、高すぎると「歌えない」。
- * 実測で77%が2半音以内だった初版は、この下限にまるで届いていなかった。
+ * ハード制約。**満たさない曲は「音楽として壊れている」ので点数を付ける前に捨てる。**
+ * ここを厚くすると初版の「落とすだけ」に戻るので、本当に常に間違いなものだけを置く。
  */
-const MIN_LEAP_RATIO = 0.08;
-const MAX_LEAP_RATIO = 0.32;
-/** メロディが使う音域（半音）の下限。1オクターブは動かす。 */
-const MIN_MELODY_RANGE = 12;
-/** サブメロが使う音域（半音）の下限。0 だと「同じ音を置いただけ」になる。 */
-const MIN_SUBMELODY_RANGE = 5;
-/** 基準を満たす draw が出るまでの再試行回数。 */
-const MAX_ATTEMPTS = 80;
+const HARD = {
+	/** メロディが1音も無い、音域が半音未満（同じ音を並べただけ）。 */
+	minMelodyRange: 3,
+	/** サブメロが動いていない。 */
+	minSubmelodyRange: 2,
+	/** クライマックスを除く跳躍がこれを超える＝歌えない。 */
+	maxLeapSemitones: 14,
+	/** 曲の8割以上が休符＝曲になっていない。 */
+	maxRestRatio: 0.8,
+} as const;
+
+/**
+ * 採点の重み。**構造（順序依存）の指標に半分以上を配分する**のが初版との一番の違い。
+ * 分布の指標（エントロピー・休符率・跳躍率・音域）は「壊れていないこと」の確認であって、
+ * そこをいくら最適化しても曲は良くならない、というのが実測から得た結論。
+ */
+const WEIGHTS = {
+	// --- 分布（順序非依存）。壊れ検知としてだけ効かせる ---
+	entropy: 0.6,
+	valueKinds: 0.4,
+	restRatio: 0.6,
+	leapRatio: 0.6,
+	maxLeap: 0.4,
+	melodyRange: 0.6,
+	// --- 構造（順序依存）。ここが本体 ---
+	/** 隣り合う小節は違う形をしているか（高すぎると「同じ小節の連打」）。 */
+	sim1: 0.8,
+	sim2: 0.8,
+	/** 4小節・8小節で形が戻ってくるか。フレーズ感の本体。 */
+	sim4: 1.4,
+	sim8: 1.4,
+	phraseBreath: 1.0,
+	climaxPosition: 1.0,
+	climaxPeaks: 1.0,
+	/** メロディとサブメロが呼応しているか。 */
+	complementarity: 1.0,
+	// --- 和声（コードが要るのでコーパスからは較正できない） ---
+	/** B部でテンションが上がるか。 */
+	tensionRise: 1.0,
+	/** 終止で解決するか。 */
+	tensionResolve: 0.8,
+	// --- 直近に作った曲と違うか ---
+	novelty: 1.2,
+} as const;
+
+/**
+ * コーパスから較正できない指標の目標帯（手で決めたもの）。
+ *
+ * - `complementarity` … コーパス側で「対旋律」に当たるチャンネルを機械的に選ぶ精度が
+ *   低く、p25 が 0 に張り付く。これを目標にすると「サブメロは常にメロディと重なって
+ *   いろ」という誤った基準になる。合いの手と対旋律が半分、ハモリが重なる、という配分を
+ *   想定して 0.25〜0.7 を満点にしてある。
+ * - `climaxPeaks` … コーパスの曲は長い（数十小節）ぶん頂点が増え、p25〜p75 が 4〜13 に
+ *   なる。16小節の曲にそのまま当てると緩すぎるので「山は1〜2回」を満点にする。
+ */
+const HAND_BANDS = {
+	complementarity: [0.05, 0.25, 0.7, 0.95] as Band,
+	climaxPeaks: [0, 1, 2, 5] as Band,
+} as const;
+
+/** 1曲作るのに引く候補数。この中から一番点数の高いものを返す。 */
+const DRAW_COUNT = 40;
 
 // ============================================================
 // 音価（1小節 = stepsPerBar。既定192ステップ ＝ 4分音符48ステップ）
@@ -304,7 +414,24 @@ const RHYTHM_CELLS: RhythmCell[] = [
 	{ value: [QUARTER, DOT_HALF], density: "sparse" },
 	{ value: [-QUARTER, DOT_HALF], density: "sparse" },
 	{ value: [HALF, -QUARTER, QUARTER], density: "sparse" },
+	// --- 緩・息継ぎ型: 小節の末尾を休符で空ける ---
+	// 人間の曲を測ると、主旋律の休符はステップ比で15〜43%（p25〜p75）あった。
+	// 初版のセルでは全曲が3〜8%にしかならず、目標帯にまるで届かない。
+	// 末尾を空ける形は、フレーズの切れ目の息継ぎ（{@link StructureFeatures.phraseBreath}）
+	// にもそのまま効く。
+	{ value: [DOT_QUARTER, EIGHTH, -HALF], density: "sparse" },
+	{ value: [QUARTER, QUARTER, -HALF], density: "sparse" },
+	{ value: [HALF, -HALF], density: "sparse" },
+	{ value: [-QUARTER, HALF, -QUARTER], density: "sparse" },
+	// 3拍休む形。人間の主旋律は曲によっては小節のほとんどを休むので、ここまで
+	// 空ける形が無いと休符率が10%あたりで頭打ちになる。**1音は必ず残す**——
+	// 完全な空小節にすると、この小節のサブメロとベースまで書かれなくなる。
+	{ value: [-DOT_HALF, QUARTER], density: "sparse" },
+	{ value: [QUARTER, -DOT_HALF], density: "sparse" },
+	{ value: [-HALF, QUARTER, -QUARTER], density: "sparse" },
 	// --- 中: 4分・8分が主体 ---
+	{ value: [QUARTER, EIGHTH, EIGHTH, QUARTER, -QUARTER], density: "medium" },
+	{ value: [EIGHTH, EIGHTH, QUARTER, QUARTER, -QUARTER], density: "medium" },
 	{ value: [QUARTER, QUARTER, HALF], density: "medium" },
 	{ value: [HALF, QUARTER, QUARTER], density: "medium" },
 	{ value: [DOT_QUARTER, EIGHTH, HALF], density: "medium" },
@@ -491,8 +618,32 @@ type BassStyle =
 	| "syncopated"
 	| "walking"
 	| "octave";
-/** サブメロの置き方。初版は「小節を等分して1〜2音」の1種類しか無かった。 */
-type SubStyle = "pad" | "half" | "answer" | "long-short" | "anticipate";
+/**
+ * サブメロの書法。
+ *
+ * 初版はここが「小節を等分して長い音を1〜2個置く」の変種しか無かった。理由は
+ * おまかせマスタリングの役割推定（`daw.ts` の `classifyTrackRole`）が
+ * **単音・低密度・長音価**の3点でサブメロを判定していたためで、その形を外すと
+ * 「伴奏」と誤判定されて楽器が変わってしまうからだった。
+ *
+ * その制約は無くなった——`daw.ts` は simple モードでは**トラックIDが役割そのもの**
+ * なので推定を通さない（推定は advanced モードとMIDI取り込みのためだけに残っている）。
+ * 対旋律として意味のある形を書けるようになったので、書法を増やしてある。
+ *
+ * - `pad` … 全音符1つ。和音の色を支える。
+ * - `long-short` … 付点2分＋4分。
+ * - `answer` … **合いの手**。メロディが休んでいる隙間にだけ入る。
+ * - `harmony` … **ハモリ**。メロディのリズムをなぞって3度／6度下を歌う。
+ * - `counter` … **対旋律**。8分でメロディと反行する。
+ * - `pedal` … **保続音**。小節を通して同じ音を伸ばす。
+ */
+type SubStyle =
+	| "pad"
+	| "long-short"
+	| "answer"
+	| "harmony"
+	| "counter"
+	| "pedal";
 
 /**
  * モチーフの原型（音階の度数差の列）。初版はここが「±1／±2 の乱数の累積」だったため、
@@ -543,8 +694,23 @@ export type ComposeStats = {
 	melodyRange: number;
 	/** サブメロが使った音域（半音）。小さいと旋律になっていない。 */
 	submelodyRange: number;
-	/** 実際に採用されるまでに引き直した回数。 */
+	/** 順序に依存する構造の指標。{@link file://./compose-metrics.ts} 参照。 */
+	structure: StructureFeatures;
+	/** 緊張カーブの指標（B部で上がるか・終止で解けるか）。 */
+	tension: TensionFeatures;
+	/** 採点の総合点（0〜1）。{@link WEIGHTS} の加重和を重みの合計で割ったもの。 */
+	score: number;
+	/** 項目ごとの得点（0〜1）。どこで点を落としたかを調べるために持つ。 */
+	scoreBreakdown: Record<string, number>;
+	/** 引いた候補の数。 */
 	attempts: number;
+	/** ハード制約で捨てられた候補の数。 */
+	rejected: number;
+	/**
+	 * この曲の特徴ベクトル。次に作曲するとき {@link ComposeOptions.recent} へ
+	 * 渡すと、「前と似た曲」が出にくくなる。
+	 */
+	fingerprint: number[];
 };
 
 export type ComposeOptions = {
@@ -554,6 +720,17 @@ export type ComposeOptions = {
 	edo?: number;
 	/** 乱数源。テストから決定的な値を注入するために差し替えられる。 */
 	random?: () => number;
+	/**
+	 * 直近に作った曲の特徴ベクトル（{@link ComposeStats.fingerprint}）。
+	 *
+	 * 指標に最適化すると、**基準を満たすことに最適化された結果として全曲が同じ
+	 * 統計値へ寄る**。実際、初版は品質基準こそ満たしていたのに「同じ設計図の上で
+	 * 音名だけが違う曲」を量産していた。ここへ直近の曲を渡すと、それらから離れている
+	 * 候補に加点する（{@link WEIGHTS.novelty}）。
+	 */
+	recent?: number[][];
+	/** 引く候補の数。既定 {@link DRAW_COUNT}。 */
+	drawCount?: number;
 };
 
 export type ComposeResult = {
@@ -595,9 +772,20 @@ const nearestChordTone = (
 	targetSemi: number,
 	tones: ChordTone[],
 	minWeight: number,
+	/**
+	 * 和音の色を出す音（3度・7度＝重み2）があるなら、そちらを優先する。
+	 *
+	 * `minWeight` を2へ下げるだけでは、ルート・5度も候補に残るので「最も近い音」は
+	 * たいてい結局ルートか5度になり、和音がいくら動いても緊張が上がらなかった
+	 * （B部の {@link TensionFeatures.rise} が実測で半数の曲において 0）。
+	 * 「許す」ではなく「選ぶ」に変えるためのフラグ。
+	 */
+	preferColor = false,
 ): ScaleDegree => {
 	const candidates = tones.filter((t) => t.weight >= minWeight);
-	const pool = candidates.length > 0 ? candidates : tones;
+	const colored = preferColor ? tones.filter((t) => t.weight === 2) : [];
+	const pool =
+		colored.length > 0 ? colored : candidates.length > 0 ? candidates : tones;
 	let best: ScaleDegree = pool[0];
 	let bestDist = Number.POSITIVE_INFINITY;
 	for (const tone of pool) {
@@ -668,6 +856,10 @@ const barDegrees = (
 	startDegree: number,
 	/** 直前の小節もモチーフだったときにずらす度数。同じ小節が2つ並ぶのを避ける。 */
 	repeatShift: number,
+	/** この小節で強拍に着地させる構成音の重み下限。B部だけ緩める。 */
+	barHeadWeight: 2 | 3,
+	/** 強拍で和音の色を出す音（3度・7度）を優先するか。B部だけ true。 */
+	preferColor: boolean,
 	rnd: () => number,
 ): number[] => {
 	const noteCount = slots.length;
@@ -792,8 +984,12 @@ const barDegrees = (
 	for (let i = 0; i < out.length; i++) {
 		if (!slots[i].isStrong) continue;
 		out[i] = semitoneToDegree(
-			nearestChordTone(degreeToPitch(out[i]).semi, tones, style.barHeadWeight)
-				.semi,
+			nearestChordTone(
+				degreeToPitch(out[i]).semi,
+				tones,
+				barHeadWeight,
+				preferColor,
+			).semi,
 		);
 	}
 
@@ -866,11 +1062,8 @@ const shapeBar = (
 	return out;
 };
 
-/** 1回分の draw。基準を満たすかは呼び出し側が {@link ComposeStats} で判定する。 */
-const draw = (
-	options: ComposeOptions,
-	rnd: () => number,
-): Omit<ComposeResult, "stats"> & {
+/** 1回分の draw。点数を付けるのは呼び出し側（{@link evaluate}）の仕事。 */
+type Draw = Omit<ComposeResult, "stats"> & {
 	melodyDurations: number[];
 	restSteps: number;
 	totalSteps: number;
@@ -878,7 +1071,12 @@ const draw = (
 	leapRatio: number;
 	melodyRange: number;
 	submelodyRange: number;
-} => {
+	/** 小節ごとの緊張度（0〜1）。{@link tensionFeatures} の材料。 */
+	barTension: number[];
+	stepsPerBar: number;
+};
+
+const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	const stepsPerBar = options.stepsPerBar;
 	const edo = options.edo === 31 ? 31 : 12;
 	// 音価は192ステップ基準で書いてあるので、実際の stepsPerBar へ比率で写す。
@@ -920,7 +1118,8 @@ const draw = (
 			["descend", "five-three-one", "leap-up", "hold-tonic"],
 			rnd,
 		),
-		leapAffinity: 0.12 + rnd() * 0.28,
+		// 人間の曲の跳躍率は p25〜p75 で 0.40〜0.55。上限が低いとその帯へ届かない。
+		leapAffinity: 0.15 + rnd() * 0.4,
 		barHeadWeight: rnd() < 0.65 ? 3 : 2,
 		bassStyle: pick<BassStyle>(
 			[
@@ -935,7 +1134,7 @@ const draw = (
 			rnd,
 		),
 		subStyle: pick<SubStyle>(
-			["pad", "half", "answer", "long-short", "anticipate"],
+			["pad", "long-short", "answer", "harmony", "counter", "pedal"],
 			rnd,
 		),
 		subInterval: pick([3, 4, 8, 9], rnd),
@@ -965,7 +1164,16 @@ const draw = (
 			const pool = RHYTHM_CELLS.filter((c) => c.density === wanted);
 			// 隣り合う小節で同じリズム型を続けない（単調さの最大の原因）。
 			const fresh = pool.filter((c) => c !== prevCell);
-			cell = pick(fresh.length > 0 ? fresh : pool, rnd);
+			const usable = fresh.length > 0 ? fresh : pool;
+			// **4小節フレーズの最後の小節では、休符を含む形を優先する。**
+			// 人間の曲の主旋律は休符がステップ比で15〜43%（p25〜p75）あるのに、
+			// 初版は全曲が3〜8%にしかならなかった。息継ぎはフレーズの切れ目に置くのが
+			// 自然なので、休符を増やす場所をここに寄せる。
+			const breathing = usable.filter((c) => c.value.some((v) => v < 0));
+			cell =
+				bar % 4 === 3 && breathing.length > 0
+					? pick(breathing, rnd)
+					: pick(usable, rnd);
 		}
 		prevCell = cell;
 		barRhythms.push(cell.value.map(scaleStep));
@@ -985,6 +1193,8 @@ const draw = (
 	const submelody: ComposedNote[] = [];
 	const bass: ComposedNote[] = [];
 	const melodyDurations: number[] = [];
+	/** 小節ごとの緊張度（0〜1）。和音が無い小節は0のまま。 */
+	const barTension: number[] = new Array(BARS).fill(0);
 	let restSteps = 0;
 	let maxLeap = 0;
 	let leaps = 0;
@@ -992,13 +1202,20 @@ const draw = (
 	// 開始音を曲ごとに変える。初版はここが 72 固定で、60%の曲が同じ音から始まっていた。
 	let prevSemi = pick([60, 64, 65, 67, 69, 72, 74, 76], rnd);
 
-	/** サブメロの置き方。単音・低密度・長音価という形は崩さずに、置き場所だけ変える。 */
-	const SUB_CELLS: Record<SubStyle, number[]> = {
-		pad: [WHOLE],
-		half: [HALF, HALF],
-		answer: [-HALF, HALF], // 前半休んでメロディに応える
-		"long-short": [DOT_HALF, QUARTER],
-		anticipate: [-QUARTER, DOT_QUARTER, DOT_QUARTER],
+	/**
+	 * 小節内でメロディが鳴っていない区間を返す。合いの手（`answer`）を
+	 * **メロディの隙間にだけ**置くのに使う。ここが取れるのは、リズムを音より先に
+	 * 決めてあるおかげで `slots` に発音位置と長さが揃っているから。
+	 */
+	const melodyGaps = (slots: Slot[]): [number, number][] => {
+		const gaps: [number, number][] = [];
+		let cursor = 0;
+		for (const s of slots) {
+			if (s.at > cursor) gaps.push([cursor, s.at - cursor]);
+			cursor = s.at + s.value;
+		}
+		if (cursor < stepsPerBar) gaps.push([cursor, stepsPerBar - cursor]);
+		return gaps;
 	};
 
 	for (let bar = 0; bar < BARS; bar++) {
@@ -1019,10 +1236,16 @@ const draw = (
 		if (slots.length === 0) continue;
 
 		// 小節頭の着地点。曲ごとの重み下限で、ルート/5度固定になりすぎないようにする。
+		// **B部（9〜12小節）だけは3度・7度への着地を許す。** ルート・5度へ落とし続けると
+		// 和音がいくら動いても緊張が上がらず、「サビで景色が変わる」効果が出ない
+		// （実測で {@link TensionFeatures.rise} が 0.1 前後に張り付いていた）。
+		const isSectionB = bar >= 8 && bar < 12;
+		const headWeight: 2 | 3 = isSectionB ? 2 : style.barHeadWeight;
 		const headSemi = nearestChordTone(
 			prevSemi,
 			tones,
-			style.barHeadWeight,
+			headWeight,
+			isSectionB,
 		).semi;
 		// モチーフ小節が2つ続くと、和音が同じなら音まで完全に同じ小節が並ぶ。
 		// 2度目は少しずらして「反復」ではなく「一歩進んだ反復」にする。
@@ -1040,6 +1263,8 @@ const draw = (
 			motifContour,
 			semitoneToDegree(headSemi),
 			repeatShift,
+			headWeight,
+			isSectionB,
 			rnd,
 		);
 		const pitches = shapeBar(degrees, slots, tones, prevSemi, {
@@ -1053,8 +1278,16 @@ const draw = (
 
 		// メロディ
 		const barHead = pitches[0];
+		// この小節の緊張度。`toneWeight` は「その瞬間の和音におけるこの音の重要度」
+		// （3=ルート/5度 … 0=アボイドノート）なので、3から引くと不協和度になる。
+		// **初版はこの値を1音ごとに使い捨てていた**——時系列に積むと曲の緊張カーブが
+		// 出るのに、それを測っていなかった。{@link tensionFeatures} で使う。
+		let tensionSum = 0;
+		let tensionSteps = 0;
 		for (let i = 0; i < slots.length; i++) {
 			const semi = pitches[i];
+			tensionSum += ((3 - toneWeight(semi, tones)) / 3) * slots[i].value;
+			tensionSteps += slots[i].value;
 			if (role !== "climax") {
 				const gap = Math.abs(semi - prevSemi);
 				maxLeap = Math.max(maxLeap, gap);
@@ -1077,50 +1310,106 @@ const draw = (
 			melodyDurations.push(slot.value);
 			prevSemi = semi;
 		}
+		barTension[bar] = tensionSteps === 0 ? 0 : tensionSum / tensionSteps;
 		for (const value of rhythm) if (value < 0) restSteps += -value;
 
 		// --- サブメロ（対旋律） ---
-		// **単音で・音数が少なく・音価が長い**という形は崩さない。おまかせマスタリングの
-		// 役割推定が（同時発音数と音価と密度で）サブメロを判定するため、和音になったり
-		// 音数が増えたりすると「伴奏」と誤判定されて楽器が変わってしまう。
-		// その制約の中で、**メロディと反行する輪郭**を持たせて旋律の形にする。
+		// 役割推定の都合で「単音・低密度・長音価」に縛られていた制約は外れた
+		// （`daw.ts` が simple モードでトラックIDを役割として使うようになったため）。
+		// 単音であることだけは守る——ピアノロールの1トラックは単旋律を前提にしていて、
+		// 和音にすると重なり判定やレガート処理が壊れる。
 		const melodyRising = prevSemi >= barHead;
 		const subDir = melodyRising ? -1 : 1; // 反行（contrary motion）
-		const subCell =
-			role === "hold" || role === "cadence"
-				? [WHOLE]
-				: role === "run"
-					? [HALF, HALF]
-					: SUB_CELLS[style.subStyle];
-		let subCursor = 0;
-		let subIndex = 0;
+		// 役割ごとに書法を差し替える。終止は和音を支える、緩む小節は保続音、
+		// それ以外は曲ごとに引いた書法をそのまま使う。
+		// メロディが休んでいる区間が8分2つぶん以上あるなら、曲の書法によらず
+		// **その小節だけ合いの手にする**。書法を曲単位で1つに固定していたころは、
+		// 6分の1の曲しか合いの手を持たず、サブメロがほぼ常にメロディと重なっていた
+		// （実測で {@link StructureFeatures.complementarity} が 0.11）。
+		// ハモリはメロディと重なるのが正しい書法なので、そこだけは差し替えない。
+		const gapSteps = melodyGaps(slots).reduce((sum, [, len]) => sum + len, 0);
+		const subStyle: SubStyle =
+			role === "cadence"
+				? "pad"
+				: role === "hold"
+					? "pedal"
+					: gapSteps >= scaleStep(EIGHTH) * 2 && style.subStyle !== "harmony"
+						? "answer"
+						: style.subStyle;
+		/** サブメロの1音を、和音の色が出る音（3度・7度）へ寄せて置く。 */
+		const pushSub = (at: number, len: number, wantedSemi: number): number => {
+			if (len <= 0 || at + len > stepsPerBar) return wantedSemi;
+			const tone = nearestChordTone(wantedSemi, tones, 2);
+			const semi = clampSemi(tone.semi, SUBMELODY_LOW, SUBMELODY_HIGH);
+			submelody.push({
+				startStep: barStart + at,
+				pitchUnits: spelledToUnits(semi, tone.fifth, edo),
+				durationSteps: len,
+				velocity: at === 0 ? 90 : 84,
+			});
+			return semi;
+		};
 		let subSemi = clampSemi(
 			barHead - style.subInterval,
 			SUBMELODY_LOW,
 			SUBMELODY_HIGH,
 		);
-		for (const raw of subCell) {
-			const len = scaleStep(raw);
-			if (raw < 0) {
-				subCursor += -len;
-				continue;
+
+		if (subStyle === "answer") {
+			// 合いの手。メロディが休んでいる区間にだけ8分で入る。8分に満たない
+			// 隙間は無視する（細かすぎる音は合いの手ではなく雑音になる）。
+			const eighth = scaleStep(EIGHTH);
+			let placed = 0;
+			for (const [at, len] of melodyGaps(slots)) {
+				if (len < eighth) continue;
+				const count = Math.min(4, Math.floor(len / eighth));
+				for (let i = 0; i < count; i++) {
+					subSemi = pushSub(
+						at + i * eighth,
+						eighth,
+						i === 0 ? subSemi : walk(subSemi, subDir),
+					);
+					placed++;
+				}
 			}
-			// 2音目以降はメロディと反対方向へ1〜2度動かしてから、
-			// 和音の色を出す音（3度・7度）へ寄せる。
-			const wanted =
-				subIndex === 0
-					? subSemi
-					: walk(subSemi, subDir * (rnd() < 0.6 ? 1 : 2));
-			const tone = nearestChordTone(wanted, tones, 2);
-			subSemi = clampSemi(tone.semi, SUBMELODY_LOW, SUBMELODY_HIGH);
-			submelody.push({
-				startStep: barStart + subCursor,
-				pitchUnits: spelledToUnits(subSemi, tone.fifth, edo),
-				durationSteps: len,
-				velocity: subIndex === 0 ? 90 : 84,
-			});
-			subCursor += len;
-			subIndex++;
+			// 隙間が無い小節では合いの手が1音も置けない。空のままだとサブメロが
+			// 途切れるので、メロディの下でロングトーンに切り替える。
+			if (placed === 0) subSemi = pushSub(0, stepsPerBar, subSemi);
+		} else if (subStyle === "harmony") {
+			// ハモリ。メロディのリズムをそのままなぞり、3度／6度下を歌う。
+			// **メロディと重なるのが正しい**書法なので、コール&レスポンスの指標
+			// （complementarity）は下がる。そのための重みづけにしてある。
+			for (let i = 0; i < slots.length; i++)
+				subSemi = pushSub(
+					slots[i].at,
+					slots[i].value,
+					pitches[i] - style.subInterval,
+				);
+		} else if (subStyle === "counter") {
+			// 対旋律。8分でメロディと反行する。**小節頭は空ける**——メロディの
+			// 打ち出しに重ねると対旋律ではなく厚みになる。1拍遅れて入るのが定石。
+			const eighth = scaleStep(EIGHTH);
+			const from = scaleStep(QUARTER);
+			const count = Math.max(1, Math.floor((stepsPerBar - from) / eighth));
+			for (let i = 0; i < count; i++)
+				subSemi = pushSub(
+					from + i * eighth,
+					eighth,
+					i === 0 ? subSemi : walk(subSemi, subDir * (i % 2 === 0 ? 1 : -1)),
+				);
+		} else if (subStyle === "pedal") {
+			// 保続音。小節を通して1音を伸ばす。
+			pushSub(0, stepsPerBar, subSemi);
+		} else if (subStyle === "long-short") {
+			subSemi = pushSub(0, scaleStep(DOT_HALF), subSemi);
+			pushSub(scaleStep(DOT_HALF), scaleStep(QUARTER), walk(subSemi, subDir));
+		} else if (role === "cadence") {
+			// 終止だけは和音を支えたいので小節を通して伸ばす。
+			pushSub(0, stepsPerBar, subSemi);
+		} else {
+			// pad。1拍空けてから3拍伸ばす。ここも小節頭を空けて、メロディの
+			// 打ち出しとぶつからないようにする。
+			pushSub(scaleStep(QUARTER), scaleStep(DOT_HALF), subSemi);
 		}
 
 		// --- ベース ---
@@ -1240,25 +1529,95 @@ const draw = (
 		leapRatio: intervals === 0 ? 0 : leaps / intervals,
 		melodyRange: range(melody),
 		submelodyRange: range(submelody),
+		barTension,
+		stepsPerBar,
 	};
 };
 
-/**
- * 16小節の曲を組み立てる。品質基準（{@link MIN_ENTROPY_BITS} 等）を満たす draw が出るまで
- * 引き直し、{@link MAX_ATTEMPTS} 回で出なければその時点で一番良かったものを返す
- * （ボタンを押して何も起きない、という状態にはしない）。
- */
-export const composeSong = (options: ComposeOptions): ComposeResult => {
-	const rnd = options.random ?? Math.random;
-	let best: ComposeResult | null = null;
-	let bestScore = -1;
+// ============================================================
+// 採点
+// ============================================================
 
-	for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-		const d = draw(options, rnd);
-		const entropy = durationEntropy(d.melodyDurations);
-		const valueKinds = new Set(d.melodyDurations).size;
-		const restRatio = d.restSteps / d.totalSteps;
-		const stats: ComposeStats = {
+/** ノート列を指標モジュールが読める形（半音・ステップ）へ落とす。 */
+const toMetricNotes = (notes: ComposedNote[]): MetricNote[] =>
+	notes
+		.map((n) => ({
+			startStep: n.startStep,
+			pitchSemi: n.pitchUnits / UNITS_PER_SEMITONE,
+			durationSteps: n.durationSteps,
+		}))
+		.sort((a, b) => a.startStep - b.startStep);
+
+/** 候補1本を採点する。ハード制約に触れたものは `null`。 */
+const evaluate = (
+	d: Draw,
+	recent: number[][],
+): { stats: Omit<ComposeStats, "attempts" | "rejected">; ok: boolean } => {
+	const entropy = durationEntropy(d.melodyDurations);
+	const valueKinds = new Set(d.melodyDurations).size;
+	const restRatio = d.restSteps / d.totalSteps;
+	const opts = { stepsPerBar: d.stepsPerBar, bars: BARS };
+	const structure = structureFeatures(
+		toMetricNotes(d.melody),
+		toMetricNotes(d.submelody),
+		opts,
+	);
+	const tension = tensionFeatures(d.barTension);
+	const fingerprint = featureVector({
+		entropy,
+		restRatio,
+		leapRatio: d.leapRatio,
+		melodyRange: d.melodyRange,
+		structure,
+	});
+
+	// 直近の曲からどれだけ離れているか。1.0 離れていれば満点。
+	const novelty =
+		recent.length === 0
+			? 1
+			: Math.min(
+					1,
+					Math.min(...recent.map((r) => featureDistance(fingerprint, r))) / 1.0,
+				);
+
+	const at = (b: Band, v: number): number => band(v, b[0], b[1], b[2], b[3]);
+	const scoreBreakdown: Record<string, number> = {
+		entropy: at(CORPUS_BANDS.entropy, entropy),
+		valueKinds: at(CORPUS_BANDS.valueKinds, valueKinds),
+		restRatio: at(CORPUS_BANDS.restRatio, restRatio),
+		leapRatio: at(CORPUS_BANDS.leapRatio, d.leapRatio),
+		maxLeap: at(CORPUS_BANDS.maxLeap, d.maxLeap),
+		melodyRange: at(CORPUS_BANDS.melodyRange, d.melodyRange),
+		sim1: at(CORPUS_BANDS.sim1, structure.sim1),
+		sim2: at(CORPUS_BANDS.sim2, structure.sim2),
+		sim4: at(CORPUS_BANDS.sim4, structure.sim4),
+		sim8: at(CORPUS_BANDS.sim8, structure.sim8),
+		phraseBreath: at(CORPUS_BANDS.phraseBreath, structure.phraseBreath),
+		climaxPosition: at(CORPUS_BANDS.climaxPosition, structure.climaxPosition),
+		climaxPeaks: at(HAND_BANDS.climaxPeaks, structure.climaxPeaks),
+		complementarity: at(HAND_BANDS.complementarity, structure.complementarity),
+		tensionRise: tension.rise,
+		tensionResolve: tension.resolve,
+		novelty,
+	};
+
+	let weighted = 0;
+	let weightSum = 0;
+	for (const [key, weight] of Object.entries(WEIGHTS)) {
+		weighted += (scoreBreakdown[key] ?? 0) * weight;
+		weightSum += weight;
+	}
+	const score = weightSum === 0 ? 0 : weighted / weightSum;
+
+	const ok =
+		d.melody.length > 0 &&
+		d.melodyRange >= HARD.minMelodyRange &&
+		d.submelodyRange >= HARD.minSubmelodyRange &&
+		d.maxLeap <= HARD.maxLeapSemitones &&
+		restRatio <= HARD.maxRestRatio;
+
+	return {
+		stats: {
 			valueKinds,
 			entropy,
 			restRatio,
@@ -1266,33 +1625,64 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			leapRatio: d.leapRatio,
 			melodyRange: d.melodyRange,
 			submelodyRange: d.submelodyRange,
-			attempts: attempt,
-		};
-		const result: ComposeResult = {
+			structure,
+			tension,
+			score,
+			scoreBreakdown,
+			fingerprint,
+		},
+		ok,
+	};
+};
+
+/**
+ * 16小節の曲を組み立てる。
+ *
+ * {@link DRAW_COUNT} 本の候補を引き、**ハード制約（{@link HARD}）に触れたものだけを捨てて、
+ * 残りから一番点数の高いものを返す**。初版は「しきい値を全部満たした最初の1本」を
+ * 返していたが、それでは
+ *
+ * - 構造が良くても休符率が0.09なら捨てる（好みを表現できない）
+ * - しきい値さえ満たせば1本目で確定する（より良い候補を探しに行かない）
+ *
+ * という2つの問題があった。全滅した場合も点数最大のものを返すので、
+ * 「ボタンを押して何も起きない」状態にはならない。
+ *
+ * 較正済みの目標帯（{@link CORPUS_BANDS}、人間の曲 {@link CORPUS_SIZE} 本から実測）を
+ * 使うので、点数は「人間の曲として普通の範囲にどれだけ収まっているか」を意味する。
+ */
+export const composeSong = (options: ComposeOptions): ComposeResult => {
+	const rnd = options.random ?? Math.random;
+	const recent = options.recent ?? [];
+	const count = Math.max(1, options.drawCount ?? DRAW_COUNT);
+
+	let best: ComposeResult | null = null;
+	let bestScore = Number.NEGATIVE_INFINITY;
+	let bestIsValid = false;
+	let rejected = 0;
+
+	for (let attempt = 1; attempt <= count; attempt++) {
+		const d = draw(options, rnd);
+		const { stats, ok } = evaluate(d, recent);
+		if (!ok) rejected++;
+		// ハード制約を通った候補は、通らなかった候補より必ず優先する。
+		const better = ok === bestIsValid ? stats.score > bestScore : ok;
+		if (!better) continue;
+		bestScore = stats.score;
+		bestIsValid = ok;
+		best = {
 			chordProgression: d.chordProgression,
 			chordPattern: d.chordPattern,
 			melody: d.melody,
 			submelody: d.submelody,
 			bass: d.bass,
-			stats,
+			stats: { ...stats, attempts: attempt, rejected },
 		};
-		const ok =
-			entropy >= MIN_ENTROPY_BITS &&
-			valueKinds >= MIN_VALUE_KINDS &&
-			restRatio >= MIN_REST_RATIO &&
-			restRatio <= MAX_REST_RATIO &&
-			d.maxLeap <= MAX_LEAP_SEMITONES &&
-			d.leapRatio >= MIN_LEAP_RATIO &&
-			d.leapRatio <= MAX_LEAP_RATIO &&
-			d.melodyRange >= MIN_MELODY_RANGE &&
-			d.submelodyRange >= MIN_SUBMELODY_RANGE;
-		if (ok) return result;
-		// 基準を落としたときのための保険。エントロピーが一番高いものを残す。
-		if (entropy > bestScore) {
-			bestScore = entropy;
-			best = result;
-		}
 	}
-	// MAX_ATTEMPTS 回で基準を満たせなかった場合の保険。best は必ず入っている。
-	return best as ComposeResult;
+
+	// best は必ず入っている（候補を1本以上引いているため）。
+	const result = best as ComposeResult;
+	result.stats.attempts = count;
+	result.stats.rejected = rejected;
+	return result;
 };

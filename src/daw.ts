@@ -384,7 +384,7 @@ const COMPOSE_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>作曲とは</h4>
   <p>コード進行・メロディ・サブメロ・ベース・伴奏を、16小節ぶんまとめて自動で作るボタンです。押すたびに違う曲ができます。できあがった曲はそのまま編集できるので、気に入らないところだけ後から直すこともできますし、もう一度押して作り直すこともできます。</p>
-  <p>ノートを配置するだけで、楽器・音量・ミックスは変えません。音のバランスを整えたいときは「全体トラック設定」の<strong>おまかせマスタリング</strong>を続けて押してください。作曲で置いたノートの形（メロディは細かく動く／サブメロは長い音が少しだけ／ベースは低い）から、おまかせマスタリング側が各トラックの役割を判定して楽器と音量を当てにいきます。</p>
+  <p>ノートを配置するだけで、楽器・音量・ミックスは変えません。音のバランスを整えたいときは「全体トラック設定」の<strong>おまかせマスタリング</strong>を続けて押してください。シンプルモードはトラックそのものが役割（メロディ／サブメロ／ベース／伴奏）なので、おまかせマスタリングはその役割どおりに楽器と音量を当てます。</p>
   <h4>曲の組み立て方</h4>
   <p>単純にランダムな音を並べているわけではありません。次の順番で組み立てています。</p>
   <ol>
@@ -407,10 +407,18 @@ const COMPOSE_INFO_HTML = `
     <li><strong>16小節の骨格</strong>（どの小節をモチーフ・走句・タメ・つなぎにするか）</li>
     <li><strong>メロディの書法</strong>——走句の形（音階／折り返し／分散和音／ジグザグ）、つなぎの形（山なり／谷／上行／下行／うねり／軸音まわり）、終止の形（順次下降／ソミド／跳ね上がり／ロングトーン）、モチーフの原型、跳躍の混ぜ具合、開始音</li>
     <li><strong>ベースの奏法</strong>（4分打ち／オルタネイト／2分／8分ドライブ／シンコペ／ウォーキング／オクターブ）</li>
-    <li><strong>サブメロの置き方</strong>。メロディが上がるときは下がる（反行）よう輪郭をつけた対旋律になっています。</li>
+    <li><strong>サブメロの書き方</strong>——合いの手（メロディが休んだ隙間にだけ入る）、ハモリ（メロディのリズムをなぞって3度・6度下を歌う）、対旋律（8分でメロディと反行する）、保続音（同じ音を伸ばし続ける）、パッド。小節ごとに、メロディが息継ぎしている場所では自動で合いの手に切り替わります。</li>
   </ul>
-  <h4>できあがりの検算</h4>
-  <p>生成したメロディは、音価の種類数・音価のばらつき（シャノンエントロピー）・休符の割合・跳躍の大きさと比率・使っている音域を自動で測っていて、基準を満たさないものは内部で作り直してから画面に出しています。「なんとなく単調」を感覚ではなく数値で弾く仕組みです。</p>
+  <p>さらに、直前に作った5曲と特徴が似ている候補には減点しています。続けて押したときに似た曲が並ばないようにするためです。</p>
+  <h4>できあがりの選び方</h4>
+  <p>1回押すごとに<strong>40曲ぶんの候補を作って、その中でいちばん点数の高いものを画面に出しています</strong>。点数は次の観点で付けています。</p>
+  <ul>
+    <li><strong>曲の形</strong>——4小節・8小節で同じ形が戻ってくるか、隣り合う小節はちゃんと違う形か、フレーズの切れ目で息継ぎがあるか、いちばん高い音（聞かせどころ）が曲の後半に1回だけ来ているか。</li>
+    <li><strong>緊張と解放</strong>——サビで和音の色が濃くなり、終わりでちゃんと解決しているか。</li>
+    <li><strong>メロディとサブメロの掛け合い</strong>——サブメロがメロディの息継ぎで喋っているか。</li>
+    <li><strong>音の分布</strong>——音価のばらつき・休符の割合・跳躍の大きさと比率・使っている音域。</li>
+  </ul>
+  <p>各項目の合格ラインは勘で決めたものではなく、<strong>人間が書いたMIDIを実際に測って、その分布の真ん中あたりを満点にしています</strong>。たとえば主旋律の休符は、人が書いた曲では全体の15〜43%を占めていました。</p>
   <h4>そのほか</h4>
   <ul>
     <li>調はハ長調（またはイ短調）で固定です。別の調にしたいときは、この下の「移調」で動かしてください。</li>
@@ -836,17 +844,47 @@ const computeAutoRoleStats = (
 /** ベース判定の音高しきい値。C3 (MIDI 48) を units で表したもの。 */
 const AUTO_ROLE_BASS_UNITS = 48 * UNITS_PER_SEMITONE;
 
-const classifyTrackRole = (stats: AutoRoleStats): AutoRole => {
+const classifyTrackRole = (
+	stats: AutoRoleStats,
+	/**
+	 * このトラックが「単音トラックのうち最も平均音高が高いもの」か。
+	 *
+	 * 以前はここが `notesPerBeat < 1.2 && avgDur >= 1.5拍`、つまり
+	 * **密度と音価でサブメロを定義していた**。この定義は脆く、密度の高い
+	 * オブリガート（合いの手・16分の対旋律）を主旋律と取り違える。さらに、
+	 * 生成側（`compose.ts`）がこの判定式を満たすためにサブメロを
+	 * 「単音・低密度・長音価」でしか書けない、という逆転まで起こしていた。
+	 *
+	 * 主旋律と対旋律を分けるのは絶対的な密度ではなく**トラックどうしの関係**
+	 * （どちらが上を歌っているか）なので、そちらで判定する。
+	 */
+	isTopSingleVoice: boolean,
+): AutoRole => {
 	// avgPitch は units（1/372オクターブ）。半音の数値と直接比べないこと。
 	if (stats.avgPitch < AUTO_ROLE_BASS_UNITS) return "bass"; // C3未満 = 低音域
 	if (stats.maxPoly >= 2 && stats.avgDur >= AUTO_ROLE_STEPS_PER_BEAT)
 		return "chord";
-	if (
-		stats.notesPerBeat < 1.2 &&
-		stats.avgDur >= AUTO_ROLE_STEPS_PER_BEAT * 1.5
-	)
-		return "submelody";
-	return "melody";
+	return isTopSingleVoice ? "melody" : "submelody";
+};
+
+/**
+ * トラックIDから分かる役割。**simpleモードはトラックそのものが役割**なので、
+ * ノートから推定する必要がない。
+ *
+ * 推定に通していたころは、**役割が決まっているトラックの中身を推定式に合わせて
+ * 書かなければならない**という逆転が起きていた。実際 `compose.ts` のサブメロは
+ * 「単音・低密度・長音価」（{@link classifyTrackRole} のサブメロ判定条件そのもの）を
+ * 崩さないように書かれていて、合いの手や対旋律といった密度の高い書法を選べなかった。
+ * 答えを持っているのに推測していたのが原因なので、宣言された役割をそのまま使う。
+ *
+ * {@link classifyTrackRole} は、**本当に役割が不明な経路**——advancedモードの
+ * 15トラックと、MIDI取り込みのトラック——のためだけに残してある。
+ */
+const DECLARED_ROLE: Record<string, AutoRole> = {
+	melody: "melody",
+	submelody: "submelody",
+	bass: "bass",
+	chord: "chord",
 };
 
 /**
@@ -1219,6 +1257,11 @@ export const mountDAW = (
 	options.onMasterCompressionChange?.(masterCompression);
 	let drumVolume = options.drumVolume ?? 80;
 	let currentDrumPattern = refs.drumSelect.value;
+	/**
+	 * 直近に「作曲」で作った曲の特徴ベクトル。次の作曲で
+	 * {@link ComposeOptions.recent} へ渡し、似た曲が続けて出ないようにする。
+	 */
+	const recentComposeFingerprints: number[][] = [];
 	let currentDrumFont = options.drumFont ?? "FluidR3_GM_sf2_file:0";
 	refs.drumFontSelect.value = currentDrumFont;
 	/**
@@ -1514,6 +1557,26 @@ export const mountDAW = (
 	};
 
 	let showModal: (title: string, bodyHTML: string) => void;
+	/**
+	 * アプリ内の確認ダイアログ。**`confirm()` を使ってはいけない**理由がある。
+	 *
+	 * ネイティブの `confirm()` は、
+	 *
+	 * - サンドボックス化された iframe（`allow-modals` なし）では**常に false を返す**。
+	 *   このコンポーネントは `mountDAW` として他のページへ埋め込まれる前提なので、
+	 *   埋め込み先の条件次第で無条件に「キャンセル扱い」になる。
+	 * - Chrome は同じページが繰り返しダイアログを出すと「追加のダイアログを表示しない」の
+	 *   チェックボックスを出し、ユーザーが一度チェックすると**以後ずっと false を返す**。
+	 *
+	 * どちらの場合も、押しても何も起きず・何のフィードバックも出ないボタンになる。
+	 * 実際「一度作曲した後、作曲ボタンを再度押しても効かない」という形で表面化した
+	 * （作曲は2回目以降だけ確認を挟むため、1回目は動いて2回目から沈黙する）。
+	 */
+	let showConfirm: (
+		title: string,
+		message: string,
+		onConfirm: () => void,
+	) => void;
 
 	// ============================================================
 	// 描画
@@ -4765,22 +4828,50 @@ export const mountDAW = (
 				if (t.lyricModel && t.config.id !== mainVocalId) nonMainVocalCount++;
 			}
 
-			// 楽器・音量の自動割り当て: 歌詞トラックを除く各トラックのノート（音高・タイミング・
-			// 和音の厚み）から役割（メロディ/サブメロ/ベース/伴奏）を推定し、現在選択中の
-			// 楽器プリセット（未選択ならピアノ）からその役割に合う楽器名を引いて個別設定する。
-			// simpleモードは元々トラック＝役割が固定なので実質的に見た目は変わらないが、
-			// advancedモード（15トラック1:1）ではここが唯一の「楽器を自動で当てる」経路になる。
+			// 楽器・音量の自動割り当て: 各トラックの役割（メロディ/サブメロ/ベース/伴奏）を
+			// 決め、現在選択中の楽器プリセット（未選択ならピアノ）からその役割に合う
+			// 楽器名を引いて個別設定する。
+			//
+			// **役割が分かっているトラックは推定しない**（{@link DECLARED_ROLE}）。
+			// simpleモードの4トラックはIDがそのまま役割なので、ノートから推測する理由が
+			// 無い。推測に通していたころは、役割の決まっているトラックの中身を推定式に
+			// 合わせて書かねばならず、自動作曲のサブメロが「単音・低密度・長音価」しか
+			// 書けなくなっていた。推定（{@link classifyTrackRole}）が要るのは、
+			// 役割が本当に不明な advancedモード（15トラック1:1）とMIDI取り込みだけ。
 			const autoPreset =
 				INSTRUMENT_PRESETS[currentInstrument] ?? INSTRUMENT_PRESETS.piano;
 			// 判定できた役割をトラックIDごとに控えておき、下のチャンネルストリップ調整
 			// （圧縮・幅・リバーブ送り・EQ）でも使い回す。
 			const roleByTrackId = new Map<string, AutoRole>();
+			// 役割を推定するトラックの統計を先に全部出す。主旋律か対旋律かは
+			// 1トラックだけ見ても決まらない（どちらが上を歌っているかの比較が要る）。
+			const statsByTrackId = new Map<string, AutoRoleStats>();
+			for (const t of trackStates) {
+				if (t.lyricModel) continue;
+				const notes = t.core.getNotes();
+				if (notes.length === 0) continue;
+				statsByTrackId.set(t.config.id, computeAutoRoleStats(notes));
+			}
+			// 単音（和音でない）かつベース音域より上のトラックのうち、最も平均音高が
+			// 高いものを主旋律とみなす。
+			let topSingleVoiceId: string | null = null;
+			let topSingleVoicePitch = Number.NEGATIVE_INFINITY;
+			for (const [id, st] of statsByTrackId) {
+				if (st.maxPoly >= 2 && st.avgDur >= AUTO_ROLE_STEPS_PER_BEAT) continue;
+				if (st.avgPitch < AUTO_ROLE_BASS_UNITS) continue;
+				if (st.avgPitch > topSingleVoicePitch) {
+					topSingleVoicePitch = st.avgPitch;
+					topSingleVoiceId = id;
+				}
+			}
 			for (const t of trackStates) {
 				if (t.lyricModel) continue; // 歌声トラックは楽器を持たない
-				const notes = t.core.getNotes();
-				if (notes.length === 0) continue; // 音が無いトラックは判定不能なのでそのまま
-				const stats = computeAutoRoleStats(notes);
-				const role = classifyTrackRole(stats);
+				const stats = statsByTrackId.get(t.config.id);
+				if (!stats) continue; // 音が無いトラックは判定不能なのでそのまま
+				// 役割が分かっているトラック（simpleモード）は推定しない。
+				const role =
+					DECLARED_ROLE[t.config.id] ??
+					classifyTrackRole(stats, t.config.id === topSingleVoiceId);
 				roleByTrackId.set(t.config.id, role);
 				const instName = autoPreset[role];
 				t.trackInstrument = instName;
@@ -4928,24 +5019,22 @@ export const mountDAW = (
 		refs.macroComposeInfo.addEventListener("click", () => {
 			showModal("作曲の解説", COMPOSE_INFO_HTML);
 		});
-		refs.macroCompose.addEventListener("click", () => {
-			// 既にノートがあるときだけ確認する。空の状態（初心者が最初に押す場面）で
-			// 毎回警告を出すと、一番押してほしいボタンが押しにくくなるため。
-			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
-			if (
-				hasNotes &&
-				!globalThis.confirm(
-					"今あるノートをすべて消して、16小節の曲を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）",
-				)
-			) {
-				return;
-			}
+		/** 「作曲」本体。確認を挟むかどうかは呼び出し側で決める。 */
+		const runCompose = (): void => {
 			stop();
 			overlayDuring(() => {
 				const song = composeSong({
 					stepsPerBar: renderConfig.stepsPerBar,
 					edo: renderConfig.edo,
+					// 直近に作った曲の特徴を渡すと、それらから離れた候補に加点される。
+					// 「作曲」を続けて押したときに似た曲が並ぶのを防ぐ。
+					recent: recentComposeFingerprints,
 				});
+				// 直近5曲ぶんだけ覚える。これ以上遡ると「どの曲とも違うこと」の制約が
+				// 強くなりすぎて、まともな曲が候補から外れる。
+				recentComposeFingerprints.push(song.stats.fingerprint);
+				if (recentComposeFingerprints.length > 5)
+					recentComposeFingerprints.shift();
 
 				// メロディ・サブメロ・ベースは生成したノートをそのまま書き込む。
 				// 履歴の残し方は applyChord と揃えてあり、実行後に Undo で戻せる。
@@ -4984,6 +5073,22 @@ export const mountDAW = (
 				updateTrackPanel(); // 和音の入力欄へ生成した進行を反映する
 				updateUndoRedo();
 			});
+		};
+		refs.macroCompose.addEventListener("click", () => {
+			// 既にノートがあるときだけ確認する。空の状態（初心者が最初に押す場面）で
+			// 毎回警告を出すと、一番押してほしいボタンが押しにくくなるため。
+			// 確認はネイティブの confirm() ではなくアプリ内のモーダルで出す
+			// （{@link showConfirm} に理由）。
+			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
+			if (hasNotes) {
+				showConfirm(
+					"作曲",
+					"今あるノートをすべて消して、16小節の曲を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）",
+					runCompose,
+				);
+				return;
+			}
+			runCompose();
 		});
 		refs.macroClear.addEventListener("click", () => {
 			overlayDuring(() => {
@@ -5198,6 +5303,38 @@ export const mountDAW = (
 					}
 				});
 			}
+		};
+		showConfirm = (
+			title: string,
+			message: string,
+			onConfirm: () => void,
+		): void => {
+			const escaped = message
+				.replace(/&/g, "&amp;")
+				.replace(/</g, "&lt;")
+				.replace(/>/g, "&gt;");
+			showModal(
+				title,
+				`<div class="dtm-modal-body-content">
+  <p>${escaped}</p>
+  <div class="dtm-row" style="justify-content:flex-end;gap:8px;margin-top:12px;">
+    <button class="dtm-btn" data-dtm-confirm="cancel">キャンセル</button>
+    <button class="dtm-btn dtm-btn--danger" data-dtm-confirm="ok">実行する</button>
+  </div>
+</div>`,
+			);
+			const close = (): void => {
+				refs.modalOverlay.setAttribute("hidden", "");
+			};
+			refs.modalBody
+				.querySelector('[data-dtm-confirm="cancel"]')
+				?.addEventListener("click", close);
+			refs.modalBody
+				.querySelector('[data-dtm-confirm="ok"]')
+				?.addEventListener("click", () => {
+					close();
+					onConfirm();
+				});
 		};
 		refs.modalClose.addEventListener("click", () => {
 			collapseActiveSample();

@@ -10,6 +10,7 @@
 
 import { buildChordPlacements } from "../src/chords";
 import { composeSong, durationEntropy } from "../src/compose";
+import { structureFeatures } from "../src/compose-metrics";
 import { UNITS_PER_SEMITONE } from "../src/tuning";
 
 const STEPS_PER_BAR = 192;
@@ -131,6 +132,8 @@ let entropySum = 0;
 let restSum = 0;
 let attemptsSum = 0;
 let worstEntropy = Number.POSITIVE_INFINITY;
+let scoreSum = 0;
+let worstScore = Number.POSITIVE_INFINITY;
 
 for (let seed = 1; seed <= SEEDS; seed++) {
 	const song = composeSong({
@@ -144,45 +147,41 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	attemptsSum += song.stats.attempts;
 	worstEntropy = Math.min(worstEntropy, song.stats.entropy);
 
-	// --- 品質基準 ---
+	// --- ハード制約（これを外れた曲は「音楽として壊れている」） ---
+	// しきい値の合否で採否を決めるのはここまで。残りは連続値の点数にして
+	// 候補どうしを比べる方式へ変わった（src/compose.ts の WEIGHTS 参照）ので、
+	// 「休符率が0.09だから不合格」といった判定はもう行わない。
 	check(
-		`${tag} 音価の種類数`,
-		song.stats.valueKinds >= 4,
-		`${song.stats.valueKinds}種`,
-	);
-	check(
-		`${tag} 音価のエントロピー`,
-		song.stats.entropy >= 1.1,
-		`${song.stats.entropy.toFixed(3)}bit`,
-	);
-	check(
-		`${tag} 休符率`,
-		song.stats.restRatio >= 0.03 && song.stats.restRatio <= 0.08,
-		`${(song.stats.restRatio * 100).toFixed(1)}%`,
-	);
-	check(
-		`${tag} 小節内の跳躍`,
-		song.stats.maxLeapSemitones <= 9,
-		`${song.stats.maxLeapSemitones}半音`,
-	);
-	// 跳躍が少なすぎるメロディは「音階の上をうろついているだけ」で印象に残らない。
-	// 多すぎると歌えない。初版はここが実測8%未満で、全曲がのっぺりしていた。
-	check(
-		`${tag} 跳躍の比率`,
-		song.stats.leapRatio >= 0.08 && song.stats.leapRatio <= 0.32,
-		`${(song.stats.leapRatio * 100).toFixed(1)}%`,
-	);
-	check(
-		`${tag} メロディの音域が1オクターブ以上`,
-		song.stats.melodyRange >= 12,
+		`${tag} メロディが同じ音の連打になっていない`,
+		song.stats.melodyRange >= 3,
 		`${song.stats.melodyRange}半音`,
 	);
-	// サブメロが「同じ音を置いただけ」になっていないこと（対旋律の体を成すか）。
 	check(
 		`${tag} サブメロが動いている`,
-		song.stats.submelodyRange >= 5,
+		song.stats.submelodyRange >= 2,
 		`${song.stats.submelodyRange}半音`,
 	);
+	check(
+		`${tag} 歌える範囲の跳躍`,
+		song.stats.maxLeapSemitones <= 14,
+		`${song.stats.maxLeapSemitones}半音`,
+	);
+	check(
+		`${tag} 曲が休符だらけでない`,
+		song.stats.restRatio <= 0.8,
+		`${(song.stats.restRatio * 100).toFixed(1)}%`,
+	);
+
+	// --- 採点 ---
+	// 総合点は「人間の曲として普通の範囲にどれだけ収まっているか」。
+	// 候補40本から最良を選んでいるので、下限を大きく割ることは無い。
+	check(
+		`${tag} 総合点`,
+		song.stats.score >= 0.6,
+		`${song.stats.score.toFixed(3)}`,
+	);
+	scoreSum += song.stats.score;
+	worstScore = Math.min(worstScore, song.stats.score);
 
 	// --- 構造 ---
 	for (const [name, notes] of [
@@ -256,22 +255,15 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 		avgMidi(song.submelody) >= 48,
 		`${avgMidi(song.submelody).toFixed(1)}`,
 	);
-	// サブメロは「単音・音数が少なく・音価が長い」形でないと伴奏と誤判定される
-	const subSpanBeats = (BARS * STEPS_PER_BAR) / (STEPS_PER_BAR / 4);
-	const subPerBeat = song.submelody.length / subSpanBeats;
-	const subAvgDur =
-		song.submelody.reduce((s, n) => s + n.durationSteps, 0) /
-		song.submelody.length;
-	check(
-		`${tag} サブメロの密度 < 1.2音/拍`,
-		subPerBeat < 1.2,
-		`${subPerBeat.toFixed(2)}`,
-	);
-	check(
-		`${tag} サブメロの平均音価 >= 1.5拍`,
-		subAvgDur >= (STEPS_PER_BAR / 4) * 1.5,
-		`${(subAvgDur / (STEPS_PER_BAR / 4)).toFixed(2)}拍`,
-	);
+	// かつてここには「サブメロの密度 < 1.2音/拍」「平均音価 >= 1.5拍」という検査が
+	// あった。おまかせマスタリングの役割推定（daw.ts の classifyTrackRole）が
+	// **単音・低密度・長音価**でサブメロを判定していたため、その形を外すと伴奏だと
+	// 誤判定されて楽器が変わってしまうからだった。
+	//
+	// daw.ts は simple モードではトラックIDをそのまま役割として使うようになり
+	// （DECLARED_ROLE）、推定を通さなくなったので、この制約は消えた。合いの手・
+	// ハモリ・対旋律といった密度の高い書法が選べるのはそのため。**この検査を
+	// 復活させないこと**——復活させると、また書法が1種類に潰れる。
 
 	// --- コード進行が伴奏として展開できるか ---
 	const chordNotes = buildChordPlacements({
@@ -362,6 +354,72 @@ console.log("● 曲どうしの違い");
 }
 
 // ============================================================
+// 2.6 受け入れ基準が「曲の構造」を見ているか
+//
+//     初版の指標は7項目中5つが順序非依存で、**16小節の順番をシャッフルして曲を
+//     破壊しても値が1つも動かなかった**（実測: entropy 1.925 → 1.925、
+//     valueKinds 5 → 5、restRatio 0.039 → 0.039、range 15 → 15）。
+//     つまり「曲かどうか」を一切測っていなかった。
+//
+//     この検査は、その状態への逆戻りを防ぐためにある。小節の順番を入れ替えたら
+//     構造の指標が確かに悪化することを確かめる。ここが通らなくなったら、
+//     指標がまた分布だけを見るものに戻っている。
+// ============================================================
+
+console.log("● 構造の指標が順序に反応するか");
+{
+	const toMetric = (
+		ns: { startStep: number; pitchUnits: number; durationSteps: number }[],
+	) =>
+		ns
+			.map((n) => ({
+				startStep: n.startStep,
+				pitchSemi: n.pitchUnits / UNITS_PER_SEMITONE,
+				durationSteps: n.durationSteps,
+			}))
+			.sort((a, b) => a.startStep - b.startStep);
+
+	let degraded = 0;
+	const TRIALS = 30;
+	for (let seed = 1; seed <= TRIALS; seed++) {
+		const song = composeSong({
+			stepsPerBar: STEPS_PER_BAR,
+			edo: 12,
+			random: seededRandom(seed * 104729),
+		});
+		const rnd = seededRandom(seed * 7 + 3);
+		const order = [...Array(BARS).keys()];
+		for (let i = BARS - 1; i > 0; i--) {
+			const j = Math.floor(rnd() * (i + 1));
+			[order[i], order[j]] = [order[j], order[i]];
+		}
+		const shuffled = song.melody.map((n) => {
+			const bar = Math.floor(n.startStep / STEPS_PER_BAR);
+			return {
+				...n,
+				startStep:
+					order.indexOf(bar) * STEPS_PER_BAR + (n.startStep % STEPS_PER_BAR),
+			};
+		});
+		const opts = { stepsPerBar: STEPS_PER_BAR, bars: BARS };
+		const before = structureFeatures(toMetric(song.melody), [], opts);
+		const after = structureFeatures(toMetric(shuffled), [], opts);
+		// 自己相似プロファイルは小節の並び順そのものなので、必ず動く。
+		const moved =
+			Math.abs(before.sim4 - after.sim4) +
+			Math.abs(before.sim8 - after.sim8) +
+			Math.abs(before.climaxPosition - after.climaxPosition);
+		if (moved > 0.05) degraded++;
+	}
+	check(
+		"小節をシャッフルすると構造の指標が動く",
+		degraded >= TRIALS * 0.9,
+		`${TRIALS}回中 ${degraded}回しか動かなかった（指標が順序を見ていない）`,
+	);
+	console.log(`  ${TRIALS}回中 ${degraded}回で構造の指標が変化`);
+}
+
+// ============================================================
 // 3. 31平均律でも成立するか
 // ============================================================
 
@@ -408,12 +466,13 @@ check("空配列は0bit", durationEntropy([]) === 0, `${durationEntropy([])}`);
 
 console.log("");
 console.log(
+	`平均総合点     ${(scoreSum / SEEDS).toFixed(3)}（最低 ${worstScore.toFixed(3)}）`,
+);
+console.log(
 	`平均エントロピー ${(entropySum / SEEDS).toFixed(3)}bit（最低 ${worstEntropy.toFixed(3)}bit）`,
 );
 console.log(`平均休符率     ${((restSum / SEEDS) * 100).toFixed(1)}%`);
-console.log(
-	`平均引き直し回数 ${(attemptsSum / SEEDS).toFixed(1)}回 / 上限80回`,
-);
+console.log(`引いた候補数   ${(attemptsSum / SEEDS).toFixed(1)}本/曲`);
 console.log("");
 if (failures > 0) {
 	console.error(`${failures} 件失敗`);
