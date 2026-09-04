@@ -265,11 +265,32 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	// ハモリ・対旋律といった密度の高い書法が選べるのはそのため。**この検査を
 	// 復活させないこと**——復活させると、また書法が1種類に潰れる。
 
+	// --- 調（rootShift）とノートが揃っているか ---
+	// メロディ・サブメロ・ベースは生成側で移調済み、伴奏は rootShift を渡して展開する。
+	// この2つがずれると曲全体が半音単位で不協和になるので、終止音で検算する。
+	// 進行はハ長調で書かれているので、終止音は主音（C=0 か Am=9）を移調したもの。
+	const lastNote = song.melody[song.melody.length - 1];
+	const lastPc =
+		(((Math.round(lastNote.pitchUnits / UNITS_PER_SEMITONE) - song.rootShift) %
+			12) +
+			12) %
+		12;
+	check(
+		`${tag} 終止音が調の主音（移調後）`,
+		lastPc === 0,
+		`移調 ${song.rootShift} 半音 / 終止音のハ長調換算 ${lastPc}`,
+	);
+	check(
+		`${tag} テンポが妥当`,
+		song.bpm >= 60 && song.bpm <= 200,
+		`${song.bpm}`,
+	);
+
 	// --- コード進行が伴奏として展開できるか ---
 	const chordNotes = buildChordPlacements({
 		chordStr: song.chordProgression,
 		patternType: song.chordPattern,
-		rootShift: 0,
+		rootShift: song.rootShift,
 		bpm: 120,
 		stepsPerBar: STEPS_PER_BAR,
 		edo: 12,

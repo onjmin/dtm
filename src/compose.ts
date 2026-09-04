@@ -81,7 +81,11 @@
  */
 
 import { parseChord } from "@onjmin/chord-parser";
-import { type ChordPatternType, spelledToUnits } from "./chords";
+import {
+	type ChordPatternType,
+	semitonesToUnits,
+	spelledToUnits,
+} from "./chords";
 import { CORPUS_BANDS, CORPUS_SIZE } from "./compose-corpus";
 import {
 	type Band,
@@ -211,6 +215,28 @@ const SIXTEENTH = 12;
 
 /** 曲の長さ。A(4) - A'(4) - B(4) - A''(4) の16小節。 */
 const BARS = 16;
+
+/**
+ * 曲の調（ハ長調からの移調量・半音）。
+ *
+ * 初版は**全曲がハ長調／イ短調に固定**で、終止音に至っては100%が同じ「ド」だった。
+ * 曲の中身をいくら作り分けても、調が同じなら続けて聴いたとき「似た感じ」から抜けない。
+ * 参考曲91本の調を数えると C 28 / D# 21 / F 17 / E 11 / G# 7 …と12調すべてに散っており、
+ * ここが固定なのは単純に不足していた。
+ *
+ * 音域は C を基準に組んであるので、上下に極端へ振らず -5〜+6 半音に収める。
+ */
+const ROOT_SHIFTS = [0, 1, 2, 3, 4, 5, 6, -1, -2, -3, -4, -5];
+
+/**
+ * テンポ（BPM）の候補。参考曲100本の実測は 中央値132・p25〜p75 が 126〜136 で、
+ * その周辺を厚めに、外れたテンポも少し混ぜてある。初版はテンポを設定しておらず、
+ * 全曲が既定値のままだった。
+ */
+const BPM_CHOICES = [
+	88, 96, 104, 112, 120, 124, 126, 128, 130, 132, 132, 134, 136, 138, 142, 150,
+	160, 174,
+];
 
 // ============================================================
 // 音階
@@ -446,6 +472,30 @@ const RHYTHM_CELLS: RhythmCell[] = [
 	{ value: [EIGHTH, EIGHTH, EIGHTH, EIGHTH, HALF], density: "medium" },
 	{ value: [HALF, EIGHTH, EIGHTH, QUARTER], density: "medium" },
 	{ value: [-EIGHTH, EIGHTH, QUARTER, QUARTER, QUARTER], density: "medium" },
+	// --- 中・16分グルーヴ: 走句ではなく「地」として16分を含む形 ---
+	// これが無いと16分グルーヴの曲でも `run` の小節にしか16分が出ず、
+	// 1曲に1〜3個の孤立した16分小節（＝思い出したように入る一発ネタ）になる。
+	{ value: [QUARTER, EIGHTH, SIXTEENTH, SIXTEENTH, HALF], density: "medium" },
+	{
+		value: [EIGHTH, SIXTEENTH, SIXTEENTH, QUARTER, QUARTER, QUARTER],
+		density: "medium",
+	},
+	{
+		value: [SIXTEENTH, SIXTEENTH, EIGHTH, QUARTER, DOT_QUARTER, EIGHTH],
+		density: "medium",
+	},
+	{
+		value: [QUARTER, QUARTER, EIGHTH, SIXTEENTH, SIXTEENTH, QUARTER],
+		density: "medium",
+	},
+	{
+		value: [DOT_QUARTER, SIXTEENTH, SIXTEENTH, QUARTER, QUARTER],
+		density: "medium",
+	},
+	{
+		value: [EIGHTH, EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH, QUARTER, -QUARTER],
+		density: "medium",
+	},
 	// --- 急: 16分の走句を含む ---
 	{
 		value: [SIXTEENTH, SIXTEENTH, SIXTEENTH, SIXTEENTH, QUARTER, HALF],
@@ -526,6 +576,72 @@ const MOTIF_CELLS: RhythmCell[] = [
 		density: "medium",
 	},
 	{ value: [HALF, EIGHTH, EIGHTH, QUARTER], density: "medium" },
+	// 16分グルーヴの曲用。**モチーフ自体が16分を持たないと、曲の顔にならない。**
+	// モチーフは曲中で最も多く鳴る型なので、ここに16分が無いと、16分は結局
+	// 走句の小節だけに現れる「装飾」に留まってしまう。
+	{
+		value: [EIGHTH, SIXTEENTH, SIXTEENTH, QUARTER, QUARTER, QUARTER],
+		density: "medium",
+	},
+	{
+		value: [SIXTEENTH, SIXTEENTH, EIGHTH, EIGHTH, EIGHTH, HALF],
+		density: "medium",
+	},
+	{
+		value: [QUARTER, SIXTEENTH, SIXTEENTH, EIGHTH, HALF],
+		density: "medium",
+	},
+	{
+		value: [EIGHTH, EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH, QUARTER, QUARTER],
+		density: "medium",
+	},
+	// **16分が主役の型。** 上の4つは16分を「混ぜて」いるので音価の種類が増え、
+	// 音価エントロピーの目標帯（参考曲 0.62〜1.18）から外れて候補選抜で負ける。
+	// 実測で16分を使う曲が30曲中1曲まで減った。16分が大半を占める形なら
+	// 「1つの音価が支配的」になるのでエントロピーは低いままで、16分の曲が
+	// ちゃんと選ばれるようになる。
+	{
+		value: [
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			EIGHTH,
+			QUARTER,
+			QUARTER,
+		],
+		density: "medium",
+	},
+	{
+		value: [
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			HALF,
+		],
+		density: "medium",
+	},
+	{
+		value: [
+			EIGHTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			QUARTER,
+			QUARTER,
+		],
+		density: "medium",
+	},
 ];
 
 // ============================================================
@@ -609,6 +725,54 @@ type StepShape = "arch" | "valley" | "ascend" | "descend" | "wave" | "pivot";
 type HoldShape = "long" | "third" | "neighbor";
 /** 終止（`cadence`）の形。初版は「順次下降して主音」だけで、全曲の最後が同じ形だった。 */
 type CadenceShape = "descend" | "five-three-one" | "leap-up" | "hold-tonic";
+/**
+ * 曲全体を貫く基準音価（グルーヴ）。
+ *
+ * 「16分を使う曲か、使わない曲か」を**曲単位で決める**ためにある。初版はリズム型を
+ * 小節ごとに独立に引いていたため、16分を含む小節が曲の中に1〜3個だけ散らばり、
+ * **実測でその100%が「前後の小節に16分が無い孤立した小節」**になっていた。
+ * 前後と繋がらない場所に細かい音が一度だけ出てくるのは、グルーヴではなく思い付きに聞こえる。
+ */
+type Groove = "eighth" | "sixteenth";
+
+/**
+ * リズム型をグルーヴで絞る。8分の曲からは16分を含む型を丸ごと外し、16分の曲では
+ * 16分を含む型を優先する。**16分は曲の性格であって、装飾ではない。**
+ */
+const groovyCells = (
+	cells: RhythmCell[],
+	groove: Groove,
+	rnd: () => number,
+): RhythmCell[] => {
+	const hasSixteenth = (c: RhythmCell): boolean =>
+		c.value.some((v) => Math.abs(v) <= SIXTEENTH);
+	if (groove === "eighth") return cells.filter((c) => !hasSixteenth(c));
+	const withSixteenth = cells.filter(hasSixteenth);
+	// 16分の曲でも全部の小節を16分で埋めると息が詰まるので、たまに素の型も通す。
+	return withSixteenth.length > 0 && rnd() < 0.75 ? withSixteenth : cells;
+};
+
+/**
+ * 合いの手の言い回し。メロディの隙間へ差し込む短いリズム。
+ *
+ * 初版は隙間を8分で等分して埋めていた。その結果サブメロが曲を通して機械的な刻みになり
+ * （実測: サブメロの音の40%、最悪の曲では100%が「同じ音価が3つ以上続く」形）、
+ * 「思い出したように特定のトラックだけ細かく刻んでいる」という聞こえ方になっていた。
+ * 合いの手は等分ではなく、**言い回し**として置く。
+ */
+const ANSWER_FIGURES: number[][] = [
+	[EIGHTH, EIGHTH, QUARTER],
+	[QUARTER, EIGHTH],
+	[EIGHTH, DOT_QUARTER],
+	[SIXTEENTH, SIXTEENTH, EIGHTH, QUARTER],
+	[EIGHTH, QUARTER, EIGHTH],
+	[DOT_QUARTER, EIGHTH],
+	[QUARTER, QUARTER],
+	[EIGHTH, EIGHTH, EIGHTH, DOT_QUARTER],
+	[HALF],
+	[QUARTER],
+];
+
 /** ベースの奏法。初版はルート4分打ちの1種類しか無かった。 */
 type BassStyle =
 	| "quarter"
@@ -738,6 +902,14 @@ export type ComposeResult = {
 	chordProgression: string;
 	/** 伴奏の奏法。 */
 	chordPattern: ChordPatternType;
+	/**
+	 * 曲の調。ハ長調からの移調量（半音）。メロディ・サブメロ・ベースの音は
+	 * **既にこの量だけ移調済み**なので、呼び出し側は伴奏トラックの `rootShift` へ
+	 * 同じ値を渡すだけでよい。
+	 */
+	rootShift: number;
+	/** 曲のテンポ（BPM）。 */
+	bpm: number;
 	melody: ComposedNote[];
 	submelody: ComposedNote[];
 	bass: ComposedNote[];
@@ -828,6 +1000,8 @@ type Slot = { isStrong: boolean; value: number; at: number };
 
 /** 曲ごとに引くメロディの書法。ここが曲どうしの違いの主な出どころ。 */
 type MelodyStyle = {
+	/** 曲全体の基準音価。16分を使う曲かどうかを曲単位で決める。 */
+	groove: Groove;
 	runShape: RunShape;
 	stepShape: StepShape;
 	holdShape: HoldShape;
@@ -1099,6 +1273,10 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	const progression = [...progA, ...progA2, ...progB, ...progA3];
 	const chordProgression = progression.join("|");
 	const chordPattern = pick(CHORD_PATTERNS, rnd);
+	// 調とテンポも曲ごとに引く。生成はハ長調で行い、最後にまとめて移調する
+	// （生成中に移調すると音域の折り返しが調ごとにずれ、輪郭が壊れる）。
+	const rootShift = pick(ROOT_SHIFTS, rnd);
+	const bpm = pick(BPM_CHOICES, rnd);
 
 	// --- 曲の骨格と書法を引く（ここが曲どうしの違いの出どころ） ---
 	const barRoles: BarRole[] = [
@@ -1108,6 +1286,7 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		...pick(SECTION_FORMS.a3, rnd),
 	];
 	const style: MelodyStyle = {
+		groove: pick<Groove>(["eighth", "sixteenth"], rnd),
 		runShape: pick<RunShape>(["scale", "turn", "broken", "zigzag"], rnd),
 		stepShape: pick<StepShape>(
 			["arch", "valley", "ascend", "descend", "wave", "pivot"],
@@ -1141,41 +1320,93 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	};
 
 	// --- ②リズム型を先に設計する ---
-	const motifCell = pick(MOTIF_CELLS, rnd);
-	// モチーフの反復にリズムの変奏を1種類だけ用意する（逆行）。合計は変わらないので
-	// 小節をはみ出さない。同じ形が3〜5回そのまま出ると耳が飽きる。
+	//
+	// **役割ごとに1つのリズム型を曲全体で使い回す。** 初版は隣り合う小節で必ず別の型を
+	// 引いていたが、参考にした曲（作者自身の91曲）を測ると逆で、
+	//
+	//   自己相似 lag1  生成物 0.455 / 参考曲 0.483〜0.709
+	//   自己相似 lag4  生成物 0.546 / 参考曲 0.569〜0.786
+	//   音価のエントロピー 生成物 1.70 / 参考曲 0.62〜1.18
+	//
+	// と、**参考曲のほうがはるかに反復し、音価の種類も絞っている**。毎小節ちがう形を
+	// 引くと、1曲の中では変化に富むが、曲どうしの区別が付かなくなる——どの曲も同じ
+	// 「均等にばらけた」テクスチャになるため。曲の顔になるのは変化ではなく反復の型。
+	const motifCell = pick(groovyCells(MOTIF_CELLS, style.groove, rnd), rnd);
+	// モチーフの変奏（逆行）は1曲に1回程度に留める。初版は6割の曲で使っていて、
+	// これも音価のばらけ（エントロピー過多）の一因だった。
 	const motifRetro: RhythmCell = {
 		value: [...motifCell.value].reverse(),
 		density: motifCell.density,
 	};
-	const useRetro = rnd() < 0.6;
+	const useRetro = rnd() < 0.3;
+	/** つなぎの小節にモチーフのリズムを流用するか。曲ごとに引く。 */
+	const stepUsesMotif = rnd() < 0.55;
+
+	/** 役割 → その曲でその役割に使うリズム型。曲の「リズムの顔」になる。 */
+	const cellByRole = new Map<BarRole, RhythmCell>();
+	const cellFor = (role: BarRole): RhythmCell => {
+		const cached = cellByRole.get(role);
+		if (cached) return cached;
+		const wanted =
+			role === "run" ? "dense" : role === "hold" ? "sparse" : "medium";
+		let pool = groovyCells(
+			RHYTHM_CELLS.filter((c) => c.density === wanted),
+			style.groove,
+			rnd,
+		);
+		// 8分グルーヴの曲に「走句」が来たら、16分ではなく8分の細かい形で走る。
+		// 16分を1小節だけ差し込むと、前後と繋がらない一発ネタになる（実測で
+		// 16分を含む小節の100%が、前後に16分を持たない孤立した小節だった）。
+		if (pool.length === 0)
+			pool = RHYTHM_CELLS.filter((c) => c.density === "medium");
+		// **モチーフの音価の語彙から、はみ出しの少ない型を選ぶ。**
+		//
+		// 役割ごとに無関係な型を引くと1曲の音価の種類が増えすぎる。参考曲91本の
+		// 音価エントロピーは 0.62〜1.18 で、これは「種類が3〜5あるが、そのうち1つが
+		// 大半を占める」状態を意味する。役割ごとに好き勝手な型を引くと種類が均等に
+		// ばらけ、実測1.70まで上がっていた。均等にばらけた音価は「変化に富む」のでは
+		// なく、**どの曲も同じのっぺりしたテクスチャ**になる。
+		//
+		// 「2つ以上共通していればよい」では緩すぎたので、**新しく持ち込む音価の数が
+		// 最小の型**に絞る。
+		const motifValues = new Set(motifCell.value.map(Math.abs));
+		const novelty = (c: RhythmCell): number =>
+			new Set(c.value.map(Math.abs).filter((v) => !motifValues.has(v))).size;
+		const fewest = Math.min(...pool.map(novelty));
+		const kin = pool.filter((c) => novelty(c) === fewest);
+		const cell = pick(kin.length > 0 ? kin : pool, rnd);
+		cellByRole.set(role, cell);
+		return cell;
+	};
+
+	// 対旋律のリズム。曲ごとに1つ引いて使い回す（サブメロにも「その曲の型」を持たせる）。
+	const counterRhythm = pick(
+		groovyCells(
+			RHYTHM_CELLS.filter((c) => c.density === "medium"),
+			style.groove,
+			rnd,
+		),
+		rnd,
+	).value;
+
 	const barRhythms: number[][] = [];
-	let prevCell: RhythmCell | null = null;
 	let motifSeen = 0;
 	for (let bar = 0; bar < BARS; bar++) {
 		const role = barRoles[bar];
 		let cell: RhythmCell;
 		if (role === "motif" || role === "sequence" || role === "climax") {
 			motifSeen++;
-			cell = useRetro && motifSeen % 3 === 2 ? motifRetro : motifCell;
+			cell = useRetro && motifSeen === 3 ? motifRetro : motifCell;
+		} else if (role === "step" && stepUsesMotif) {
+			// **つなぎの小節でもモチーフのリズムを使う。** `step` は曲の半分近くを
+			// 占める最頻の役割なので、ここに別の型を当てると音価の種類が一気に増える。
+			// 参考曲の音価エントロピーは 0.62〜1.18 で、型を役割ごとに分けた時点の
+			// 生成物（1.37）はまだ上振れしていた。同じ型が戻ってくることが
+			// 「その曲らしさ」になる。
+			cell = motifCell;
 		} else {
-			const wanted =
-				role === "run" ? "dense" : role === "hold" ? "sparse" : "medium";
-			const pool = RHYTHM_CELLS.filter((c) => c.density === wanted);
-			// 隣り合う小節で同じリズム型を続けない（単調さの最大の原因）。
-			const fresh = pool.filter((c) => c !== prevCell);
-			const usable = fresh.length > 0 ? fresh : pool;
-			// **4小節フレーズの最後の小節では、休符を含む形を優先する。**
-			// 人間の曲の主旋律は休符がステップ比で15〜43%（p25〜p75）あるのに、
-			// 初版は全曲が3〜8%にしかならなかった。息継ぎはフレーズの切れ目に置くのが
-			// 自然なので、休符を増やす場所をここに寄せる。
-			const breathing = usable.filter((c) => c.value.some((v) => v < 0));
-			cell =
-				bar % 4 === 3 && breathing.length > 0
-					? pick(breathing, rnd)
-					: pick(usable, rnd);
+			cell = cellFor(role);
 		}
-		prevCell = cell;
 		barRhythms.push(cell.value.map(scaleStep));
 	}
 
@@ -1207,6 +1438,17 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	 * **メロディの隙間にだけ**置くのに使う。ここが取れるのは、リズムを音より先に
 	 * 決めてあるおかげで `slots` に発音位置と長さが揃っているから。
 	 */
+	/** 隙間の長さに収まる言い回しを1つ引く。収まるものが無ければ置かない。 */
+	const pickFigure = (
+		gapSteps: number,
+		scale: (v: number) => number,
+	): number[] | null => {
+		const fits = ANSWER_FIGURES.filter(
+			(f) => f.reduce((sum, v) => sum + scale(Math.abs(v)), 0) <= gapSteps,
+		);
+		return fits.length === 0 ? null : pick(fits, rnd);
+	};
+
 	const melodyGaps = (slots: Slot[]): [number, number][] => {
 		const gaps: [number, number][] = [];
 		let cursor = 0;
@@ -1356,20 +1598,27 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		);
 
 		if (subStyle === "answer") {
-			// 合いの手。メロディが休んでいる区間にだけ8分で入る。8分に満たない
-			// 隙間は無視する（細かすぎる音は合いの手ではなく雑音になる）。
-			const eighth = scaleStep(EIGHTH);
+			// 合いの手。メロディが休んでいる区間にだけ入る。
+			// **等間隔に刻まない。** 8分を並べるだけだと、サブメロが曲を通して
+			// 機械的な刻みになる（実測で、サブメロの音の40%——最大100%——が
+			// 「同じ音価が3つ以上続く」形だった）。隙間に入る短い言い回しを引く。
 			let placed = 0;
 			for (const [at, len] of melodyGaps(slots)) {
-				if (len < eighth) continue;
-				const count = Math.min(4, Math.floor(len / eighth));
-				for (let i = 0; i < count; i++) {
-					subSemi = pushSub(
-						at + i * eighth,
-						eighth,
-						i === 0 ? subSemi : walk(subSemi, subDir),
-					);
-					placed++;
+				const figure = pickFigure(len, scaleStep);
+				if (!figure) continue;
+				let cursor = at;
+				for (let i = 0; i < figure.length; i++) {
+					const raw = figure[i];
+					const step = scaleStep(Math.abs(raw));
+					if (raw > 0) {
+						subSemi = pushSub(
+							cursor,
+							step,
+							i === 0 ? subSemi : walk(subSemi, subDir),
+						);
+						placed++;
+					}
+					cursor += step;
 				}
 			}
 			// 隙間が無い小節では合いの手が1音も置けない。空のままだとサブメロが
@@ -1386,17 +1635,26 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 					pitches[i] - style.subInterval,
 				);
 		} else if (subStyle === "counter") {
-			// 対旋律。8分でメロディと反行する。**小節頭は空ける**——メロディの
-			// 打ち出しに重ねると対旋律ではなく厚みになる。1拍遅れて入るのが定石。
-			const eighth = scaleStep(EIGHTH);
-			const from = scaleStep(QUARTER);
-			const count = Math.max(1, Math.floor((stepsPerBar - from) / eighth));
-			for (let i = 0; i < count; i++)
-				subSemi = pushSub(
-					from + i * eighth,
-					eighth,
-					i === 0 ? subSemi : walk(subSemi, subDir * (i % 2 === 0 ? 1 : -1)),
-				);
+			// 対旋律。メロディと反行する独立した旋律線。**小節頭は空ける**——
+			// メロディの打ち出しに重ねると対旋律ではなく厚みになる。
+			// リズムは曲ごとに引いた型を使う。等間隔の8分を並べると対旋律ではなく
+			// ただの刻みになるため。
+			let cursor = 0;
+			let index = 0;
+			for (const raw of counterRhythm) {
+				const step = scaleStep(Math.abs(raw));
+				if (raw > 0 && cursor > 0) {
+					subSemi = pushSub(
+						cursor,
+						step,
+						index === 0
+							? subSemi
+							: walk(subSemi, subDir * (index % 2 === 0 ? 1 : -1)),
+					);
+					index++;
+				}
+				cursor += step;
+			}
 		} else if (subStyle === "pedal") {
 			// 保続音。小節を通して1音を伸ばす。
 			pushSub(0, stepsPerBar, subSemi);
@@ -1516,9 +1774,17 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		return (Math.max(...us) - Math.min(...us)) / UNITS_PER_SEMITONE;
 	};
 
+	// 曲全体を同じ量だけずらす。units は絶対音高なので、綴りの関係は保たれたまま動く。
+	const shiftUnits = semitonesToUnits(rootShift, edo);
+	if (shiftUnits !== 0)
+		for (const list of [melody, submelody, bass])
+			for (const n of list) n.pitchUnits = (n.pitchUnits + shiftUnits) as Units;
+
 	return {
 		chordProgression,
 		chordPattern,
+		rootShift,
+		bpm,
 		melody,
 		submelody,
 		bass,
@@ -1673,6 +1939,8 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 		best = {
 			chordProgression: d.chordProgression,
 			chordPattern: d.chordPattern,
+			rootShift: d.rootShift,
+			bpm: d.bpm,
 			melody: d.melody,
 			submelody: d.submelody,
 			bass: d.bass,

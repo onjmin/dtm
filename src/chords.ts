@@ -57,12 +57,22 @@ const MEANTONE_STEP_BY_SEMITONE = [0, 3, 5, 8, 10, 13, 16, 18, 21, 23, 26, 28];
  * 移調（`rootShift`）は12平均律の半音で指定されるので、31平均律ではミーントーンの
  * 度数（{@link MEANTONE_STEP_BY_SEMITONE}）へ写してから足す。
  */
-const chordBaseUnits = (rootShift: number, edo: 12 | 31): number => {
-	const within = ((rootShift % 12) + 12) % 12;
-	const oct = Math.round((rootShift - within) / 12);
+/**
+ * 12平均律の半音で表した移調量を、その音律の units へ写す。
+ *
+ * 31平均律では半音をそのまま足すと格子から外れるので、ミーントーンの度数
+ * （{@link MEANTONE_STEP_BY_SEMITONE}）を経由する。曲全体を同じ量だけずらす用途
+ * （自動作曲の調決め）と、和音の基準位置を出す用途の両方で使う。
+ */
+export const semitonesToUnits = (semitones: number, edo: 12 | 31): number => {
+	const within = ((semitones % 12) + 12) % 12;
+	const oct = Math.round((semitones - within) / 12);
 	const step = edo === 31 ? MEANTONE_STEP_BY_SEMITONE[within] : within;
-	return (C3 / 12 + oct) * UNITS_PER_OCTAVE + step * (UNITS_PER_OCTAVE / edo);
+	return oct * UNITS_PER_OCTAVE + step * (UNITS_PER_OCTAVE / edo);
 };
+
+const chordBaseUnits = (rootShift: number, edo: 12 | 31): number =>
+	(C3 / 12) * UNITS_PER_OCTAVE + semitonesToUnits(rootShift, edo);
 
 /**
  * 和音の構成音を units へ写す。

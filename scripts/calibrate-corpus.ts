@@ -405,10 +405,17 @@ const argOf = (name: string): string | undefined => {
 	return i >= 0 ? argv[i + 1] : undefined;
 };
 
-const collectFromDir = (dir: string): Buffer[] =>
-	readdirSync(dir)
-		.filter((f) => f.toLowerCase().endsWith(".mid"))
-		.map((f) => readFileSync(join(dir, f)));
+/** フォルダを再帰的に辿って .mid を集める（曲ごとにフォルダを切ってある構成に合わせる）。 */
+const collectFromDir = (dir: string): Buffer[] => {
+	const out: Buffer[] = [];
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		const full = join(dir, entry.name);
+		if (entry.isDirectory()) out.push(...collectFromDir(full));
+		else if (entry.name.toLowerCase().endsWith(".mid"))
+			out.push(readFileSync(full));
+	}
+	return out;
+};
 
 const API_BASE = "https://rpgen-search.pages.dev/api";
 

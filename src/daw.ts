@@ -5064,9 +5064,15 @@ export const mountDAW = (
 				if (chordTrack) {
 					chordTrack.savedChordInput = song.chordProgression;
 					chordTrack.savedChordPattern = song.chordPattern;
-					chordTrack.savedChordRoot = 0; // 生成はハ長調固定。移調はマクロの「移調」で行う
+					// 進行はハ長調で書かれていて、調は rootShift で表す。メロディ・サブメロ・
+					// ベースのノートは生成側で移調済みなので、ここで伴奏に同じ量を渡すと
+					// 曲全体の調が揃う。
+					chordTrack.savedChordRoot = song.rootShift;
 					applyChord(chordTrack);
 				}
+				// テンポも曲ごとに決める。設定しないと全曲が既定値のままで、
+				// 続けて聴いたときに曲の違いが出にくい。
+				setBpm(song.bpm);
 
 				playStartStep = 0;
 				redrawAll();
