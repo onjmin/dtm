@@ -16,6 +16,7 @@ import {
 } from "./drum-config";
 import type { MmlPlayback, PlayMmlOptions } from "./headless-player";
 import {
+	buildStreamVoiceNotes,
 	createSingingVoices,
 	PREWARM_NOTES,
 	panToStereo,
@@ -33,7 +34,7 @@ import {
 } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { createSynth, type Synth } from "./synth";
-import { UNITS_PER_OCTAVE, units } from "./tuning";
+import { UNITS_PER_OCTAVE } from "./tuning";
 import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 import {
 	DEFAULT_BPM,
@@ -147,21 +148,18 @@ export const playSingingMML = async (
 			const sorted = [...(seqTrack?.notes ?? [])].sort(
 				(a, b) => a.startStep - b.startStep,
 			);
-			const gate = (lt.gate ?? DEFAULT_GATE) / 100;
-			// オクターブシフトを units 換算でピッチへ加算（1オクターブ = 372 units）
-			const semis = (lt.octave ?? 0) * UNITS_PER_OCTAVE;
-			const count = Math.min(sorted.length, lt.syllables.length);
-			const notes: StreamVoiceNote[] = [];
-			for (let i = 0; i < count; i++) {
-				const n = sorted[i];
-				if (n.startStep < fromStep) continue;
-				notes.push({
-					syllable: lt.syllables[i],
-					pitch: units(n.pitchUnits + semis),
-					startSec: (n.startStep - fromStep) * secondsPerStep,
-					durationSec: n.durationSteps * secondsPerStep * gate,
-				});
-			}
+			// 継続記号（ー / 〜）のノート結合・ブレスの畳み込みはここで一括して行う。
+			const notes: StreamVoiceNote[] = buildStreamVoiceNotes(
+				lt.syllables,
+				sorted,
+				{
+					fromStep,
+					secondsPerStep,
+					gate: (lt.gate ?? DEFAULT_GATE) / 100,
+					// オクターブシフトを units 換算でピッチへ加算（1オクターブ = 372 units）
+					octaveShiftUnits: (lt.octave ?? 0) * UNITS_PER_OCTAVE,
+				},
+			);
 			return {
 				id: TRACK_ID_BY_INDEX[index] ?? `t${index}`,
 				model: lt.model,

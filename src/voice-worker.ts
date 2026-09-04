@@ -10,7 +10,8 @@
  */
 
 import { leadInFromEntry, VoiceBank, Worldline } from "@onjmin/koe";
-import { vibratoPitchCurve } from "./vibrato";
+import type { PitchSegment } from "./pitch-curve";
+import { pitchCurveFor } from "./pitch-curve";
 import type {
 	VoiceWorkerInbound,
 	VoiceWorkerOutbound,
@@ -94,6 +95,7 @@ const renderComposite = async (
 	gender: number | undefined,
 	breathiness: number | undefined,
 	tension: number | undefined,
+	pitchSegments: PitchSegment[] | undefined,
 ): Promise<Rendered | null> => {
 	if (!worldline) return null;
 	const [consonantPcm, vowelPcm] = await Promise.all([
@@ -106,7 +108,7 @@ const renderComposite = async (
 	const targetHz = unitsToFreq(pitch);
 	const audio = worldline.renderNote({
 		pcm: spliced.pcm,
-		pitch: vibrato ? vibratoPitchCurve(targetHz, spliced.preMs) : targetHz,
+		pitch: pitchCurveFor(targetHz, pitchSegments, spliced.preMs, !!vibrato),
 		durationMs,
 		preMs: spliced.preMs,
 		consonantMs: spliced.consonantMs,
@@ -125,6 +127,7 @@ const renderAlias = async (
 	gender?: number,
 	breathiness?: number,
 	tension?: number,
+	pitchSegments?: PitchSegment[],
 ): Promise<Rendered | null> => {
 	if (!bank) return null;
 	const composite = unpackCompositeAlias(alias);
@@ -138,6 +141,7 @@ const renderAlias = async (
 			gender,
 			breathiness,
 			tension,
+			pitchSegments,
 		);
 	}
 	const pcm = await getPcm(alias);
@@ -149,7 +153,7 @@ const renderAlias = async (
 	if (worldline) {
 		const audio = worldline.renderNote({
 			pcm,
-			pitch: vibrato ? vibratoPitchCurve(targetHz, lead.preMs) : targetHz,
+			pitch: pitchCurveFor(targetHz, pitchSegments, lead.preMs, !!vibrato),
 			durationMs,
 			...lead,
 			gender,
@@ -199,6 +203,7 @@ wself.onmessage = async (ev) => {
 			gender,
 			breathiness,
 			tension,
+			pitchSegments,
 		} = msg;
 		try {
 			const out = await renderAlias(
@@ -209,6 +214,7 @@ wself.onmessage = async (ev) => {
 				gender,
 				breathiness,
 				tension,
+				pitchSegments,
 			);
 			if (out) {
 				wself.postMessage(

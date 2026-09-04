@@ -6,7 +6,8 @@
  *   例: `@@2 klatt どはどなつのど`
  *       `@@3 external_engine きょー`
  *
- * 区切りは半角スペース（引用符不要）。歌詞内のひらがな・カタカナ・長音記号(ー)以外は破棄する。
+ * 区切りは半角スペース（引用符不要）。歌詞内のひらがな・カタカナと、
+ * 制御記号 `ー` `〜`（継続）・`っ`（促音）・`_`（休符）・`、`（ブレス）以外は破棄する。
  *
  * 演奏データ（テンポ・休符・音符長）とは完全に分離されており、
  * Note On のタイミングで音節を1つずつ消費して歌わせる。
@@ -16,6 +17,14 @@
  */
 
 import { leadInFromEntry, VoiceBank, Worldline } from "@onjmin/koe";
+import type { PitchSegment } from "./pitch-curve";
+import {
+	PORTAMENTO_MS,
+	pitchCurveFor,
+	STEP_GLIDE_MS,
+	segmentsCacheKey,
+	transposeSegments,
+} from "./pitch-curve";
 import { type Units, units } from "./tuning";
 import type {
 	CustomVocalDef,
@@ -25,7 +34,7 @@ import type {
 	PlayNoteEvent,
 } from "./types";
 import { DEFAULT_GATE, DEFAULT_PAN, DEFAULT_VOCAL_VOLUME } from "./types";
-import { VIBRATO_MIN_SEC, vibratoPitchCurve } from "./vibrato";
+import { VIBRATO_MIN_SEC } from "./vibrato";
 import type {
 	VoiceWorkerInit,
 	VoiceWorkerOutbound,
@@ -34,7 +43,13 @@ import type {
 } from "./voice-worker-types";
 import { packCompositeAlias, unpackCompositeAlias } from "./voice-worker-types";
 
-export type { LyricSyllable, LyricTrack, OctaveUnisonMode } from "./types";
+export type { PitchSegment } from "./pitch-curve";
+export type {
+	LyricSyllable,
+	LyricSyllableKind,
+	LyricTrack,
+	OctaveUnisonMode,
+} from "./types";
 export { VIBRATO_MIN_SEC } from "./vibrato";
 
 /** かな → [子音, 母音] のローマ字対応表（清音・濁音・半濁音・撥音） */
@@ -127,33 +142,54 @@ const VOWEL_KANA: Record<string, string> = {
 	o: "お",
 };
 
+/** 継続記号（階段）。直前の音を言い直さずに保ち、ピッチだけを切り替える。 */
+export const TIE_MARK = "ー";
+/** 継続記号（ポルタメント）。{@link TIE_MARK} と同じだが、ピッチを滑らかに繋ぐ。 */
+export const PORTAMENTO_MARK = "〜";
+/** 促音。ノートを消費し、無音の閉鎖として間を作る。 */
+export const STOP_MARK = "っ";
+/** 明示的な休符。ノートを消費するが歌わない（そのノートは無音になる）。 */
+export const REST_MARK = "_";
+/** ブレス。ノートは消費せず、直前ノートの尻を削って息継ぎを差し込む。 */
+export const BREATH_MARK = "、";
+
 /**
- * カタカナをひらがなへ寄せ、ひらがな以外を破棄する。
- * 仕様: ひらがな／カタカナのみ抽出。
+ * カタカナをひらがなへ寄せ、かなと制御記号以外を破棄する。
+ * 仕様: ひらがな／カタカナ ＋ {@link TIE_MARK} `ー` / {@link PORTAMENTO_MARK} `〜` /
+ * {@link REST_MARK} `_` / {@link BREATH_MARK} `、`（促音 `っ` はかなに含まれる）。
  *
- * 促音（っ）・長音記号（ー）は、それ単体の音声サンプルを持つUSTは通常存在しない
- * （音源側に「っ」「ー」という発音は無い）ため、ここで丸ごと除去する。
- * どちらも「無いもの」として扱い、除去した結果その音符には次の実在する
- * かな（歌詞）が繰り上がって割り当てられる。
+ * 記号の異体字はここで正規形へ寄せる（NFKC で `～`→`~`、`，`→`,`、`＿`→`_` になるため、
+ * 残りの `~`→`〜`、`,`→`、` を明示で畳む）。
+ *
+ * 2.0系までは `っ` `ー` を「音声サンプルが存在しない」として丸ごと除去していたが、
+ * どちらもノートを消費する制御記号になったため、ここでは残す。
  */
 const sanitizeText = (text: string): string =>
 	text
 		.normalize("NFKC")
 		// カタカナ(ァ-ヶ)→ひらがなへ寄せる
 		.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
-		// 促音(っ)・長音記号(ー)を除去（音声サンプルが存在しないため）
-		.replace(/[っー]/g, "")
-		// ひらがな(ぁ-ゖ)以外を破棄
-		.replace(/[^ぁ-ゖ]/g, "");
+		// 記号の異体字を正規形へ寄せる
+		.replace(/~/g, PORTAMENTO_MARK)
+		.replace(/,/g, BREATH_MARK)
+		// ひらがな(ぁ-ゖ)と制御記号以外を破棄
+		.replace(/[^ぁ-ゖー〜_、]/g, "");
 
 /**
  * 文字列を音節単位へ分解する。
  * 小さいかな（ぁぃぅぇぉゃゅょ）は直前の文字と結合して1音節にする。
+ * 制御記号（`ー` `〜` `_` `、`）は結合対象にせず、常に単独で切り出す。
  */
 const splitSyllables = (text: string): string[] => {
+	const MARKS = `${TIE_MARK}${PORTAMENTO_MARK}${REST_MARK}${BREATH_MARK}`;
 	const result: string[] = [];
 	for (const ch of text) {
-		if (result.length > 0 && SMALL_KANA.includes(ch)) {
+		const prev = result[result.length - 1];
+		if (
+			prev !== undefined &&
+			SMALL_KANA.includes(ch) &&
+			!MARKS.includes(prev[prev.length - 1])
+		) {
 			result[result.length - 1] += ch;
 		} else {
 			result.push(ch);
@@ -179,12 +215,24 @@ const kanaToVowel = (kana: string): string => {
 
 /**
  * 音節文字列を子音・母音へ分解する。
- * 「ー」「っ」は sanitizeText で除去済みのため通常はここに来ないが、
- * normalizeLyrics以外から直接呼ばれる可能性に備えて分岐は残す。
+ * 制御記号（継続 `ー`/`〜`・促音 `っ`・休符 `_`）は種別だけを立てて返し、
+ * 継続の母音は {@link normalizeLyrics} が直前の音節から埋める。
  */
 const analyzeSyllable = (syllable: string): LyricSyllable => {
-	if (syllable === "ー") return { kana: syllable, consonant: "-", vowel: "-" };
-	if (syllable === "っ") return { kana: syllable, consonant: "Q", vowel: "" };
+	if (syllable === TIE_MARK)
+		return { kana: syllable, consonant: "-", vowel: "-", kind: "tie" };
+	if (syllable === PORTAMENTO_MARK)
+		return {
+			kana: syllable,
+			consonant: "-",
+			vowel: "-",
+			kind: "tie",
+			portamento: true,
+		};
+	if (syllable === STOP_MARK)
+		return { kana: syllable, consonant: "Q", vowel: "", kind: "stop" };
+	if (syllable === REST_MARK)
+		return { kana: syllable, consonant: "", vowel: "", kind: "rest" };
 
 	const head = syllable[0];
 	const row = kanaTable[head];
@@ -201,32 +249,70 @@ const analyzeSyllable = (syllable: string): LyricSyllable => {
 };
 
 /**
- * 長音記号（ー）を直前の音節の母音かなへ置換する。
- * 例: きょ + ー → きょ + お
+ * 歌詞文字列（かな＋制御記号）を正規化済み音節列へ変換する。
+ *
+ * 出力の1要素＝ノート1つぶん。ブレス（`、`）だけはノートを消費せず、
+ * 直前の音節の {@link LyricSyllable.breathAfter} へ畳まれる。
+ *
+ * 継続記号（`ー` / `〜`）は直前の音節の母音を焼き込んで返す（例: きょ + ー → きょ + お）。
+ * `kind: "tie"` は残るので、発音側は「言い直さない」判断ができ、表示側は `ー` へ戻せる。
+ *
+ * - 撥音（ん）の直後の継続は「ん」を伸ばす（ハミング）。
+ * - 促音（`っ`）は母音の文脈を切らない（語中の詰まりなので直前母音を保つ）。
+ * - 休符（`_`）は歌わず、ブレス（`、`）ともども母音の文脈を切る。次の音節は語頭として歌われる。
+ * - 引き継ぐ母音が無い継続（行頭・ブレス直後）は意味を持たないので捨てる。
  */
-const resolveLongVowels = (syllables: LyricSyllable[]): LyricSyllable[] => {
+export const normalizeLyrics = (text: string): LyricSyllable[] => {
 	const result: LyricSyllable[] = [];
 	let prevVowel = "";
-	for (const syl of syllables) {
-		if (syl.consonant === "-") {
-			// 直前の母音を引き継ぐ。先頭にある等で判定不能なら破棄
+	for (const mark of splitSyllables(sanitizeText(text))) {
+		if (mark === BREATH_MARK) {
+			const last = result[result.length - 1];
+			if (last) last.breathAfter = true;
+			prevVowel = "";
+			continue;
+		}
+		const syl = analyzeSyllable(mark);
+		if (syl.kind === "tie") {
 			if (!prevVowel) continue;
 			result.push({
-				kana: VOWEL_KANA[prevVowel] ?? syl.kana,
+				...syl,
+				kana: prevVowel === "N" ? "ん" : (VOWEL_KANA[prevVowel] ?? syl.kana),
 				consonant: "",
 				vowel: prevVowel,
 			});
 			continue;
 		}
-		if (syl.vowel && syl.vowel !== "N") prevVowel = syl.vowel;
+		if (syl.kind === "rest") prevVowel = "";
+		else if (syl.vowel) prevVowel = syl.vowel; // 撥音(N)も継続の引き継ぎ元になる
 		result.push(syl);
 	}
 	return result;
 };
 
-/** 歌詞文字列（かな）を正規化済み音節列へ変換する */
-export const normalizeLyrics = (text: string): LyricSyllable[] =>
-	resolveLongVowels(splitSyllables(sanitizeText(text)).map(analyzeSyllable));
+/**
+ * 音節を歌詞テキストの1文字（表示・MMLへの書き戻し用）へ戻す。
+ * 継続・休符は元の記号へ、ブレスは直後に `、` を付けて返す。
+ *
+ * {@link LyricSyllable.kana} は継続のとき「引き継いだ母音のかな」なので、
+ * これをそのまま繋ぐと `あーー` が `あああ` になって継続の意図が失われる。
+ * 表示と往復（MML ⇄ エディタ）には必ずこちらを使うこと。
+ */
+export const displayKana = (syl: LyricSyllable): string => {
+	const head =
+		syl.kind === "tie"
+			? syl.portamento
+				? PORTAMENTO_MARK
+				: TIE_MARK
+			: syl.kind === "rest"
+				? REST_MARK
+				: syl.kana;
+	return syl.breathAfter ? head + BREATH_MARK : head;
+};
+
+/** 音節列を歌詞テキストへ戻す（{@link displayKana} の連結）。 */
+export const syllablesToText = (syllables: LyricSyllable[]): string =>
+	syllables.map(displayKana).join("");
 
 /**
  * 複数行に分かれた歌詞を1つの音節列へまとめ、改行位置を併せて返す。
@@ -667,6 +753,11 @@ export type VoiceModel = {
 		durationMs: number,
 		vibrato?: boolean,
 		expr?: VoiceExpression,
+		/**
+		 * 継続記号（`ー` / `〜`）で結合されたノート内のピッチ推移（2区間目以降）。
+		 * 先頭区間は `pitch`、`durationMs` は結合後の全長。未指定なら単一ピッチ。
+		 */
+		pitchSegments?: PitchSegment[],
 	) => Promise<string | null>;
 	/**
 	 * {@link renderToCache} 済みのバッファを絶対時刻 t0（AudioContextクロック秒）へスケジュールする。
@@ -680,6 +771,11 @@ export type VoiceModel = {
 		reverbSend?: number,
 		delaySend?: number,
 		destination?: AudioNode,
+		/**
+		 * 直前ノートからの継続として鳴らす（継続記号がノート結合できなかったときの分割再生）。
+		 * 先行母音を切り、立ち上がりを直前ノートの減衰へ被せて言い直し感を消す。
+		 */
+		continuation?: boolean,
 	) => void;
 	/** スケジュール済みの発音をすべて即停止する（停止・一時停止・シーク時）。 */
 	stopAll?: () => void;
@@ -729,11 +825,13 @@ export const createKlattVoice = (
 		// 声量は等倍=1。100超(>1)はブーストとして上限なしで通す（クリップは利用側の判断）。
 		const peak = Math.max(0.0001, e.volume);
 
-		// 促音(っ)は無声。発音せず間（ま）として消費する
+		// 促音(っ)・休符(_)は無声。発音せず間（ま）として消費する
 		if (syllable.vowel === "" || syllable.consonant === "Q") return;
 
 		const [f1, f2] = FORMANTS[syllable.vowel] ?? FORMANTS.a;
-		const attack = 0.02;
+		// 継続（結合できずに分割された ー / 〜）は言い直さない。立ち上がりを長めに取り、
+		// 直前ノートの減衰へ被せることでアタック感を消す。
+		const attack = syllable.kind === "tie" ? 0.06 : 0.02;
 		const release = 0.06;
 		const sustainEnd = t0 + Math.max(attack + 0.02, e.duration);
 
@@ -768,7 +866,20 @@ export const createKlattVoice = (
 		// 声門音源（倍音豊富なのこぎり波）
 		const osc = ctx.createOscillator();
 		osc.type = "sawtooth";
-		osc.frequency.value = unitsToFreq(e.pitchUnits);
+		let oscHz = unitsToFreq(e.pitchUnits);
+		osc.frequency.setValueAtTime(oscHz, t0);
+		// 継続記号（ー / 〜）で結合されたノートは、言い直さずにピッチだけを動かす。
+		// klatt は生きたオシレータなので、境界へ周波数オートメーションを置くだけでよい。
+		// AudioParam.value はスケジュール済みの自動化を反映しないため、直前ピッチは
+		// ここで自前に持ち回る（value を読むと毎回先頭ピッチへ戻ってしまう）。
+		for (const seg of e.pitchSegments ?? []) {
+			const hz = Math.max(1, unitsToFreq(seg.pitch));
+			const glideS = (seg.portamento ? PORTAMENTO_MS : STEP_GLIDE_MS) / 1000;
+			const from = Math.max(t0, t0 + Math.max(0, seg.atSec) - glideS / 2);
+			osc.frequency.setValueAtTime(oscHz, from);
+			osc.frequency.exponentialRampToValueAtTime(hz, from + glideS);
+			oscHz = hz;
+		}
 
 		const makeFormant = (
 			freq: number,
@@ -1027,14 +1138,23 @@ const resolveKoeAlias = (
 	const romaji = `${cons}${vow}` || vow;
 	const pv = prevVowel || "-"; // 直前母音が無ければ語頭扱い
 
-	const raw: string[] = [
-		// 連続音（VCV）: 直前母音つき
-		`${pv} ${kana}`,
-		`${pv} ${romaji}`,
-		// 単独音 / CVVC
-		kana,
-		romaji,
-	];
+	// 継続（ー / 〜）は「言い直さない」音なので、子音つきの候補を一切引かない。
+	// 同母音の連続音（"a あ"）→ 母音単体（"あ" / "a"）の順で、当たりの柔らかい素片を選ぶ。
+	const raw: string[] =
+		syl.kind === "tie"
+			? [
+					`${syl.vowel === "N" ? "n" : syl.vowel} ${kana}`,
+					`${pv} ${kana}`,
+					kana,
+				]
+			: [
+					// 連続音（VCV）: 直前母音つき
+					`${pv} ${kana}`,
+					`${pv} ${romaji}`,
+					// 単独音 / CVVC
+					kana,
+					romaji,
+				];
 	// 母音フォールバック
 	const vk = VOWEL_KANA[syl.vowel];
 	if (vk) raw.push(`${pv} ${vk}`, vk, syl.vowel);
@@ -1176,6 +1296,8 @@ type RenderBackend = {
 		durationMs: number,
 		vibrato?: boolean,
 		expr?: VoiceExpression,
+		/** 継続記号で結合されたノート内のピッチ推移（2区間目以降）。 */
+		pitchSegments?: PitchSegment[],
 	) => Promise<BackendRender>;
 	/** 破棄（Worker終了など）。 */
 	dispose: () => void;
@@ -1214,6 +1336,7 @@ const createLocalBackend = async (
 		durationMs: number,
 		vibrato: boolean | undefined,
 		expr: VoiceExpression | undefined,
+		pitchSegments: PitchSegment[] | undefined,
 	): Promise<BackendRender> => {
 		if (!worldline) return null;
 		const [consonantPcm, vowelPcm] = await Promise.all([
@@ -1226,7 +1349,7 @@ const createLocalBackend = async (
 		const targetHz = unitsToFreq(pitch);
 		const audio = worldline.renderNote({
 			pcm: spliced.pcm,
-			pitch: vibrato ? vibratoPitchCurve(targetHz, spliced.preMs) : targetHz,
+			pitch: pitchCurveFor(targetHz, pitchSegments, spliced.preMs, !!vibrato),
 			durationMs,
 			preMs: spliced.preMs,
 			consonantMs: spliced.consonantMs,
@@ -1243,6 +1366,7 @@ const createLocalBackend = async (
 		durationMs: number,
 		vibrato?: boolean,
 		expr?: VoiceExpression,
+		pitchSegments?: PitchSegment[],
 	): Promise<BackendRender> => {
 		const composite = unpackCompositeAlias(alias);
 		if (composite) {
@@ -1253,6 +1377,7 @@ const createLocalBackend = async (
 				durationMs,
 				vibrato,
 				expr,
+				pitchSegments,
 			);
 		}
 		const pcm = await getPcm(alias);
@@ -1263,7 +1388,7 @@ const createLocalBackend = async (
 		if (worldline) {
 			const audio = worldline.renderNote({
 				pcm,
-				pitch: vibrato ? vibratoPitchCurve(targetHz, lead.preMs) : targetHz,
+				pitch: pitchCurveFor(targetHz, pitchSegments, lead.preMs, !!vibrato),
 				durationMs,
 				...lead,
 				gender: expr?.gender,
@@ -1351,6 +1476,7 @@ const createWorkerBackend = async (
 		durationMs: number,
 		vibrato?: boolean,
 		expr?: VoiceExpression,
+		pitchSegments?: PitchSegment[],
 	): Promise<BackendRender> =>
 		new Promise((resolve) => {
 			const id = ++reqId;
@@ -1371,6 +1497,7 @@ const createWorkerBackend = async (
 				gender: expr?.gender,
 				breathiness: expr?.breathiness,
 				tension: expr?.tension,
+				pitchSegments,
 			} satisfies VoiceWorkerRenderReq);
 		});
 
@@ -1432,8 +1559,9 @@ export const createKoeVoice = async (
 		durationMs: number,
 		vibrato?: boolean,
 		expr?: VoiceExpression,
+		pitchSegments?: PitchSegment[],
 	): string =>
-		`${alias}|${pitch}|${Math.round(durationMs / 10) * 10}${vibrato ? "|vib" : ""}${
+		`${alias}|${pitch}|${Math.round(durationMs / 10) * 10}${segmentsCacheKey(pitchSegments)}${vibrato ? "|vib" : ""}${
 			expr?.gender !== undefined ? `|g${Math.round(expr.gender * 100)}` : ""
 		}${
 			expr?.breathiness !== undefined
@@ -1450,8 +1578,9 @@ export const createKoeVoice = async (
 		durationMs: number,
 		vibrato?: boolean,
 		expr?: VoiceExpression,
+		pitchSegments?: PitchSegment[],
 	): Promise<RenderedNote | null> => {
-		const key = keyOf(alias, pitch, durationMs, vibrato, expr);
+		const key = keyOf(alias, pitch, durationMs, vibrato, expr, pitchSegments);
 		const existing = renderCache.get(key);
 		if (existing !== undefined) return Promise.resolve(existing);
 		const flying = inflight.get(key);
@@ -1464,6 +1593,7 @@ export const createKoeVoice = async (
 				durationMs,
 				vibrato,
 				expr,
+				pitchSegments,
 			);
 			let rendered: RenderedNote | null = null;
 			if (out) {
@@ -1483,6 +1613,13 @@ export const createKoeVoice = async (
 	 * 「2重声」を防ぐ。koeデモの LEADCAP_MS=90 に準拠。 */
 	const LEADCAP_S = 0.09;
 
+	/**
+	 * 継続ノート（結合できなかった `ー` / `〜`）を直前ノートへ被せる長さ（秒）。
+	 * この分だけ前倒しで鳴らし始め、同じ長さを掛けて立ち上げることで、
+	 * 直前ノートの減衰と等パワーに近い形で交差させる（＝言い直しに聞こえない）。
+	 */
+	const TIE_XFADE_S = 0.03;
+
 	const schedule = (
 		r: RenderedNote,
 		t0: number,
@@ -1491,6 +1628,7 @@ export const createKoeVoice = async (
 		reverbSend = 0,
 		delaySend = 0,
 		destOverride?: AudioNode,
+		continuation = false,
 	): void => {
 		// トラック単位チャンネルストリップの入口が指定されていればそちらへ。
 		const dest = destOverride ?? destination;
@@ -1526,14 +1664,19 @@ export const createKoeVoice = async (
 
 		// VCV連続音の長いプリ発声（〜300ms以上）を cap し、前のノートの母音と
 		// 重なり過ぎないようにする。余剰分はバッファ先頭からスキップする。
-		const effPre = Math.min(r.preSec, LEADCAP_S);
-		const skipS = r.preSec - effPre;
+		// 継続ノートは先行母音そのものが「言い直し」に聞こえるため丸ごと捨て、
+		// 代わりに直前ノートの尻へ短く被せて立ち上げる。
+		const effPre = continuation ? TIE_XFADE_S : Math.min(r.preSec, LEADCAP_S);
+		const skipS = continuation ? r.preSec : r.preSec - effPre;
 		const startAt = Math.max(ctx.currentTime + 0.001, t0 - effPre);
-		const playDurSec = r.audio.duration / r.rate - skipS;
+		// 先行母音を丸ごと捨てる継続ノートで、素片が先行分しか無い場合に長さが
+		// 0以下にならないようにする（stop < start は例外になる）。
+		const playDurSec = Math.max(0.01, r.audio.duration / r.rate - skipS);
 		const endAt = startAt + playDurSec;
 
-		// クリック防止のフェードと声量エンベロープ
-		const attack = 0.01;
+		// クリック防止のフェードと声量エンベロープ。継続ノートは立ち上がりを
+		// 被せ幅いっぱいまで伸ばし、アタック感（発音のたちあがり）を消す。
+		const attack = continuation ? TIE_XFADE_S : 0.01;
 		const release = 0.04;
 		const env = ctx.createGain();
 		env.gain.setValueAtTime(0.0001, startAt);
@@ -1573,9 +1716,25 @@ export const createKoeVoice = async (
 		const peak = Math.max(0.0001, e.volume);
 		const pan = e.pan ?? 0;
 		const durationMs = Math.max(60, e.duration * 1000);
-		void renderInto(alias, e.pitchUnits, durationMs).then((r) => {
+		void renderInto(
+			alias,
+			e.pitchUnits,
+			durationMs,
+			undefined,
+			undefined,
+			e.pitchSegments,
+		).then((r) => {
 			if (r)
-				schedule(r, t0, peak, pan, e.reverbSend, e.delaySend, e.destination);
+				schedule(
+					r,
+					t0,
+					peak,
+					pan,
+					e.reverbSend,
+					e.delaySend,
+					e.destination,
+					syllable.kind === "tie",
+				);
 		});
 	};
 
@@ -1586,6 +1745,7 @@ export const createKoeVoice = async (
 		durationMs,
 		vibrato,
 		expr,
+		pitchSegments,
 	) => {
 		if (syllable.consonant === "Q" || syllable.vowel === "") return null;
 		const alias = resolveKoeAlias(
@@ -1602,13 +1762,23 @@ export const createKoeVoice = async (
 		const dMs = Math.max(60, durationMs);
 		// 短いノートは1周期も揺れきらず不自然になるため、ここで最終的な適用可否を決める。
 		const vib = !!vibrato && dMs / 1000 >= VIBRATO_MIN_SEC;
-		const r = await renderInto(alias, pitch, dMs, vib, expr);
-		return r ? keyOf(alias, pitch, dMs, vib, expr) : null;
+		const r = await renderInto(alias, pitch, dMs, vib, expr, pitchSegments);
+		return r ? keyOf(alias, pitch, dMs, vib, expr, pitchSegments) : null;
 	};
 
-	model.scheduleCached = (key, t0, peak, pan, reverbSend, delaySend, dest) => {
+	model.scheduleCached = (
+		key,
+		t0,
+		peak,
+		pan,
+		reverbSend,
+		delaySend,
+		dest,
+		continuation,
+	) => {
 		const r = renderCache.get(key);
-		if (r) schedule(r, t0, peak, pan, reverbSend, delaySend, dest);
+		if (r)
+			schedule(r, t0, peak, pan, reverbSend, delaySend, dest, continuation);
 	};
 
 	model.stopAll = () => {
@@ -1634,12 +1804,163 @@ export type StreamVoiceNote = {
 	/**
 	 * ピッチ。単位は units（1/372オクターブ）。koe は Hz を受けるので、
 	 * ここから直接 Hz へ変換して歌わせる（整数MIDIノートに丸めない）。
+	 * 継続記号で複数ノートが結合されている場合は**先頭区間**のピッチ。
 	 */
 	pitch: Units;
 	/** アンカー（再生開始時刻）からの相対秒。実発音時刻 = anchorTime + startSec。 */
 	startSec: number;
-	/** ゲート適用済みの発音長（秒）。 */
+	/** ゲート適用済みの発音長（秒）。結合されている場合は結合後の全長。 */
 	durationSec: number;
+	/**
+	 * 継続記号（`ー` / `〜`）で結合された2区間目以降のピッチ推移。
+	 * これがあるノートは「1回の合成で歌い切る長い1音」で、区間の境界では
+	 * 言い直さずにピッチだけが動く。
+	 */
+	pitchSegments?: PitchSegment[];
+	/**
+	 * 直前ノートからの継続として鳴らす（結合できなかった `ー` / `〜`）。
+	 * 発音側は先行母音を切り、立ち上がりを直前ノートへ被せて言い直し感を消す。
+	 */
+	continuation?: boolean;
+	/**
+	 * このノートの直後にブレス（`、`）を入れる。
+	 * `durationSec` は既にブレスぶん切り詰めてある。
+	 */
+	breath?: boolean;
+};
+
+/**
+ * 継続記号でノートを結合できる上限（秒）。これを超える長さは1回の合成に載せず、
+ * 分割して継続ノート（{@link StreamVoiceNote.continuation}）として繋ぐ。
+ *
+ * WORLD再合成のコストは音価にほぼ比例するので、際限なく結合すると先読みが
+ * 間に合わず「遅延スキップ」で歌が抜ける。
+ * ロングトーンとして実用になる長さを確保しつつ、合成が破綻しない上限。
+ */
+export const TIE_MERGE_MAX_SEC = 4;
+
+/** ブレス（`、`）で直前ノートから削る長さ（秒）。息そのものの長さも兼ねる。 */
+const BREATH_SEC = 0.16;
+
+/** ブレス音の音量（歌唱のピークに対する比）。歌を邪魔しない程度に控えめ。 */
+const BREATH_PEAK_SCALE = 0.16;
+
+/** ブレスで削ってよい直前ノートの割合の上限（短い音符を消してしまわないため）。 */
+const BREATH_MAX_RATIO = 0.4;
+
+/** {@link buildStreamVoiceNotes} が受け取る演奏ノート（startStep 昇順で渡すこと）。 */
+export type TieSourceNote = {
+	startStep: number;
+	durationSteps: number;
+	pitchUnits: Units;
+};
+
+/** {@link buildStreamVoiceNotes} のタイミング・移調パラメータ。 */
+export type StreamVoiceNoteOptions = {
+	/** シーク開始位置（ステップ）。これより前に始まるノートは切り落とす。 */
+	fromStep: number;
+	/** 1ステップの実時間（秒）。 */
+	secondsPerStep: number;
+	/** ゲートタイム係数 0-1（歌詞トラックの `q` を正規化したもの）。 */
+	gate: number;
+	/** 歌唱ピッチのオクターブシフト（units）。 */
+	octaveShiftUnits: number;
+};
+
+/**
+ * 音節列と演奏ノート列を突き合わせ、ストリーミング用のノート列を組み立てる。
+ *
+ * 音節とノートは**発音順（startStep昇順）の index で1:1**に対応する。これは
+ * ピアノロールの歌詞表示（`renderer.drawNoteLyrics`）とも共通の規則。
+ *
+ * 継続記号（`ー` / `〜`）はここでノートへ畳まれる:
+ * - 直前ノートと**隙間なく続いている**なら1音へ結合し、{@link StreamVoiceNote.pitchSegments}
+ *   としてピッチ推移だけを持たせる（＝1回の合成で歌い切る）。
+ * - 隙間がある／{@link TIE_MERGE_MAX_SEC} を超えるなら結合をやめ、
+ *   {@link StreamVoiceNote.continuation} を立てた別ノートとして繋ぐ。
+ * - シークで先頭が切り落とされた継続（結合相手が居ない）も同じく継続ノートになる。
+ *
+ * 隙間の判定は**ゲート適用前のステップ**で行う。ゲートを短くすると全ノートの間に
+ * 隙間ができるが、それは発音長の設定であって「音が途切れている」ことではないため。
+ */
+export const buildStreamVoiceNotes = (
+	syllables: LyricSyllable[],
+	sorted: TieSourceNote[],
+	o: StreamVoiceNoteOptions,
+): StreamVoiceNote[] => {
+	const { fromStep, secondsPerStep, gate, octaveShiftUnits } = o;
+	const count = Math.min(sorted.length, syllables.length);
+	const out: StreamVoiceNote[] = [];
+
+	/** ゲート適用済みの発音長（秒）。 */
+	const gatedSec = (n: TieSourceNote): number =>
+		n.durationSteps * secondsPerStep * gate;
+	/** アンカー（fromStep）からの相対開始秒。 */
+	const startSecOf = (n: TieSourceNote): number =>
+		(n.startStep - fromStep) * secondsPerStep;
+	const pitchOf = (n: TieSourceNote): Units =>
+		units(n.pitchUnits + octaveShiftUnits);
+
+	let i = 0;
+	while (i < count) {
+		const head = sorted[i];
+		const syl = syllables[i];
+		i++;
+		if (head.startStep < fromStep) continue; // シークで切り落とされたノート
+
+		// 先頭が継続記号 = 結合相手を失った継続（シークで頭が切られた等）。
+		// 言い直さないことだけは守り、ここから新しい結合グループを始める。
+		const continuation = syl.kind === "tie";
+
+		// 続く継続記号を、隙間なく繋がっている限り1音へ畳む。
+		// 歌わない音節（促音・休符）へは畳まない — 畳むと継続ごと無音になってしまう
+		// （例: "あっー" の "ー" は、"っ" の無音へ吸われず単体の継続として鳴らす）。
+		const sungHead = syl.kind !== "stop" && syl.kind !== "rest";
+		const segments: PitchSegment[] = [];
+		let last = head;
+		let breath = !!syl.breathAfter;
+		while (
+			sungHead &&
+			i < count &&
+			syllables[i].kind === "tie" &&
+			!breath && // ブレスを挟んだら別の息＝別の音
+			sorted[i].startStep <= last.startStep + last.durationSteps &&
+			(sorted[i].startStep + sorted[i].durationSteps - head.startStep) *
+				secondsPerStep <=
+				TIE_MERGE_MAX_SEC
+		) {
+			const n = sorted[i];
+			segments.push({
+				pitch: pitchOf(n),
+				atSec: (n.startStep - head.startStep) * secondsPerStep,
+				portamento: !!syllables[i].portamento,
+			});
+			last = n;
+			breath = !!syllables[i].breathAfter;
+			i++;
+		}
+
+		// 結合後の全長 = 先頭の開始から最終区間の（ゲート適用済み）終端まで。
+		let durationSec =
+			(last.startStep - head.startStep) * secondsPerStep + gatedSec(last);
+		if (breath) {
+			durationSec = Math.max(
+				durationSec * (1 - BREATH_MAX_RATIO),
+				durationSec - BREATH_SEC,
+			);
+		}
+
+		out.push({
+			syllable: syl,
+			pitch: pitchOf(head),
+			startSec: startSecOf(head),
+			durationSec,
+			...(segments.length ? { pitchSegments: segments } : {}),
+			...(continuation ? { continuation: true } : {}),
+			...(breath ? { breath: true } : {}),
+		});
+	}
+	return out;
 };
 
 /** ストリーミング再生する歌詞トラック1本。 */
@@ -1889,6 +2210,67 @@ export const createSingingVoices = (
 	// ノートへ反映される（先読み秒数ぶんの遅延はあるが、実用上は十分ライブに追従する）。
 	let masterVolumeScalar = 1;
 
+	// スケジュール済みのブレス音。stopStream で一括停止する（音源のノートとは別管理）。
+	const activeBreaths = new Set<AudioBufferSourceNode>();
+
+	/**
+	 * ブレス（`、`）を鳴らす。音源の素片には頼らず、帯域を絞ったノイズで作る。
+	 *
+	 * UTAU音源の息継ぎ素片（`息` `br` 等）は存在するバンクとしないバンクがあり、
+	 * エイリアス名も揃っていない。ブレスは「どの音源でも同じように効く表現」で
+	 * あってほしいので、音源非依存のノイズで統一する。
+	 */
+	const scheduleBreath = (
+		t0: number,
+		peak: number,
+		pan: number,
+		destOverride?: AudioNode,
+	): void => {
+		const dur = BREATH_SEC;
+		const startAt = Math.max(ctx.currentTime + 0.001, t0);
+		const length = Math.max(1, Math.floor(ctx.sampleRate * dur));
+		const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+		const data = buffer.getChannelData(0);
+		for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+
+		const src = ctx.createBufferSource();
+		src.buffer = buffer;
+		// 息の帯域（子音のノイズより低く、広め）。ささやきに近い質感になる。
+		const bp = ctx.createBiquadFilter();
+		bp.type = "bandpass";
+		bp.frequency.value = 1400;
+		bp.Q.value = 0.7;
+
+		const env = ctx.createGain();
+		// 吸う息は「すっ」と立ち上がって緩やかに引く。前半で山を作る。
+		env.gain.setValueAtTime(0.0001, startAt);
+		env.gain.exponentialRampToValueAtTime(
+			Math.max(0.0001, peak * BREATH_PEAK_SCALE),
+			startAt + dur * 0.35,
+		);
+		env.gain.exponentialRampToValueAtTime(0.0001, startAt + dur);
+
+		let out: AudioNode = destOverride ?? masterGain;
+		let panner: StereoPannerNode | null = null;
+		if (typeof ctx.createStereoPanner === "function") {
+			panner = ctx.createStereoPanner();
+			panner.pan.value = Math.max(-1, Math.min(1, pan));
+			panner.connect(out);
+			out = panner;
+		}
+		src.connect(bp).connect(env).connect(out);
+		src.start(startAt);
+		src.stop(startAt + dur + 0.02);
+		activeBreaths.add(src);
+		src.onended = () => {
+			activeBreaths.delete(src);
+			src.disconnect();
+			bp.disconnect();
+			env.disconnect();
+			panner?.disconnect();
+		};
+	};
+
 	const loaded = new Map<string, VoiceModel>([
 		[
 			FALLBACK_MODEL,
@@ -1960,10 +2342,17 @@ export const createSingingVoices = (
 		let prevVowel = "";
 		for (const note of track.notes) {
 			const syl = note.syllable;
+			// 休符(_)は歌わないうえ、母音の文脈もここで切る（次は語頭 "- か" として歌う）
+			if (syl.kind === "rest") {
+				prevVowel = "";
+				continue;
+			}
 			// 促音(っ)・無声は歌わない（合成対象外）。ただし直前母音は維持する
 			if (syl.consonant === "Q" || syl.vowel === "") continue;
 			fn(note, prevVowel);
 			if (syl.vowel && syl.vowel !== "N") prevVowel = syl.vowel;
+			// ブレス(、)を挟んだら息が切れる。次の音節も語頭として歌わせる
+			if (note.breath) prevVowel = "";
 		}
 	};
 
@@ -1979,6 +2368,7 @@ export const createSingingVoices = (
 			pitch: number;
 			vibrato?: boolean;
 			expr?: VoiceExpression;
+			pitchSegments?: PitchSegment[];
 		}[] = [];
 
 		for (const track of tracks) {
@@ -2000,8 +2390,10 @@ export const createSingingVoices = (
 					pitch: note.pitch,
 					vibrato: track.vibrato,
 					expr,
+					pitchSegments: note.pitchSegments,
 				});
 				// オクターブユニゾン有効時は重ねる声も先読みしておく。
+				// 継続のピッチ推移も同じだけ移調しないとキャッシュキーが一致しない。
 				for (const offset of octaveUnisonOffsets(track.octaveUnison)) {
 					tasks.push({
 						model: m,
@@ -2010,6 +2402,7 @@ export const createSingingVoices = (
 						pitch: note.pitch + offset,
 						vibrato: track.vibrato,
 						expr,
+						pitchSegments: transposeSegments(note.pitchSegments, offset),
 					});
 				}
 			});
@@ -2032,6 +2425,7 @@ export const createSingingVoices = (
 				task.note.durationSec * 1000,
 				task.vibrato,
 				task.expr,
+				task.pitchSegments,
 			) ?? Promise.resolve(null));
 			done++;
 			onProgress?.(done, total);
@@ -2083,10 +2477,12 @@ export const createSingingVoices = (
 					const startSec = note.startSec + loopOffsetSec;
 					// 先読み上限を超えていれば、再生ヘッドが近づくまで待つ（合成を曲全体へ分散）。
 					// elapsed = ctx.currentTime - anchorTime が現在の再生位置（秒）。
-					while (
-						startSec - (ctx.currentTime - anchorTime) >
-						STREAM_LOOKAHEAD_SEC
-					) {
+					// 継続記号で結合された長い1音は合成にその分だけ時間が掛かるため、
+					// 音価に応じて地平を前倒しして合成の猶予を確保する。
+					const lookahead =
+						STREAM_LOOKAHEAD_SEC +
+						Math.min(TIE_MERGE_MAX_SEC, note.durationSec) * 0.4;
+					while (startSec - (ctx.currentTime - anchorTime) > lookahead) {
 						await new Promise((resolve) => setTimeout(resolve, STREAM_POLL_MS));
 						if (session !== streamSession) return;
 					}
@@ -2097,7 +2493,17 @@ export const createSingingVoices = (
 					// 1音を指定ピッチ・音量係数で合成→スケジュールする。オクターブユニゾン有効時は
 					// 同じ音節をもう1声（±12半音・控えめな音量）重ねるため、通常発声とは
 					// 独立に呼び出せる関数へ切り出している。
-					const dispatchNote = (pitch: Units, peakScale: number): void => {
+					const dispatchNote = (
+						offsetUnits: number,
+						peakScale: number,
+					): void => {
+						const pitch = units(note.pitch + offsetUnits);
+						// 継続のピッチ推移もユニゾンぶん移調する（推移だけ元のままだと
+						// 途中から重ねた声が本来のオクターブへ戻ってしまう）。
+						const pitchSegments = transposeSegments(
+							note.pitchSegments,
+							offsetUnits,
+						);
 						if (model.renderToCache && model.scheduleCached) {
 							const renderToCache = model.renderToCache;
 							const scheduleCached = model.scheduleCached;
@@ -2116,6 +2522,7 @@ export const createSingingVoices = (
 										breathiness: track.breathiness,
 										tension: track.tension,
 									},
+									pitchSegments,
 								);
 								if (session !== streamSession) return;
 								if (key) {
@@ -2135,6 +2542,7 @@ export const createSingingVoices = (
 											track.reverbSend,
 											track.delaySend,
 											dest,
+											note.continuation,
 										);
 										opts?.onScheduled?.(track, note, t0);
 									} else {
@@ -2164,14 +2572,25 @@ export const createSingingVoices = (
 								reverbSend: track.reverbSend,
 								delaySend: track.delaySend,
 								destination: dest,
+								pitchSegments,
 							});
 							opts?.onScheduled?.(track, note, t0);
 						}
 					};
 
-					dispatchNote(note.pitch, 1);
+					dispatchNote(0, 1);
 					for (const offset of octaveUnisonOffsets(track.octaveUnison)) {
-						dispatchNote(units(note.pitch + offset), OCTAVE_UNISON_PEAK_SCALE);
+						dispatchNote(offset, OCTAVE_UNISON_PEAK_SCALE);
+					}
+					// ブレス（、）は音源に依存しないノイズで作る。歌の直後へ差し込む。
+					if (note.breath) {
+						const breathDest = options.getTrackDestination?.(track.id ?? "");
+						scheduleBreath(
+							t0 + note.durationSec,
+							breathDest ? peak * masterVolumeScalar : peak,
+							track.pan,
+							breathDest,
+						);
 					}
 					// klatt等（軽量・状態なし）はawaitが無く同期で回るため、UI応答性のため1音ごとに制御を返す。
 					if (!(model.renderToCache && model.scheduleCached)) {
@@ -2194,6 +2613,13 @@ export const createSingingVoices = (
 	const stopStream: SingingVoices["stopStream"] = () => {
 		streamSession++; // 進行中の合成ループをキャンセル
 		for (const v of loaded.values()) v.stopAll?.();
+		for (const src of activeBreaths) {
+			try {
+				src.stop();
+			} catch {}
+			src.disconnect();
+		}
+		activeBreaths.clear();
 	};
 
 	const reset: SingingVoices["reset"] = () => {

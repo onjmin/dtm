@@ -2,6 +2,7 @@ import type { ClipMeter } from "./clip-meter";
 import type { DelayDivision } from "./delay";
 import type { SingingVoices } from "./lyrics";
 import type { MidiSearchConfig } from "./midi-search";
+import type { PitchSegment } from "./pitch-curve";
 import type { Units } from "./tuning";
 
 export const DEFAULT_VOCAL_VOLUME = 200;
@@ -184,6 +185,12 @@ export type PlayNoteEvent = {
 	/** 秒 */
 	duration: number;
 	/**
+	 * 継続記号（`ー` / `〜`）で結合されたノート内のピッチ推移（2区間目以降）。
+	 * 先頭区間のピッチは {@link PlayNoteEvent.pitchUnits}、`duration` は結合後の全長。
+	 * 未指定なら従来どおり単一ピッチの1音として鳴らせばよい。
+	 */
+	pitchSegments?: PitchSegment[];
+	/**
 	 * ステレオ定位 -1(完全左)〜+1(完全右)、0が中央。未指定は中央扱い。
 	 * 歌詞トラックに p<n>(0-127, 既定64=中央) があれば正規化した値が載る。
 	 * 合成側は StereoPannerNode.pan などにそのまま渡せばよい。
@@ -221,6 +228,18 @@ export type PlayNoteEvent = {
 // 歌詞拡張（MML歌詞拡張仕様）関連の型
 // ============================================================
 
+/**
+ * 音節の種別。省略時（undefined）は通常のかな音節。
+ *
+ * - `"tie"`  : 継続記号（`ー` / `〜`）。ノートは消費するが**言い直さない**。
+ *   直前の母音をそのまま引き継ぎ、ピッチだけを動かす。
+ * - `"stop"` : 促音（`っ`）。ノートを消費し、無音の閉鎖として間を作る。
+ * - `"rest"` : 明示的な休符（`_`）。ノートを消費するが歌わない（そのノートは無音）。
+ *   歌詞トラックは楽器音も鳴らさないので、`_` はそのまま「歌の休み」になる。
+ *   直前母音の文脈もここで切れる（次の音節は語頭として扱われる）。
+ */
+export type LyricSyllableKind = "tie" | "stop" | "rest";
+
 // 解析済みの1音節。子音・母音はフォルマント合成のパラメータ選択に使う
 export type LyricSyllable = {
 	/** 表示用かな（"きょ" 等。長音は置換後の母音かな） */
@@ -229,6 +248,22 @@ export type LyricSyllable = {
 	consonant: string;
 	/** 母音 "a"|"i"|"u"|"e"|"o"、撥音 "N"、促音 "" */
 	vowel: string;
+	/**
+	 * 音節の種別。省略時は通常のかな音節。
+	 * 発音・表示・MMLへの書き戻しの分岐に使う（{@link LyricSyllableKind}）。
+	 */
+	kind?: LyricSyllableKind;
+	/**
+	 * `kind === "tie"` のとき、直前ピッチから滑らかに繋ぐ（`〜`）。
+	 * false（`ー`）なら階段状に切り替える。
+	 */
+	portamento?: boolean;
+	/**
+	 * この音節の直後にブレス（息継ぎ）を入れる（`、`）。
+	 * ブレス自体はノートを消費しない — 直前ノートの尻を削って息を差し込み、
+	 * 次の音節を語頭（連続音の `- か`）として歌わせる。
+	 */
+	breathAfter?: boolean;
 };
 
 /**

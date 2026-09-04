@@ -36,12 +36,23 @@ const VIBRATO_FADE_MS = 150;
  */
 export const vibratoPitchCurve =
 	(baseHz: number, preMs: number) =>
-	(tMs: number): number => {
-		const sinceOnset = tMs - preMs;
-		if (sinceOnset <= 0) return baseHz;
-		const depth =
-			VIBRATO_DEPTH_CENTS * Math.min(1, sinceOnset / VIBRATO_FADE_MS);
-		const cents =
-			depth * Math.sin((2 * Math.PI * VIBRATO_RATE_HZ * sinceOnset) / 1000);
-		return baseHz * 2 ** (cents / 1200);
-	};
+	(tMs: number): number =>
+		baseHz * vibratoRatio(tMs - preMs);
+
+/**
+ * 発音（母音オンセット）からの経過時間に対するビブラートの倍率を返す。
+ * オンセット前（負の経過時間）は 1（無変調）。
+ *
+ * ピッチそのものではなく倍率を返すのは、継続記号でピッチが動く音
+ * （{@link file://./pitch-curve.ts}）へも同じLFOをそのまま掛けられるようにするため。
+ *
+ * @param sinceOnsetMs 母音オンセットからの経過（ms）
+ */
+export const vibratoRatio = (sinceOnsetMs: number): number => {
+	if (sinceOnsetMs <= 0) return 1;
+	const depth =
+		VIBRATO_DEPTH_CENTS * Math.min(1, sinceOnsetMs / VIBRATO_FADE_MS);
+	const cents =
+		depth * Math.sin((2 * Math.PI * VIBRATO_RATE_HZ * sinceOnsetMs) / 1000);
+	return 2 ** (cents / 1200);
+};

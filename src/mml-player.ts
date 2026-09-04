@@ -23,7 +23,9 @@ import {
 } from "./drum-config";
 import { icon } from "./icons";
 import {
+	buildStreamVoiceNotes,
 	createSingingVoices,
+	displayKana,
 	KOE_VOICEBANK_LABELS,
 	KOE_VOICEBANK_TERMS,
 	PREWARM_NOTES,
@@ -40,7 +42,7 @@ import { createSequencer, type SequencerTrack } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import { createSynth, type Synth } from "./synth";
-import { UNITS_PER_OCTAVE, units, unitsToPitchV1 } from "./tuning";
+import { UNITS_PER_OCTAVE, unitsToPitchV1 } from "./tuning";
 import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
 import {
 	DEFAULT_BPM,
@@ -1214,9 +1216,13 @@ export const mountMmlPlayer = (
 					br.textContent = "\\n";
 					lane.appendChild(br);
 				}
+				const syl = lyricTrack.syllables[i];
 				const span = doc.createElement("span");
-				span.className = "dtm-tk dtm-tk--lyric";
-				span.textContent = lyricTrack.syllables[i].kana;
+				// 継続・促音・休符は「歌わない/言い直さない」ことが目で分かるよう色を分ける。
+				span.className = `dtm-tk dtm-tk--lyric${
+					syl.kind ? ` dtm-tk--lyric-${syl.kind}` : ""
+				}`;
+				span.textContent = displayKana(syl);
 				lane.appendChild(span);
 				laneTokens.push({
 					el: span,
@@ -1510,21 +1516,14 @@ export const mountMmlPlayer = (
 			const sorted = [...(seqTrack?.notes ?? [])].sort(
 				(a, b) => a.startStep - b.startStep,
 			);
-			const gate = (lt.gate ?? DEFAULT_GATE) / 100;
-			// オクターブシフトを units 換算でピッチへ加算（1オクターブ = 372 units）
-			const semis = (lt.octave ?? 0) * UNITS_PER_OCTAVE;
-			const count = Math.min(sorted.length, lt.syllables.length);
-			const notes = [];
-			for (let i = 0; i < count; i++) {
-				const n = sorted[i];
-				if (n.startStep < fromStep) continue;
-				notes.push({
-					syllable: lt.syllables[i],
-					pitch: units(n.pitchUnits + semis),
-					startSec: (n.startStep - fromStep) * secondsPerStep,
-					durationSec: n.durationSteps * secondsPerStep * gate,
-				});
-			}
+			// 継続記号（ー / 〜）のノート結合・ブレスの畳み込みはここで一括して行う。
+			const notes = buildStreamVoiceNotes(lt.syllables, sorted, {
+				fromStep,
+				secondsPerStep,
+				gate: (lt.gate ?? DEFAULT_GATE) / 100,
+				// オクターブシフトを units 換算でピッチへ加算（1オクターブ = 372 units）
+				octaveShiftUnits: (lt.octave ?? 0) * UNITS_PER_OCTAVE,
+			});
 			// 注意: trackVolume/masterVolume はここでは掛けない。voices の共有先（studio 経由の
 			// DAW 等）が同じ SingingVoices インスタンスのゲインノードを既にライブ制御している場合、
 			// ここでも static に掛けるとマスタ音量が二重適用され、歌声だけ楽器よりも音量が

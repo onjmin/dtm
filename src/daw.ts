@@ -19,6 +19,8 @@ import {
 import { icon } from "./icons";
 import { INSTRUMENT_PRESETS } from "./instrument-presets";
 import {
+	buildStreamVoiceNotes,
+	displayKana,
 	isValidHttpUrl,
 	KOE_VOICEBANK_LABELS,
 	KOE_VOICEBANK_TERMS,
@@ -28,6 +30,7 @@ import {
 	panToStereo,
 	parseCustomVocals,
 	type StreamVoiceTrack,
+	syllablesToText,
 	VOICE_IMAGE_KEY,
 	vocalVolumeToGain,
 } from "./lyrics";
@@ -1425,7 +1428,7 @@ export const mountDAW = (
 		if (!text) return [];
 		if (text !== lyricKanaCacheText) {
 			lyricKanaCacheText = text;
-			lyricKanaCache = normalizeLyrics(text).map((sy) => sy.kana);
+			lyricKanaCache = normalizeLyrics(text).map(displayKana);
 		}
 		return lyricKanaCache;
 	};
@@ -2425,21 +2428,14 @@ export const mountDAW = (
 					const sorted = [...(trackState?.core.getNotes() ?? [])].sort(
 						(a, b) => a.startStep - b.startStep,
 					);
-					const gate = (lt.gate ?? DEFAULT_GATE) / 100;
-					// オクターブシフトを units 換算でピッチへ加算（1オクターブ = 372 units）
-					const semis = (lt.octave ?? 0) * UNITS_PER_OCTAVE;
-					const count = Math.min(sorted.length, lt.syllables.length);
-					const notes = [];
-					for (let i = 0; i < count; i++) {
-						const n = sorted[i];
-						if (n.startStep < fromStep) continue;
-						notes.push({
-							syllable: lt.syllables[i],
-							pitch: units(n.pitchUnits + semis),
-							startSec: (n.startStep - fromStep) * secondsPerStep,
-							durationSec: n.durationSteps * secondsPerStep * gate,
-						});
-					}
+					// 継続記号（ー / 〜）のノート結合・ブレスの畳み込みはここで一括して行う。
+					const notes = buildStreamVoiceNotes(lt.syllables, sorted, {
+						fromStep,
+						secondsPerStep,
+						gate: (lt.gate ?? DEFAULT_GATE) / 100,
+						// オクターブシフトを units 換算でピッチへ加算（1オクターブ = 372 units）
+						octaveShiftUnits: (lt.octave ?? 0) * UNITS_PER_OCTAVE,
+					});
 					return {
 						id: trackState?.config.id,
 						model: lt.model,
@@ -3028,7 +3024,7 @@ export const mountDAW = (
             <button class="dtm-infobtn" data-dtm="lyric-octave-unison-info" title="オクターブユニゾンの解説">${icon("info", 12)}</button>
           </div>
         </details>
-        <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）"></textarea>
+        <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）&#10;ー=伸ばす 〜=しゃくり っ=詰まる _=歌わない 、=ブレス"></textarea>
       </div>`;
 			refs.trackBody.appendChild(lyricDiv);
 			(
@@ -4060,7 +4056,9 @@ export const mountDAW = (
 			if (applyActiveOnly && lt.trackId !== activeTrackIndex) return;
 			const t = trackStates[lt.trackId];
 			if (!t) return;
-			t.lyrics = lt.syllables.map((s) => s.kana).join("");
+			// kana は継続（ー）を母音へ解決済みなので、そのまま繋ぐと "あーー" が
+			// "あああ" に化けて継続の意図が失われる。記号のまま書き戻す。
+			t.lyrics = syllablesToText(lt.syllables);
 			t.lyricModel = lt.model;
 			t.vocalVolume = lt.volume;
 			t.vocalGate = lt.gate;
