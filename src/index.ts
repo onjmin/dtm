@@ -6,6 +6,15 @@
 export * from "./audio-config";
 export * from "./chord-player";
 export * from "./chords";
+// 自動作曲（コード進行→リズム→モチーフ展開で16小節を組み立てる）
+export {
+	type ComposedNote,
+	type ComposeOptions,
+	type ComposeResult,
+	type ComposeStats,
+	composeSong,
+	durationEntropy,
+} from "./compose";
 export { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 export * from "./drum-config";
 // ヘッドレス再生（DOM非依存・BGM向け）＋ 内蔵synthプリミティブ

@@ -8,6 +8,7 @@
 import { GM_INSTRUMENT_NAMES } from "./audio-config";
 import { type ChordPlayerInstance, mountChordPlayer } from "./chord-player";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
+import { type ComposedNote, composeSong } from "./compose";
 import { buildUI } from "./daw-ui";
 import type { DelayDivision } from "./delay";
 import {
@@ -131,6 +132,41 @@ const CHORD_INFO_HTML = `
     <li><strong>ヤツメ穴</strong>: リズミカルなピコピコゲーム風の伴奏パターンです。</li>
     <li><strong>交互奏</strong>: ルート音（低音）とコード構成音（高音）を交互に刻みます。</li>
   </ul>
+</div>
+`;
+
+const LYRIC_INPUT_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>基本</h4>
+  <p>ひらがな・カタカナで書きます。<strong>1文字（拗音は2文字）が音符1つ</strong>に対応し、音符の並び順（左から）に割り当てられます。音符より歌詞が多いぶんは歌いません。</p>
+  <pre>ど れ み ふぁ そ   ← 5音節
+c  d  e  f   g    ← 音符5つ</pre>
+  <p><small>右上の「◯音節」は、この歌詞が消費する音符の数です。音符の数と合っているか確認できます。</small></p>
+
+  <h4>特殊な文字</h4>
+  <ul>
+    <li><code>ー</code> <strong>伸ばす</strong>（長音記号）… 直前の音を言い直さずに保ち、音程だけを切り替えます。音符を1つ消費します。</li>
+    <li><code>〜</code> <strong>しゃくり</strong>（波ダッシュ）… <code>ー</code> と同じですが、音程を滑らかに繋ぎます（ポルタメント／スラー）。</li>
+    <li><code>っ</code> <strong>詰まる</strong>（小さい「つ」）… 音符を1つ消費して無音にします（促音）。</li>
+    <li><code>_</code> <strong>歌わない</strong>（アンダースコア）… 音符を1つ消費しますが何も鳴りません（歌だけ休む）。</li>
+    <li><code>、</code> <strong>ブレス</strong>（読点）… <strong>音符は消費せず</strong>、直前の音を少し短くして息継ぎを入れます。</li>
+  </ul>
+  <p><small>全角チルダ <code>～</code> は <code>〜</code>、半角カンマ <code>,</code> は <code>、</code> として扱われます。これら以外の記号（英数字・スペース・句読点など）は無視されます。</small></p>
+
+  <h4>「あああああ」と「あーーーー」の違い</h4>
+  <p>いちばん使う書き分けです。同じ音を音程違いで続けるとき、<strong>1音ずつ区切って言い直すか、伸ばしたまま音程だけ動かすか</strong>を選べます。</p>
+  <pre>あああああ   ← 「あ・あ・あ・あ・あ」と5回言い直す
+あーーーー   ← 「あ〜」と伸ばしたまま音程だけ動く</pre>
+
+  <h4>伸ばすと何の音になるか</h4>
+  <ul>
+    <li>直前の音節の母音を引き継ぎます。<code>きょー</code> は「きょ」＋「お」。</li>
+    <li><code>んー</code> は「ん」を伸ばしたハミングになります。</li>
+    <li><code>_</code> や <code>、</code> の直後は引き継ぐ母音が無いので、<code>ー</code> を書いても無視されます。</li>
+  </ul>
+
+  <h4>きれいに伸ばすコツ</h4>
+  <p>伸ばす区間の音符が<strong>隙間なく並んでいる</strong>と、1つの長い音としてまとめて合成されるため、継ぎ目のない自然なロングトーンになります。音符の間が空いているときや、伸ばしが長すぎるとき（約4秒超）は自動で分割されます（その場合も言い直しには聞こえないよう繋ぎます）。</p>
 </div>
 `;
 
@@ -341,6 +377,38 @@ const MASTER_COMP_INFO_HTML = `
   <p>音割れ検知バッジと連動する安全リミッターは、常にONで音割れを防ぐための保険です。こちらのグルーコンプは既定0（オフ）で、音を良くするための表現目的の処理です。掛かる順序はグルーコンプ→安全リミッターで、グルーコンプ通過後の信号を安全リミッター・音割れ検知メーターが監視します。</p>
   <h4>トラック単位の「音圧強化」との違い</h4>
   <p>各トラックの「音圧強化」（チャンネルストリップのコンプレッサー）は、そのトラック単体の粒立ちを揃えるためのものです。グルーコンプはそれとは別に、全トラックが混ざった後の「合奏」全体に対して掛かります。両方を強く掛けすぎるとダイナミクス（強弱の表情）が失われて単調になりやすいため、グルーコンプは控えめ（20〜40%程度）が出発点の目安です。</p>
+</div>
+`;
+
+const COMPOSE_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>作曲とは</h4>
+  <p>コード進行・メロディ・サブメロ・ベース・伴奏を、16小節ぶんまとめて自動で作るボタンです。押すたびに違う曲ができます。できあがった曲はそのまま編集できるので、気に入らないところだけ後から直すこともできますし、もう一度押して作り直すこともできます。</p>
+  <p>ノートを配置するだけで、楽器・音量・ミックスは変えません。音のバランスを整えたいときは「全体トラック設定」の<strong>おまかせマスタリング</strong>を続けて押してください。作曲で置いたノートの形（メロディは細かく動く／サブメロは長い音が少しだけ／ベースは低い）から、おまかせマスタリング側が各トラックの役割を判定して楽器と音量を当てにいきます。</p>
+  <h4>曲の組み立て方</h4>
+  <p>単純にランダムな音を並べているわけではありません。次の順番で組み立てています。</p>
+  <ol>
+    <li><strong>コード進行を決める</strong> — 王道進行・小室進行・カノン進行などから引き、7thやセカンダリドミナントを混ぜます。同じ4小節をただ4回繰り返さないよう、A-A'-B-A'' の16小節構成にしています。</li>
+    <li><strong>先に各小節のリズムを決める</strong> — 音より先にリズムを設計し、隣り合う小節で必ず形を変えます。全音符・2分・4分・8分・16分を混ぜ、休符も少し入れます。</li>
+    <li><strong>その上に音を乗せる</strong> — 短いモチーフ（合言葉のような数音のかたまり）を1つ作り、「そのまま繰り返す」「音程を上げて発展させる」「1オクターブ上げてサビの頂点にする」の3通りに変形して曲全体へ展開します。</li>
+  </ol>
+  <p>音を先に決めてから音価を機械的に均等割りすると、どうしても「同じ長さの音が延々と続く、機械的な曲」になります。リズムを先に設計するのはそれを避けるためです。</p>
+  <h4>メロディの作り方の決まりごと</h4>
+  <ul>
+    <li><strong>隣り合う音へ順に動く（順次進行）のが基本</strong>。あちこち跳ね回るメロディは歌いにくく、覚えにくくなります。</li>
+    <li><strong>大きく跳ぶのはサビの頭の1箇所だけ</strong>。ここだけ1オクターブ跳ね上げて聞かせどころを作ります。</li>
+    <li><strong>小節の頭と3拍目では、和音のルートか5度に着地させます</strong>。和音の上を意味もなく上下しているだけ、という印象を避けるためです。</li>
+    <li><strong>緩急をつけます</strong>。16分音符が続く「急」な小節と、ロングトーンや休符の「緩」な小節を意図的に対比させます。</li>
+  </ul>
+  <h4>できあがりの検算</h4>
+  <p>生成したメロディは、音価の種類数・音価のばらつき（シャノンエントロピー）・休符の割合・跳躍の大きさを自動で測っていて、基準を満たさないものは内部で作り直してから画面に出しています。「なんとなく単調」を感覚ではなく数値で弾く仕組みです。</p>
+  <h4>そのほか</h4>
+  <ul>
+    <li>調はハ長調（またはイ短調）で固定です。別の調にしたいときは、この下の「移調」で動かしてください。</li>
+    <li>31平均律の曲でも使えます。和音・メロディとも31平均律の格子に乗せて生成します。</li>
+    <li>ドラムは変更しません。「ドラム設定」から好きなリズムを選んでください。</li>
+    <li>実行後は「元に戻す」で作曲前の状態へ戻せます。元に戻すはトラックごとに効くので、4トラックすべてを戻したいときはトラックを切り替えながら1回ずつ押してください。</li>
+  </ul>
 </div>
 `;
 
@@ -977,6 +1045,9 @@ export const mountDAW = (
 		showMidi,
 		showChord,
 		showMidiSearch,
+		// 「作曲」は役割が固定の4トラック（メロディ/サブメロ/ベース/伴奏）へ書き込むので、
+		// 1:1マッピングの advanced モードでは出さない。
+		showCompose: !isAdvanced,
 	});
 	refs.masterVolume.value = String(options.masterVolume ?? 50);
 	refs.masterVolumeLabel.textContent = `${options.masterVolume ?? 50}%`;
@@ -3024,6 +3095,10 @@ export const mountDAW = (
             <button class="dtm-infobtn" data-dtm="lyric-octave-unison-info" title="オクターブユニゾンの解説">${icon("info", 12)}</button>
           </div>
         </details>
+        <div class="dtm-row">
+          <span class="dtm-label dtm-grow">歌詞</span>
+          <button class="dtm-infobtn" data-dtm="lyric-input-info" title="歌詞の書き方（ー・〜・っ・_・、の意味）">${icon("info", 12)}</button>
+        </div>
         <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）&#10;ー=伸ばす 〜=しゃくり っ=詰まる _=歌わない 、=ブレス"></textarea>
       </div>`;
 			refs.trackBody.appendChild(lyricDiv);
@@ -3049,6 +3124,12 @@ export const mountDAW = (
 			const lyricInput = lyricDiv.querySelector(
 				'[data-dtm="lyric-input"]',
 			) as HTMLTextAreaElement;
+			const lyricInputInfo = lyricDiv.querySelector(
+				'[data-dtm="lyric-input-info"]',
+			) as HTMLButtonElement;
+			lyricInputInfo.addEventListener("click", () => {
+				showModal("歌詞の書き方", LYRIC_INPUT_INFO_HTML);
+			});
 			const lyricCount = lyricDiv.querySelector(
 				'[data-dtm="lyric-count"]',
 			) as HTMLElement;
@@ -4116,16 +4197,23 @@ export const mountDAW = (
 		}
 	};
 
-	const applyChord = (): void => {
-		const active = getActive();
+	/**
+	 * コード進行を伴奏トラックへ展開する。
+	 *
+	 * 進行の文字列は「どのトラックの設定を使うか」で決まる。画面の「適用」ボタンから
+	 * 押されたときは伴奏トラックが選択中なので既定（アクティブトラック）でよいが、
+	 * 「作曲」からは選択中のトラックに関係なく伴奏トラックの設定を使いたいので、
+	 * ソースを明示的に渡せるようにしてある。
+	 */
+	const applyChord = (source: TrackState = getActive()): void => {
 		const chordTrack = trackStates.find((t) => t.config.id === "chord");
 		if (!chordTrack) return;
 		const placements = buildChordPlacements({
 			// 和音は五度連鎖経由で音律の格子へ写す（31平均律では長3度が10度になる）
 			edo: renderConfig.edo,
-			chordStr: active.savedChordInput,
-			patternType: active.savedChordPattern,
-			rootShift: active.savedChordRoot,
+			chordStr: source.savedChordInput,
+			patternType: source.savedChordPattern,
+			rootShift: source.savedChordRoot,
 			bpm,
 			stepsPerBar: renderConfig.stepsPerBar,
 		});
@@ -4137,8 +4225,9 @@ export const mountDAW = (
 				velocity: p.velocity,
 			});
 		}
+		// endBatch() が履歴を1つ積むので、ここで addHistoryOnce() は呼ばない
+		// （呼ぶと同じ状態が2つ並び、1回目の Undo が空振りする）。
 		chordTrack.core.endBatch();
-		chordTrack.core.addHistoryOnce();
 		redrawAll();
 	};
 
@@ -4818,6 +4907,66 @@ export const mountDAW = (
 		});
 
 		// マクロ
+		refs.macroComposeInfo.addEventListener("click", () => {
+			showModal("作曲の解説", COMPOSE_INFO_HTML);
+		});
+		refs.macroCompose.addEventListener("click", () => {
+			// 既にノートがあるときだけ確認する。空の状態（初心者が最初に押す場面）で
+			// 毎回警告を出すと、一番押してほしいボタンが押しにくくなるため。
+			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
+			if (
+				hasNotes &&
+				!globalThis.confirm(
+					"今あるノートをすべて消して、16小節の曲を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）",
+				)
+			) {
+				return;
+			}
+			stop();
+			overlayDuring(() => {
+				const song = composeSong({
+					stepsPerBar: renderConfig.stepsPerBar,
+					edo: renderConfig.edo,
+				});
+
+				// メロディ・サブメロ・ベースは生成したノートをそのまま書き込む。
+				// 履歴の残し方は applyChord と揃えてあり、実行後に Undo で戻せる。
+				const writeTrack = (id: string, notes: ComposedNote[]): void => {
+					const track = trackStates.find((t) => t.config.id === id);
+					if (!track) return;
+					track.core.clearNotesWithoutHistory();
+					track.core.beginBatch();
+					for (const n of notes) {
+						track.core.addNote(n.startStep, n.pitchUnits, {
+							noteLengthSteps: Math.max(1, n.durationSteps),
+							velocity: n.velocity,
+						});
+					}
+					// endBatch() が履歴を1つ積む。ここで addHistoryOnce() も呼ぶと同じ状態が
+					// 2つ並び、1回目の Undo が何も変わらない空振りになる。
+					track.core.endBatch();
+				};
+				writeTrack("melody", song.melody);
+				writeTrack("submelody", song.submelody);
+				writeTrack("bass", song.bass);
+
+				// 伴奏はコード進行の文字列を伴奏トラックの設定として保存してから、
+				// 画面の「適用」と同じ経路で展開する。こうしておくと、生成された進行が
+				// そのまま和音の入力欄に出てユーザーが読める・書き換えられる。
+				const chordTrack = trackStates.find((t) => t.config.id === "chord");
+				if (chordTrack) {
+					chordTrack.savedChordInput = song.chordProgression;
+					chordTrack.savedChordPattern = song.chordPattern;
+					chordTrack.savedChordRoot = 0; // 生成はハ長調固定。移調はマクロの「移調」で行う
+					applyChord(chordTrack);
+				}
+
+				playStartStep = 0;
+				redrawAll();
+				updateTrackPanel(); // 和音の入力欄へ生成した進行を反映する
+				updateUndoRedo();
+			});
+		});
 		refs.macroClear.addEventListener("click", () => {
 			overlayDuring(() => {
 				const active = getActive();

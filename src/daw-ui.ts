@@ -91,6 +91,8 @@ export type DawUIRefs = {
 	transposeApplyBtn: HTMLButtonElement;
 	transposeInfoBtn: HTMLButtonElement;
 	// macros
+	macroCompose: HTMLButtonElement;
+	macroComposeInfo: HTMLButtonElement;
 	macroClear: HTMLButtonElement;
 	macroRandom: HTMLButtonElement;
 	macroHarmonic: HTMLButtonElement;
@@ -136,6 +138,8 @@ export type BuildUIOptions = {
 	showMidi: boolean;
 	showChord: boolean;
 	showMidiSearch: boolean;
+	/** 「作曲」ボタンを出すか。役割が固定の4トラック（シンプルモード）でしか成立しない。 */
+	showCompose: boolean;
 };
 
 /**
@@ -151,6 +155,7 @@ export const buildUI = (
 		defaultBpm,
 		showMidi,
 		showMidiSearch,
+		showCompose,
 	} = options;
 
 	const drumOptions = [`<option value="none">なし</option>`]
@@ -378,6 +383,11 @@ export const buildUI = (
   <details class="dtm-panel">
     <summary>マクロ</summary>
     <div class="dtm-panel-body">
+      <div class="dtm-row ${showCompose ? "" : "dtm-hidden"}" data-dtm="compose-row">
+        <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose" title="コード進行・メロディ・サブメロ・ベース・伴奏を16小節ぶん自動で作ります">作曲</button>
+        <button class="dtm-infobtn" data-dtm="macro-compose-info" title="作曲の解説">${icon("info", 12)}</button>
+        <span class="dtm-grow"></span>
+      </div>
       <div class="dtm-row">
         <span class="dtm-label">全体シフト</span>
         <select class="dtm-select" data-dtm="shift-select">
@@ -570,6 +580,8 @@ export const buildUI = (
 		transposeSelect: sel("transpose-select"),
 		transposeApplyBtn: sel("transpose-apply"),
 		transposeInfoBtn: sel("transpose-info"),
+		macroCompose: sel("macro-compose"),
+		macroComposeInfo: sel("macro-compose-info"),
 		macroClear: sel("macro-clear"),
 		macroRandom: sel("macro-random"),
 		macroHarmonic: sel("macro-harmonic"),

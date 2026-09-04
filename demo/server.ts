@@ -109,7 +109,8 @@ app.get("/rechord/*", async (c) => {
 	}
 });
 
-// サーバー起動
-serve({ fetch: app.fetch, port: 40298 });
+// サーバー起動。ポートは PORT で上書きできる（既定は従来どおり40298）。
+const port = Number.parseInt(process.env.PORT ?? "", 10) || 40298;
+serve({ fetch: app.fetch, port });
 
-console.log("Server running at http://localhost:40298");
+console.log(`Server running at http://localhost:${port}`);

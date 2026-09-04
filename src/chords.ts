@@ -52,43 +52,56 @@ const C3 = 48;
 const MEANTONE_STEP_BY_SEMITONE = [0, 3, 5, 8, 10, 13, 16, 18, 21, 23, 26, 28];
 
 /**
+ * 伴奏の基準音（C3）に移調量を足した位置を units で返す。
+ *
+ * 移調（`rootShift`）は12平均律の半音で指定されるので、31平均律ではミーントーンの
+ * 度数（{@link MEANTONE_STEP_BY_SEMITONE}）へ写してから足す。
+ */
+const chordBaseUnits = (rootShift: number, edo: 12 | 31): number => {
+	const within = ((rootShift % 12) + 12) % 12;
+	const oct = Math.round((rootShift - within) / 12);
+	const step = edo === 31 ? MEANTONE_STEP_BY_SEMITONE[within] : within;
+	return (C3 / 12 + oct) * UNITS_PER_OCTAVE + step * (UNITS_PER_OCTAVE / edo);
+};
+
+/**
  * 和音の構成音を units へ写す。
  *
- * chord-parser の `notes` は12平均律の半音、`noteFifths` は五度圏インデックス。
- * 五度圏は綴りを保持しているので、31平均律でも増4度と減5度・C# と Db を
- * 正しく区別して度数へ落とせる（`fifthToStep` 参照）。
+ * chord-parser の `notes` は **C からの絶対半音**（`Am` なら `[9,12,16]` ＝ A・C・E）で、
+ * `noteFifths` は同じ並びの五度圏インデックス。**どちらもコードのルートからの相対では
+ * ないので、ルートを引いてはいけない**（引くと全コードがC系へ潰れる。実際に
+ * `Am|F|C|G` が全部 `C3 E3 G3` 相当になる不具合になっていた）。
  *
- * オクターブは半音側から、オクターブ内の位置は五度圏側から決める。両者を混ぜるのは
- * 五度圏がオクターブ不変（音類しか表さない）ため。
+ * オクターブ内の位置は五度圏側から決める。五度圏は綴りを保持しているので、31平均律でも
+ * 増4度と減5度・C# と Db を正しく区別して度数へ落とせる（`fifthToStep` 参照）。
+ * オクターブは半音側から決めるが、B# のように綴りと半音でオクターブの跨ぎ方が食い違う音が
+ * あるため、半音側から出した概算位置へ最も近くなるオクターブを選ぶ。どちらか一方だけを
+ * 信じるとオクターブが飛ぶ。
  */
 const chordToneToUnits = (
 	relSemitone: number,
 	relFifth: number,
-	rootSemitone: number,
-	rootFifth: number,
+	baseUnits: number,
 	edo: 12 | 31,
 ): Units => {
-	const perStep = UNITS_PER_OCTAVE / edo;
-	// ルートの位置。移調はミーントーンの度数へ写してから足す。
-	const rootOct = Math.floor(rootSemitone / 12);
-	const rootWithin = ((rootSemitone % 12) + 12) % 12;
-	const rootStep =
-		edo === 31
-			? (fifthToStep(rootFifth, 31) +
-					MEANTONE_STEP_BY_SEMITONE[rootWithin] -
-					fifthToStep(rootFifth, 31) +
-					31) %
-				31
-			: rootWithin;
-	// ルートからの相対。オクターブ数は半音側、オクターブ内は五度圏側で決める。
-	const relWithin12 = ((relSemitone % 12) + 12) % 12;
-	const relOct = Math.round((relSemitone - relWithin12) / 12);
-	const relStep =
-		(fifthToStep(relFifth, edo) - fifthToStep(rootFifth, edo) + edo) % edo;
-	return units(
-		(rootOct + relOct) * UNITS_PER_OCTAVE + (rootStep + relStep) * perStep,
-	);
+	const within = fifthToStep(relFifth, edo) * (UNITS_PER_OCTAVE / edo);
+	const approx = (relSemitone / 12) * UNITS_PER_OCTAVE;
+	const oct = Math.round((approx - within) / UNITS_PER_OCTAVE);
+	return units(baseUnits + oct * UNITS_PER_OCTAVE + within);
 };
+
+/**
+ * 綴りを保った音（絶対半音＋五度圏インデックス）を units へ写す。
+ *
+ * 作曲マクロ（`compose.ts`）がメロディ・ベースの音を作るときにも使う。伴奏トラックと
+ * **同じ写像を通す**ことで、31平均律で `D7` の増4度(15ステップ)に対しメロディが
+ * 減5度(16ステップ)を鳴らして半端にぶつかる、といった食い違いを構造的に防ぐ。
+ */
+export const spelledToUnits = (
+	semitone: number,
+	fifth: number,
+	edo: 12 | 31,
+): Units => chordToneToUnits(semitone, fifth, 0, edo);
 
 export const buildChordPlacements = (
 	options: ApplyChordOptions,
@@ -105,7 +118,7 @@ export const buildChordPlacements = (
 	const placements: ChordPlacement[] = [];
 	if (!chordStr.trim()) return placements;
 
-	const offset = rootShift;
+	const baseUnits = chordBaseUnits(rootShift, edo === 31 ? 31 : 12);
 	const chordLength = stepsPerBar;
 
 	let chordData: ReturnType<typeof parseChords> = [];
@@ -152,8 +165,7 @@ export const buildChordPlacements = (
 						chordToneToUnits(
 							rel,
 							fifthOf.get(rel) ?? parsed.rootFifth,
-							C3 + offset,
-							parsed.rootFifth,
+							baseUnits,
 							edo === 31 ? 31 : 12,
 						);
 				} catch {
@@ -256,8 +268,7 @@ export const buildChordPlacements = (
 					chordToneToUnits(
 						rel,
 						fifthOf.get(rel) ?? parsed.rootFifth,
-						C3 + offset,
-						parsed.rootFifth,
+						baseUnits,
 						edo === 31 ? 31 : 12,
 					);
 			} catch {

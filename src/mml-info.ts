@@ -53,7 +53,18 @@ export const MML_INFO_HTML = `
   <h4>7. 歌声・歌詞入力</h4>
   <p><code>@@&lt;トラック番号&gt; &lt;音源名&gt; &lt;歌詞&gt;</code> の形式で、音符と同期する歌詞を入力できます。</p>
   <pre>例: @@0 tsukuyomi どんぐりころころどんぐりこ</pre>
-  <p style="margin-top:4px; margin-bottom:16px;"><small>（音源名は <code>tsukuyomi</code> や <code>klatt</code>, <code>roze</code> などの音声モデルを指定できます）</small></p>
+  <p style="margin-top:4px;"><small>（音源名は <code>tsukuyomi</code> や <code>klatt</code>, <code>roze</code> などの音声モデルを指定できます）</small></p>
+  <p>歌詞は<strong>1文字（拗音は2文字）が音符1つ</strong>に対応します。次の記号だけは特別な意味を持ちます。</p>
+  <ul>
+    <li><code>ー</code> 伸ばす（言い直さずに音を保ち、音程だけ切り替える）</li>
+    <li><code>〜</code> しゃくり（<code>ー</code> と同じだが音程を滑らかに繋ぐ）</li>
+    <li><code>っ</code> 詰まる（音符を1つ消費して無音にする）</li>
+    <li><code>_</code> 歌わない（音符を1つ消費するが何も鳴らない）</li>
+    <li><code>、</code> ブレス（音符は消費せず、直前の音を短くして息継ぎを入れる）</li>
+  </ul>
+  <pre>あああああ  ← 「あ」を5回言い直す
+あーーーー  ← 伸ばしたまま音程だけ動く</pre>
+  <p style="margin-top:4px; margin-bottom:16px;"><small>（ひらがな・カタカナと上の記号以外は無視されます）</small></p>
 
   <h4 style="margin-top: 18px; border-top: 1px solid var(--dtm-border2); padding-top: 8px;">サンプル曲（試聴・コピー）</h4>
 
