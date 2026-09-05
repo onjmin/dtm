@@ -88,8 +88,14 @@ import {
 } from "./chords";
 import { CORPUS_BANDS, CORPUS_SIZE } from "./compose-corpus";
 import {
+	type ComposedDrums,
+	composeDrumPattern,
+	type DrumStyle,
+} from "./compose-drums";
+import {
 	type Band,
 	band,
+	densityFeatures,
 	featureDistance,
 	featureVector,
 	type MetricNote,
@@ -214,6 +220,16 @@ const DOT_QUARTER = 72;
 const QUARTER = 48;
 const EIGHTH = 24;
 const SIXTEENTH = 12;
+/**
+ * 三連符。1拍（48ステップ）を3等分した8分三連が16ステップ、2等分ぶんの
+ * 4分三連が32ステップ。**16分の格子（12の倍数）から外れる**のが要点で、
+ * 192は3で割り切れるのでステップの整数のまま表せる。
+ *
+ * 参考にした人間の曲は主旋律の平均24%が16分格子の外にあり、生成物は0%だった。
+ * 三連もスウィングも前ノリも、格子の上にいる限り原理的に作れない。
+ */
+export const TRIPLET_EIGHTH = 16;
+const TRIPLET_QUARTER = 32;
 
 /** 曲の長さ。A(4) - A'(4) - B(4) - A''(4) の16小節。 */
 const BARS = 16;
@@ -568,6 +584,66 @@ export const RHYTHM_CELLS: RhythmCell[] = [
 		],
 		density: "dense",
 	},
+	// --- 三連: 16分の格子から外れる唯一の型 ---
+	// 8分三連は1拍(48)を3等分した16ステップ。12の倍数ではないので、
+	// これが1つも無い限り生成物の「格子外の音」は永遠に0%のままになる。
+	{
+		value: [
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			QUARTER,
+			QUARTER,
+			QUARTER,
+		],
+		density: "medium",
+	},
+	{
+		value: [
+			QUARTER,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			QUARTER,
+			QUARTER,
+		],
+		density: "medium",
+	},
+	{
+		value: [
+			TRIPLET_QUARTER,
+			TRIPLET_QUARTER,
+			TRIPLET_QUARTER,
+			TRIPLET_QUARTER,
+			TRIPLET_QUARTER,
+			TRIPLET_QUARTER,
+		],
+		density: "medium",
+	},
+	{
+		value: [
+			HALF,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+		],
+		density: "dense",
+	},
+	{
+		value: [
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			HALF,
+		],
+		density: "dense",
+	},
 ];
 
 /**
@@ -666,6 +742,23 @@ export const MOTIF_CELLS: RhythmCell[] = [
 		],
 		density: "medium",
 	},
+	// 三連のモチーフ。**モチーフが持たないと曲の顔にならない**——16分のときと
+	// 同じ理由で、リズム型に足すだけでは走句の小節にしか三連が出ない。
+	{
+		value: [
+			QUARTER,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			TRIPLET_EIGHTH,
+			QUARTER,
+			QUARTER,
+		],
+		density: "medium",
+	},
+	{
+		value: [TRIPLET_EIGHTH, TRIPLET_EIGHTH, TRIPLET_EIGHTH, QUARTER, HALF],
+		density: "medium",
+	},
 ];
 
 // ============================================================
@@ -757,7 +850,7 @@ type CadenceShape = "descend" | "five-three-one" | "leap-up" | "hold-tonic";
  * **実測でその100%が「前後の小節に16分が無い孤立した小節」**になっていた。
  * 前後と繋がらない場所に細かい音が一度だけ出てくるのは、グルーヴではなく思い付きに聞こえる。
  */
-type Groove = "eighth" | "sixteenth";
+type Groove = "eighth" | "sixteenth" | "triplet";
 
 /**
  * リズム型をグルーヴで絞る。8分の曲からは16分を含む型を丸ごと外し、16分の曲では
@@ -768,12 +861,34 @@ const groovyCells = (
 	groove: Groove,
 	rnd: () => number,
 ): RhythmCell[] => {
+	// 三連は16分の格子に乗らない音価（12の倍数でない）で見分ける。
+	const hasTriplet = (c: RhythmCell): boolean =>
+		c.value.some((v) => Math.abs(v) % SIXTEENTH !== 0);
 	const hasSixteenth = (c: RhythmCell): boolean =>
 		c.value.some((v) => Math.abs(v) <= SIXTEENTH);
-	if (groove === "eighth") return cells.filter((c) => !hasSixteenth(c));
-	const withSixteenth = cells.filter(hasSixteenth);
+	// **三連も曲の性格。** 16分と同じ理由で、混ぜると音価の種類が増えて
+	// 音価エントロピーが目標帯（参考曲 0.62〜1.18）から上振れし、候補選抜で負ける。
+	// 実際、三連の型を一般のプールへ足しただけの状態では平均が 1.17→1.62 まで上がった。
+	// イーブンの曲からは三連を丸ごと外し、三連の曲からは16分を外す。
+	const even = cells.filter((c) => !hasTriplet(c));
+	if (groove === "triplet") {
+		const withTriplet = cells.filter((c) => hasTriplet(c) && !hasSixteenth(c));
+		if (withTriplet.length === 0) return even;
+		// **三連は「足す」のではなく「置き換える」。** 一般のプールへ混ぜると
+		// 音価の種類が {12,24,36,48,72,96,144,192} に {16,32} が乗るだけになり、
+		// エントロピーが実測 2.09（参考曲の帯は 0.62〜1.18、0点の外側が 1.75）まで
+		// 上振れして候補選抜で必ず負ける。三連の曲では素の音価のほうを
+		// 4分・2分・全音符だけに絞り、付点と8分は三連へ譲る。
+		const plain = new Set<number>([QUARTER, HALF, WHOLE]);
+		const simple = even.filter((c) =>
+			c.value.every((v) => plain.has(Math.abs(v))),
+		);
+		return [...withTriplet, ...withTriplet, ...simple];
+	}
+	if (groove === "eighth") return even.filter((c) => !hasSixteenth(c));
+	const withSixteenth = even.filter(hasSixteenth);
 	// 16分の曲でも全部の小節を16分で埋めると息が詰まるので、たまに素の型も通す。
-	return withSixteenth.length > 0 && rnd() < 0.75 ? withSixteenth : cells;
+	return withSixteenth.length > 0 && rnd() < 0.75 ? withSixteenth : even;
 };
 
 /**
@@ -934,6 +1049,15 @@ export type ComposeResult = {
 	rootShift: number;
 	/** 曲のテンポ（BPM）。 */
 	bpm: number;
+	/**
+	 * 16小節ぶんのドラム編曲。
+	 *
+	 * **作曲マクロは長らくドラムに一切触っていなかった**。既定の1小節ループが16小節
+	 * そのまま鳴り続けるので、上物をどれだけ作り分けても「同じ伴奏の上で違うメロディを
+	 * 鳴らしただけ」に聞こえていた。参考にした人間の曲は全曲がドラムに2〜31種の小節
+	 * パターン（フィル・クラッシュ・セクションごとの刻みの差）を持っている。
+	 */
+	drums: ComposedDrums;
 	melody: ComposedNote[];
 	submelody: ComposedNote[];
 	bass: ComposedNote[];
@@ -1041,6 +1165,11 @@ type Slot = { isStrong: boolean; value: number; at: number };
 type MelodyStyle = {
 	/** 曲全体の基準音価。16分を使う曲かどうかを曲単位で決める。 */
 	groove: Groove;
+	/**
+	 * スウィング量（0=イーブン、1/3=跳ねる）。**曲単位で決める**——小節ごとに
+	 * 跳ねたり跳ねなかったりするグルーヴは存在しない。
+	 */
+	swing: number;
 	runShape: RunShape;
 	stepShape: StepShape;
 	holdShape: HoldShape;
@@ -1365,7 +1494,9 @@ const shapeBar = (
 };
 
 /** 1回分の draw。点数を付けるのは呼び出し側（{@link evaluate}）の仕事。 */
-type Draw = Omit<ComposeResult, "stats"> & {
+type Draw = Omit<ComposeResult, "stats" | "drums"> & {
+	/** この候補のスウィング量。ドラムの型を合わせるのに要る。 */
+	swing: number;
 	melodyDurations: number[];
 	restSteps: number;
 	totalSteps: number;
@@ -1378,6 +1509,106 @@ type Draw = Omit<ComposeResult, "stats"> & {
 	stepsPerBar: number;
 };
 
+/**
+ * フレーズの息をつなぐ。リズム型は1小節ぶんで閉じているので、そのまま並べると
+ * **小節線をまたぐ音が1つも出ない**（実測 0.0%、参考曲は平均3.5%・最大32%）。
+ * 呼吸が必ず1小節周期でリセットされるのが、打ち込みらしさとして一番耳に残る。
+ *
+ * 2つの操作で境目だけをつなぎ直す。どちらも**音数も総時間も変えない**ので、
+ * 休符率や音価の分布を壊さずに構造だけが変わる。
+ *
+ * - **弱起（アウフタクト）** … フレーズ頭の音を8分だけ前へ出し、前の小節の最後の音を
+ *   そのぶん短くする。フレーズが小節線の手前から歌い出す形になる。
+ * - **タイ** … フレーズの途中の小節線で、前の小節の最後の音を次の小節へ伸ばし、
+ *   次の小節の頭の音を吸収する。伸ばした音がそのまま小節線をまたぐ。
+ */
+export const applyPhrasing = (
+	melody: ComposedNote[],
+	opts: { stepsPerBar: number; bars: number; rnd: () => number },
+): void => {
+	const { stepsPerBar, bars, rnd } = opts;
+	const eighth = Math.max(1, Math.round(stepsPerBar / 8));
+	/** 小節線 `bar` の直前・直後の音。間に休符があるときは対象にしない。 */
+	const pairAt = (bar: number): [ComposedNote, ComposedNote] | null => {
+		const at = bar * stepsPerBar;
+		const i = melody.findIndex((n) => n.startStep >= at);
+		if (i <= 0) return null;
+		const a = melody[i - 1];
+		const c = melody[i];
+		if (a.startStep + a.durationSteps !== at || c.startStep !== at) return null;
+		return [a, c];
+	};
+
+	// フレーズの頭（2小節・4小節の切れ目）へ弱起を入れる。全部に入れると
+	// 「毎回食っている」だけになるので、曲ごとに引いた切れ目にだけ入れる。
+	const heads = [2, 4, 6, 8, 10, 12, 14].filter(() => rnd() < 0.6);
+	if (heads.length === 0) heads.push(rnd() < 0.5 ? 4 : 8);
+	for (const bar of heads) {
+		if (bar >= bars) continue;
+		const pair = pairAt(bar);
+		if (!pair) continue;
+		const [a, c] = pair;
+		// 前の音を削りすぎない（1ステップ以上残す）。
+		if (a.durationSteps <= eighth) continue;
+		a.durationSteps -= eighth;
+		c.startStep -= eighth;
+		// 終わりは動かさない。こうすると後ろの音に一切影響しない。
+		c.durationSteps += eighth;
+	}
+
+	// フレーズの途中の小節線にタイを掛ける。多用すると音数が減って間延びするので、
+	// 1曲に0〜2箇所まで。
+	const ties = [1, 3, 5, 7, 9, 11, 13]
+		.filter((b) => !heads.includes(b) && b < bars)
+		.filter(() => rnd() < 0.25)
+		.slice(0, 2);
+	for (const bar of ties) {
+		const pair = pairAt(bar);
+		if (!pair) continue;
+		const [a, c] = pair;
+		const i = melody.indexOf(c);
+		// 吸収する音は短いものだけ。長い音を消すとフレーズの形が変わってしまう。
+		if (c.durationSteps > eighth) continue;
+		a.durationSteps += c.durationSteps;
+		melody.splice(i, 1);
+	}
+};
+
+/**
+ * スウィング。拍の裏（8分の「ウラ」）を後ろへずらして跳ねさせる。
+ *
+ * 8分を3等分の 2:1 に配分するのが基本の形で、192ステップの小節なら
+ * 24（ウラの位置）→32 になる。**16分の格子から外れた位置**なので、
+ * これが無いと生成物の格子外の音は0%のままになる。
+ *
+ * 音の終わりは動かさず、直前の音を伸ばして帳尻を合わせるので、総時間は変わらない。
+ */
+export const applySwing = (
+	melody: ComposedNote[],
+	stepsPerBar: number,
+	amount: number,
+): number => {
+	const quarter = stepsPerBar / 4;
+	const eighth = quarter / 2;
+	const shift = Math.round(eighth * amount);
+	if (shift < 1) return 0;
+	let moved = 0;
+	for (let i = 1; i < melody.length; i++) {
+		const n = melody[i];
+		const prev = melody[i - 1];
+		// 拍のウラ（8分の裏）に、ちょうど乗っている音だけを動かす。
+		if (n.startStep % quarter !== eighth) continue;
+		// ずらすと音が消えるほど短い音、直前と間が空いている音は触らない。
+		if (n.durationSteps <= shift) continue;
+		if (prev.startStep + prev.durationSteps !== n.startStep) continue;
+		prev.durationSteps += shift;
+		n.startStep += shift;
+		n.durationSteps -= shift;
+		moved++;
+	}
+	return moved;
+};
+
 const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	const stepsPerBar = options.stepsPerBar;
 	const edo = options.edo === 31 ? 31 : 12;
@@ -1385,6 +1616,29 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	const scaleStep = (v: number): number =>
 		Math.max(1, Math.round((Math.abs(v) * stepsPerBar) / BASE_STEPS_PER_BAR)) *
 		Math.sign(v);
+	/**
+	 * リズム型を実際の stepsPerBar へ写す。**写した後の合計を必ず1小節に揃える。**
+	 *
+	 * 型は192ステップ基準で書いてあり、1音ずつ丸めると合計がずれる。既定の192では
+	 * 割り切れるので表面化しなかったが、三連（1音16ステップ）のように192の約数でも
+	 * 16分の倍数でもない音価を入れると、stepsPerBar が192以外のときに小節から
+	 * はみ出す。ずれは最後の音で吸収する。
+	 */
+	const scaleCell = (value: number[]): number[] => {
+		const scaled = value.map(scaleStep);
+		const total = scaled.reduce((sum, v) => sum + Math.abs(v), 0);
+		let diff = stepsPerBar - total;
+		if (diff !== 0) {
+			for (let i = scaled.length - 1; i >= 0 && diff !== 0; i--) {
+				const sign = Math.sign(scaled[i]);
+				const next = Math.abs(scaled[i]) + diff;
+				if (next < 1) continue;
+				scaled[i] = next * sign;
+				diff = 0;
+			}
+		}
+		return scaled;
+	};
 	const quarterSteps = scaleStep(QUARTER);
 	const strongStep = Math.max(1, Math.round(stepsPerBar / 2));
 
@@ -1433,7 +1687,12 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		return null;
 	};
 	const style: MelodyStyle = {
-		groove: pick<Groove>(["eighth", "sixteenth"], rnd),
+		groove: pick<Groove>(
+			["eighth", "eighth", "sixteenth", "sixteenth", "triplet"],
+			rnd,
+		),
+		// 跳ねる曲は4曲に1曲くらい。全曲が跳ねると今度はそれが単調になる。
+		swing: rnd() < 0.25 ? 1 / 3 : 0,
 		runShape: pick<RunShape>(["scale", "turn", "broken", "zigzag"], rnd),
 		stepShape: pick<StepShape>(
 			["arch", "valley", "ascend", "descend", "wave", "pivot"],
@@ -1563,7 +1822,7 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		// 再現の小節は、リズムも元の小節と同じにする（同じフレーズの歌い直しなので）。
 		const source = restatementOf(bar);
 		barRhythms.push(
-			source !== null ? barRhythms[source] : cell.value.map(scaleStep),
+			source !== null ? barRhythms[source] : scaleCell(cell.value),
 		);
 	}
 
@@ -2017,6 +2276,20 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		for (const n of barBass) bass.push(n);
 	}
 
+	// --- ④小節で閉じたリズムを、フレーズとしてつなぎ直す ---
+	// ここまでの melody は「1小節ぶんのリズム型」を並べたものなので、**小節線をまたぐ音が
+	// 1つも無い**。参考曲は平均3.5%（最大32%）がまたいでいて、呼吸が1小節周期でリセット
+	// されないのはここが理由。音数も総時間も変えずに、境目だけをつなぎ直す。
+	applyPhrasing(melody, { stepsPerBar, bars: BARS, rnd });
+	// 跳ねる曲でも、拍のウラに乗った音が1つも無ければ実際には何も動かない。
+	// そのときは「跳ねていない曲」として扱う——そうしないと、イーブンな
+	// メロディにシャッフルのドラムだけが当たって喧嘩する（実測 15曲中3曲）。
+	const swung =
+		style.swing > 0 ? applySwing(melody, stepsPerBar, style.swing) > 0 : false;
+	// 音価は上の2つで変わるので、検算に使う配列を作り直す。
+	melodyDurations.length = 0;
+	for (const n of melody) melodyDurations.push(n.durationSteps);
+
 	/** ノート列が使った音域（半音）。 */
 	const range = (notes: ComposedNote[]): number => {
 		if (notes.length === 0) return 0;
@@ -2035,6 +2308,7 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		chordPattern,
 		rootShift,
 		bpm,
+		swing: swung ? style.swing : 0,
 		melody,
 		submelody,
 		bass,
@@ -2079,11 +2353,13 @@ const evaluate = (
 		opts,
 	);
 	const tension = tensionFeatures(d.barTension);
+	const density = densityFeatures(toMetricNotes(d.melody), opts);
 	const fingerprint = featureVector({
 		entropy,
 		restRatio,
 		leapRatio: d.leapRatio,
 		melodyRange: d.melodyRange,
+		density,
 		structure,
 	});
 
@@ -2174,6 +2450,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	const count = Math.max(1, options.drawCount ?? DRAW_COUNT);
 
 	let best: ComposeResult | null = null;
+	let bestSwing = 0;
 	let bestScore = Number.NEGATIVE_INFINITY;
 	let bestIsValid = false;
 	let rejected = 0;
@@ -2187,7 +2464,11 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 		if (!better) continue;
 		bestScore = stats.score;
 		bestIsValid = ok;
+		bestSwing = d.swing;
 		best = {
+			// ドラムは勝った候補にだけ後から付ける（メロディに依存しないので
+			// 候補ごとに引いても採点は動かず、40本ぶん無駄になる）。
+			drums: null as unknown as ComposedDrums,
 			chordProgression: d.chordProgression,
 			chordPattern: d.chordPattern,
 			rootShift: d.rootShift,
@@ -2203,7 +2484,46 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	const result = best as ComposeResult;
 	result.stats.attempts = count;
 	result.stats.rejected = rejected;
+	result.drums = composeDrumPattern({
+		bars: BARS,
+		stepsPerBar: options.stepsPerBar,
+		rnd,
+		style: pickDrumStyle(result, bestSwing, rnd),
+	});
 	return result;
+};
+
+/**
+ * ドラムの性格を曲に合わせて選ぶ。
+ *
+ * ドラムはメロディに依存しないので候補ごとに引く必要はないが、**引き当てた曲と噛み合って
+ * いない**と目も当てられない（16分で走るメロディにバラードのドラム、など）。
+ * テンポと刻みの細かさから絞ってから引く。
+ */
+const pickDrumStyle = (
+	song: ComposeResult,
+	swing: number,
+	rnd: () => number,
+): DrumStyle => {
+	const eighth = BASE_STEPS_PER_BAR / 8;
+	const short =
+		song.melody.filter((n) => n.durationSteps <= eighth).length /
+		Math.max(1, song.melody.length);
+	// 跳ねているメロディにイーブンのドラムを当てると両方が喧嘩する。ここは
+	// ノートから推測せず生成時の値をそのまま使う——三連を含む曲のオンセットは
+	// 拍のウラと見分けが付かず、推測にすると全曲がシャッフルになった。
+	// **シャッフルはここでしか出さない。** 抽選プールにも入れていたせいで、
+	// イーブンなメロディの上で三連のハイハットが鳴る曲が出ていた（実測 42曲中21曲）。
+	if (swing > 0) return "shuffle";
+	const pool: DrumStyle[] =
+		song.bpm >= 150
+			? ["four", "rock", "sixteen"]
+			: short >= 0.6
+				? ["sixteen", "four", "rock"]
+				: song.bpm <= 124 && short < 0.4
+					? ["ballad", "eight", "ballad"]
+					: ["eight", "rock", "four", "sixteen"];
+	return pick(pool, rnd);
 };
 
 // ============================================================

@@ -34,6 +34,8 @@ import {
 import { join } from "node:path";
 import { durationEntropy } from "../src/compose";
 import {
+	type DensityFeatures,
+	densityFeatures,
 	type MetricNote,
 	type StructureFeatures,
 	structureFeatures,
@@ -247,15 +249,16 @@ export const isPlausibleMelody = (ns: MetricNote[]): boolean => {
 	return end >= STEPS_PER_BAR * 8;
 };
 
-type SongFeatures = StructureFeatures & {
-	entropy: number;
-	valueKinds: number;
-	restRatio: number;
-	leapRatio: number;
-	maxLeap: number;
-	melodyRange: number;
-	bars: number;
-};
+type SongFeatures = StructureFeatures &
+	DensityFeatures & {
+		entropy: number;
+		valueKinds: number;
+		restRatio: number;
+		leapRatio: number;
+		maxLeap: number;
+		melodyRange: number;
+		bars: number;
+	};
 
 /**
  * MIDIをチャンネル単位のノート列へ展開する（打楽器 ch10 は除く）。
@@ -385,6 +388,7 @@ const featuresOf = (buf: Buffer): SongFeatures | null => {
 
 	return {
 		...structureFeatures(mono, submelody, opts),
+		...densityFeatures(mono, opts),
 		entropy: durationEntropy(durations),
 		valueKinds: new Set(durations).size,
 		restRatio: Math.max(0, 1 - played / (bars * STEPS_PER_BAR)),
@@ -553,6 +557,8 @@ const main = async (): Promise<void> => {
 		"leapRatio",
 		"maxLeap",
 		"melodyRange",
+		"notesPerBar",
+		"shortNoteRatio",
 		"sim1",
 		"sim2",
 		"sim4",

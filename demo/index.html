@@ -395,7 +395,10 @@
             location.hostname.endsWith('.local') ||
             // 宛先がプライベートIPやループバックの場合にtrueを返すシンプルな判定
             /^127\.|^10\.|^192\.168\.|^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(location.hostname);
-        const DTM = await import(isLocal ? `http://${location.hostname}:40298/dist/index.mjs` : './index.mjs');
+        // ローカルは dev サーバーが /dist/* を自分のオリジンで配信しているので、
+        // ポートを決め打ちせずオリジン相対で読む（server.ts は PORT での上書きを
+        // 許しているのに、ここが 40298 固定だと上書きした瞬間に読めなくなる）。
+        const DTM = await import(isLocal ? new URL('./dist/index.mjs', location.origin).href : './index.mjs');
 
         const { createDtmStudio, INSTRUMENT_PRESETS, TRACKS_SIMPLE, TRACKS_ADVANCED, encodeMml, decodeMml, parseMML, VOICE_IMAGE_KEY, VOICE_IMAGES, showLoadingOverlay } = DTM;
 

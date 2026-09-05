@@ -272,6 +272,44 @@ export const structureFeatures = (
 };
 
 // ============================================================
+// 密度（メロディの「速さ」）
+// ============================================================
+
+/**
+ * メロディがどれくらい細かく動いているか。
+ *
+ * **これが無かったせいで、生成物は人間の曲のちょうど半分の速さで止まっていた。**
+ * 参考曲を測ると 1小節あたり 9.3音（p25〜p75 で 4.4〜10.0）・音の 93% が8分以下
+ * なのに対し、生成物は 4.4音・49% で、支配的な音価は4分音符だった。
+ *
+ * 既存の指標ではこの差が1つも見えない——音価エントロピーも種類数も**分布の散らばり**
+ * しか見ておらず、「4分中心に散らばった曲」と「16分中心に散らばった曲」を区別しない。
+ * 休符率も自己相似も同じ。結果、`groove: "sixteenth"` を50%の確率で引いていたのに、
+ * 採点を通ると16分の曲は8%（60曲中5曲）まで落ちていた。
+ *
+ * メロディの速さは曲の性格そのものなので、採点項目として持つ。
+ */
+export type DensityFeatures = {
+	/** 1小節あたりの音数。 */
+	notesPerBar: number;
+	/** 8分音符以下の短い音が占める比率。曲の「刻みの細かさ」。 */
+	shortNoteRatio: number;
+};
+
+export const densityFeatures = (
+	notes: MetricNote[],
+	opts: MetricOptions,
+): DensityFeatures => {
+	if (notes.length === 0) return { notesPerBar: 0, shortNoteRatio: 0 };
+	const eighth = opts.stepsPerBar / 8;
+	const short = notes.filter((n) => n.durationSteps <= eighth).length;
+	return {
+		notesPerBar: notes.length / Math.max(1, opts.bars),
+		shortNoteRatio: short / notes.length,
+	};
+};
+
+// ============================================================
 // 緊張と解放（和音が要るので人間の曲からは較正できない）
 // ============================================================
 
@@ -347,12 +385,15 @@ export const featureVector = (f: {
 	restRatio: number;
 	leapRatio: number;
 	melodyRange: number;
+	density: DensityFeatures;
 	structure: StructureFeatures;
 }): number[] => [
 	f.entropy / 3,
 	f.restRatio * 8,
 	f.leapRatio * 2,
 	f.melodyRange / 24,
+	f.density.notesPerBar / 12,
+	f.density.shortNoteRatio,
 	f.structure.sim1,
 	f.structure.sim2,
 	f.structure.sim4,

@@ -410,12 +410,14 @@ const COMPOSE_INFO_HTML = `
     <li><strong>小節の頭と3拍目では、和音の重要な構成音に着地させます</strong>。和音の上を意味もなく上下しているだけ、という印象を避けるためです。</li>
     <li><strong>和音を濁す音（アボイドノート）は強拍や長い音では鳴らしません</strong>。同じ「ファ」でも、Cの上では濁り、Fの上では和音の芯になります。その瞬間の和音ごとに音の重要度を測り直しています。</li>
     <li><strong>緩急をつけます</strong>。16分音符が続く「急」な小節と、ロングトーンや休符の「緩」な小節を意図的に対比させます。</li>
+    <li><strong>フレーズは小節線をまたぎます</strong>。リズムを1小節ずつ区切って並べると、息継ぎが必ず小節の頭でリセットされて機械的に聞こえます。フレーズの歌い出しを小節線の手前から始めたり（弱起）、前の小節の音を次の小節へ伸ばしたり（タイ）して、2〜4小節ひとまとまりの息にします。</li>
+    <li><strong>16分の格子から出ます</strong>。曲によって三連符を使ったり、拍のウラを後ろへずらして跳ねさせたり（スウィング）します。格子の上に全部の音が乗っている限り、グルーヴは原理的に作れません。跳ねる曲にはシャッフルのドラムが当たります。</li>
   </ul>
   <h4>押すたびに違う曲にするために</h4>
   <p>品質の基準を満たしていても、毎回同じ設計図で作っていれば「音名だけが違う似た曲」しかできません。そこで曲ごとに次を引き直しています。</p>
   <ul>
     <li><strong>16小節の骨格</strong>（どの小節をモチーフ・走句・タメ・つなぎにするか）</li>
-    <li><strong>メロディの書法</strong>——走句の形（音階／折り返し／分散和音／ジグザグ）、つなぎの形（山なり／谷／上行／下行／うねり／軸音まわり）、終止の形（順次下降／ソミド／跳ね上がり／ロングトーン）、モチーフの原型、跳躍の混ぜ具合、開始音</li>
+    <li><strong>メロディの書法</strong>——走句の形（音階／折り返し／分散和音／ジグザグ）、つなぎの形（山なり／谷／上行／下行／うねり／軸音まわり）、終止の形（順次下降／ソミド／跳ね上がり／ロングトーン）、モチーフの原型、跳躍の混ぜ具合、開始音、基準の刻み（8分／16分／三連）、スウィング量</li>
     <li><strong>ベースの奏法</strong>（4分打ち／オルタネイト／2分／8分ドライブ／シンコペ／ウォーキング／オクターブ）</li>
     <li><strong>サブメロの書き方</strong>——合いの手（メロディが休んだ隙間にだけ入る）、ハモリ（メロディのリズムをなぞって3度・6度下を歌う）、対旋律（8分でメロディと反行する）、保続音（同じ音を伸ばし続ける）、パッド。小節ごとに、メロディが息継ぎしている場所では自動で合いの手に切り替わります。</li>
   </ul>
@@ -433,7 +435,7 @@ const COMPOSE_INFO_HTML = `
   <ul>
     <li>調はハ長調（またはイ短調）で固定です。別の調にしたいときは、この下の「移調」で動かしてください。</li>
     <li>31平均律の曲でも使えます。和音・メロディとも31平均律の格子に乗せて生成します。</li>
-    <li>ドラムは変更しません。「ドラム設定」から好きなリズムを選んでください。</li>
+    <li><strong>ドラムも曲に合わせて組み立てます</strong>。テンポとメロディの刻みから8ビート／16ビート／4つ打ち／シャッフル／バラード／ロックのどれかを選び、A・A'・サビ・A'' で刻みの強さを変え、4小節ごとにフィル、セクションの頭にクラッシュを置きます。気に入らなければ「ドラム設定」から他のリズムへ切り替えられます。</li>
     <li>実行後は「元に戻す」で作曲前の状態へ戻せます。元に戻すはトラックごとに効くので、4トラックすべてを戻したいときはトラックを切り替えながら1回ずつ押してください。</li>
   </ul>
 </div>
@@ -5308,6 +5310,11 @@ export const mountDAW = (
 				// 続けて聴いたときに曲の違いが出にくい。
 				setBpm(song.bpm);
 
+				// ドラムも曲の一部として書き換える。ここを触っていなかったので、
+				// 既定の1小節ループが16小節そのまま鳴り続けていた。上物をどれだけ
+				// 作り分けても、伴奏の地が同じなら「同じ曲の別バージョン」に聞こえる。
+				applyComposedDrumPattern(song.drums.def);
+
 				// ベースにだけは「おまかせマスタリング」を待たずにコンプを掛ける。
 				// トラックのコンプは既定0（＝無圧縮）で、押さなければ一切掛からない。
 				// ベースの「太さ」はコンプで作るものなので、作った直後の素の状態が
@@ -5718,25 +5725,41 @@ export const mountDAW = (
 	// MIDI選択時に自動抽出したドラム定義（ドラムJSON出力で現在の音源と併せて再生成する）
 	let extractedMidiDrum: import("./song-drum-config").SongDrumPattern | null =
 		null;
+	/**
+	 * ドラムパターンを DAW に追加して選択状態にする。ドラム選択の `<option>` も
+	 * 作り足すので、ユーザーは後から手で他のパターンへ切り替えられる。
+	 */
+	const installDrumPattern = (
+		key: string,
+		patternDef: import("./drum-config").DrumPatternDef,
+	): void => {
+		drumPatterns[key] = patternDef;
+		let option = refs.drumSelect.querySelector(
+			`option[value="${key}"]`,
+		) as HTMLOptionElement | null;
+		if (!option) {
+			option = document.createElement("option");
+			option.value = key;
+			refs.drumSelect.appendChild(option);
+		}
+		option.textContent = patternDef.label;
+		currentDrumPattern = key;
+		refs.drumSelect.value = key;
+		options.onDrumChange?.(key);
+	};
 	// 抽出したドラムパターンを DAW に追加し、自動選択する
 	const applyExtractedDrumPattern = (
 		patternDef: import("./drum-config").DrumPatternDef,
 	): void => {
 		extractedMidiDrum =
 			patternDef.pattern as import("./song-drum-config").SongDrumPattern;
-		drumPatterns["_extracted_midi"] = patternDef;
-		let option = refs.drumSelect.querySelector(
-			`option[value="_extracted_midi"]`,
-		) as HTMLOptionElement | null;
-		if (!option) {
-			option = document.createElement("option");
-			option.value = "_extracted_midi";
-			refs.drumSelect.appendChild(option);
-		}
-		option.textContent = patternDef.label;
-		currentDrumPattern = "_extracted_midi";
-		refs.drumSelect.value = "_extracted_midi";
-		options.onDrumChange?.("_extracted_midi");
+		installDrumPattern("_extracted_midi", patternDef);
+	};
+	/** 作曲マクロが組み立てたドラム編曲を適用する。 */
+	const applyComposedDrumPattern = (
+		patternDef: import("./drum-config").DrumPatternDef,
+	): void => {
+		installDrumPattern("_composed", patternDef);
 	};
 	const wireMidi = (): void => {
 		refs.midiInput.addEventListener("change", async () => {

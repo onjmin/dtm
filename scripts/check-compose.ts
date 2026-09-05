@@ -16,8 +16,10 @@ import {
 	durationEntropy,
 	MOTIF_CELLS,
 	RHYTHM_CELLS,
+	TRIPLET_EIGHTH,
 } from "../src/compose";
 import { structureFeatures } from "../src/compose-metrics";
+import { DRUM_KEYS, resolveDrumPattern } from "../src/drum-config";
 import { UNITS_PER_SEMITONE } from "../src/tuning";
 
 const STEPS_PER_BAR = 192;
@@ -265,20 +267,21 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 		);
 	}
 
-	// --- 1小節がちょうど4拍か（メロディ） ---
-	for (let bar = 0; bar < BARS; bar++) {
-		const start = bar * STEPS_PER_BAR;
-		const inBar = song.melody.filter(
-			(n) => n.startStep >= start && n.startStep < start + STEPS_PER_BAR,
-		);
-		if (inBar.length === 0) continue;
-		const last = inBar[inBar.length - 1];
-		check(
-			`${tag} bar${bar + 1} が小節をはみ出さない`,
-			last.startStep + last.durationSteps <= start + STEPS_PER_BAR,
-			`末尾 ${last.startStep + last.durationSteps - start}/${STEPS_PER_BAR}`,
-		);
-	}
+	// --- 小節線をまたぐ音（フレーズ）---
+	// **「小節をはみ出さない」ことは不変条件ではない。** 以前はここで各小節の最後の音が
+	// 小節内に収まることを検算していたが、それはリズム型が1小節で閉じている実装を
+	// なぞっていただけで、結果として小節線をまたぐ音が0.0%（参考曲は平均3.5%・最大32%）
+	// になり、呼吸が1小節周期でリセットされていた。守るべきなのは
+	// 「曲の終端をはみ出さない」「重ならない」の2つで、どちらも別に検算している。
+	// ここではまたぎが長すぎないことだけを見る（1音で2小節を越えたら形が壊れている）。
+	const tooLong = song.melody.filter(
+		(n) => n.durationSteps > STEPS_PER_BAR + STEPS_PER_BAR / 2,
+	);
+	check(
+		`${tag} 1音が1.5小節を超えない`,
+		tooLong.length === 0,
+		`${tooLong.length}音`,
+	);
 
 	// --- おまかせマスタリングの役割推定に乗るか ---
 	// daw.ts の classifyTrackRole は「平均音高が C3(MIDI48) 未満ならベース」と判定する。
@@ -483,6 +486,249 @@ console.log("● 構造の指標が順序に反応するか");
 		`${TRIALS}回中 ${degraded}回しか動かなかった（指標が順序を見ていない）`,
 	);
 	console.log(`  ${TRIALS}回中 ${degraded}回で構造の指標が変化`);
+}
+
+// ============================================================
+// 2.6 フレーズと格子（小節で閉じていないか）
+//
+//     どちらも「0%になっていたら退行」という種類の指標。1曲だけ見ても
+//     気づけないので、まとめて生成して比率で測る。
+// ============================================================
+
+console.log("● フレーズと格子");
+{
+	const N = 60;
+	let cross = 0;
+	let offGrid = 0;
+	let notes = 0;
+	let crossSongs = 0;
+	let offGridSongs = 0;
+	let tripletSongs = 0;
+	const drumStyles = new Set<string>();
+	for (let seed = 1; seed <= N; seed++) {
+		const song = composeSong({
+			stepsPerBar: STEPS_PER_BAR,
+			edo: 12,
+			random: seededRandom(seed * 7919),
+		});
+		drumStyles.add(song.drums.style);
+		let c = 0;
+		let o = 0;
+		for (const n of song.melody) {
+			notes++;
+			const bar = Math.floor(n.startStep / STEPS_PER_BAR);
+			const endBar = Math.floor(
+				(n.startStep + n.durationSteps - 1) / STEPS_PER_BAR,
+			);
+			if (endBar !== bar) {
+				cross++;
+				c++;
+			}
+			// 16分の格子（12ステップ刻み）から外れているか。三連とスウィングで出る。
+			if (n.startStep % (STEPS_PER_BAR / 16) !== 0) {
+				offGrid++;
+				o++;
+			}
+		}
+		if (c > 0) crossSongs++;
+		if (o > 0) offGridSongs++;
+		if (song.melody.some((n) => n.durationSteps === TRIPLET_EIGHTH))
+			tripletSongs++;
+		// 曲の終端をはみ出していないこと（またぎを入れた副作用が出るならここ）。
+		const over = song.melody.filter(
+			(n) => n.startStep + n.durationSteps > BARS * STEPS_PER_BAR,
+		);
+		check(
+			`seed=${seed} 曲の終端をはみ出さない`,
+			over.length === 0,
+			`${over.length}音`,
+		);
+	}
+	// 参考曲は平均3.5%（最大32%）。0%＝リズム型が1小節で閉じたままという退行。
+	const crossRatio = cross / notes;
+	check(
+		"メロディが小節線をまたぐ",
+		crossRatio >= 0.005 && crossRatio <= 0.15,
+		`${(crossRatio * 100).toFixed(1)}%`,
+	);
+	check(
+		"またぎが一部の曲に偏らない",
+		crossSongs >= N / 3,
+		`${crossSongs}/${N}曲`,
+	);
+	// 参考曲は平均24.3%。0%＝三連もスウィングも出せていないという退行。
+	const offRatio = offGrid / notes;
+	check(
+		"16分格子から外れた音がある",
+		offRatio >= 0.03 && offRatio <= 0.5,
+		`${(offRatio * 100).toFixed(1)}%`,
+	);
+	check("三連を使う曲がある", tripletSongs >= N / 10, `${tripletSongs}/${N}曲`);
+	// 跳ねる曲にはシャッフルのドラムが当たる。ノートから推測していた頃は
+	// 三連の音を「ウラ」と誤検出して全曲シャッフルになっていた。
+	check(
+		"ドラムの型が偏っていない",
+		drumStyles.size >= 3,
+		`${drumStyles.size}種: ${[...drumStyles].join(",")}`,
+	);
+	console.log(
+		`  ${N}曲: 小節線またぎ ${(crossRatio * 100).toFixed(1)}%（${crossSongs}曲） / 格子外 ${(offRatio * 100).toFixed(1)}%（${offGridSongs}曲） / 三連 ${tripletSongs}曲`,
+	);
+}
+
+// ============================================================
+// 2.7 ドラム編曲
+//
+//     作曲マクロは長らくドラムに一切触っておらず、既定の1小節ループが16小節
+//     そのまま鳴っていた。参考にした人間の曲13本は全曲がドラムに2〜31種
+//     （平均5.9種）の小節パターンを持つ。ここが1種に戻ったら退行。
+// ============================================================
+
+console.log("● ドラム編曲");
+{
+	const N = 40;
+	const styles = new Set<string>();
+	let minVariety = Number.POSITIVE_INFINITY;
+	for (let seed = 1; seed <= N; seed++) {
+		const song = composeSong({
+			stepsPerBar: STEPS_PER_BAR,
+			edo: 12,
+			random: seededRandom(seed * 31),
+		});
+		const tag = `seed=${seed}`;
+		const { drums } = song;
+		styles.add(drums.style);
+		minVariety = Math.min(minVariety, drums.variety);
+		check(
+			`${tag} 小節パターンが2種以上`,
+			drums.variety >= 2,
+			`${drums.variety}種（1種＝1小節ループ）`,
+		);
+		// 打点が小節からはみ出していないこと。はみ出すと次の小節へ回り込む。
+		const overflow = drums.def.pattern.flatMap((i) =>
+			i.pattern.filter((h) => h.step < 0 || h.step >= STEPS_PER_BAR),
+		);
+		check(`${tag} 打点が小節内`, overflow.length === 0, `${overflow.length}打`);
+		// 全小節が埋まっていること（無音の小節があるとドラムが抜ける）。
+		const covered = new Set<number>();
+		for (const i of drums.def.pattern)
+			for (const [lo, hi] of i.ranges)
+				for (let b = lo; b <= hi; b++) covered.add(b);
+		check(
+			`${tag} 16小節すべてにドラムがある`,
+			covered.size === BARS,
+			`${covered.size}小節`,
+		);
+		// フィル（4小節の切れ目）とクラッシュ（セクションの頭）が入っていること。
+		const barOf = (bar: number) =>
+			drums.def.pattern.find((i) =>
+				i.ranges.some(([lo, hi]) => bar >= lo && bar <= hi),
+			)?.pattern ?? [];
+		check(
+			`${tag} サビ頭にクラッシュ`,
+			barOf(9).some((h) => h.pitch === DRUM_KEYS.crashCymbal1),
+			"9小節目にクラッシュが無い",
+		);
+		const toms = [DRUM_KEYS.highTom, DRUM_KEYS.lowMidTom, DRUM_KEYS.lowTom];
+		const isFillBar = (bar: number) =>
+			barOf(bar).filter(
+				(h) =>
+					h.step >= STEPS_PER_BAR / 2 &&
+					(h.pitch === DRUM_KEYS.acousticSnare || toms.includes(h.pitch)),
+			).length >= 2;
+		check(`${tag} 4小節目にフィル`, isFillBar(4), "フィルが無い");
+		check(`${tag} 8小節目にフィル`, isFillBar(8), "フィルが無い");
+		// 最終小節は鳴らし切る（刻み続けると終わった感じが出ない）。
+		check(
+			`${tag} 最終小節で締める`,
+			barOf(BARS).some((h) => h.pitch === DRUM_KEYS.crashCymbal1) &&
+				barOf(BARS).length <= 4,
+			`${barOf(BARS).length}打`,
+		);
+	}
+	check(
+		"ドラムの型が複数出る",
+		styles.size >= 3,
+		`${styles.size}種: ${[...styles].join(",")}`,
+	);
+
+	// シャッフルのドラム（三連のハイハット）は、跳ねているメロディの曲にだけ当てる。
+	// 一般の抽選プールにも入れていたときは、イーブンなメロディの上で三連が鳴る曲が
+	// 42曲中21曲出ていた。ドラムだけが跳ねている状態は、はっきり喧嘩して聞こえる。
+	{
+		let shuffleSongs = 0;
+		let mismatched = 0;
+		for (let seed = 1; seed <= 120; seed++) {
+			const song = composeSong({
+				stepsPerBar: STEPS_PER_BAR,
+				edo: 12,
+				random: seededRandom(seed * 7919),
+			});
+			if (song.drums.style !== "shuffle") continue;
+			shuffleSongs++;
+			const quarter = STEPS_PER_BAR / 4;
+			const eighth = STEPS_PER_BAR / 8;
+			// 跳ねている＝拍のウラが8分の位置から後ろへずれて、16分の格子から外れている。
+			const swung = song.melody.some(
+				(n) =>
+					n.startStep % quarter > eighth &&
+					n.startStep % (STEPS_PER_BAR / 16) !== 0,
+			);
+			if (!swung) mismatched++;
+		}
+		check(
+			"シャッフルのドラムは跳ねている曲にだけ当たる",
+			mismatched === 0,
+			`${shuffleSongs}曲中 ${mismatched}曲がイーブン`,
+		);
+	}
+
+	// --- 再生経路との結合 ---
+	// daw.ts は生成した定義を drumPatterns へ入れ、シーケンサが小節ごとに
+	// resolveDrumPattern() で引く。ranges / patternBars の形が噛み合っていないと、
+	// 生成側が正しくてもここで空になったり別の小節の型が返ったりする。
+	// 生成物を直接見るだけでは検出できないので、実際に引いて確かめる。
+	{
+		const song = composeSong({
+			stepsPerBar: STEPS_PER_BAR,
+			edo: 12,
+			random: seededRandom(12345),
+		});
+		const dict = { _composed: song.drums.def };
+		const resolved: ReturnType<typeof resolveDrumPattern>[] = [];
+		for (let bar = 1; bar <= BARS; bar++)
+			resolved.push(resolveDrumPattern("_composed", dict, bar));
+		check(
+			"全小節でドラムが解決できる",
+			resolved.every((r) => r !== null && r.length > 0),
+			`空の小節 ${resolved.filter((r) => !r || r.length === 0).length}個`,
+		);
+		check(
+			"解決後の打点も小節内",
+			resolved.every((r) =>
+				(r ?? []).every((h) => h.step >= 0 && h.step < STEPS_PER_BAR),
+			),
+			"小節からはみ出した打点がある",
+		);
+		// 解決結果が小節ごとに違うこと（1種に潰れていたらループに戻っている）。
+		const kinds = new Set(resolved.map((r) => JSON.stringify(r)));
+		check("解決後も小節ごとに違う", kinds.size >= 2, `${kinds.size}種`);
+		// 生成した定義と解決結果が一致すること。
+		const mismatched = resolved.filter((r, i) => {
+			const expected = song.drums.def.pattern.find((ins) =>
+				ins.ranges.some(([lo, hi]) => i + 1 >= lo && i + 1 <= hi),
+			)?.pattern;
+			return JSON.stringify(r) !== JSON.stringify(expected);
+		});
+		check(
+			"解決結果が定義どおり",
+			mismatched.length === 0,
+			`${mismatched.length}小節でずれ`,
+		);
+	}
+	console.log(
+		`  ${N}曲: 型${styles.size}種（${[...styles].join(" ")}） / 小節パターンの最小種類数 ${minVariety}`,
+	);
 }
 
 // ============================================================
