@@ -92,6 +92,7 @@ export type DawUIRefs = {
 	transposeInfoBtn: HTMLButtonElement;
 	// macros
 	macroCompose: HTMLButtonElement;
+	macroComposeVocal: HTMLButtonElement;
 	macroComposeInfo: HTMLButtonElement;
 	macroClear: HTMLButtonElement;
 	macroRandom: HTMLButtonElement;
@@ -385,12 +386,14 @@ export const buildUI = (
     <div class="dtm-panel-body">
       <div class="dtm-row ${showCompose ? "" : "dtm-hidden"}" data-dtm="compose-row">
         <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose" title="コード進行・メロディ・サブメロ・ベース・伴奏を16小節ぶん自動で作ります">作曲</button>
+        <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose-vocal" title="作曲したうえで、メロディに歌詞を付けて歌わせます">歌入り作曲</button>
         <button class="dtm-infobtn" data-dtm="macro-compose-info" title="作曲の解説">${icon("info", 12)}</button>
         <span class="dtm-grow"></span>
       </div>
       <div class="dtm-row">
         <span class="dtm-label">全体シフト</span>
         <select class="dtm-select" data-dtm="shift-select">
+          <option value="-1536">-8小節</option>
           <option value="-192">-1小節</option>
           <option value="-96">-2分</option>
           <option value="-48">-4分</option>
@@ -401,6 +404,7 @@ export const buildUI = (
           <option value="48">+4分</option>
           <option value="96">+2分</option>
           <option value="192">+1小節</option>
+          <option value="1536">+8小節</option>
         </select>
         <button class="dtm-btn dtm-btn--primary" data-dtm="shift-apply">適用</button>
       </div>
@@ -581,6 +585,7 @@ export const buildUI = (
 		transposeApplyBtn: sel("transpose-apply"),
 		transposeInfoBtn: sel("transpose-info"),
 		macroCompose: sel("macro-compose"),
+		macroComposeVocal: sel("macro-compose-vocal"),
 		macroComposeInfo: sel("macro-compose-info"),
 		macroClear: sel("macro-clear"),
 		macroRandom: sel("macro-random"),

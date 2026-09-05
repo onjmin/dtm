@@ -192,6 +192,8 @@ const WEIGHTS = {
  *   なる。16小節の曲にそのまま当てると緩すぎるので「山は1〜2回」を満点にする。
  */
 const HAND_BANDS = {
+	/** サブメロの音数/小節。少なすぎると「置いただけ」、多すぎるとメロディを食う。 */
+	subDensity: [0.5, 1.8, 4.5, 8] as Band,
 	complementarity: [0.05, 0.25, 0.7, 0.95] as Band,
 	climaxPeaks: [0, 1, 2, 5] as Band,
 } as const;
@@ -204,7 +206,7 @@ const DRAW_COUNT = 40;
 // ============================================================
 
 /** 1小節を192ステップとしたときの音価。実際の stepsPerBar に合わせて比率で伸縮する。 */
-const BASE_STEPS_PER_BAR = 192;
+export const BASE_STEPS_PER_BAR = 192;
 const WHOLE = 192;
 const DOT_HALF = 144;
 const HALF = 96;
@@ -229,13 +231,14 @@ const BARS = 16;
 const ROOT_SHIFTS = [0, 1, 2, 3, 4, 5, 6, -1, -2, -3, -4, -5];
 
 /**
- * テンポ（BPM）の候補。参考曲100本の実測は 中央値132・p25〜p75 が 126〜136 で、
- * その周辺を厚めに、外れたテンポも少し混ぜてある。初版はテンポを設定しておらず、
- * 全曲が既定値のままだった。
+ * テンポ（BPM）の候補。参考曲100本の実測は 中央値132・p25〜p75 が 126〜136。
+ * その周辺を厚めにしつつ、**120未満を落として170〜185の高速帯を足してある**——
+ * ボカロ曲は120以上でそれらしくなり、高速系は170〜185が最も多い（1拍に16分が4つ
+ * 収まって「詰め込み感」が出る帯）。初版はテンポを設定しておらず全曲が既定値だった。
  */
 const BPM_CHOICES = [
-	88, 96, 104, 112, 120, 124, 126, 128, 130, 132, 132, 134, 136, 138, 142, 150,
-	160, 174,
+	112, 120, 124, 126, 128, 130, 132, 132, 134, 136, 138, 142, 150, 155, 160,
+	168, 172, 175, 180, 185,
 ];
 
 // ============================================================
@@ -430,7 +433,7 @@ const toneWeight = (semi: number, tones: ChordTone[]): number => {
  */
 type RhythmCell = { value: number[]; density: "sparse" | "medium" | "dense" };
 
-const RHYTHM_CELLS: RhythmCell[] = [
+export const RHYTHM_CELLS: RhythmCell[] = [
 	// --- 緩: ロングトーン・休符主体 ---
 	{ value: [WHOLE], density: "sparse" },
 	{ value: [DOT_HALF, QUARTER], density: "sparse" },
@@ -472,6 +475,18 @@ const RHYTHM_CELLS: RhythmCell[] = [
 	{ value: [EIGHTH, EIGHTH, EIGHTH, EIGHTH, HALF], density: "medium" },
 	{ value: [HALF, EIGHTH, EIGHTH, QUARTER], density: "medium" },
 	{ value: [-EIGHTH, EIGHTH, QUARTER, QUARTER, QUARTER], density: "medium" },
+	// --- 中・シンコペーション: 拍の裏から入る形 ---
+	// 参考曲は主旋律の音の47%が拍頭に無い（生成物は35%）。拍の頭にきれいに揃った
+	// メロディは、それだけで打ち込みらしく聞こえる。合計は必ず1小節。
+	{ value: [EIGHTH, QUARTER, QUARTER, QUARTER, EIGHTH], density: "medium" },
+	{ value: [EIGHTH, EIGHTH, DOT_QUARTER, DOT_QUARTER], density: "medium" },
+	{ value: [DOT_QUARTER, DOT_QUARTER, EIGHTH, EIGHTH], density: "medium" },
+	{ value: [-EIGHTH, EIGHTH, DOT_QUARTER, DOT_QUARTER], density: "medium" },
+	{ value: [QUARTER, EIGHTH, DOT_QUARTER, QUARTER], density: "medium" },
+	{
+		value: [SIXTEENTH, EIGHTH, SIXTEENTH, QUARTER, QUARTER, QUARTER],
+		density: "medium",
+	},
 	// --- 中・16分グルーヴ: 走句ではなく「地」として16分を含む形 ---
 	// これが無いと16分グルーヴの曲でも `run` の小節にしか16分が出ず、
 	// 1曲に1〜3個の孤立した16分小節（＝思い出したように入る一発ネタ）になる。
@@ -559,7 +574,7 @@ const RHYTHM_CELLS: RhythmCell[] = [
  * モチーフに使うリズム型。5音前後で、音価に変化があり、覚えやすい形のものだけを選ぶ
  * （モチーフは「そのまま反復して記憶に残す」のが仕事なので、走句のような流れる形は不向き）。
  */
-const MOTIF_CELLS: RhythmCell[] = [
+export const MOTIF_CELLS: RhythmCell[] = [
 	{ value: [QUARTER, EIGHTH, EIGHTH, QUARTER, QUARTER], density: "medium" },
 	{ value: [EIGHTH, EIGHTH, DOT_QUARTER, EIGHTH, QUARTER], density: "medium" },
 	{ value: [QUARTER, QUARTER, EIGHTH, EIGHTH, QUARTER], density: "medium" },
@@ -576,6 +591,15 @@ const MOTIF_CELLS: RhythmCell[] = [
 		density: "medium",
 	},
 	{ value: [HALF, EIGHTH, EIGHTH, QUARTER], density: "medium" },
+	// シンコペーションのモチーフ。**拍の裏はモチーフ自体が持っていないと曲に出ない。**
+	// リズム型を足すだけでは、モチーフが拍頭に揃っている限り曲全体は揃ったままになる
+	// （実測: シンコペーションの型を6つ足しても「拍頭以外」の割合が 0.349→0.348 と
+	// 動かなかった）。モチーフは曲中で最も多く鳴る型なので、ここを変えるしかない。
+	{ value: [EIGHTH, QUARTER, QUARTER, QUARTER, EIGHTH], density: "medium" },
+	{ value: [EIGHTH, EIGHTH, DOT_QUARTER, DOT_QUARTER], density: "medium" },
+	{ value: [DOT_QUARTER, DOT_QUARTER, EIGHTH, EIGHTH], density: "medium" },
+	{ value: [-EIGHTH, EIGHTH, DOT_QUARTER, DOT_QUARTER], density: "medium" },
+	{ value: [EIGHTH, DOT_QUARTER, EIGHTH, DOT_QUARTER], density: "medium" },
 	// 16分グルーヴの曲用。**モチーフ自体が16分を持たないと、曲の顔にならない。**
 	// モチーフは曲中で最も多く鳴る型なので、ここに16分が無いと、16分は結局
 	// 走句の小節だけに現れる「装飾」に留まってしまう。
@@ -760,7 +784,7 @@ const groovyCells = (
  * 「思い出したように特定のトラックだけ細かく刻んでいる」という聞こえ方になっていた。
  * 合いの手は等分ではなく、**言い回し**として置く。
  */
-const ANSWER_FIGURES: number[][] = [
+export const ANSWER_FIGURES: number[][] = [
 	[EIGHTH, EIGHTH, QUARTER],
 	[QUARTER, EIGHTH],
 	[EIGHTH, DOT_QUARTER],
@@ -1034,6 +1058,8 @@ const barDegrees = (
 	barHeadWeight: 2 | 3,
 	/** 強拍で和音の色を出す音（3度・7度）を優先するか。B部だけ true。 */
 	preferColor: boolean,
+	/** 4分音符のステップ数。「長い音」の判定に使う。 */
+	quarterSteps: number,
 	rnd: () => number,
 ): number[] => {
 	const noteCount = slots.length;
@@ -1167,12 +1193,25 @@ const barDegrees = (
 		);
 	}
 
-	// 弱拍に跳躍を混ぜる。跳躍のないメロディは歌いやすいが印象に残らない。
-	// 直後は {@link shapeBar} の gap fill が反行の順次進行で埋める。
+	// **音価と音の動きを対応させる。**
+	//
+	// 歌メロの定石として「短い音符では順次進行か同音連打、長い音符では跳躍」がある
+	// （細かい音で跳ぶと歌えないし、長い音が順次に動くと平坦に聞こえる）。初版は
+	// 音価と無関係に弱拍へ跳躍を撒いていたので、16分の走句の途中で唐突に跳ぶ、
+	// といった「人が書かない形」が出ていた。ここが自動生成っぽさの主な出どころ。
 	for (let i = 1; i < out.length - 1; i++) {
-		if (rnd() >= style.leapAffinity) continue;
 		if (slots[i].isStrong) continue;
-		out[i] = out[i - 1] + pick([-4, -3, -2, 2, 3, 4], rnd);
+		if (slots[i].value >= quarterSteps) {
+			// 長い音 → 跳躍。直後は shapeBar の gap fill が反行の順次進行で埋める。
+			if (rnd() < style.leapAffinity)
+				out[i] = out[i - 1] + pick([-5, -4, -3, 3, 4, 5], rnd);
+			continue;
+		}
+		// 短い音 → 順次進行、または同音連打。
+		// 同音連打は歌メロで頻出だが、初版は実測 7.6%（参考曲は10.3%）と少なかった。
+		if (rnd() < 0.22) out[i] = out[i - 1];
+		else if (Math.abs(out[i] - out[i - 1]) > 2)
+			out[i] = out[i - 1] + Math.sign(out[i] - out[i - 1]);
 	}
 	return out;
 };
@@ -1185,15 +1224,85 @@ const barDegrees = (
  * 3. **跳躍の直後は反行の順次進行で埋める**（gap fill）
  * 4. 強拍・長い音価にアボイドノートが来たら隣のスケール音へ逃がす
  */
+/**
+ * モチーフを**塊ごと**和音に合わせる。
+ *
+ * 音を1つずつ和音へ寄せると、同じモチーフでも和音が変わるたびに別の形へ化ける。
+ * 人がやるのは逆で、**モチーフの形はそのままに、置く高さを変えて**和音に合わせる。
+ * ここでは度数を上下に振ってみて、
+ *
+ * - 強拍の音がどれだけ和音構成音に乗るか（重み付き）
+ * - 直前の音とのつながりが跳びすぎないか
+ *
+ * が最も良い移調量を選ぶ。1音も曲げないので、輪郭は完全に保たれる。
+ */
+const fitMotif = (
+	degrees: number[],
+	slots: Slot[],
+	tones: ChordTone[],
+	prevSemi: number,
+	quarterSteps: number,
+): number[] => {
+	let best = degrees;
+	let bestScore = Number.NEGATIVE_INFINITY;
+	for (let shift = -4; shift <= 4; shift++) {
+		const moved = degrees.map((d) => d + shift);
+		let score = 0;
+		for (let i = 0; i < moved.length; i++) {
+			const semi = clampSemi(
+				degreeToPitch(moved[i]).semi,
+				MELODY_LOW,
+				MELODY_HIGH,
+			);
+			const w = toneWeight(semi, tones);
+			// 強拍と長い音は和音構成音であってほしい。弱拍の経過音は自由。
+			const important = slots[i].isStrong || slots[i].value >= quarterSteps;
+			score += important ? w * 3 : w;
+		}
+		// 前の小節からのつながり。跳びすぎる置き方は避ける。
+		const head = clampSemi(
+			degreeToPitch(moved[0]).semi,
+			MELODY_LOW,
+			MELODY_HIGH,
+		);
+		score -= Math.max(0, Math.abs(head - prevSemi) - MAX_BAR_LEAP_SEMITONES);
+		if (score > bestScore) {
+			bestScore = score;
+			best = moved;
+		}
+	}
+	return best;
+};
+
 const shapeBar = (
 	degrees: number[],
 	slots: Slot[],
 	tones: ChordTone[],
 	prevSemi: number,
-	opts: { allowLeap: boolean; allowArpeggio: boolean; quarterSteps: number },
+	opts: {
+		allowLeap: boolean;
+		allowArpeggio: boolean;
+		quarterSteps: number;
+		/**
+		 * モチーフの輪郭をそのまま鳴らす。
+		 *
+		 * 通常は音を1つずつ和音へ寄せる（強拍の着地・gap fill・アボイド回避）が、
+		 * **モチーフの小節でそれをやると、同じモチーフが和音ごとに別の形へ化ける**。
+		 * 実測で「同じ輪郭が2回以上現れる小節」は61%しかなく、聴き手には
+		 * フックが繰り返されていると分からない＝毎小節ちがう音が流れるだけになる。
+		 * モチーフは音を曲げるのではなく、**塊ごと移調して**和音に合わせる
+		 * （{@link fitMotif}）。ここでは音域に収めるだけにする。
+		 */
+		preserveContour?: boolean;
+	},
 ): number[] => {
 	const out: number[] = [];
 	let prev = prevSemi;
+	if (opts.preserveContour) {
+		for (const degree of degrees)
+			out.push(clampSemi(degreeToPitch(degree).semi, MELODY_LOW, MELODY_HIGH));
+		return out;
+	}
 	for (let i = 0; i < degrees.length; i++) {
 		let semi = clampSemi(
 			degreeToPitch(degrees[i]).semi,
@@ -1279,12 +1388,31 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	const bpm = pick(BPM_CHOICES, rnd);
 
 	// --- 曲の骨格と書法を引く（ここが曲どうしの違いの出どころ） ---
-	const barRoles: BarRole[] = [
-		...pick(SECTION_FORMS.a, rnd),
-		...pick(SECTION_FORMS.a2, rnd),
-		...pick(SECTION_FORMS.b, rnd),
-		...pick(SECTION_FORMS.a3, rnd),
+	// **A' と A'' は A の再現。** 初版は4つのセクションすべてを独立に引いていたため、
+	// 「A-A'-B-A''」という名前とは裏腹に、実際には16小節ぶん別々の melodie が並んで
+	// いるだけだった。聴き手はどこにも同じフレーズの再来を見つけられず、
+	// 「毎小節ちがう音が流れているだけ」＝いかにも自動生成、という印象になる。
+	//
+	// 最初の3小節をそのまま再現し、4小節目だけ差し替えて着地を変える——これが
+	// A-A'-B-A'' の実体。B部だけは対比が仕事なので独立に引く。
+	const formA = pick(SECTION_FORMS.a, rnd);
+	const formB = pick(SECTION_FORMS.b, rnd);
+	const formA2: BarRole[] = [
+		...formA.slice(0, 3),
+		pick<BarRole>(["run", "step", "hold"], rnd),
 	];
+	const formA3: BarRole[] = [...formA.slice(0, 3), "cadence"];
+	const barRoles: BarRole[] = [...formA, ...formA2, ...formB, ...formA3];
+
+	/**
+	 * その小節が、どの小節の再現か。A'（5〜8小節）と A''（13〜16小節）の最初の3小節は
+	 * A部の同じ位置の小節をそのまま歌い直す。差し替えた4小節目だけは新しく作る。
+	 */
+	const restatementOf = (bar: number): number | null => {
+		if (bar >= 4 && bar < 7) return bar - 4;
+		if (bar >= 12 && bar < 15) return bar - 12;
+		return null;
+	};
 	const style: MelodyStyle = {
 		groove: pick<Groove>(["eighth", "sixteenth"], rnd),
 		runShape: pick<RunShape>(["scale", "turn", "broken", "zigzag"], rnd),
@@ -1312,10 +1440,11 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 			],
 			rnd,
 		),
-		subStyle: pick<SubStyle>(
-			["pad", "long-short", "answer", "harmony", "counter", "pedal"],
-			rnd,
-		),
+		// **サブメロは旋律であること。** 曲単位の書法をハモリと対旋律に絞る。
+		// パッド・保続音・付点2分は「置いただけの音」になりやすく、実際
+		// サブメロの音の38%が全音符1つ（1.5音/小節）まで薄くなっていた。
+		// それらは終止の小節でだけ使う逃げ道に降格する。
+		subStyle: pick<SubStyle>(["harmony", "harmony", "counter"], rnd),
 		subInterval: pick([3, 4, 8, 9], rnd),
 	};
 
@@ -1407,7 +1536,11 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		} else {
 			cell = cellFor(role);
 		}
-		barRhythms.push(cell.value.map(scaleStep));
+		// 再現の小節は、リズムも元の小節と同じにする（同じフレーズの歌い直しなので）。
+		const source = restatementOf(bar);
+		barRhythms.push(
+			source !== null ? barRhythms[source] : cell.value.map(scaleStep),
+		);
 	}
 
 	// --- ③その上に音を乗せる ---
@@ -1420,6 +1553,8 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		else motifContour.push(motifContour[i - 1] + (rnd() < 0.5 ? 1 : -1));
 	}
 
+	/** 小節ごとに実際に使った音の並び（度数）。A' / A'' の再現で読み直す。 */
+	const plannedDegrees: (number[] | null)[] = new Array(BARS).fill(null);
 	const melody: ComposedNote[] = [];
 	const submelody: ComposedNote[] = [];
 	const bass: ComposedNote[] = [];
@@ -1507,16 +1642,45 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 			repeatShift,
 			headWeight,
 			isSectionB,
+			quarterSteps,
 			rnd,
 		);
-		const pitches = shapeBar(degrees, slots, tones, prevSemi, {
-			allowLeap: role === "climax",
-			allowArpeggio:
-				role === "climax" ||
-				(role === "run" && style.runShape === "broken") ||
-				(role === "cadence" && style.cadenceShape !== "descend"),
-			quarterSteps,
-		});
+		// 再現の小節は、元の小節の音の並びをそのまま使う。和音が違っても
+		// **音を曲げず、塊ごと移調して**合わせる（{@link fitMotif}）ので、
+		// 同じフレーズが返ってきたと耳で分かる。
+		const source = restatementOf(bar);
+		if (source !== null && plannedDegrees[source])
+			degrees.splice(
+				0,
+				degrees.length,
+				...(plannedDegrees[source] as number[]),
+			);
+		plannedDegrees[bar] = [...degrees];
+
+		// モチーフ系と再現の小節は「塊ごと移調して輪郭を保つ」、それ以外は従来どおり
+		// 1音ずつ和音へ寄せる。フックは形が変わらないことに意味がある。
+		const isMotifBar =
+			source !== null ||
+			role === "motif" ||
+			role === "sequence" ||
+			role === "climax";
+		const pitches = shapeBar(
+			isMotifBar
+				? fitMotif(degrees, slots, tones, prevSemi, quarterSteps)
+				: degrees,
+			slots,
+			tones,
+			prevSemi,
+			{
+				allowLeap: role === "climax",
+				allowArpeggio:
+					role === "climax" ||
+					(role === "run" && style.runShape === "broken") ||
+					(role === "cadence" && style.cadenceShape !== "descend"),
+				quarterSteps,
+				preserveContour: isMotifBar,
+			},
+		);
 
 		// メロディ
 		const barHead = pitches[0];
@@ -1570,14 +1734,16 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		// （実測で {@link StructureFeatures.complementarity} が 0.11）。
 		// ハモリはメロディと重なるのが正しい書法なので、そこだけは差し替えない。
 		const gapSteps = melodyGaps(slots).reduce((sum, [, len]) => sum + len, 0);
+		// 終止だけは和音を支えて伸ばす。それ以外は、メロディが休む小節なら合いの手、
+		// 鳴っている小節なら曲ごとの書法（ハモリ／対旋律）で**旋律を歌い続ける**。
+		// 以前は `hold` の小節を保続音にしていたが、緩む小節ほどサブメロが聞こえる
+		// ので、そこで動きを止めると「伴奏の一部」に落ちてしまう。
 		const subStyle: SubStyle =
 			role === "cadence"
 				? "pad"
-				: role === "hold"
-					? "pedal"
-					: gapSteps >= scaleStep(EIGHTH) * 2 && style.subStyle !== "harmony"
-						? "answer"
-						: style.subStyle;
+				: gapSteps >= scaleStep(EIGHTH) * 2 && style.subStyle !== "harmony"
+					? "answer"
+					: style.subStyle;
 		/** サブメロの1音を、和音の色が出る音（3度・7度）へ寄せて置く。 */
 		const pushSub = (at: number, len: number, wantedSemi: number): number => {
 			if (len <= 0 || at + len > stepsPerBar) return wantedSemi;
@@ -1862,6 +2028,7 @@ const evaluate = (
 		climaxPosition: at(CORPUS_BANDS.climaxPosition, structure.climaxPosition),
 		climaxPeaks: at(HAND_BANDS.climaxPeaks, structure.climaxPeaks),
 		complementarity: at(HAND_BANDS.complementarity, structure.complementarity),
+		subDensity: at(HAND_BANDS.subDensity, d.submelody.length / BARS),
 		tensionRise: tension.rise,
 		tensionResolve: tension.resolve,
 		novelty,
@@ -1953,4 +2120,109 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	result.stats.attempts = count;
 	result.stats.rejected = rejected;
 	return result;
+};
+
+// ============================================================
+// 歌詞
+// ============================================================
+
+/**
+ * 歌詞に使う語句の素。**意味のある歌詞は作らない**——文脈も情景も無いところから
+ * 意味の通る詞は出せないし、出せたふりをするほうが害がある。ここが作るのは
+ * 「メロディに正しく乗る、日本語として発音できる音の並び」で、詞そのものは
+ * ユーザーが書き換える前提。歌詞欄に出るので、そのまま上書きできる。
+ *
+ * 母音で終わる開音節を主体にし、2〜3拍の語をまぜて単調な羅列にならないようにする。
+ */
+const LYRIC_WORDS: string[] = [
+	"あさ",
+	"ひかり",
+	"そら",
+	"かぜ",
+	"ゆめ",
+	"こえ",
+	"みち",
+	"とおく",
+	"きみ",
+	"ぼく",
+	"ここ",
+	"いま",
+	"また",
+	"ずっと",
+	"そっと",
+	"きっと",
+	"あした",
+	"よる",
+	"ほし",
+	"うみ",
+	"はな",
+	"なみだ",
+	"わらう",
+	"あるく",
+	"さがす",
+	"とどく",
+	"うたう",
+	"めぐる",
+	"かさなる",
+	"つづく",
+	"ひとり",
+	"ふたり",
+	"しずか",
+	"まぶしい",
+	"せかい",
+	"きせつ",
+];
+
+/**
+ * メロディに乗る歌詞を作る。
+ *
+ * `lyrics.ts` の約束は **音符1つ ＝ 音節1つ**。伸ばし棒（`ー`）も1音節を占める
+ * （直前の母音を引き継ぐ音として扱われる）ので、「長い音符に `ー` を足して伸ばす」
+ * という書き方をすると音節が音符より多くなり、後半の歌詞が全部ずれる。
+ * したがって **`ー` は音符を1つ消費する形でしか置かない**。
+ *
+ * 読点（`、`）だけは音符を消費せず、直前の音節に息継ぎフラグを立てる。
+ */
+export const composeLyrics = (
+	melody: ComposedNote[],
+	options: { stepsPerBar: number; random?: () => number },
+): string => {
+	const rnd = options.random ?? Math.random;
+	const { stepsPerBar } = options;
+	const sorted = [...melody].sort((a, b) => a.startStep - b.startStep);
+	if (sorted.length === 0) return "";
+	const quarter = stepsPerBar / 4;
+
+	/** 語を1音節ずつ切り出して供給する。尽きたら次の語を引く。 */
+	let buffer: string[] = [];
+	const nextKana = (): string => {
+		if (buffer.length === 0) buffer = [...pick(LYRIC_WORDS, rnd)];
+		return buffer.shift() as string;
+	};
+
+	const out: string[] = [];
+	for (let i = 0; i < sorted.length; i++) {
+		const note = sorted[i];
+		const prev = sorted[i - 1];
+		// 同じ高さへ短い音で続くところは母音を伸ばす（メリスマ）。語の途中では切らない。
+		const holds =
+			i > 0 &&
+			prev !== undefined &&
+			note.pitchUnits === prev.pitchUnits &&
+			note.durationSteps < quarter &&
+			buffer.length === 0 &&
+			rnd() < 0.5;
+		out.push(holds ? "ー" : nextKana());
+		// フレーズの切れ目（4小節ごと）で息継ぎ。`、` は音符を消費しない。
+		const next = sorted[i + 1];
+		if (
+			next &&
+			Math.floor(note.startStep / (stepsPerBar * 4)) !==
+				Math.floor(next.startStep / (stepsPerBar * 4))
+		) {
+			out.push("、");
+			buffer = []; // フレーズをまたいで語を割らない
+		}
+	}
+	return out.join("");
 };

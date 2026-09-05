@@ -9,7 +9,14 @@
  */
 
 import { buildChordPlacements } from "../src/chords";
-import { composeSong, durationEntropy } from "../src/compose";
+import {
+	ANSWER_FIGURES,
+	BASE_STEPS_PER_BAR,
+	composeSong,
+	durationEntropy,
+	MOTIF_CELLS,
+	RHYTHM_CELLS,
+} from "../src/compose";
 import { structureFeatures } from "../src/compose-metrics";
 import { UNITS_PER_SEMITONE } from "../src/tuning";
 
@@ -119,6 +126,44 @@ console.log("● コード進行 → 伴奏の構成音");
 		"31平均律 D7 の D→F# が長3度=10ステップ",
 		d31[1] - d31[0] === 10,
 		`実際 ${d31[1] - d31[0]}`,
+	);
+}
+
+// ============================================================
+// 1.5 リズム型の合計が必ず1小節か
+//
+//     セルの数値を手で足し合わせて書いているので、1つでも合計を間違えると
+//     その型を引いた曲だけノートが小節からはみ出す。実際 [EIGHTH, DOT_QUARTER,
+//     EIGHTH, QUARTER, QUARTER] を 216ステップで書いてしまい、200曲中1曲だけが
+//     壊れる、という形で表面化した。型は増え続けるので機械で検算する。
+// ============================================================
+
+console.log("● リズム型の合計");
+{
+	for (const [label, cells] of [
+		["RHYTHM_CELLS", RHYTHM_CELLS],
+		["MOTIF_CELLS", MOTIF_CELLS],
+	] as const) {
+		cells.forEach((cell, i) => {
+			const total = cell.value.reduce((sum, v) => sum + Math.abs(v), 0);
+			check(
+				`${label}[${i}] の合計が1小節`,
+				total === BASE_STEPS_PER_BAR,
+				`${total}/${BASE_STEPS_PER_BAR} (${cell.value.join(",")})`,
+			);
+		});
+	}
+	// 合いの手の言い回しは小節に収まればよい（隙間へ差し込むので合計は可変）。
+	ANSWER_FIGURES.forEach((figure, i) => {
+		const total = figure.reduce((sum, v) => sum + Math.abs(v), 0);
+		check(
+			`ANSWER_FIGURES[${i}] が1小節に収まる`,
+			total > 0 && total <= BASE_STEPS_PER_BAR,
+			`${total}`,
+		);
+	});
+	console.log(
+		`  リズム型 ${RHYTHM_CELLS.length} / モチーフ ${MOTIF_CELLS.length} / 合いの手 ${ANSWER_FIGURES.length}`,
 	);
 }
 

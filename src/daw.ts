@@ -8,7 +8,7 @@
 import { GM_INSTRUMENT_NAMES } from "./audio-config";
 import { type ChordPlayerInstance, mountChordPlayer } from "./chord-player";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
-import { type ComposedNote, composeSong } from "./compose";
+import { type ComposedNote, composeLyrics, composeSong } from "./compose";
 import { buildUI } from "./daw-ui";
 import type { DelayDivision } from "./delay";
 import {
@@ -150,8 +150,18 @@ c  d  e  f   g    ← 音符5つ</pre>
     <li><code>っ</code> <strong>詰まる</strong>（小さい「つ」）… 音符を1つ消費して無音にします（促音）。</li>
     <li><code>_</code> <strong>歌わない</strong>（アンダースコア）… 音符を1つ消費しますが何も鳴りません（歌だけ休む）。</li>
     <li><code>、</code> <strong>ブレス</strong>（読点）… <strong>音符は消費せず</strong>、直前の音を少し短くして息継ぎを入れます。</li>
+    <li><code>↓</code> <strong>だんだん小さく</strong>（下向き矢印）… <strong>音符は消費せず</strong>、その音を歌ったまま声量を落とします。</li>
+    <li><code>↑</code> <strong>だんだん大きく</strong>（上向き矢印）… <code>↓</code> の対。小さく入って声量を上げていきます。</li>
   </ul>
-  <p><small>全角チルダ <code>～</code> は <code>〜</code>、半角カンマ <code>,</code> は <code>、</code> として扱われます。これら以外の記号（英数字・スペース・句読点など）は無視されます。</small></p>
+  <p><small>全角チルダ <code>～</code> は <code>〜</code>、半角カンマ <code>,</code> は <code>、</code>、<code>⇩</code> <code>⬇</code> は <code>↓</code>、<code>⇧</code> <code>⬆</code> は <code>↑</code> として扱われます。これら以外の記号（英数字・スペース・句読点など）は無視されます。</small></p>
+
+  <h4>強弱をつける（<code>↓</code> <code>↑</code>）</h4>
+  <p>伸ばした音に付けると、<strong>言い直さずに伸ばしたまま</strong>声量だけが動きます。曲の終わりの余韻や、サビへの盛り上げに使います。</p>
+  <pre>あーーーーー↓   ← 伸ばしながら消えていく（デクレッシェンド）
+あーーーーー↑   ← 小さく入ってふくらんでいく（クレッシェンド）
+あーーーーー↑↓  ← ふくらんでから消える（スウェル）
+あ↓            ← その1音だけがすっと消える</pre>
+  <p><code>ー</code> で繋がった一続きの音に付けると、<strong>付けた位置に関係なくその一続き全体</strong>が対象になります（<code>あー↓ーー</code> も <code>あーーー↓</code> も同じ）。<code>↑</code> と <code>↓</code> を両方書くとスウェルになり、書く順番（<code>↑↓</code> / <code>↓↑</code>）は問いません。どちらも音符を消費しないので、音節数はズレません。</p>
 
   <h4>「あああああ」と「あーーーー」の違い</h4>
   <p>いちばん使う書き分けです。同じ音を音程違いで続けるとき、<strong>1音ずつ区切って言い直すか、伸ばしたまま音程だけ動かすか</strong>を選べます。</p>
@@ -700,6 +710,45 @@ const DEFAULT_TRACKS = TRACKS_SIMPLE;
  */
 const BASE_LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
 
+/**
+ * 「歌入り作曲」でボーカル未選択のときに当てる既定のモデル。
+ * `klatt` は内蔵の合成音で、音源のダウンロードを待たずに必ず鳴る——
+ * ボタンを押した直後に無音になるのを避けるため、ここを既定にしている。
+ * 既に別のモデルが選ばれているトラックでは、それを尊重して差し替えない。
+ */
+const DEFAULT_COMPOSE_VOCAL = "klatt";
+
+/**
+ * 上級者モード（15トラック）で「作曲」が展開する編曲。
+ *
+ * 15本あるからといって同じ素材を15回コピーしても、音数が増えて濁るだけで
+ * 「高度」にはならない。ここで並べるのは**役割の違う声部**:
+ *
+ * - メロディと、その1オクターブ上の重ね（芯と輝きを作る編曲の定石。重ねる側は弱く）
+ * - ハモリ（サブメロ）
+ * - ベースと、その1オクターブ下の重ね（低域の土台）
+ * - 同じコード進行を**別の奏法で3通り**——パッド（ブロック）・アルペジオ・オフビート。
+ *   同じ和音でも刻み方が違えば別の役割になる。
+ *
+ * 8トラックを使い、残り7本は空けておく（ユーザーが足す余地）。
+ * `octave` は {@link TrackState.trackOctave}、`volume` はベロシティ基準値。
+ */
+const ADVANCED_COMPOSE_LAYOUT: {
+	index: number;
+	part: "melody" | "submelody" | "bass" | ChordPatternType;
+	octave: number;
+	volume: number;
+}[] = [
+	{ index: 0, part: "melody", octave: 0, volume: 104 },
+	{ index: 1, part: "melody", octave: 1, volume: 62 },
+	{ index: 2, part: "submelody", octave: 0, volume: 88 },
+	{ index: 3, part: "bass", octave: 0, volume: 92 },
+	{ index: 4, part: "bass", octave: -1, volume: 58 },
+	{ index: 5, part: "block", octave: 0, volume: 62 },
+	{ index: 6, part: "arpeggio", octave: 0, volume: 54 },
+	{ index: 7, part: "offbeat", octave: 0, volume: 50 },
+];
+
 /** 内蔵モデルのカテゴリ定義（プルダウンの optgroup 表示用） */
 const LYRIC_MODEL_CATEGORIES = [
 	{
@@ -995,6 +1044,23 @@ type TrackState = {
 	/** 歌唱のステレオ定位 0-127（0=左, 64=中央, 127=右）。既定64（中央） */
 	vocalPan: number;
 	/** 歌唱のオクターブシフト -2〜+2（音源の得意音域に合わせてピッチを上下）。既定0 */
+	/**
+	 * このトラックの発音オクターブ（-2〜+2）。ボーカルの
+	 * {@link TrackState.vocalOctave} と同じ役割を楽器トラックにも持たせたもの。
+	 * 音源によって得意な音域が違うので、打ち込みを触らずに鳴りを合わせられる。
+	 *
+	 * **ノート自体は動かさない**（ピアノロールの表示位置は変わらない）。再生と
+	 * 書き出しの直前に加算する。MML/MIDIへ書き出すときは焼き込まれるので、
+	 * 読み直すと ±0 に戻り、鳴りは同じになる。
+	 */
+	trackOctave: number;
+	/**
+	 * このトラックのオクターブユニゾン。ボーカルの
+	 * {@link TrackState.vocalOctaveUnison} と同じ考え方で、同じ音をオクターブ上/下に
+	 * 重ねて鳴らす。音源によっては低域が痩せる・高域が細いといった弱点があるので、
+	 * 打ち込みを増やさずに厚みと輪郭を補える。
+	 */
+	trackOctaveUnison: OctaveUnisonMode;
 	vocalOctave: number;
 	/** 自動ビブラート ON/OFF。ONでも一定長以上のロングトーンにだけ適用される。既定false */
 	vocalVibrato: boolean;
@@ -1092,9 +1158,9 @@ export const mountDAW = (
 		showMidi,
 		showChord,
 		showMidiSearch,
-		// 「作曲」は役割が固定の4トラック（メロディ/サブメロ/ベース/伴奏）へ書き込むので、
-		// 1:1マッピングの advanced モードでは出さない。
-		showCompose: !isAdvanced,
+		// 「作曲」は simple では役割固定の4トラックへ、advanced では15トラックへ
+		// 編曲を展開する（{@link ADVANCED_COMPOSE_LAYOUT}）。どちらでも出す。
+		showCompose: true,
 	});
 	refs.masterVolume.value = String(options.masterVolume ?? 50);
 	refs.masterVolumeLabel.textContent = `${options.masterVolume ?? 50}%`;
@@ -1485,6 +1551,8 @@ export const mountDAW = (
 				vocalVolume: DEFAULT_VOCAL_VOLUME,
 				vocalGate: 100,
 				vocalPan: 64,
+				trackOctave: 0,
+				trackOctaveUnison: "none",
 				vocalOctave: 0,
 				vocalVibrato: false,
 				vocalReverb: 0,
@@ -1576,11 +1644,46 @@ export const mountDAW = (
 		title: string,
 		message: string,
 		onConfirm: () => void,
+		/**
+		 * 「次回から表示しない」を出すときの保存キー。チェックされたら以後この確認は
+		 * 出さず、すぐ実行する。localStorage が使えない環境（プライベートモード等）
+		 * では単に毎回聞く挙動に戻るだけで、機能は壊れない。
+		 */
+		suppressKey?: string,
 	) => void;
 
 	// ============================================================
 	// 描画
 	// ============================================================
+	/**
+	 * 再生・書き出しへ渡すノート。トラックのオクターブ設定を加算する。
+	 * 編集中のノート自体は動かさないので、ピアノロールの見た目は変わらない。
+	 */
+	const playableNotes = (t: TrackState): Note[] => {
+		const base = t.core.getNotes();
+		const shift = t.trackOctave * UNITS_PER_OCTAVE;
+		const shifted = shift
+			? base.map((n) => ({ ...n, pitchUnits: units(n.pitchUnits + shift) }))
+			: base;
+		const mode = t.trackOctaveUnison;
+		if (mode === "none") return shifted;
+		// 重ねる声は少し弱くする。同じ強さで重ねると輪郭がぼやけ、
+		// 音量だけが上がって「厚い」ではなく「うるさい」になる。
+		const doubled = (delta: number): Note[] =>
+			shifted.map((n) => ({
+				...n,
+				pitchUnits: units(n.pitchUnits + delta * UNITS_PER_OCTAVE),
+				velocity: Math.max(
+					1,
+					Math.round((n.velocity ?? DEFAULT_VELOCITY) * 0.7),
+				),
+			}));
+		const extra: Note[] = [];
+		if (mode === "down" || mode === "both") extra.push(...doubled(-1));
+		if (mode === "up" || mode === "both") extra.push(...doubled(1));
+		return [...shifted, ...extra];
+	};
+
 	/** 全トラックを通した最後のノートの終端ステップ（余白なし）。フェードアウトの終端計算に使う。 */
 	const getSongEndStepExact = (): number => {
 		let maxEndStep = 0;
@@ -2492,7 +2595,7 @@ export const mountDAW = (
 			trackStates.map((t) => ({
 				id: t.config.id,
 				volume: t.volume,
-				notes: t.core.getNotes(),
+				notes: playableNotes(t),
 			})),
 		getBpm: () => bpm,
 		getPlayStartStep: () => playStartStep,
@@ -2773,6 +2876,23 @@ export const mountDAW = (
         <span class="dtm-label">ベロシティ</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="track-vol" min="0" max="127" value="${active.volume}">
         <span class="dtm-label" data-dtm="track-vol-label">${active.volume}</span>
+      </div>
+      <div class="dtm-row" data-dtm="track-octave-row">
+        <span class="dtm-label">オクターブ</span>
+        <select class="dtm-select" data-dtm="track-octave" aria-label="このトラックの発音オクターブ（音源の得意音域に合わせる）" title="オクターブ">
+          <option value="2">+2 oct</option>
+          <option value="1">+1 oct</option>
+          <option value="0">±0 oct</option>
+          <option value="-1">-1 oct</option>
+          <option value="-2">-2 oct</option>
+        </select>
+        <span class="dtm-label">ユニゾン</span>
+        <select class="dtm-select dtm-grow" data-dtm="track-octave-unison" aria-label="オクターブユニゾン（同じ音を上/下に重ねる）">
+          <option value="none">なし</option>
+          <option value="down">下 (-1oct)</option>
+          <option value="up">上 (+1oct)</option>
+          <option value="both">上下両方</option>
+        </select>
       </div>
       <details class="dtm-advanced" data-dtm="track-fx-advanced" ${trackFxAdvancedOpen ? "open" : ""}>
         <summary>詳細設定（EQ・音圧・ステレオ幅）</summary>
@@ -3067,6 +3187,30 @@ export const mountDAW = (
 		(
 			refs.trackBody.querySelector('[data-dtm="track-vol-row"]') as HTMLElement
 		).prepend(instLabel, instSel);
+
+		// トラックのオクターブ。歌詞トラックは歌声側の「オクターブ」が効くので、
+		// 二重に効かせないようこちらは隠す。
+		const octaveRow = refs.trackBody.querySelector(
+			'[data-dtm="track-octave-row"]',
+		) as HTMLElement;
+		const octaveSel = refs.trackBody.querySelector(
+			'[data-dtm="track-octave"]',
+		) as HTMLSelectElement;
+		octaveSel.value = String(active.trackOctave);
+		const syncOctaveVisibility = (): void => {
+			octaveRow.classList.toggle("dtm-hidden", !!active.lyricModel.trim());
+		};
+		syncOctaveVisibility();
+		octaveSel.addEventListener("change", () => {
+			active.trackOctave = Number.parseInt(octaveSel.value, 10) || 0;
+		});
+		const unisonSel = refs.trackBody.querySelector(
+			'[data-dtm="track-octave-unison"]',
+		) as HTMLSelectElement;
+		unisonSel.value = active.trackOctaveUnison;
+		unisonSel.addEventListener("change", () => {
+			active.trackOctaveUnison = unisonSel.value as OctaveUnisonMode;
+		});
 
 		// 歌詞エディタ（全トラック共通）。歌唱モデルのプルダウン既定「なし」が無効状態を兼ねる。
 		// モデルを選んだときだけ声量・歌詞欄を出す（使わないときは隠す）。@@n model[:声量] lyrics として往復。
@@ -3477,6 +3621,7 @@ export const mountDAW = (
 				active.lyricModel = lyricModelSel.value;
 				syncLyricVisibility();
 				syncInstDisabled();
+				syncOctaveVisibility();
 				syncVelocityDisabled();
 				redrawAll(); // モデル「なし」への切り替えで歌詞表示も消す
 				fireLyricsChange(active);
@@ -3849,7 +3994,7 @@ export const mountDAW = (
 		const trackLinesMini: string[] = [];
 
 		trackStates.forEach((t, i) => {
-			const notes = clipNotes(t.core.getNotes());
+			const notes = clipNotes(playableNotes(t));
 			if (notes.length > 0) {
 				const mml = t.core.getMMLFromNotes(notes, bpm, t.volume).trim();
 				trackLines.push(`@${i} ${mml}`);
@@ -4411,7 +4556,7 @@ export const mountDAW = (
 	const exportMIDI = (): Blob =>
 		exportMIDIBlob({
 			tracks: trackStates.map((t) => ({
-				notes: t.core.getNotes(),
+				notes: playableNotes(t),
 				volume: t.volume,
 			})),
 			getDrumPattern: (currentBar) =>
@@ -5019,8 +5164,11 @@ export const mountDAW = (
 		refs.macroComposeInfo.addEventListener("click", () => {
 			showModal("作曲の解説", COMPOSE_INFO_HTML);
 		});
-		/** 「作曲」本体。確認を挟むかどうかは呼び出し側で決める。 */
-		const runCompose = (): void => {
+		/**
+		 * 「作曲」本体。確認を挟むかどうかは呼び出し側で決める。
+		 * `withVocal` を立てると、メロディトラックに歌詞を付けて歌わせる。
+		 */
+		const runCompose = (withVocal: boolean): void => {
 			stop();
 			overlayDuring(() => {
 				const song = composeSong({
@@ -5038,6 +5186,19 @@ export const mountDAW = (
 
 				// メロディ・サブメロ・ベースは生成したノートをそのまま書き込む。
 				// 履歴の残し方は applyChord と揃えてあり、実行後に Undo で戻せる。
+				const writeTrackAt = (index: number, notes: ComposedNote[]): void => {
+					const track = trackStates[index];
+					if (!track) return;
+					track.core.clearNotesWithoutHistory();
+					track.core.beginBatch();
+					for (const n of notes) {
+						track.core.addNote(n.startStep, n.pitchUnits, {
+							noteLengthSteps: Math.max(1, n.durationSteps),
+							velocity: n.velocity,
+						});
+					}
+					track.core.endBatch();
+				};
 				const writeTrack = (id: string, notes: ComposedNote[]): void => {
 					const track = trackStates.find((t) => t.config.id === id);
 					if (!track) return;
@@ -5053,48 +5214,116 @@ export const mountDAW = (
 					// 2つ並び、1回目の Undo が何も変わらない空振りになる。
 					track.core.endBatch();
 				};
-				writeTrack("melody", song.melody);
-				writeTrack("submelody", song.submelody);
-				writeTrack("bass", song.bass);
+				if (isAdvanced) {
+					// --- 上級者モード（15トラック）---
+					// 同じ素材をむやみに複製すると音数だけ増えて濁るので、
+					// **役割の違う声部**を並べる。伴奏は同じ進行を別の奏法で3通り展開し、
+					// メロディとベースはオクターブの重ねで芯を作る（編曲の定石）。
+					// 使うのは8トラックで、残りはユーザーが自由に足せるよう空けておく。
+					for (const layer of ADVANCED_COMPOSE_LAYOUT) {
+						const track = trackStates[layer.index];
+						if (!track) continue;
+						const notes =
+							layer.part === "melody"
+								? song.melody
+								: layer.part === "submelody"
+									? song.submelody
+									: layer.part === "bass"
+										? song.bass
+										: buildChordPlacements({
+												edo: renderConfig.edo,
+												chordStr: song.chordProgression,
+												patternType: layer.part,
+												rootShift: song.rootShift,
+												bpm: song.bpm,
+												stepsPerBar: renderConfig.stepsPerBar,
+											}).map((p) => ({
+												startStep: p.startStep,
+												pitchUnits: p.pitchUnits,
+												durationSteps: p.durationSteps,
+												velocity: p.velocity,
+											}));
+						writeTrackAt(layer.index, notes);
+						track.trackOctave = layer.octave;
+						track.volume = layer.volume;
+						track.core.setVolume(layer.volume);
+					}
+					// 使わないトラックは空にしておく（前の曲の残骸を残さない）。
+					for (let i = 0; i < trackStates.length; i++) {
+						if (ADVANCED_COMPOSE_LAYOUT.some((l) => l.index === i)) continue;
+						writeTrackAt(i, []);
+					}
+				} else {
+					writeTrack("melody", song.melody);
+					writeTrack("submelody", song.submelody);
+					writeTrack("bass", song.bass);
 
-				// 伴奏はコード進行の文字列を伴奏トラックの設定として保存してから、
-				// 画面の「適用」と同じ経路で展開する。こうしておくと、生成された進行が
-				// そのまま和音の入力欄に出てユーザーが読める・書き換えられる。
-				const chordTrack = trackStates.find((t) => t.config.id === "chord");
-				if (chordTrack) {
-					chordTrack.savedChordInput = song.chordProgression;
-					chordTrack.savedChordPattern = song.chordPattern;
-					// 進行はハ長調で書かれていて、調は rootShift で表す。メロディ・サブメロ・
-					// ベースのノートは生成側で移調済みなので、ここで伴奏に同じ量を渡すと
-					// 曲全体の調が揃う。
-					chordTrack.savedChordRoot = song.rootShift;
-					applyChord(chordTrack);
+					// 伴奏はコード進行の文字列を伴奏トラックの設定として保存してから、
+					// 画面の「適用」と同じ経路で展開する。こうしておくと、生成された進行が
+					// そのまま和音の入力欄に出てユーザーが読める・書き換えられる。
+					const chordTrack = trackStates.find((t) => t.config.id === "chord");
+					if (chordTrack) {
+						chordTrack.savedChordInput = song.chordProgression;
+						chordTrack.savedChordPattern = song.chordPattern;
+						// 進行はハ長調で書かれていて、調は rootShift で表す。メロディ・サブメロ・
+						// ベースのノートは生成側で移調済みなので、ここで伴奏に同じ量を渡すと
+						// 曲全体の調が揃う。
+						chordTrack.savedChordRoot = song.rootShift;
+						applyChord(chordTrack);
+					}
 				}
 				// テンポも曲ごとに決める。設定しないと全曲が既定値のままで、
 				// 続けて聴いたときに曲の違いが出にくい。
 				setBpm(song.bpm);
 
+				// --- 歌入り ---
+				if (withVocal) {
+					// simple はメロディトラック、advanced はレイアウト上のメロディ（t0）。
+					const melodyTrack = isAdvanced
+						? trackStates[0]
+						: trackStates.find((t) => t.config.id === "melody");
+					if (melodyTrack) {
+						// 既にボーカルが選ばれていればそれを尊重する。未選択のときだけ
+						// 既定の内蔵モデルを当てる（勝手に別の声へ差し替えない）。
+						if (!melodyTrack.lyricModel.trim())
+							melodyTrack.lyricModel = DEFAULT_COMPOSE_VOCAL;
+						melodyTrack.lyrics = composeLyrics(song.melody, {
+							stepsPerBar: renderConfig.stepsPerBar,
+						});
+						fireLyricsChange(melodyTrack);
+					}
+				}
+
 				playStartStep = 0;
 				redrawAll();
-				updateTrackPanel(); // 和音の入力欄へ生成した進行を反映する
+				updateTrackPanel(); // 和音の入力欄・歌詞欄へ生成結果を反映する
 				updateUndoRedo();
 			});
 		};
-		refs.macroCompose.addEventListener("click", () => {
-			// 既にノートがあるときだけ確認する。空の状態（初心者が最初に押す場面）で
-			// 毎回警告を出すと、一番押してほしいボタンが押しにくくなるため。
-			// 確認はネイティブの confirm() ではなくアプリ内のモーダルで出す
-			// （{@link showConfirm} に理由）。
+		/**
+		 * 既にノートがあるときだけ確認する。空の状態（初心者が最初に押す場面）で
+		 * 毎回警告を出すと、一番押してほしいボタンが押しにくくなるため。
+		 * 確認はネイティブの confirm() ではなくアプリ内のモーダルで出す
+		 * （{@link showConfirm} に理由）。
+		 */
+		const composeWithConfirm = (withVocal: boolean): void => {
 			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
 			if (hasNotes) {
 				showConfirm(
-					"作曲",
+					withVocal ? "歌入り作曲" : "作曲",
 					"今あるノートをすべて消して、16小節の曲を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）",
-					runCompose,
+					() => runCompose(withVocal),
+					"compose",
 				);
 				return;
 			}
-			runCompose();
+			runCompose(withVocal);
+		};
+		refs.macroCompose.addEventListener("click", () => {
+			composeWithConfirm(false);
+		});
+		refs.macroComposeVocal.addEventListener("click", () => {
+			composeWithConfirm(true);
 		});
 		refs.macroClear.addEventListener("click", () => {
 			overlayDuring(() => {
@@ -5310,19 +5539,47 @@ export const mountDAW = (
 				});
 			}
 		};
+		/** 確認ダイアログの抑止フラグ。読めない環境では常に「抑止しない」。 */
+		const isConfirmSuppressed = (key: string): boolean => {
+			try {
+				return localStorage.getItem(`dtm-skip-confirm-${key}`) === "1";
+			} catch {
+				return false;
+			}
+		};
+		const suppressConfirm = (key: string): void => {
+			try {
+				localStorage.setItem(`dtm-skip-confirm-${key}`, "1");
+			} catch {
+				// 保存できなくても確認が出続けるだけなので、握りつぶしてよい
+			}
+		};
+
 		showConfirm = (
 			title: string,
 			message: string,
 			onConfirm: () => void,
+			suppressKey?: string,
 		): void => {
+			if (suppressKey && isConfirmSuppressed(suppressKey)) {
+				onConfirm();
+				return;
+			}
 			const escaped = message
 				.replace(/&/g, "&amp;")
 				.replace(/</g, "&lt;")
 				.replace(/>/g, "&gt;");
+			const skipRow = suppressKey
+				? `<label class="dtm-row" style="gap:6px;margin-top:12px;cursor:pointer;">
+    <input type="checkbox" data-dtm-confirm="skip" />
+    <span>次回から表示しない</span>
+  </label>`
+				: "";
 			showModal(
 				title,
 				`<div class="dtm-modal-body-content">
   <p>${escaped}</p>
+  ${skipRow}
   <div class="dtm-row" style="justify-content:flex-end;gap:8px;margin-top:12px;">
     <button class="dtm-btn" data-dtm-confirm="cancel">キャンセル</button>
     <button class="dtm-btn dtm-btn--danger" data-dtm-confirm="ok">実行する</button>
@@ -5338,6 +5595,12 @@ export const mountDAW = (
 			refs.modalBody
 				.querySelector('[data-dtm-confirm="ok"]')
 				?.addEventListener("click", () => {
+					// 抑止の保存は「実行する」を押したときだけ。キャンセルしたのに
+					// 二度と確認が出なくなるのは事故のもと。
+					const skip = refs.modalBody.querySelector<HTMLInputElement>(
+						'[data-dtm-confirm="skip"]',
+					);
+					if (suppressKey && skip?.checked) suppressConfirm(suppressKey);
 					close();
 					onConfirm();
 				});

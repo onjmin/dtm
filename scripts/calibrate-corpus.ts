@@ -54,7 +54,7 @@ type MidiEvent = {
 	setTempo?: { microsecondsPerQuarter: number };
 };
 
-const parseSmf = (
+export const parseSmf = (
 	buf: Buffer,
 ): { division: number; format: number; tracks: MidiEvent[][] } => {
 	let p = 0;
@@ -188,14 +188,14 @@ const GRID = STEPS_PER_BAR / 16;
  * 違う長さ）まで膨らみ、エントロピーの目標帯も 4.4bit まで伸びていた。生成側は
  * 構造上そこへ到達できないので、比べる意味のない帯になっていた。
  */
-const quantize = (ns: MetricNote[]): MetricNote[] =>
+export const quantize = (ns: MetricNote[]): MetricNote[] =>
 	ns.map((n) => ({
 		startStep: Math.round(n.startStep / GRID) * GRID,
 		pitchSemi: n.pitchSemi,
 		durationSteps: Math.max(GRID, Math.round(n.durationSteps / GRID) * GRID),
 	}));
 
-const toMonophonic = (ns: MetricNote[]): MetricNote[] => {
+export const toMonophonic = (ns: MetricNote[]): MetricNote[] => {
 	const sorted = [...ns].sort((a, b) => a.startStep - b.startStep);
 	const out: MetricNote[] = [];
 	for (const n of sorted) {
@@ -220,7 +220,7 @@ const toMonophonic = (ns: MetricNote[]): MetricNote[] => {
  * 残りの条件はどれも「旋律ならこうはならない」形: 音数が少なすぎる／音価が1種類しかない
  * （パッドや単調なアルペジオ）／恒常的にオクターブ超えで跳ぶ／曲が短すぎる。
  */
-const isPlausibleMelody = (ns: MetricNote[]): boolean => {
+export const isPlausibleMelody = (ns: MetricNote[]): boolean => {
 	if (ns.length < 32) return false;
 	// 同じ音を繰り返しているだけの線（ドラム代わりのパルス等）は旋律ではない
 	const pitches = ns.map((n) => n.pitchSemi);
@@ -270,7 +270,7 @@ type SongFeatures = StructureFeatures & {
  * 役割分類はもともと取り込みUXのためのもので、コーパス採掘用ではない。ここは
  * チャンネル単位で見て、{@link isPlausibleMelody} を通ったものから選ぶ。
  */
-const channelNotes = (
+export const channelNotes = (
 	midi: ReturnType<typeof parseSmf>,
 ): Map<number, MetricNote[]> => {
 	const ticksPerStep = midi.division / 48; // 48ステップ = 4分音符
@@ -406,7 +406,7 @@ const argOf = (name: string): string | undefined => {
 };
 
 /** フォルダを再帰的に辿って .mid を集める（曲ごとにフォルダを切ってある構成に合わせる）。 */
-const collectFromDir = (dir: string): Buffer[] => {
+export const collectFromDir = (dir: string): Buffer[] => {
 	const out: Buffer[] = [];
 	for (const entry of readdirSync(dir, { withFileTypes: true })) {
 		const full = join(dir, entry.name);
@@ -608,4 +608,5 @@ ${keys.map((k) => `\t${k}: [${bands[k].join(", ")}] as Band,`).join("\n")}
 	console.log("\n  → src/compose-corpus.ts を書き出しました");
 };
 
-void main();
+// 直接実行されたときだけ較正を走らせる（分析スクリプトから部品を import できるように）。
+if (process.argv[1]?.includes("calibrate-corpus")) void main();

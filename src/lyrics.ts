@@ -152,6 +152,16 @@ export const STOP_MARK = "っ";
 export const REST_MARK = "_";
 /** ブレス。ノートは消費せず、直前ノートの尻を削って息継ぎを差し込む。 */
 export const BREATH_MARK = "、";
+/**
+ * デクレッシェンド。ノートは消費せず、直前の音（継続で結合されていればその全体）を
+ * 歌いながら声量0へ落とす。`あーーーーー↓` で「あ」を伸ばしたまま消えていく。
+ */
+export const FADE_OUT_MARK = "↓";
+/**
+ * クレッシェンド。ノートは消費せず、直前の音（継続で結合されていればその全体）を
+ * 歌いながら声量を上げていく。{@link FADE_OUT_MARK} と併用するとスウェルになる。
+ */
+export const FADE_IN_MARK = "↑";
 
 /**
  * カタカナをひらがなへ寄せ、かなと制御記号以外を破棄する。
@@ -172,8 +182,11 @@ const sanitizeText = (text: string): string =>
 		// 記号の異体字を正規形へ寄せる
 		.replace(/~/g, PORTAMENTO_MARK)
 		.replace(/,/g, BREATH_MARK)
+		// 上下矢印の異体字を正規形へ寄せる（↡ ⇩ ⬇ / ↟ ⇧ ⬆ など）
+		.replace(/[↡⇩⬇🡇]/gu, FADE_OUT_MARK)
+		.replace(/[↟⇧⬆🡅]/gu, FADE_IN_MARK)
 		// ひらがな(ぁ-ゖ)と制御記号以外を破棄
-		.replace(/[^ぁ-ゖー〜_、]/g, "");
+		.replace(/[^ぁ-ゖー〜_、↓↑]/g, "");
 
 /**
  * 文字列を音節単位へ分解する。
@@ -181,7 +194,7 @@ const sanitizeText = (text: string): string =>
  * 制御記号（`ー` `〜` `_` `、`）は結合対象にせず、常に単独で切り出す。
  */
 const splitSyllables = (text: string): string[] => {
-	const MARKS = `${TIE_MARK}${PORTAMENTO_MARK}${REST_MARK}${BREATH_MARK}`;
+	const MARKS = `${TIE_MARK}${PORTAMENTO_MARK}${REST_MARK}${BREATH_MARK}${FADE_OUT_MARK}${FADE_IN_MARK}`;
 	const result: string[] = [];
 	for (const ch of text) {
 		const prev = result[result.length - 1];
@@ -272,6 +285,19 @@ export const normalizeLyrics = (text: string): LyricSyllable[] => {
 			prevVowel = "";
 			continue;
 		}
+		// デクレッシェンドもノートを消費しない。直前の音（＝結合後の1音）へ畳む。
+		// 母音の文脈は切らない——音は続いたまま小さくなるだけなので、
+		// 後ろに継続記号が来たら引き続き伸ばせる（`あー↓ー` が成立する）。
+		if (mark === FADE_OUT_MARK) {
+			const last = result[result.length - 1];
+			if (last) last.fadeOut = true;
+			continue;
+		}
+		if (mark === FADE_IN_MARK) {
+			const last = result[result.length - 1];
+			if (last) last.fadeIn = true;
+			continue;
+		}
 		const syl = analyzeSyllable(mark);
 		if (syl.kind === "tie") {
 			if (!prevVowel) continue;
@@ -307,7 +333,11 @@ export const displayKana = (syl: LyricSyllable): string => {
 			: syl.kind === "rest"
 				? REST_MARK
 				: syl.kana;
-	return syl.breathAfter ? head + BREATH_MARK : head;
+	let out = syl.breathAfter ? head + BREATH_MARK : head;
+	// 併記の順は ↑↓ に正規化する（スウェルは書いた順を問わないため）。
+	if (syl.fadeIn) out += FADE_IN_MARK;
+	if (syl.fadeOut) out += FADE_OUT_MARK;
+	return out;
 };
 
 /** 音節列を歌詞テキストへ戻す（{@link displayKana} の連結）。 */
@@ -776,9 +806,65 @@ export type VoiceModel = {
 		 * 先行母音を切り、立ち上がりを直前ノートの減衰へ被せて言い直し感を消す。
 		 */
 		continuation?: boolean,
+		/** 歌いながら声量0へ落とす（`↓`）。{@link LyricSyllable.fadeOut} を引き回したもの。 */
+		fadeOut?: boolean,
+		/** 歌いながら声量を上げる（`↑`）。両方立てるとスウェルになる。 */
+		fadeIn?: boolean,
 	) => void;
 	/** スケジュール済みの発音をすべて即停止する（停止・一時停止・シーク時）。 */
 	stopAll?: () => void;
+};
+
+/**
+ * デクレッシェンド（`↓`）で落とし切る先の音量比。完全な0にはしない——
+ * `exponentialRampToValueAtTime` は0を受け付けないうえ、最後まで芯を残したほうが
+ * 「消えていった」と聞こえる（本当に0まで落とすと途中で消音したように感じる）。
+ */
+const FADE_OUT_FLOOR = 0.02;
+
+/**
+ * 声量エンベロープの本体（立ち上がり〜サステイン）を書き込む。
+ *
+ * koe音源と klatt は合成方法がまるで違うが、**強弱の付き方は同じであるべき**なので
+ * ここに1本化してある。別々に書くと、片方だけクレッシェンドが効かない・カーブが違う
+ * といったズレが必ず出る。最後のリリース（0への落とし込み）は、音源ごとに終端時刻の
+ * 決め方が違うので呼び出し側に残す。
+ *
+ * - `fadeIn` … 小さく入ってサステイン終端で最大（クレッシェンド）
+ * - `fadeOut` … 最大で入ってサステイン終端で最小（デクレッシェンド）
+ * - 両方 … 小さく入って中央で最大、そこから最小（スウェル／messa di voce）
+ * - どちらも無し … 従来どおりサステイン一定
+ *
+ * `exponentialRampToValueAtTime` は0を受け付けないので、下限は
+ * {@link FADE_OUT_FLOOR} 倍で止める。芯を残したほうが「消えていった」と聞こえる。
+ */
+const applyDynamicsEnvelope = (
+	gain: AudioParam,
+	o: {
+		startAt: number;
+		attackEnd: number;
+		sustainEnd: number;
+		peak: number;
+		fadeIn?: boolean;
+		fadeOut?: boolean;
+	},
+): void => {
+	const { startAt, attackEnd, sustainEnd, peak, fadeIn, fadeOut } = o;
+	const floor = Math.max(0.0001, peak * FADE_OUT_FLOOR);
+	gain.setValueAtTime(0.0001, startAt);
+	// クレッシェンドは「小さく入る」ので、立ち上がりの到達点が下限になる。
+	gain.exponentialRampToValueAtTime(fadeIn ? floor : peak, attackEnd);
+	if (fadeIn && fadeOut) {
+		const mid = attackEnd + (sustainEnd - attackEnd) / 2;
+		gain.exponentialRampToValueAtTime(peak, mid);
+		gain.exponentialRampToValueAtTime(floor, sustainEnd);
+	} else if (fadeIn) {
+		gain.exponentialRampToValueAtTime(peak, sustainEnd);
+	} else if (fadeOut) {
+		gain.exponentialRampToValueAtTime(floor, sustainEnd);
+	} else {
+		gain.setValueAtTime(peak, sustainEnd);
+	}
 };
 
 /** 母音ごとのフォルマント周波数 [F1, F2]（Hz） */
@@ -897,9 +983,14 @@ export const createKlattVoice = (
 		};
 
 		const env = ctx.createGain();
-		env.gain.setValueAtTime(0.0001, t0);
-		env.gain.exponentialRampToValueAtTime(peak, t0 + attack);
-		env.gain.setValueAtTime(peak, sustainEnd);
+		applyDynamicsEnvelope(env.gain, {
+			startAt: t0,
+			attackEnd: t0 + attack,
+			sustainEnd,
+			peak,
+			fadeIn: syllable.fadeIn,
+			fadeOut: syllable.fadeOut,
+		});
 		env.gain.exponentialRampToValueAtTime(0.0001, sustainEnd + release);
 
 		// 狭帯域バンドパス2段はのこぎり波のエネルギーを大きく削るため、
@@ -1629,6 +1720,8 @@ export const createKoeVoice = async (
 		delaySend = 0,
 		destOverride?: AudioNode,
 		continuation = false,
+		fadeOut = false,
+		fadeIn = false,
 	): void => {
 		// トラック単位チャンネルストリップの入口が指定されていればそちらへ。
 		const dest = destOverride ?? destination;
@@ -1679,10 +1772,16 @@ export const createKoeVoice = async (
 		const attack = continuation ? TIE_XFADE_S : 0.01;
 		const release = 0.04;
 		const env = ctx.createGain();
-		env.gain.setValueAtTime(0.0001, startAt);
-		env.gain.exponentialRampToValueAtTime(peak, startAt + attack);
 		const fadeStart = Math.max(startAt + attack, endAt - release);
-		env.gain.setValueAtTime(peak, fadeStart);
+		// 素片は最後まで鳴らしたまま声量だけを動かすので、途中で音が切れない。
+		applyDynamicsEnvelope(env.gain, {
+			startAt,
+			attackEnd: startAt + attack,
+			sustainEnd: fadeStart,
+			peak,
+			fadeIn,
+			fadeOut,
+		});
 		env.gain.exponentialRampToValueAtTime(0.0001, endAt);
 
 		src.connect(env).connect(out);
@@ -1775,10 +1874,23 @@ export const createKoeVoice = async (
 		delaySend,
 		dest,
 		continuation,
+		fadeOut,
+		fadeIn,
 	) => {
 		const r = renderCache.get(key);
 		if (r)
-			schedule(r, t0, peak, pan, reverbSend, delaySend, dest, continuation);
+			schedule(
+				r,
+				t0,
+				peak,
+				pan,
+				reverbSend,
+				delaySend,
+				dest,
+				continuation,
+				fadeOut,
+				fadeIn,
+			);
 	};
 
 	model.stopAll = () => {
@@ -1827,6 +1939,13 @@ export type StreamVoiceNote = {
 	 * `durationSec` は既にブレスぶん切り詰めてある。
 	 */
 	breath?: boolean;
+	/**
+	 * このノートを歌いながら声量0へ落とす（`↓`）。継続記号で結合されたグループの
+	 * どこに `↓` が付いていても、**結合後の1音全体**に掛かる。
+	 */
+	fadeOut?: boolean;
+	/** このノートを歌いながら声量を上げていく（`↑`）。{@link StreamVoiceNote.fadeOut} の対。 */
+	fadeIn?: boolean;
 };
 
 /**
@@ -1919,6 +2038,10 @@ export const buildStreamVoiceNotes = (
 		const segments: PitchSegment[] = [];
 		let last = head;
 		let breath = !!syl.breathAfter;
+		// デクレッシェンドは結合を切らない（音量の話であって息の切れ目ではない）。
+		// グループ内のどこに付いていても、結合後の1音全体へ掛ける。
+		let fadeOut = !!syl.fadeOut;
+		let fadeIn = !!syl.fadeIn;
 		while (
 			sungHead &&
 			i < count &&
@@ -1937,6 +2060,8 @@ export const buildStreamVoiceNotes = (
 			});
 			last = n;
 			breath = !!syllables[i].breathAfter;
+			if (syllables[i].fadeOut) fadeOut = true;
+			if (syllables[i].fadeIn) fadeIn = true;
 			i++;
 		}
 
@@ -1958,6 +2083,8 @@ export const buildStreamVoiceNotes = (
 			...(segments.length ? { pitchSegments: segments } : {}),
 			...(continuation ? { continuation: true } : {}),
 			...(breath ? { breath: true } : {}),
+			...(fadeOut ? { fadeOut: true } : {}),
+			...(fadeIn ? { fadeIn: true } : {}),
 		});
 	}
 	return out;
@@ -2543,6 +2670,8 @@ export const createSingingVoices = (
 											track.delaySend,
 											dest,
 											note.continuation,
+											note.fadeOut,
+											note.fadeIn,
 										);
 										opts?.onScheduled?.(track, note, t0);
 									} else {
@@ -2561,7 +2690,19 @@ export const createSingingVoices = (
 							// マスタ音量係数をここで peak に掛けて再現する。
 							const effPeak =
 								(dest ? peak * masterVolumeScalar : peak) * peakScale;
-							model(note.syllable, {
+							// デクレッシェンド（`↓`）は結合後のノート側に立っている。
+							// klatt は音節を見て判断するので、ここで移し替える
+							// （`↓` が継続記号の途中や末尾に付いていると、先頭音節には
+							//  フラグが無い）。
+							const klattSyllable =
+								note.fadeOut || note.fadeIn
+									? {
+											...note.syllable,
+											...(note.fadeOut ? { fadeOut: true } : {}),
+											...(note.fadeIn ? { fadeIn: true } : {}),
+										}
+									: note.syllable;
+							model(klattSyllable, {
 								trackId: track.id ?? "",
 								pitchUnits: pitch,
 								velocity: 100,
