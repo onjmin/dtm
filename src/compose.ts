@@ -813,6 +813,11 @@ export const MOTIF_CELLS: RhythmCell[] = [
  */
 type BarRole =
 	| "motif"
+	/**
+	 * 答えの小節。問い（モチーフ）を受けて、同じリズムのまま着地音を変える。
+	 * 解説の言う「上行フレーズ終わり＝疑問／下行フレーズ終わり＝応答」の応答側。
+	 */
+	| "answer"
 	| "sequence"
 	| "climax"
 	| "step"
@@ -821,49 +826,28 @@ type BarRole =
 	| "cadence";
 
 /**
- * 4小節セクションの型。初版はこれが16小節ぶんの定数1本だったため、
- * **全曲がまったく同じドラマ展開**になっていた。曲ごとに引き直す。
+ * **フレーズの並べ方。** 1要素が4小節の小楽節で、その小楽節の「問い」に
+ * どの素材（モチーフAかBか、Aのセクエンツか）を使うかを指す。
  *
- * 固定するのは3点だけ——1小節目あたりでモチーフを提示する、B部にクライマックスが1回、
- * 16小節目は終止。これらは「曲として成立させる」ための最低条件で、
- * ここまでランダムにすると構成が破綻する。
+ * 解説はどれも次の順で組めと書いている。
+ *
+ * ```
+ *   モチーフ（2小節） → 繰り返して小楽節（4小節） → 8小節・16小節
+ *   AABA / AAAB / AABC / ABAB … 2小節を単位に並べ替える
+ * ```
+ *
+ * 初版はここが**1小節単位**で、小節ごとに motif/step/run/hold の役割を割り当てて
+ * いた。2小節のまとまりが存在しないので、「同じフレーズが返ってきた」という
+ * 手応えがどこにも無く、毎小節ちがう音が流れるだけになっていた。
  */
-const SECTION_FORMS: Record<"a" | "a2" | "b" | "a3", BarRole[][]> = {
-	a: [
-		["motif", "step", "sequence", "step"],
-		["motif", "motif", "sequence", "hold"],
-		["motif", "run", "sequence", "step"],
-		["motif", "step", "motif", "run"],
-		["motif", "hold", "sequence", "run"],
-		["motif", "step", "step", "sequence"],
-		["motif", "sequence", "step", "hold"],
-	],
-	a2: [
-		["motif", "run", "sequence", "hold"],
-		["motif", "step", "run", "hold"],
-		["sequence", "motif", "run", "hold"],
-		["motif", "run", "step", "hold"],
-		["motif", "sequence", "run", "step"],
-		["sequence", "step", "motif", "run"],
-	],
-	b: [
-		["climax", "run", "step", "hold"],
-		["climax", "step", "run", "hold"],
-		["climax", "sequence", "run", "hold"],
-		["climax", "run", "sequence", "step"],
-		["hold", "climax", "run", "step"],
-		["step", "climax", "run", "hold"],
-		["climax", "hold", "run", "sequence"],
-	],
-	a3: [
-		["motif", "step", "run", "cadence"],
-		["motif", "sequence", "step", "cadence"],
-		["motif", "run", "step", "cadence"],
-		["motif", "step", "hold", "cadence"],
-		["motif", "motif", "run", "cadence"],
-		["sequence", "motif", "step", "cadence"],
-	],
-};
+const PHRASE_FORMS: ("a" | "a2" | "b")[][] = [
+	["a", "a2", "b", "a"], // AABA（最も多い形）
+	["a", "a2", "a2", "b"], // AAAB
+	["a", "b", "a", "b"], // ABAB
+	["a", "a2", "b", "b"], // AABB
+	["a", "a2", "b", "a2"],
+	["a", "a", "b", "a2"],
+];
 
 // ============================================================
 // メロディの書法（曲ごとに引く）
@@ -972,11 +956,21 @@ const MOTIF_ARCHETYPES: number[][] = [
 	// 混ぜても届かない（実測1%）ので、モチーフの輪郭そのものに持たせる。
 	// 度数はペンタトニックの歩数なので、5歩でちょうど1オクターブ。
 	[0, 5, 4, 3, 2], // オクターブ上へ跳んで降りてくる
+	[0, 5, 4, 3, 2],
 	[0, 5, 0, 5, 0], // オクターブを行き来する
+	[0, 5, 0, 5, 0],
 	[0, 0, 5, 4, 3],
 	[0, -5, 0, 1, 2], // 一度下へ落としてから戻る
 	[5, 4, 0, 1, 0],
 	[0, 1, 5, 4, 3],
+	// --- 同音連打を含む形 ---
+	// 参考曲は隣接音程の11%が同音。歌メロでは「語りかけ」「疾走感」を作る定番だが、
+	// モチーフの輪郭に無いと出てこない（実測3%）。
+	[0, 0, 0, 1, 2],
+	[0, 0, 2, 2, 1],
+	[0, 0, -1, -1, -2],
+	[0, 1, 1, 0, 0],
+	[0, 0, 5, 5, 4],
 	[0, 1, 2, 3, 2], // 上行して一歩戻る
 	[0, -1, -2, -3, -2], // 下行して一歩戻る
 	[0, 2, 1, 0, -1], // 跳ねてから埋める
@@ -1272,6 +1266,47 @@ const leapTarget = (
 	return pick(weighted.length > 0 ? weighted : candidates, rnd);
 };
 
+/**
+ * フレーズの最後の音を、指定の音階度数へ着地させる。
+ *
+ * 「上行フレーズ終わり＝疑問／下行フレーズ終わり＝応答」という解説の実装。
+ * 小楽節の答えは、**主音へ落とせば解決、主音以外（2度・5度）で止めれば
+ * まだ続く**という言い分けになる。これが無いと、どのフレーズも同じように
+ * 終わってしまい、問いと答えの関係が生まれない。
+ */
+const landOn = (degrees: number[], scaleIndex: number): void => {
+	if (degrees.length === 0) return;
+	const last = degrees[degrees.length - 1];
+	const index = ((last % 7) + 7) % 7;
+	let delta = scaleIndex - index;
+	// 近い方へ寄せる（7度上ではなく2度下、のように）。
+	if (delta > 3) delta -= 7;
+	if (delta < -3) delta += 7;
+	degrees[degrees.length - 1] = last + delta;
+};
+
+/**
+ * 音高が確定した後に、フレーズの最後の音を着地音へ確定させる。
+ *
+ * 度数の段階で決めても、{@link shapeBar} の跳躍制限・gap fill が最後の音を
+ * 書き換えてしまう（実測で200曲中4曲、全終止が主音から外れた）。着地は
+ * フレーズの意味そのものなので、最後に上書きし直す。
+ */
+const landPitch = (pitches: number[], scaleIndex: number): void => {
+	if (pitches.length === 0) return;
+	const last = pitches[pitches.length - 1];
+	const degree = semitoneToDegree(last);
+	const index = ((degree % 7) + 7) % 7;
+	let delta = scaleIndex - index;
+	if (delta > 3) delta -= 7;
+	if (delta < -3) delta += 7;
+	pitches[pitches.length - 1] = clampSemi(
+		degreeToPitch(degree + delta).semi,
+		MELODY_LOW,
+		MELODY_HIGH,
+	);
+};
+
 const barDegrees = (
 	role: BarRole,
 	slots: Slot[],
@@ -1279,6 +1314,12 @@ const barDegrees = (
 	style: MelodyStyle,
 	motifContour: number[],
 	startDegree: number,
+	/**
+	 * この小節が輪郭のどこから始まるか。**モチーフは2小節でひとまとまり**なので、
+	 * 2小節目は1小節目の続きから読む。ここを常に0にすると2小節目が1小節目と
+	 * 同じ形を繰り返すだけになり、2小節の楽句にならない。
+	 */
+	contourOffset: number,
 	/** 直前の小節もモチーフだったときにずらす度数。同じ小節が2つ並ぶのを避ける。 */
 	repeatShift: number,
 	/** この小節で強拍に着地させる構成音の重み下限。B部だけ緩める。 */
@@ -1292,7 +1333,12 @@ const barDegrees = (
 	const noteCount = slots.length;
 	const out: number[] = [];
 
-	if (role === "motif" || role === "sequence" || role === "climax") {
+	if (
+		role === "motif" ||
+		role === "sequence" ||
+		role === "climax" ||
+		role === "answer"
+	) {
 		// モチーフの輪郭をそのまま乗せる。sequence は音程ごとずらし、climax は
 		// 1オクターブ上げる——「同じ型に別の音を当てはめる」のではなく
 		// 「同じアイデアを別の文脈で置き直す」のが狙い。
@@ -1311,14 +1357,20 @@ const barDegrees = (
 			for (let i = 0; i < noteCount; i++)
 				out.push(
 					pentaToDegree(
-						startPenta + shift + motifContour[i % motifContour.length],
+						startPenta +
+							shift +
+							motifContour[(contourOffset + i) % motifContour.length],
 					),
 				);
 		} else {
 			// ダイアトニックで組む曲。ファ・シが輪郭の中に入るので、
 			// 半音の動きと、ペンタトニックでは出ない2度の並びが出る。
 			for (let i = 0; i < noteCount; i++)
-				out.push(startDegree + shift + motifContour[i % motifContour.length]);
+				out.push(
+					startDegree +
+						shift +
+						motifContour[(contourOffset + i) % motifContour.length],
+				);
 		}
 		return out;
 	}
@@ -1780,26 +1832,77 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	// いるだけだった。聴き手はどこにも同じフレーズの再来を見つけられず、
 	// 「毎小節ちがう音が流れているだけ」＝いかにも自動生成、という印象になる。
 	//
-	// 最初の3小節をそのまま再現し、4小節目だけ差し替えて着地を変える——これが
-	// A-A'-B-A'' の実体。B部だけは対比が仕事なので独立に引く。
-	const formA = pick(SECTION_FORMS.a, rnd);
-	const formB = pick(SECTION_FORMS.b, rnd);
-	const formA2: BarRole[] = [
-		...formA.slice(0, 3),
-		pick<BarRole>(["run", "step", "hold"], rnd),
-	];
-	const formA3: BarRole[] = [...formA.slice(0, 3), "cadence"];
-	const barRoles: BarRole[] = [...formA, ...formA2, ...formB, ...formA3];
+	// **16小節 = 4つの小楽節（4小節）= 8つの楽句（2小節）。**
+	//
+	// 解説はどれも「モチーフは2小節、それを繰り返して4小節の小楽節、
+	// 小楽節を AABA / AAAB / ABAB で並べて曲にする」と書いている。
+	// 初版はここが1小節単位で、小節ごとに motif/step/run/hold の役割を配っていた。
+	// 2小節のまとまりが無いので「同じフレーズが返ってきた」という手応えがどこにも
+	// 生まれず、毎小節ちがう音が流れるだけになっていた。
+	//
+	// 各小楽節は【問い2小節】＋【答え2小節】。答えは問いと同じリズムを受けて
+	// （同じリズムの繰り返し＝シーケンス）、着地音だけを変える。
+	//
+	//   小楽節1 問い→答え（半終止・まだ続く）
+	//   小楽節2 問い→答え（一度落ち着く）
+	//   小楽節3 サビ：オクターブ上の問い→答え
+	//   小楽節4 問いの回帰→全終止（主音・白玉＋休符）
+	const form = pick(PHRASE_FORMS, rnd);
+	// **サビ（オクターブ上げる小楽節）の位置を曲ごとに変える。** 3つ目に固定すると
+	// 最高音の出現位置が常に曲の56%あたりになる。参考曲は中央値33%・p25〜p75 が
+	// 17〜73% と散っていて、前半に山が来る曲も多い。
+	const climaxPhrase = pick([1, 2, 2], rnd);
+	/** 楽句（2小節）ごとの設計。 */
+	type Unit = {
+		role: BarRole;
+		/** どのモチーフを使うか。同じ素材の楽句は音の並びごと再現する。 */
+		source: "a" | "a2" | "b" | "answer";
+		/** 答えの着地音（主音からの音階度数）。問いのときは null。 */
+		landing: number | null;
+	};
+	const units: Unit[] = [];
+	for (let phrase = 0; phrase < 4; phrase++) {
+		const src = form[phrase];
+		// 問い。3つ目の小楽節（9〜12小節）がサビなので、そこはオクターブ上げる。
+		units.push({
+			role:
+				phrase === climaxPhrase
+					? "climax"
+					: src === "a2"
+						? "sequence"
+						: "motif",
+			source: src,
+			landing: null,
+		});
+		// 答え。最後の小楽節だけ全終止（主音）で、それ以外は主音を避けて
+		// 「まだ続く」感じを残す（半終止）。
+		units.push({
+			role: phrase === 3 ? "cadence" : "answer",
+			source: "answer",
+			landing: phrase === 3 ? 0 : phrase === 1 ? 2 : pick([4, 1], rnd),
+		});
+	}
+	const barRoles: BarRole[] = units.flatMap((u) => [u.role, u.role]);
+	/** その小節が楽句のどちら側か（0=前半、1=後半）。輪郭の読み出し位置に使う。 */
+	const barInUnit = (bar: number): number => bar % 2;
+	const unitOf = (bar: number): number => Math.floor(bar / 2);
 
 	/**
-	 * その小節が、どの小節の再現か。A'（5〜8小節）と A''（13〜16小節）の最初の3小節は
-	 * A部の同じ位置の小節をそのまま歌い直す。差し替えた4小節目だけは新しく作る。
+	 * その小節が、どの小節の再現か。**同じ素材の楽句は音の並びごと歌い直す。**
+	 * これが「同じフレーズが返ってきた」という手応えの実体で、
+	 * AABA の2つ目の A と4つ目の A が別の音だったら形として成立しない。
 	 */
 	const restatementOf = (bar: number): number | null => {
-		if (bar >= 4 && bar < 7) return bar - 4;
-		if (bar >= 12 && bar < 15) return bar - 12;
+		const u = unitOf(bar);
+		for (let v = 0; v < u; v++) {
+			if (units[v].source !== units[u].source) continue;
+			// 答えどうしは着地音が違うので、後半の小節は再現しない。
+			if (units[u].source === "answer" && barInUnit(bar) === 1) return null;
+			return v * 2 + barInUnit(bar);
+		}
 		return null;
 	};
+
 	const style: MelodyStyle = {
 		groove: pick<Groove>(["eighth", "sixteenth"], rnd),
 		arcPeriod: pick([4, 8, 8, 16], rnd),
@@ -1818,7 +1921,7 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 			rnd,
 		),
 		// 人間の曲の跳躍率は p25〜p75 で 0.40〜0.55。上限が低いとその帯へ届かない。
-		leapAffinity: 0.15 + rnd() * 0.4,
+		leapAffinity: 0.08 + rnd() * 0.3,
 		barHeadWeight: rnd() < 0.65 ? 3 : 2,
 		bassStyle: pick<BassStyle>(
 			[
@@ -1857,53 +1960,33 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	// と、**参考曲のほうがはるかに反復し、音価の種類も絞っている**。毎小節ちがう形を
 	// 引くと、1曲の中では変化に富むが、曲どうしの区別が付かなくなる——どの曲も同じ
 	// 「均等にばらけた」テクスチャになるため。曲の顔になるのは変化ではなく反復の型。
-	const motifCell = pick(groovyCells(MOTIF_CELLS, style.groove, rnd), rnd);
-	// モチーフの変奏（逆行）は1曲に1回程度に留める。初版は6割の曲で使っていて、
-	// これも音価のばらけ（エントロピー過多）の一因だった。
-	const motifRetro: RhythmCell = {
-		value: [...motifCell.value].reverse(),
-		density: motifCell.density,
-	};
-	const useRetro = rnd() < 0.3;
-	/** つなぎの小節にモチーフのリズムを流用するか。曲ごとに引く。 */
-	const stepUsesMotif = rnd() < 0.55;
-
-	/** 役割 → その曲でその役割に使うリズム型。曲の「リズムの顔」になる。 */
-	const cellByRole = new Map<BarRole, RhythmCell>();
-	const cellFor = (role: BarRole): RhythmCell => {
-		const cached = cellByRole.get(role);
-		if (cached) return cached;
-		const wanted =
-			role === "run" ? "dense" : role === "hold" ? "sparse" : "medium";
-		let pool = groovyCells(
-			RHYTHM_CELLS.filter((c) => c.density === wanted),
-			style.groove,
-			rnd,
-		);
-		// 8分グルーヴの曲に「走句」が来たら、16分ではなく8分の細かい形で走る。
-		// 16分を1小節だけ差し込むと、前後と繋がらない一発ネタになる（実測で
-		// 16分を含む小節の100%が、前後に16分を持たない孤立した小節だった）。
-		if (pool.length === 0)
-			pool = RHYTHM_CELLS.filter((c) => c.density === "medium");
-		// **モチーフの音価の語彙から、はみ出しの少ない型を選ぶ。**
-		//
-		// 役割ごとに無関係な型を引くと1曲の音価の種類が増えすぎる。参考曲91本の
-		// 音価エントロピーは 0.62〜1.18 で、これは「種類が3〜5あるが、そのうち1つが
-		// 大半を占める」状態を意味する。役割ごとに好き勝手な型を引くと種類が均等に
-		// ばらけ、実測1.70まで上がっていた。均等にばらけた音価は「変化に富む」のでは
-		// なく、**どの曲も同じのっぺりしたテクスチャ**になる。
-		//
-		// 「2つ以上共通していればよい」では緩すぎたので、**新しく持ち込む音価の数が
-		// 最小の型**に絞る。
-		const motifValues = new Set(motifCell.value.map(Math.abs));
-		const novelty = (c: RhythmCell): number =>
-			new Set(c.value.map(Math.abs).filter((v) => !motifValues.has(v))).size;
-		const fewest = Math.min(...pool.map(novelty));
-		const kin = pool.filter((c) => novelty(c) === fewest);
-		const cell = pick(kin.length > 0 ? kin : pool, rnd);
-		cellByRole.set(role, cell);
-		return cell;
-	};
+	// **モチーフは2小節。** 1小節の型を1つ引いて全部そこから作っていた頃は、
+	// 「ボーカルが一息で歌いきる長さ」という言い回しの単位を持てていなかった。
+	const motifPool = groovyCells(MOTIF_CELLS, style.groove, rnd);
+	const motifCell = pick(motifPool, rnd);
+	/**
+	 * モチーフ2小節目。
+	 *
+	 * **1小節目と別の型に固定しない。** 必ず違う型にすると隣り合う小節の自己相似が
+	 * 実測 0.31 まで落ちた（参考曲は 0.48〜0.71）。2小節の言い回しは
+	 * 「1小節の形＋その変形」であることが多く、まるごと同じ型のことも珍しくない。
+	 */
+	const motifCell2 =
+		rnd() < 0.45
+			? motifCell
+			: pick(
+					motifPool.filter((c) => c !== motifCell),
+					rnd,
+				);
+	/** 対照的な楽句（サビ用）のモチーフ。A と別の型を引く。 */
+	const motifB = pick(
+		motifPool.filter((c) => c !== motifCell && c !== motifCell2),
+		rnd,
+	);
+	const motifB2 = pick(
+		motifPool.filter((c) => c !== motifB),
+		rnd,
+	);
 
 	// 対旋律のリズム。曲ごとに1つ引いて使い回す（サブメロにも「その曲の型」を持たせる）。
 	const counterRhythm = pick(
@@ -1915,39 +1998,70 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		rnd,
 	).value;
 
+	/**
+	 * 答えの後半小節。**フレーズの終わりは白玉で受けて息継ぎを空ける。**
+	 * 解説の「フレーズの区切れ目には歌手の息継ぎを想定した休符を入れる」
+	 * 「『ド』『ミ』『ソ』のいずれかを白玉で伸ばして終わらせる」の実装。
+	 */
+	const breathCell = pick(
+		RHYTHM_CELLS.filter(
+			(c) => c.density === "sparse" && c.value.some((v) => v < 0),
+		),
+		rnd,
+	);
+
 	const barRhythms: number[][] = [];
-	let motifSeen = 0;
 	for (let bar = 0; bar < BARS; bar++) {
-		const role = barRoles[bar];
-		let cell: RhythmCell;
-		if (role === "motif" || role === "sequence" || role === "climax") {
-			motifSeen++;
-			cell = useRetro && motifSeen === 3 ? motifRetro : motifCell;
-		} else if (role === "step" && stepUsesMotif) {
-			// **つなぎの小節でもモチーフのリズムを使う。** `step` は曲の半分近くを
-			// 占める最頻の役割なので、ここに別の型を当てると音価の種類が一気に増える。
-			// 参考曲の音価エントロピーは 0.62〜1.18 で、型を役割ごとに分けた時点の
-			// 生成物（1.37）はまだ上振れしていた。同じ型が戻ってくることが
-			// 「その曲らしさ」になる。
-			cell = motifCell;
-		} else {
-			cell = cellFor(role);
-		}
-		// 再現の小節は、リズムも元の小節と同じにする（同じフレーズの歌い直しなので）。
+		const u = unitOf(bar);
+		const half = barInUnit(bar);
 		const source = restatementOf(bar);
-		barRhythms.push(
-			source !== null ? barRhythms[source] : scaleCell(cell.value),
-		);
+		if (source !== null) {
+			// 同じ素材の楽句は、リズムもそのまま歌い直す。
+			barRhythms.push(barRhythms[source]);
+			continue;
+		}
+		const isB = units[u].source === "b";
+		let cell: RhythmCell;
+		if (units[u].source === "answer") {
+			// 答えは問いと同じリズムで入る。**白玉＋休符で受けるのは大楽節の
+			// 切れ目（8小節ごと）だけ**——小楽節ごとに息継ぎを入れると
+			// フレーズの切れ目率が実測0.50まで上がる（参考曲は0.25）。
+			const isPeriodEnd = u === 3 || u === 7;
+			cell =
+				half === 0
+					? isB
+						? motifB
+						: motifCell
+					: isPeriodEnd
+						? breathCell
+						: isB
+							? motifB2
+							: motifCell2;
+		} else {
+			cell =
+				half === 0 ? (isB ? motifB : motifCell) : isB ? motifB2 : motifCell2;
+		}
+		barRhythms.push(scaleCell(cell.value));
 	}
 
 	// --- ③その上に音を乗せる ---
 	// モチーフの輪郭は名前の付く形から引き、足りないぶんだけ曲ごとに伸ばす。
-	const motifNoteCount = motifCell.value.filter((v) => v > 0).length;
+	// **輪郭も2小節ぶん作る。** 1小節ぶんしか持たないと、2小節目が1小節目と
+	// 同じ形を繰り返すだけになり、2小節でひとつの言い回しにならない。
+	const motifNoteCount =
+		motifCell.value.filter((v) => v > 0).length +
+		motifCell2.value.filter((v) => v > 0).length;
 	const archetype = pick(MOTIF_ARCHETYPES, rnd);
+	// **足りないぶんは原型の繰り返しで埋める。** 2小節ぶんの音数（10〜12音）に対して
+	// 原型は5音なので、初版は残りを ±1 のランダムウォークで伸ばしていた。その結果
+	// 輪郭の後半が順次進行の酔歩になり、原型に込めたオクターブ跳躍も同音連打も
+	// 薄まっていた（実測で2度が44%、参照は24%）。原型を少しずらして繰り返せば
+	// セクエンツになり、音程の性格が2小節を通して保たれる。
+	const sequenceShift = pick([-2, -1, 1, 2], rnd);
 	const motifContour: number[] = [];
 	for (let i = 0; i < motifNoteCount; i++) {
-		if (i < archetype.length) motifContour.push(archetype[i]);
-		else motifContour.push(motifContour[i - 1] + (rnd() < 0.5 ? 1 : -1));
+		const repeat = Math.floor(i / archetype.length);
+		motifContour.push(archetype[i % archetype.length] + sequenceShift * repeat);
 	}
 
 	/** 小節ごとに実際に使った音の並び（度数）。A' / A'' の再現で読み直す。 */
@@ -2034,6 +2148,11 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		).semi;
 		// モチーフ小節が2つ続くと、和音が同じなら音まで完全に同じ小節が並ぶ。
 		// 2度目は少しずらして「反復」ではなく「一歩進んだ反復」にする。
+		// この小節が輪郭のどこから始まるか。楽句の後半小節は前半の続きを読む。
+		const contourOffset =
+			barInUnit(bar) === 0
+				? 0
+				: barRhythms[bar - 1].filter((v) => v > 0).length;
 		const prevRole = bar > 0 ? barRoles[bar - 1] : null;
 		const repeatShift =
 			role === "motif" &&
@@ -2047,6 +2166,7 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 			style,
 			motifContour,
 			semitoneToDegree(headSemi),
+			contourOffset,
 			repeatShift,
 			headWeight,
 			isSectionB,
@@ -2063,6 +2183,9 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 				degrees.length,
 				...(plannedDegrees[source] as number[]),
 			);
+		// 楽句の最後の小節は、着地音を決めて終わる（半終止／全終止）。
+		const landing = units[unitOf(bar)].landing;
+		if (landing !== null && barInUnit(bar) === 1) landOn(degrees, landing);
 		plannedDegrees[bar] = [...degrees];
 
 		// モチーフ系と再現の小節は「塊ごと移調して輪郭を保つ」、それ以外は従来どおり
@@ -2071,7 +2194,8 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 			source !== null ||
 			role === "motif" ||
 			role === "sequence" ||
-			role === "climax";
+			role === "climax" ||
+			role === "answer";
 		const pitches = shapeBar(
 			isMotifBar
 				? fitMotif(
@@ -2096,11 +2220,19 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 				// モチーフの小節はオクターブ移動を入れない。モチーフは輪郭が命なので、
 				// 後から音を1つ跳ばすと「同じフレーズが返ってきた」と分からなくなる。
 				// モチーフ側は {@link MOTIF_ARCHETYPES} が自前でオクターブを持つ。
-				octaveAffinity: isMotifBar ? 0 : style.octaveAffinity,
+				// モチーフ・セクエンツ・サビの小節はオクターブ移動を入れない
+				// （輪郭が命なので、後から音を1つ跳ばすと同じフレーズと分からなくなる）。
+				// 答えの小節は輪郭を借りているだけなので許す。
+				octaveAffinity:
+					role === "motif" || role === "sequence" || role === "climax"
+						? 0
+						: style.octaveAffinity,
 				rnd,
 				preserveContour: isMotifBar,
 			},
 		);
+
+		if (landing !== null && barInUnit(bar) === 1) landPitch(pitches, landing);
 
 		// メロディ
 		const barHead = pitches[0];

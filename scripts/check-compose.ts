@@ -489,6 +489,79 @@ console.log("● 構造の指標が順序に反応するか");
 }
 
 // ============================================================
+// 2.55 フレーズ構造（2小節の楽句・問いと答え）
+//
+//     解説はどれも「モチーフは2小節、繰り返して4小節の小楽節、AABA等で並べる」
+//     と書いている。初版はここが1小節単位で、2小節のまとまりが存在しなかった。
+//     自己相似が lag4/lag8 で戻ってくること、フレーズの終わりが着地することを
+//     機械で確かめる。
+// ============================================================
+
+console.log("● フレーズ構造");
+{
+	const N = 60;
+	let sim4Sum = 0;
+	let sim1Sum = 0;
+	for (let seed = 1; seed <= N; seed++) {
+		const song = composeSong({
+			stepsPerBar: STEPS_PER_BAR,
+			edo: 12,
+			random: seededRandom(seed * 7919),
+		});
+		const tag = `seed=${seed}`;
+		const notes = song.melody.map((n) => ({
+			startStep: n.startStep,
+			pitchSemi: n.pitchUnits / UNITS_PER_SEMITONE,
+			durationSteps: n.durationSteps,
+		}));
+		const f = structureFeatures(notes, [], {
+			stepsPerBar: STEPS_PER_BAR,
+			bars: BARS,
+		});
+		sim4Sum += f.sim4;
+		sim1Sum += f.sim1;
+		// **4小節で形が戻ってくること。** 1曲ずつ lag4 > lag1 を要求はしない——
+		// 2小節の楽句を「同じ型を2回」で作る曲では lag1 が高くて当然で、参考曲でも
+		// lag1（0.48〜0.71）と lag4（0.57〜0.80）は重なっている。曲ごとには
+		// 「小楽節が戻ってきている」ことだけを見て、大小関係は全体の平均で見る。
+		check(`${tag} 4小節で形が戻る`, f.sim4 >= 0.4, `lag4 ${f.sim4.toFixed(2)}`);
+		// フレーズの切れ目（2小節ごと）で息継ぎがあること。
+		check(
+			`${tag} フレーズの切れ目で息継ぎ`,
+			f.phraseBreath >= 0.1,
+			`${f.phraseBreath.toFixed(2)}`,
+		);
+		// 楽句は2小節。8小節目・16小節目の末尾は必ずロングトーンか休符で受ける。
+		for (const bar of [7, 15]) {
+			const inBar = song.melody.filter(
+				(n) =>
+					n.startStep >= bar * STEPS_PER_BAR &&
+					n.startStep < (bar + 1) * STEPS_PER_BAR,
+			);
+			if (inBar.length === 0) continue;
+			const last = inBar[inBar.length - 1];
+			const tail =
+				(bar + 1) * STEPS_PER_BAR - (last.startStep + last.durationSteps);
+			check(
+				`${tag} bar${bar + 1} が大楽節の切れ目として受ける`,
+				last.durationSteps >= STEPS_PER_BAR / 4 || tail >= STEPS_PER_BAR / 8,
+				`末尾の音 ${last.durationSteps}ステップ / 空き ${tail}`,
+			);
+		}
+	}
+	// 全体としては lag4 のほうが高いこと。ここが逆転していたら、4小節の小楽節が
+	// 機能しておらず「隣どうしが似ているだけ」の曲を量産している。
+	check(
+		"平均では4小節周期の反復が勝つ",
+		sim4Sum / N > sim1Sum / N,
+		`lag1 ${(sim1Sum / N).toFixed(3)} / lag4 ${(sim4Sum / N).toFixed(3)}`,
+	);
+	console.log(
+		`  ${N}曲: 自己相似 lag1 ${(sim1Sum / N).toFixed(2)} / lag4 ${(sim4Sum / N).toFixed(2)}`,
+	);
+}
+
+// ============================================================
 // 2.6 格子への乗り
 //
 //     参考曲（他作13本・自作91本）を192ステップの格子へ量子化して測ると、
