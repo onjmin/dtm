@@ -41,23 +41,36 @@ const CURVE_SAMPLES = 1024;
  * - `bass` … パラレル・サチュレーション。
  * - `guitar-clean` … キャビネットのみ（クリーン系エレキ。歪ませない）。
  * - `guitar-drive` … 軽いドライブ＋キャビネット（オーバードライブ／ディストーション）。
- * - `none` … 何も挿さない（生楽器・シンセ・鍵盤など）。
+ * - `acoustic` … 生の撥弦楽器。プレゼンス＋エアのEQだけ。
+ * - `none` … 何も挿さない（鍵盤・管弦・シンセなど）。
  */
-export type InstrumentTone = "bass" | "guitar-clean" | "guitar-drive" | "none";
+export type InstrumentTone =
+	| "bass"
+	| "guitar-clean"
+	| "guitar-drive"
+	| "acoustic"
+	| "none";
 
 /**
  * GMプログラム番号 → 音作りの種別。
  *
- * アコースティックギター（24-25）を除外しているのは、生ギターにキャビネットを
- * 通すのは実機の信号経路として誤りだから（マイク録りの音にスピーカーの色を
- * 足すことになる）。クリーン系エレキ（26-28, 31）はキャビだけ通す——実機の
- * クリーントーンもアンプを鳴らした音なので、歪ませずに箱の色だけ足すのが正しい。
+ * アコースティックギター（24-25）にキャビネットを通さないのは、実機の信号経路として
+ * 誤りだから——生ギターはマイクで録った音で、スピーカーを通っていない。同じ理由で
+ * 「ボディの共鳴を足す」のもやらない（サンプルには既に実物の箱鳴りが入っている）。
+ * 代わりに掛けるのはEQだけ——生ギターの録り音にプレゼンスとエアを足すのは、
+ * ミックスで普通にやる処理で、無い装置を模擬するのとは違う。
+ *
+ * クリーン系エレキ（26-28, 31）はキャビだけ通す——実機のクリーントーンもアンプを
+ * 鳴らした音なので、歪ませずに箱の色だけ足すのが正しい。
  */
 export const toneForProgram = (program: number): InstrumentTone => {
 	if (program >= 32 && program <= 39) return "bass";
 	if (program === 29 || program === 30) return "guitar-drive";
 	if (program === 26 || program === 27 || program === 28 || program === 31)
 		return "guitar-clean";
+	// アコギ（24-25）・ハープ（46）・バンジョー/三味線/琴/カリンバ（105-108）。
+	if (program === 24 || program === 25 || program === 46) return "acoustic";
+	if (program >= 105 && program <= 108) return "acoustic";
 	return "none";
 };
 
@@ -75,6 +88,24 @@ export const createSaturationCurve = (drive: number): Float32Array => {
 	}
 	return curve;
 };
+
+/**
+ * WaveShaperのオーバーサンプリング設定。**必ず "none" を使う。**
+ *
+ * `"2x"` は Chromium で**128サンプル（44.1kHzで2.9ms）の遅延**を持つ（インパルスを
+ * 通して実測）。`"4x"` は192サンプル。折り返し（エイリアス）は減るが、この遅延が
+ * 2つの問題を起こす。
+ *
+ * 1. **パラレル接続が櫛形フィルタになる**。ベースのサチュレーションは原音と歪みを
+ *    並列に足すので、片側だけ2.9ms遅れると 172Hz・517Hz…に打ち消しの谷ができる。
+ *    実際、GM Electric Bass のノートを実測すると 200〜600Hz が **-8.1dB** 落ちていた
+ *    ——**倍音を足すつもりで、一番大事な帯域を削っていた**。
+ * 2. トラック間で位相がずれる。歪み段を通るトラックだけ2.9ms遅れるので、同じ音を
+ *    重ねる編曲（オクターブ重ね等）で濁る。
+ *
+ * 入力側を先に帯域制限してあるので、"none" でも折り返しは実用上問題にならない。
+ */
+const OVERSAMPLE: OverSampleType = "none";
 
 /** キャビネットIRの長さ（秒）。実測のギターキャビIRもおおむね20〜30ms。 */
 const CAB_IMPULSE_SEC = 0.03;
@@ -190,7 +221,7 @@ export const createBassSaturator = (ctx: AudioContext): ToneStage => {
 
 	const shaper = ctx.createWaveShaper();
 	shaper.curve = createSaturationCurve(BASS_DRIVE);
-	shaper.oversample = "2x";
+	shaper.oversample = OVERSAMPLE;
 
 	// 歪みが作る高次倍音のうち、耳障りな上の方を落としてから混ぜる。
 	const tame = ctx.createBiquadFilter();
@@ -272,7 +303,7 @@ export const createGuitarCabinet = (
 	if (drive) {
 		const shaper = ctx.createWaveShaper();
 		shaper.curve = createSaturationCurve(GUITAR_DRIVE);
-		shaper.oversample = "2x";
+		shaper.oversample = OVERSAMPLE;
 		// tanh(k*x)/tanh(k) は小信号で k/tanh(k) 倍のゲインを持つ。その逆数を掛けて
 		// 「小さい音は素通し・大きい音だけ潰れる」形にする（歪ませると音量まで
 		// 上がる、という状態を避ける）。
@@ -318,6 +349,44 @@ export const createGuitarCabinet = (
 	};
 };
 
+/** 生の撥弦楽器に足すプレゼンス（弦の輪郭）とエア（空気感）。 */
+const ACOUSTIC_PRESENCE_HZ = 3200;
+const ACOUSTIC_PRESENCE_DB = 2.5;
+const ACOUSTIC_AIR_HZ = 7000;
+const ACOUSTIC_AIR_DB = 2;
+/** 箱鳴りより下の、音楽的な意味を持たない低域を切る。 */
+const ACOUSTIC_RUMBLE_HZ = 60;
+
+/**
+ * 生の撥弦楽器（アコギ・ハープ・琴など）向け。**装置は模擬しない**——サンプルは
+ * 既に実物をマイクで録った音なので、足すべきものは「アンプ」でも「箱鳴り」でもなく、
+ * ミックスで生ギターに掛けるのと同じEQだけ。
+ */
+export const createAcousticTone = (ctx: AudioContext): ToneStage => {
+	const input = ctx.createGain();
+	const output = ctx.createGain();
+	const rumble = ctx.createBiquadFilter();
+	rumble.type = "highpass";
+	rumble.frequency.value = ACOUSTIC_RUMBLE_HZ;
+	const presence = ctx.createBiquadFilter();
+	presence.type = "peaking";
+	presence.frequency.value = ACOUSTIC_PRESENCE_HZ;
+	presence.Q.value = 0.9;
+	presence.gain.value = ACOUSTIC_PRESENCE_DB;
+	const air = ctx.createBiquadFilter();
+	air.type = "highshelf";
+	air.frequency.value = ACOUSTIC_AIR_HZ;
+	air.gain.value = ACOUSTIC_AIR_DB;
+	input.connect(rumble).connect(presence).connect(air).connect(output);
+	return {
+		input,
+		output,
+		dispose: () => {
+			for (const n of [input, rumble, presence, air, output]) n.disconnect();
+		},
+	};
+};
+
 /** {@link InstrumentTone} に対応する音作り段を作る。`none` は null（素通し）。 */
 export const createToneStage = (
 	ctx: AudioContext,
@@ -330,6 +399,8 @@ export const createToneStage = (
 			return createGuitarCabinet(ctx, false);
 		case "guitar-drive":
 			return createGuitarCabinet(ctx, true);
+		case "acoustic":
+			return createAcousticTone(ctx);
 		default:
 			return null;
 	}

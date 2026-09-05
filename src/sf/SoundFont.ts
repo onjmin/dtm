@@ -26,6 +26,19 @@ type Zone = {
 	};
 };
 
+/**
+ * エンベロープの型。**音作りの種別（{@link InstrumentTone}）とは別軸**で決める——
+ * 「アンプを通すか」と「音がどう減衰するか」は本来無関係で、たとえばアコギと
+ * ピアノは通す装置は違わない（どちらも素通し）が、どちらも撥弦・打弦で減衰する。
+ *
+ * - `bass` … 次の音までに必ず消す。締まった低音の条件。
+ * - `pluck` … 撥弦・打弦・撥音（ピアノ／ギター／ハープ／民族楽器）。**サンプル自身が
+ *   減衰を持っている**ので、エンベロープ側では減衰させず（サステインをほぼ1に保つ）、
+ *   離鍵後の尾ひれだけ短く切る。ここを下げるとサンプルの減衰と二重に掛かって痩せる。
+ * - `sustain` … 弓・管・オルガン・パッド。鳴らし続ける音なので余韻も長めに残す。
+ */
+type EnvKind = "bass" | "pluck" | "sustain";
+
 /** 1音の振幅エンベロープ（アタックは全楽器共通なので持たない）。 */
 type Envelope = {
 	/** ピークからサステインまで落ちるのに掛ける秒数。 */
@@ -51,14 +64,11 @@ export class SoundFont {
 	// ファミリごとに変える。
 	/** アタック（無音からピークまで）秒。クリック防止の最小限。全楽器共通。 */
 	static attackSec = 0.005;
-	/** 楽器ファミリ別のエンベロープ。 */
-	static envelopes: Record<InstrumentTone, Envelope> = {
-		// ベースは短く切る。次の音までに必ず消えているのが「締まった低音」の条件。
+	/** 減衰の型ごとのエンベロープ。 */
+	static envelopes: Record<EnvKind, Envelope> = {
 		bass: { decaySec: 0.06, sustain: 0.9, releaseSec: 0.12 },
-		"guitar-clean": { decaySec: 0.09, sustain: 0.8, releaseSec: 0.2 },
-		"guitar-drive": { decaySec: 0.09, sustain: 0.85, releaseSec: 0.2 },
-		// それ以外（鍵盤・管弦・シンセ）は旧来の余韻の長さに近い値を既定にする。
-		none: { decaySec: 0.15, sustain: 0.8, releaseSec: 0.35 },
+		pluck: { decaySec: 0.1, sustain: 0.95, releaseSec: 0.18 },
+		sustain: { decaySec: 0.15, sustain: 0.85, releaseSec: 0.35 },
 	};
 
 	// ── ヒューマナイズ（疑似ラウンドロビン）──
@@ -104,6 +114,13 @@ export class SoundFont {
 	 * 完全に同一の信号経路を通り、余計な音痩せや位相変化が起きないようにするため。
 	 */
 	static brightnessBypassAbove = 0.98;
+	/**
+	 * 1音ごとにカットオフを振る幅（比率）。ドラムと同じ狙いの疑似ラウンドロビンで、
+	 * 同じ高さ・同じ強さの音を連打しても毎回わずかに音色が変わるようにする
+	 * （市販音源が持つラウンドロビン——Shreddage 3 なら1音につきダウン/アップ各4本——
+	 * の代わり。こちらはサンプルが1本しか無いので、鳴らし方の側で崩す）。
+	 */
+	static brightnessJitterRatio = 0.1;
 	/**
 	 * ベースだけは別のカーブを使う。既定の下限2400Hzでは velocity 44 でも
 	 * カットオフが8.5kHzあり、**弱く弾いた音が暗くならない**——つまりゴーストノートや
@@ -165,7 +182,10 @@ export class SoundFont {
 				zones.set(Number(pitch), v);
 			}
 			if (SoundFont.ch < ch) SoundFont.ch = ch;
-			fonts.set(fontName, new SoundFont(zones, ch, isDrum, toneOf(fontName)));
+			fonts.set(
+				fontName,
+				new SoundFont(zones, ch, isDrum, toneOf(fontName), envKindOf(fontName)),
+			);
 		}
 		const result = fonts.get(fontName);
 		if (!result) throw new Error("SoundFont load failed.");
@@ -182,6 +202,8 @@ export class SoundFont {
 		 * チャンネルストリップへ挿す段（ベースの歪み／ギターのキャビ）にも使う。
 		 */
 		public tone: InstrumentTone = "none",
+		/** 減衰の型。エンベロープの選択に使う（{@link SoundFont.envelopes}）。 */
+		public envKind: EnvKind = "sustain",
 	) {}
 
 	play({
@@ -278,13 +300,13 @@ export class SoundFont {
 			const maxHz = isBass
 				? SoundFont.bassBrightnessMaxHz
 				: SoundFont.brightnessMaxHz;
+			const base = isBass
+				? minHz * (maxHz / minHz) ** brightness
+				: minHz + (maxHz - minHz) * brightness;
+			const jitter =
+				1 + (Math.random() * 2 - 1) * SoundFont.brightnessJitterRatio;
 			filter.type = "lowpass";
-			filter.frequency.setValueAtTime(
-				isBass
-					? minHz * (maxHz / minHz) ** brightness
-					: minHz + (maxHz - minHz) * brightness,
-				0,
-			);
+			filter.frequency.setValueAtTime(base * jitter, 0);
 			filter.Q.setValueAtTime(SoundFont.brightnessQ, 0);
 		}
 
@@ -294,7 +316,8 @@ export class SoundFont {
 		const startGainTime = Math.max(ctx.currentTime, _when);
 		g.gain.setValueAtTime(0, startGainTime);
 
-		const env = SoundFont.envelopes[this.tone] ?? SoundFont.envelopes.none;
+		const env =
+			SoundFont.envelopes[this.envKind] ?? SoundFont.envelopes.sustain;
 		// ループしないサンプルはバッファの終わりより先へは伸ばせない。
 		const limit = src.loop
 			? Number.POSITIVE_INFINITY
@@ -396,23 +419,41 @@ const findZone = (
 
 /**
  * WebAudioFontのフォント名（例: `_tone_0330_FluidR3_GM_sf2_file`）から
- * GMプログラム番号を取り出して音作りの種別へ写す。取り出せなければ `none`。
+ * GMプログラム番号を取り出す。取り出せなければ null。
  */
-const toneOf = (fontName: string): InstrumentTone => {
+const programOf = (fontName: string): number | null => {
 	const match = fontName.match(/_tone_(\d+)_/);
-	if (!match) return "none";
-	return toneForProgram(Math.floor(Number(match[1]) / 10));
+	if (!match) return null;
+	return Math.floor(Number(match[1]) / 10);
 };
 
-const isDecayInstrument = (fontName: string): boolean => {
-	const match = fontName.match(/_tone_(\d+)_/);
-	if (!match) return false;
-	const program = Math.floor(Number(match[1]) / 10);
+/** フォント名 → 音作りの種別。取り出せなければ `none`。 */
+const toneOf = (fontName: string): InstrumentTone => {
+	const program = programOf(fontName);
+	return program === null ? "none" : toneForProgram(program);
+};
+
+/** フォント名 → 減衰の型。取り出せなければ「鳴らし続ける音」として扱う。 */
+const envKindOf = (fontName: string): EnvKind => {
+	const program = programOf(fontName);
+	if (program === null) return "sustain";
+	// シンセベース（38-39）も含めてベースは同じ扱い（低域は短く切る）。
+	if (32 <= program && program <= 39) return "bass";
+	return isDecayProgram(program) ? "pluck" : "sustain";
+};
+
+/** 減衰する（＝鳴らしっぱなしにならない）楽器か。 */
+const isDecayProgram = (program: number): boolean => {
 	if (0 <= program && program <= 15) return true; // Pianos, Chromatic Percussion
 	if (24 <= program && program <= 37) return true; // Guitars, Basses (Synth Bass 38, 39 are sustain)
 	if (program === 46) return true; // Harp
 	if (104 <= program && program <= 119) return true; // Ethnic, Percussive
 	return false;
+};
+
+const isDecayInstrument = (fontName: string): boolean => {
+	const program = programOf(fontName);
+	return program === null ? false : isDecayProgram(program);
 };
 
 const adjustZone = async (
