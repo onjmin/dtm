@@ -489,52 +489,36 @@ console.log("● 構造の指標が順序に反応するか");
 }
 
 // ============================================================
-// 2.6 フレーズと格子（小節で閉じていないか）
+// 2.6 格子への乗り
 //
-//     どちらも「0%になっていたら退行」という種類の指標。1曲だけ見ても
-//     気づけないので、まとめて生成して比率で測る。
+//     参考曲（他作13本・自作91本）を192ステップの格子へ量子化して測ると、
+//     **小節線をまたぐ音も16分格子から外れる音も中央値0%**だった。
+//     一時期この逆（またぎ3.5%・格子外24%）を目標にして三連・スウィング・
+//     弱起を入れたが、それは量子化せず生のtickで測った値で、演奏上のズレと
+//     tickの丸めを拾っていただけだった。**この様式のメロディは格子の上に乗る。**
 // ============================================================
 
-console.log("● フレーズと格子");
+console.log("● 格子への乗り");
 {
 	const N = 60;
-	let cross = 0;
-	let offGrid = 0;
 	let notes = 0;
-	let crossSongs = 0;
-	let offGridSongs = 0;
-	let tripletSongs = 0;
-	const drumStyles = new Set<string>();
+	let offGrid = 0;
+	let cross = 0;
 	for (let seed = 1; seed <= N; seed++) {
 		const song = composeSong({
 			stepsPerBar: STEPS_PER_BAR,
 			edo: 12,
 			random: seededRandom(seed * 7919),
 		});
-		drumStyles.add(song.drums.style);
-		let c = 0;
-		let o = 0;
 		for (const n of song.melody) {
 			notes++;
+			if (n.startStep % (STEPS_PER_BAR / 16) !== 0) offGrid++;
 			const bar = Math.floor(n.startStep / STEPS_PER_BAR);
-			const endBar = Math.floor(
-				(n.startStep + n.durationSteps - 1) / STEPS_PER_BAR,
-			);
-			if (endBar !== bar) {
+			if (
+				Math.floor((n.startStep + n.durationSteps - 1) / STEPS_PER_BAR) !== bar
+			)
 				cross++;
-				c++;
-			}
-			// 16分の格子（12ステップ刻み）から外れているか。三連とスウィングで出る。
-			if (n.startStep % (STEPS_PER_BAR / 16) !== 0) {
-				offGrid++;
-				o++;
-			}
 		}
-		if (c > 0) crossSongs++;
-		if (o > 0) offGridSongs++;
-		if (song.melody.some((n) => n.durationSteps === TRIPLET_EIGHTH))
-			tripletSongs++;
-		// 曲の終端をはみ出していないこと（またぎを入れた副作用が出るならここ）。
 		const over = song.melody.filter(
 			(n) => n.startStep + n.durationSteps > BARS * STEPS_PER_BAR,
 		);
@@ -544,36 +528,9 @@ console.log("● フレーズと格子");
 			`${over.length}音`,
 		);
 	}
-	// 参考曲は平均3.5%（最大32%）。0%＝リズム型が1小節で閉じたままという退行。
-	const crossRatio = cross / notes;
-	check(
-		"メロディが小節線をまたぐ",
-		crossRatio >= 0.005 && crossRatio <= 0.15,
-		`${(crossRatio * 100).toFixed(1)}%`,
-	);
-	check(
-		"またぎが一部の曲に偏らない",
-		crossSongs >= N / 3,
-		`${crossSongs}/${N}曲`,
-	);
-	// 参考曲は平均24.3%。0%＝三連もスウィングも出せていないという退行。
-	const offRatio = offGrid / notes;
-	check(
-		"16分格子から外れた音がある",
-		offRatio >= 0.03 && offRatio <= 0.5,
-		`${(offRatio * 100).toFixed(1)}%`,
-	);
-	check("三連を使う曲がある", tripletSongs >= N / 10, `${tripletSongs}/${N}曲`);
-	// 跳ねる曲にはシャッフルのドラムが当たる。ノートから推測していた頃は
-	// 三連の音を「ウラ」と誤検出して全曲シャッフルになっていた。
-	check(
-		"ドラムの型が偏っていない",
-		drumStyles.size >= 3,
-		`${drumStyles.size}種: ${[...drumStyles].join(",")}`,
-	);
-	console.log(
-		`  ${N}曲: 小節線またぎ ${(crossRatio * 100).toFixed(1)}%（${crossSongs}曲） / 格子外 ${(offRatio * 100).toFixed(1)}%（${offGridSongs}曲） / 三連 ${tripletSongs}曲`,
-	);
+	check("16分格子の上に乗る", offGrid === 0, `${offGrid}/${notes}音が格子外`);
+	check("小節線をまたがない", cross === 0, `${cross}/${notes}音がまたぎ`);
+	console.log(`  ${N}曲: 格子外 ${offGrid}音 / 小節線またぎ ${cross}音`);
 }
 
 // ============================================================

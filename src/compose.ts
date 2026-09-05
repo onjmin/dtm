@@ -220,16 +220,6 @@ const DOT_QUARTER = 72;
 const QUARTER = 48;
 const EIGHTH = 24;
 const SIXTEENTH = 12;
-/**
- * 三連符。1拍（48ステップ）を3等分した8分三連が16ステップ、2等分ぶんの
- * 4分三連が32ステップ。**16分の格子（12の倍数）から外れる**のが要点で、
- * 192は3で割り切れるのでステップの整数のまま表せる。
- *
- * 参考にした人間の曲は主旋律の平均24%が16分格子の外にあり、生成物は0%だった。
- * 三連もスウィングも前ノリも、格子の上にいる限り原理的に作れない。
- */
-export const TRIPLET_EIGHTH = 16;
-const TRIPLET_QUARTER = 32;
 
 /** 曲の長さ。A(4) - A'(4) - B(4) - A''(4) の16小節。 */
 const BARS = 16;
@@ -308,6 +298,60 @@ const semitoneToDegree = (semi: number): number => {
 /** 音階上を `delta` 度動かす（半音でなく度数で動かすのでスケールから外れない）。 */
 const walk = (semi: number, delta: number): number =>
 	degreeToPitch(semitoneToDegree(semi) + delta).semi;
+
+/**
+ * ペンタトニックから外れる度数。**ファ（4度）とシ（7度）**の2つ。
+ *
+ * 歌メロの解説はどれも「まずペンタトニック（ド・レ・ミ・ソ・ラ）に絞れ」と言う。
+ * ハ長調でもイ短調でも外れるのはこの2音で（イ短調のペンタトニックは
+ * ラ・ド・レ・ミ・ソ）、どちらも半音上に隣の音が迫っていて主張が強い。
+ *
+ * この2音を無条件に使うと、**スケールの上をなぞっただけのメロディ**になる。
+ * 使ってよいのは次の2つの場合だけ、というのが共通して書かれている規則。
+ *
+ * - その瞬間の和音の構成音であるとき（F の上のファ、G7 の上のシは和音の芯）
+ * - **前後を順次進行で挟むとき**（経過音・刺繍音として通り過ぎるだけ）
+ *
+ * 生成物はここを一切見ておらず、7音を無差別に使っていた。
+ */
+const NON_PENTATONIC_DEGREES = new Set([3, 6]); // ファ・シ
+
+/** その音がペンタトニックの外（ファ・シ）か。 */
+const isNonPentatonic = (semi: number): boolean =>
+	NON_PENTATONIC_DEGREES.has(((semitoneToDegree(semi) % 7) + 7) % 7);
+
+/** ペンタトニックの5音を、ダイアトニックの度数で表したもの（ド・レ・ミ・ソ・ラ）。 */
+const PENTATONIC_DEGREES = [0, 1, 2, 4, 5];
+
+/**
+ * ペンタトニックの度数（5音で1オクターブ）→ ダイアトニックの度数。
+ *
+ * **モチーフはこちらの度数で組み立てる。** ダイアトニックの度数で輪郭を作ると、
+ * 「1つ上」が文脈によってミ→ファ（半音）にもなり、モチーフを移調したとたんに
+ * ファやシが紛れ込む。ペンタトニックの度数で持てば、どこへ移調しても
+ * ペンタトニックのままでいられる。
+ */
+const pentaToDegree = (penta: number): number => {
+	const index = ((penta % 5) + 5) % 5;
+	const octave = Math.floor(penta / 5);
+	return PENTATONIC_DEGREES[index] + octave * 7;
+};
+
+/** ダイアトニックの度数 → 最も近いペンタトニックの度数。 */
+const degreeToPenta = (degree: number): number => {
+	const index = ((degree % 7) + 7) % 7;
+	const octave = Math.floor(degree / 7);
+	let best = 0;
+	let bestDist = Number.POSITIVE_INFINITY;
+	for (let i = 0; i < PENTATONIC_DEGREES.length; i++) {
+		const dist = Math.abs(PENTATONIC_DEGREES[i] - index);
+		if (dist < bestDist) {
+			bestDist = dist;
+			best = i;
+		}
+	}
+	return octave * 5 + best;
+};
 
 // ============================================================
 // コード進行
@@ -584,73 +628,68 @@ export const RHYTHM_CELLS: RhythmCell[] = [
 		],
 		density: "dense",
 	},
-	// --- 三連: 16分の格子から外れる唯一の型 ---
-	// 8分三連は1拍(48)を3等分した16ステップ。12の倍数ではないので、
-	// これが1つも無い限り生成物の「格子外の音」は永遠に0%のままになる。
-	{
-		value: [
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			QUARTER,
-			QUARTER,
-			QUARTER,
-		],
-		density: "medium",
-	},
-	{
-		value: [
-			QUARTER,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			QUARTER,
-			QUARTER,
-		],
-		density: "medium",
-	},
-	{
-		value: [
-			TRIPLET_QUARTER,
-			TRIPLET_QUARTER,
-			TRIPLET_QUARTER,
-			TRIPLET_QUARTER,
-			TRIPLET_QUARTER,
-			TRIPLET_QUARTER,
-		],
-		density: "medium",
-	},
-	{
-		value: [
-			HALF,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-		],
-		density: "dense",
-	},
-	{
-		value: [
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			HALF,
-		],
-		density: "dense",
-	},
 ];
 
 /**
  * モチーフに使うリズム型。5音前後で、音価に変化があり、覚えやすい形のものだけを選ぶ
  * （モチーフは「そのまま反復して記憶に残す」のが仕事なので、走句のような流れる形は不向き）。
  */
-export const MOTIF_CELLS: RhythmCell[] = [
+/**
+ * **2拍（半小節）の言い回し。** モチーフのリズムはここから2つ引いて組み立てる。
+ *
+ * 歌モノのメロディで実際に多いのは「タタ／タタ」（8分4つ）と
+ * 「ター／タタ」（4分＋8分2つ）で、そこへ時々ロングトーンや16分が混ざる、という形。
+ * 初版はモチーフの型を1小節まるごと手書きで並べていたため、この偏りが再現できず、
+ * どの型も同じ確率で出ていた。**言い回しの単位は1小節ではなく2拍**なので、
+ * 2拍で持って組み合わせる。
+ *
+ * 並びの重複がそのまま重み付け。よく使う形ほど多く入れてある。
+ */
+const HALF_BAR_FIGURES: number[][] = [
+	[EIGHTH, EIGHTH, EIGHTH, EIGHTH], // タタタタ
+	[EIGHTH, EIGHTH, EIGHTH, EIGHTH],
+	[EIGHTH, EIGHTH, EIGHTH, EIGHTH],
+	[EIGHTH, EIGHTH, EIGHTH, EIGHTH],
+	[QUARTER, EIGHTH, EIGHTH], // ター・タタ
+	[EIGHTH, EIGHTH, QUARTER], // タタ・ター
+	[DOT_QUARTER, EIGHTH], // 食い（シンコペーション）
+	[DOT_QUARTER, EIGHTH],
+	[EIGHTH, QUARTER, EIGHTH], // 頭抜き
+	[HALF], // ロングトーン
+	// 休符。参考曲の休符率は中央値20%あり、言い回しの側に持たせないと届かない。
+	[-EIGHTH, EIGHTH, EIGHTH, EIGHTH],
+	[EIGHTH, EIGHTH, -EIGHTH, EIGHTH],
+	[QUARTER, -EIGHTH, EIGHTH],
+	[EIGHTH, EIGHTH, EIGHTH, -EIGHTH],
+	[QUARTER, -QUARTER],
+	[-QUARTER, EIGHTH, EIGHTH],
+	// 16分。参考曲は音の20%が16分で、8分に次いで多い。
+	[SIXTEENTH, SIXTEENTH, EIGHTH, EIGHTH, EIGHTH],
+	[SIXTEENTH, SIXTEENTH, EIGHTH, EIGHTH, EIGHTH],
+	[EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH, EIGHTH],
+	[EIGHTH, EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH],
+	[EIGHTH, SIXTEENTH, SIXTEENTH, QUARTER],
+	[SIXTEENTH, SIXTEENTH, SIXTEENTH, SIXTEENTH, EIGHTH, EIGHTH],
+	[EIGHTH, EIGHTH, SIXTEENTH, SIXTEENTH, SIXTEENTH, SIXTEENTH],
+	[SIXTEENTH, SIXTEENTH, EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH],
+	[EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH, -EIGHTH],
+	[-EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH, EIGHTH],
+];
+
+/** 2拍の言い回しを2つ並べて1小節のモチーフを作る。 */
+const buildMotifCells = (): RhythmCell[] => {
+	const unique = HALF_BAR_FIGURES.filter(
+		(f, i) =>
+			HALF_BAR_FIGURES.findIndex((g) => g.join(",") === f.join(",")) === i,
+	);
+	const out: RhythmCell[] = [];
+	for (const a of HALF_BAR_FIGURES)
+		for (const b of unique)
+			out.push({ value: [...a, ...b], density: "medium" });
+	return out;
+};
+
+const HAND_MOTIF_CELLS: RhythmCell[] = [
 	{ value: [QUARTER, EIGHTH, EIGHTH, QUARTER, QUARTER], density: "medium" },
 	{ value: [EIGHTH, EIGHTH, DOT_QUARTER, EIGHTH, QUARTER], density: "medium" },
 	{ value: [QUARTER, QUARTER, EIGHTH, EIGHTH, QUARTER], density: "medium" },
@@ -742,23 +781,19 @@ export const MOTIF_CELLS: RhythmCell[] = [
 		],
 		density: "medium",
 	},
-	// 三連のモチーフ。**モチーフが持たないと曲の顔にならない**——16分のときと
-	// 同じ理由で、リズム型に足すだけでは走句の小節にしか三連が出ない。
-	{
-		value: [
-			QUARTER,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			TRIPLET_EIGHTH,
-			QUARTER,
-			QUARTER,
-		],
-		density: "medium",
-	},
-	{
-		value: [TRIPLET_EIGHTH, TRIPLET_EIGHTH, TRIPLET_EIGHTH, QUARTER, HALF],
-		density: "medium",
-	},
+];
+
+/**
+ * モチーフに使うリズム型。**2拍の言い回し2つで組み立てたもの**（
+ * {@link HALF_BAR_FIGURES}）に、シンコペーション・16分・三連の手書きの型を足したもの。
+ *
+ * 手書きの型だけだった頃は、実際の歌メロで多い「タタタタ」「ター・タタ」と、
+ * それ以外の型が同じ確率で出ていた。言い回しの単位は1小節ではなく2拍なので、
+ * 2拍で持って組み合わせたほうが偏りがそのまま出る。
+ */
+export const MOTIF_CELLS: RhythmCell[] = [
+	...buildMotifCells(),
+	...HAND_MOTIF_CELLS,
 ];
 
 // ============================================================
@@ -850,7 +885,7 @@ type CadenceShape = "descend" | "five-three-one" | "leap-up" | "hold-tonic";
  * **実測でその100%が「前後の小節に16分が無い孤立した小節」**になっていた。
  * 前後と繋がらない場所に細かい音が一度だけ出てくるのは、グルーヴではなく思い付きに聞こえる。
  */
-type Groove = "eighth" | "sixteenth" | "triplet";
+type Groove = "eighth" | "sixteenth";
 
 /**
  * リズム型をグルーヴで絞る。8分の曲からは16分を含む型を丸ごと外し、16分の曲では
@@ -861,34 +896,12 @@ const groovyCells = (
 	groove: Groove,
 	rnd: () => number,
 ): RhythmCell[] => {
-	// 三連は16分の格子に乗らない音価（12の倍数でない）で見分ける。
-	const hasTriplet = (c: RhythmCell): boolean =>
-		c.value.some((v) => Math.abs(v) % SIXTEENTH !== 0);
 	const hasSixteenth = (c: RhythmCell): boolean =>
 		c.value.some((v) => Math.abs(v) <= SIXTEENTH);
-	// **三連も曲の性格。** 16分と同じ理由で、混ぜると音価の種類が増えて
-	// 音価エントロピーが目標帯（参考曲 0.62〜1.18）から上振れし、候補選抜で負ける。
-	// 実際、三連の型を一般のプールへ足しただけの状態では平均が 1.17→1.62 まで上がった。
-	// イーブンの曲からは三連を丸ごと外し、三連の曲からは16分を外す。
-	const even = cells.filter((c) => !hasTriplet(c));
-	if (groove === "triplet") {
-		const withTriplet = cells.filter((c) => hasTriplet(c) && !hasSixteenth(c));
-		if (withTriplet.length === 0) return even;
-		// **三連は「足す」のではなく「置き換える」。** 一般のプールへ混ぜると
-		// 音価の種類が {12,24,36,48,72,96,144,192} に {16,32} が乗るだけになり、
-		// エントロピーが実測 2.09（参考曲の帯は 0.62〜1.18、0点の外側が 1.75）まで
-		// 上振れして候補選抜で必ず負ける。三連の曲では素の音価のほうを
-		// 4分・2分・全音符だけに絞り、付点と8分は三連へ譲る。
-		const plain = new Set<number>([QUARTER, HALF, WHOLE]);
-		const simple = even.filter((c) =>
-			c.value.every((v) => plain.has(Math.abs(v))),
-		);
-		return [...withTriplet, ...withTriplet, ...simple];
-	}
-	if (groove === "eighth") return even.filter((c) => !hasSixteenth(c));
-	const withSixteenth = even.filter(hasSixteenth);
+	if (groove === "eighth") return cells.filter((c) => !hasSixteenth(c));
+	const withSixteenth = cells.filter(hasSixteenth);
 	// 16分の曲でも全部の小節を16分で埋めると息が詰まるので、たまに素の型も通す。
-	return withSixteenth.length > 0 && rnd() < 0.75 ? withSixteenth : even;
+	return withSixteenth.length > 0 && rnd() < 0.75 ? withSixteenth : cells;
 };
 
 /**
@@ -954,6 +967,16 @@ type SubStyle =
  * 曲ごとに1本引く。
  */
 const MOTIF_ARCHETYPES: number[][] = [
+	// --- オクターブを跨ぐ形 ---
+	// 参考曲の隣接音程は**オクターブが17%**を占め、2度に次いで多い。跳躍の後処理で
+	// 混ぜても届かない（実測1%）ので、モチーフの輪郭そのものに持たせる。
+	// 度数はペンタトニックの歩数なので、5歩でちょうど1オクターブ。
+	[0, 5, 4, 3, 2], // オクターブ上へ跳んで降りてくる
+	[0, 5, 0, 5, 0], // オクターブを行き来する
+	[0, 0, 5, 4, 3],
+	[0, -5, 0, 1, 2], // 一度下へ落としてから戻る
+	[5, 4, 0, 1, 0],
+	[0, 1, 5, 4, 3],
 	[0, 1, 2, 3, 2], // 上行して一歩戻る
 	[0, -1, -2, -3, -2], // 下行して一歩戻る
 	[0, 2, 1, 0, -1], // 跳ねてから埋める
@@ -1126,6 +1149,8 @@ const nearestChordTone = (
 /** メロディの音域（半音・MIDIノート番号相当）。C4〜C6あたりに収める。 */
 const MELODY_LOW = 60;
 const MELODY_HIGH = 84;
+/** メロディの音域の中心。大きなうねり（{@link MelodyStyle.arcPeriod}）の基準。 */
+const MELODY_CENTER = (MELODY_LOW + MELODY_HIGH) / 2;
 /** サブメロの音域。メロディの下・ベースの上に置く。 */
 const SUBMELODY_LOW = 55;
 const SUBMELODY_HIGH = 74;
@@ -1166,10 +1191,25 @@ type MelodyStyle = {
 	/** 曲全体の基準音価。16分を使う曲かどうかを曲単位で決める。 */
 	groove: Groove;
 	/**
-	 * スウィング量（0=イーブン、1/3=跳ねる）。**曲単位で決める**——小節ごとに
-	 * 跳ねたり跳ねなかったりするグルーヴは存在しない。
+	 * 大きなうねりの周期（小節）。上げるフレーズと下げるフレーズを交互に置くための、
+	 * 曲全体を貫く音高の波。4なら2小節上げて2小節下げる、8なら4小節ずつ。
 	 */
-	swing: number;
+	arcPeriod: number;
+	/** うねりの位相（小節）。上げから始まるか下げから始まるか。 */
+	arcPhase: number;
+	/** うねりの振幅（半音）。 */
+	arcAmp: number;
+	/** 弱拍でオクターブ跳躍を入れる確率。 */
+	octaveAffinity: number;
+	/**
+	 * モチーフをペンタトニックの度数で組むか。
+	 *
+	 * 解説はどれも「まずペンタトニックに絞れ」と書いているが、**全曲をそれで通すと
+	 * 今度はファ・シが一切出なくなる**（実測でペンタ外が9%、参考曲は23%）。
+	 * 半音の動き（隣接音程の1半音）も一緒に消え、3半音（ペンタトニックの隣どうし）
+	 * ばかりの平坦な線になる。制約は曲単位で掛け、掛けない曲も混ぜる。
+	 */
+	pentatonicMotif: boolean;
 	runShape: RunShape;
 	stepShape: StepShape;
 	holdShape: HoldShape;
@@ -1193,6 +1233,45 @@ type MelodyStyle = {
  * ここではまだ音域も跳躍制限も見ない——形を作るのが仕事で、
  * 整えるのは {@link shapeBar} の役目。
  */
+/**
+ * 跳躍の着地点を探す。**和音の構成音の中からしか選ばない。**
+ *
+ * 解説に共通して書かれている「跳躍進行はコードトーン間（ドソ・ドミ）に限る」の実装。
+ * 3〜9半音（短3度〜長6度）離れた構成音を候補にし、近いものを優先して引く。
+ * 候補が無ければ跳ばない（順次進行のまま）。
+ */
+const leapTarget = (
+	from: number,
+	tones: ChordTone[],
+	rnd: () => number,
+): number | null => {
+	const candidates: number[] = [];
+	for (const tone of tones) {
+		const base = pitchClass(tone.semi);
+		for (let oct = 0; oct <= 10; oct++) {
+			const semi = base + oct * 12;
+			if (semi < MELODY_LOW || semi > MELODY_HIGH) continue;
+			const gap = Math.abs(semi - from);
+			if (gap >= 3 && gap <= MAX_LEAP_SEMITONES) candidates.push(semi);
+		}
+	}
+	if (candidates.length === 0) return null;
+	// **オクターブを厚く引く。** 参考曲の隣接音程はオクターブが17%を占めていて、
+	// 2度の次に多い。この様式の顔になっている跳躍なので、「大跳躍は控えめに」
+	// という一般論のまま近い跳躍だけ引くと再現できない。
+	const octaves = candidates.filter((c) => Math.abs(c - from) === 12);
+	const near = candidates
+		.filter((c) => Math.abs(c - from) < 12)
+		.sort((a, b) => Math.abs(a - from) - Math.abs(b - from));
+	const weighted = [
+		...octaves,
+		...octaves,
+		...octaves,
+		...near.slice(0, Math.max(2, Math.ceil(near.length / 2))),
+	];
+	return pick(weighted.length > 0 ? weighted : candidates, rnd);
+};
+
 const barDegrees = (
 	role: BarRole,
 	slots: Slot[],
@@ -1217,14 +1296,30 @@ const barDegrees = (
 		// モチーフの輪郭をそのまま乗せる。sequence は音程ごとずらし、climax は
 		// 1オクターブ上げる——「同じ型に別の音を当てはめる」のではなく
 		// 「同じアイデアを別の文脈で置き直す」のが狙い。
+		// **モチーフはペンタトニックの度数で組み立てる。** ダイアトニックの度数で
+		// 輪郭を持つと「1つ上」がミ→ファ（半音）にもなり、移調するたびに
+		// ファやシが紛れ込んで、モチーフが歌えない形へ化ける。
+		// セクエンツもオクターブ上げも、ペンタトニックの歩数で数える。
 		const shift =
 			(role === "sequence"
-				? pick([-2, -1, 1, 2, 3], rnd)
+				? pick([-2, -1, 1, 2], rnd)
 				: role === "climax"
-					? 7
+					? 5 // ペンタトニックの5歩＝1オクターブ
 					: 0) + repeatShift;
-		for (let i = 0; i < noteCount; i++)
-			out.push(startDegree + shift + motifContour[i % motifContour.length]);
+		if (style.pentatonicMotif) {
+			const startPenta = degreeToPenta(startDegree);
+			for (let i = 0; i < noteCount; i++)
+				out.push(
+					pentaToDegree(
+						startPenta + shift + motifContour[i % motifContour.length],
+					),
+				);
+		} else {
+			// ダイアトニックで組む曲。ファ・シが輪郭の中に入るので、
+			// 半音の動きと、ペンタトニックでは出ない2度の並びが出る。
+			for (let i = 0; i < noteCount; i++)
+				out.push(startDegree + shift + motifContour[i % motifContour.length]);
+		}
 		return out;
 	}
 
@@ -1351,8 +1446,16 @@ const barDegrees = (
 		if (slots[i].isStrong) continue;
 		if (slots[i].value >= quarterSteps) {
 			// 長い音 → 跳躍。直後は shapeBar の gap fill が反行の順次進行で埋める。
-			if (rnd() < style.leapAffinity)
-				out[i] = out[i - 1] + pick([-5, -4, -3, 3, 4, 5], rnd);
+			//
+			// **跳ぶ先は和音の構成音に限る。** 解説はどれも「跳躍進行はコードトーン間
+			// （ドソ・ドミ）に限れ、無作為な音飛びはしない」と書いている。度数を
+			// 適当に足していた頃は、和音と関係ない音へ跳んで着地するので、
+			// 跳躍のたびに調子外れに聞こえていた。
+			if (rnd() < style.leapAffinity) {
+				const from = degreeToPitch(out[i - 1]).semi;
+				const target = leapTarget(from, tones, rnd);
+				if (target !== null) out[i] = semitoneToDegree(target);
+			}
 			continue;
 		}
 		// 短い音 → 順次進行、または同音連打。
@@ -1390,11 +1493,19 @@ const fitMotif = (
 	tones: ChordTone[],
 	prevSemi: number,
 	quarterSteps: number,
+	/** ペンタトニックの歩数で移調するか。ダイアトニックで組んだモチーフには掛けない。 */
+	pentatonic: boolean,
 ): number[] => {
 	let best = degrees;
 	let bestScore = Number.NEGATIVE_INFINITY;
-	for (let shift = -4; shift <= 4; shift++) {
-		const moved = degrees.map((d) => d + shift);
+	// ペンタトニックで組んだモチーフは**ペンタトニックの歩数**で移調する。
+	// ダイアトニックの度数で ±1 するとミ→ファのような半音移動が混ざり、輪郭が崩れる。
+	// 逆に、ダイアトニックで組んだモチーフをペンタトニックの歩数で動かすと、
+	// せっかく輪郭に入れたファ・シがその場で潰れる（実測でペンタ外が9%から動かなかった）。
+	for (let shift = -3; shift <= 3; shift++) {
+		const moved = degrees.map((d) =>
+			pentatonic ? pentaToDegree(degreeToPenta(d) + shift) : d + shift,
+		);
 		let score = 0;
 		for (let i = 0; i < moved.length; i++) {
 			const semi = clampSemi(
@@ -1431,6 +1542,9 @@ const shapeBar = (
 		allowLeap: boolean;
 		allowArpeggio: boolean;
 		quarterSteps: number;
+		/** 弱拍でオクターブ跳躍を入れる確率。 */
+		octaveAffinity: number;
+		rnd: () => number;
 		/**
 		 * モチーフの輪郭をそのまま鳴らす。
 		 *
@@ -1447,8 +1561,23 @@ const shapeBar = (
 	const out: number[] = [];
 	let prev = prevSemi;
 	if (opts.preserveContour) {
-		for (const degree of degrees)
-			out.push(clampSemi(degreeToPitch(degree).semi, MELODY_LOW, MELODY_HIGH));
+		// **音域へは塊ごと収める。** 1音ずつ折り返すと、オクターブ跳躍のように
+		// 音域の端をまたぐ動きがその場で潰れ、跳んだ先が跳ぶ前と同じ音になる
+		// （実測でオクターブの隣接音程が 4% 止まりだった原因）。輪郭を保つのが
+		// この分岐の役目なので、収める操作も輪郭を壊さない形で行う。
+		const raw = degrees.map((d) => degreeToPitch(d).semi);
+		const lo = Math.min(...raw);
+		const hi = Math.max(...raw);
+		let shift = 0;
+		while (lo + shift < MELODY_LOW) shift += 12;
+		while (hi + shift > MELODY_HIGH) shift -= 12;
+		// 塊が音域より広いときだけ、はみ出した音を1つずつ折り返す。
+		for (const semi of raw)
+			out.push(
+				semi + shift >= MELODY_LOW && semi + shift <= MELODY_HIGH
+					? semi + shift
+					: clampSemi(semi + shift, MELODY_LOW, MELODY_HIGH),
+			);
 		return out;
 	}
 	for (let i = 0; i < degrees.length; i++) {
@@ -1490,13 +1619,98 @@ const shapeBar = (
 		out.push(semi);
 		prev = semi;
 	}
+	applyPentatonic(out, slots, tones, prevSemi, opts.quarterSteps / 2);
+	applyOctaveJumps(out, slots, opts.octaveAffinity, opts.rnd);
 	return out;
+};
+
+/**
+ * オクターブの跳ね上げ／落とし。
+ *
+ * 参考曲の隣接音程は**オクターブが17%**を占め、2度に次いで多い。
+ * 「細かくジグザグ動かしながら大きな周期で上下する」というこの様式の動きは、
+ * なめらかに移調するのではなく**オクターブで飛ぶ**ことで作られている。
+ *
+ * **音域へ畳み込んだ後に入れる。** 度数の段階で足すと、跳んだ先が音域の外に出て
+ * その場で1オクターブ折り返され、跳ぶ前と同じ音に潰れる（実測でオクターブの
+ * 隣接音程が5%止まりだった原因）。オクターブ移動は音名を変えないので、
+ * 和音との関係も強拍の着地も壊さない。
+ */
+const applyOctaveJumps = (
+	out: number[],
+	slots: Slot[],
+	affinity: number,
+	rnd: () => number,
+): void => {
+	// 小節の最後の音は動かさない。オクターブ移動は「直前の音の1オクターブ上下」へ
+	// 置き換える操作なので、終止の音に掛けると**主音でなくなる**（実測で200曲中4曲、
+	// 終止が主音から外れた）。次の小節へのつなぎにもなる音なので触らない。
+	for (let i = 1; i < out.length - 1; i++) {
+		if (slots[i].isStrong) continue;
+		if (rnd() >= affinity) continue;
+		const from = out[i - 1];
+		const up = from + 12;
+		const down = from - 12;
+		const canUp = up <= MELODY_HIGH;
+		const canDown = down >= MELODY_LOW;
+		if (!canUp && !canDown) continue;
+		out[i] = canUp && (!canDown || rnd() < 0.5) ? up : down;
+	}
+};
+
+/**
+ * ペンタトニックの外の音（ファ・シ）を整理する。
+ *
+ * 歌メロの解説はどれも「まずペンタトニックに絞れ、ファとシはクセが強いので
+ * **前後を順次進行で挟むときだけ**通せ」と言う。生成物はここを一切見ておらず、
+ * 7音を無差別に使っていたため、和音の上を移動しているだけで**歌のメロディに
+ * 聞こえない**という状態になっていた。
+ *
+ * 残してよいのは次のどちらか。それ以外は隣のペンタトニック音へ逃がす。
+ *
+ * - その瞬間の和音の構成音（F の上のファ、G7 の上のシは和音の芯なので当然よい）
+ * - 前からも次へも順次進行で出入りしている（経過音・刺繍音として通り過ぎるだけ）
+ *
+ * 逃がす向きは**輪郭を壊さない方**を選ぶ。前の音と同じ高さになる向きは避ける。
+ */
+const applyPentatonic = (
+	out: number[],
+	slots: Slot[],
+	tones: ChordTone[],
+	prevSemi: number,
+	shortSteps: number,
+): void => {
+	for (let i = 0; i < out.length; i++) {
+		const semi = out[i];
+		if (!isNonPentatonic(semi)) continue;
+		// 和音構成音なら触らない。
+		if (tones.some((t) => pitchClass(t.semi) === pitchClass(semi))) continue;
+		const before = i === 0 ? prevSemi : out[i - 1];
+		const after = i + 1 < out.length ? out[i + 1] : null;
+		const inByStep = Math.abs(semi - before) <= STEP_SEMITONES;
+		const outByStep =
+			after !== null && Math.abs(after - semi) <= STEP_SEMITONES;
+		// **順次で入るか順次で出るか、どちらかを満たせば通す。** 両方を要求すると
+		// ファ・シが実測7%まで減り、参考曲の23%に遠く届かない。半音の動きも
+		// 一緒に消えてしまう（隣接音程の1半音が 9%→3% に落ちていた）。
+		if (inByStep || outByStep) continue;
+		// 短い弱拍の音は通り過ぎるだけなので、そのまま通す。ここまで縛ると
+		// 「ペンタトニックをなぞるだけ」になって、今度は別の単調さが出る。
+		if (!slots[i].isStrong && slots[i].value <= shortSteps) continue;
+		const up = clampSemi(walk(semi, 1), MELODY_LOW, MELODY_HIGH);
+		const down = clampSemi(walk(semi, -1), MELODY_LOW, MELODY_HIGH);
+		// ファの隣はミとソ、シの隣はラとド。どちらもペンタトニックの音になる。
+		const score = (s: number): number =>
+			(isNonPentatonic(s) ? -4 : 0) +
+			toneWeight(s, tones) +
+			(s === before ? -3 : 0) +
+			(after !== null ? -Math.abs(after - s) / 12 : 0);
+		out[i] = score(down) >= score(up) ? down : up;
+	}
 };
 
 /** 1回分の draw。点数を付けるのは呼び出し側（{@link evaluate}）の仕事。 */
 type Draw = Omit<ComposeResult, "stats" | "drums"> & {
-	/** この候補のスウィング量。ドラムの型を合わせるのに要る。 */
-	swing: number;
 	melodyDurations: number[];
 	restSteps: number;
 	totalSteps: number;
@@ -1507,106 +1721,6 @@ type Draw = Omit<ComposeResult, "stats" | "drums"> & {
 	/** 小節ごとの緊張度（0〜1）。{@link tensionFeatures} の材料。 */
 	barTension: number[];
 	stepsPerBar: number;
-};
-
-/**
- * フレーズの息をつなぐ。リズム型は1小節ぶんで閉じているので、そのまま並べると
- * **小節線をまたぐ音が1つも出ない**（実測 0.0%、参考曲は平均3.5%・最大32%）。
- * 呼吸が必ず1小節周期でリセットされるのが、打ち込みらしさとして一番耳に残る。
- *
- * 2つの操作で境目だけをつなぎ直す。どちらも**音数も総時間も変えない**ので、
- * 休符率や音価の分布を壊さずに構造だけが変わる。
- *
- * - **弱起（アウフタクト）** … フレーズ頭の音を8分だけ前へ出し、前の小節の最後の音を
- *   そのぶん短くする。フレーズが小節線の手前から歌い出す形になる。
- * - **タイ** … フレーズの途中の小節線で、前の小節の最後の音を次の小節へ伸ばし、
- *   次の小節の頭の音を吸収する。伸ばした音がそのまま小節線をまたぐ。
- */
-export const applyPhrasing = (
-	melody: ComposedNote[],
-	opts: { stepsPerBar: number; bars: number; rnd: () => number },
-): void => {
-	const { stepsPerBar, bars, rnd } = opts;
-	const eighth = Math.max(1, Math.round(stepsPerBar / 8));
-	/** 小節線 `bar` の直前・直後の音。間に休符があるときは対象にしない。 */
-	const pairAt = (bar: number): [ComposedNote, ComposedNote] | null => {
-		const at = bar * stepsPerBar;
-		const i = melody.findIndex((n) => n.startStep >= at);
-		if (i <= 0) return null;
-		const a = melody[i - 1];
-		const c = melody[i];
-		if (a.startStep + a.durationSteps !== at || c.startStep !== at) return null;
-		return [a, c];
-	};
-
-	// フレーズの頭（2小節・4小節の切れ目）へ弱起を入れる。全部に入れると
-	// 「毎回食っている」だけになるので、曲ごとに引いた切れ目にだけ入れる。
-	const heads = [2, 4, 6, 8, 10, 12, 14].filter(() => rnd() < 0.6);
-	if (heads.length === 0) heads.push(rnd() < 0.5 ? 4 : 8);
-	for (const bar of heads) {
-		if (bar >= bars) continue;
-		const pair = pairAt(bar);
-		if (!pair) continue;
-		const [a, c] = pair;
-		// 前の音を削りすぎない（1ステップ以上残す）。
-		if (a.durationSteps <= eighth) continue;
-		a.durationSteps -= eighth;
-		c.startStep -= eighth;
-		// 終わりは動かさない。こうすると後ろの音に一切影響しない。
-		c.durationSteps += eighth;
-	}
-
-	// フレーズの途中の小節線にタイを掛ける。多用すると音数が減って間延びするので、
-	// 1曲に0〜2箇所まで。
-	const ties = [1, 3, 5, 7, 9, 11, 13]
-		.filter((b) => !heads.includes(b) && b < bars)
-		.filter(() => rnd() < 0.25)
-		.slice(0, 2);
-	for (const bar of ties) {
-		const pair = pairAt(bar);
-		if (!pair) continue;
-		const [a, c] = pair;
-		const i = melody.indexOf(c);
-		// 吸収する音は短いものだけ。長い音を消すとフレーズの形が変わってしまう。
-		if (c.durationSteps > eighth) continue;
-		a.durationSteps += c.durationSteps;
-		melody.splice(i, 1);
-	}
-};
-
-/**
- * スウィング。拍の裏（8分の「ウラ」）を後ろへずらして跳ねさせる。
- *
- * 8分を3等分の 2:1 に配分するのが基本の形で、192ステップの小節なら
- * 24（ウラの位置）→32 になる。**16分の格子から外れた位置**なので、
- * これが無いと生成物の格子外の音は0%のままになる。
- *
- * 音の終わりは動かさず、直前の音を伸ばして帳尻を合わせるので、総時間は変わらない。
- */
-export const applySwing = (
-	melody: ComposedNote[],
-	stepsPerBar: number,
-	amount: number,
-): number => {
-	const quarter = stepsPerBar / 4;
-	const eighth = quarter / 2;
-	const shift = Math.round(eighth * amount);
-	if (shift < 1) return 0;
-	let moved = 0;
-	for (let i = 1; i < melody.length; i++) {
-		const n = melody[i];
-		const prev = melody[i - 1];
-		// 拍のウラ（8分の裏）に、ちょうど乗っている音だけを動かす。
-		if (n.startStep % quarter !== eighth) continue;
-		// ずらすと音が消えるほど短い音、直前と間が空いている音は触らない。
-		if (n.durationSteps <= shift) continue;
-		if (prev.startStep + prev.durationSteps !== n.startStep) continue;
-		prev.durationSteps += shift;
-		n.startStep += shift;
-		n.durationSteps -= shift;
-		moved++;
-	}
-	return moved;
 };
 
 const draw = (options: ComposeOptions, rnd: () => number): Draw => {
@@ -1687,12 +1801,12 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		return null;
 	};
 	const style: MelodyStyle = {
-		groove: pick<Groove>(
-			["eighth", "eighth", "sixteenth", "sixteenth", "triplet"],
-			rnd,
-		),
-		// 跳ねる曲は4曲に1曲くらい。全曲が跳ねると今度はそれが単調になる。
-		swing: rnd() < 0.25 ? 1 / 3 : 0,
+		groove: pick<Groove>(["eighth", "sixteenth"], rnd),
+		arcPeriod: pick([4, 8, 8, 16], rnd),
+		arcPhase: pick([0, 1, 2], rnd),
+		arcAmp: 3 + rnd() * 4,
+		octaveAffinity: 0.14 + rnd() * 0.2,
+		pentatonicMotif: rnd() < 0.55,
 		runShape: pick<RunShape>(["scale", "turn", "broken", "zigzag"], rnd),
 		stepShape: pick<StepShape>(
 			["arch", "valley", "ascend", "descend", "wave", "pivot"],
@@ -1901,8 +2015,19 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		// （実測で {@link TensionFeatures.rise} が 0.1 前後に張り付いていた）。
 		const isSectionB = bar >= 8 && bar < 12;
 		const headWeight: 2 | 3 = isSectionB ? 2 : style.barHeadWeight;
+		// **大きな周期で上下させる。** 直前の音の近くへ着地させるだけだと、細かい
+		// ジグザグはあっても曲全体では同じ高さをうろつき続ける（「津軽三味線」の
+		// ように細かく動いているだけで、上げるフレーズ・下げるフレーズの交代が無い）。
+		// 上げるメロディと下げるメロディを交互に置く、というのが歌モノの定石なので、
+		// 小節ごとの目標の高さを曲単位の周期で振り、そこへ引き寄せる。
+		const arc = Math.sin(
+			((bar + style.arcPhase) / style.arcPeriod) * Math.PI * 2,
+		);
+		const arcCenter = MELODY_CENTER + arc * style.arcAmp;
+		// 直前の音と目標の中間へ寄せる（いきなり飛ばず、数小節かけて上下する）。
+		const headTarget = prevSemi + (arcCenter - prevSemi) * 0.5;
 		const headSemi = nearestChordTone(
-			prevSemi,
+			headTarget,
 			tones,
 			headWeight,
 			isSectionB,
@@ -1949,7 +2074,14 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 			role === "climax";
 		const pitches = shapeBar(
 			isMotifBar
-				? fitMotif(degrees, slots, tones, prevSemi, quarterSteps)
+				? fitMotif(
+						degrees,
+						slots,
+						tones,
+						prevSemi,
+						quarterSteps,
+						style.pentatonicMotif,
+					)
 				: degrees,
 			slots,
 			tones,
@@ -1961,6 +2093,11 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 					(role === "run" && style.runShape === "broken") ||
 					(role === "cadence" && style.cadenceShape !== "descend"),
 				quarterSteps,
+				// モチーフの小節はオクターブ移動を入れない。モチーフは輪郭が命なので、
+				// 後から音を1つ跳ばすと「同じフレーズが返ってきた」と分からなくなる。
+				// モチーフ側は {@link MOTIF_ARCHETYPES} が自前でオクターブを持つ。
+				octaveAffinity: isMotifBar ? 0 : style.octaveAffinity,
+				rnd,
 				preserveContour: isMotifBar,
 			},
 		);
@@ -2276,19 +2413,11 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		for (const n of barBass) bass.push(n);
 	}
 
-	// --- ④小節で閉じたリズムを、フレーズとしてつなぎ直す ---
-	// ここまでの melody は「1小節ぶんのリズム型」を並べたものなので、**小節線をまたぐ音が
-	// 1つも無い**。参考曲は平均3.5%（最大32%）がまたいでいて、呼吸が1小節周期でリセット
-	// されないのはここが理由。音数も総時間も変えずに、境目だけをつなぎ直す。
-	applyPhrasing(melody, { stepsPerBar, bars: BARS, rnd });
-	// 跳ねる曲でも、拍のウラに乗った音が1つも無ければ実際には何も動かない。
-	// そのときは「跳ねていない曲」として扱う——そうしないと、イーブンな
-	// メロディにシャッフルのドラムだけが当たって喧嘩する（実測 15曲中3曲）。
-	const swung =
-		style.swing > 0 ? applySwing(melody, stepsPerBar, style.swing) > 0 : false;
-	// 音価は上の2つで変わるので、検算に使う配列を作り直す。
-	melodyDurations.length = 0;
-	for (const n of melody) melodyDurations.push(n.durationSteps);
+	// **後処理で小節線をまたがせない。** 一時期ここで弱起とタイを入れていたが、
+	// 参考にした曲を 192ステップの格子へ量子化して測り直すと、**小節線をまたぐ音も
+	// 16分格子から外れる音も、どちらも中央値0%**だった。以前「またぎ3.5%・格子外24%」
+	// と読んだのは、量子化せずに生のtickで測っていたためで、演奏上の微妙なズレと
+	// tickの丸めを拾っていただけだった。この様式のメロディは格子の上に乗っている。
 
 	/** ノート列が使った音域（半音）。 */
 	const range = (notes: ComposedNote[]): number => {
@@ -2308,7 +2437,6 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		chordPattern,
 		rootShift,
 		bpm,
-		swing: swung ? style.swing : 0,
 		melody,
 		submelody,
 		bass,
@@ -2450,7 +2578,6 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	const count = Math.max(1, options.drawCount ?? DRAW_COUNT);
 
 	let best: ComposeResult | null = null;
-	let bestSwing = 0;
 	let bestScore = Number.NEGATIVE_INFINITY;
 	let bestIsValid = false;
 	let rejected = 0;
@@ -2464,7 +2591,6 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 		if (!better) continue;
 		bestScore = stats.score;
 		bestIsValid = ok;
-		bestSwing = d.swing;
 		best = {
 			// ドラムは勝った候補にだけ後から付ける（メロディに依存しないので
 			// 候補ごとに引いても採点は動かず、40本ぶん無駄になる）。
@@ -2488,7 +2614,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 		bars: BARS,
 		stepsPerBar: options.stepsPerBar,
 		rnd,
-		style: pickDrumStyle(result, bestSwing, rnd),
+		style: pickDrumStyle(result, rnd),
 	});
 	return result;
 };
@@ -2500,11 +2626,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
  * いない**と目も当てられない（16分で走るメロディにバラードのドラム、など）。
  * テンポと刻みの細かさから絞ってから引く。
  */
-const pickDrumStyle = (
-	song: ComposeResult,
-	swing: number,
-	rnd: () => number,
-): DrumStyle => {
+const pickDrumStyle = (song: ComposeResult, rnd: () => number): DrumStyle => {
 	const eighth = BASE_STEPS_PER_BAR / 8;
 	const short =
 		song.melody.filter((n) => n.durationSteps <= eighth).length /
@@ -2512,9 +2634,9 @@ const pickDrumStyle = (
 	// 跳ねているメロディにイーブンのドラムを当てると両方が喧嘩する。ここは
 	// ノートから推測せず生成時の値をそのまま使う——三連を含む曲のオンセットは
 	// 拍のウラと見分けが付かず、推測にすると全曲がシャッフルになった。
-	// **シャッフルはここでしか出さない。** 抽選プールにも入れていたせいで、
-	// イーブンなメロディの上で三連のハイハットが鳴る曲が出ていた（実測 42曲中21曲）。
-	if (swing > 0) return "shuffle";
+	// **シャッフルは出さない。** メロディがイーブン（16分格子の上）なので、
+	// ドラムだけ三連で跳ねると喧嘩する。参考曲を量子化して測ると、この様式の
+	// メロディは格子から外れないので、跳ねるドラムを当てる根拠が無い。
 	const pool: DrumStyle[] =
 		song.bpm >= 150
 			? ["four", "rock", "sixteen"]
