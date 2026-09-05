@@ -36,6 +36,108 @@
 const CURVE_SAMPLES = 1024;
 
 /**
+ * 1音の振幅エンベロープの型。**「どんな装置を通すか」（{@link InstrumentTone}）とは
+ * 別軸**で、「音がどう始まってどう消えるか」を決める。
+ *
+ * - `bass` … 次の音までに必ず消す。締まった低音の条件。
+ * - `pluck` … 撥弦・打弦・打撃（ピアノ／ギター／ハープ／ティンパニ／民族楽器）。
+ *   **サンプル自身が減衰を持っている**ので、エンベロープ側では減衰させず
+ *   （サステインをほぼ1に保つ）、離鍵後の尾ひれだけ短く切る。ここを下げると
+ *   サンプルの減衰と二重に掛かって痩せる。
+ * - `organ` … トーンホイール／パイプオルガン。**鍵を離した瞬間に止まる**のが
+ *   この楽器の音の特徴で、余韻を残すとオルガンに聞こえなくなる。
+ * - `sustain` … 弓・管・声。鳴らし続ける音。
+ * - `pad` … シンセパッド／FX。ゆっくり立ち上がって長く残るのが役割。
+ */
+export type EnvKind = "bass" | "pluck" | "organ" | "sustain" | "pad";
+
+/**
+ * ベロシティ→音色（明るさ）の対応カーブ。
+ *
+ * - `default` … 線形。鍵盤・シンセなど。
+ * - `bass` … 下限を大きく下げた対数。弱く弾いた音を確実に暗くして、ゴースト／
+ *   デッドノートを表現できるようにする。
+ * - `wind` … 金管・木管。**息の強さで音色が最も変わる**楽器群で、市販の管楽器音源
+ *   （SWAM等の物理モデリング）が表現力の中心に据えているのもここ。弱奏で丸く、
+ *   強奏で開くカーブにする。
+ */
+export type BrightnessCurve = "default" | "bass" | "wind";
+
+/**
+ * GM楽器の「鳴らし方」。プログラム番号から引く（{@link playStyleForProgram}）。
+ */
+export type PlayStyle = {
+	env: EnvKind;
+	/**
+	 * ロングトーンに自動ビブラート（ピッチLFO）を掛けてよいか。
+	 *
+	 * **奏者が発音中にピッチを連続的に動かせる楽器だけ true**。ピアノ・鉄琴・ハープ・
+	 * オルガン・撥弦楽器は、鳴り始めたら物理的にピッチを変えられないので、掛けると
+	 * 単に音痴に聞こえる。改修前は「ベース以外の全楽器」に掛かっていた。
+	 * 和音で鳴らすことが前提の楽器（ギター・パッド）も、全声部が同位相で揺れて
+	 * うねるため対象外にする。
+	 */
+	vibrato: boolean;
+	brightness: BrightnessCurve;
+};
+
+/** 種別が判定できないときの既定。 */
+export const DEFAULT_PLAY_STYLE: PlayStyle = {
+	env: "sustain",
+	vibrato: false,
+	brightness: "default",
+};
+
+/**
+ * GMプログラム番号 → 鳴らし方。GMの並びは同じ族が8個ずつ並んでいるが、
+ * **族の中に例外が混ざっている**ので範囲だけで括ると事故る。実際に例外なのは
+ * ピチカート(45)・ティンパニ(47)・オーケストラヒット(55)・ハープ(46)——
+ * 弦楽器の族に居ながら減衰する楽器——と、民族楽器の族に居る
+ * バグパイプ(109)・フィドル(110)・チャルメラ(111)（こちらは逆に持続する楽器）。
+ */
+export const playStyleForProgram = (program: number): PlayStyle => {
+	const pluck: PlayStyle = {
+		env: "pluck",
+		vibrato: false,
+		brightness: "default",
+	};
+	const bass: PlayStyle = { env: "bass", vibrato: false, brightness: "bass" };
+	const organ: PlayStyle = {
+		env: "organ",
+		vibrato: false,
+		brightness: "default",
+	};
+	const blown: PlayStyle = {
+		env: "sustain",
+		vibrato: true,
+		brightness: "wind",
+	};
+	const bowed: PlayStyle = {
+		env: "sustain",
+		vibrato: true,
+		brightness: "default",
+	};
+	const pad: PlayStyle = { env: "pad", vibrato: false, brightness: "default" };
+
+	if (program <= 15) return pluck; // ピアノ・鉄琴系（打鍵・打撃）
+	if (program <= 20) return organ; // ドローバー〜リードオルガン
+	if (program <= 23) return bowed; // アコーディオン・ハーモニカ（奏者が揺らせる）
+	if (program <= 31) return pluck; // ギター
+	if (program <= 39) return bass; // ベース
+	if (program <= 44) return bowed; // ヴァイオリン〜トレモロ弦
+	if (program <= 47) return pluck; // ピチカート・ハープ・ティンパニ
+	if (program === 55) return pluck; // オーケストラヒット
+	if (program <= 54) return bowed; // 弦アンサンブル・合唱
+	if (program <= 79) return blown; // 金管・木管・笛
+	if (program <= 87) return bowed; // シンセリード（単音で揺らす前提）
+	if (program <= 103) return pad; // シンセパッド・FX
+	if (program <= 108) return pluck; // シタール〜カリンバ
+	if (program <= 111) return blown; // バグパイプ・フィドル・チャルメラ
+	if (program <= 119) return pluck; // 打楽器系
+	return DEFAULT_PLAY_STYLE; // 効果音
+};
+
+/**
  * トラックへ挿す音作りの種別。GMプログラム番号から決める（{@link toneForProgram}）。
  *
  * - `bass` … パラレル・サチュレーション。
@@ -68,9 +170,9 @@ export const toneForProgram = (program: number): InstrumentTone => {
 	if (program === 29 || program === 30) return "guitar-drive";
 	if (program === 26 || program === 27 || program === 28 || program === 31)
 		return "guitar-clean";
-	// アコギ（24-25）・ハープ（46）・バンジョー/三味線/琴/カリンバ（105-108）。
+	// アコギ（24-25）・ハープ（46）・シタール〜カリンバ（104-108）。
 	if (program === 24 || program === 25 || program === 46) return "acoustic";
-	if (program >= 105 && program <= 108) return "acoustic";
+	if (program >= 104 && program <= 108) return "acoustic";
 	return "none";
 };
 

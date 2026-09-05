@@ -2,7 +2,14 @@
  * @credits rpgen3 https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont.mjs (MIT)
  * https://github.com/surikov/webaudiofontdata/
  */
-import { type InstrumentTone, toneForProgram } from "../amp-sim";
+import {
+	DEFAULT_PLAY_STYLE,
+	type EnvKind,
+	type InstrumentTone,
+	type PlayStyle,
+	playStyleForProgram,
+	toneForProgram,
+} from "../amp-sim";
 import { getScript } from "./import";
 
 type Zone = {
@@ -25,19 +32,6 @@ type Zone = {
 		src: { loop: boolean; loopStart?: number; loopEnd?: number };
 	};
 };
-
-/**
- * エンベロープの型。**音作りの種別（{@link InstrumentTone}）とは別軸**で決める——
- * 「アンプを通すか」と「音がどう減衰するか」は本来無関係で、たとえばアコギと
- * ピアノは通す装置は違わない（どちらも素通し）が、どちらも撥弦・打弦で減衰する。
- *
- * - `bass` … 次の音までに必ず消す。締まった低音の条件。
- * - `pluck` … 撥弦・打弦・撥音（ピアノ／ギター／ハープ／民族楽器）。**サンプル自身が
- *   減衰を持っている**ので、エンベロープ側では減衰させず（サステインをほぼ1に保つ）、
- *   離鍵後の尾ひれだけ短く切る。ここを下げるとサンプルの減衰と二重に掛かって痩せる。
- * - `sustain` … 弓・管・オルガン・パッド。鳴らし続ける音なので余韻も長めに残す。
- */
-type EnvKind = "bass" | "pluck" | "sustain";
 
 /** 1音の振幅エンベロープ（アタックは全楽器共通なので持たない）。 */
 type Envelope = {
@@ -64,11 +58,20 @@ export class SoundFont {
 	// ファミリごとに変える。
 	/** アタック（無音からピークまで）秒。クリック防止の最小限。全楽器共通。 */
 	static attackSec = 0.005;
-	/** 減衰の型ごとのエンベロープ。 */
+	/**
+	 * 減衰の型ごとのエンベロープ。
+	 *
+	 * `organ` のリリースが極端に短いのは、鍵を離した瞬間に音が止まるのが
+	 * トーンホイールオルガンの音の特徴そのものだから（市販のオルガン音源が
+	 * キークリックまで再現するのと同じ理由で、ここは長くしてはいけない）。
+	 * 逆に `pad` は長く残すのが役割なので、リリースを他の倍以上取る。
+	 */
 	static envelopes: Record<EnvKind, Envelope> = {
 		bass: { decaySec: 0.06, sustain: 0.9, releaseSec: 0.12 },
 		pluck: { decaySec: 0.1, sustain: 0.95, releaseSec: 0.18 },
-		sustain: { decaySec: 0.15, sustain: 0.85, releaseSec: 0.35 },
+		organ: { decaySec: 0.02, sustain: 1, releaseSec: 0.05 },
+		sustain: { decaySec: 0.15, sustain: 0.9, releaseSec: 0.3 },
+		pad: { decaySec: 0.2, sustain: 0.95, releaseSec: 0.8 },
 	};
 
 	// ── ヒューマナイズ（疑似ラウンドロビン）──
@@ -130,6 +133,14 @@ export class SoundFont {
 	 */
 	static bassBrightnessMinHz = 500;
 	static bassBrightnessMaxHz = 14000;
+	/**
+	 * 金管・木管用のカーブ。息の強さで音色が最も変わる楽器群なので、ベースと同じく
+	 * 対数補間にして弱奏側の変化を大きく取る。物理モデリングの管楽器音源が
+	 * 表現力の中心に「息の強さ→音色」を置いているのと同じ狙い（あちらはCC11で
+	 * 連続的に動かすが、こちらはノートのベロシティで1音ごとに決める）。
+	 */
+	static windBrightnessMinHz = 900;
+	static windBrightnessMaxHz = 16000;
 
 	// ── ロングトーン用ビブラート(ピッチLFO) ──
 	// 伸ばす音が完全に静止していると不自然に聞こえるため、一定長以上持続する
@@ -184,7 +195,7 @@ export class SoundFont {
 			if (SoundFont.ch < ch) SoundFont.ch = ch;
 			fonts.set(
 				fontName,
-				new SoundFont(zones, ch, isDrum, toneOf(fontName), envKindOf(fontName)),
+				new SoundFont(zones, ch, isDrum, toneOf(fontName), styleOf(fontName)),
 			);
 		}
 		const result = fonts.get(fontName);
@@ -202,8 +213,11 @@ export class SoundFont {
 		 * チャンネルストリップへ挿す段（ベースの歪み／ギターのキャビ）にも使う。
 		 */
 		public tone: InstrumentTone = "none",
-		/** 減衰の型。エンベロープの選択に使う（{@link SoundFont.envelopes}）。 */
-		public envKind: EnvKind = "sustain",
+		/**
+		 * 鳴らし方（エンベロープ／自動ビブラートの可否／ベロシティ→明るさのカーブ）。
+		 * GMプログラム番号から引く。
+		 */
+		public style: PlayStyle = DEFAULT_PLAY_STYLE,
 	) {}
 
 	play({
@@ -291,18 +305,25 @@ export class SoundFont {
 				0,
 			);
 		} else if (filter) {
-			// ベースだけは下限を下げた対数カーブ。弱く弾いた音がきちんと暗くなる
-			// （＝ゴースト／デッドノートが表現できる）ようにするため。
-			const isBass = this.tone === "bass";
-			const minHz = isBass
-				? SoundFont.bassBrightnessMinHz
-				: SoundFont.brightnessMinHz;
-			const maxHz = isBass
-				? SoundFont.bassBrightnessMaxHz
-				: SoundFont.brightnessMaxHz;
-			const base = isBass
-				? minHz * (maxHz / minHz) ** brightness
-				: minHz + (maxHz - minHz) * brightness;
+			// ベース・管楽器は下限を下げた対数カーブ。弱く吹いた／弾いた音がきちんと
+			// 暗くなり、ゴーストノートや弱奏のニュアンスが表現できるようにするため。
+			const curve = this.style.brightness;
+			const minHz =
+				curve === "bass"
+					? SoundFont.bassBrightnessMinHz
+					: curve === "wind"
+						? SoundFont.windBrightnessMinHz
+						: SoundFont.brightnessMinHz;
+			const maxHz =
+				curve === "bass"
+					? SoundFont.bassBrightnessMaxHz
+					: curve === "wind"
+						? SoundFont.windBrightnessMaxHz
+						: SoundFont.brightnessMaxHz;
+			const base =
+				curve === "default"
+					? minHz + (maxHz - minHz) * brightness
+					: minHz * (maxHz / minHz) ** brightness;
 			const jitter =
 				1 + (Math.random() * 2 - 1) * SoundFont.brightnessJitterRatio;
 			filter.type = "lowpass";
@@ -317,7 +338,7 @@ export class SoundFont {
 		g.gain.setValueAtTime(0, startGainTime);
 
 		const env =
-			SoundFont.envelopes[this.envKind] ?? SoundFont.envelopes.sustain;
+			SoundFont.envelopes[this.style.env] ?? SoundFont.envelopes.sustain;
 		// ループしないサンプルはバッファの終わりより先へは伸ばせない。
 		const limit = src.loop
 			? Number.POSITIVE_INFINITY
@@ -352,11 +373,12 @@ export class SoundFont {
 		// ため、一定長以上の音符にだけ発音直後フェードインしつつピッチLFOを掛ける。
 		let vibratoOsc: OscillatorNode | undefined;
 		let vibratoDepth: GainNode | undefined;
-		// ベースは対象外。低い音のピッチが揺れると音程の芯がぼやけ、低域の輪郭が
-		// 濁るだけで得が無い（実際のベーシストもロングトーンで常時ビブラートはしない）。
+		// 掛けてよいのは**奏者が発音中にピッチを動かせる楽器だけ**（PlayStyle.vibrato）。
+		// 改修前は「ベース以外の全楽器」に掛かっていたので、ピアノ・鉄琴・オルガン・
+		// ハープのような、鳴り始めたらピッチを変えられない楽器まで揺れていた。
 		if (
 			!isDrum &&
-			this.tone !== "bass" &&
+			this.style.vibrato &&
 			duration >= SoundFont.longToneThresholdSec
 		) {
 			vibratoOsc = ctx.createOscillator();
@@ -433,27 +455,22 @@ const toneOf = (fontName: string): InstrumentTone => {
 	return program === null ? "none" : toneForProgram(program);
 };
 
-/** フォント名 → 減衰の型。取り出せなければ「鳴らし続ける音」として扱う。 */
-const envKindOf = (fontName: string): EnvKind => {
+/** フォント名 → 鳴らし方。取り出せなければ既定（持続音・ビブラートなし）。 */
+const styleOf = (fontName: string): PlayStyle => {
 	const program = programOf(fontName);
-	if (program === null) return "sustain";
-	// シンセベース（38-39）も含めてベースは同じ扱い（低域は短く切る）。
-	if (32 <= program && program <= 39) return "bass";
-	return isDecayProgram(program) ? "pluck" : "sustain";
+	return program === null ? DEFAULT_PLAY_STYLE : playStyleForProgram(program);
 };
 
-/** 減衰する（＝鳴らしっぱなしにならない）楽器か。 */
-const isDecayProgram = (program: number): boolean => {
-	if (0 <= program && program <= 15) return true; // Pianos, Chromatic Percussion
-	if (24 <= program && program <= 37) return true; // Guitars, Basses (Synth Bass 38, 39 are sustain)
-	if (program === 46) return true; // Harp
-	if (104 <= program && program <= 119) return true; // Ethnic, Percussive
-	return false;
-};
-
+/**
+ * 減衰する（＝鳴らしっぱなしにならない）楽器か。ループ点が壊れているサンプルの
+ * ゲイン補正をどこまで掛けるかの判断に使う。
+ * 判定は鳴らし方の表（{@link playStyleForProgram}）と共有する——同じ
+ * 「サンプル自身が減衰するか」という問いなので、範囲を二重に持つと片方だけ直して
+ * 食い違う。
+ */
 const isDecayInstrument = (fontName: string): boolean => {
-	const program = programOf(fontName);
-	return program === null ? false : isDecayProgram(program);
+	const env = styleOf(fontName).env;
+	return env === "pluck" || env === "bass";
 };
 
 const adjustZone = async (
