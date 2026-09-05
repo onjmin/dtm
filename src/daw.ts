@@ -711,12 +711,25 @@ const DEFAULT_TRACKS = TRACKS_SIMPLE;
 const BASE_LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
 
 /**
- * 「歌入り作曲」でボーカル未選択のときに当てる既定のモデル。
- * `klatt` は内蔵の合成音で、音源のダウンロードを待たずに必ず鳴る——
- * ボタンを押した直後に無音になるのを避けるため、ここを既定にしている。
- * 既に別のモデルが選ばれているトラックでは、それを尊重して差し替えない。
+ * 「歌入り作曲」でボーカル未選択のときに引く候補。内蔵の `klatt`（軽量ロボ声）に
+ * 加えて **UTAU由来の .koe 音源も1回目から引く**——「歌入り」と言いながら毎回同じ
+ * ロボ声では曲の印象が変わらないため。koe音源はダウンロードが要るが、再生開始時に
+ * `play()` が `loadModels()` をローディング表示付きで待つので無音にはならない。
+ *
+ * 既に別のモデルが選ばれているトラックでは、それを尊重して差し替えない
+ * （前回この機能が当てた値のときだけ引き直す）。
  */
-const DEFAULT_COMPOSE_VOCAL = "klatt";
+const COMPOSE_VOCAL_POOL = BASE_LYRIC_MODELS;
+
+/**
+ * 「歌入り作曲」のボーカルを1つ引く。`exclude`（前回当てた値）とは違うものを返し、
+ * 続けて押したときに同じ声が並ばないようにする。
+ */
+const pickComposeVocal = (exclude?: string | null): string => {
+	const pool = COMPOSE_VOCAL_POOL.filter((m) => m !== exclude);
+	const list = pool.length > 0 ? pool : COMPOSE_VOCAL_POOL;
+	return list[Math.floor(Math.random() * list.length)] ?? "klatt";
+};
 
 /**
  * 上級者モード（15トラック）で「作曲」が展開する編曲。
@@ -1328,6 +1341,12 @@ export const mountDAW = (
 	 * {@link ComposeOptions.recent} へ渡し、似た曲が続けて出ないようにする。
 	 */
 	const recentComposeFingerprints: number[][] = [];
+	/**
+	 * 直前の「歌入り作曲」が自動で当てたボーカルのモデル名。ユーザーが自分で選んだ声を
+	 * 上書きしないための目印で、`lyricModel` がこの値のままなら（＝ユーザーは触っていない）
+	 * 次の作曲で別の声へ引き直す。null は「まだ一度も自動で当てていない」。
+	 */
+	let autoComposeVocal: string | null = null;
 	let currentDrumFont = options.drumFont ?? "FluidR3_GM_sf2_file:0";
 	refs.drumFontSelect.value = currentDrumFont;
 	/**
@@ -5165,6 +5184,19 @@ export const mountDAW = (
 			showModal("作曲の解説", COMPOSE_INFO_HTML);
 		});
 		/**
+		 * 「作曲」が書き込んだベースのトラック。simple はID、advanced はレイアウト定義
+		 * （{@link ADVANCED_COMPOSE_LAYOUT}）から引く。
+		 */
+		const bassTracksForCompose = (): TrackState[] => {
+			if (!isAdvanced) {
+				const t = trackStates.find((x) => x.config.id === "bass");
+				return t ? [t] : [];
+			}
+			return ADVANCED_COMPOSE_LAYOUT.filter((l) => l.part === "bass")
+				.map((l) => trackStates[l.index])
+				.filter((t): t is TrackState => !!t);
+		};
+		/**
 		 * 「作曲」本体。確認を挟むかどうかは呼び出し側で決める。
 		 * `withVocal` を立てると、メロディトラックに歌詞を付けて歌わせる。
 		 */
@@ -5276,6 +5308,16 @@ export const mountDAW = (
 				// 続けて聴いたときに曲の違いが出にくい。
 				setBpm(song.bpm);
 
+				// ベースにだけは「おまかせマスタリング」を待たずにコンプを掛ける。
+				// トラックのコンプは既定0（＝無圧縮）で、押さなければ一切掛からない。
+				// ベースの「太さ」はコンプで作るものなので、作った直後の素の状態が
+				// 一番痩せて聞こえる、という状態になっていた。他のトラックは無圧縮でも
+				// 破綻しないのでここでは触らない（おまかせの領分）。
+				for (const t of bassTracksForCompose()) {
+					t.trackCompression = AUTO_ROLE_MIX.bass.compression;
+					options.onTrackCompressionChange?.(t.config.id, t.trackCompression);
+				}
+
 				// --- 歌入り ---
 				if (withVocal) {
 					// simple はメロディトラック、advanced はレイアウト上のメロディ（t0）。
@@ -5283,10 +5325,15 @@ export const mountDAW = (
 						? trackStates[0]
 						: trackStates.find((t) => t.config.id === "melody");
 					if (melodyTrack) {
-						// 既にボーカルが選ばれていればそれを尊重する。未選択のときだけ
-						// 既定の内蔵モデルを当てる（勝手に別の声へ差し替えない）。
-						if (!melodyTrack.lyricModel.trim())
-							melodyTrack.lyricModel = DEFAULT_COMPOSE_VOCAL;
+						// ユーザーが自分で選んだ声は尊重し、差し替えない。差し替えるのは
+						// 「未選択」か「前回この機能が当てた声のまま」のときだけで、後者は
+						// 曲が変わるたびに声も変わるようにするため引き直す（毎回同じ声だと
+						// 「歌入り作曲」を押し直しても曲の印象が似通って聞こえる）。
+						const current = melodyTrack.lyricModel.trim();
+						if (!current || current === autoComposeVocal) {
+							melodyTrack.lyricModel = pickComposeVocal(autoComposeVocal);
+							autoComposeVocal = melodyTrack.lyricModel;
+						}
 						melodyTrack.lyrics = composeLyrics(song.melody, {
 							stepsPerBar: renderConfig.stepsPerBar,
 						});

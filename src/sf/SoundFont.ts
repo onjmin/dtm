@@ -2,6 +2,7 @@
  * @credits rpgen3 https://rpgen3.github.io/soundfont/mjs/surikov/SoundFont.mjs (MIT)
  * https://github.com/surikov/webaudiofontdata/
  */
+import { type InstrumentTone, toneForProgram } from "../amp-sim";
 import { getScript } from "./import";
 
 type Zone = {
@@ -25,10 +26,40 @@ type Zone = {
 	};
 };
 
+/** 1音の振幅エンベロープ（アタックは全楽器共通なので持たない）。 */
+type Envelope = {
+	/** ピークからサステインまで落ちるのに掛ける秒数。 */
+	decaySec: number;
+	/** サステインの高さ（ピークに対する比）。 */
+	sustain: number;
+	/** ノートオフから消えるまでの秒数。 */
+	releaseSec: number;
+};
+
 export class SoundFont {
-	static afterTime = 0.5;
 	static fonts = new Map<string, SoundFont>();
 	static ch = -1;
+
+	// ── 振幅エンベロープ（AD-S-R）──
+	// 旧実装は「5msで立ち上げて、音符の終わり+0.5秒に向けて直線でゼロへ落とす」
+	// という1本のフェードだけだった。サステインが無いので、BPM132の4分音符なら
+	// 音符の終わりで既に振幅52%（-5.6dB）まで落ちている。撥弦のサンプルはそれ自体が
+	// 減衰するので**減衰が二重に掛かり**、とくにベースが痩せて聞こえる原因になっていた。
+	// さらにリリースが全楽器一律0.5秒だったため、8分のベースだと尾ひれが次の2音に
+	// 被って低域が濁っていた（実際の奏者は弾いたら止める）。
+	// ここではアタック→ディケイ→サステイン→リリースの形にし、リリースは楽器の
+	// ファミリごとに変える。
+	/** アタック（無音からピークまで）秒。クリック防止の最小限。全楽器共通。 */
+	static attackSec = 0.005;
+	/** 楽器ファミリ別のエンベロープ。 */
+	static envelopes: Record<InstrumentTone, Envelope> = {
+		// ベースは短く切る。次の音までに必ず消えているのが「締まった低音」の条件。
+		bass: { decaySec: 0.06, sustain: 0.9, releaseSec: 0.12 },
+		"guitar-clean": { decaySec: 0.09, sustain: 0.8, releaseSec: 0.2 },
+		"guitar-drive": { decaySec: 0.09, sustain: 0.85, releaseSec: 0.2 },
+		// それ以外（鍵盤・管弦・シンセ）は旧来の余韻の長さに近い値を既定にする。
+		none: { decaySec: 0.15, sustain: 0.8, releaseSec: 0.35 },
+	};
 
 	// ── ヒューマナイズ（疑似ラウンドロビン）──
 	// サンプルを複数持たない代わりに、発音のたびピッチと音量をごく僅かにランダムへ
@@ -37,6 +68,23 @@ export class SoundFont {
 	static humanizeDetuneCents = 4;
 	/** 発音ごとの音量微揺らぎ幅（比率、0.06 = ±6%の範囲で一様乱数）。 */
 	static humanizeGainRatio = 0.06;
+
+	// ── ドラムの疑似ラウンドロビン ──
+	// 市販のドラム音源（Steven Slate Drums 5 は最大24ベロシティレイヤー×各12テイク）が
+	// 機械的に聞こえないのは、同じ強さの連打でも毎回**違う波形**が鳴るため。こちらは
+	// 1キー1サンプルしか持てないので、代わりに1発ごとに「再生開始位置・音量・ピッチ・
+	// 高域の傾き」をわずかにずらして、同一波形の連打であることを見えにくくする。
+	// 開始位置をずらすのはアタックの立ち上がりの角度が毎回変わるからで、これが
+	// 「別のテイク感」に一番効く。ただしずらしすぎるとアタックそのものを削るので数ms。
+	/** 1発ごとの再生開始位置のずれ幅（秒、0〜この値の一様乱数）。 */
+	static drumRoundRobinOffsetSec = 0.0025;
+	/** 1発ごとの音量揺らぎ幅（比率）。メロディ楽器より少し広く取る。 */
+	static drumHumanizeGainRatio = 0.09;
+	/** 1発ごとのピッチ揺らぎ幅（セント）。太鼓の「大きさ」がわずかに変わって聞こえる。 */
+	static drumHumanizeDetuneCents = 10;
+	/** 1発ごとの音色の傾きを作るピーキングフィルタの中心周波数(Hz)と最大ゲイン(dB)。 */
+	static drumTiltHz = 3000;
+	static drumTiltMaxDb = 1.5;
 
 	// ── ベロシティ→明るさ連動フィルタ ──
 	// velocity は音量にしか効かず音色（明るさ）が変わらないのを補うため、
@@ -56,6 +104,15 @@ export class SoundFont {
 	 * 完全に同一の信号経路を通り、余計な音痩せや位相変化が起きないようにするため。
 	 */
 	static brightnessBypassAbove = 0.98;
+	/**
+	 * ベースだけは別のカーブを使う。既定の下限2400Hzでは velocity 44 でも
+	 * カットオフが8.5kHzあり、**弱く弾いた音が暗くならない**——つまりゴーストノートや
+	 * デッドノート（弦に触れて音程を殺した打点）が「ただ音量の小さい普通の音」に
+	 * なってしまう。ベースは強弱で音色が最も変わる楽器なので、下限をぐっと下げ、
+	 * さらに対数補間（`min * (max/min)^brightness`）にして弱い側の変化を大きくする。
+	 */
+	static bassBrightnessMinHz = 500;
+	static bassBrightnessMaxHz = 14000;
 
 	// ── ロングトーン用ビブラート(ピッチLFO) ──
 	// 伸ばす音が完全に静止していると不自然に聞こえるため、一定長以上持続する
@@ -108,7 +165,7 @@ export class SoundFont {
 				zones.set(Number(pitch), v);
 			}
 			if (SoundFont.ch < ch) SoundFont.ch = ch;
-			fonts.set(fontName, new SoundFont(zones, ch, isDrum));
+			fonts.set(fontName, new SoundFont(zones, ch, isDrum, toneOf(fontName)));
 		}
 		const result = fonts.get(fontName);
 		if (!result) throw new Error("SoundFont load failed.");
@@ -119,6 +176,12 @@ export class SoundFont {
 		private zones: Map<number, Zone>,
 		public ch: number,
 		public isDrum: boolean,
+		/**
+		 * この音源に合った音作りの種別（GMプログラム番号から判定）。エンベロープと
+		 * ビブラートの要否をここで決めるほか、`studio.ts` がトラックの
+		 * チャンネルストリップへ挿す段（ベースの歪み／ギターのキャビ）にも使う。
+		 */
+		public tone: InstrumentTone = "none",
 	) {}
 
 	play({
@@ -166,51 +229,96 @@ export class SoundFont {
 		Object.assign(src, _param.src);
 
 		// ヒューマナイズ: 発音ごとにピッチと音量をごく僅かにランダムへブレさせる。
+		// ドラムは1キー1サンプルで同じ波形の連打になりやすいため、揺らぎ幅を広く取り、
+		// さらに再生開始位置もずらす（疑似ラウンドロビン）。
 		const humanizeCents =
-			(Math.random() * 2 - 1) * SoundFont.humanizeDetuneCents;
+			(Math.random() * 2 - 1) *
+			(isDrum
+				? SoundFont.drumHumanizeDetuneCents
+				: SoundFont.humanizeDetuneCents);
 		const humanizeGainMul =
-			1 + (Math.random() * 2 - 1) * SoundFont.humanizeGainRatio;
+			1 +
+			(Math.random() * 2 - 1) *
+				(isDrum
+					? SoundFont.drumHumanizeGainRatio
+					: SoundFont.humanizeGainRatio);
 		src.detune.setValueAtTime(humanizeCents + detuneCents, 0);
 		const effectiveVolume = volume * humanizeGainMul;
+		// 開始位置のずれ。長さもそのぶん縮むので、終端の計算にも同じ値を使う。
+		const startOffsetSec = isDrum
+			? Math.random() * SoundFont.drumRoundRobinOffsetSec
+			: 0;
 
-		// ベロシティ→明るさ連動フィルタ: 弱いほど丸く、強いほど明るく。
-		// 連動元は velocity のみ。volume（＝トラック音量フェーダー込み）は使わない。
-		// velocity 未指定の呼び出し元は最強打扱いにしてフィルタを挿入しない。
+		// 音色を1発／1音ごとに変えるフィルタ。
+		// - 楽器: ベロシティ→明るさ連動（弱いほど丸く、強いほど明るく）。連動元は
+		//   velocity のみで、volume（＝トラック音量フェーダー込み）は使わない。
+		//   velocity 未指定の呼び出し元は最強打扱いにしてフィルタを挿入しない。
+		// - ドラム: 高域の傾きを1発ごとにわずかに振る（別テイクらしさ）。
 		const brightness =
 			velocity === undefined ? 1 : Math.max(0, Math.min(1, velocity / 127));
+		const needsBrightness =
+			!isDrum && brightness < SoundFont.brightnessBypassAbove;
 		const filter =
-			brightness >= SoundFont.brightnessBypassAbove
-				? undefined
-				: ctx.createBiquadFilter();
-		if (filter) {
+			needsBrightness || isDrum ? ctx.createBiquadFilter() : undefined;
+		if (filter && isDrum) {
+			filter.type = "peaking";
+			filter.frequency.setValueAtTime(SoundFont.drumTiltHz, 0);
+			filter.Q.setValueAtTime(1, 0);
+			filter.gain.setValueAtTime(
+				(Math.random() * 2 - 1) * SoundFont.drumTiltMaxDb,
+				0,
+			);
+		} else if (filter) {
+			// ベースだけは下限を下げた対数カーブ。弱く弾いた音がきちんと暗くなる
+			// （＝ゴースト／デッドノートが表現できる）ようにするため。
+			const isBass = this.tone === "bass";
+			const minHz = isBass
+				? SoundFont.bassBrightnessMinHz
+				: SoundFont.brightnessMinHz;
+			const maxHz = isBass
+				? SoundFont.bassBrightnessMaxHz
+				: SoundFont.brightnessMaxHz;
 			filter.type = "lowpass";
 			filter.frequency.setValueAtTime(
-				SoundFont.brightnessMinHz +
-					(SoundFont.brightnessMaxHz - SoundFont.brightnessMinHz) * brightness,
+				isBass
+					? minHz * (maxHz / minHz) ** brightness
+					: minHz + (maxHz - minHz) * brightness,
 				0,
 			);
 			filter.Q.setValueAtTime(SoundFont.brightnessQ, 0);
 		}
 
+		// ── 振幅エンベロープ（AD-S-R）──
 		// Start with 0 volume at currentTime to avoid clicking on connection
 		g.gain.setValueAtTime(0, ctx.currentTime);
-		const attackTime = 0.005; // 5ms fade-in
 		const startGainTime = Math.max(ctx.currentTime, _when);
 		g.gain.setValueAtTime(0, startGainTime);
-		g.gain.linearRampToValueAtTime(effectiveVolume, startGainTime + attackTime);
 
-		const _duration = duration + SoundFont.afterTime;
-		const end =
-			_when +
-			(isDrum
-				? buffer.duration
-				: src.loop
-					? _duration
-					: Math.min(_duration, _param.max));
+		const env = SoundFont.envelopes[this.tone] ?? SoundFont.envelopes.none;
+		// ループしないサンプルはバッファの終わりより先へは伸ばせない。
+		const limit = src.loop
+			? Number.POSITIVE_INFINITY
+			: _when + _param.max - startOffsetSec;
+		// 各点は「直前の点以降」かつ「サンプルの終わり以前」に収める。こうしないと
+		// 短いサンプルでオートメーションの時刻が前後してエンベロープが壊れる。
+		const attackEnd = Math.min(startGainTime + SoundFont.attackSec, limit);
+		const decayEnd = Math.min(
+			Math.max(attackEnd, attackEnd + env.decaySec),
+			limit,
+		);
+		const noteOff = Math.min(Math.max(decayEnd, _when + duration), limit);
+		const end = isDrum
+			? _when + buffer.duration - startOffsetSec
+			: Math.max(Math.min(noteOff + env.releaseSec, limit), noteOff + 0.001);
 
 		if (!isDrum) {
-			g.gain.setValueAtTime(effectiveVolume, startGainTime + attackTime);
+			const sustainVolume = effectiveVolume * env.sustain;
+			g.gain.linearRampToValueAtTime(effectiveVolume, attackEnd);
+			g.gain.linearRampToValueAtTime(sustainVolume, decayEnd);
+			g.gain.setValueAtTime(sustainVolume, noteOff);
 			g.gain.linearRampToValueAtTime(0, end);
+		} else {
+			g.gain.linearRampToValueAtTime(effectiveVolume, attackEnd);
 		}
 
 		if (filter) src.connect(filter).connect(g);
@@ -221,7 +329,13 @@ export class SoundFont {
 		// ため、一定長以上の音符にだけ発音直後フェードインしつつピッチLFOを掛ける。
 		let vibratoOsc: OscillatorNode | undefined;
 		let vibratoDepth: GainNode | undefined;
-		if (!isDrum && duration >= SoundFont.longToneThresholdSec) {
+		// ベースは対象外。低い音のピッチが揺れると音程の芯がぼやけ、低域の輪郭が
+		// 濁るだけで得が無い（実際のベーシストもロングトーンで常時ビブラートはしない）。
+		if (
+			!isDrum &&
+			this.tone !== "bass" &&
+			duration >= SoundFont.longToneThresholdSec
+		) {
 			vibratoOsc = ctx.createOscillator();
 			vibratoOsc.type = "sine";
 			vibratoOsc.frequency.setValueAtTime(SoundFont.vibratoRateHz, 0);
@@ -236,7 +350,7 @@ export class SoundFont {
 			vibratoOsc.stop(end);
 		}
 
-		src.start(_when);
+		src.start(_when, startOffsetSec);
 		src.stop(end);
 
 		src.onended = () => {
@@ -278,6 +392,16 @@ const findZone = (
 			return [k, v] as [number, Zone];
 		}),
 	);
+};
+
+/**
+ * WebAudioFontのフォント名（例: `_tone_0330_FluidR3_GM_sf2_file`）から
+ * GMプログラム番号を取り出して音作りの種別へ写す。取り出せなければ `none`。
+ */
+const toneOf = (fontName: string): InstrumentTone => {
+	const match = fontName.match(/_tone_(\d+)_/);
+	if (!match) return "none";
+	return toneForProgram(Math.floor(Number(match[1]) / 10));
 };
 
 const isDecayInstrument = (fontName: string): boolean => {

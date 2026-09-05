@@ -10,6 +10,12 @@
  * 「量」つまみへ丸めて提供する（DTMエディタ側の思想: 難しいパラメータは単純化する）。
  */
 
+import {
+	createToneStage,
+	type InstrumentTone,
+	type ToneStage,
+} from "./amp-sim";
+
 export type ChannelStripOptions = {
 	/** コンプレッサーの掛かり具合 0-100。既定0（実質バイパス＝無圧縮）。 */
 	compression?: number;
@@ -61,6 +67,19 @@ export type ChannelStrip = {
 	setDelaySend: (amount: number) => void;
 	/** ステレオ定位を -1(左)〜+1(右) でリアルタイムに変更する。 */
 	setPan: (pan: number) => void;
+	/**
+	 * このトラックの楽器に応じた音作り段（ベースのサチュレーション／ギターの
+	 * キャビネット）を差し替える。同じ種別を渡した場合は何もしない（発音のたびに
+	 * 呼んでも安全）。
+	 */
+	setInstrumentTone: (tone: InstrumentTone) => void;
+	/**
+	 * サイドチェイン用のダッキング。`atTime`（AudioContextクロック秒）に向けて
+	 * 素早く音量を下げ、`releaseSec` かけて戻す。キックが鳴る瞬間にベースを
+	 * 一瞬だけ譲らせる、という定番の使い方を想定している。
+	 * @param depth 0〜1。0.3 なら -30% まで下げる。
+	 */
+	duck: (atTime: number, depth?: number, releaseSec?: number) => void;
 	/** ノードを切断して破棄する。 */
 	dispose: () => void;
 };
@@ -108,6 +127,30 @@ export const createChannelStrip = (
 ): ChannelStrip => {
 	const input = ctx.createGain(); // 発音の合流点（複数ソースの接続を受け付ける）
 
+	// ── 楽器別の音作り段（差し替え可能）──
+	// ベースのサチュレーション・ギターのキャビネットはここへ挿す。EQより前に置くのは
+	// 実機の信号経路（楽器 → アンプ → 卓のEQ）と同じ順序にするため。差し替えできる
+	// よう、前後を素通しのGainNodeで挟んでその間だけ入れ替える。
+	const toneIn = ctx.createGain();
+	const toneOut = ctx.createGain();
+	input.connect(toneIn);
+	toneIn.connect(toneOut);
+	let toneStage: ToneStage | null = null;
+	let toneKind: InstrumentTone = "none";
+	const setInstrumentTone = (tone: InstrumentTone): void => {
+		if (tone === toneKind) return;
+		toneKind = tone;
+		toneIn.disconnect();
+		toneStage?.dispose();
+		toneStage = createToneStage(ctx, tone);
+		if (toneStage) {
+			toneIn.connect(toneStage.input);
+			toneStage.output.connect(toneOut);
+		} else {
+			toneIn.connect(toneOut);
+		}
+	};
+
 	// ── EQ（3バンド: 低域シェルフ・中域ピーキング・高域シェルフ）──
 	// ミックスの定石通り、コンプレッサーより手前（EQ→コンプ→ステレオ幅）に置く。
 	// 不要な帯域を先に削ってからコンプを掛けることで、変な帯域を含めて丸ごと
@@ -125,7 +168,7 @@ export const createChannelStrip = (
 	eqHigh.type = "highshelf";
 	eqHigh.frequency.value = EQ_HIGH_FREQ;
 	eqHigh.gain.value = clamp(options.eqHigh ?? 0, -EQ_MAX_DB, EQ_MAX_DB);
-	input.connect(eqLow);
+	toneOut.connect(eqLow);
 	eqLow.connect(eqMid);
 	eqMid.connect(eqHigh);
 
@@ -202,10 +245,28 @@ export const createChannelStrip = (
 	if (panner) panner.pan.value = clamp(options.pan ?? 0, -1, 1);
 	const panOut: AudioNode = panner ?? merger;
 
-	// input → EQ(低→中→高) → compressor → M/Sワイド → パン → destination
-	//                                                        └→ reverbSendGain → reverbBus（並列センド、任意）
+	// ── サイドチェイン用ダッキング ──
+	// コンプレッサーの後段に置く。手前に置くとコンプが下げたぶんを押し戻してしまい、
+	// 「一瞬だけ譲る」という意図した動きにならないため。センド（リバーブ／ディレイ）も
+	// この後で分岐するので、ダッキングは残響側にも同じように効く。
+	const duckGain = ctx.createGain();
+	duckGain.gain.value = 1;
+	/** ダッキングの立ち下がり時間（秒）。速すぎるとクリックになる。 */
+	const DUCK_ATTACK_SEC = 0.008;
+	const duck = (atTime: number, depth = 0.3, releaseSec = 0.18): void => {
+		const t = Math.max(atTime, ctx.currentTime);
+		const floor = clamp(1 - depth, 0, 1);
+		// 先に予約済みの復帰ランプを打ち消さない（打ち消すと値が飛んでクリックになる）。
+		// ランプは直前の予約値から始まるので、キックが連続しても自然につながる。
+		duckGain.gain.linearRampToValueAtTime(floor, t + DUCK_ATTACK_SEC);
+		duckGain.gain.linearRampToValueAtTime(1, t + DUCK_ATTACK_SEC + releaseSec);
+	};
+
+	// input → 音作り段 → EQ(低→中→高) → compressor → ダッキング → M/Sワイド → パン → destination
+	//                                                                          └→ reverbSendGain → reverbBus（並列センド、任意）
 	eqHigh.connect(compressor);
-	compressor.connect(splitter);
+	compressor.connect(duckGain);
+	duckGain.connect(splitter);
 	if (panner) merger.connect(panner);
 	panOut.connect(destination);
 
@@ -262,8 +323,14 @@ export const createChannelStrip = (
 			if (!panner) return; // 非対応環境ではパンできないので無視
 			panner.pan.setTargetAtTime(clamp(pan, -1, 1), ctx.currentTime, 0.02);
 		},
+		setInstrumentTone,
+		duck,
 		dispose: () => {
 			input.disconnect();
+			toneIn.disconnect();
+			toneStage?.dispose();
+			toneOut.disconnect();
+			duckGain.disconnect();
 			eqLow.disconnect();
 			eqMid.disconnect();
 			eqHigh.disconnect();

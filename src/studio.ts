@@ -15,6 +15,7 @@
  */
 
 import { parseArrayBuffer } from "midi-json-parser";
+import type { InstrumentTone } from "./amp-sim";
 import { buildNameToKeyMapping } from "./audio-config";
 import { type ChannelStrip, createChannelStrip } from "./channel-strip";
 import {
@@ -105,6 +106,12 @@ type SoundFontInstance = {
 		when: number;
 		duration: number;
 	}) => void;
+	/**
+	 * この音源に合った音作りの種別（ベース／ギター等）。チャンネルストリップへ挿す
+	 * 段（サチュレーション・キャビネット）の選択に使う。外部から差し替えたエンジンが
+	 * 持たない場合は "none" 扱い。
+	 */
+	tone?: InstrumentTone;
 };
 type SoundFontEngine = {
 	load: (o: {
@@ -713,6 +720,40 @@ export const createDtmStudio = async (
 		return strip;
 	};
 
+	/** trackId → 直近にそのトラックで鳴らした楽器の音作り種別。 */
+	const trackTones = new Map<string, InstrumentTone>();
+	/**
+	 * 発音先のノードを返しつつ、そのトラックのチャンネルストリップへ楽器に応じた
+	 * 音作り段（ベースのサチュレーション／ギターのキャビネット）を挿す。
+	 * 楽器が変わったときだけ差し替わるので、発音のたびに呼んでよい。
+	 */
+	const routeToStrip = (trackId: string, tone: InstrumentTone): AudioNode => {
+		const strip = getChannelStrip(trackId);
+		if (trackTones.get(trackId) !== tone) {
+			trackTones.set(trackId, tone);
+			strip.setInstrumentTone(tone);
+		}
+		return strip.input;
+	};
+
+	// ── キック → ベースのサイドチェイン ──
+	// キックとベースは同じ低域に居るので、同時に鳴ると打ち消し合って**両方**が弱くなる。
+	// キックの瞬間だけベースを一段譲らせると、キックの芯が通り、ベースも輪郭が出る。
+	/** キックとみなすGMドラムキー（35=Acoustic Bass Drum, 36=Bass Drum 1）。 */
+	const KICK_PITCHES = new Set([35, 36]);
+	/** ダッキングの深さ（0.25 = -25%）と戻り時間（秒）。 */
+	const SIDECHAIN_DEPTH = 0.25;
+	const SIDECHAIN_RELEASE_SEC = 0.16;
+	const duckBassForKick = (whenSec: number): void => {
+		const at = audioCtx.currentTime + whenSec;
+		for (const [trackId, tone] of trackTones) {
+			if (tone !== "bass") continue;
+			channelStrips
+				.get(trackId)
+				?.duck(at, SIDECHAIN_DEPTH, SIDECHAIN_RELEASE_SEC);
+		}
+	};
+
 	/**
 	 * MMLメタのトラック別チャンネルストリップ設定（`#t<n>comp=` 等）を、そのトラックの
 	 * 発音先ストリップへ一度だけ適用するアプライヤを作る。
@@ -1063,6 +1104,7 @@ export const createDtmStudio = async (
 	// ── 発音ハンドラ（ドラムは曲全体共通。楽器音は編集UI/再生UIごとにプリセットを解決） ──
 	const playDrum = (e: PlayDrumEvent): void => {
 		if (!sfDrum.font) return;
+		if (KICK_PITCHES.has(e.pitch)) duckBassForKick(e.when);
 		sfDrum.play({
 			ctx: audioCtx,
 			destination: drumGain,
@@ -1146,7 +1188,7 @@ export const createDtmStudio = async (
 			const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
 			sfInst.play({
 				ctx: audioCtx,
-				destination: getChannelStrip(e.trackId).input,
+				destination: routeToStrip(e.trackId, sfInst.tone ?? "none"),
 				pitch: midi,
 				detuneCents,
 				volume: e.volume,
@@ -1553,7 +1595,7 @@ export const createDtmStudio = async (
 			const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
 			sfInst.play({
 				ctx: audioCtx,
-				destination: getChannelStrip(e.trackId).input,
+				destination: routeToStrip(e.trackId, sfInst.tone ?? "none"),
 				pitch: midi,
 				detuneCents,
 				volume: e.volume,
@@ -1663,7 +1705,7 @@ export const createDtmStudio = async (
 			const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
 			sfInst.play({
 				ctx: audioCtx,
-				destination: getChannelStrip(e.trackId).input,
+				destination: routeToStrip(e.trackId, sfInst.tone ?? "none"),
 				pitch: midi,
 				detuneCents,
 				volume: e.volume,
@@ -1768,7 +1810,7 @@ export const createDtmStudio = async (
 			const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
 			sfInst.play({
 				ctx: audioCtx,
-				destination: getChannelStrip(e.trackId).input,
+				destination: routeToStrip(e.trackId, sfInst.tone ?? "none"),
 				pitch: midi,
 				detuneCents,
 				volume: e.volume,
@@ -1814,7 +1856,7 @@ export const createDtmStudio = async (
 		const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
 		sfInst.play({
 			ctx: audioCtx,
-			destination: getChannelStrip(e.trackId).input,
+			destination: routeToStrip(e.trackId, sfInst.tone ?? "none"),
 			pitch: midi,
 			detuneCents,
 			volume: e.volume,
@@ -1901,7 +1943,7 @@ export const createDtmStudio = async (
 			const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
 			sfInst.play({
 				ctx: audioCtx,
-				destination: getChannelStrip("chord").input,
+				destination: routeToStrip("chord", sfInst.tone ?? "none"),
 				pitch: midi,
 				detuneCents,
 				volume: e.volume,

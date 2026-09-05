@@ -1012,6 +1012,21 @@ const SUBMELODY_HIGH = 74;
 const BASS_LOW = 33;
 const BASS_HIGH = 45;
 
+// ベースの強弱。初版は「小節頭108・それ以外96」の2値しか無く、どの音も同じ強さで
+// 並ぶ＝グルーヴが生まれない状態だった。実際のベースは拍の重み付けとゴーストで
+// リズムを作るので、4段階に分ける。
+/** キックが居る拍（1拍目・3拍目）。曲の芯になる打点。 */
+const BASS_ACCENT_VELOCITY = 112;
+/** その他の拍頭。 */
+const BASS_BEAT_VELOCITY = 98;
+/** 拍の裏。 */
+const BASS_OFFBEAT_VELOCITY = 86;
+/**
+ * ゴースト（デッドノート）。極端に弱くすることで、再生側のベロシティ→明るさ連動が
+ * カットオフを1kHz付近まで落とし、音程感の薄いくぐもった打点になる。
+ */
+const BASS_GHOST_VELOCITY = 44;
+
 const clampSemi = (semi: number, low: number, high: number): number => {
 	let s = semi;
 	while (s < low) s += 12;
@@ -1035,6 +1050,10 @@ type MelodyStyle = {
 	/** 強拍で着地させる構成音の重み下限（3=ルート/5度のみ、2=3度/7度も許す）。 */
 	barHeadWeight: 2 | 3;
 	bassStyle: BassStyle;
+	/** ベースを短く切って弾むように弾くか（スタッカート）。 */
+	bassStaccato: boolean;
+	/** 小節にゴーストノート（弦に触れて音程を殺した打点）を混ぜる確率。 */
+	bassGhost: number;
 	subStyle: SubStyle;
 	/** サブメロがメロディから何半音下を歌うか。 */
 	subInterval: number;
@@ -1440,6 +1459,11 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 			],
 			rnd,
 		),
+		// 短く切る奏法は、刻みの細かい書法（8分・オクターブ・オルタネイト）でだけ引く。
+		// 4分打ちやウォーキングを短く切ると、支えるべき土台がスカスカになる。
+		bassStaccato: rnd() < 0.45,
+		// ゴーストは入れすぎるとただの雑音になるので、曲ごとに 0〜0.5 の範囲で引く。
+		bassGhost: rnd() * 0.5,
 		// **サブメロは旋律であること。** 曲単位の書法をハモリと対旋律に絞る。
 		// パッド・保続音・付点2分は「置いただけの音」になりやすく、実際
 		// サブメロの音の38%が全音符1つ（1.5音/小節）まで薄くなっていた。
@@ -1912,6 +1936,8 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 								: style.bassStyle
 						]
 					: BASS_CELLS[style.bassStyle];
+		// 音の強弱・切り方・ゴーストは、この小節ぶんを組み立ててから後段でまとめて付ける。
+		const barBass: ComposedNote[] = [];
 		let bassCursor = 0;
 		for (const [semi, value] of bassCell) {
 			const len = scaleStep(value);
@@ -1923,14 +1949,72 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 						: semi === T
 							? (thirdTone?.fifth ?? rootTone.fifth)
 							: degreeToPitch(semitoneToDegree(semi)).fifth;
-			bass.push({
+			barBass.push({
 				startStep: barStart + bassCursor,
 				pitchUnits: spelledToUnits(semi, fifth, edo),
 				durationSteps: len,
-				velocity: bassCursor === 0 ? 108 : 96,
+				// 強弱は「キックが居る場所」を基準に付ける。ドラムのパターンは
+				// このモジュールの外（DAWのドラム設定）で選ぶので実物は見られないが、
+				// 8ビート系のキックはまず1拍目と3拍目に居る。そこへベースのアクセントを
+				// 揃えると、低域の芯が同じ場所で立ち上がって曲がまとまって聞こえる。
+				velocity:
+					bassCursor % (quarterSteps * 2) === 0
+						? BASS_ACCENT_VELOCITY
+						: bassCursor % quarterSteps === 0
+							? BASS_BEAT_VELOCITY
+							: BASS_OFFBEAT_VELOCITY,
 			});
 			bassCursor += len;
 		}
+
+		// スタッカート。音価を半分にして、残りを休符（＝弾いたら止める）にする。
+		// 音価の半分は必ず表現できる音価（4分→8分、付点4分→付点8分）なので、
+		// MMLへ書き出しても汚れない。伸ばすことに意味がある小節（hold/cadence）と、
+		// 土台を作る役目の書法（4分打ち・ウォーキング）では掛けない。
+		if (
+			style.bassStaccato &&
+			role !== "hold" &&
+			role !== "cadence" &&
+			(style.bassStyle === "eighth" ||
+				style.bassStyle === "octave" ||
+				style.bassStyle === "alternate")
+		)
+			for (const n of barBass)
+				if (n.durationSteps >= 2 && n.durationSteps < quarterSteps * 2)
+					n.durationSteps = Math.max(1, Math.round(n.durationSteps / 2));
+
+		// ゴーストノート（デッドノート）。強拍の直前に、弦に触れて音程を殺した打点を
+		// 1つだけ挟む。実際のベーシストがグルーヴを作るときの常套手段で、
+		// 「音符と音符の間に何も無い」打ち込み臭さが一番よく消える。
+		// velocity を極端に低くすることで、再生側のベロシティ→明るさ連動
+		// （SoundFont の bassBrightness*）がカットオフを1kHz付近まで落とし、
+		// 音程感の薄いくぐもった打点になる——これがデッドノートの実体。
+		if (role !== "hold" && role !== "cadence" && rnd() < style.bassGhost) {
+			const sixteenth = scaleStep(SIXTEENTH);
+			const eighth = scaleStep(EIGHTH);
+			// 直前が4分か8分のときだけ挟む。そこから16分を借りた残り（付点8分・16分）は
+			// どちらも表現できる音価なので、MMLへ書き出しても端数が出ない。
+			const idx = barBass.findIndex(
+				(n, i) =>
+					i > 0 &&
+					(barBass[i - 1].durationSteps === quarterSteps ||
+						barBass[i - 1].durationSteps === eighth) &&
+					n.startStep % quarterSteps === 0,
+			);
+			if (idx > 0 && sixteenth >= 1) {
+				const prev = barBass[idx - 1];
+				prev.durationSteps -= sixteenth;
+				barBass.splice(idx, 0, {
+					startStep: barBass[idx].startStep - sixteenth,
+					// 直後に鳴らす音と同じ音（同じ弦を触って鳴らすため）。
+					pitchUnits: barBass[idx].pitchUnits,
+					durationSteps: sixteenth,
+					velocity: BASS_GHOST_VELOCITY,
+				});
+			}
+		}
+
+		for (const n of barBass) bass.push(n);
 	}
 
 	/** ノート列が使った音域（半音）。 */
