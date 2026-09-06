@@ -9,6 +9,7 @@ import { GM_INSTRUMENT_NAMES } from "./audio-config";
 import { type ChordPlayerInstance, mountChordPlayer } from "./chord-player";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import { type ComposedNote, composeLyrics, composeSong } from "./compose";
+import { getComposeKeyDescription } from "./compose-keys";
 import {
 	buildSectionPlan,
 	DEFAULT_SECTIONS,
@@ -5249,6 +5250,17 @@ export const mountDAW = (
 		refs.composeSections.addEventListener("change", updateComposeSectionsLen);
 		updateComposeSectionsLen();
 
+		const updateComposeKeyHint = (): void => {
+			if (!refs.composeKey || !refs.composeKeyHint) return;
+			const desc = getComposeKeyDescription(refs.composeKey.value);
+			refs.composeKeyHint.textContent = desc;
+			refs.composeKeyHint.title = desc;
+		};
+		if (refs.composeKey) {
+			refs.composeKey.addEventListener("change", updateComposeKeyHint);
+			updateComposeKeyHint();
+		}
+
 		const runCompose = (withVocal: boolean): void => {
 			stop();
 			overlayDuring(() => {
@@ -5256,6 +5268,7 @@ export const mountDAW = (
 					stepsPerBar: renderConfig.stepsPerBar,
 					edo: renderConfig.edo,
 					sections: selectedComposeSections(),
+					baseKey: refs.composeKey?.value ?? "any",
 					// 直近に作った曲の特徴を渡すと、それらから離れた候補に加点される。
 					// 「作曲」を続けて押したときに似た曲が並ぶのを防ぐ。
 					recent: recentComposeFingerprints,
@@ -5358,10 +5371,11 @@ export const mountDAW = (
 				// 続けて聴いたときに曲の違いが出にくい。
 				setBpm(song.bpm);
 
-				// ドラムも曲の一部として書き換える。ここを触っていなかったので、
-				// 既定の1小節ループが16小節そのまま鳴り続けていた。上物をどれだけ
-				// 作り分けても、伴奏の地が同じなら「同じ曲の別バージョン」に聞こえる。
-				applyComposedDrumPattern(song.drums.def);
+				// ドラムも曲に合わせて組み込みパターンから自動選択する。
+				currentDrumPattern = song.drum;
+				refs.drumSelect.value = song.drum;
+				options.onDrumChange?.(song.drum);
+				applyDrumPatternFont(song.drum);
 
 				// ベースにだけは「おまかせマスタリング」を待たずにコンプを掛ける。
 				// トラックのコンプは既定0（＝無圧縮）で、押さなければ一切掛からない。
@@ -5394,6 +5408,11 @@ export const mountDAW = (
 						});
 						fireLyricsChange(melodyTrack);
 					}
+				}
+
+				if (refs.composeKeyHint) {
+					refs.composeKeyHint.textContent = `${song.keyLabel} で作成`;
+					refs.composeKeyHint.title = `${song.keyLabel}${song.moodLabel ? `（${song.moodLabel}）` : ""}`;
 				}
 
 				playStartStep = 0;
@@ -5807,12 +5826,6 @@ export const mountDAW = (
 		extractedMidiDrum =
 			patternDef.pattern as import("./song-drum-config").SongDrumPattern;
 		installDrumPattern("_extracted_midi", patternDef);
-	};
-	/** 作曲マクロが組み立てたドラム編曲を適用する。 */
-	const applyComposedDrumPattern = (
-		patternDef: import("./drum-config").DrumPatternDef,
-	): void => {
-		installDrumPattern("_composed", patternDef);
 	};
 	const wireMidi = (): void => {
 		refs.midiInput.addEventListener("change", async () => {

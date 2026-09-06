@@ -17,6 +17,20 @@ export {
 } from "./compose";
 // 作曲の採点に使う目標帯（人間の曲から実測したもの）
 export { CORPUS_BANDS, CORPUS_SIZE } from "./compose-corpus";
+// ベース調・調性格・雰囲気グループ
+export {
+	COMPOSE_KEYS,
+	COMPOSE_MOOD_GROUPS,
+	type ComposeKeyTarget,
+	type ComposeMoodGroup,
+	type ComposeMoodId,
+	getComposeKeyDescription,
+	type KeyMode,
+	MAJOR_KEY_IDS,
+	MINOR_KEY_IDS,
+	type ResolvedComposeKey,
+	resolveComposeKey,
+} from "./compose-keys";
 // 生成物の良さを測る指標（順序に依存する構造の指標・緊張カーブ・曲どうしの距離）
 export {
 	type Band,

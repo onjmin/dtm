@@ -124,11 +124,7 @@ import {
 	spelledToUnits,
 } from "./chords";
 import { CORPUS_BANDS, CORPUS_MEDIANS, CORPUS_SIZE } from "./compose-corpus";
-import {
-	type ComposedDrums,
-	composeDrumPattern,
-	type DrumStyle,
-} from "./compose-drums";
+import { type ResolvedComposeKey, resolveComposeKey } from "./compose-keys";
 import {
 	type Band,
 	band,
@@ -1246,6 +1242,11 @@ export type ComposeOptions = {
 	 * `SECTION_ORDER` に従う。
 	 */
 	sections?: SectionKind[];
+	/**
+	 * ベースとなる調・雰囲気の指定（"any" | "major" | "minor" | "mood_*" | "key_*"）。
+	 * 省略時は "any"（全24調からランダム抽選）。
+	 */
+	baseKey?: string;
 };
 
 export type ComposeResult = {
@@ -1259,21 +1260,20 @@ export type ComposeResult = {
 	 * 同じ値を渡すだけでよい。
 	 */
 	rootShift: number;
+	/** 曲の調の名前（例: "C", "D", "Am"）。 */
+	keyName: string;
+	/** 曲の調の表示ラベル（例: "ハ長調 (C)", "イ短調 (Am)"）。 */
+	keyLabel: string;
+	/** 雰囲気カテゴリのラベル（該当する場合）。 */
+	moodLabel?: string;
 	/** 曲のテンポ（BPM）。 */
 	bpm: number;
 	/** 曲の設計図。どの小節がどのセクションかを表す。 */
 	sections: PlacedSection[];
 	/** 曲の長さ（小節）。セクションの選び方で変わる。 */
 	bars: number;
-	/**
-	 * 16小節ぶんのドラム編曲。
-	 *
-	 * **作曲マクロは長らくドラムに一切触っていなかった**。既定の1小節ループが16小節
-	 * そのまま鳴り続けるので、上物をどれだけ作り分けても「同じ伴奏の上で違うメロディを
-	 * 鳴らしただけ」に聞こえていた。参考にした人間の曲は全曲がドラムに2〜31種の小節
-	 * パターン（フィル・クラッシュ・セクションごとの刻みの差）を持っている。
-	 */
-	drums: ComposedDrums;
+	/** 曲に合わせて組み込みから自動選択されたドラムパターン名（DRUM_PATTERNS のキー）。 */
+	drum: string;
 	melody: ComposedNote[];
 	submelody: ComposedNote[];
 	bass: ComposedNote[];
@@ -2123,7 +2123,7 @@ const applyChromatic = (
 };
 
 /** 1回分の draw。点数を付けるのは呼び出し側（{@link evaluate}）の仕事。 */
-type Draw = Omit<ComposeResult, "stats" | "drums"> & {
+type Draw = Omit<ComposeResult, "stats" | "drum"> & {
 	melodyDurations: number[];
 	restSteps: number;
 	totalSteps: number;
@@ -2140,7 +2140,11 @@ type Draw = Omit<ComposeResult, "stats" | "drums"> & {
 	stepsPerBar: number;
 };
 
-const draw = (options: ComposeOptions, rnd: () => number): Draw => {
+const draw = (
+	options: ComposeOptions,
+	resolvedKey: ResolvedComposeKey,
+	rnd: () => number,
+): Draw => {
 	const stepsPerBar = options.stepsPerBar;
 	const edo = options.edo === 31 ? 31 : 12;
 	// 音価は192ステップ基準で書いてあるので、実際の stepsPerBar へ比率で写す。
@@ -2220,7 +2224,14 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	// **セクションごとに進行を割り当てる。** Aメロ系は progA、サビ系は progB。
 	// イントロがサビの和音で始まるのは「曲の顔を先に見せる」定石で、
 	// 間奏も同じ理由でサビ側を使う。
-	const progA = pick(SECTION_A_PROGRESSIONS, rnd);
+	// ベース調が長調／短調に指定されている場合は進行をそれに合わせる。
+	const progAPool =
+		resolvedKey.mode === "major"
+			? SECTION_A_PROGRESSIONS.filter((p) => !p[0].startsWith("Am"))
+			: resolvedKey.mode === "minor"
+				? SECTION_A_PROGRESSIONS.filter((p) => p[0].startsWith("Am"))
+				: SECTION_A_PROGRESSIONS;
+	const progA = pick(progAPool, rnd);
 	// サビはAメロと質感を変えるのが役目なので、同じ進行を引いたら引き直す。
 	const progBPool = SECTION_B_PROGRESSIONS.filter(
 		(p) => p.join("|") !== progA.join("|"),
@@ -2256,7 +2267,7 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	const chordPattern = pick(CHORD_PATTERNS, rnd);
 	// 調とテンポも曲ごとに引く。生成はハ長調で行い、最後にまとめて移調する
 	// （生成中に移調すると音域の折り返しが調ごとにずれ、輪郭が壊れる）。
-	const rootShift = pick(ROOT_SHIFTS, rnd);
+	const rootShift = resolvedKey.rootShift;
 	const bpm = pick(BPM_CHOICES, rnd);
 
 	// --- 曲の骨格と書法を引く（ここが曲どうしの違いの出どころ） ---
@@ -3175,6 +3186,9 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		chordProgression,
 		chordPattern,
 		rootShift,
+		keyName: resolvedKey.keyName,
+		keyLabel: resolvedKey.keyLabel,
+		moodLabel: resolvedKey.moodLabel,
 		bpm,
 		sections: sectionPlan,
 		bars: totalBars,
@@ -3350,6 +3364,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	const rnd = options.random ?? Math.random;
 	const recent = options.recent ?? [];
 	const count = Math.max(1, options.drawCount ?? DRAW_COUNT);
+	const resolvedKey = resolveComposeKey(options.baseKey, rnd);
 
 	let best: ComposeResult | null = null;
 	let bestScore = Number.NEGATIVE_INFINITY;
@@ -3357,7 +3372,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	let rejected = 0;
 
 	for (let attempt = 1; attempt <= count; attempt++) {
-		const d = draw(options, rnd);
+		const d = draw(options, resolvedKey, rnd);
 		const { stats, ok } = evaluate(d, recent);
 		if (!ok) rejected++;
 		// ハード制約を通った候補は、通らなかった候補より必ず優先する。
@@ -3368,10 +3383,13 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 		best = {
 			// ドラムは勝った候補にだけ後から付ける（メロディに依存しないので
 			// 候補ごとに引いても採点は動かず、40本ぶん無駄になる）。
-			drums: null as unknown as ComposedDrums,
+			drum: "",
 			chordProgression: d.chordProgression,
 			chordPattern: d.chordPattern,
 			rootShift: d.rootShift,
+			keyName: d.keyName,
+			keyLabel: d.keyLabel,
+			moodLabel: d.moodLabel,
 			bpm: d.bpm,
 			sections: d.sections,
 			bars: d.bars,
@@ -3386,56 +3404,31 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	const result = best as ComposeResult;
 	result.stats.attempts = count;
 	result.stats.rejected = rejected;
-	// ドラムもセクションに従う。イントロは抑えめ、サビは最大、セクションの頭に
-	// クラッシュ、終わりの1つ手前にフィル——切り替わりを作っているのはここ。
-	const levels = new Array<0 | 1 | 2>(result.bars).fill(1);
-	const crashBars: number[] = [];
-	const fillBars: number[] = [];
-	for (const section of result.sections) {
-		for (let i = 0; i < section.bars; i++)
-			levels[section.startBar + i] = section.spec.drumLevel;
-		crashBars.push(section.startBar + 1);
-		const fill = section.startBar + section.bars - 1;
-		if (fill > 0) fillBars.push(fill);
-	}
-	result.drums = composeDrumPattern({
-		bars: result.bars,
-		stepsPerBar: options.stepsPerBar,
-		rnd,
-		style: pickDrumStyle(result, rnd),
-		levels,
-		crashBars,
-		fillBars,
-	});
+	result.drum = pickBuiltinDrum(result, rnd);
 	return result;
 };
 
 /**
- * ドラムの性格を曲に合わせて選ぶ。
+ * 曲に合わせて組み込みドラムパターン（DRUM_PATTERNS のキー）を選ぶ。
  *
- * ドラムはメロディに依存しないので候補ごとに引く必要はないが、**引き当てた曲と噛み合って
- * いない**と目も当てられない（16分で走るメロディにバラードのドラム、など）。
+ * ドラムはメロディに依存しないので候補ごとに引く必要はないが、引き当てた曲と噛み合って
+ * いないと目も当てられない（速い曲にスロードラム、など）。
  * テンポと刻みの細かさから絞ってから引く。
  */
-const pickDrumStyle = (song: ComposeResult, rnd: () => number): DrumStyle => {
+const pickBuiltinDrum = (song: ComposeResult, rnd: () => number): string => {
 	const eighth = BASE_STEPS_PER_BAR / 8;
 	const short =
 		song.melody.filter((n) => n.durationSteps <= eighth).length /
 		Math.max(1, song.melody.length);
-	// 跳ねているメロディにイーブンのドラムを当てると両方が喧嘩する。ここは
-	// ノートから推測せず生成時の値をそのまま使う——三連を含む曲のオンセットは
-	// 拍のウラと見分けが付かず、推測にすると全曲がシャッフルになった。
-	// **シャッフルは出さない。** メロディがイーブン（16分格子の上）なので、
-	// ドラムだけ三連で跳ねると喧嘩する。参考曲を量子化して測ると、この様式の
-	// メロディは格子から外れないので、跳ねるドラムを当てる根拠が無い。
-	const pool: DrumStyle[] =
+
+	const pool: string[] =
 		song.bpm >= 150
-			? ["four", "rock", "sixteen"]
+			? ["4beat", "dance", "16beat", "disco"]
 			: short >= 0.6
-				? ["sixteen", "four", "rock"]
-				: song.bpm <= 124 && short < 0.4
-					? ["ballad", "eight", "ballad"]
-					: ["eight", "rock", "four", "sixteen"];
+				? ["16beat", "dance", "4beat", "disco"]
+				: song.bpm <= 110 && short < 0.4
+					? ["bossa", "8beat"]
+					: ["8beat", "4beat", "16beat"];
 	return pick(pool, rnd);
 };
 

@@ -1557,7 +1557,7 @@ export const createDtmStudio = async (
 			}
 		};
 
-		void Promise.all([
+		const presetPromise = Promise.all([
 			loadPreset(
 				playerPreset,
 				loadTrackIds,
@@ -1604,25 +1604,29 @@ export const createDtmStudio = async (
 				duration: e.duration,
 			});
 		};
+		const { onResumeAudio: userOnResumeAudio, ...playerOpts } = opts;
 		const player = mountMmlPlayer(target, mml, {
+			...playerOpts,
 			getAudioTime: () => audioCtx.currentTime,
 			onResumeAudio: async () => {
 				await resumeAudio();
+				await presetPromise;
 				if (meta.drum) {
 					await loadRequiredDrums(
 						getDrumPatternKeys(
 							meta.drum,
-							resolveDrumPatterns(opts.drumPatterns ?? options.drumPatterns),
+							resolveDrumPatterns(
+								playerOpts.drumPatterns ?? options.drumPatterns,
+							),
 						),
 						meta.drumFont || "FluidR3_GM_sf2_file:0",
 					);
 				}
-				await opts.onResumeAudio?.();
+				await userOnResumeAudio?.();
 			},
 			onPlayNote: playPlayerNote,
 			onPlayDrum: playDrum,
 			singingVoices,
-			...opts,
 		});
 		mountedPlayers.push(player);
 		// destroy 時に内部リストからも外す（多数の再生UIを生成し続けても溜まらないように）。
@@ -1670,7 +1674,7 @@ export const createDtmStudio = async (
 			}
 		};
 
-		void Promise.all([
+		const presetPromise = Promise.all([
 			loadPreset(
 				playerPreset,
 				loadTrackIds,
@@ -1715,8 +1719,9 @@ export const createDtmStudio = async (
 			});
 		};
 
+		const { onResumeAudio: userOnResumeAudio, ...playOpts } = opts;
 		return playMML(mml, {
-			...opts,
+			...playOpts,
 			audioContext: audioCtx,
 			destination: masterGain,
 			synth: false,
@@ -1724,15 +1729,18 @@ export const createDtmStudio = async (
 			onPlayDrum: playDrum,
 			onResumeAudio: async () => {
 				await resumeAudio();
+				await presetPromise;
 				if (meta.drum) {
 					await loadRequiredDrums(
 						getDrumPatternKeys(
 							meta.drum,
-							resolveDrumPatterns(opts.drumPatterns ?? options.drumPatterns),
+							resolveDrumPatterns(
+								playOpts.drumPatterns ?? options.drumPatterns,
+							),
 						),
 					);
 				}
-				await opts.onResumeAudio?.();
+				await userOnResumeAudio?.();
 			},
 		});
 	};
@@ -1775,7 +1783,7 @@ export const createDtmStudio = async (
 			}
 		};
 
-		void Promise.all([
+		const presetPromise = Promise.all([
 			loadPreset(
 				playerPreset,
 				loadTrackIds,
@@ -1820,8 +1828,9 @@ export const createDtmStudio = async (
 			});
 		};
 
+		const { onResumeAudio: userOnResumeAudio, ...playOpts } = opts;
 		return playSingingMML(mml, {
-			...opts,
+			...playOpts,
 			audioContext: audioCtx,
 			destination: masterGain,
 			synth: false,
@@ -1830,15 +1839,18 @@ export const createDtmStudio = async (
 			onPlayDrum: playDrum,
 			onResumeAudio: async () => {
 				await resumeAudio();
+				await presetPromise;
 				if (meta.drum) {
 					await loadRequiredDrums(
 						getDrumPatternKeys(
 							meta.drum,
-							resolveDrumPatterns(opts.drumPatterns ?? options.drumPatterns),
+							resolveDrumPatterns(
+								playOpts.drumPatterns ?? options.drumPatterns,
+							),
 						),
 					);
 				}
-				await opts.onResumeAudio?.();
+				await userOnResumeAudio?.();
 			},
 		});
 	};
@@ -1933,7 +1945,7 @@ export const createDtmStudio = async (
 		}));
 
 		const playerPreset = defaultPreset;
-		void loadPreset(playerPreset, ["chord"]);
+		const presetPromise = loadPreset(playerPreset, ["chord"]);
 
 		const playPlayerNote = (e: PlayNoteEvent): void => {
 			const sfInst = resolveSoundFont(playerPreset, "chord");
@@ -1953,16 +1965,21 @@ export const createDtmStudio = async (
 			});
 		};
 
+		const { onResumeAudio: userOnResumeAudio, ...chordOpts } = opts;
 		return playPlacements(placements, {
-			...opts,
+			...chordOpts,
 			audioContext: audioCtx,
 			destination: masterGain,
 			synth: false,
 			onPlayNote: playPlayerNote,
 			onPlayDrum: playDrum,
-			onResumeAudio: resumeAudio,
+			onResumeAudio: async () => {
+				await resumeAudio();
+				await presetPromise;
+				await userOnResumeAudio?.();
+			},
 			bpm,
-			metaVolume: opts.volume ?? 100,
+			metaVolume: chordOpts.volume ?? 100,
 		});
 	};
 

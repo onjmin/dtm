@@ -95,6 +95,8 @@ export type DawUIRefs = {
 	macroCompose: HTMLButtonElement;
 	composeSections: HTMLElement;
 	composeSectionsLen: HTMLElement;
+	composeKey: HTMLSelectElement;
+	composeKeyHint: HTMLElement;
 	macroComposeVocal: HTMLButtonElement;
 	macroComposeInfo: HTMLButtonElement;
 	macroClear: HTMLButtonElement;
@@ -406,6 +408,56 @@ export const buildUI = (
         <span class="dtm-grow"></span>
         <span class="dtm-hint" data-dtm="compose-sections-len"></span>
       </div>
+      <div class="dtm-row ${showCompose ? "" : "dtm-hidden"}" data-dtm="compose-key-row">
+        <span class="dtm-label">ベース調</span>
+        <select class="dtm-select" data-dtm="compose-key" title="自動作曲のベースとなる調や雰囲気を選びます">
+          <option value="any" title="全24調からランダムに決定します">希望なし</option>
+          <optgroup label="基本">
+            <option value="major" title="12の長調の中からランダムに抽選します">長調</option>
+            <option value="minor" title="12の短調の中からランダムに抽選します">短調</option>
+          </optgroup>
+          <optgroup label="雰囲気から選ぶ（抽選）">
+            <option value="mood_happy" title="ハ長調・イ長調・変ロ長調から抽選（無垢に喜ばしい、牧歌的、陽気）">喜ばしい・陽気な曲</option>
+            <option value="mood_triumphant" title="ニ長調・変ト長調から抽選（意気揚々、勝利の喊声、困難打破、安堵）">勝利・力強い曲</option>
+            <option value="mood_fierce" title="ホ長調・ヘ長調・ロ長調から抽選（けんかっ早い、怒り狂った荒々しさ、どぎつく猛烈）">激しい・荒々しい曲</option>
+            <option value="mood_solemn" title="ト長調・ニ短調・イ短調から抽選（厳粛、崇高、幻想、敬虔、思索的）">厳粛・幻想的な曲</option>
+            <option value="mood_plaintive" title="ハ短調・ホ短調・ヘ短調から抽選（純粋に悲しげ、恋わずらい、落ち着きのない、物悲しい哀愁）">物悲しい・哀愁の曲</option>
+            <option value="mood_melancholy" title="変ニ長調・ロ短調・嬰ハ短調から抽選（悲しみ、憂鬱、孤独、忍耐、落胆、悲涙）">憂鬱・孤独な曲</option>
+            <option value="mood_anxious" title="ト短調・変ホ短調・嬰ヘ短調・変イ短調から抽選（不満、不安、深い苦悩、陰気な憤り）">不安・苦悩な曲</option>
+            <option value="mood_dark" title="変ホ長調・変イ長調・変ロ短調から抽選（厳しい愛、死、永遠、裁き、暗闇、恐ろしい嘲り）">暗闇・重厚な曲</option>
+          </optgroup>
+          <optgroup label="長調（個別指定）">
+            <option value="key_C" title="無垢に喜ばしい、純粋、素朴、出発">ハ長調 (C)</option>
+            <option value="key_Db" title="悲しみ、憂鬱な、甘美な感傷">変ニ長調 (D♭)</option>
+            <option value="key_D" title="意気揚々とした、勝利の、喊声">ニ長調 (D)</option>
+            <option value="key_Eb" title="厳しい、きつい、それでいて愛に満ちた">変ホ長調 (E♭)</option>
+            <option value="key_E" title="けんかっ早い、荒々しい、輝かしい情熱">ホ長調 (E)</option>
+            <option value="key_F" title="怒り狂った、気性の荒い、一時的な悲嘆">ヘ長調 (F)</option>
+            <option value="key_Gb" title="困難の打破、安堵のため息、凱旋">変ト長調 (G♭)</option>
+            <option value="key_G" title="厳粛な、崇高な、幻想、誠実">ト長調 (G)</option>
+            <option value="key_Ab" title="死、永遠、裁き、深遠な瞑想">変イ長調 (A♭)</option>
+            <option value="key_A" title="うれしい、牧歌的な、愛の告白">イ長調 (A)</option>
+            <option value="key_Bb" title="喜ばしい、風変わりな、陽気な、軽快">変ロ長調 (B♭)</option>
+            <option value="key_B" title="どぎつい、強烈な、荒っぽい、猛烈">ロ長調 (B)</option>
+          </optgroup>
+          <optgroup label="短調（個別指定）">
+            <option value="key_Am" title="柔らかな、物悲しい、敬虔な、素朴な哀愁">イ短調 (Am)</option>
+            <option value="key_Bbm" title="恐ろしい、暗闇、嘲るような、不気味">変ロ短調 (B♭m)</option>
+            <option value="key_Bm" title="孤独な、憂鬱な、忍耐、静かな諦念">ロ短調 (Bm)</option>
+            <option value="key_Cm" title="純粋に悲しげな、恋わずらいの、悲劇的">ハ短調 (Cm)</option>
+            <option value="key_Csm" title="落胆、泣き叫んだ、悲涙の、深い嘆き">嬰ハ短調 (C♯m)</option>
+            <option value="key_Dm" title="厳粛な、敬虔な、思索的な、重厚な祈り">ニ短調 (Dm)</option>
+            <option value="key_Ebm" title="深い苦悩、実存的な不安、戦慄">変ホ短調 (E♭m)</option>
+            <option value="key_Em" title="弱々しい、なまめかしい、落ち着きのない">ホ短調 (Em)</option>
+            <option value="key_Fm" title="ぼんやりした、物悲しい、しめやかな、葬送">ヘ短調 (Fm)</option>
+            <option value="key_Fsm" title="陰気な、激しい憤り、暗い情念">嬰ヘ短調 (F♯m)</option>
+            <option value="key_Gm" title="不満、不安、やるせなさ、悲痛な叫び">ト短調 (Gm)</option>
+            <option value="key_Abm" title="不服な、嘆きの、泣き叫んだ">変イ短調 (A♭m)</option>
+          </optgroup>
+        </select>
+        <span class="dtm-grow"></span>
+        <span class="dtm-hint" data-dtm="compose-key-hint"></span>
+      </div>
       <div class="dtm-row">
         <span class="dtm-label">全体シフト</span>
         <select class="dtm-select" data-dtm="shift-select">
@@ -605,6 +657,8 @@ export const buildUI = (
 		macroCompose: sel("macro-compose"),
 		composeSections: sel("compose-sections"),
 		composeSectionsLen: sel("compose-sections-len"),
+		composeKey: sel("compose-key"),
+		composeKeyHint: sel("compose-key-hint"),
 		macroComposeVocal: sel("macro-compose-vocal"),
 		macroComposeInfo: sel("macro-compose-info"),
 		macroClear: sel("macro-clear"),
