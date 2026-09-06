@@ -796,6 +796,11 @@ export const createDtmStudio = async (
 	};
 
 	const resumeAudio = (): Promise<void> => {
+		// 先行して走っていた別プレイヤー等のフェードアウトで gain が 0 に張り付いている
+		// 可能性を排除するため、再生開始時に fadeGain を即座に通常音量 1 へリセットする。
+		fadeGain.gain.cancelScheduledValues(audioCtx.currentTime);
+		fadeGain.gain.setValueAtTime(1, audioCtx.currentTime);
+
 		// Safari は new AudioContext() 直後に state が "running" と報告するが、
 		// ユーザー操作前はオーディオ出力が実際には有効化されていない場合がある。
 		// "running" でも resume() を呼ぶことは no-op で安全なため、
@@ -1902,9 +1907,7 @@ export const createDtmStudio = async (
 		const vol = options.volume ?? 80;
 		const dur = options.duration ?? 1.0;
 
-		if (audioCtx.state === "suspended") {
-			await audioCtx.resume();
-		}
+		await resumeAudio();
 
 		// SoundFont は整数MIDIノートのゾーンしか持たない。最寄りのゾーンを鳴らして
 		// 残差を detune で補正する（units をそのまま渡すとゾーンが無く無音になる）。

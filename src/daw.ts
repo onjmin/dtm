@@ -2684,6 +2684,10 @@ export const mountDAW = (
 			redrawAll();
 		},
 		onEnd: (interrupted) => {
+			// 曲が自然終了（または遅延検知で割り込み停止）した際、フェードアウトで
+			// gain が 0 に下がったままマスターバスが永久にミュートされるのを防ぐため、
+			// 必ずフェードスケジュールを解除して音量を 1 に復帰させる。
+			options.onScheduleFade?.(null);
 			if (interrupted) {
 				playbackState = "paused";
 				pausedPlayStep = currentPlayStep;
@@ -2797,15 +2801,23 @@ export const mountDAW = (
 			}
 			if (fadeOutSec > 0) {
 				const endStep = getSongEndStepExact();
-				const totalDurationSec = (endStep - fromStep) * secondsPerStepFade;
-				if (totalDurationSec > 0) {
-					const fadeOutEndAt = anchor + totalDurationSec;
-					const earliestStart = params.fadeInEndAt ?? anchor;
-					params.fadeOutEndAt = fadeOutEndAt;
-					params.fadeOutStartAt = Math.max(
-						fadeOutEndAt - fadeOutSec,
-						earliestStart,
-					);
+				// 再生開始位置がすでに曲終端以降の場合はフェードアウトしない
+				if (endStep > fromStep) {
+					const totalDurationSec = (endStep - fromStep) * secondsPerStepFade;
+					// 残り再生時間がフェードアウト秒数より十分ある場合、終端に向かってフェードアウトする
+					if (totalDurationSec > 0.1) {
+						const fadeOutEndAt = anchor + totalDurationSec;
+						const earliestStart = params.fadeInEndAt ?? anchor;
+						const fadeOutStartAt = Math.max(
+							fadeOutEndAt - fadeOutSec,
+							earliestStart,
+						);
+						// 開始時刻が終了時刻より前の場合のみスケジュール
+						if (fadeOutStartAt < fadeOutEndAt) {
+							params.fadeOutStartAt = fadeOutStartAt;
+							params.fadeOutEndAt = fadeOutEndAt;
+						}
+					}
 				}
 			}
 			options.onScheduleFade?.(params);
