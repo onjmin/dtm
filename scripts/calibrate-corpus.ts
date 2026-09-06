@@ -255,10 +255,77 @@ type SongFeatures = StructureFeatures &
 		valueKinds: number;
 		restRatio: number;
 		leapRatio: number;
+		stepRatio: number;
+		chromaticRatio: number;
 		maxLeap: number;
 		melodyRange: number;
 		bars: number;
 	};
+
+// ============================================================
+// 調の推定（Krumhansl-Schmuckler）
+// ============================================================
+
+/**
+ * 調が要るのは**変化音の割合**を測るため。生成側はハ長調で組んでから移調するので
+ * 主音が分かっているが、コーパスのMIDIには調の情報が無い。音価で重み付けした
+ * ピッチクラスの分布を、長調・短調のプロファイルと12回転ぶん相関させて主音を選ぶ。
+ */
+const MAJOR_PROFILE = [
+	6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
+];
+const MINOR_PROFILE = [
+	6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17,
+];
+
+const correlation = (a: number[], b: number[]): number => {
+	const ma = a.reduce((s, v) => s + v, 0) / a.length;
+	const mb = b.reduce((s, v) => s + v, 0) / b.length;
+	let num = 0;
+	let da = 0;
+	let db = 0;
+	for (let i = 0; i < a.length; i++) {
+		num += (a[i] - ma) * (b[i] - mb);
+		da += (a[i] - ma) ** 2;
+		db += (b[i] - mb) ** 2;
+	}
+	return da === 0 || db === 0 ? 0 : num / Math.sqrt(da * db);
+};
+
+/** 主音のピッチクラスと、長調か短調か。 */
+export const estimateKey = (
+	ns: MetricNote[],
+): { tonic: number; minor: boolean } => {
+	const hist = new Array(12).fill(0);
+	for (const n of ns)
+		hist[((Math.round(n.pitchSemi) % 12) + 12) % 12] += n.durationSteps;
+	let best = { tonic: 0, minor: false, score: Number.NEGATIVE_INFINITY };
+	for (let t = 0; t < 12; t++) {
+		const rotated = hist.slice(t).concat(hist.slice(0, t));
+		const major = correlation(rotated, MAJOR_PROFILE);
+		const minor = correlation(rotated, MINOR_PROFILE);
+		if (major > best.score) best = { tonic: t, minor: false, score: major };
+		if (minor > best.score) best = { tonic: t, minor: true, score: minor };
+	}
+	return { tonic: best.tonic, minor: best.minor };
+};
+
+/** ハ長調のピッチクラス（短調は平行長調へ寄せてから見る）。 */
+const DIATONIC_PCS = new Set([0, 2, 4, 5, 7, 9, 11]);
+
+/** 調の外の音が音数に占める割合。 */
+export const chromaticRatioOf = (ns: MetricNote[]): number => {
+	if (ns.length === 0) return 0;
+	const key = estimateKey(ns);
+	let outside = 0;
+	for (const n of ns) {
+		const rel = (((Math.round(n.pitchSemi) - key.tonic) % 12) + 12) % 12;
+		// 短調の主音は平行長調の6度なので、+9 で長調の度数へ写す。
+		const inMajor = key.minor ? (rel + 9) % 12 : rel;
+		if (!DIATONIC_PCS.has(inMajor)) outside++;
+	}
+	return outside / ns.length;
+};
 
 /**
  * MIDIをチャンネル単位のノート列へ展開する（打楽器 ch10 は除く）。
@@ -344,7 +411,13 @@ const featuresOf = (buf: Buffer): SongFeatures | null => {
 	if (melody.length === 0) return null;
 	sourceCounts.ok = (sourceCounts.ok ?? 0) + 1;
 
-	const mono = toMonophonic(quantize(melody));
+	// **主旋律が歌い始めるところから測る。** イントロで主旋律が鳴っていない小節を
+	// 含めると、休符率も音数も「イントロの長さ」を測っているだけになる。生成側も
+	// メロディを書かないセクション（イントロ・間奏）を除いて測るので、ここを
+	// 揃えないと「人間の曲はスカスカ」という誤った目標帯が出る。
+	const raw = toMonophonic(quantize(melody));
+	const offset = Math.floor(raw[0].startStep / STEPS_PER_BAR) * STEPS_PER_BAR;
+	const mono = raw.map((n) => ({ ...n, startStep: n.startStep - offset }));
 	const end = Math.max(...mono.map((n) => n.startStep + n.durationSteps));
 	const bars = Math.max(4, Math.ceil(end / STEPS_PER_BAR));
 	const opts = { stepsPerBar: STEPS_PER_BAR, bars };
@@ -364,7 +437,10 @@ const featuresOf = (buf: Buffer): SongFeatures | null => {
 		const coverage = ns.reduce((sum, n) => sum + n.durationSteps, 0);
 		if (coverage > subCoverage) {
 			subCoverage = coverage;
-			submelody = toMonophonic(quantize(ns));
+			submelody = toMonophonic(quantize(ns)).map((n) => ({
+				...n,
+				startStep: n.startStep - offset,
+			}));
 		}
 	}
 
@@ -375,12 +451,14 @@ const featuresOf = (buf: Buffer): SongFeatures | null => {
 
 	const durations = mono.map((n) => n.durationSteps);
 	let leaps = 0;
+	let steps = 0;
 	let intervals = 0;
 	let maxLeap = 0;
 	for (let i = 1; i < mono.length; i++) {
 		const gap = Math.abs(mono[i].pitchSemi - mono[i - 1].pitchSemi);
 		intervals++;
 		if (gap > 2) leaps++;
+		else if (gap > 0) steps++;
 		maxLeap = Math.max(maxLeap, gap);
 	}
 	const played = durations.reduce((a, b) => a + b, 0);
@@ -393,6 +471,8 @@ const featuresOf = (buf: Buffer): SongFeatures | null => {
 		valueKinds: new Set(durations).size,
 		restRatio: Math.max(0, 1 - played / (bars * STEPS_PER_BAR)),
 		leapRatio: intervals === 0 ? 0 : leaps / intervals,
+		stepRatio: intervals === 0 ? 0 : steps / intervals,
+		chromaticRatio: chromaticRatioOf(mono),
 		maxLeap,
 		melodyRange: Math.max(...pitches) - Math.min(...pitches),
 		bars,
@@ -555,6 +635,8 @@ const main = async (): Promise<void> => {
 		"valueKinds",
 		"restRatio",
 		"leapRatio",
+		"stepRatio",
+		"chromaticRatio",
 		"maxLeap",
 		"melodyRange",
 		"notesPerBar",
@@ -570,6 +652,7 @@ const main = async (): Promise<void> => {
 	] as const;
 
 	const bands: Record<string, [number, number, number, number]> = {};
+	const medians: Record<string, number> = {};
 	console.log(
 		`● コーパス ${rows.length}曲（主旋律を取り出せず除外 ${skipped}本）`,
 	);
@@ -582,6 +665,13 @@ const main = async (): Promise<void> => {
 	for (const k of keys) {
 		const values = rows.map((r) => r[k] as number).filter(Number.isFinite);
 		bands[k] = bandOf(values);
+		medians[k] =
+			Math.round(
+				percentile(
+					[...values].sort((a, b) => a - b),
+					0.5,
+				) * 1000,
+			) / 1000;
 		console.log(
 			`  ${k.padEnd(16)}${bands[k].map((v) => v.toFixed(3).padStart(7)).join(" ")}`,
 		);
@@ -609,6 +699,15 @@ export const CORPUS_SIZE = ${rows.length};
 export const CORPUS_BANDS = {
 ${keys.map((k) => `\t${k}: [${bands[k].join(", ")}] as Band,`).join("\n")}
 } satisfies Record<string, Band>;
+
+/**
+ * 同じ分布の中央値。**帯の内側で「人間の曲の真ん中に近いか」を見る**のに使う
+ * （compose-metrics.ts の centeredBand）。周辺分布の帯だけだと、全項目が帯の端に
+ * 同時に寄った曲も満点になってしまう。
+ */
+export const CORPUS_MEDIANS = {
+${keys.map((k) => `\t${k}: ${medians[k]},`).join("\n")}
+} satisfies Record<keyof typeof CORPUS_BANDS, number>;
 `;
 	writeFileSync(new URL("../src/compose-corpus.ts", import.meta.url), body);
 	console.log("\n  → src/compose-corpus.ts を書き出しました");

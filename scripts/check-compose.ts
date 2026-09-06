@@ -8,6 +8,7 @@
  *   pnpm test
  */
 
+import { parseChord } from "@onjmin/chord-parser";
 import { buildChordPlacements } from "../src/chords";
 import {
 	ANSWER_FIGURES,
@@ -639,6 +640,85 @@ console.log("● 格子への乗り");
 	check("16分格子の上に乗る", offGrid === 0, `${offGrid}/${notes}音が格子外`);
 	check("小節線をまたがない", cross === 0, `${cross}/${notes}音がまたぎ`);
 	console.log(`  ${N}曲: 格子外 ${offGrid}音 / 小節線またぎ ${cross}音`);
+}
+
+// ============================================================
+// 2.65 変化音（調の外の音）
+//
+//     メロディは長らく音階の度数だけで組み立てられていて、`nearestChordTone` が
+//     `E7` の `G#` を返してもその場で音階へ丸められていた。実測で非ダイアトニック音は
+//     **40曲・約4000音を測って0音**。参考曲91本は音数比で中央値4%・p75で11%あり、
+//     「どの曲も同じ音階をなぞっている＝調が固定に聞こえる」の実体がここだった。
+//
+//     変化音は**置けば良いというものではない**。和音構成音でもなく、順次で入って
+//     順次で出るのでもない半音は、通り過ぎる音ではなく「調を外した音」として耳に残る。
+//     実装当初はそれが変化音の45%を占めていたので、ここで0であることを検算する。
+// ============================================================
+
+console.log("● 変化音（調の外の音）");
+{
+	const N = 60;
+	const DIATONIC = new Set([0, 2, 4, 5, 7, 9, 11]);
+	let notes = 0;
+	let chromatic = 0;
+	let unresolved = 0;
+	let songsWithChromatic = 0;
+	for (let seed = 1; seed <= N; seed++) {
+		const song = composeSong({
+			stepsPerBar: STEPS_PER_BAR,
+			edo: 12,
+			random: seededRandom(seed * 104729),
+		});
+		const progression = song.chordProgression.split("|");
+		let inSong = 0;
+		for (let i = 0; i < song.melody.length; i++) {
+			const n = song.melody[i];
+			notes++;
+			// 生成はハ長調で行い、最後に rootShift だけ移調してある。
+			const semi = n.pitchUnits / UNITS_PER_SEMITONE;
+			const pc = (((Math.round(semi) - song.rootShift) % 12) + 12) % 12;
+			if (DIATONIC.has(pc)) continue;
+			chromatic++;
+			inSong++;
+			// 許されるのは「その瞬間の和音の構成音」か「順次で入って順次で出る短い音」。
+			const bar = Math.floor(n.startStep / STEPS_PER_BAR);
+			let tones: number[] = [];
+			try {
+				tones = parseChord(progression[bar] ?? "C").notes.map(
+					(v) => ((v % 12) + 12) % 12,
+				);
+			} catch {}
+			if (tones.includes(pc)) continue;
+			const prev = song.melody[i - 1];
+			const next = song.melody[i + 1];
+			const stepIn =
+				!prev || Math.abs(semi - prev.pitchUnits / UNITS_PER_SEMITONE) <= 2;
+			const stepOut =
+				!next || Math.abs(next.pitchUnits / UNITS_PER_SEMITONE - semi) <= 2;
+			if (n.durationSteps <= STEPS_PER_BAR / 8 && stepIn && stepOut) continue;
+			unresolved++;
+		}
+		if (inSong > 0) songsWithChromatic++;
+	}
+	check(
+		"変化音は和音構成音か順次で出入りする経過音のどちらか",
+		unresolved === 0,
+		`${unresolved}/${chromatic}音が浮いている`,
+	);
+	check(
+		"変化音がまったく出ない状態に戻っていない",
+		songsWithChromatic >= N / 2,
+		`${songsWithChromatic}/${N}曲`,
+	);
+	// 参考曲は音数比で p05 0.000 / p50 0.040 / p95 0.237。撒きすぎも退行。
+	check(
+		"変化音の割合が参考曲の範囲に収まる",
+		chromatic / notes <= 0.237,
+		`${((chromatic / notes) * 100).toFixed(1)}%`,
+	);
+	console.log(
+		`  ${N}曲: 変化音 ${((chromatic / notes) * 100).toFixed(1)}% / 浮いた変化音 ${unresolved}音 / 変化音を含む曲 ${songsWithChromatic}曲`,
+	);
 }
 
 // ============================================================

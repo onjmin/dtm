@@ -70,6 +70,43 @@
  * さらに、指標に最適化した結果として全曲が同じ統計値へ寄るのを防ぐため、直近に作った
  * 曲との距離を加点している（{@link ComposeOptions.recent}）。
  *
+ * ## 「調が固定に聞こえる」を潰したこと
+ *
+ * 曲の調（{@link ROOT_SHIFTS}）は曲ごとに12調へ散らしてあるのに、続けて聴くと
+ * どれも同じ調子に聞こえる、という状態が長く残っていた。参考曲91本と生成物を
+ * **同じ物差しで測って**原因を特定した（`scripts/compare-corpus.ts`）。
+ *
+ * - **メロディが調の外の音を1音も出せなかった。** 音の並びは最後まで音階の度数
+ *   （{@link MAJOR_SCALE}）で持っていて、{@link nearestChordTone} が `E7` の `G#` を
+ *   返しても `semitoneToDegree` がその場で `G` へ丸めていた。実測で非ダイアトニック音は
+ *   40曲・約4000音を測って**0音**（参考曲は音数比で中央値4%・p75で11%）。
+ *   進行にセカンダリドミナントを入れておきながら、旋律だけが調に留まっていた。
+ *   {@link applyChromatic} と、アボイドノートを半音上の和音構成音へ解決させる分岐
+ *   （{@link shapeBar}）で、和音の変化音・半音の経過音を通すようにしてある。
+ * - **和音の側にも調の外が無かった。** 進行の候補が全部ハ長調／イ短調の
+ *   ダイアトニックだったので、借用和音（サブドミナントマイナー・bVII・裏コード）を
+ *   候補に足した。
+ *
+ * ## 帯の内側で、どこに居るか
+ *
+ * 目標帯（{@link CORPUS_BANDS}）は指標ごとに独立して採った**周辺分布**なので、
+ * p25〜p75 を一律に満点にすると**全部の帯の端に同時に居座る曲**も満点を取れる。
+ * 実測がまさにそれで、参考曲と生成物の中央値を並べると
+ *
+ *   1小節の音数 6.3 / 5.2　　順次進行 0.50 / 0.36　　休符率 0.07 / 0.18
+ *   跳躍率 0.37 / 0.51　　音域 19 / 23半音
+ *
+ * と、**どの項目も帯の内側なのに揃って同じ側へ寄っていた**——「スカスカで跳ねて
+ * ばかりの曲」は、周辺分布だけ見れば全項目が人間の範囲に収まる。帯の内側にも
+ * 中央値へ向かう傾斜を付け（`centeredBand`）、測っていたのに採点していなかった
+ * 密度（{@link file://./compose-metrics.ts} の `DensityFeatures`）と順次進行の比率を
+ * 採点項目に足した。
+ *
+ * ただし**採点だけでは密度は動かない**。候補40本はどれも同じ分布から引いた
+ * ものなので、選抜しても中央値は1音も動かなかった。曲ごとに狙いの密度と休符率を
+ * 先に決めて、それに近いリズム型を引くようにしてある（`targetNotesPerBar` /
+ * `targetRestRatio`）。
+ *
  * ## サブメロの制約が外れたこと
  *
  * サブメロは長らく「単音・低密度・長音価」の形しか書けなかった。おまかせマスタリングの
@@ -86,7 +123,7 @@ import {
 	semitonesToUnits,
 	spelledToUnits,
 } from "./chords";
-import { CORPUS_BANDS, CORPUS_SIZE } from "./compose-corpus";
+import { CORPUS_BANDS, CORPUS_MEDIANS, CORPUS_SIZE } from "./compose-corpus";
 import {
 	type ComposedDrums,
 	composeDrumPattern,
@@ -95,6 +132,8 @@ import {
 import {
 	type Band,
 	band,
+	centeredBand,
+	type DensityFeatures,
 	densityFeatures,
 	featureDistance,
 	featureVector,
@@ -173,6 +212,17 @@ const WEIGHTS = {
 	leapRatio: 0.6,
 	maxLeap: 0.4,
 	melodyRange: 0.6,
+	/**
+	 * メロディの速さ。**測っていたのに採点していなかった**項目で、実測は
+	 * 1小節 4.4音（参考曲 5.0〜7.3）・順次進行 34%（参考曲 20〜61%、中央値50%）と
+	 * 「スカスカで跳ねてばかり」に寄っていた。
+	 */
+	notesPerBar: 0.8,
+	shortNoteRatio: 0.6,
+	/** 順次進行の比率。跳躍率だけを見ていると、跳躍の帯の上端に張り付く。 */
+	stepRatio: 0.8,
+	/** 調の外の音。0のままだと全曲が同じ音階をなぞるだけになる。 */
+	chromaticRatio: 0.6,
 	// --- 構造（順序依存）。ここが本体 ---
 	/** 隣り合う小節は違う形をしているか（高すぎると「同じ小節の連打」）。 */
 	sim1: 0.8,
@@ -383,6 +433,14 @@ const SECTION_A_PROGRESSIONS: string[][] = [
 	["Am", "C", "F", "G"], // マイナー始まりの4536
 	["FM7", "G7", "CM7", "Am7"], // ジャズ寄りの2-5-1
 	["Dm7", "G7", "Em7", "Am7"], // 2-5-3-6
+	// --- 借用和音（同主短調・ミクソリディアンから借りる） ---
+	// **調の外の和音を進行そのものに持たせる。** ここまでの候補は全部ハ長調／イ短調の
+	// ダイアトニックで、セカンダリドミナント以外に調の外の音が出てこなかった。
+	// メロディが変化音を採れるようになった（{@link applyChromatic}）ので、
+	// 和音の側にも「調の外」を用意しておかないと、その受け皿が無い。
+	["F", "Fm", "C", "G7"], // サブドミナントマイナー（王道の陰り）
+	["C", "Bb", "F", "C"], // bVII（ミクソリディアン借用）
+	["Am", "Dm7", "Bb", "E7"], // bVI からドミナントへ
 ];
 
 /** B部（9〜12小節）の候補。A部と質感を変えるため、必ず別の進行から引く。 */
@@ -399,6 +457,11 @@ const SECTION_B_PROGRESSIONS: string[][] = [
 	["Dm7", "A7", "Dm7", "G7"],
 	["FM7", "E7", "Am", "G7"],
 	["Am7", "D7", "Dm7", "G7"], // ドッペルドミナント
+	// --- 借用和音 ---
+	["FM7", "Fm7", "Em7", "Am"], // サブドミナントマイナーで陰らせる
+	["F", "G", "Ab", "Bb"], // bVI→bVII（サビ前の持ち上げ）
+	["Dm7", "Db7", "CM7", "A7"], // 裏コード（トライトーン代理）
+	["Am", "C7", "F", "Fm"], // セカンダリドミナント → サブドミナントマイナー
 ];
 
 /**
@@ -990,6 +1053,12 @@ export type ComposeStats = {
 	maxLeapSemitones: number;
 	/** 隣接音程のうち跳躍（3半音以上）が占める比率。低すぎると「のっぺり」。 */
 	leapRatio: number;
+	/** 隣接音程のうち順次進行（1〜2半音）が占める比率。歌いやすさの側。 */
+	stepRatio: number;
+	/** 調の外の音（変化音）が音数に占める比率。0が続くと「調が固定」に聞こえる。 */
+	chromaticRatio: number;
+	/** メロディの密度（1小節あたりの音数・短い音の比率）。 */
+	density: DensityFeatures;
 	/** メロディが使った音域（半音）。 */
 	melodyRange: number;
 	/** サブメロが使った音域（半音）。小さいと旋律になっていない。 */
@@ -1200,6 +1269,14 @@ type MelodyStyle = {
 	cadenceShape: CadenceShape;
 	/** 弱拍で跳躍を混ぜる確率。 */
 	leapAffinity: number;
+	/**
+	 * 調の外の音（変化音）を使う度合い。{@link applyChromatic} 参照。
+	 *
+	 * 0 の曲も混ぜる——全曲に半音を撒くと今度はどの曲も同じ「半音まみれ」の
+	 * 顔になる。参考曲も非ダイアトニック音が 0 に近い曲から 20% を超える曲まで
+	 * 幅がある（音数比で p05 0.00 / p50 0.04 / p95 0.22）。
+	 */
+	chromaticAffinity: number;
 	/** 強拍で着地させる構成音の重み下限（3=ルート/5度のみ、2=3度/7度も許す）。 */
 	barHeadWeight: 2 | 3;
 	bassStyle: BassStyle;
@@ -1586,6 +1663,8 @@ const shapeBar = (
 		quarterSteps: number;
 		/** 弱拍でオクターブ跳躍を入れる確率。 */
 		octaveAffinity: number;
+		/** アボイドノートを半音上の和音構成音へ解決させる確率。 */
+		chromaticAffinity: number;
 		rnd: () => number;
 		/**
 		 * モチーフの輪郭をそのまま鳴らす。
@@ -1652,11 +1731,28 @@ const shapeBar = (
 			toneWeight(semi, tones) === 0 &&
 			(slots[i].isStrong || slots[i].value >= opts.quarterSteps)
 		) {
-			const up = clampSemi(walk(semi, 1), MELODY_LOW, MELODY_HIGH);
-			const down = clampSemi(walk(semi, -1), MELODY_LOW, MELODY_HIGH);
-			const score = (s: number) =>
-				toneWeight(s, tones) * 2 + (i > 0 && s === prev ? -3 : 0);
-			semi = score(down) >= score(up) ? down : up;
+			// **アボイドノートは半音上に和音構成音があるから避けられている。**
+			// その構成音そのものへ半音上げて解決するのが、いちばん自然な逃げ先。
+			// `E7` の上のソ→ソ#、`A7` の上のド→ド# がここで出る——調の外の音だが、
+			// それは「和音がそう鳴っている」というだけのことで、この様式の泣きメロの
+			// 芯はまさにこの音。度数へ丸めていた頃は隣の音階音へ逃げるしかなく、
+			// セカンダリドミナントの上でメロディだけ調に留まっていた。
+			const resolved = semi + 1;
+			const useResolved =
+				resolved <= MELODY_HIGH &&
+				!DIATONIC_PCS.has(pitchClass(resolved)) &&
+				toneWeight(resolved, tones) >= 2 &&
+				resolved !== prev &&
+				opts.rnd() < opts.chromaticAffinity;
+			if (useResolved) {
+				semi = resolved;
+			} else {
+				const up = clampSemi(walk(semi, 1), MELODY_LOW, MELODY_HIGH);
+				const down = clampSemi(walk(semi, -1), MELODY_LOW, MELODY_HIGH);
+				const score = (s: number) =>
+					toneWeight(s, tones) * 2 + (i > 0 && s === prev ? -3 : 0);
+				semi = score(down) >= score(up) ? down : up;
+			}
 		}
 		out.push(semi);
 		prev = semi;
@@ -1751,6 +1847,141 @@ const applyPentatonic = (
 	}
 };
 
+// ============================================================
+// 変化音（調の外の音）
+// ============================================================
+
+/**
+ * ハ長調のピッチクラス。ここに無い音が「調の外の音（変化音）」。
+ */
+const DIATONIC_PCS = new Set(MAJOR_SCALE.map((d) => d.semi));
+
+/**
+ * ピッチクラス → 五度圏インデックス。**上行の変化音はシャープ、下行はフラット**で
+ * 綴る（C→C#→D と上がるならド・ド#・レ、E→Eb→D と下がるならミ・ミb・レ）。
+ * 綴りが要るのは31平均律で C# と Db が別の音になるためで、12平均律でも
+ * ピアノロールの表示がこれで決まる。
+ */
+const SHARP_FIFTHS = [0, 7, 2, 9, 4, -1, 6, 1, 8, 3, 10, 5];
+const FLAT_FIFTHS = [0, -5, 2, -3, 4, -1, -6, 1, -4, 3, -2, 5];
+
+/** 音階上の音の綴り。変化音でない音はこちらで綴る。 */
+const diatonicFifth = (semi: number): number =>
+	degreeToPitch(semitoneToDegree(semi)).fifth;
+
+/** `semi` と同じピッチクラスのうち、`near` にいちばん近い高さ。 */
+const nearestOctaveOf = (near: number, semi: number): number => {
+	const pc = pitchClass(semi);
+	let best = pc;
+	let bestDist = Number.POSITIVE_INFINITY;
+	for (let oct = 0; oct <= 10; oct++) {
+		const s = pc + oct * 12;
+		const d = Math.abs(s - near);
+		if (d < bestDist) {
+			bestDist = d;
+			best = s;
+		}
+	}
+	return best;
+};
+
+/**
+ * 調の外の音（変化音）を通す。**メロディの音を作り終えた最後に掛ける。**
+ *
+ * ## なぜ要るか
+ *
+ * ここまでの生成は音階の度数（{@link MAJOR_SCALE}）だけで組み立てていて、
+ * {@link nearestChordTone} が `E7` の `G#` を返しても `semitoneToDegree` が
+ * その場で `G` か `A` へ丸めていた。結果、**生成物の非ダイアトニック音は
+ * 実測で1音も無い**（40曲・約4000音を測って0%）。参考曲91本は音数比で
+ * 中央値4%・p75で11%あり、ここが「調が固定に聞こえる」の実体だった。
+ *
+ * セカンダリドミナントを進行に入れておきながらメロディがその変化音を採れないと、
+ * `E7` の上で `G` を鳴らす（和音の `G#` と半音でぶつかる）か、避けて `A` へ
+ * 逃げるかしかない。**進行だけ借りて旋律が付いていっていない**状態になる。
+ *
+ * ## 何を通すか
+ *
+ * - **和音の変化音**（`E7` の `G#`、`D7` の `F#`、`A7` の `C#`、`Bm7-5` の `F`）。
+ *   強拍と長い音で、半音〜全音以内にあるときだけ寄せる。ここが泣きメロの芯になる。
+ * - **半音の経過音**。全音で隣り合う2音の間を、短い弱拍で半音ずつ通り抜ける。
+ * - **半音のアプローチ**。強拍の音へ、その半音下（上行時）から入る。
+ *
+ * どれも**弱拍・短い音でしか作らない**（和音の変化音を除く）ので、調の感じは
+ * 壊れない。曲ごとに {@link MelodyStyle.chromaticAffinity} を引くので、
+ * 変化音をまったく使わない曲も混ざる。
+ */
+const applyChromatic = (
+	pitches: number[],
+	fifths: number[],
+	slots: Slot[],
+	tones: ChordTone[],
+	opts: {
+		affinity: number;
+		quarterSteps: number;
+		shortSteps: number;
+		/** 最後の音を触らない（着地音が決まっている楽句の終わり）。 */
+		keepLast: boolean;
+		rnd: () => number;
+	},
+): void => {
+	const last = pitches.length - 1;
+	// ⓪ 和音構成音と同じ高さの音は、**その構成音の綴りで書く**。
+	// `E7` の上のソ#を「ラのフラット」と綴ると、31平均律で別の音になってしまう。
+	for (let i = 0; i < pitches.length; i++) {
+		const tone = tones.find(
+			(x) => pitchClass(x.semi) === pitchClass(pitches[i]),
+		);
+		if (tone) fifths[i] = tone.fifth;
+	}
+	// ① 和音の変化音を採る。
+	const altered = tones.filter((t) => !DIATONIC_PCS.has(pitchClass(t.semi)));
+	for (let i = 0; i < pitches.length; i++) {
+		if (opts.keepLast && i === last) continue;
+		if (!slots[i].isStrong && slots[i].value < opts.quarterSteps) continue;
+		for (const tone of altered) {
+			const target = nearestOctaveOf(pitches[i], tone.semi);
+			const gap = Math.abs(target - pitches[i]);
+			// 半音差は無条件（避けて逃げた先から戻す）。全音差は輪郭が動くので確率で。
+			if (gap === 0 || gap > 2) continue;
+			if (gap === 2 && opts.rnd() > opts.affinity) continue;
+			// 直前の音と同じ高さへ潰れる寄せ方はしない。
+			if (i > 0 && target === pitches[i - 1]) continue;
+			pitches[i] = target;
+			fifths[i] = tone.fifth;
+			break;
+		}
+	}
+	if (opts.affinity <= 0) return;
+	// ② 半音の経過音・アプローチ。短い弱拍だけを書き換える。
+	//
+	// **必ず順次で入って順次で出る形にする。** 変化音を跳躍で掴んだり、変化音から
+	// 跳んで離れたりすると、通り過ぎる音ではなく「調を外した音」として耳に残る。
+	// 実測でその形が変化音の45%を占めていたので、前後どちらも2半音以内に収まる
+	// 置き方（全音で入って半音で出る／半音で入って半音で出る）だけを作る。
+	let lastAltered = -2;
+	for (let i = 1; i < last; i++) {
+		if (slots[i].isStrong || slots[i].value > opts.shortSteps) continue;
+		// 変化音を続けて置かない（半音階の走句になってしまう）。
+		if (i - lastAltered <= 1) continue;
+		if (opts.rnd() > opts.affinity) continue;
+		const before = pitches[i - 1];
+		const after = pitches[i + 1];
+		const dir = Math.sign(after - before);
+		if (dir === 0) continue;
+		const span = Math.abs(after - before);
+		// 経過音（全音の間を埋める）と、アプローチ（全音で入って半音で出る）。
+		const target = span === 2 ? before + dir : span === 3 ? after - dir : null;
+		if (target === null) continue;
+		if (DIATONIC_PCS.has(pitchClass(target))) continue; // 変化音になる場合だけ
+		if (target === before || target === after) continue;
+		if (target < MELODY_LOW || target > MELODY_HIGH) continue;
+		pitches[i] = target;
+		fifths[i] = (dir > 0 ? SHARP_FIFTHS : FLAT_FIFTHS)[pitchClass(target)];
+		lastAltered = i;
+	}
+};
+
 /** 1回分の draw。点数を付けるのは呼び出し側（{@link evaluate}）の仕事。 */
 type Draw = Omit<ComposeResult, "stats" | "drums"> & {
 	melodyDurations: number[];
@@ -1758,6 +1989,10 @@ type Draw = Omit<ComposeResult, "stats" | "drums"> & {
 	totalSteps: number;
 	maxLeap: number;
 	leapRatio: number;
+	/** 隣接音程が2半音以内（同音を除く）だった割合。順次進行の多さ。 */
+	stepRatio: number;
+	/** 調の外の音が音数に占める割合。 */
+	chromaticRatio: number;
 	melodyRange: number;
 	submelodyRange: number;
 	/** 小節ごとの緊張度（0〜1）。{@link tensionFeatures} の材料。 */
@@ -1972,6 +2207,9 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		),
 		// 人間の曲の跳躍率は p25〜p75 で 0.40〜0.55。上限が低いとその帯へ届かない。
 		leapAffinity: 0.08 + rnd() * 0.3,
+		// 4曲に1曲は変化音を使わない曲にする（調の外の音は曲の性格そのものなので、
+		// 全曲に掛けると「どの曲も同じ味付け」になる）。
+		chromaticAffinity: rnd() < 0.25 ? 0 : 0.15 + rnd() * 0.45,
 		barHeadWeight: rnd() < 0.65 ? 3 : 2,
 		bassStyle: pick<BassStyle>(
 			[
@@ -2013,7 +2251,51 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	// **モチーフは2小節。** 1小節の型を1つ引いて全部そこから作っていた頃は、
 	// 「ボーカルが一息で歌いきる長さ」という言い回しの単位を持てていなかった。
 	const motifPool = groovyCells(MOTIF_CELLS, style.groove, rnd);
-	const motifCell = pick(motifPool, rnd);
+	/**
+	 * 曲ごとの「刻みの細かさ」の狙い（1小節あたりの音数）。
+	 *
+	 * **型をただ引くだけでは、曲の密度が引きの平均へ集まる。** 実測で生成物は
+	 * 1小節 5.15音（参考曲 5.0〜7.3、中央値5.9）に張り付き、候補を40本引いても
+	 * 中央値が1音も動かなかった——どの候補も同じ分布から引いているので、
+	 * 選抜では密度は変えられない。**曲ごとに狙いの密度を先に決めて、それに近い型を
+	 * 引く**ようにすると、曲どうしの差（詰め込んだ曲・空けた曲）も同時に出る。
+	 */
+	const targetNotesPerBar = 4 + rnd() * 4.5;
+	/**
+	 * 曲ごとの休符率の狙い。参考曲は中央値0.12（p25〜p75で0.06〜0.17）、
+	 * 生成物は0.18で頭打ちだった。息継ぎの型（{@link RHYTHM_CELLS} の sparse）と
+	 * 休符入りの言い回しが、密度と無関係に一定の割合で引かれていたため。
+	 */
+	const targetRestRatio = 0.02 + rnd() * 0.22;
+	/** 1小節の型が持つ音数。 */
+	const cellNotes = (c: RhythmCell): number =>
+		c.value.filter((v) => v > 0).length;
+	/** 1小節の型が休符に使うステップの比率。 */
+	const cellRest = (c: RhythmCell): number => {
+		let rest = 0;
+		let total = 0;
+		for (const v of c.value) {
+			total += Math.abs(v);
+			if (v < 0) rest += -v;
+		}
+		return total === 0 ? 0 : rest / total;
+	};
+	/**
+	 * 狙いの密度に近い型を引く。3本引いて一番近いものを採る——1本に絞ると
+	 * 密度が同じ曲ばかりになるので、**寄せるだけで固定はしない**。
+	 */
+	const cellDistance = (c: RhythmCell): number =>
+		Math.abs(cellNotes(c) - targetNotesPerBar) +
+		Math.abs(cellRest(c) - targetRestRatio) * 8;
+	const pickCell = (pool: RhythmCell[]): RhythmCell => {
+		let best = pick(pool, rnd);
+		for (let i = 0; i < 2; i++) {
+			const c = pick(pool, rnd);
+			if (cellDistance(c) < cellDistance(best)) best = c;
+		}
+		return best;
+	};
+	const motifCell = pickCell(motifPool);
 	/**
 	 * モチーフ2小節目。
 	 *
@@ -2024,19 +2306,27 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	const motifCell2 =
 		rnd() < 0.45
 			? motifCell
-			: pick(
-					motifPool.filter((c) => c !== motifCell),
-					rnd,
-				);
+			: pickCell(motifPool.filter((c) => c !== motifCell));
 	/** 対照的な楽句（サビ用）のモチーフ。A と別の型を引く。 */
-	const motifB = pick(
+	const motifB = pickCell(
 		motifPool.filter((c) => c !== motifCell && c !== motifCell2),
-		rnd,
 	);
-	const motifB2 = pick(
-		motifPool.filter((c) => c !== motifB),
-		rnd,
+	const motifB2 = pickCell(motifPool.filter((c) => c !== motifB));
+	/**
+	 * Bメロ（`a2`）のモチーフ。**Aメロと同じ型を使い回さない。**
+	 *
+	 * ここを分けるまで、曲全体の発音パターンは
+	 * Aメロ2種＋サビ2種＋息継ぎ1種の**5種類しか無かった**（参考曲は20小節で
+	 * 8種類前後）。Bメロは「Aメロと同じ素材のセクエンツ」だが、音の並びが
+	 * 同じ素材由来でも、**リズムまで同じだとセクションが変わったと聞こえない**。
+	 */
+	const motifA2 = pickCell(
+		motifPool.filter(
+			(c) => c !== motifCell && c !== motifCell2 && c !== motifB,
+		),
 	);
+	const motifA22 =
+		rnd() < 0.45 ? motifA2 : pickCell(motifPool.filter((c) => c !== motifA2));
 
 	// 対旋律のリズム。曲ごとに1つ引いて使い回す（サブメロにも「その曲の型」を持たせる）。
 	const counterRhythm = pick(
@@ -2071,6 +2361,14 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 			continue;
 		}
 		const isB = units[u].source === "b";
+		const isA2 = units[u].source === "a2";
+		/** その楽句が使う2小節ぶんのリズム型（前半・後半）。 */
+		const pair = (): [RhythmCell, RhythmCell] =>
+			isB
+				? [motifB, motifB2]
+				: isA2
+					? [motifA2, motifA22]
+					: [motifCell, motifCell2];
 		let cell: RhythmCell;
 		if (units[u].source === "answer") {
 			// 答えは問いと同じリズムで入る。**白玉＋休符で受けるのは大楽節の
@@ -2078,19 +2376,18 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 			// フレーズの切れ目率が実測0.50まで上がる（参考曲は0.25）。
 			// 息継ぎで受けるのはセクションの終わり（＝着地音が決まっている楽句）。
 			const isPeriodEnd = units[u].landing !== null;
-			cell =
-				half === 0
-					? isB
-						? motifB
-						: motifCell
-					: isPeriodEnd
-						? breathCell
-						: isB
-							? motifB2
-							: motifCell2;
+			// 答えは直前の問いと同じ素材で受ける（`answer` 自身は素材を持たない）。
+			const prevSource = units[u - 1]?.source;
+			const [head, tail] =
+				prevSource === "b"
+					? [motifB, motifB2]
+					: prevSource === "a2"
+						? [motifA2, motifA22]
+						: [motifCell, motifCell2];
+			cell = half === 0 ? head : isPeriodEnd ? breathCell : tail;
 		} else {
-			cell =
-				half === 0 ? (isB ? motifB : motifCell) : isB ? motifB2 : motifCell2;
+			const [head, tail] = pair();
+			cell = half === 0 ? head : tail;
 		}
 		barRhythms.push(scaleCell(cell.value));
 	}
@@ -2126,7 +2423,12 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	let restSteps = 0;
 	let maxLeap = 0;
 	let leaps = 0;
+	let steps = 0;
 	let intervals = 0;
+	/** 調の外の音（変化音）の数。{@link applyChromatic} が通した音。 */
+	let chromaticNotes = 0;
+	/** メロディを書いた小節の数（休符率の母数）。 */
+	let sungBars = 0;
 	// 開始音を曲ごとに変える。初版はここが 72 固定で、60%の曲が同じ音から始まっていた。
 	let prevSemi = pick([60, 64, 65, 67, 69, 72, 74, 76], rnd);
 
@@ -2278,12 +2580,25 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 					role === "motif" || role === "sequence" || role === "climax"
 						? 0
 						: style.octaveAffinity,
+				chromaticAffinity: style.chromaticAffinity,
 				rnd,
 				preserveContour: isMotifBar,
 			},
 		);
 
 		if (landing !== null && barInUnit(bar) === 1) landPitch(pitches, landing);
+
+		// **最後に変化音を通す。** ここまでの音は全部ハ長調の音階の上にあり、
+		// セカンダリドミナントの上でも和音の変化音を採れていなかった
+		// （実測で非ダイアトニック音が1音も出ない＝調が固定に聞こえる原因）。
+		const fifths = pitches.map(diatonicFifth);
+		applyChromatic(pitches, fifths, slots, tones, {
+			affinity: style.chromaticAffinity,
+			quarterSteps,
+			shortSteps: scaleStep(EIGHTH),
+			keepLast: landing !== null && barInUnit(bar) === 1,
+			rnd,
+		});
 
 		// **イントロと間奏はメロディを書かない。** ここに歌メロを置くと、
 		// どのセクションも同じ顔になり「ずっと歌っている曲」になってしまう。
@@ -2307,19 +2622,17 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 				maxLeap = Math.max(maxLeap, gap);
 				intervals++;
 				if (gap > STEP_SEMITONES) leaps++;
+				else if (gap > 0) steps++;
 			}
 			const slot = slots[i];
 			if (silent) {
 				prevSemi = semi;
 				continue;
 			}
+			if (!DIATONIC_PCS.has(pitchClass(semi))) chromaticNotes++;
 			melody.push({
 				startStep: barStart + slot.at,
-				pitchUnits: spelledToUnits(
-					semi,
-					degreeToPitch(semitoneToDegree(semi)).fifth,
-					edo,
-				),
+				pitchUnits: spelledToUnits(semi, fifths[i], edo),
 				durationSteps: slot.value,
 				// 小節頭は少し強く、16分の走句は少し弱く弾く（打ち込みの定石）。
 				velocity:
@@ -2329,7 +2642,13 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 			prevSemi = semi;
 		}
 		barTension[bar] = tensionSteps === 0 ? 0 : tensionSum / tensionSteps;
-		for (const value of rhythm) if (value < 0) restSteps += -value;
+		// **休符率はメロディを書く小節だけで測る。** イントロ・間奏はそもそも
+		// メロディを置かない小節なので、ここを母数に入れると「イントロが長い曲＝
+		// 休符が多い曲」になり、歌っている間の詰まり具合が見えなくなる。
+		if (!silent) {
+			for (const value of rhythm) if (value < 0) restSteps += -value;
+			sungBars++;
+		}
 
 		// --- サブメロ（対旋律） ---
 		// 役割推定の都合で「単音・低密度・長音価」に縛られていた制約は外れた
@@ -2636,9 +2955,11 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		bass,
 		melodyDurations,
 		restSteps,
-		totalSteps: totalBars * stepsPerBar,
+		totalSteps: Math.max(1, sungBars) * stepsPerBar,
 		maxLeap,
 		leapRatio: intervals === 0 ? 0 : leaps / intervals,
+		stepRatio: intervals === 0 ? 0 : steps / intervals,
+		chromaticRatio: melody.length === 0 ? 0 : chromaticNotes / melody.length,
 		melodyRange: range(melody),
 		submelodyRange: range(submelody),
 		barTension,
@@ -2668,14 +2989,31 @@ const evaluate = (
 	const entropy = durationEntropy(d.melodyDurations);
 	const valueKinds = new Set(d.melodyDurations).size;
 	const restRatio = d.restSteps / d.totalSteps;
-	const opts = { stepsPerBar: d.stepsPerBar, bars: d.bars };
+	// **メロディが歌い始めるところから測る。** イントロはメロディを書かないので、
+	// 曲頭から測ると休符率も密度もクライマックスの位置も「イントロの長さ」に
+	// 引きずられる。較正側（`scripts/calibrate-corpus.ts`）も主旋律の入りから
+	// 測っているので、ここを揃えないと目標帯と別のものを比べることになる。
+	const melodyNotes = toMetricNotes(d.melody);
+	const offset =
+		melodyNotes.length === 0
+			? 0
+			: Math.floor(melodyNotes[0].startStep / d.stepsPerBar) * d.stepsPerBar;
+	const fromMelody = (ns: MetricNote[]): MetricNote[] =>
+		offset === 0
+			? ns
+			: ns.map((n) => ({ ...n, startStep: n.startStep - offset }));
+	const opts = {
+		stepsPerBar: d.stepsPerBar,
+		bars: Math.max(1, d.bars - offset / d.stepsPerBar),
+	};
+	const melodyFrom = fromMelody(melodyNotes);
 	const structure = structureFeatures(
-		toMetricNotes(d.melody),
-		toMetricNotes(d.submelody),
+		melodyFrom,
+		fromMelody(toMetricNotes(d.submelody)),
 		opts,
 	);
 	const tension = tensionFeatures(d.barTension);
-	const density = densityFeatures(toMetricNotes(d.melody), opts);
+	const density = densityFeatures(melodyFrom, opts);
 	const fingerprint = featureVector({
 		entropy,
 		restRatio,
@@ -2695,19 +3033,30 @@ const evaluate = (
 				);
 
 	const at = (b: Band, v: number): number => band(v, b[0], b[1], b[2], b[3]);
+	/**
+	 * コーパスから採った項目は**中央値へ寄っているほど高い点**にする。
+	 * 帯（p25〜p75）を一律に満点にしていた頃は、全項目が帯の端へ同時に寄った曲
+	 * ——スカスカで跳ねてばかりの曲——も満点を取れていた（{@link centeredBand}）。
+	 */
+	const atc = (key: keyof typeof CORPUS_BANDS, v: number): number =>
+		centeredBand(v, CORPUS_BANDS[key], CORPUS_MEDIANS[key]);
 	const scoreBreakdown: Record<string, number> = {
-		entropy: at(CORPUS_BANDS.entropy, entropy),
-		valueKinds: at(CORPUS_BANDS.valueKinds, valueKinds),
-		restRatio: at(CORPUS_BANDS.restRatio, restRatio),
-		leapRatio: at(CORPUS_BANDS.leapRatio, d.leapRatio),
-		maxLeap: at(CORPUS_BANDS.maxLeap, d.maxLeap),
-		melodyRange: at(CORPUS_BANDS.melodyRange, d.melodyRange),
-		sim1: at(CORPUS_BANDS.sim1, structure.sim1),
-		sim2: at(CORPUS_BANDS.sim2, structure.sim2),
-		sim4: at(CORPUS_BANDS.sim4, structure.sim4),
-		sim8: at(CORPUS_BANDS.sim8, structure.sim8),
-		phraseBreath: at(CORPUS_BANDS.phraseBreath, structure.phraseBreath),
-		climaxPosition: at(CORPUS_BANDS.climaxPosition, structure.climaxPosition),
+		entropy: atc("entropy", entropy),
+		valueKinds: atc("valueKinds", valueKinds),
+		restRatio: atc("restRatio", restRatio),
+		leapRatio: atc("leapRatio", d.leapRatio),
+		maxLeap: atc("maxLeap", d.maxLeap),
+		melodyRange: atc("melodyRange", d.melodyRange),
+		notesPerBar: atc("notesPerBar", density.notesPerBar),
+		shortNoteRatio: atc("shortNoteRatio", density.shortNoteRatio),
+		stepRatio: atc("stepRatio", d.stepRatio),
+		chromaticRatio: atc("chromaticRatio", d.chromaticRatio),
+		sim1: atc("sim1", structure.sim1),
+		sim2: atc("sim2", structure.sim2),
+		sim4: atc("sim4", structure.sim4),
+		sim8: atc("sim8", structure.sim8),
+		phraseBreath: atc("phraseBreath", structure.phraseBreath),
+		climaxPosition: atc("climaxPosition", structure.climaxPosition),
 		climaxPeaks: at(HAND_BANDS.climaxPeaks, structure.climaxPeaks),
 		complementarity: at(HAND_BANDS.complementarity, structure.complementarity),
 		subDensity: at(HAND_BANDS.subDensity, d.submelody.length / d.bars),
@@ -2738,6 +3087,9 @@ const evaluate = (
 			restRatio,
 			maxLeapSemitones: d.maxLeap,
 			leapRatio: d.leapRatio,
+			stepRatio: d.stepRatio,
+			chromaticRatio: d.chromaticRatio,
+			density,
 			melodyRange: d.melodyRange,
 			submelodyRange: d.submelodyRange,
 			structure,
