@@ -59,7 +59,22 @@ const STEPS_PER_BAR = 192;
 /** trackIndex 0:melody 1:submelody 2:bass 3:chord の既定色（PICO-8パレット） */
 const DEFAULT_TRACK_COLORS = ["#00e436", "#29adff", "#ff77a8", "#ffec27"];
 
+/**
+ * 入力文字列から `#loop=on|off`（または `1|0` / `true|false`）メタ行を読み取る。
+ * 埋め込みプレイヤーは再生専用で編集UIを持たないため、
+ * ループをかけたい場合はこのメタ行をMML文字列側で指定する。
+ * 未指定・無効値の場合は null を返す。
+ */
+const parseLoopMeta = (mml: string): boolean | null => {
+	const m = mml.match(/^#\s*loop\s*=\s*(on|off|1|0|true|false)\s*$/im);
+	if (!m) return null;
+	const v = m[1].toLowerCase();
+	return v === "on" || v === "1" || v === "true";
+};
+
 export type MmlPlayerOptions = {
+	/** ループ再生（既定オフ）。#loop=on メタ行でも指定可 */
+	loop?: boolean;
 	/** メロディックノートの発音要求。未指定かつ synth 未指定なら内蔵synthが鳴る */
 	onPlayNote?: (e: PlayNoteEvent) => void;
 	/**
@@ -421,6 +436,7 @@ export const mountMmlPlayer = (
 	const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
 	const useSynth = options.synth ?? !options.onPlayNote;
 	const secondsPerStep = 60 / bpm / STEPS_PER_BEAT;
+	let loopEnabled = options.loop ?? parseLoopMeta(mml) ?? false;
 
 	// placements を trackIndex ごとにまとめ、ノートを持つトラックだけ採用
 	const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
@@ -565,6 +581,14 @@ export const mountMmlPlayer = (
 	playBtn.className = "dtm-player-play";
 	playBtn.innerHTML = icon("play", 12);
 	playBtn.disabled = trackIndices.length === 0;
+
+	const loopBtn = doc.createElement("button");
+	loopBtn.type = "button";
+	loopBtn.className = "dtm-player-loop";
+	loopBtn.innerHTML = icon("loop", 12);
+	loopBtn.title = loopEnabled ? "LOOP ON" : "LOOP OFF";
+	loopBtn.classList.toggle("dtm-player-loop--on", loopEnabled);
+	loopBtn.disabled = trackIndices.length === 0;
 
 	const mutedTracks = new Set<number>();
 	const labelByTrack = new Map<number, HTMLDivElement>();
@@ -1086,7 +1110,7 @@ export const mountMmlPlayer = (
 	chordEl.textContent = "";
 	beatRow.appendChild(chordEl);
 
-	head.append(playBtn, beatRow, dots, mmlHeader);
+	head.append(playBtn, loopBtn, beatRow, dots, mmlHeader);
 	root.appendChild(head);
 
 	// シークバー（再生位置の表示・操作）
@@ -1451,6 +1475,7 @@ export const mountMmlPlayer = (
 		getDrumPattern: (currentBar) =>
 			resolveDrumPattern(drumPatternName, drumPatternDict, currentBar),
 		getSoloTrackId: () => null,
+		getLoop: () => loopEnabled,
 		getAudioTime,
 		onPlayNote: (e) => {
 			const trackIdx = Number(e.trackId);
@@ -1600,8 +1625,16 @@ export const mountMmlPlayer = (
 			// 楽器と同じ「曲既定音量×現在のマスタ音量」を歌声のゲインノードへ反映してから鳴らす。
 			// buildStreamTracks 側では掛けていない（二重適用防止）ため、ここが唯一の適用点になる。
 			v.setVolume((trackVolume / 100) * (masterVolume / 100));
+			let loopLengthSec: number | undefined;
+			let loopStartSec: number | undefined;
+			if (loopEnabled) {
+				loopStartSec = 0;
+				loopLengthSec = maxStep * secondsPerStep;
+			}
 			v.startStream(tracks, seq.getStartTime(), {
 				isAudible: (t) => !mutedTracks.has(Number(t.id)),
+				loopLengthSec,
+				loopStartSec,
 				onLateSkip: () => {
 					showPlayerMessage(
 						"音声合成が間に合わないため、一部の発音をスキップしました",
@@ -1687,6 +1720,15 @@ export const mountMmlPlayer = (
 	playBtn.addEventListener("click", () => {
 		if (playing) pause();
 		else play(Number(seekInput.value));
+	});
+
+	loopBtn.addEventListener("click", () => {
+		loopEnabled = !loopEnabled;
+		loopBtn.classList.toggle("dtm-player-loop--on", loopEnabled);
+		loopBtn.title = loopEnabled ? "LOOP ON" : "LOOP OFF";
+		if (playing) {
+			seekTo(playStep);
+		}
 	});
 
 	const destroy = (): void => {

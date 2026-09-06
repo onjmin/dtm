@@ -1109,6 +1109,27 @@ export const DAW_CSS = `
 .dtm-player-play:active { transform: translate(2px, 2px); box-shadow: none; }
 .dtm-player-play--stop { background: var(--dtm-danger); }
 .dtm-player-play:disabled { opacity: 0.4; cursor: default; }
+.dtm-player-loop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid var(--dtm-border2);
+  background: var(--dtm-bg);
+  color: var(--dtm-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.dtm-player-loop:active { transform: translate(1px, 1px); }
+.dtm-player-loop--on {
+  border-color: var(--c-black);
+  background: var(--dtm-gold);
+  color: var(--c-black);
+  box-shadow: 2px 2px 0 var(--c-black);
+}
+.dtm-player-loop:disabled { opacity: 0.4; cursor: default; }
 .dtm-player-beat-row {
   display: flex;
   align-items: center;
