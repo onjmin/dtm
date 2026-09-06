@@ -1690,6 +1690,7 @@ export const mountMmlPlayer = (
 	};
 
 	let isSeeking = false;
+	let lastCommittedStep: number | null = null;
 
 	// シークバー操作。再生中ならその場で再生位置を切り替え、停止中は
 	// 表示だけを更新して次回の再生開始位置として憶えておく。
@@ -1705,16 +1706,40 @@ export const mountMmlPlayer = (
 		}
 	};
 
-	seekInput.addEventListener("pointerdown", () => {
+	const commitSeek = (): void => {
+		isSeeking = false;
+		const step = Number(seekInput.value);
+		if (lastCommittedStep !== step) {
+			lastCommittedStep = step;
+			seekTo(step);
+		}
+	};
+
+	seekInput.addEventListener("pointerdown", (e) => {
 		isSeeking = true;
+		lastCommittedStep = null;
+		try {
+			seekInput.setPointerCapture(e.pointerId);
+		} catch {}
 	});
 	seekInput.addEventListener("input", () => {
 		renderPlayhead(Number(seekInput.value));
 		syncSeekFill();
 	});
 	seekInput.addEventListener("change", () => {
+		commitSeek();
+	});
+	seekInput.addEventListener("pointerup", (e) => {
+		try {
+			seekInput.releasePointerCapture(e.pointerId);
+		} catch {}
+		commitSeek();
+	});
+	seekInput.addEventListener("pointercancel", (e) => {
+		try {
+			seekInput.releasePointerCapture(e.pointerId);
+		} catch {}
 		isSeeking = false;
-		seekTo(Number(seekInput.value));
 	});
 
 	playBtn.addEventListener("click", () => {

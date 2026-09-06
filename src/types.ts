@@ -623,6 +623,13 @@ export type DawOptions = {
 	customVocals?: CustomVocalDef[];
 	defaultBpm?: number;
 	initialMML?: string;
+	/**
+	 * ループ再生の初期状態（既定 false）。
+	 * MML読み込み時に #loop=on があればそちらが優先される。
+	 */
+	initialLoop?: boolean;
+	/** ループ再生のON/OFFが変化したときに呼ばれる */
+	onLoopChange?: (loop: boolean) => void;
 	/** 利用規約への同意画面の表示をスキップするかどうか */
 	skipConsent?: boolean;
 	/**
@@ -676,6 +683,10 @@ export type DawInstance = {
 	loadMIDI: (bytes: Uint8Array) => void | Promise<void>;
 	exportMIDI: () => Blob;
 	setBpm: (bpm: number) => void;
+	/** 現在のループ再生状態（ON/OFF）を返す */
+	getLoop: () => boolean;
+	/** ループ再生状態を設定する。UIおよび再生シーケンサへ反映される。 */
+	setLoop: (loop: boolean) => void;
 	getPlaybackState: () => PlaybackState;
 	getCurrentPlayStep: () => number;
 	forcePauseAt: (step: number) => void;

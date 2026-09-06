@@ -1493,19 +1493,44 @@ export const mountChordPlayer = (
 		play(idx);
 	};
 
-	seekInput.addEventListener("pointerdown", () => {
+	let lastCommittedSec: number | null = null;
+
+	const commitSeek = (): void => {
+		isSeeking = false;
+		if (totalSec <= 0) return;
+		const sec = Number(seekInput.value);
+		if (lastCommittedSec !== sec) {
+			lastCommittedSec = sec;
+			const idx = getActiveIndexBySec(sec);
+			seekTo(idx >= 0 ? idx : Math.max(0, chordEvents.length - 1));
+		}
+	};
+
+	seekInput.addEventListener("pointerdown", (e) => {
 		isSeeking = true;
+		lastCommittedSec = null;
+		try {
+			seekInput.setPointerCapture(e.pointerId);
+		} catch {}
 	});
 	seekInput.addEventListener("input", () => {
 		updateTimeDisplay(Number(seekInput.value));
 		syncSeekFill();
 	});
 	seekInput.addEventListener("change", () => {
+		commitSeek();
+	});
+	seekInput.addEventListener("pointerup", (e) => {
+		try {
+			seekInput.releasePointerCapture(e.pointerId);
+		} catch {}
+		commitSeek();
+	});
+	seekInput.addEventListener("pointercancel", (e) => {
+		try {
+			seekInput.releasePointerCapture(e.pointerId);
+		} catch {}
 		isSeeking = false;
-		if (totalSec <= 0) return;
-		const sec = Number(seekInput.value);
-		const idx = getActiveIndexBySec(sec);
-		seekTo(idx >= 0 ? idx : Math.max(0, chordEvents.length - 1));
 	});
 
 	const stop = () => {

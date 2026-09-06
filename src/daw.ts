@@ -386,6 +386,17 @@ const TRACK_DELAYSEND_INFO_HTML = `
 </div>
 `;
 
+const LOOP_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>何をする設定か</h4>
+  <p>ループ再生を有効にします。ONにすると、再生が曲末で停止せず、先頭からシームレスに繰り返されます。</p>
+  <h4>MML出力への反映</h4>
+  <p>ループ再生がONの場合、MML生成時に <code>#loop=on</code> メタ行が出力されます。埋め込みプレイヤーや再生専用プレイヤー（mountPlayer / mountChordPlayer）でもこのMMLを読み込むことで自動的にループ再生されます。</p>
+  <h4>BGMやゲーム音楽向け</h4>
+  <p>WebサイトのBGMやゲームのステージ曲など、途切れずにループさせたい曲の制作に最適です。</p>
+</div>
+`;
+
 const MASTER_COMP_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>何をする設定か</h4>
@@ -1268,6 +1279,21 @@ export const mountDAW = (
 	};
 
 	applyMasterVolume(masterVolume);
+
+	let loopEnabled = options.initialLoop ?? false;
+
+	const applyLoop = (enabled: boolean): void => {
+		loopEnabled = enabled;
+		if (refs.loopToggle) {
+			refs.loopToggle.checked = enabled;
+		}
+		if (refs.loopToggleLabel) {
+			refs.loopToggleLabel.textContent = enabled ? "ON" : "OFF";
+		}
+		options.onLoopChange?.(enabled);
+	};
+
+	applyLoop(loopEnabled);
 
 	/**
 	 * 曲の音律を切り替える（`#edo=`）。
@@ -2648,6 +2674,7 @@ export const mountDAW = (
 		getDrumPattern: (currentBar) =>
 			resolveDrumPattern(currentDrumPattern, drumPatterns, currentBar),
 		getSoloTrackId: () => (isSolo ? activeTrackId : null),
+		getLoop: () => loopEnabled,
 		getAudioTime,
 		onPlayNote: (e) => {
 			// 音ミュート中のトラックはスキップ。
@@ -2676,6 +2703,22 @@ export const mountDAW = (
 				currentOffsetX = clamp(
 					currentOffsetX +
 						visibleBars * renderConfig.stepsPerBar * renderConfig.stepWidth,
+					0,
+					getMaxOffsetX(),
+				);
+				renderer.setDrawOffset(currentOffsetX, currentOffsetY);
+			} else if (currentPlayStep < currentOffsetX / renderConfig.stepWidth) {
+				const visibleBars = Math.max(
+					1,
+					Math.round(visibleSteps / renderConfig.stepsPerBar),
+				);
+				currentOffsetX = clamp(
+					Math.floor(
+						currentPlayStep / (visibleBars * renderConfig.stepsPerBar),
+					) *
+						visibleBars *
+						renderConfig.stepsPerBar *
+						renderConfig.stepWidth,
 					0,
 					getMaxOffsetX(),
 				);
@@ -2826,8 +2869,18 @@ export const mountDAW = (
 		// 楽器と同じアンカー（開始時刻）で歌声の先読みストリーミングを開始する。
 		// ソロはライブ判定（楽器側＝シーケンサの getSoloTrackId と同じ基準）で渡す。
 		if (streaming && voices) {
+			let loopLengthSec: number | undefined;
+			let loopStartSec: number | undefined;
+			if (loopEnabled) {
+				const endStep = getSongEndStepExact();
+				const sps = 60 / bpm / 48;
+				loopStartSec = 0;
+				loopLengthSec = endStep * sps;
+			}
 			voices.startStream(streamTracks, sequencer.getStartTime(), {
 				isAudible: (t) => !isSolo || t.id === activeTrackId,
+				loopLengthSec,
+				loopStartSec,
 				onScheduled: (t, note, t0) => {
 					if (!t.id) return;
 					flashTrackPill(t.id, t0 - getAudioTime(), note.durationSec);
@@ -3975,6 +4028,7 @@ export const mountDAW = (
 				fadeOut: Math.round(fadeOutSec * 10),
 				mode: mode,
 				edo: renderConfig.edo,
+				loop: loopEnabled ? true : undefined,
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
@@ -4004,6 +4058,7 @@ export const mountDAW = (
 				fadeOut: Math.round(fadeOutSec * 10),
 				mode: mode,
 				edo: renderConfig.edo,
+				loop: loopEnabled ? true : undefined,
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
@@ -4268,6 +4323,7 @@ export const mountDAW = (
 			// MML読込は全ノートが差し替わるので再スナップは不要
 			applyEdo(meta.edo ?? 12);
 			refs.edoSelect.value = String(renderConfig.edo ?? 12);
+			applyLoop(meta.loop ?? false);
 			if (meta.drumVolume !== undefined) {
 				drumVolume = meta.drumVolume;
 				refs.drumVolume.value = String(meta.drumVolume);
@@ -4880,6 +4936,14 @@ export const mountDAW = (
 
 		refs.edoInfoBtn.addEventListener("click", () => {
 			showModal("音律の解説", EDO_INFO_HTML);
+		});
+
+		refs.loopToggle.addEventListener("change", () => {
+			applyLoop(refs.loopToggle.checked);
+		});
+
+		refs.loopInfoBtn.addEventListener("click", () => {
+			showModal("ループ再生の解説", LOOP_INFO_HTML);
 		});
 
 		refs.masterVolume.addEventListener("input", () => {
@@ -6616,6 +6680,8 @@ export const mountDAW = (
 		},
 		exportMIDI,
 		setBpm,
+		getLoop: () => loopEnabled,
+		setLoop: (loop: boolean) => applyLoop(loop),
 		getPlaybackState: () => playbackState,
 		getCurrentPlayStep,
 		forcePauseAt,

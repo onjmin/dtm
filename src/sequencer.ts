@@ -357,7 +357,11 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		if (!active) return;
 		const sps = secondsPerStep();
 		const time = options.getAudioTime() - startTime;
-		options.onTick(getWrappedPlayStep(time, sps));
+		try {
+			options.onTick(getWrappedPlayStep(time, sps));
+		} catch (err) {
+			console.error("[sequencer] error in onTick callback:", err);
+		}
 		animationId = requestAnimationFrame(animate);
 	};
 

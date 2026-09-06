@@ -45,6 +45,9 @@ export type DawUIRefs = {
 	hScroll: HTMLElement;
 	hScrollThumb: HTMLElement;
 	// track panel
+	loopToggle: HTMLInputElement;
+	loopToggleLabel: HTMLElement;
+	loopInfoBtn: HTMLButtonElement;
 	masterVolume: HTMLInputElement;
 	masterVolumeLabel: HTMLElement;
 	masterComp: HTMLInputElement;
@@ -265,6 +268,15 @@ export const buildUI = (
           <option value="31">31平均律（微分音）</option>
         </select>
         <button class="dtm-infobtn" data-dtm="edo-info" title="音律の解説">${icon("info", 12)}</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">ループ再生</span>
+        <label class="dtm-toggle">
+          <input type="checkbox" data-dtm="loop-toggle">
+          <span data-dtm="loop-toggle-label">OFF</span>
+        </label>
+        <span class="dtm-grow"></span>
+        <button class="dtm-infobtn" data-dtm="loop-info" title="ループ再生の解説">${icon("info", 12)}</button>
       </div>
       <div class="dtm-row">
         <span class="dtm-label">全体音量</span>
@@ -610,6 +622,9 @@ export const buildUI = (
 		vScrollThumb: sel("vscroll-thumb"),
 		hScroll: sel("hscroll"),
 		hScrollThumb: sel("hscroll-thumb"),
+		loopToggle: sel<HTMLInputElement>("loop-toggle"),
+		loopToggleLabel: sel("loop-toggle-label"),
+		loopInfoBtn: sel<HTMLButtonElement>("loop-info"),
 		masterVolume: sel("master-volume"),
 		masterVolumeLabel: sel("master-volume-label"),
 		masterComp: sel("master-comp"),

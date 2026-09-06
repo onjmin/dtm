@@ -121,11 +121,16 @@ export type MmlMeta = {
 	 * チャンネルストリップ共通のパラメータ（歌詞トラック固有の `vocalDelay`/`d`トークンとは別軸）。
 	 */
 	trackDelaySend?: Record<number, number>;
+	/**
+	 * ループ再生の指定（#loop=on / off）。BGM等で曲末停止せずシームレスにループさせる。
+	 * 省略時はオフ。
+	 */
+	loop?: boolean;
 };
 
-/** `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア・コロン） */
+/** `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...` `#loop=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア・コロン） */
 const META_DIRECTIVE =
-	/#(inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|mastercomp|fadein|fadeout|mode|edo)=([\w:-]+)/gi;
+	/#(inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|mastercomp|fadein|fadeout|mode|edo|loop)=([\w:-]+)/gi;
 
 /** `#t<n>inst=<GM楽器名>` にマッチする（値は`;` `#` 改行以外の任意文字） */
 const TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
@@ -197,6 +202,9 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 			// 対応するのは12と31のみ。未知の値は無視して既定(12)のままにする。
 			const e = Number.parseInt(m[2], 10);
 			if (e === 12 || e === 31) meta.edo = e;
+		} else if (key === "loop") {
+			const v = m[2].toLowerCase();
+			meta.loop = v === "on" || v === "1" || v === "true";
 		}
 	}
 	for (const m of mml.matchAll(TRACK_INST_DIRECTIVE)) {
@@ -315,6 +323,7 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 		parts.push(`#fadeout=${meta.fadeOut}`);
 	if (meta.mode) parts.push(`#mode=${meta.mode}`);
 	if (meta.edo !== undefined && meta.edo !== 12) parts.push(`#edo=${meta.edo}`);
+	if (meta.loop) parts.push("#loop=on");
 	if (meta.trackInstruments) {
 		for (const [idx, name] of Object.entries(meta.trackInstruments)) {
 			if (name) parts.push(`#t${idx}inst=${name}`);
