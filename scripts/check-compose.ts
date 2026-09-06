@@ -17,6 +17,7 @@ import {
 	durationEntropy,
 	MOTIF_CELLS,
 	RHYTHM_CELLS,
+	transposeChordName,
 	TRIPLET_EIGHTH,
 } from "../src/compose";
 import { structureFeatures } from "../src/compose-metrics";
@@ -318,16 +319,24 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	// メロディ・サブメロ・ベースは生成側で移調済み、伴奏は rootShift を渡して展開する。
 	// この2つがずれると曲全体が半音単位で不協和になるので、終止音で検算する。
 	// 進行はハ長調で書かれているので、終止音は主音（C=0 か Am=9）を移調したもの。
+	// セクション転調がある場合はそのセクションの keyShift も加味する。
 	const lastNote = song.melody[song.melody.length - 1];
+	const lastBar = Math.floor(lastNote.startStep / STEPS_PER_BAR);
+	const lastSec = song.sections.find(
+		(s) => lastBar >= s.startBar && lastBar < s.startBar + s.bars,
+	);
+	const lastKeyShift = lastSec?.keyShift ?? 0;
 	const lastPc =
-		(((Math.round(lastNote.pitchUnits / UNITS_PER_SEMITONE) - song.rootShift) %
+		(((Math.round(lastNote.pitchUnits / UNITS_PER_SEMITONE) -
+			song.rootShift -
+			lastKeyShift) %
 			12) +
 			12) %
 		12;
 	check(
 		`${tag} 終止音が調の主音（移調後）`,
 		lastPc === 0,
-		`移調 ${song.rootShift} 半音 / 終止音のハ長調換算 ${lastPc}`,
+		`移調 ${song.rootShift}+${lastKeyShift} 半音 / 終止音のハ長調換算 ${lastPc}`,
 	);
 	check(
 		`${tag} テンポが妥当`,
@@ -386,14 +395,26 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	const pre = song.sections.find((x) => x.kind === "prechorus");
 	if (pre) {
 		const last = progBars[pre.startBar + pre.bars - 1];
-		check(`${tag} Bメロがドミナントで終わる`, /^G7?$/.test(last), last);
+		const expG = transposeChordName("G", pre.keyShift);
+		const expG7 = transposeChordName("G7", pre.keyShift);
+		check(
+			`${tag} Bメロがドミナントで終わる`,
+			last === expG || last === expG7,
+			`${last} (期待 ${expG})`,
+		);
 	}
 	// サビとアウトロは主音へ着地して締める。
 	for (const kind of ["chorus", "outro"]) {
 		const sec = song.sections.find((x) => x.kind === kind);
 		if (!sec) continue;
 		const last = progBars[sec.startBar + sec.bars - 1];
-		check(`${tag} ${kind}が主音で終わる`, /^(C|Am)$/.test(last), last);
+		const expC = transposeChordName("C", sec.keyShift);
+		const expAm = transposeChordName("Am", sec.keyShift);
+		check(
+			`${tag} ${kind}が主音で終わる`,
+			last === expC || last === expAm,
+			`${last} (期待 ${expC}または${expAm})`,
+		);
 	}
 }
 
@@ -674,21 +695,27 @@ console.log("● 変化音（調の外の音）");
 		for (let i = 0; i < song.melody.length; i++) {
 			const n = song.melody[i];
 			notes++;
-			// 生成はハ長調で行い、最後に rootShift だけ移調してある。
+			const bar = Math.floor(n.startStep / STEPS_PER_BAR);
+			const sec = song.sections.find(
+				(s) => bar >= s.startBar && bar < s.startBar + s.bars,
+			);
+			const keyShift = sec?.keyShift ?? 0;
+			// 生成はハ長調で行い、セクション転調(keyShift)と曲全体のrootShiftだけ移調してある。
 			const semi = n.pitchUnits / UNITS_PER_SEMITONE;
-			const pc = (((Math.round(semi) - song.rootShift) % 12) + 12) % 12;
+			const pc =
+				(((Math.round(semi) - song.rootShift - keyShift) % 12) + 12) % 12;
 			if (DIATONIC.has(pc)) continue;
 			chromatic++;
 			inSong++;
 			// 許されるのは「その瞬間の和音の構成音」か「順次で入って順次で出る短い音」。
-			const bar = Math.floor(n.startStep / STEPS_PER_BAR);
 			let tones: number[] = [];
 			try {
 				tones = parseChord(progression[bar] ?? "C").notes.map(
 					(v) => ((v % 12) + 12) % 12,
 				);
 			} catch {}
-			if (tones.includes(pc)) continue;
+			const localPc = (((Math.round(semi) - song.rootShift) % 12) + 12) % 12;
+			if (tones.includes(localPc)) continue;
 			const prev = song.melody[i - 1];
 			const next = song.melody[i + 1];
 			const stepIn =

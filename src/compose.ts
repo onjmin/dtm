@@ -275,8 +275,101 @@ const DOT_HALF = 144;
 const HALF = 96;
 const DOT_QUARTER = 72;
 const QUARTER = 48;
+const DOT_EIGHTH = 36;
 const EIGHTH = 24;
 const SIXTEENTH = 12;
+
+const NOTE_NAME_TO_PC: Record<string, number> = {
+	C: 0,
+	"B#": 0,
+	"C#": 1,
+	Db: 1,
+	D: 2,
+	"D#": 3,
+	Eb: 3,
+	E: 4,
+	Fb: 4,
+	F: 5,
+	"E#": 5,
+	"F#": 6,
+	Gb: 6,
+	G: 7,
+	"G#": 8,
+	Ab: 8,
+	A: 9,
+	"A#": 10,
+	Bb: 10,
+	B: 11,
+	Cb: 11,
+};
+
+const SHARP_NOTE_NAMES = [
+	"C",
+	"C#",
+	"D",
+	"D#",
+	"E",
+	"F",
+	"F#",
+	"G",
+	"G#",
+	"A",
+	"A#",
+	"B",
+];
+const FLAT_NOTE_NAMES = [
+	"C",
+	"Db",
+	"D",
+	"Eb",
+	"E",
+	"F",
+	"Gb",
+	"G",
+	"Ab",
+	"A",
+	"Bb",
+	"B",
+];
+
+/**
+ * 半音シフト量（0〜11）に対応する五度圏インデックスの変化量。
+ * 12平均律・31平均律ともに五度圏インデックスを保つために用いる。
+ */
+const SEMITONE_TO_FIFTH_SHIFT = [
+	0, // 0: C
+	7, // 1: C# (+7)
+	2, // 2: D (+2)
+	-3, // 3: Eb (-3)
+	4, // 4: E (+4)
+	-1, // 5: F (-1)
+	6, // 6: F# (+6)
+	1, // 7: G (+1)
+	-4, // 8: Ab (-4)
+	3, // 9: A (+3)
+	-2, // 10: Bb (-2)
+	5, // 11: B (+5)
+];
+
+/**
+ * コードネーム（例: "C", "Am7", "F#m/C#", "Bb" など）を半音単位で移調する。
+ * セクションごとの曲中転調に伴奏トラックを追従させるのに使う。
+ */
+export const transposeChordName = (chord: string, shift: number): string => {
+	if (shift === 0 || !chord.trim()) return chord;
+	const normShift = ((shift % 12) + 12) % 12;
+	if (normShift === 0) return chord;
+	const preferFlat =
+		chord.includes("b") ||
+		(!chord.includes("#") &&
+			(normShift === 3 || normShift === 5 || normShift === 10));
+	const names = preferFlat ? FLAT_NOTE_NAMES : SHARP_NOTE_NAMES;
+	return chord.replace(/([A-G][#b]?)/g, (match) => {
+		const pc = NOTE_NAME_TO_PC[match];
+		if (pc === undefined) return match;
+		return names[(((pc + normShift) % 12) + 12) % 12];
+	});
+};
 
 /**
  * 曲の調（ハ長調からの移調量・半音）。
@@ -723,22 +816,35 @@ const HALF_BAR_FIGURES: number[][] = [
 	[DOT_QUARTER, EIGHTH],
 	[EIGHTH, QUARTER, EIGHTH], // 頭抜き
 	[HALF], // ロングトーン
-	// 休符。参考曲の休符率は中央値20%あり、言い回しの側に持たせないと届かない。
+	// 付点8分＋16分（タッカ）。歌モノで非常に多用される跳ね・推進力の型。
+	[DOT_EIGHTH, SIXTEENTH, EIGHTH, EIGHTH],
+	[EIGHTH, EIGHTH, DOT_EIGHTH, SIXTEENTH],
+	[DOT_EIGHTH, SIXTEENTH, DOT_EIGHTH, SIXTEENTH],
+	// 休符。参考曲の休符率は中央値9%（p25〜p75で3〜16%）。
+	// 4分休符のような大休符はメロディをスカスカにするので、短い8分の息継ぎ・頭抜きに絞る。
 	[-EIGHTH, EIGHTH, EIGHTH, EIGHTH],
-	[EIGHTH, EIGHTH, -EIGHTH, EIGHTH],
-	[QUARTER, -EIGHTH, EIGHTH],
 	[EIGHTH, EIGHTH, EIGHTH, -EIGHTH],
-	[QUARTER, -QUARTER],
-	[-QUARTER, EIGHTH, EIGHTH],
+	[EIGHTH, -EIGHTH, EIGHTH, EIGHTH],
 	// 16分。参考曲は音の20%が16分で、8分に次いで多い。
 	[SIXTEENTH, SIXTEENTH, EIGHTH, EIGHTH, EIGHTH],
 	[SIXTEENTH, SIXTEENTH, EIGHTH, EIGHTH, EIGHTH],
 	[EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH, EIGHTH],
 	[EIGHTH, EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH],
+	[EIGHTH, EIGHTH, EIGHTH, SIXTEENTH, SIXTEENTH],
 	[EIGHTH, SIXTEENTH, SIXTEENTH, QUARTER],
 	[SIXTEENTH, SIXTEENTH, SIXTEENTH, SIXTEENTH, EIGHTH, EIGHTH],
 	[EIGHTH, EIGHTH, SIXTEENTH, SIXTEENTH, SIXTEENTH, SIXTEENTH],
 	[SIXTEENTH, SIXTEENTH, EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH],
+	[
+		SIXTEENTH,
+		SIXTEENTH,
+		SIXTEENTH,
+		SIXTEENTH,
+		SIXTEENTH,
+		SIXTEENTH,
+		SIXTEENTH,
+		SIXTEENTH,
+	],
 	[EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH, -EIGHTH],
 	[-EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH, EIGHTH],
 ];
@@ -757,6 +863,27 @@ const buildMotifCells = (): RhythmCell[] => {
 };
 
 const HAND_MOTIF_CELLS: RhythmCell[] = [
+	// 詰まった8分の王道歌メロ型（6〜8音）。参考曲の中央値 6.2音/小節を支える。
+	{
+		value: [EIGHTH, EIGHTH, EIGHTH, EIGHTH, EIGHTH, EIGHTH, EIGHTH, EIGHTH],
+		density: "medium",
+	},
+	{
+		value: [EIGHTH, EIGHTH, EIGHTH, EIGHTH, EIGHTH, EIGHTH, QUARTER],
+		density: "medium",
+	},
+	{
+		value: [QUARTER, EIGHTH, EIGHTH, EIGHTH, EIGHTH, EIGHTH, EIGHTH],
+		density: "medium",
+	},
+	{
+		value: [EIGHTH, EIGHTH, EIGHTH, EIGHTH, QUARTER, QUARTER],
+		density: "medium",
+	},
+	{
+		value: [QUARTER, QUARTER, EIGHTH, EIGHTH, EIGHTH, EIGHTH],
+		density: "medium",
+	},
 	{ value: [QUARTER, EIGHTH, EIGHTH, QUARTER, QUARTER], density: "medium" },
 	{ value: [EIGHTH, EIGHTH, DOT_QUARTER, EIGHTH, QUARTER], density: "medium" },
 	{ value: [QUARTER, QUARTER, EIGHTH, EIGHTH, QUARTER], density: "medium" },
@@ -774,17 +901,12 @@ const HAND_MOTIF_CELLS: RhythmCell[] = [
 	},
 	{ value: [HALF, EIGHTH, EIGHTH, QUARTER], density: "medium" },
 	// シンコペーションのモチーフ。**拍の裏はモチーフ自体が持っていないと曲に出ない。**
-	// リズム型を足すだけでは、モチーフが拍頭に揃っている限り曲全体は揃ったままになる
-	// （実測: シンコペーションの型を6つ足しても「拍頭以外」の割合が 0.349→0.348 と
-	// 動かなかった）。モチーフは曲中で最も多く鳴る型なので、ここを変えるしかない。
 	{ value: [EIGHTH, QUARTER, QUARTER, QUARTER, EIGHTH], density: "medium" },
 	{ value: [EIGHTH, EIGHTH, DOT_QUARTER, DOT_QUARTER], density: "medium" },
 	{ value: [DOT_QUARTER, DOT_QUARTER, EIGHTH, EIGHTH], density: "medium" },
 	{ value: [-EIGHTH, EIGHTH, DOT_QUARTER, DOT_QUARTER], density: "medium" },
 	{ value: [EIGHTH, DOT_QUARTER, EIGHTH, DOT_QUARTER], density: "medium" },
 	// 16分グルーヴの曲用。**モチーフ自体が16分を持たないと、曲の顔にならない。**
-	// モチーフは曲中で最も多く鳴る型なので、ここに16分が無いと、16分は結局
-	// 走句の小節だけに現れる「装飾」に留まってしまう。
 	{
 		value: [EIGHTH, SIXTEENTH, SIXTEENTH, QUARTER, QUARTER, QUARTER],
 		density: "medium",
@@ -801,11 +923,21 @@ const HAND_MOTIF_CELLS: RhythmCell[] = [
 		value: [EIGHTH, EIGHTH, SIXTEENTH, SIXTEENTH, EIGHTH, QUARTER, QUARTER],
 		density: "medium",
 	},
-	// **16分が主役の型。** 上の4つは16分を「混ぜて」いるので音価の種類が増え、
-	// 音価エントロピーの目標帯（参考曲 0.62〜1.18）から外れて候補選抜で負ける。
-	// 実測で16分を使う曲が30曲中1曲まで減った。16分が大半を占める形なら
-	// 「1つの音価が支配的」になるのでエントロピーは低いままで、16分の曲が
-	// ちゃんと選ばれるようになる。
+	{
+		value: [
+			SIXTEENTH,
+			SIXTEENTH,
+			EIGHTH,
+			SIXTEENTH,
+			SIXTEENTH,
+			EIGHTH,
+			EIGHTH,
+			EIGHTH,
+			QUARTER,
+		],
+		density: "medium",
+	},
+	// **16分が主役の型。**
 	{
 		value: [
 			SIXTEENTH,
@@ -994,40 +1126,48 @@ type SubStyle =
  * 曲ごとに1本引く。
  */
 const MOTIF_ARCHETYPES: number[][] = [
-	// --- オクターブを跨ぐ形 ---
-	// 参考曲の隣接音程は**オクターブが17%**を占め、2度に次いで多い。跳躍の後処理で
-	// 混ぜても届かない（実測1%）ので、モチーフの輪郭そのものに持たせる。
-	// 度数はペンタトニックの歩数なので、5歩でちょうど1オクターブ。
-	[0, 5, 4, 3, 2], // オクターブ上へ跳んで降りてくる
-	[0, 5, 4, 3, 2],
-	[0, 5, 0, 5, 0], // オクターブを行き来する
-	[0, 5, 0, 5, 0],
-	[0, 0, 5, 4, 3],
-	[0, -5, 0, 1, 2], // 一度下へ落としてから戻る
-	[5, 4, 0, 1, 0],
-	[0, 1, 5, 4, 3],
-	// --- 同音連打を含む形 ---
-	// 参考曲は隣接音程の11%が同音。歌メロでは「語りかけ」「疾走感」を作る定番だが、
-	// モチーフの輪郭に無いと出てこない（実測3%）。
+	// --- 順次進行主体（歌いやすく滑らかな旋律。参考曲の順次進行 50% を支える） ---
+	[0, 1, 2, 3, 4], // スケール上行
+	[0, 1, 2, 3, 4],
+	[4, 3, 2, 1, 0], // スケール下降
+	[4, 3, 2, 1, 0],
+	[0, 1, 2, 1, 2], // 順次上行・揺れ
+	[0, -1, -2, -1, -2], // 順次下降・揺れ
+	[0, 1, 2, 3, 2], // 上行して一歩戻る
+	[0, 1, 2, 3, 2],
+	[0, -1, -2, -3, -2], // 下行して一歩戻る
+	[0, 1, 2, 1, 0], // 順次アーチ
+	[0, -1, -2, -1, 0], // 順次谷型
+	[0, 1, 0, -1, 0], // 軸音まわりの揺れ
+	[2, 1, 0, 1, 2], // 折り返し
+	[0, 1, 2, 0, 1], // 波型
+	[0, 0, 1, 2, 3], // 連打から上行
+	[0, 0, -1, -2, -1], // 連打から下降
+	[0, 2, 1, 2, 3], // 軽い跳躍からの順次上行
+	[0, -2, -1, 0, 1], // 軽い沈み込みからの順次上行
+	[0, 1, 2, 2, 3], // 順次進行に同音を挟む
+	[0, -1, -2, -2, -3],
+	[0, 3, 2, 1, 0], // 跳躍からの順次下降（gap fill の教科書形）
+	[0, -3, -2, -1, 0], // 下跳躍からの順次上行
+	[0, 1, 3, 2, 1], // アーチ
+	[0, 2, 1, 0, -1], // 跳ねてから埋める
+	[0, 4, 3, 2, 1], // 5度上へ跳んで順次下降
+	[0, -4, -3, -2, -1], // 下へ跳んで順次上行
+	// --- 同音連打を含む形（語りかけ・疾走感） ---
 	[0, 0, 0, 1, 2],
 	[0, 0, 2, 2, 1],
 	[0, 0, -1, -1, -2],
 	[0, 1, 1, 0, 0],
-	[0, 0, 5, 5, 4],
-	[0, 1, 2, 3, 2], // 上行して一歩戻る
-	[0, -1, -2, -3, -2], // 下行して一歩戻る
-	[0, 2, 1, 0, -1], // 跳ねてから埋める
-	[0, 4, 3, 2, 1], // 5度上へ跳んで順次下降（gap fill の教科書形）
-	[0, -4, -3, -2, -1], // 下へ跳んで順次上行
-	[0, 0, 1, 2, 1], // 同音反復から動き出す
-	[0, 1, 0, -1, 0], // 軸音まわりの揺れ
+	[0, 0, 1, 2, 1],
+	// --- 跳躍・オクターブを含む形（フック・ドラマ性） ---
+	[0, 5, 4, 3, 2], // オクターブ上へ跳んで降りてくる
+	[0, 5, 0, 5, 0], // オクターブを行き来する
+	[0, -5, 0, 1, 2], // 一度下へ落としてから戻る
+	[0, 1, 5, 4, 3],
 	[0, 2, 4, 3, 2], // 分散和音風の上行
-	[0, -2, -1, 1, 0], // 沈んでから跳ね上がる
 	[0, 3, 2, 4, 3], // 二段跳び
-	[0, 1, 3, 2, 0], // アーチ
 	[0, -1, 1, -2, 0], // ジグザグ
 	[0, 5, 4, 2, 0], // 6度跳躍からの大きな下降
-	[0, 0, -1, -3, -2], // 反復してから落ちる
 ];
 
 // ============================================================
@@ -2033,12 +2173,48 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	const quarterSteps = scaleStep(QUARTER);
 	const strongStep = Math.max(1, Math.round(stepsPerBar / 2));
 
-	// --- ⓪曲の設計図（セクション）---
+	// --- ⓪曲の設計図（セクション）と曲中転調 ---
 	// **どこがイントロで、どこがサビなのかを持つ。** これが無いと、どの小節も
 	// 同じ密度・同じ音域で鳴り、聴き手が最初に掴む「セクションの切り替わり」が
 	// 生まれない（{@link file://./compose-sections.ts} 参照）。
 	const sectionPlan = buildSectionPlan(options.sections ?? DEFAULT_SECTIONS);
 	const totalBars = sectionPlan.reduce((sum, s) => sum + s.bars, 0);
+
+	// 約35%の曲でセクションごとの曲中転調（ラスサビ転調・Bメロ転調）を入れる。
+	// 伴奏トラックは rootShift が曲全体に掛かるため、曲中の調変化は各小節のコード名を移調し、
+	// メロディ・サブメロ・ベースの各トラックもそのセクションの小節だけ音高をシフトする。
+	if (rnd() < 0.35) {
+		const modType = pick<"chorus_up" | "prechorus_down">(
+			["chorus_up", "chorus_up", "prechorus_down"],
+			rnd,
+		);
+		if (modType === "chorus_up") {
+			// サビで +1 半音（または +2 半音）転調して盛り上げる（J-POP/ボカロの王道）
+			const shift = pick([1, 1, 2], rnd);
+			let lastChorusIdx = -1;
+			for (let i = 0; i < sectionPlan.length; i++) {
+				if (sectionPlan[i].kind === "chorus") lastChorusIdx = i;
+			}
+			if (lastChorusIdx >= 0) {
+				for (let i = lastChorusIdx; i < sectionPlan.length; i++) {
+					sectionPlan[i].keyShift = shift;
+				}
+			}
+		} else {
+			// Bメロで一時的に転調（-2 長2度下 または +3 短3度上）して陰影を付け、サビで主調に戻る
+			const shift = pick([-2, 3], rnd);
+			for (const s of sectionPlan) {
+				if (s.kind === "prechorus") s.keyShift = shift;
+			}
+		}
+	}
+
+	const barKeyShift: number[] = new Array(totalBars).fill(0);
+	for (const s of sectionPlan) {
+		for (let b = s.startBar; b < s.startBar + s.bars && b < totalBars; b++) {
+			barKeyShift[b] = s.keyShift;
+		}
+	}
 
 	// --- ①コード進行を決める ---
 	// **セクションごとに進行を割り当てる。** Aメロ系は progA、サビ系は progB。
@@ -2073,7 +2249,10 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		}
 	}
 	progression.length = totalBars;
-	const chordProgression = progression.join("|");
+	// 伴奏トラック用のコード文字列。転調セクションはコード名そのものを移調して出力する。
+	const chordProgression = progression
+		.map((chord, bar) => transposeChordName(chord, barKeyShift[bar]))
+		.join("|");
 	const chordPattern = pick(CHORD_PATTERNS, rnd);
 	// 調とテンポも曲ごとに引く。生成はハ長調で行い、最後にまとめて移調する
 	// （生成中に移調すると音域の折り返しが調ごとにずれ、輪郭が壊れる）。
@@ -2260,13 +2439,16 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	 * 選抜では密度は変えられない。**曲ごとに狙いの密度を先に決めて、それに近い型を
 	 * 引く**ようにすると、曲どうしの差（詰め込んだ曲・空けた曲）も同時に出る。
 	 */
-	const targetNotesPerBar = 4 + rnd() * 4.5;
 	/**
-	 * 曲ごとの休符率の狙い。参考曲は中央値0.12（p25〜p75で0.06〜0.17）、
-	 * 生成物は0.18で頭打ちだった。息継ぎの型（{@link RHYTHM_CELLS} の sparse）と
-	 * 休符入りの言い回しが、密度と無関係に一定の割合で引かれていたため。
+	 * 曲ごとの「刻みの細かさ」の狙い（1小節あたりの音数）。
+	 * 参考曲は中央値6.2（p25〜p75で5.4〜7.3）。狙いをこの帯に合わせる。
 	 */
-	const targetRestRatio = 0.02 + rnd() * 0.22;
+	const targetNotesPerBar = 5.5 + rnd() * 2.5;
+	/**
+	 * 曲ごとの休符率の狙い。参考曲は中央値0.09（p25〜p75で0.03〜0.16）。
+	 * 短い息継ぎを中心にして、歌が程よく詰まるように寄せる。
+	 */
+	const targetRestRatio = 0.02 + rnd() * 0.1;
 	/** 1小節の型が持つ音数。 */
 	const cellNotes = (c: RhythmCell): number =>
 		c.value.filter((v) => v > 0).length;
@@ -2296,13 +2478,7 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		return best;
 	};
 	const motifCell = pickCell(motifPool);
-	/**
-	 * モチーフ2小節目。
-	 *
-	 * **1小節目と別の型に固定しない。** 必ず違う型にすると隣り合う小節の自己相似が
-	 * 実測 0.31 まで落ちた（参考曲は 0.48〜0.71）。2小節の言い回しは
-	 * 「1小節の形＋その変形」であることが多く、まるごと同じ型のことも珍しくない。
-	 */
+	/** モチーフ2小節目。 */
 	const motifCell2 =
 		rnd() < 0.45
 			? motifCell
@@ -2312,14 +2488,7 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		motifPool.filter((c) => c !== motifCell && c !== motifCell2),
 	);
 	const motifB2 = pickCell(motifPool.filter((c) => c !== motifB));
-	/**
-	 * Bメロ（`a2`）のモチーフ。**Aメロと同じ型を使い回さない。**
-	 *
-	 * ここを分けるまで、曲全体の発音パターンは
-	 * Aメロ2種＋サビ2種＋息継ぎ1種の**5種類しか無かった**（参考曲は20小節で
-	 * 8種類前後）。Bメロは「Aメロと同じ素材のセクエンツ」だが、音の並びが
-	 * 同じ素材由来でも、**リズムまで同じだとセクションが変わったと聞こえない**。
-	 */
+	/** Bメロ（`a2`）のモチーフ。Aメロと同じ型を使い回さない。 */
 	const motifA2 = pickCell(
 		motifPool.filter(
 			(c) => c !== motifCell && c !== motifCell2 && c !== motifB,
@@ -2327,6 +2496,40 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	);
 	const motifA22 =
 		rnd() < 0.45 ? motifA2 : pickCell(motifPool.filter((c) => c !== motifA2));
+
+	/**
+	 * 応答・展開用のバリエーション型。
+	 * 毎小節バラバラにはせず、基本のモチーフを反復しつつも、
+	 * 小楽節の後半や答えの応答で適度な変化をつけてリズム型の種類数（参考曲中央値8）を満たす。
+	 */
+	const motifVar = pickCell(
+		motifPool.filter((c) => c !== motifCell && c !== motifCell2),
+	);
+	const motifBVar = pickCell(
+		motifPool.filter((c) => c !== motifB && c !== motifB2),
+	);
+	/** Bメロの最後の小節（サビ直前）のビルドアップ型（8分連打・キメ）。 */
+	const buildUpCell: RhythmCell = pick(
+		[
+			{
+				value: [EIGHTH, EIGHTH, EIGHTH, EIGHTH, QUARTER, -QUARTER],
+				density: "medium",
+			},
+			{
+				value: [EIGHTH, EIGHTH, EIGHTH, EIGHTH, EIGHTH, EIGHTH, -QUARTER],
+				density: "medium",
+			},
+			{
+				value: [QUARTER, QUARTER, QUARTER, QUARTER],
+				density: "medium",
+			},
+			{
+				value: [EIGHTH, EIGHTH, EIGHTH, EIGHTH, EIGHTH, EIGHTH, QUARTER],
+				density: "medium",
+			},
+		],
+		rnd,
+	);
 
 	// 対旋律のリズム。曲ごとに1つ引いて使い回す（サブメロにも「その曲の型」を持たせる）。
 	const counterRhythm = pick(
@@ -2340,8 +2543,6 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 
 	/**
 	 * 答えの後半小節。**フレーズの終わりは白玉で受けて息継ぎを空ける。**
-	 * 解説の「フレーズの区切れ目には歌手の息継ぎを想定した休符を入れる」
-	 * 「『ド』『ミ』『ソ』のいずれかを白玉で伸ばして終わらせる」の実装。
 	 */
 	const breathCell = pick(
 		RHYTHM_CELLS.filter(
@@ -2362,6 +2563,16 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		}
 		const isB = units[u].source === "b";
 		const isA2 = units[u].source === "a2";
+		const isPrechorusEnd =
+			units[u].section.kind === "prechorus" &&
+			bar === units[u].section.startBar + units[u].section.bars - 1;
+
+		if (isPrechorusEnd) {
+			// Bメロの最後の小節はサビへのビルドアップ
+			barRhythms.push(scaleCell(buildUpCell.value));
+			continue;
+		}
+
 		/** その楽句が使う2小節ぶんのリズム型（前半・後半）。 */
 		const pair = (): [RhythmCell, RhythmCell] =>
 			isB
@@ -2371,12 +2582,8 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 					: [motifCell, motifCell2];
 		let cell: RhythmCell;
 		if (units[u].source === "answer") {
-			// 答えは問いと同じリズムで入る。**白玉＋休符で受けるのは大楽節の
-			// 切れ目（8小節ごと）だけ**——小楽節ごとに息継ぎを入れると
-			// フレーズの切れ目率が実測0.50まで上がる（参考曲は0.25）。
-			// 息継ぎで受けるのはセクションの終わり（＝着地音が決まっている楽句）。
+			// 答えは問いのリズムを受けて着地する。
 			const isPeriodEnd = units[u].landing !== null;
-			// 答えは直前の問いと同じ素材で受ける（`answer` 自身は素材を持たない）。
 			const prevSource = units[u - 1]?.source;
 			const [head, tail] =
 				prevSource === "b"
@@ -2384,7 +2591,18 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 					: prevSource === "a2"
 						? [motifA2, motifA22]
 						: [motifCell, motifCell2];
-			cell = half === 0 ? head : isPeriodEnd ? breathCell : tail;
+			// 答えの小節で、問いのリズムから適度に発展・応答するバリエーション
+			const answerVar = prevSource === "b" ? motifBVar : motifVar;
+			cell =
+				half === 0
+					? rnd() < 0.4
+						? answerVar
+						: head
+					: isPeriodEnd
+						? breathCell
+						: rnd() < 0.35
+							? answerVar
+							: tail;
 		} else {
 			const [head, tail] = pair();
 			cell = half === 0 ? head : tail;
@@ -2394,22 +2612,23 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 
 	// --- ③その上に音を乗せる ---
 	// モチーフの輪郭は名前の付く形から引き、足りないぶんだけ曲ごとに伸ばす。
-	// **輪郭も2小節ぶん作る。** 1小節ぶんしか持たないと、2小節目が1小節目と
-	// 同じ形を繰り返すだけになり、2小節でひとつの言い回しにならない。
 	const motifNoteCount =
 		motifCell.value.filter((v) => v > 0).length +
 		motifCell2.value.filter((v) => v > 0).length;
 	const archetype = pick(MOTIF_ARCHETYPES, rnd);
-	// **足りないぶんは原型の繰り返しで埋める。** 2小節ぶんの音数（10〜12音）に対して
-	// 原型は5音なので、初版は残りを ±1 のランダムウォークで伸ばしていた。その結果
-	// 輪郭の後半が順次進行の酔歩になり、原型に込めたオクターブ跳躍も同音連打も
-	// 薄まっていた（実測で2度が44%、参照は24%）。原型を少しずらして繰り返せば
-	// セクエンツになり、音程の性格が2小節を通して保たれる。
-	const sequenceShift = pick([-2, -1, 1, 2], rnd);
+	// **周回の継ぎ目を順次進行（±1 または 0）で滑らかに繋ぐ。**
+	// 初版のように先頭へ機械的に戻すと、アーキタイプの末尾と先頭の間で大きな跳躍（5〜7半音）が
+	// 生まれていた。前の周回の最後の音から滑らかに接続することで、旋律全体の順次進行比率が保たれる。
 	const motifContour: number[] = [];
+	let baseDegree = 0;
 	for (let i = 0; i < motifNoteCount; i++) {
-		const repeat = Math.floor(i / archetype.length);
-		motifContour.push(archetype[i % archetype.length] + sequenceShift * repeat);
+		const idx = i % archetype.length;
+		if (i > 0 && idx === 0) {
+			const lastVal = motifContour[i - 1];
+			const connectShift = pick([-1, 0, 1], rnd);
+			baseDegree = lastVal + connectShift - archetype[0];
+		}
+		motifContour.push(baseDegree + archetype[idx]);
 	}
 
 	/** 小節ごとに実際に使った音の並び（度数）。A' / A'' の再現で読み直す。 */
@@ -2630,9 +2849,12 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 				continue;
 			}
 			if (!DIATONIC_PCS.has(pitchClass(semi))) chromaticNotes++;
+			const k = barKeyShift[bar];
+			const fifthShift =
+				k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
 			melody.push({
 				startStep: barStart + slot.at,
-				pitchUnits: spelledToUnits(semi, fifths[i], edo),
+				pitchUnits: spelledToUnits(semi + k, fifths[i] + fifthShift, edo),
 				durationSteps: slot.value,
 				// 小節頭は少し強く、16分の走句は少し弱く弾く（打ち込みの定石）。
 				velocity:
@@ -2680,9 +2902,12 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 			if (len <= 0 || at + len > stepsPerBar) return wantedSemi;
 			const tone = nearestChordTone(wantedSemi, tones, 2);
 			const semi = clampSemi(tone.semi, SUBMELODY_LOW, SUBMELODY_HIGH);
+			const k = barKeyShift[bar];
+			const fifthShift =
+				k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
 			submelody.push({
 				startStep: barStart + at,
-				pitchUnits: spelledToUnits(semi, tone.fifth, edo),
+				pitchUnits: spelledToUnits(semi + k, tone.fifth + fifthShift, edo),
 				durationSteps: len,
 				velocity: at === 0 ? 90 : 84,
 			});
@@ -2856,9 +3081,12 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 						: semi === T
 							? (thirdTone?.fifth ?? rootTone.fifth)
 							: degreeToPitch(semitoneToDegree(semi)).fifth;
+			const k = barKeyShift[bar];
+			const fifthShift =
+				k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
 			barBass.push({
 				startStep: barStart + bassCursor,
-				pitchUnits: spelledToUnits(semi, fifth, edo),
+				pitchUnits: spelledToUnits(semi + k, fifth + fifthShift, edo),
 				durationSteps: len,
 				// 強弱は「キックが居る場所」を基準に付ける。ドラムのパターンは
 				// このモジュールの外（DAWのドラム設定）で選ぶので実物は見られないが、

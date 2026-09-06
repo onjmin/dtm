@@ -156,6 +156,11 @@ export type PlacedSection = {
 	startBar: number;
 	bars: number;
 	spec: SectionSpec;
+	/**
+	 * セクション内の転調量（ハ長調基準からの半音シフト）。
+	 * ラスサビで +1/+2 半音上がるなど、曲中の転調を小節単位で表現する。
+	 */
+	keyShift: number;
 };
 
 /**
@@ -172,7 +177,7 @@ export const buildSectionPlan = (kinds: SectionKind[]): PlacedSection[] => {
 	let bar = 0;
 	for (const kind of ordered) {
 		const spec = SECTION_SPECS[kind];
-		plan.push({ kind, startBar: bar, bars: spec.bars, spec });
+		plan.push({ kind, startBar: bar, bars: spec.bars, spec, keyShift: 0 });
 		bar += spec.bars;
 	}
 	return plan;
