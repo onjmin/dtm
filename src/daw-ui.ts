@@ -5,6 +5,7 @@
 
 import { DELAY_DIVISIONS } from "./delay";
 import { icon } from "./icons";
+import { persistPanels } from "./panel-state";
 import type { TrackConfig } from "./types";
 
 export type DawUIRefs = {
@@ -214,14 +215,14 @@ export const buildUI = (
   </div>
   <div class="dtm-hscroll" data-dtm="hscroll"><div class="dtm-hscroll-thumb" data-dtm="hscroll-thumb"></div></div>
 
-  <details class="dtm-panel" open>
+  <details class="dtm-panel" data-dtm-acc="track" open>
     <summary>個別トラック設定</summary>
     <div class="dtm-panel-body">
       <div class="dtm-track-body" data-dtm="track-body"></div>
     </div>
   </details>
 
-  <details class="dtm-panel">
+  <details class="dtm-panel" data-dtm-acc="view">
     <summary>表示</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row">
@@ -249,7 +250,7 @@ export const buildUI = (
     </div>
   </details>
 
-  <details class="dtm-panel" open>
+  <details class="dtm-panel" data-dtm-acc="global" open>
     <summary>全体トラック設定</summary>
     <div class="dtm-panel-body">
       <div data-dtm="preset-select-slot"></div>
@@ -316,7 +317,7 @@ export const buildUI = (
     </div>
   </details>
 
-  <details class="dtm-panel">
+  <details class="dtm-panel" data-dtm-acc="drum">
     <summary>ドラム設定</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row">
@@ -349,7 +350,7 @@ export const buildUI = (
     </div>
   </details>
 
-  <details class="dtm-panel ${showMidi ? "" : "dtm-hidden"}" data-dtm="midi-panel">
+  <details class="dtm-panel ${showMidi ? "" : "dtm-hidden"}" data-dtm="midi-panel" data-dtm-acc="io-in">
     <summary>MIDI / MML 入力</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row" style="flex-wrap:nowrap">
@@ -381,7 +382,7 @@ export const buildUI = (
     </div>
   </details>
 
-  <details class="dtm-panel">
+  <details class="dtm-panel" data-dtm-acc="macro">
     <summary>マクロ</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row ${showCompose ? "" : "dtm-hidden"}" data-dtm="compose-row">
@@ -436,7 +437,7 @@ export const buildUI = (
     </div>
   </details>
 
-  <details class="dtm-panel">
+  <details class="dtm-panel" data-dtm-acc="io-out">
     <summary>MIDI / MML 出力</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row">
@@ -504,6 +505,8 @@ export const buildUI = (
 </div>`;
 
 	const root = q<HTMLElement>(target, '[data-dtm="root"]');
+	// 各パネルの開閉状態を localStorage から復元し、以後の開閉を覚えさせる。
+	persistPanels(root);
 	const sel = <T extends HTMLElement>(name: string): T =>
 		q<T>(root, `[data-dtm="${name}"]`);
 

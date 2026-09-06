@@ -56,6 +56,7 @@ import { decomposeToMonophonic, isChordHeavyTrack, MMLCore } from "./mml-core";
 import { MML_INFO_HTML } from "./mml-info";
 import { formatMmlMeta, parseMML } from "./mml-parser";
 import { mountMmlPlayer } from "./mml-player";
+import { readPanelOpen, writePanelOpen } from "./panel-state";
 import { createRenderer, type Renderer } from "./renderer";
 import {
 	DEFAULT_REVERB_DECAY_SEC,
@@ -1373,8 +1374,10 @@ export const mountDAW = (
 	let currentInstrument = "";
 	let activeTrackId = options.initialActiveTrack ?? trackConfigs[0].id;
 	// トラック切り替えでパネルを再構築しても開閉状態を維持するための「詳細設定」開閉フラグ
-	let trackFxAdvancedOpen = false;
-	let lyricAdvancedOpen = false;
+	// 「詳細設定」も畳み状態を覚える（トラック切替で作り直されるので変数経由で保持し、
+	// ページをまたぐぶんは localStorage を初期値にする）。
+	let trackFxAdvancedOpen = readPanelOpen("track-fx-advanced") ?? false;
+	let lyricAdvancedOpen = readPanelOpen("lyric-advanced") ?? false;
 	let activeToolMode: ToolMode = "pen";
 	let currentInsertLength = 48;
 	let snapGridSteps = 12;
@@ -2973,6 +2976,7 @@ export const mountDAW = (
 			) as HTMLDetailsElement
 		).addEventListener("toggle", (e) => {
 			trackFxAdvancedOpen = (e.target as HTMLDetailsElement).open;
+			writePanelOpen("track-fx-advanced", trackFxAdvancedOpen);
 		});
 		const volInput = refs.trackBody.querySelector(
 			'[data-dtm="track-vol"]',
@@ -3351,6 +3355,7 @@ export const mountDAW = (
 				) as HTMLDetailsElement
 			).addEventListener("toggle", (e) => {
 				lyricAdvancedOpen = (e.target as HTMLDetailsElement).open;
+				writePanelOpen("lyric-advanced", lyricAdvancedOpen);
 			});
 			const lyricModelSel = lyricDiv.querySelector(
 				'[data-dtm="lyric-model"]',
