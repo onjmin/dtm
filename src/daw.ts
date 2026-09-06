@@ -9,6 +9,11 @@ import { GM_INSTRUMENT_NAMES } from "./audio-config";
 import { type ChordPlayerInstance, mountChordPlayer } from "./chord-player";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import { type ComposedNote, composeLyrics, composeSong } from "./compose";
+import {
+	buildSectionPlan,
+	DEFAULT_SECTIONS,
+	type SectionKind,
+} from "./compose-sections";
 import { buildUI } from "./daw-ui";
 import type { DelayDivision } from "./delay";
 import {
@@ -394,15 +399,28 @@ const MASTER_COMP_INFO_HTML = `
 const COMPOSE_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>作曲とは</h4>
-  <p>コード進行・メロディ・サブメロ・ベース・伴奏を、16小節ぶんまとめて自動で作るボタンです。押すたびに違う曲ができます。できあがった曲はそのまま編集できるので、気に入らないところだけ後から直すこともできますし、もう一度押して作り直すこともできます。</p>
+  <p>コード進行・メロディ・サブメロ・ベース・伴奏・ドラムをまとめて自動で作るボタンです。押すたびに違う曲ができます。できあがった曲はそのまま編集できるので、気に入らないところだけ後から直すこともできますし、もう一度押して作り直すこともできます。</p>
+  <h4>作る部分を選べます</h4>
+  <p>ボタンの下のチェックで、<strong>イントロ・Aメロ・Bメロ・サビ・間奏・アウトロ</strong>のどれを作るかを選べます。選んだぶんだけ曲が長くなり、右に何小節になるかが出ます（既定はイントロ＋Aメロ＋Bメロ＋サビの24小節）。「サビだけ作り直したい」「間奏を足したい」といった使い方ができます。</p>
+  <p>セクションごとに作り分けている中身は次のとおりです。</p>
+  <table class="dtm-info-table">
+    <tr><th>　</th><th>メロディ</th><th>音域</th><th>ドラム</th><th>終わり方</th></tr>
+    <tr><td>イントロ</td><td>無し</td><td>—</td><td>抑えめ</td><td>—</td></tr>
+    <tr><td>Aメロ</td><td>有り</td><td>低め</td><td>抑えめ</td><td>5度で止める（まだ続く）</td></tr>
+    <tr><td>Bメロ</td><td>有り</td><td>中</td><td>標準</td><td>ドミナントで宙吊り</td></tr>
+    <tr><td>サビ</td><td>有り</td><td>高い</td><td>最大</td><td>主音へ着地</td></tr>
+    <tr><td>間奏</td><td>無し</td><td>—</td><td>標準</td><td>—</td></tr>
+    <tr><td>アウトロ</td><td>有り</td><td>低め</td><td>薄い</td><td>主音へ着地</td></tr>
+  </table>
+  <p>イントロと間奏はメロディを書きません（伴奏・ベース・ドラム・サブメロだけが鳴ります）。ここに歌メロを置くと、どのセクションも同じ顔になって「ずっと歌っている曲」になってしまうためです。セクションの頭ではドラムがクラッシュを叩き、終わりの1つ手前でフィルが入ります。</p>
   <p>ノートを配置するだけで、楽器・音量・ミックスは変えません。音のバランスを整えたいときは「全体トラック設定」の<strong>おまかせマスタリング</strong>を続けて押してください。シンプルモードはトラックそのものが役割（メロディ／サブメロ／ベース／伴奏）なので、おまかせマスタリングはその役割どおりに楽器と音量を当てます。</p>
   <h4>曲の組み立て方</h4>
   <p>単純にランダムな音を並べているわけではありません。次の順番で組み立てています。</p>
   <ol>
-    <li><strong>コード進行を決める</strong> — 王道進行・小室進行・カノン進行などから引き、7thやセカンダリドミナントを混ぜます。同じ4小節をただ4回繰り返さないよう、A-A'-B-A'' の16小節構成にしています。</li>
+    <li><strong>コード進行を決める</strong> — 王道進行・小室進行・カノン進行などから引き、7thやセカンダリドミナントを混ぜます。Aメロ系とサビ系で別の進行を割り当て、イントロと間奏はサビの進行を使います（曲の顔を先に見せる定石）。</li>
     <li><strong>先に各小節のリズムを決める</strong> — 音より先にリズムを設計し、隣り合う小節で必ず形を変えます。全音符・2分・4分・8分・16分を混ぜ、休符も少し入れます。</li>
     <li><strong>その上に音を乗せる</strong> — <strong>2小節のモチーフ</strong>（ボーカルが一息で歌いきる長さ）を1つ作り、「そのまま繰り返す」「音程を上げて発展させる」「1オクターブ上げてサビの頂点にする」の3通りに変形して曲全体へ展開します。</li>
-    <li><strong>フレーズとして組み立てる</strong> — 2小節のモチーフ（<strong>問い</strong>）に、同じリズムで着地音だけを変えた2小節（<strong>答え</strong>）を続けて4小節のまとまりにし、それを AABA・AAAB・ABAB などの形で4つ並べて16小節にします。答えは、途中では主音を避けて「まだ続く」感じを残し（半終止）、最後だけ主音へ落として終わります（全終止）。8小節ごとの切れ目は白玉で受けて息継ぎを空けます。</li>
+    <li><strong>フレーズとして組み立てる</strong> — 2小節のモチーフ（<strong>問い</strong>）に、同じリズムで着地音だけを変えた2小節（<strong>答え</strong>）を続けて4小節のまとまりにし、それをセクションの中に1〜2個ずつ置きます。答えは、途中では主音を避けて「まだ続く」感じを残し（半終止）、最後だけ主音へ落として終わります（全終止）。8小節ごとの切れ目は白玉で受けて息継ぎを空けます。</li>
   </ol>
   <p>音を先に決めてから音価を機械的に均等割りすると、どうしても「同じ長さの音が延々と続く、機械的な曲」になります。リズムを先に設計するのはそれを避けるためです。</p>
   <h4>メロディの作り方の決まりごと</h4>
@@ -420,7 +438,7 @@ const COMPOSE_INFO_HTML = `
   <h4>押すたびに違う曲にするために</h4>
   <p>品質の基準を満たしていても、毎回同じ設計図で作っていれば「音名だけが違う似た曲」しかできません。そこで曲ごとに次を引き直しています。</p>
   <ul>
-    <li><strong>16小節の骨格</strong>（どの小節をモチーフ・走句・タメ・つなぎにするか）</li>
+    <li><strong>フレーズの骨格</strong>（どの楽句をモチーフの原形・セクエンツ・答えにするか）</li>
     <li><strong>メロディの書法</strong>——走句の形（音階／折り返し／分散和音／ジグザグ）、つなぎの形（山なり／谷／上行／下行／うねり／軸音まわり）、終止の形（順次下降／ソミド／跳ね上がり／ロングトーン）、モチーフの原型、跳躍の混ぜ具合、開始音、基準の刻み（8分／16分／三連）、スウィング量</li>
     <li><strong>ベースの奏法</strong>（4分打ち／オルタネイト／2分／8分ドライブ／シンコペ／ウォーキング／オクターブ）</li>
     <li><strong>サブメロの書き方</strong>——合いの手（メロディが休んだ隙間にだけ入る）、ハモリ（メロディのリズムをなぞって3度・6度下を歌う）、対旋律（8分でメロディと反行する）、保続音（同じ音を伸ばし続ける）、パッド。小節ごとに、メロディが息継ぎしている場所では自動で合いの手に切り替わります。</li>
@@ -5210,12 +5228,34 @@ export const mountDAW = (
 		 * 「作曲」本体。確認を挟むかどうかは呼び出し側で決める。
 		 * `withVocal` を立てると、メロディトラックに歌詞を付けて歌わせる。
 		 */
+		/** チェックの入っているセクション。全部外れていたら既定の構成に戻す。 */
+		const selectedComposeSections = (): SectionKind[] => {
+			const boxes = [
+				...refs.composeSections.querySelectorAll<HTMLInputElement>(
+					'input[type="checkbox"]',
+				),
+			];
+			const picked = boxes
+				.filter((b) => b.checked)
+				.map((b) => b.value as SectionKind);
+			return picked.length > 0 ? picked : DEFAULT_SECTIONS;
+		};
+		/** 選んだセクションで曲が何小節になるかを、押す前に表示する。 */
+		const updateComposeSectionsLen = (): void => {
+			const plan = buildSectionPlan(selectedComposeSections());
+			const bars = plan.reduce((sum, x) => sum + x.bars, 0);
+			refs.composeSectionsLen.textContent = `${bars}小節`;
+		};
+		refs.composeSections.addEventListener("change", updateComposeSectionsLen);
+		updateComposeSectionsLen();
+
 		const runCompose = (withVocal: boolean): void => {
 			stop();
 			overlayDuring(() => {
 				const song = composeSong({
 					stepsPerBar: renderConfig.stepsPerBar,
 					edo: renderConfig.edo,
+					sections: selectedComposeSections(),
 					// 直近に作った曲の特徴を渡すと、それらから離れた候補に加点される。
 					// 「作曲」を続けて押したときに似た曲が並ぶのを防ぐ。
 					recent: recentComposeFingerprints,
@@ -5373,7 +5413,12 @@ export const mountDAW = (
 			if (hasNotes) {
 				showConfirm(
 					withVocal ? "歌入り作曲" : "作曲",
-					"今あるノートをすべて消して、16小節の曲を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）",
+					`今あるノートをすべて消して、${buildSectionPlan(
+						selectedComposeSections(),
+					).reduce(
+						(sum, x) => sum + x.bars,
+						0,
+					)}小節の曲を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
 					() => runCompose(withVocal),
 					"compose",
 				);

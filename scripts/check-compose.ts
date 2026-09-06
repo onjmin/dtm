@@ -238,10 +238,10 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	] as const) {
 		check(`${tag} ${name}が空でない`, notes.length > 0, "0音");
 		const overshoot = notes.filter(
-			(n) => n.startStep + n.durationSteps > BARS * STEPS_PER_BAR,
+			(n) => n.startStep + n.durationSteps > song.bars * STEPS_PER_BAR,
 		);
 		check(
-			`${tag} ${name}が16小節に収まる`,
+			`${tag} ${name}が曲の長さに収まる`,
 			overshoot.length === 0,
 			`${overshoot.length}音がはみ出し`,
 		);
@@ -344,26 +344,56 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 		edo: 12,
 	});
 	check(`${tag} 伴奏が生成できる`, chordNotes.length > 0, "0音");
+	const progBars = song.chordProgression.split("|");
 	check(
-		`${tag} 進行が16小節`,
-		song.chordProgression.split("|").length === BARS,
-		`${song.chordProgression.split("|").length}小節`,
+		`${tag} 進行が曲の長さと一致`,
+		progBars.length === song.bars,
+		`${progBars.length}小節 / 曲は${song.bars}小節`,
 	);
-	// 単純ループを避ける。A(0-3) A'(4-7) B(8-11) A''(12-15) のうち、
-	// A' と A'' は A の変形なので似ていてよいが、**B部はA部と違う進行**でなければ
-	// 「サビで景色が変わる」効果が出ない。
-	const bars = song.chordProgression.split("|");
-	const [secA, secA2, secB, secA3] = [
-		bars.slice(0, 4).join("|"),
-		bars.slice(4, 8).join("|"),
-		bars.slice(8, 12).join("|"),
-		bars.slice(12, 16).join("|"),
-	];
-	check(`${tag} B部がA部と異なる`, secB !== secA, `A=${secA} / B=${secB}`);
-	// A' は「まだ続く」感じを出すためドミナントで終わる。A部が元からG7で終わる進行なら
-	// A' と同じ形になるのが正しい挙動なので、比較ではなく終止和音を見る。
-	check(`${tag} A'がドミナントで終わる`, /\|G7?$/.test(secA2), secA2);
-	check(`${tag} A''が主音で終わる`, /\|(C|Am)$/.test(secA3), secA3);
+
+	// --- セクション ---
+	// **どこがイントロで、どこがサビなのかを持っていること。** これが無いと
+	// どの小節も同じ密度・同じ音域で鳴り、聴き手が最初に掴む切り替わりが生まれない。
+	check(`${tag} セクションがある`, song.sections.length > 0, "0個");
+	const sectionBars = song.sections.reduce((sum, x) => sum + x.bars, 0);
+	check(
+		`${tag} セクションの合計が曲の長さ`,
+		sectionBars === song.bars,
+		`${sectionBars} / ${song.bars}`,
+	);
+	// セクションが隙間なく並んでいること。
+	let expectedStart = 0;
+	for (const section of song.sections) {
+		check(
+			`${tag} ${section.kind} が隙間なく並ぶ`,
+			section.startBar === expectedStart,
+			`開始${section.startBar} / 期待${expectedStart}`,
+		);
+		expectedStart += section.bars;
+	}
+	// サビの進行はAメロと違うこと（「サビで景色が変わる」効果の土台）。
+	const barsOf = (kind: string): string =>
+		song.sections
+			.filter((x) => x.kind === kind)
+			.flatMap((x) => progBars.slice(x.startBar, x.startBar + x.bars))
+			.join("|");
+	const verse = barsOf("verse");
+	const chorus = barsOf("chorus");
+	if (verse && chorus)
+		check(`${tag} サビの進行がAメロと違う`, verse !== chorus, `A=${verse}`);
+	// Bメロはサビへの助走なので、ドミナントで宙吊りにして終わる。
+	const pre = song.sections.find((x) => x.kind === "prechorus");
+	if (pre) {
+		const last = progBars[pre.startBar + pre.bars - 1];
+		check(`${tag} Bメロがドミナントで終わる`, /^G7?$/.test(last), last);
+	}
+	// サビとアウトロは主音へ着地して締める。
+	for (const kind of ["chorus", "outro"]) {
+		const sec = song.sections.find((x) => x.kind === kind);
+		if (!sec) continue;
+		const last = progBars[sec.startBar + sec.bars - 1];
+		check(`${tag} ${kind}が主音で終わる`, /^(C|Am)$/.test(last), last);
+	}
 }
 
 // ============================================================
@@ -516,7 +546,7 @@ console.log("● フレーズ構造");
 		}));
 		const f = structureFeatures(notes, [], {
 			stepsPerBar: STEPS_PER_BAR,
-			bars: BARS,
+			bars: song.bars,
 		});
 		sim4Sum += f.sim4;
 		sim1Sum += f.sim1;
@@ -531,8 +561,13 @@ console.log("● フレーズ構造");
 			f.phraseBreath >= 0.1,
 			`${f.phraseBreath.toFixed(2)}`,
 		);
-		// 楽句は2小節。8小節目・16小節目の末尾は必ずロングトーンか休符で受ける。
-		for (const bar of [7, 15]) {
+		// 楽句は2小節。**メロディのあるセクションの末尾**は必ずロングトーンか
+		// 休符で受ける（歌手の息継ぎ）。小節番号で固定していた頃は、セクションの
+		// 選び方で位置が変わると成立しなくなっていた。
+		const endBars = song.sections
+			.filter((x) => x.spec.melody)
+			.map((x) => x.startBar + x.bars - 1);
+		for (const bar of endBars) {
 			const inBar = song.melody.filter(
 				(n) =>
 					n.startStep >= bar * STEPS_PER_BAR &&
@@ -543,7 +578,7 @@ console.log("● フレーズ構造");
 			const tail =
 				(bar + 1) * STEPS_PER_BAR - (last.startStep + last.durationSteps);
 			check(
-				`${tag} bar${bar + 1} が大楽節の切れ目として受ける`,
+				`${tag} bar${bar + 1} がセクションの切れ目として受ける`,
 				last.durationSteps >= STEPS_PER_BAR / 4 || tail >= STEPS_PER_BAR / 8,
 				`末尾の音 ${last.durationSteps}ステップ / 空き ${tail}`,
 			);
@@ -593,7 +628,7 @@ console.log("● 格子への乗り");
 				cross++;
 		}
 		const over = song.melody.filter(
-			(n) => n.startStep + n.durationSteps > BARS * STEPS_PER_BAR,
+			(n) => n.startStep + n.durationSteps > song.bars * STEPS_PER_BAR,
 		);
 		check(
 			`seed=${seed} 曲の終端をはみ出さない`,
@@ -645,20 +680,25 @@ console.log("● ドラム編曲");
 			for (const [lo, hi] of i.ranges)
 				for (let b = lo; b <= hi; b++) covered.add(b);
 		check(
-			`${tag} 16小節すべてにドラムがある`,
-			covered.size === BARS,
-			`${covered.size}小節`,
+			`${tag} 全小節にドラムがある`,
+			covered.size === song.bars,
+			`${covered.size}/${song.bars}小節`,
 		);
-		// フィル（4小節の切れ目）とクラッシュ（セクションの頭）が入っていること。
 		const barOf = (bar: number) =>
 			drums.def.pattern.find((i) =>
 				i.ranges.some(([lo, hi]) => bar >= lo && bar <= hi),
 			)?.pattern ?? [];
-		check(
-			`${tag} サビ頭にクラッシュ`,
-			barOf(9).some((h) => h.pitch === DRUM_KEYS.crashCymbal1),
-			"9小節目にクラッシュが無い",
-		);
+		// **セクションの頭にクラッシュ。** 切り替わりを耳で分からせる主役。
+		for (const section of song.sections) {
+			check(
+				`${tag} ${section.kind}の頭にクラッシュ`,
+				barOf(section.startBar + 1).some(
+					(h) => h.pitch === DRUM_KEYS.crashCymbal1,
+				),
+				`${section.startBar + 1}小節目にクラッシュが無い`,
+			);
+		}
+		// **セクションの終わりの1つ手前にフィル**（次のセクションへの助走）。
 		const toms = [DRUM_KEYS.highTom, DRUM_KEYS.lowMidTom, DRUM_KEYS.lowTom];
 		const isFillBar = (bar: number) =>
 			barOf(bar).filter(
@@ -666,14 +706,22 @@ console.log("● ドラム編曲");
 					h.step >= STEPS_PER_BAR / 2 &&
 					(h.pitch === DRUM_KEYS.acousticSnare || toms.includes(h.pitch)),
 			).length >= 2;
-		check(`${tag} 4小節目にフィル`, isFillBar(4), "フィルが無い");
-		check(`${tag} 8小節目にフィル`, isFillBar(8), "フィルが無い");
+		for (const section of song.sections) {
+			const fillBar = section.startBar + section.bars - 1;
+			// 最終小節は鳴らし切る側なので、フィルは入らない。
+			if (fillBar >= song.bars) continue;
+			check(
+				`${tag} ${section.kind}の終わりにフィル`,
+				isFillBar(fillBar),
+				`${fillBar}小節目にフィルが無い`,
+			);
+		}
 		// 最終小節は鳴らし切る（刻み続けると終わった感じが出ない）。
 		check(
 			`${tag} 最終小節で締める`,
-			barOf(BARS).some((h) => h.pitch === DRUM_KEYS.crashCymbal1) &&
-				barOf(BARS).length <= 4,
-			`${barOf(BARS).length}打`,
+			barOf(song.bars).some((h) => h.pitch === DRUM_KEYS.crashCymbal1) &&
+				barOf(song.bars).length <= 4,
+			`${barOf(song.bars).length}打`,
 		);
 	}
 	check(

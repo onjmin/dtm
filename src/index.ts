@@ -31,6 +31,16 @@ export {
 	type TensionFeatures,
 	tensionFeatures,
 } from "./compose-metrics";
+export {
+	buildSectionPlan,
+	DEFAULT_SECTIONS,
+	type PlacedSection,
+	SECTION_LABELS,
+	SECTION_ORDER,
+	SECTION_SPECS,
+	type SectionKind,
+	type SectionSpec,
+} from "./compose-sections";
 export { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 export * from "./drum-config";
 // ヘッドレス再生（DOM非依存・BGM向け）＋ 内蔵synthプリミティブ

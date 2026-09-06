@@ -243,6 +243,16 @@ export type ComposeDrumOptions = {
 	rnd: () => number;
 	/** 曲の性格を外から決めたいとき（省略時はランダム）。 */
 	style?: DrumStyle;
+	/**
+	 * 小節ごとの強度（0=抑えめ 1=標準 2=最大）。**セクションから作って渡す。**
+	 * ここを小節番号で決め打ちしていた頃は、イントロだろうがサビだろうが
+	 * 「1〜4小節は抑えめ」という固定の割り当てしかできなかった。
+	 */
+	levels?: (0 | 1 | 2)[];
+	/** クラッシュを置く小節（1始まり）。セクションの頭。 */
+	crashBars?: number[];
+	/** フィルを置く小節（1始まり）。セクションの終わりの1つ手前。 */
+	fillBars?: number[];
 };
 
 export type ComposedDrums = {
@@ -292,11 +302,19 @@ export const composeDrumPattern = (
 	const openTail = rnd() < 0.6;
 	const useClap = style === "four" && rnd() < 0.5;
 
+	// 強度・クラッシュ・フィルの位置はセクションから渡してもらう。渡されない
+	// ときだけ、4小節ごとの素朴な割り当てにする（単体で使えるように）。
+	const levels = options.levels;
+	const crashSet = new Set(options.crashBars ?? [1, 9, 13]);
+	const fillSet = new Set(
+		options.fillBars ?? [4, 8, 12, bars - 1].filter((b) => b > 0),
+	);
 	const sectionLevel = (bar: number): Intensity => {
-		if (bar <= 4) return 0; // A: 抑えめ
-		if (bar <= 8) return 1; // A': 標準
-		if (bar <= 12) return 2; // B: サビ
-		return 1; // A'': 標準へ戻す
+		if (levels) return levels[bar - 1] ?? 1;
+		if (bar <= 4) return 0;
+		if (bar <= 8) return 1;
+		if (bar <= 12) return 2;
+		return 1;
 	};
 
 	const barPatterns: DrumPattern[] = [];
@@ -306,11 +324,11 @@ export const composeDrumPattern = (
 		// フィルは4小節の切れ目に置く。ただし**最終小節は例外で、1つ手前に置く**——
 		// フィルは「次の小節へ入る助走」なので、次が無い小節に置くと行き場を失う。
 		// 最終小節はクラッシュを叩いて鳴らし切る形にする。
-		const isFill = !isLast && (bar % 4 === 0 || bar === bars - 1);
+		const isFill = !isLast && fillSet.has(bar);
 		const hits: DrumPattern = [];
 
 		// --- クラッシュ（セクションの頭と、曲の締め） ---
-		if (bar === 1 || bar === 9 || bar === 13 || isLast)
+		if (crashSet.has(bar) || isLast)
 			hits.push({
 				step: 0,
 				pitch: DRUM_KEYS.crashCymbal1,

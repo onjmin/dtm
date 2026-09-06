@@ -231,6 +231,53 @@ export const DAW_CSS = `
   margin-top: 4px;
 }
 .dtm-checkbox-label:hover { color: var(--dtm-text); }
+
+/* ─── 作曲するセクションの選択（イントロ・Aメロ…のチェック） ─── */
+.dtm-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+}
+.dtm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  color: var(--dtm-muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.dtm-check:hover { color: var(--dtm-text); }
+.dtm-check input {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--dtm-success);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.dtm-info-table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 11px;
+  width: 100%;
+}
+.dtm-info-table th,
+.dtm-info-table td {
+  border: 1px solid var(--dtm-border);
+  padding: 3px 6px;
+  text-align: left;
+  white-space: nowrap;
+}
+.dtm-info-table th { color: var(--dtm-muted); font-weight: normal; }
+.dtm-hint {
+  font-family: var(--dtm-font);
+  font-size: 10px;
+  color: var(--dtm-muted);
+  white-space: nowrap;
+}
 .dtm-checkbox-label--sub { margin-left: 20px; font-size: 10px; }
 .dtm-checkbox {
   width: 14px;

@@ -104,6 +104,13 @@ import {
 	type TensionFeatures,
 	tensionFeatures,
 } from "./compose-metrics";
+import {
+	buildSectionPlan,
+	DEFAULT_SECTIONS,
+	type PlacedSection,
+	type SectionKind,
+	sectionAt,
+} from "./compose-sections";
 import { UNITS_PER_SEMITONE, type Units } from "./tuning";
 
 // ============================================================
@@ -220,9 +227,6 @@ const DOT_QUARTER = 72;
 const QUARTER = 48;
 const EIGHTH = 24;
 const SIXTEENTH = 12;
-
-/** 曲の長さ。A(4) - A'(4) - B(4) - A''(4) の16小節。 */
-const BARS = 16;
 
 /**
  * 曲の調（ハ長調からの移調量・半音）。
@@ -825,30 +829,6 @@ type BarRole =
 	| "hold"
 	| "cadence";
 
-/**
- * **フレーズの並べ方。** 1要素が4小節の小楽節で、その小楽節の「問い」に
- * どの素材（モチーフAかBか、Aのセクエンツか）を使うかを指す。
- *
- * 解説はどれも次の順で組めと書いている。
- *
- * ```
- *   モチーフ（2小節） → 繰り返して小楽節（4小節） → 8小節・16小節
- *   AABA / AAAB / AABC / ABAB … 2小節を単位に並べ替える
- * ```
- *
- * 初版はここが**1小節単位**で、小節ごとに motif/step/run/hold の役割を割り当てて
- * いた。2小節のまとまりが存在しないので、「同じフレーズが返ってきた」という
- * 手応えがどこにも無く、毎小節ちがう音が流れるだけになっていた。
- */
-const PHRASE_FORMS: ("a" | "a2" | "b")[][] = [
-	["a", "a2", "b", "a"], // AABA（最も多い形）
-	["a", "a2", "a2", "b"], // AAAB
-	["a", "b", "a", "b"], // ABAB
-	["a", "a2", "b", "b"], // AABB
-	["a", "a2", "b", "a2"],
-	["a", "a", "b", "a2"],
-];
-
 // ============================================================
 // メロディの書法（曲ごとに引く）
 // ============================================================
@@ -1051,6 +1031,12 @@ export type ComposeOptions = {
 	recent?: number[][];
 	/** 引く候補の数。既定 {@link DRAW_COUNT}。 */
 	drawCount?: number;
+	/**
+	 * 作るセクション（イントロ・Aメロ・Bメロ・サビ・間奏・アウトロ）。
+	 * 省略時は {@link DEFAULT_SECTIONS}。並び順は指定によらず
+	 * `SECTION_ORDER` に従う。
+	 */
+	sections?: SectionKind[];
 };
 
 export type ComposeResult = {
@@ -1066,6 +1052,10 @@ export type ComposeResult = {
 	rootShift: number;
 	/** 曲のテンポ（BPM）。 */
 	bpm: number;
+	/** 曲の設計図。どの小節がどのセクションかを表す。 */
+	sections: PlacedSection[];
+	/** 曲の長さ（小節）。セクションの選び方で変わる。 */
+	bars: number;
 	/**
 	 * 16小節ぶんのドラム編曲。
 	 *
@@ -1808,17 +1798,46 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	const quarterSteps = scaleStep(QUARTER);
 	const strongStep = Math.max(1, Math.round(stepsPerBar / 2));
 
+	// --- ⓪曲の設計図（セクション）---
+	// **どこがイントロで、どこがサビなのかを持つ。** これが無いと、どの小節も
+	// 同じ密度・同じ音域で鳴り、聴き手が最初に掴む「セクションの切り替わり」が
+	// 生まれない（{@link file://./compose-sections.ts} 参照）。
+	const sectionPlan = buildSectionPlan(options.sections ?? DEFAULT_SECTIONS);
+	const totalBars = sectionPlan.reduce((sum, s) => sum + s.bars, 0);
+
 	// --- ①コード進行を決める ---
+	// **セクションごとに進行を割り当てる。** Aメロ系は progA、サビ系は progB。
+	// イントロがサビの和音で始まるのは「曲の顔を先に見せる」定石で、
+	// 間奏も同じ理由でサビ側を使う。
 	const progA = pick(SECTION_A_PROGRESSIONS, rnd);
-	// B部はA部と質感を変えるのが役目なので、同じ進行を引いたら引き直す。
+	// サビはAメロと質感を変えるのが役目なので、同じ進行を引いたら引き直す。
 	const progBPool = SECTION_B_PROGRESSIONS.filter(
 		(p) => p.join("|") !== progA.join("|"),
 	);
 	const progB = pick(progBPool, rnd);
 	const tonic = progA[0].startsWith("Am") ? "Am" : "C";
-	const progA2 = pick(SECTION_A2_DERIVATIONS, rnd)(progA);
-	const progA3 = pick(SECTION_A3_DERIVATIONS, rnd)(progA, tonic);
-	const progression = [...progA, ...progA2, ...progB, ...progA3];
+	/** ドミナントで終わる4小節（Bメロの末尾＝サビへの助走に使う）。 */
+	const progHalf = pick(SECTION_A2_DERIVATIONS, rnd)(progA);
+	/** 主音で終わる4小節（セクションの締めに使う）。 */
+	const progFull = pick(SECTION_A3_DERIVATIONS, rnd)(progA, tonic);
+	const progression: string[] = [];
+	for (const section of sectionPlan) {
+		const base = section.spec.progression === "b" ? progB : progA;
+		for (let i = 0; i < section.bars; i += 4) {
+			const isLastPhrase = i + 4 >= section.bars;
+			// セクションの最後の4小節は、そのセクションの役目に合わせて締める。
+			// Bメロは半終止（ドミナント）でサビへ渡し、サビとアウトロは全終止。
+			if (!isLastPhrase) {
+				progression.push(...base);
+				continue;
+			}
+			if (section.kind === "prechorus") progression.push(...progHalf);
+			else if (section.kind === "chorus" || section.kind === "outro")
+				progression.push(...progFull);
+			else progression.push(...base);
+		}
+	}
+	progression.length = totalBars;
 	const chordProgression = progression.join("|");
 	const chordPattern = pick(CHORD_PATTERNS, rnd);
 	// 調とテンポも曲ごとに引く。生成はハ長調で行い、最後にまとめて移調する
@@ -1847,40 +1866,69 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	//   小楽節2 問い→答え（一度落ち着く）
 	//   小楽節3 サビ：オクターブ上の問い→答え
 	//   小楽節4 問いの回帰→全終止（主音・白玉＋休符）
-	const form = pick(PHRASE_FORMS, rnd);
-	// **サビ（オクターブ上げる小楽節）の位置を曲ごとに変える。** 3つ目に固定すると
-	// 最高音の出現位置が常に曲の56%あたりになる。参考曲は中央値33%・p25〜p75 が
-	// 17〜73% と散っていて、前半に山が来る曲も多い。
-	const climaxPhrase = pick([1, 2, 2], rnd);
-	/** 楽句（2小節）ごとの設計。 */
+	// **楽句（2小節）はセクションの中で組む。**
+	//
+	// 各セクションは【問い2小節】＋【答え2小節】の小楽節を1〜2個持つ。
+	// 8小節のセクション（Aメロ・サビ）は「問い→答え→問いの変形→答え」、
+	// 4小節のセクション（Bメロ等）は「問い→答え」。
+	// イントロと間奏はメロディを書かない（伴奏・ベース・ドラムだけが鳴る）。
 	type Unit = {
 		role: BarRole;
 		/** どのモチーフを使うか。同じ素材の楽句は音の並びごと再現する。 */
-		source: "a" | "a2" | "b" | "answer";
-		/** 答えの着地音（主音からの音階度数）。問いのときは null。 */
+		source: "a" | "a2" | "b" | "answer" | "silent";
+		/** セクションの終わりの着地音（主音からの音階度数）。途中は null。 */
 		landing: number | null;
+		section: PlacedSection;
 	};
+	/**
+	 * セクション → モチーフの素材。**BメロはサビともAメロとも違う顔でなければ
+	 * ならない**ので、Aメロと同じ素材のセクエンツにする（まったく無関係な素材を
+	 * 置くと、曲としての統一感が消える）。
+	 */
+	const sourceOf = (kind: SectionKind): "a" | "a2" | "b" =>
+		kind === "chorus" || kind === "interlude"
+			? "b"
+			: kind === "prechorus"
+				? "a2"
+				: "a";
 	const units: Unit[] = [];
-	for (let phrase = 0; phrase < 4; phrase++) {
-		const src = form[phrase];
-		// 問い。3つ目の小楽節（9〜12小節）がサビなので、そこはオクターブ上げる。
-		units.push({
-			role:
-				phrase === climaxPhrase
-					? "climax"
-					: src === "a2"
-						? "sequence"
-						: "motif",
-			source: src,
-			landing: null,
-		});
-		// 答え。最後の小楽節だけ全終止（主音）で、それ以外は主音を避けて
-		// 「まだ続く」感じを残す（半終止）。
-		units.push({
-			role: phrase === 3 ? "cadence" : "answer",
-			source: "answer",
-			landing: phrase === 3 ? 0 : phrase === 1 ? 2 : pick([4, 1], rnd),
-		});
+	for (const section of sectionPlan) {
+		const unitCount = Math.max(1, Math.round(section.bars / 2));
+		const src = sourceOf(section.kind);
+		for (let u = 0; u < unitCount; u++) {
+			if (!section.spec.melody) {
+				units.push({
+					role: "hold",
+					source: "silent",
+					landing: null,
+					section,
+				});
+				continue;
+			}
+			const isLast = u === unitCount - 1;
+			if (u % 2 === 0) {
+				// 問い。サビはオクターブ上げて聞かせどころにする。
+				units.push({
+					role:
+						section.kind === "chorus"
+							? "climax"
+							: src === "a2" || u > 0
+								? "sequence"
+								: "motif",
+					source: src,
+					landing: null,
+					section,
+				});
+			} else {
+				// 答え。セクションの最後だけ、そのセクションの役目に応じて着地する。
+				units.push({
+					role: isLast && section.spec.landing === 0 ? "cadence" : "answer",
+					source: "answer",
+					landing: isLast ? section.spec.landing : null,
+					section,
+				});
+			}
+		}
 	}
 	const barRoles: BarRole[] = units.flatMap((u) => [u.role, u.role]);
 	/** その小節が楽句のどちら側か（0=前半、1=後半）。輪郭の読み出し位置に使う。 */
@@ -1889,13 +1937,15 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 
 	/**
 	 * その小節が、どの小節の再現か。**同じ素材の楽句は音の並びごと歌い直す。**
-	 * これが「同じフレーズが返ってきた」という手応えの実体で、
-	 * AABA の2つ目の A と4つ目の A が別の音だったら形として成立しない。
+	 * これが「同じフレーズが返ってきた」という手応えの実体で、Aメロが2回出てくる
+	 * のに毎回別の音だったら、セクションとして成立しない。
 	 */
 	const restatementOf = (bar: number): number | null => {
 		const u = unitOf(bar);
+		if (units[u].source === "silent") return null;
 		for (let v = 0; v < u; v++) {
 			if (units[v].source !== units[u].source) continue;
+			if (units[v].role !== units[u].role) continue;
 			// 答えどうしは着地音が違うので、後半の小節は再現しない。
 			if (units[u].source === "answer" && barInUnit(bar) === 1) return null;
 			return v * 2 + barInUnit(bar);
@@ -2011,7 +2061,7 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	);
 
 	const barRhythms: number[][] = [];
-	for (let bar = 0; bar < BARS; bar++) {
+	for (let bar = 0; bar < totalBars; bar++) {
 		const u = unitOf(bar);
 		const half = barInUnit(bar);
 		const source = restatementOf(bar);
@@ -2026,7 +2076,8 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 			// 答えは問いと同じリズムで入る。**白玉＋休符で受けるのは大楽節の
 			// 切れ目（8小節ごと）だけ**——小楽節ごとに息継ぎを入れると
 			// フレーズの切れ目率が実測0.50まで上がる（参考曲は0.25）。
-			const isPeriodEnd = u === 3 || u === 7;
+			// 息継ぎで受けるのはセクションの終わり（＝着地音が決まっている楽句）。
+			const isPeriodEnd = units[u].landing !== null;
 			cell =
 				half === 0
 					? isB
@@ -2065,13 +2116,13 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 	}
 
 	/** 小節ごとに実際に使った音の並び（度数）。A' / A'' の再現で読み直す。 */
-	const plannedDegrees: (number[] | null)[] = new Array(BARS).fill(null);
+	const plannedDegrees: (number[] | null)[] = new Array(totalBars).fill(null);
 	const melody: ComposedNote[] = [];
 	const submelody: ComposedNote[] = [];
 	const bass: ComposedNote[] = [];
 	const melodyDurations: number[] = [];
 	/** 小節ごとの緊張度（0〜1）。和音が無い小節は0のまま。 */
-	const barTension: number[] = new Array(BARS).fill(0);
+	const barTension: number[] = new Array(totalBars).fill(0);
 	let restSteps = 0;
 	let maxLeap = 0;
 	let leaps = 0;
@@ -2106,7 +2157,7 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		return gaps;
 	};
 
-	for (let bar = 0; bar < BARS; bar++) {
+	for (let bar = 0; bar < totalBars; bar++) {
 		const role = barRoles[bar];
 		const barStart = bar * stepsPerBar;
 		const tones = chordTones(progression[bar]);
@@ -2234,6 +2285,11 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 
 		if (landing !== null && barInUnit(bar) === 1) landPitch(pitches, landing);
 
+		// **イントロと間奏はメロディを書かない。** ここに歌メロを置くと、
+		// どのセクションも同じ顔になり「ずっと歌っている曲」になってしまう。
+		// 伴奏・ベース・ドラム（とサブメロ）は鳴るので、無音にはならない。
+		const silent = units[unitOf(bar)].source === "silent";
+
 		// メロディ
 		const barHead = pitches[0];
 		// この小節の緊張度。`toneWeight` は「その瞬間の和音におけるこの音の重要度」
@@ -2253,6 +2309,10 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 				if (gap > STEP_SEMITONES) leaps++;
 			}
 			const slot = slots[i];
+			if (silent) {
+				prevSemi = semi;
+				continue;
+			}
 			melody.push({
 				startStep: barStart + slot.at,
 				pitchUnits: spelledToUnits(
@@ -2400,7 +2460,7 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		const O = clampSemi(R + 12, BASS_LOW, BASS_HIGH);
 		// ウォーキングの経過音は「次の小節のルートの1つ下のスケール音」。
 		// 半音の経過音にしないのは、31平均律で綴りの決まらない音を出さないため。
-		const nextTones = chordTones(progression[(bar + 1) % BARS]);
+		const nextTones = chordTones(progression[(bar + 1) % totalBars]);
 		const A = clampSemi(
 			walk(
 				nextTones[0] ? clampSemi(nextTones[0].semi, BASS_LOW, BASS_HIGH) : R,
@@ -2569,12 +2629,14 @@ const draw = (options: ComposeOptions, rnd: () => number): Draw => {
 		chordPattern,
 		rootShift,
 		bpm,
+		sections: sectionPlan,
+		bars: totalBars,
 		melody,
 		submelody,
 		bass,
 		melodyDurations,
 		restSteps,
-		totalSteps: BARS * stepsPerBar,
+		totalSteps: totalBars * stepsPerBar,
 		maxLeap,
 		leapRatio: intervals === 0 ? 0 : leaps / intervals,
 		melodyRange: range(melody),
@@ -2606,7 +2668,7 @@ const evaluate = (
 	const entropy = durationEntropy(d.melodyDurations);
 	const valueKinds = new Set(d.melodyDurations).size;
 	const restRatio = d.restSteps / d.totalSteps;
-	const opts = { stepsPerBar: d.stepsPerBar, bars: BARS };
+	const opts = { stepsPerBar: d.stepsPerBar, bars: d.bars };
 	const structure = structureFeatures(
 		toMetricNotes(d.melody),
 		toMetricNotes(d.submelody),
@@ -2648,7 +2710,7 @@ const evaluate = (
 		climaxPosition: at(CORPUS_BANDS.climaxPosition, structure.climaxPosition),
 		climaxPeaks: at(HAND_BANDS.climaxPeaks, structure.climaxPeaks),
 		complementarity: at(HAND_BANDS.complementarity, structure.complementarity),
-		subDensity: at(HAND_BANDS.subDensity, d.submelody.length / BARS),
+		subDensity: at(HAND_BANDS.subDensity, d.submelody.length / d.bars),
 		tensionRise: tension.rise,
 		tensionResolve: tension.resolve,
 		novelty,
@@ -2731,6 +2793,8 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			chordPattern: d.chordPattern,
 			rootShift: d.rootShift,
 			bpm: d.bpm,
+			sections: d.sections,
+			bars: d.bars,
 			melody: d.melody,
 			submelody: d.submelody,
 			bass: d.bass,
@@ -2742,11 +2806,26 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	const result = best as ComposeResult;
 	result.stats.attempts = count;
 	result.stats.rejected = rejected;
+	// ドラムもセクションに従う。イントロは抑えめ、サビは最大、セクションの頭に
+	// クラッシュ、終わりの1つ手前にフィル——切り替わりを作っているのはここ。
+	const levels = new Array<0 | 1 | 2>(result.bars).fill(1);
+	const crashBars: number[] = [];
+	const fillBars: number[] = [];
+	for (const section of result.sections) {
+		for (let i = 0; i < section.bars; i++)
+			levels[section.startBar + i] = section.spec.drumLevel;
+		crashBars.push(section.startBar + 1);
+		const fill = section.startBar + section.bars - 1;
+		if (fill > 0) fillBars.push(fill);
+	}
 	result.drums = composeDrumPattern({
-		bars: BARS,
+		bars: result.bars,
 		stepsPerBar: options.stepsPerBar,
 		rnd,
 		style: pickDrumStyle(result, rnd),
+		levels,
+		crashBars,
+		fillBars,
 	});
 	return result;
 };
