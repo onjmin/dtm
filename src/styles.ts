@@ -589,6 +589,46 @@ export const DAW_CSS = `
 .dtm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .dtm-track-body { display: flex; flex-direction: column; gap: 10px; }
 
+/* ─── 自動作曲コンテナ（マクロパネル内の専用カード風グループ枠） ─── */
+.dtm-compose-container {
+  background: var(--dtm-deep);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 1px var(--dtm-border2),
+    0 0 0 1px var(--dtm-success),
+    3px 3px 0 var(--c-black);
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.dtm-compose-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--dtm-border2);
+  margin-bottom: 2px;
+}
+.dtm-compose-badge {
+  font-family: var(--dtm-font);
+  font-size: 10px;
+  font-weight: bold;
+  background: var(--dtm-success);
+  color: var(--c-black);
+  padding: 2px 6px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.dtm-compose-title {
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  color: var(--dtm-success);
+  letter-spacing: .12em;
+  font-weight: bold;
+}
+
 /* ─── アクティブトラック色（個別トラック設定パネルの左端ライン） ─── */
 .dtm-panel--track > summary::before,
 .dtm-panel--track[open] > summary::before {
