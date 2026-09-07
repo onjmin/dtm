@@ -403,15 +403,11 @@ export const buildUI = (
     <summary>マクロ</summary>
     <div class="dtm-panel-body">
       <div class="dtm-compose-container ${showCompose ? "" : "dtm-hidden"}" data-dtm="compose-container">
-        <div class="dtm-compose-header">
-          <span class="dtm-compose-badge">AUTO COMPOSE</span>
-          <span class="dtm-compose-title">自動作曲</span>
-          <span class="dtm-grow"></span>
-          <button class="dtm-infobtn" data-dtm="macro-compose-info" title="作曲の解説">${icon("info", 12)}</button>
-        </div>
         <div class="dtm-row" data-dtm="compose-row">
           <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose" title="コード進行・メロディ・サブメロ・ベース・伴奏・ドラムを自動で作ります">作曲</button>
           <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose-vocal" title="作曲したうえで、メロディに歌詞を付けて歌わせます">歌入り作曲</button>
+          <button class="dtm-infobtn" data-dtm="macro-compose-info" title="作曲の解説">${icon("info", 12)}</button>
+          <span class="dtm-grow"></span>
         </div>
         <div class="dtm-row" data-dtm="compose-template-row">
           <span class="dtm-label">構成</span>

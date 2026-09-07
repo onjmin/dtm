@@ -603,31 +603,6 @@ export const DAW_CSS = `
   gap: 10px;
   margin-bottom: 6px;
 }
-.dtm-compose-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px dashed var(--dtm-border2);
-  margin-bottom: 2px;
-}
-.dtm-compose-badge {
-  font-family: var(--dtm-font);
-  font-size: 10px;
-  font-weight: bold;
-  background: var(--dtm-success);
-  color: var(--c-black);
-  padding: 2px 6px;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
-.dtm-compose-title {
-  font-family: var(--dtm-font);
-  font-size: 11px;
-  color: var(--dtm-success);
-  letter-spacing: .12em;
-  font-weight: bold;
-}
 
 /* ─── アクティブトラック色（個別トラック設定パネルの左端ライン） ─── */
 .dtm-panel--track > summary::before,
