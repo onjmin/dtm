@@ -1300,6 +1300,8 @@ export type ComposeResult = {
 	bars: number;
 	/** 曲に合わせて組み込みから自動選択されたドラムパターン名（DRUM_PATTERNS のキー）。 */
 	drum: string;
+	/** 曲に合わせて組み込みから自動選択された楽器プリセット名（INSTRUMENT_PRESETS のキー）。 */
+	instrument: string;
 	melody: ComposedNote[];
 	submelody: ComposedNote[];
 	bass: ComposedNote[];
@@ -2154,7 +2156,7 @@ const applyChromatic = (
 };
 
 /** 1回分の draw。点数を付けるのは呼び出し側（{@link evaluate}）の仕事。 */
-type Draw = Omit<ComposeResult, "stats" | "drum"> & {
+type Draw = Omit<ComposeResult, "stats" | "drum" | "instrument"> & {
 	melodyDurations: number[];
 	restSteps: number;
 	totalSteps: number;
@@ -3379,7 +3381,7 @@ const draw = (
 		let tieProb = 0.4;
 		if (nextRole === "motif") tieProb = 0.05;
 		else if (nextRole === "sequence") tieProb = 0.75;
-		else if (nextRole === "climax") tieProb = 0.90;
+		else if (nextRole === "climax") tieProb = 0.9;
 		else if (nextRole === "cadence") tieProb = 0.1;
 
 		if (rnd() < tieProb) {
@@ -3420,10 +3422,14 @@ const draw = (
 		if (rnd() < splitProb && melody[i].durationSteps === quarterSteps) {
 			// 4分音符を8分音符2つに分割（同音連打）
 			const half = scaleStep(EIGHTH);
-			const newNote = { ...melody[i], startStep: melody[i].startStep + half, durationSteps: half };
+			const newNote = {
+				...melody[i],
+				startStep: melody[i].startStep + half,
+				durationSteps: half,
+			};
 			melody[i].durationSteps = half;
 			melody.splice(i + 1, 0, newNote);
-			
+
 			// melodyDurations も同期
 			if (i < melodyDurations.length) {
 				melodyDurations[i] = half;
@@ -3660,9 +3666,10 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 		bestScore = stats.score;
 		bestIsValid = ok;
 		best = {
-			// ドラムは勝った候補にだけ後から付ける（メロディに依存しないので
+			// ドラム・楽器は勝った候補にだけ後から付ける（メロディに依存しないので
 			// 候補ごとに引いても採点は動かず、40本ぶん無駄になる）。
 			drum: "",
+			instrument: "",
 			chordProgression: d.chordProgression,
 			chordPattern: d.chordPattern,
 			rootShift: d.rootShift,
@@ -3686,6 +3693,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	result.stats.attempts = count;
 	result.stats.rejected = rejected;
 	result.drum = pickBuiltinDrum(result, rnd);
+	result.instrument = pickBuiltinInstrument(result, rnd);
 	return result;
 };
 
@@ -3710,6 +3718,60 @@ const pickBuiltinDrum = (song: ComposeResult, rnd: () => number): string => {
 				: song.bpm <= 110 && short < 0.4
 					? ["bossa", "8beat"]
 					: ["8beat", "4beat", "16beat"];
+	return pick(pool, rnd);
+};
+
+/**
+ * 曲に合わせて組み込み楽器プリセット（INSTRUMENT_PRESETS のキー）を選ぶ。
+ *
+ * ドラムやテンポ、メロディの刻みや跳躍率、雰囲気から曲の世界観に合う音色セットを選ぶ。
+ * 「どの曲も同じピアノで鳴る」のを防ぎ、曲ごとのキャラクターを際立たせる。
+ */
+export const pickBuiltinInstrument = (
+	song: ComposeResult,
+	rnd: () => number,
+): string => {
+	const eighth = BASE_STEPS_PER_BAR / 8;
+	const short =
+		song.melody.filter((n) => n.durationSteps <= eighth).length /
+		Math.max(1, song.melody.length);
+
+	// 稀に和風やエキゾチックなどのアクセント枠を出す（約6%）
+	if (rnd() < 0.06) {
+		return pick(["japanese_wa", "arabic_exotic"], rnd);
+	}
+
+	let pool: string[];
+	if (song.drum === "dance" || song.drum === "disco") {
+		// ダンス・ディスコ系: シンセ・サイバー・レトロ系
+		pool =
+			song.bpm >= 150
+				? ["cyber_punk", "synth_pop", "retro_game"]
+				: ["synth_pop", "retro_game", "rock", "piano"];
+	} else if (song.drum === "bossa") {
+		// ボサノバ: ジャズ、アコースティック、ピアノ
+		pool = ["jazz_night", "acoustic", "piano"];
+	} else if (song.bpm <= 105 && short < 0.4) {
+		// ゆったりした曲: アンビエント、アコースティック、オーケストラ、ピアノ
+		pool = ["ambient_cloud", "acoustic", "orchestra", "piano", "fantasy_rpg"];
+	} else if (song.bpm >= 145) {
+		// ハイスピード: ロック、シンセポップ、サイバーパンク、8-bit
+		pool = ["rock", "synth_pop", "cyber_punk", "retro_game", "piano"];
+	} else if (song.stats.leapRatio >= 0.45) {
+		// 跳躍の多いドラマティックな旋律: オーケストラ、ファンタジー、アコースティック
+		pool = ["fantasy_rpg", "orchestra", "acoustic", "piano"];
+	} else {
+		// 中速・スタンダード: 幅広い選択肢
+		pool = [
+			"piano",
+			"acoustic",
+			"synth_pop",
+			"rock",
+			"jazz_night",
+			"fantasy_rpg",
+		];
+	}
+
 	return pick(pool, rnd);
 };
 

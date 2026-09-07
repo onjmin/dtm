@@ -694,6 +694,11 @@ export const createDtmStudio = async (
 		if (fadeOutStartAt !== undefined && fadeOutEndAt !== undefined) {
 			fadeGain.gain.setValueAtTime(1, fadeOutStartAt);
 			fadeGain.gain.linearRampToValueAtTime(0, fadeOutEndAt);
+			// フェードアウト完了後は、リバーブやディレイの残響が完全に減衰するまで 0 を保つ。
+			// 0 のまま放置すると停止後のプレビュー試聴がミュートされるのを防ぐため、
+			// 残響が消え去った十分な時間後（2秒後）に自動で通常音量 1 へ復帰させる。
+			fadeGain.gain.setValueAtTime(0, fadeOutEndAt + 2.0);
+			fadeGain.gain.setValueAtTime(1, fadeOutEndAt + 2.0);
 		}
 	};
 
@@ -1054,6 +1059,10 @@ export const createDtmStudio = async (
 
 		const select = doc.createElement("select");
 		select.className = "dtm-select dtm-grow";
+		const autoOpt = doc.createElement("option");
+		autoOpt.value = "auto";
+		autoOpt.textContent = "✨ 自動（曲調連動）";
+		select.appendChild(autoOpt);
 		for (const [key, p] of Object.entries(INSTRUMENT_PRESETS)) {
 			const o = doc.createElement("option");
 			o.value = key;
@@ -1061,7 +1070,9 @@ export const createDtmStudio = async (
 			select.appendChild(o);
 		}
 		select.value =
-			opts.value && INSTRUMENT_PRESETS[opts.value] ? opts.value : defaultPreset;
+			opts.value === "auto" || (opts.value && INSTRUMENT_PRESETS[opts.value])
+				? opts.value
+				: defaultPreset;
 		wrapper.appendChild(select);
 
 		// 連打で多重ロードしないよう、処理中は次の change を握りつぶす。
@@ -1072,6 +1083,10 @@ export const createDtmStudio = async (
 			busy = true;
 			const key = select.value;
 			opts.onChange?.(key);
+			if (key === "auto") {
+				busy = false;
+				return;
+			}
 			const trackIds = opts.getTrackIds?.() ?? [...TRACK_ROLES];
 			const isAdvanced = trackIds.includes("t0");
 			const mode = isAdvanced ? "advanced" : "simple";
@@ -1091,7 +1106,7 @@ export const createDtmStudio = async (
 			element: wrapper,
 			select,
 			setValue: (k) => {
-				if (INSTRUMENT_PRESETS[k]) select.value = k;
+				if (k === "auto" || INSTRUMENT_PRESETS[k]) select.value = k;
 			},
 			getValue: () => select.value,
 			destroy: () => {
@@ -1106,9 +1121,17 @@ export const createDtmStudio = async (
 	nameToKey = await buildNameToKeyMapping();
 	await Promise.all([drumReady, loadPreset(defaultPreset)]);
 
+	const restoreFadeGainIfMuted = (): void => {
+		if (fadeGain.gain.value < 1) {
+			fadeGain.gain.cancelScheduledValues(audioCtx.currentTime);
+			fadeGain.gain.setValueAtTime(1, audioCtx.currentTime);
+		}
+	};
+
 	// ── 発音ハンドラ（ドラムは曲全体共通。楽器音は編集UI/再生UIごとにプリセットを解決） ──
 	const playDrum = (e: PlayDrumEvent): void => {
 		if (!sfDrum.font) return;
+		if (e.when === 0) restoreFadeGainIfMuted();
 		if (KICK_PITCHES.has(e.pitch)) duckBassForKick(e.when);
 		sfDrum.play({
 			ctx: audioCtx,
@@ -1173,6 +1196,7 @@ export const createDtmStudio = async (
 		}
 
 		const playNote = (e: PlayNoteEvent): void => {
+			if (e.when === 0) restoreFadeGainIfMuted();
 			// トラックインデックスを trackId から逆引き（"melody"→0, "t2"→2, "t9"→9 等）
 			const { trackIdx, role } = resolveTrackIdxAndRole(e.trackId);
 			const overrideKey =
@@ -1203,12 +1227,34 @@ export const createDtmStudio = async (
 			});
 		};
 
-		// 楽器変更（MML読込時など）に追従する
+		let daw: DawInstance;
+
+		// 楽器変更（MML読込時や自動作曲時など）に追従する
 		let presetSelect: PresetSelectInstance | null = null;
 		const handleInstrumentChange = (key: string): void => {
+			if (key === "auto") {
+				if (presetSelect) {
+					presetSelect.setValue("auto");
+				}
+				onInstrumentChange?.("auto");
+				return;
+			}
 			editorPreset = key;
 			if (presetSelect) {
 				presetSelect.setValue(key);
+			}
+			if (INSTRUMENT_PRESETS[key]) {
+				const wasPlaying = daw?.getPlaybackState() === "playing";
+				if (wasPlaying) daw.pause();
+				daw?.setLoading?.(true);
+				void loadPreset(
+					key,
+					trackIds,
+					isAdvancedMode ? "advanced" : "simple",
+				).finally(() => {
+					daw?.setLoading?.(false);
+					if (wasPlaying) daw?.play();
+				});
 			}
 			onInstrumentChange?.(key);
 		};
@@ -1228,8 +1274,6 @@ export const createDtmStudio = async (
 			trackInstOverrides.set(trackIndex, key);
 			await loadInstrument(key);
 		};
-
-		let daw: DawInstance;
 
 		const base: DawOptions = {
 			getAudioTime: () => audioCtx.currentTime,

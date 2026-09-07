@@ -129,6 +129,9 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 	// キュー関連の状態
 	let lastPlayStep = 0;
 
+	/** 全ノートの終了時刻（when + duration）の最大値（秒）。曲の終了判定に使用。 */
+	let maxTimelineEndSec = 0;
+
 	const secondsPerStep = (): number => 60 / options.getBpm() / STEPS_PER_BEAT;
 
 	const getWrappedPlayStep = (time: number, sps: number): number => {
@@ -165,6 +168,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		const startLimit = isLooping ? Math.min(fromStep, loopStartStep) : fromStep;
 
 		let maxEndStep = 0;
+		maxTimelineEndSec = 0;
 		for (const track of options.getTracks()) {
 			trackVolumeMap.set(track.id, track.volume);
 			for (const note of track.notes) {
@@ -173,6 +177,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 				const when = relativeStart * sps;
 				const duration = note.durationSteps * sps;
 				maxEndStep = Math.max(maxEndStep, note.startStep + note.durationSteps);
+				maxTimelineEndSec = Math.max(maxTimelineEndSec, when + duration);
 				timeline.push({
 					trackId: track.id,
 					pitch: note.pitchUnits,
@@ -343,10 +348,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 
 		// 終了判定（ループ時は曲末で止めない）
 		if (!isLooping) {
-			const last = timeline[timeline.length - 1];
-			const lastWhen = last?.when ?? 0;
-			const lastDuration = last?.duration ?? 0;
-			if (nowIndex >= timeline.length && time > lastWhen + lastDuration + 0.1) {
+			if (nowIndex >= timeline.length && time > maxTimelineEndSec + 0.1) {
 				stop();
 				options.onEnd(false);
 			}

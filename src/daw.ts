@@ -43,6 +43,12 @@ import {
 	vocalVolumeToGain,
 } from "./lyrics";
 import {
+	readMacroSections,
+	readMacroSetting,
+	writeMacroSections,
+	writeMacroSetting,
+} from "./macro-state";
+import {
 	applyHarmonicFilter,
 	applyMonophonic,
 	generateRandomPattern,
@@ -1430,6 +1436,12 @@ export const mountDAW = (
 	};
 	// MML出力の先頭に埋め込む楽器プリセット名（トップレベル宣言。空なら宣言なし）
 	let currentInstrument = "";
+	/**
+	 * 直前の「作曲」が自動で当てた楽器プリセット名。ユーザーが自分で選んだプリセットを
+	 * 上書きしないための目印で、`currentInstrument` がこの値のまま（＝ユーザーは触っていない）
+	 * または "auto" / 未設定なら、次の作曲で曲調に合わせて引き直す。
+	 */
+	let autoComposeInstrument: string | null = null;
 	let activeTrackId = options.initialActiveTrack ?? trackConfigs[0].id;
 	// トラック切り替えでパネルを再構築しても開閉状態を維持するための「詳細設定」開閉フラグ
 	// 「詳細設定」も畳み状態を覚える（トラック切替で作り直されるので変数経由で保持し、
@@ -2745,11 +2757,14 @@ export const mountDAW = (
 			redrawAll();
 		},
 		onEnd: (interrupted) => {
-			// 曲が自然終了（または遅延検知で割り込み停止）した際、フェードアウトで
-			// gain が 0 に下がったままマスターバスが永久にミュートされるのを防ぐため、
-			// 必ずフェードスケジュールを解除して音量を 1 に復帰させる。
-			options.onScheduleFade?.(null);
+			// 曲が自然終了した際、フェードアウト直後に即座に scheduleFade(null) で
+			// gain を 1 に戻すと、リバーブやディレイ、ノート・ドラムのリリース残響が
+			// 突然音量 1 で鳴り出すバグ（最後のタイミングで一瞬音量低減が解ける現象）が
+			// 発生する。フェードアウト時は fadeOutEndAt + 2.0s に自動復帰が予約されており、
+			// プレビュー試聴や次回再生時にも 1 に復帰するため、自然終了時は即時解除しない。
+			// 割り込み停止時（interrupted）のみ即時解除する。
 			if (interrupted) {
+				options.onScheduleFade?.(null);
 				playbackState = "paused";
 				pausedPlayStep = currentPlayStep;
 			} else {
@@ -5347,14 +5362,85 @@ export const mountDAW = (
 			const bars = plan.reduce((sum, x) => sum + x.bars, 0);
 			refs.composeSectionsLen.textContent = `${bars}小節`;
 		};
+		// マクロパネルの選択値を localStorage から復元
+		const savedTemplate = readMacroSetting("template");
+		if (savedTemplate && refs.composeTemplate) {
+			const hasOption = Array.from(refs.composeTemplate.options).some(
+				(opt) => opt.value === savedTemplate,
+			);
+			if (hasOption) {
+				refs.composeTemplate.value = savedTemplate;
+			}
+		}
+
+		const savedSections = readMacroSections();
+		if (savedSections && refs.composeSections) {
+			const boxes = refs.composeSections.querySelectorAll<HTMLInputElement>(
+				'input[type="checkbox"]',
+			);
+			const validValues = new Set(savedSections);
+			for (const box of boxes) {
+				box.checked = validValues.has(box.value);
+			}
+		} else if (
+			savedTemplate &&
+			savedTemplate !== "custom" &&
+			refs.composeSections
+		) {
+			const tmpl = STRUCTURE_TEMPLATES.find((t) => t.name === savedTemplate);
+			if (tmpl) {
+				const planSet = new Set(tmpl.plan);
+				const boxes = refs.composeSections.querySelectorAll<HTMLInputElement>(
+					'input[type="checkbox"]',
+				);
+				for (const box of boxes) {
+					box.checked = planSet.has(box.value as SectionKind);
+				}
+			}
+		}
+
+		const savedKey = readMacroSetting("key");
+		if (savedKey && refs.composeKey) {
+			const hasOption = Array.from(refs.composeKey.options).some(
+				(opt) => opt.value === savedKey,
+			);
+			if (hasOption) {
+				refs.composeKey.value = savedKey;
+			}
+		}
+
+		const savedShift = readMacroSetting("shift");
+		if (savedShift && refs.shiftSelect) {
+			const hasOption = Array.from(refs.shiftSelect.options).some(
+				(opt) => opt.value === savedShift,
+			);
+			if (hasOption) {
+				refs.shiftSelect.value = savedShift;
+			}
+		}
+
+		const savedTranspose = readMacroSetting("transpose");
+		if (savedTranspose && refs.transposeSelect) {
+			const hasOption = Array.from(refs.transposeSelect.options).some(
+				(opt) => opt.value === savedTranspose,
+			);
+			if (hasOption) {
+				refs.transposeSelect.value = savedTranspose;
+			}
+		}
+
 		refs.composeSections.addEventListener("change", () => {
 			if (refs.composeTemplate) {
 				refs.composeTemplate.value = "custom";
+				writeMacroSetting("template", "custom");
 			}
+			writeMacroSections(selectedComposeSections());
 			updateComposeSectionsLen();
 		});
-		if (refs.composeTemplate) {
-			refs.composeTemplate.addEventListener("change", () => {
+		const composeTemplate = refs.composeTemplate;
+		if (composeTemplate) {
+			composeTemplate.addEventListener("change", () => {
+				writeMacroSetting("template", composeTemplate.value);
 				const tmplName = selectedComposeTemplate();
 				if (tmplName) {
 					const tmpl = STRUCTURE_TEMPLATES.find((t) => t.name === tmplName);
@@ -5369,6 +5455,7 @@ export const mountDAW = (
 						}
 					}
 				}
+				writeMacroSections(selectedComposeSections());
 				updateComposeSectionsLen();
 			});
 		}
@@ -5380,9 +5467,23 @@ export const mountDAW = (
 			refs.composeKeyHint.textContent = desc;
 			refs.composeKeyHint.title = desc;
 		};
-		if (refs.composeKey) {
-			refs.composeKey.addEventListener("change", updateComposeKeyHint);
+		const composeKey = refs.composeKey;
+		if (composeKey) {
+			composeKey.addEventListener("change", () => {
+				writeMacroSetting("key", composeKey.value);
+				updateComposeKeyHint();
+			});
 			updateComposeKeyHint();
+		}
+		if (refs.shiftSelect) {
+			refs.shiftSelect.addEventListener("change", () => {
+				writeMacroSetting("shift", refs.shiftSelect.value);
+			});
+		}
+		if (refs.transposeSelect) {
+			refs.transposeSelect.addEventListener("change", () => {
+				writeMacroSetting("transpose", refs.transposeSelect.value);
+			});
 		}
 
 		const runCompose = (withVocal: boolean): void => {
@@ -5520,6 +5621,20 @@ export const mountDAW = (
 				refs.drumSelect.value = song.drum;
 				options.onDrumChange?.(song.drum);
 				applyDrumPatternFont(song.drum);
+
+				// 楽器プリセットも曲に合わせて自動選択する。
+				// ユーザーが手動で特定のプリセットを選んでいない（未選択、"auto"、または
+				// 前回自動で選ばれたプリセットのまま）ときは、曲調連動で選ばれた
+				// song.instrument を適用する。ユーザーが自分で選んだプリセットは尊重して維持する。
+				const shouldAutoInstrument =
+					!currentInstrument ||
+					currentInstrument === "auto" ||
+					currentInstrument === autoComposeInstrument;
+				if (shouldAutoInstrument && song.instrument) {
+					currentInstrument = song.instrument;
+					autoComposeInstrument = song.instrument;
+					options.onInstrumentChange?.(song.instrument);
+				}
 
 				// ベースにだけは「おまかせマスタリング」を待たずにコンプを掛ける。
 				// トラックのコンプは既定0（＝無圧縮）で、押さなければ一切掛からない。

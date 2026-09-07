@@ -26,6 +26,7 @@ import {
 } from "../src/compose-keys";
 import { structureFeatures } from "../src/compose-metrics";
 import { DRUM_KEYS, DRUM_PATTERNS, resolveDrumPattern } from "../src/drum-config";
+import { INSTRUMENT_PRESETS } from "../src/instrument-presets";
 import { UNITS_PER_SEMITONE } from "../src/tuning";
 
 const STEPS_PER_BAR = 192;
@@ -791,6 +792,41 @@ console.log("● ドラム自動選択");
 	);
 	console.log(
 		`  ${N}曲: 型${drums.size}種（${[...drums].join(" ")}）`,
+	);
+}
+
+// ============================================================
+// 2.8 楽器プリセット自動選択
+//
+//     組み込みの INSTRUMENT_PRESETS から曲調に適したものが
+//     自動選択され、実体のあるプリセット名が出力されること。
+// ============================================================
+
+console.log("● 楽器プリセット自動選択");
+{
+	const N = 40;
+	const instruments = new Set<string>();
+	for (let seed = 1; seed <= N; seed++) {
+		const song = composeSong({
+			stepsPerBar: STEPS_PER_BAR,
+			edo: 12,
+			random: seededRandom(seed * 47),
+		});
+		const tag = `seed=${seed}`;
+		instruments.add(song.instrument);
+		check(
+			`${tag} 組み込み楽器プリセットが存在する`,
+			song.instrument in INSTRUMENT_PRESETS,
+			`不明なキー: ${song.instrument}`,
+		);
+	}
+	check(
+		"楽器プリセットが複数種出る",
+		instruments.size >= 4,
+		`${instruments.size}種: ${[...instruments].join(",")}`,
+	);
+	console.log(
+		`  ${N}曲: 型${instruments.size}種（${[...instruments].join(" ")}）`,
 	);
 }
 
