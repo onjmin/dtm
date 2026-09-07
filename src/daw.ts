@@ -70,6 +70,11 @@ import { MML_INFO_HTML } from "./mml-info";
 import { formatMmlMeta, parseMML } from "./mml-parser";
 import { mountMmlPlayer } from "./mml-player";
 import { readPanelOpen, writePanelOpen } from "./panel-state";
+import {
+	type Track1Settings,
+	readTrack1Settings,
+	writeTrack1Settings,
+} from "./track1-state";
 import { createRenderer, type Renderer } from "./renderer";
 import {
 	DEFAULT_REVERB_DECAY_SEC,
@@ -1550,7 +1555,41 @@ export const mountDAW = (
 	// onLyricsChange デバウンス用タイマー。
 	let lyricsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+	// トラック1の個別トラック設定が変わるたびに localStorage へ書き戻す。
+	// 対象が先頭トラック（トラック1）以外なら何もしない。
+	const persistTrack1 = (t: TrackState): void => {
+		if (trackStates.indexOf(t) !== 0) return;
+		const settings: Track1Settings = {
+			volume: t.volume,
+			trackInstrument: t.trackInstrument,
+			trackOctave: t.trackOctave,
+			trackOctaveUnison: t.trackOctaveUnison,
+			trackCompression: t.trackCompression,
+			trackWidth: t.trackWidth,
+			trackReverbSend: t.trackReverbSend,
+			trackEqLow: t.trackEqLow,
+			trackEqMid: t.trackEqMid,
+			trackEqHigh: t.trackEqHigh,
+			trackPan: t.trackPan,
+			trackDelaySend: t.trackDelaySend,
+			lyricModel: t.lyricModel,
+			vocalVolume: t.vocalVolume,
+			vocalGate: t.vocalGate,
+			vocalPan: t.vocalPan,
+			vocalOctave: t.vocalOctave,
+			vocalVibrato: t.vocalVibrato,
+			vocalReverb: t.vocalReverb,
+			vocalDelay: t.vocalDelay,
+			vocalGender: t.vocalGender,
+			vocalBreathiness: t.vocalBreathiness,
+			vocalTension: t.vocalTension,
+			vocalOctaveUnison: t.vocalOctaveUnison,
+		};
+		writeTrack1Settings(settings);
+	};
+
 	const fireLyricsChange = (t: TrackState): void => {
+		persistTrack1(t);
 		if (!options.onLyricsChange) return;
 		const trackId = t.config.id;
 		const data: import("./types").LyricSyncData = {
@@ -1579,9 +1618,15 @@ export const mountDAW = (
 	// 音ミュート中のトラックID集合。
 	const audioMutedTracks = new Set<string>();
 
+	// トラック1（先頭トラック）だけ、前回使った個別トラック設定を localStorage から
+	// 復元する。曲データ（MML/meta）を読み込めばそちらの値で上書きされるので、
+	// ここでは「まだ何も読み込んでいない新規トラック1」の初期値としてのみ働く。
+	const savedTrack1 = readTrack1Settings();
+
 	const createTrackStates = (): void => {
-		trackStates = trackConfigs.map((config) => {
+		trackStates = trackConfigs.map((config, index) => {
 			let prevNotes: import("./types").Note[] = [];
+			const t1 = index === 0 ? savedTrack1 : null;
 			return {
 				config,
 				core: new MMLCore(
@@ -1639,34 +1684,34 @@ export const mountDAW = (
 					config.volume,
 					() => renderConfig,
 				),
-				volume: config.volume,
+				volume: t1?.volume ?? config.volume,
 				savedChordInput: "",
 				savedChordPattern: "block",
 				savedChordRoot: 0,
 				lyrics: "",
-				lyricModel: "", // 既定は「なし」（歌わない）
-				vocalVolume: DEFAULT_VOCAL_VOLUME,
-				vocalGate: 100,
-				vocalPan: 64,
-				trackOctave: 0,
-				trackOctaveUnison: "none",
-				vocalOctave: 0,
-				vocalVibrato: false,
-				vocalReverb: 0,
-				vocalDelay: 0,
-				vocalGender: 50,
-				vocalBreathiness: 50,
-				vocalTension: 50,
-				vocalOctaveUnison: "none",
-				trackInstrument: "",
-				trackCompression: 0,
-				trackWidth: 100,
-				trackReverbSend: 0,
-				trackEqLow: 0,
-				trackEqMid: 0,
-				trackEqHigh: 0,
-				trackPan: 64,
-				trackDelaySend: 0,
+				lyricModel: t1?.lyricModel ?? "", // 既定は「なし」（歌わない）
+				vocalVolume: t1?.vocalVolume ?? DEFAULT_VOCAL_VOLUME,
+				vocalGate: t1?.vocalGate ?? 100,
+				vocalPan: t1?.vocalPan ?? 64,
+				trackOctave: t1?.trackOctave ?? 0,
+				trackOctaveUnison: (t1?.trackOctaveUnison as OctaveUnisonMode) ?? "none",
+				vocalOctave: t1?.vocalOctave ?? 0,
+				vocalVibrato: t1?.vocalVibrato ?? false,
+				vocalReverb: t1?.vocalReverb ?? 0,
+				vocalDelay: t1?.vocalDelay ?? 0,
+				vocalGender: t1?.vocalGender ?? 50,
+				vocalBreathiness: t1?.vocalBreathiness ?? 50,
+				vocalTension: t1?.vocalTension ?? 50,
+				vocalOctaveUnison: (t1?.vocalOctaveUnison as OctaveUnisonMode) ?? "none",
+				trackInstrument: t1?.trackInstrument ?? "",
+				trackCompression: t1?.trackCompression ?? 0,
+				trackWidth: t1?.trackWidth ?? 100,
+				trackReverbSend: t1?.trackReverbSend ?? 0,
+				trackEqLow: t1?.trackEqLow ?? 0,
+				trackEqMid: t1?.trackEqMid ?? 0,
+				trackEqHigh: t1?.trackEqHigh ?? 0,
+				trackPan: t1?.trackPan ?? 64,
+				trackDelaySend: t1?.trackDelaySend ?? 0,
 			};
 		});
 	};
@@ -3105,6 +3150,7 @@ export const mountDAW = (
 			active.volume = Number.parseInt(volInput.value, 10);
 			active.core.setVolume(active.volume);
 			volLabel.textContent = String(active.volume);
+			persistTrack1(active);
 		});
 		// 歌詞モデルが設定されているトラックはベロシティが再生に反映されない（声量が代わりに効く）ため、
 		// 編集できないように見せる（実際に無効化して誤操作を防ぐ）。
@@ -3150,16 +3196,19 @@ export const mountDAW = (
 			active.trackEqLow = Number.parseInt(trackEqLowInput.value, 10);
 			trackEqLowLabel.textContent = fmtDb(active.trackEqLow);
 			options.onTrackEqLowChange?.(active.config.id, active.trackEqLow);
+			persistTrack1(active);
 		});
 		trackEqMidInput.addEventListener("input", () => {
 			active.trackEqMid = Number.parseInt(trackEqMidInput.value, 10);
 			trackEqMidLabel.textContent = fmtDb(active.trackEqMid);
 			options.onTrackEqMidChange?.(active.config.id, active.trackEqMid);
+			persistTrack1(active);
 		});
 		trackEqHighInput.addEventListener("input", () => {
 			active.trackEqHigh = Number.parseInt(trackEqHighInput.value, 10);
 			trackEqHighLabel.textContent = fmtDb(active.trackEqHigh);
 			options.onTrackEqHighChange?.(active.config.id, active.trackEqHigh);
+			persistTrack1(active);
 		});
 		trackEqInfo.addEventListener("click", () => {
 			showModal("EQ（イコライザー）の解説", TRACK_EQ_INFO_HTML);
@@ -3194,11 +3243,13 @@ export const mountDAW = (
 				active.config.id,
 				active.trackCompression,
 			);
+			persistTrack1(active);
 		});
 		trackWidthInput.addEventListener("input", () => {
 			active.trackWidth = Number.parseInt(trackWidthInput.value, 10);
 			trackWidthLabel.textContent = `${active.trackWidth}%`;
 			options.onTrackWidthChange?.(active.config.id, active.trackWidth);
+			persistTrack1(active);
 		});
 		trackCompInfo.addEventListener("click", () => {
 			showModal("音圧強化の解説", TRACK_COMPRESSION_INFO_HTML);
@@ -3224,6 +3275,7 @@ export const mountDAW = (
 			active.trackPan = Number.parseInt(trackPanInput.value, 10);
 			trackPanLabel.textContent = fmtTrackPan(active.trackPan);
 			options.onTrackPanChange?.(active.config.id, active.trackPan);
+			persistTrack1(active);
 		});
 		trackPanInfo.addEventListener("click", () => {
 			showModal("定位の解説", TRACK_PAN_INFO_HTML);
@@ -3247,6 +3299,7 @@ export const mountDAW = (
 				active.config.id,
 				active.trackReverbSend,
 			);
+			persistTrack1(active);
 		});
 		trackReverbSendInfo.addEventListener("click", () => {
 			showModal("リバーブ送りの解説", TRACK_REVERBSEND_INFO_HTML);
@@ -3267,6 +3320,7 @@ export const mountDAW = (
 			active.trackDelaySend = Number.parseInt(trackDelaySendInput.value, 10);
 			trackDelaySendLabel.textContent = `${active.trackDelaySend}%`;
 			options.onTrackDelaySendChange?.(active.config.id, active.trackDelaySend);
+			persistTrack1(active);
 		});
 		trackDelaySendInfo.addEventListener("click", () => {
 			showModal("ディレイ送りの解説", TRACK_DELAYSEND_INFO_HTML);
@@ -3327,6 +3381,7 @@ export const mountDAW = (
 			active.trackInstrument = instSel.value;
 			const trackIndex = trackStates.indexOf(active);
 			options.onTrackInstrumentChange?.(trackIndex, active.trackInstrument);
+			persistTrack1(active);
 		});
 		// 楽器はベロシティと同じ行に並べる（行数を減らして歌詞欄をピアノロールへ寄せる）
 		(
@@ -3348,6 +3403,7 @@ export const mountDAW = (
 		syncOctaveVisibility();
 		octaveSel.addEventListener("change", () => {
 			active.trackOctave = Number.parseInt(octaveSel.value, 10) || 0;
+			persistTrack1(active);
 		});
 		const unisonSel = refs.trackBody.querySelector(
 			'[data-dtm="track-octave-unison"]',
@@ -3355,6 +3411,7 @@ export const mountDAW = (
 		unisonSel.value = active.trackOctaveUnison;
 		unisonSel.addEventListener("change", () => {
 			active.trackOctaveUnison = unisonSel.value as OctaveUnisonMode;
+			persistTrack1(active);
 		});
 
 		// 歌詞エディタ（全トラック共通）。歌唱モデルのプルダウン既定「なし」が無効状態を兼ねる。
@@ -5640,6 +5697,14 @@ export const mountDAW = (
 						// 「歌入り作曲」を押し直しても曲の印象が似通って聞こえる）。
 						const current = melodyTrack.lyricModel.trim();
 						if (!current || current === autoComposeVocal) {
+							// 初めてこのトラックに歌声を当てるときだけ、オクターブも既定の
+							// -1 に倒しておく。UTAU/koe系の歌唱合成は中〜低音域のほうが
+							// ピッチ追従・声質が安定しやすいため（±0octだと高音で不安定に
+							// なりやすい）。ユーザーが既にオクターブを触っている場合や、
+							// 単なる声の引き直し（再作曲）では上書きしない。
+							if (!current && melodyTrack.vocalOctave === 0) {
+								melodyTrack.vocalOctave = -1;
+							}
 							melodyTrack.lyricModel = pickComposeVocal(autoComposeVocal);
 							autoComposeVocal = melodyTrack.lyricModel;
 						}
@@ -6960,7 +7025,12 @@ export const mountDAW = (
 			t.vocalBreathiness = data.vocalBreathiness ?? 50;
 			t.vocalTension = data.vocalTension ?? 50;
 			t.vocalOctaveUnison = data.vocalOctaveUnison ?? "none";
-			if (t.config.id === activeTrackId) redrawAll();
+			// アクティブトラックのパネルが表示中なら楽器プルダウンのグレーアウト等も
+			// 合わせて更新する（updateTrackPanel はノート再描画も行わないため redrawAll と両方呼ぶ）
+			if (t.config.id === activeTrackId) {
+				updateTrackPanel();
+				redrawAll();
+			}
 		},
 		applyTrackInstrument: (
 			trackIndex: number,
