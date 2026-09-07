@@ -1713,8 +1713,17 @@ const barDegrees = (
 	}
 
 	// 強拍は和音の重要構成音へ着地させる。ここで初めて「和音の上に乗った」音になる。
+	// 界隈曲らしさ：モチーフの内部構造（音程カーブ）を和音の都合で破壊しない。
 	for (let i = 0; i < out.length; i++) {
 		if (!slots[i].isStrong) continue;
+		if (
+			role === "motif" ||
+			role === "sequence" ||
+			role === "answer" ||
+			role === "climax"
+		) {
+			continue;
+		}
 		out[i] = semitoneToDegree(
 			nearestChordTone(
 				degreeToPitch(out[i]).semi,
@@ -2461,10 +2470,9 @@ const draw = (
 		),
 		// 人間の曲の跳躍率は p25〜p75 で 0.40〜0.55。上限が低いとその帯へ届かない。
 		leapAffinity: 0.08 + rnd() * 0.3,
-		// 4曲に1曲は変化音を使わない曲にする（調の外の音は曲の性格そのものなので、
-		// 全曲に掛けると「どの曲も同じ味付け」になる）。
-		chromaticAffinity: rnd() < 0.25 ? 0 : 0.15 + rnd() * 0.45,
-		barHeadWeight: rnd() < 0.65 ? 3 : 2,
+		// 界隈曲らしさ：調の外の音（クロマチック）や微小な逸脱を積極的に許容する。
+		chromaticAffinity: rnd() < 0.1 ? 0 : 0.3 + rnd() * 0.6,
+		barHeadWeight: rnd() < 0.5 ? 3 : 2,
 		bassStyle: pick<BassStyle>(
 			[
 				"quarter",
