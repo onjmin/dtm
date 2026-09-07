@@ -774,28 +774,40 @@ const pickComposeVocal = (exclude?: string | null): string => {
  * 「高度」にはならない。ここで並べるのは**役割の違う声部**:
  *
  * - メロディと、その1オクターブ上の重ね（芯と輝きを作る編曲の定石。重ねる側は弱く）
- * - ハモリ（サブメロ）
+ * - ハモリ（サビで3度上を歌う専用トラック）
+ * - サブメロ（対旋律・合いの手）
  * - ベースと、その1オクターブ下の重ね（低域の土台）
- * - 同じコード進行を**別の奏法で3通り**——パッド（ブロック）・アルペジオ・オフビート。
- *   同じ和音でも刻み方が違えば別の役割になる。
+ * - コードパッド（Bメロ〜サビのロングトーン。ストリングス/シンセ）
+ * - 同じコード進行を別の奏法で3通り——パッド（ブロック）・アルペジオ・オフビート。
+ * - ウワモノ（オクターブ上のきらびやかなアルペジオ装飾）
  *
- * 8トラックを使い、残り7本は空けておく（ユーザーが足す余地）。
+ * 11トラックを使い、残り4本は空けておく（ユーザーが足す余地）。
  * `octave` は {@link TrackState.trackOctave}、`volume` はベロシティ基準値。
  */
 const ADVANCED_COMPOSE_LAYOUT: {
 	index: number;
-	part: "melody" | "submelody" | "bass" | ChordPatternType;
+	part:
+		| "melody"
+		| "submelody"
+		| "bass"
+		| "harmony"
+		| "pad"
+		| "uwamono"
+		| ChordPatternType;
 	octave: number;
 	volume: number;
 }[] = [
 	{ index: 0, part: "melody", octave: 0, volume: 104 },
 	{ index: 1, part: "melody", octave: 1, volume: 62 },
-	{ index: 2, part: "submelody", octave: 0, volume: 88 },
-	{ index: 3, part: "bass", octave: 0, volume: 92 },
-	{ index: 4, part: "bass", octave: -1, volume: 58 },
-	{ index: 5, part: "block", octave: 0, volume: 62 },
-	{ index: 6, part: "arpeggio", octave: 0, volume: 54 },
-	{ index: 7, part: "offbeat", octave: 0, volume: 50 },
+	{ index: 2, part: "harmony", octave: 0, volume: 82 },
+	{ index: 3, part: "submelody", octave: 0, volume: 86 },
+	{ index: 4, part: "bass", octave: 0, volume: 92 },
+	{ index: 5, part: "bass", octave: -1, volume: 58 },
+	{ index: 6, part: "pad", octave: 0, volume: 64 },
+	{ index: 7, part: "block", octave: 0, volume: 62 },
+	{ index: 8, part: "arpeggio", octave: 0, volume: 54 },
+	{ index: 9, part: "offbeat", octave: 0, volume: 50 },
+	{ index: 10, part: "uwamono", octave: 1, volume: 56 },
 ];
 
 /** 内蔵モデルのカテゴリ定義（プルダウンの optgroup 表示用） */
@@ -5310,6 +5322,11 @@ export const mountDAW = (
 		 * 「作曲」本体。確認を挟むかどうかは呼び出し側で決める。
 		 * `withVocal` を立てると、メロディトラックに歌詞を付けて歌わせる。
 		 */
+		const selectedComposeTemplate = (): string | undefined => {
+			const val = refs.composeTemplate?.value;
+			return val && val !== "custom" ? val : undefined;
+		};
+
 		/** チェックの入っているセクション。全部外れていたら既定の構成に戻す。 */
 		const selectedComposeSections = (): SectionKind[] => {
 			const boxes = [
@@ -5324,11 +5341,15 @@ export const mountDAW = (
 		};
 		/** 選んだセクションで曲が何小節になるかを、押す前に表示する。 */
 		const updateComposeSectionsLen = (): void => {
-			const plan = buildSectionPlan(selectedComposeSections());
+			const tmpl = selectedComposeTemplate();
+			const plan = buildSectionPlan(selectedComposeSections(), tmpl);
 			const bars = plan.reduce((sum, x) => sum + x.bars, 0);
 			refs.composeSectionsLen.textContent = `${bars}小節`;
 		};
 		refs.composeSections.addEventListener("change", updateComposeSectionsLen);
+		if (refs.composeTemplate) {
+			refs.composeTemplate.addEventListener("change", updateComposeSectionsLen);
+		}
 		updateComposeSectionsLen();
 
 		const updateComposeKeyHint = (): void => {
@@ -5345,10 +5366,12 @@ export const mountDAW = (
 		const runCompose = (withVocal: boolean): void => {
 			stop();
 			overlayDuring(() => {
+				const tmpl = selectedComposeTemplate();
 				const song = composeSong({
 					stepsPerBar: renderConfig.stepsPerBar,
 					edo: renderConfig.edo,
 					sections: selectedComposeSections(),
+					template: tmpl,
 					baseKey: refs.composeKey?.value ?? "any",
 					// 直近に作った曲の特徴を渡すと、それらから離れた候補に加点される。
 					// 「作曲」を続けて押したときに似た曲が並ぶのを防ぐ。
@@ -5402,23 +5425,41 @@ export const mountDAW = (
 						const notes =
 							layer.part === "melody"
 								? song.melody
-								: layer.part === "submelody"
-									? song.submelody
-									: layer.part === "bass"
-										? song.bass
-										: buildChordPlacements({
-												edo: renderConfig.edo,
-												chordStr: song.chordProgression,
-												patternType: layer.part,
-												rootShift: song.rootShift,
-												bpm: song.bpm,
-												stepsPerBar: renderConfig.stepsPerBar,
-											}).map((p) => ({
-												startStep: p.startStep,
-												pitchUnits: p.pitchUnits,
-												durationSteps: p.durationSteps,
-												velocity: p.velocity,
-											}));
+								: layer.part === "harmony"
+									? song.harmony
+									: layer.part === "submelody"
+										? song.submelody
+										: layer.part === "bass"
+											? song.bass
+											: layer.part === "pad"
+												? song.pad
+												: layer.part === "uwamono"
+													? buildChordPlacements({
+															edo: renderConfig.edo,
+															chordStr: song.chordProgression,
+															patternType: "arpeggio",
+															rootShift: song.rootShift,
+															bpm: song.bpm,
+															stepsPerBar: renderConfig.stepsPerBar,
+														}).map((p) => ({
+															startStep: p.startStep,
+															pitchUnits: p.pitchUnits,
+															durationSteps: p.durationSteps,
+															velocity: Math.max(30, p.velocity - 14),
+														}))
+													: buildChordPlacements({
+															edo: renderConfig.edo,
+															chordStr: song.chordProgression,
+															patternType: layer.part,
+															rootShift: song.rootShift,
+															bpm: song.bpm,
+															stepsPerBar: renderConfig.stepsPerBar,
+														}).map((p) => ({
+															startStep: p.startStep,
+															pitchUnits: p.pitchUnits,
+															durationSteps: p.durationSteps,
+															velocity: p.velocity,
+														}));
 						writeTrackAt(layer.index, notes);
 						track.trackOctave = layer.octave;
 						track.volume = layer.volume;

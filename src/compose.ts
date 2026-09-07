@@ -532,6 +532,18 @@ const SECTION_A_PROGRESSIONS: string[][] = [
 	["Am", "Dm7", "Bb", "E7"], // bVI からドミナントへ
 ];
 
+/** Cメロ（bridge）の候補。AメロともBメロとも雰囲気が違う、ドラマチックな進行。 */
+const SECTION_C_PROGRESSIONS: string[][] = [
+	["Am", "Em", "F", "C"],
+	["Dm7", "Em7", "FM7", "G7"],
+	["Am7", "Dm7", "G7", "CM7"],
+	["F", "G", "Am", "G"],
+	["Dm7", "G7", "Em7", "Am"],
+	["FM7", "Em7", "Am7", "Dm7"],
+	["Am", "G", "FM7", "E7"],
+	["C", "Am", "FM7", "G7"],
+];
+
 /** B部（9〜12小節）の候補。A部と質感を変えるため、必ず別の進行から引く。 */
 const SECTION_B_PROGRESSIONS: string[][] = [
 	["F", "G", "Em7", "Am"],
@@ -1243,6 +1255,11 @@ export type ComposeOptions = {
 	 */
 	sections?: SectionKind[];
 	/**
+	 * 曲構成テンプレート名（"1chorus" | "jpop_standard" | "jpop_drop" | "vocaloid" | "verse_chorus"）。
+	 * 指定時は sections より優先され、2コーラスやCメロ、落ちサビなどの王道構成を展開する。
+	 */
+	template?: string;
+	/**
 	 * ベースとなる調・雰囲気の指定（"any" | "major" | "minor" | "mood_*" | "key_*"）。
 	 * 省略時は "any"（全24調からランダム抽選）。
 	 */
@@ -1277,6 +1294,10 @@ export type ComposeResult = {
 	melody: ComposedNote[];
 	submelody: ComposedNote[];
 	bass: ComposedNote[];
+	/** ハモリトラック。メロディの3度/6度上。サビセクションでのみ鳴る。 */
+	harmony: ComposedNote[];
+	/** コードパッド。ストリングス/シンセパッド的なロングトーン。Bメロ以降で鳴る。 */
+	pad: ComposedNote[];
 	stats: ComposeStats;
 };
 
@@ -2181,7 +2202,10 @@ const draw = (
 	// **どこがイントロで、どこがサビなのかを持つ。** これが無いと、どの小節も
 	// 同じ密度・同じ音域で鳴り、聴き手が最初に掴む「セクションの切り替わり」が
 	// 生まれない（{@link file://./compose-sections.ts} 参照）。
-	const sectionPlan = buildSectionPlan(options.sections ?? DEFAULT_SECTIONS);
+	const sectionPlan = buildSectionPlan(
+		options.sections ?? DEFAULT_SECTIONS,
+		options.template,
+	);
 	const totalBars = sectionPlan.reduce((sum, s) => sum + s.bars, 0);
 
 	// 約35%の曲でセクションごとの曲中転調（ラスサビ転調・Bメロ転調）を入れる。
@@ -2237,6 +2261,12 @@ const draw = (
 		(p) => p.join("|") !== progA.join("|"),
 	);
 	const progB = pick(progBPool, rnd);
+	const progC = pick(
+		SECTION_C_PROGRESSIONS.filter(
+			(p) => p.join("|") !== progA.join("|") && p.join("|") !== progB.join("|"),
+		),
+		rnd,
+	);
 	const tonic = progA[0].startsWith("Am") ? "Am" : "C";
 	/** ドミナントで終わる4小節（Bメロの末尾＝サビへの助走に使う）。 */
 	const progHalf = pick(SECTION_A2_DERIVATIONS, rnd)(progA);
@@ -2244,7 +2274,12 @@ const draw = (
 	const progFull = pick(SECTION_A3_DERIVATIONS, rnd)(progA, tonic);
 	const progression: string[] = [];
 	for (const section of sectionPlan) {
-		const base = section.spec.progression === "b" ? progB : progA;
+		const base =
+			section.spec.progression === "c"
+				? progC
+				: section.spec.progression === "b"
+					? progB
+					: progA;
 		for (let i = 0; i < section.bars; i += 4) {
 			const isLastPhrase = i + 4 >= section.bars;
 			// セクションの最後の4小節は、そのセクションの役目に合わせて締める。
@@ -2300,7 +2335,7 @@ const draw = (
 	type Unit = {
 		role: BarRole;
 		/** どのモチーフを使うか。同じ素材の楽句は音の並びごと再現する。 */
-		source: "a" | "a2" | "b" | "answer" | "silent";
+		source: "a" | "a2" | "b" | "c" | "answer" | "silent";
 		/** セクションの終わりの着地音（主音からの音階度数）。途中は null。 */
 		landing: number | null;
 		section: PlacedSection;
@@ -2310,12 +2345,14 @@ const draw = (
 	 * ならない**ので、Aメロと同じ素材のセクエンツにする（まったく無関係な素材を
 	 * 置くと、曲としての統一感が消える）。
 	 */
-	const sourceOf = (kind: SectionKind): "a" | "a2" | "b" =>
-		kind === "chorus" || kind === "interlude"
+	const sourceOf = (kind: SectionKind): "a" | "a2" | "b" | "c" =>
+		kind === "chorus" || kind === "interlude" || kind === "drop_chorus"
 			? "b"
 			: kind === "prechorus"
 				? "a2"
-				: "a";
+				: kind === "bridge"
+					? "c"
+					: "a";
 	const units: Unit[] = [];
 	for (const section of sectionPlan) {
 		const unitCount = Math.max(1, Math.round(section.bars / 2));
@@ -2454,7 +2491,7 @@ const draw = (
 	 * 曲ごとの「刻みの細かさ」の狙い（1小節あたりの音数）。
 	 * 参考曲は中央値6.2（p25〜p75で5.4〜7.3）。狙いをこの帯に合わせる。
 	 */
-	const targetNotesPerBar = 5.5 + rnd() * 2.5;
+	const targetNotesPerBar = 4.0 + rnd() * 4.0;
 	/**
 	 * 曲ごとの休符率の狙い。参考曲は中央値0.09（p25〜p75で0.03〜0.16）。
 	 * 短い息継ぎを中心にして、歌が程よく詰まるように寄せる。
@@ -2507,6 +2544,16 @@ const draw = (
 	);
 	const motifA22 =
 		rnd() < 0.45 ? motifA2 : pickCell(motifPool.filter((c) => c !== motifA2));
+
+	/** Cメロ（bridge）のモチーフ。A/Bとは完全に異なる。 */
+	const motifC = pickCell(
+		motifPool.filter(
+			(c) =>
+				c !== motifCell && c !== motifCell2 && c !== motifB && c !== motifA2,
+		),
+	);
+	const motifC2 =
+		rnd() < 0.45 ? motifC : pickCell(motifPool.filter((c) => c !== motifC));
 
 	/**
 	 * 応答・展開用のバリエーション型。
@@ -2574,6 +2621,7 @@ const draw = (
 		}
 		const isB = units[u].source === "b";
 		const isA2 = units[u].source === "a2";
+		const isC = units[u].source === "c";
 		const isPrechorusEnd =
 			units[u].section.kind === "prechorus" &&
 			bar === units[u].section.startBar + units[u].section.bars - 1;
@@ -2590,7 +2638,9 @@ const draw = (
 				? [motifB, motifB2]
 				: isA2
 					? [motifA2, motifA22]
-					: [motifCell, motifCell2];
+					: isC
+						? [motifC, motifC2]
+						: [motifCell, motifCell2];
 		let cell: RhythmCell;
 		if (units[u].source === "answer") {
 			// 答えは問いのリズムを受けて着地する。
@@ -2647,6 +2697,8 @@ const draw = (
 	const melody: ComposedNote[] = [];
 	const submelody: ComposedNote[] = [];
 	const bass: ComposedNote[] = [];
+	const harmony: ComposedNote[] = [];
+	const pad: ComposedNote[] = [];
 	const melodyDurations: number[] = [];
 	/** 小節ごとの緊張度（0〜1）。和音が無い小節は0のまま。 */
 	const barTension: number[] = new Array(totalBars).fill(0);
@@ -2721,14 +2773,28 @@ const draw = (
 			((bar + style.arcPhase) / style.arcPeriod) * Math.PI * 2,
 		);
 		const arcCenter = MELODY_CENTER + arc * style.arcAmp;
-		// 直前の音と目標の中間へ寄せる（いきなり飛ばず、数小節かけて上下する）。
-		const headTarget = prevSemi + (arcCenter - prevSemi) * 0.5;
-		const headSemi = nearestChordTone(
-			headTarget,
-			tones,
-			headWeight,
-			isSectionB,
-		).semi;
+		// 楽句の2小節目（barInUnit === 1）は1小節目のフレーズの続きなので、
+		// 前小節末尾の音（prevSemi）からの順次・スムーズな接続を優先する。
+		// 1小節目（barInUnit === 0）は楽句の開始なので、arcCenter を交えて目標を定める。
+		const inUnit = barInUnit(bar);
+		let headSemi: number;
+		if (inUnit === 1 && bar > 0) {
+			// 前小節末尾の音からスムーズに繋がる和音構成音へ着地（小節境界の跳躍を防ぐ）
+			headSemi = nearestChordTone(prevSemi, tones, headWeight, isSectionB).semi;
+			if (Math.abs(headSemi - prevSemi) > 4) {
+				// 跳躍が大きすぎる場合はより近い構成音を許容
+				headSemi = nearestChordTone(prevSemi, tones, 1, isSectionB).semi;
+			}
+		} else {
+			// 直前の音と目標の中間へ寄せる（いきなり飛ばず、数小節かけて上下する）。
+			const headTarget = prevSemi + (arcCenter - prevSemi) * 0.5;
+			headSemi = nearestChordTone(
+				headTarget,
+				tones,
+				headWeight,
+				isSectionB,
+			).semi;
+		}
 		// モチーフ小節が2つ続くと、和音が同じなら音まで完全に同じ小節が並ぶ。
 		// 2度目は少しずらして「反復」ではなく「一歩進んだ反復」にする。
 		// この小節が輪郭のどこから始まるか。楽句の後半小節は前半の続きを読む。
@@ -3003,6 +3069,62 @@ const draw = (
 			pushSub(scaleStep(QUARTER), scaleStep(DOT_HALF), subSemi);
 		}
 
+		// --- ハモリ ---
+		// メロディの3度上を歌う。サビセクションでのみ鳴らす。
+		const barSec = sectionAt(sectionPlan, bar);
+		if (
+			!silent &&
+			(barSec.kind === "chorus" || barSec.kind === "drop_chorus")
+		) {
+			for (let i = 0; i < slots.length; i++) {
+				const hSemi = pitches[i] + 3; // 3度上（短3度 or 長3度）
+				const hTone = nearestChordTone(hSemi, tones, 2);
+				const hClamped = clampSemi(hTone.semi, MELODY_LOW, MELODY_HIGH);
+				const k = barKeyShift[bar];
+				const fifthShift =
+					k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
+				harmony.push({
+					startStep: barStart + slots[i].at,
+					pitchUnits: spelledToUnits(
+						hClamped + k,
+						hTone.fifth + fifthShift,
+						edo,
+					),
+					durationSteps: slots[i].value,
+					velocity: slots[i].at === 0 ? 82 : 76,
+				});
+			}
+		}
+
+		// --- コードパッド ---
+		// Bメロ以降でコード構成音のロングトーンを鳴らす。
+		if (
+			barSec.kind === "prechorus" ||
+			barSec.kind === "chorus" ||
+			barSec.kind === "bridge" ||
+			barSec.kind === "drop_chorus"
+		) {
+			const padTone = nearestChordTone(
+				MELODY_HIGH + 2, // メロディの上の音域
+				tones,
+				2,
+			);
+			const padSemi = clampSemi(padTone.semi, MELODY_HIGH - 4, MELODY_HIGH + 8);
+			const k = barKeyShift[bar];
+			const fifthShift =
+				k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
+			pad.push({
+				startStep: barStart,
+				pitchUnits: spelledToUnits(
+					padSemi + k,
+					padTone.fifth + fifthShift,
+					edo,
+				),
+				durationSteps: stepsPerBar, // 小節全体を伸ばす
+				velocity: barSec.kind === "drop_chorus" ? 50 : 62,
+			});
+		}
+
 		// --- ベース ---
 		// 初版はルート4分打ちの1形だけで、300曲すべて同じ配置になっていた。
 		// 曲ごとに奏法を引き、役割（緩急）でさらに切り替える。
@@ -3163,11 +3285,70 @@ const draw = (
 		for (const n of barBass) bass.push(n);
 	}
 
-	// **後処理で小節線をまたがせない。** 一時期ここで弱起とタイを入れていたが、
-	// 参考にした曲を 192ステップの格子へ量子化して測り直すと、**小節線をまたぐ音も
-	// 16分格子から外れる音も、どちらも中央値0%**だった。以前「またぎ3.5%・格子外24%」
-	// と読んだのは、量子化せずに生のtickで測っていたためで、演奏上の微妙なズレと
-	// tickの丸めを拾っていただけだった。この様式のメロディは格子の上に乗っている。
+	// --- 小節をまたぐメロディライン（シンコペーションタイ） ---
+	// J-POPの王道である「4拍目裏からの食い（アンティシペーション）」。
+	// 前の小節の末尾が短い音（8分以下）で小節境界に接しており、次の小節の頭（強拍）に音がある場合、
+	// 約28%の確率でタイで小節線をまたがせる（前の音を伸ばして次の小節頭の音を吸収する）。
+	// これにより「小節ごとにぶつ切りになる」欠陥を根本から解消し、J-POP特有の疾走感と繋がりを生む。
+	const eighthSteps = scaleStep(EIGHTH);
+	for (let i = 0; i < melody.length - 1; i++) {
+		const cur = melody[i];
+		const nxt = melody[i + 1];
+		const curEnd = cur.startStep + cur.durationSteps;
+		const atBarBoundary =
+			curEnd % stepsPerBar === 0 && nxt.startStep === curEnd;
+		if (!atBarBoundary) continue;
+
+		// 8分以下の短い音で小節境界に突入しているか（食い）
+		if (cur.durationSteps > eighthSteps) continue;
+
+		const barIdx = Math.floor(curEnd / stepsPerBar);
+		if (barIdx >= totalBars) continue;
+
+		// 終止音（曲末尾の最後の音、またはセクション終了の終止音）はタイで吸収しない
+		if (i + 1 >= melody.length - 1) continue;
+		const curSec = sectionAt(sectionPlan, barIdx - 1);
+		const nextSec = sectionAt(sectionPlan, barIdx);
+		if (!nextSec.spec.melody || curSec !== nextSec) continue;
+
+		// 変化音はタイで伸ばすと経過音の音価上限を超えるため、ダイアトニック音のみ結合する
+		const curSemi = Math.round(cur.pitchUnits / UNITS_PER_SEMITONE);
+		const nxtSemi = Math.round(nxt.pitchUnits / UNITS_PER_SEMITONE);
+		const curPc = pitchClass(curSemi);
+		const nxtPc = pitchClass(nxtSemi);
+		if (!DIATONIC_PCS.has(curPc) || !DIATONIC_PCS.has(nxtPc)) continue;
+
+		// 大きな跳躍がある場合はタイにしない（同音または順次・3度以内のスムーズな食い）
+		if (Math.abs(nxtSemi - curSemi) > 3) continue;
+
+		// nxt の次の音が変化音の場合、nxt を消すとその変化音へのアプローチが跳躍に化けるため保護
+		const afterNxt = melody[i + 2];
+		if (afterNxt) {
+			const afterSemi = Math.round(afterNxt.pitchUnits / UNITS_PER_SEMITONE);
+			const afterPc = pitchClass(afterSemi);
+			if (!DIATONIC_PCS.has(afterPc) && Math.abs(afterSemi - curSemi) > 2)
+				continue;
+		}
+
+		if (rnd() < 0.28) {
+			// タイ結合：curをnxtの分まで伸ばし、nxtを吸収
+			cur.durationSteps += nxt.durationSteps;
+			melody.splice(i + 1, 1);
+			// melodyDurations も同期
+			if (i < melodyDurations.length - 1) {
+				melodyDurations[i] += melodyDurations[i + 1];
+				melodyDurations.splice(i + 1, 1);
+			}
+			// harmony も同位置にあればタイ結合
+			const hCurIdx = harmony.findIndex((h) => h.startStep === cur.startStep);
+			const hNxtIdx = harmony.findIndex((h) => h.startStep === nxt.startStep);
+			if (hCurIdx >= 0 && hNxtIdx >= 0) {
+				harmony[hCurIdx].durationSteps += harmony[hNxtIdx].durationSteps;
+				harmony.splice(hNxtIdx, 1);
+			}
+			i--;
+		}
+	}
 
 	/** ノート列が使った音域（半音）。 */
 	const range = (notes: ComposedNote[]): number => {
@@ -3179,7 +3360,7 @@ const draw = (
 	// 曲全体を同じ量だけずらす。units は絶対音高なので、綴りの関係は保たれたまま動く。
 	const shiftUnits = semitonesToUnits(rootShift, edo);
 	if (shiftUnits !== 0)
-		for (const list of [melody, submelody, bass])
+		for (const list of [melody, submelody, bass, harmony, pad])
 			for (const n of list) n.pitchUnits = (n.pitchUnits + shiftUnits) as Units;
 
 	return {
@@ -3195,6 +3376,8 @@ const draw = (
 		melody,
 		submelody,
 		bass,
+		harmony,
+		pad,
 		melodyDurations,
 		restSteps,
 		totalSteps: Math.max(1, sungBars) * stepsPerBar,
@@ -3396,6 +3579,8 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			melody: d.melody,
 			submelody: d.submelody,
 			bass: d.bass,
+			harmony: d.harmony,
+			pad: d.pad,
 			stats: { ...stats, attempts: attempt, rejected },
 		};
 	}

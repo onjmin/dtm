@@ -663,7 +663,8 @@ console.log("● 格子への乗り");
 		);
 	}
 	check("16分格子の上に乗る", offGrid === 0, `${offGrid}/${notes}音が格子外`);
-	check("小節線をまたがない", cross === 0, `${cross}/${notes}音がまたぎ`);
+	// J-POPの疾走感を作るため、小節線をまたぐシンコペーションタイが適度に生成されていること。
+	check("小節線をまたぐシンコペーションがある", cross > 0, `${cross}/${notes}音がまたぎ`);
 	console.log(`  ${N}曲: 格子外 ${offGrid}音 / 小節線またぎ ${cross}音`);
 }
 

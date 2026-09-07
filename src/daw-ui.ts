@@ -96,6 +96,7 @@ export type DawUIRefs = {
 	transposeInfoBtn: HTMLButtonElement;
 	// macros
 	macroCompose: HTMLButtonElement;
+	composeTemplate: HTMLSelectElement | null;
 	composeSections: HTMLElement;
 	composeSectionsLen: HTMLElement;
 	composeKey: HTMLSelectElement;
@@ -407,6 +408,17 @@ export const buildUI = (
         <button class="dtm-infobtn" data-dtm="macro-compose-info" title="作曲の解説">${icon("info", 12)}</button>
         <span class="dtm-grow"></span>
       </div>
+      <div class="dtm-row ${showCompose ? "" : "dtm-hidden"}" data-dtm="compose-template-row">
+        <span class="dtm-label">構成</span>
+        <select class="dtm-select" data-dtm="compose-template" title="J-POP王道などのプリセット構成を選びます">
+          <option value="custom">自由選択（下記チェック）</option>
+          <option value="1chorus">1コーラス（短め・初心者向け）</option>
+          <option value="jpop_standard">JPOP王道（マリーゴールド型 2番/Cメロ/ラスサビ）</option>
+          <option value="jpop_drop">落ちサビ入り（JPOP王道 + ラスサビ前落ちサビ）</option>
+          <option value="vocaloid">ボカロ王道（疾走・2番/Cメロ/ラスサビ）</option>
+          <option value="verse_chorus">Verse-Chorus（Bメロなし・洋楽風）</option>
+        </select>
+      </div>
       <div class="dtm-row ${showCompose ? "" : "dtm-hidden"}" data-dtm="compose-sections-row">
         <span class="dtm-label">作る部分</span>
         <div class="dtm-checks" data-dtm="compose-sections">
@@ -414,6 +426,8 @@ export const buildUI = (
           <label class="dtm-check"><input type="checkbox" value="verse" checked>Aメロ</label>
           <label class="dtm-check"><input type="checkbox" value="prechorus" checked>Bメロ</label>
           <label class="dtm-check"><input type="checkbox" value="chorus" checked>サビ</label>
+          <label class="dtm-check"><input type="checkbox" value="bridge">Cメロ</label>
+          <label class="dtm-check"><input type="checkbox" value="drop_chorus">落ちサビ</label>
           <label class="dtm-check"><input type="checkbox" value="interlude">間奏</label>
           <label class="dtm-check"><input type="checkbox" value="outro">アウトロ</label>
         </div>
@@ -670,6 +684,7 @@ export const buildUI = (
 		transposeApplyBtn: sel("transpose-apply"),
 		transposeInfoBtn: sel("transpose-info"),
 		macroCompose: sel("macro-compose"),
+		composeTemplate: sel("compose-template") as HTMLSelectElement | null,
 		composeSections: sel("compose-sections"),
 		composeSectionsLen: sel("compose-sections-len"),
 		composeKey: sel("compose-key"),
