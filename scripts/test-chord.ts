@@ -1,8 +1,17 @@
-const fs = require("fs");
-const { parseMML } = require("./dist/index.js");
+const fs = require("node:fs");
+const path = require("node:path");
+
+if (typeof Worker === "undefined") {
+	globalThis.Worker = class {
+		addEventListener() {}
+	};
+}
+
+const { parseMML } = require("../dist/index.js");
 const { detectChord } = require("@onjmin/chord-parser");
 
-const mml = fs.readFileSync("tmp/mml.md", "utf-8");
+const mmlPath = path.resolve(__dirname, "../tmp/mml.md");
+const mml = fs.readFileSync(mmlPath, "utf-8");
 const { placements } = parseMML(mml, { collectTokens: true });
 
 console.log("Placements count:", placements.length);

@@ -1,0 +1,30 @@
+﻿# Scripts Directory
+
+このディレクトリには、本プロジェクトの測定・検証・分析・ビルド補助等のスクリプトを格納します。
+
+## スクリプト一覧
+
+| ファイル名 | 役割 | コマンド例 |
+| :--- | :--- | :--- |
+| `check-compose.ts` | 自動作曲パイプラインの品質・回帰テスト（`pnpm test` から呼び出し） | `pnpm test` または `npx tsx scripts/check-compose.ts` |
+| `calibrate-corpus.ts` | 参考MIDIコーパス群から目標帯（`src/compose-corpus.ts`）を算出し校正するスクリプト | `npx tsx scripts/calibrate-corpus.ts --dir "<path>" --out src/compose-corpus.ts` |
+| `compare-corpus.ts` | 生成物と参考コーパスの音楽的特徴（周辺分布・中央値）を突き合わせて測定・比較するスクリプト | `npx tsx scripts/compare-corpus.ts --dir "<path>" --songs 80` |
+| `scratch-analyze.ts` | 生成曲の特徴量（音数、跳躍率、反復率、休符率等）をサンプリング測定するスクリプト | `npx tsx scripts/scratch-analyze.ts` |
+| `test-chord.ts` | MMLからの和音・コード解析およびカバレッジ測定を行うスクリプト | `npx tsx scripts/test-chord.ts` |
+| `downscale-assets.py` | アセット画像の縮小処理ユーティリティ | `python scripts/downscale-assets.py` |
+
+---
+
+## スクリプト作成・配置ルール（エージェントおよび開発者向け）
+
+1. **プロジェクトルート直下にスクリプトを作成しないこと**
+   - 測定系、検証系、ベンチマーク、ユーティリティスクリプトは、**必ずこの `scripts/` ディレクトリ内に作成**してください。
+   - ルート直下は設定ファイルやパッケージ定義などのみに保ちます。
+
+2. **コミット対象として管理すること**
+   - `scripts/` 配下のスクリプトはすべて Git のコミット対象として管理します。
+   - 他の環境やCI、開発者間で再実行可能なように、相対パスや引数の設計を行ってください。
+
+3. **一時的スクリプト（コミット不要な使い捨てコード）について**
+   - 1回きりの検証や実験でコミット不要なコードに限り、ルート直下の `scratch/`（`.gitignore` 済み）を利用できます。
+   - 後から再利用・追試する可能性のある測定系・検証系スクリプトは `scripts/` 配下に配置してください。

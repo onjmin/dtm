@@ -1,7 +1,7 @@
-import { composeSong } from "./src/compose";
-import { densityFeatures, MetricNote } from "./src/compose-metrics";
-import { UNITS_PER_SEMITONE } from "./src/tuning";
-import { chromaticRatioOf } from "./scripts/calibrate-corpus";
+import { composeSong } from "../src/compose";
+import { densityFeatures, MetricNote } from "../src/compose-metrics";
+import { UNITS_PER_SEMITONE } from "../src/tuning";
+import { chromaticRatioOf } from "./calibrate-corpus";
 
 const STEPS_PER_BAR = 192;
 
