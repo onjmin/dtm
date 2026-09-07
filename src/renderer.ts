@@ -709,8 +709,10 @@ export const createRenderer = (
 	const getXY = (e: MouseEvent | PointerEvent): [number, number, number] => {
 		const { clientX, clientY } = e;
 		const rect = g_grid_canvas.getBoundingClientRect();
-		const x = Math.floor(clientX - rect.left);
-		const y = Math.floor(clientY - rect.top);
+		const scaleX = rect.width > 0 ? g_grid_canvas.width / rect.width : 1;
+		const scaleY = rect.height > 0 ? g_grid_canvas.height / rect.height : 1;
+		const x = Math.floor((clientX - rect.left) * scaleX);
+		const y = Math.floor((clientY - rect.top) * scaleY);
 		return [x, y, e.buttons];
 	};
 
@@ -760,7 +762,10 @@ export const createRenderer = (
 				const pitch = units(pitchRangeStart + (keyCount - 1 - yIndex) * upr);
 
 				// 範囲チェック
-				if (pitch >= pitchRangeStart && pitch < pitchRangeStart + keyCount) {
+				if (
+					pitch >= pitchRangeStart &&
+					pitch < pitchRangeStart + keyCount * upr
+				) {
 					requestAnimationFrame(() => callback(step, pitch));
 				}
 			},

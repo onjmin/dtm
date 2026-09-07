@@ -141,12 +141,7 @@ export const createPianoRoll = (
 			const renderX = logicalX - offset.x;
 			const renderY = logicalY - offset.y;
 
-			if (
-				x >= renderX &&
-				x <= renderX + w &&
-				y >= renderY &&
-				y <= renderY + h
-			) {
+			if (x >= renderX && x < renderX + w && y >= renderY && y < renderY + h) {
 				return note;
 			}
 		}

@@ -2095,7 +2095,9 @@ export const mountDAW = (
 			unitsPerRow: upr = UNITS_PER_SEMITONE,
 		} = renderConfig;
 		const offset = renderer.getDrawOffset();
-		for (const note of active.core.getNotes()) {
+		const notes = active.core.getNotes();
+		for (let i = notes.length - 1; i >= 0; i--) {
+			const note = notes[i];
 			const logicalX = note.startStep * stepWidth;
 			const yIndex = keyCount - 1 - (note.pitchUnits - pitchRangeStart) / upr;
 			const logicalY = yIndex * keyHeight;
@@ -2196,15 +2198,25 @@ export const mountDAW = (
 
 		// pen
 		hasDragged = false;
-		// ピクセルレベルのヒット判定（タッチ操作用のマージン付き）
-		const existing = findActiveNoteAt(x, y, TOUCH_HIT_MARGIN);
+		// ピクセルレベルのヒット判定（タッチ操作用のマージン付き。マウス時は誤爆防止のため 0、タッチ時も行高の1/4までに制限）
+		const hitMargin =
+			event.pointerType === "mouse"
+				? 0
+				: Math.min(
+						TOUCH_HIT_MARGIN,
+						Math.max(0, Math.floor(renderConfig.keyHeight * 0.25)),
+					);
+		const existing = findActiveNoteAt(x, y, hitMargin);
 		if (existing) {
 			playPreview(existing.pitchUnits);
 			const { stepWidth } = renderConfig;
 			const offset = renderer.getDrawOffset();
 			const renderX = existing.startStep * stepWidth - offset.x;
 			const w = existing.durationSteps * stepWidth;
-			if (x >= renderX + w - resizeHandleWidth && x <= renderX + w) {
+			if (
+				x >= renderX + w - resizeHandleWidth &&
+				x <= renderX + w + hitMargin
+			) {
 				dragState = {
 					noteId: existing.id,
 					mode: "resize",
@@ -2219,7 +2231,7 @@ export const mountDAW = (
 					noteId: existing.id,
 					mode: "move",
 					dragOffsetStep: step - existing.startStep,
-					dragOffsetPitch: pitch - existing.pitchUnits,
+					dragOffsetPitch: 0,
 					startStep: existing.startStep,
 					durationSteps: existing.durationSteps,
 					lastPreviewPitch: existing.pitchUnits,
@@ -2358,8 +2370,8 @@ export const mountDAW = (
 							const newGrab = units(orig.pitch + deltaPitch);
 							if (
 								newGrab !== lastMultiPreviewPitch &&
-								newGrab >= 0 &&
-								newGrab < 128
+								newGrab >= PITCH_RANGE_START &&
+								newGrab <= PITCH_RANGE_END
 							) {
 								lastMultiPreviewPitch = newGrab;
 								playPreview(newGrab);
@@ -2536,16 +2548,9 @@ export const mountDAW = (
 		gridCanvas.addEventListener("dblclick", (event) => {
 			event.preventDefault();
 			if (isActiveLocked()) return;
-			const { step, pitch } = renderer.getGridPosition(event);
+			const { x, y } = renderer.getGridPosition(event);
 			const active = getActive();
-			const note = active.core
-				.getNotes()
-				.find(
-					(n) =>
-						n.pitchUnits === pitch &&
-						step >= n.startStep &&
-						step < n.startStep + n.durationSteps,
-				);
+			const note = findActiveNoteAt(x, y);
 			if (note) active.core.deleteNoteById(note.id);
 		});
 		gridCanvas.addEventListener(
