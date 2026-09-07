@@ -1694,7 +1694,8 @@ export const mountDAW = (
 				vocalGate: t1?.vocalGate ?? 100,
 				vocalPan: t1?.vocalPan ?? 64,
 				trackOctave: t1?.trackOctave ?? 0,
-				trackOctaveUnison: (t1?.trackOctaveUnison as OctaveUnisonMode) ?? "none",
+				trackOctaveUnison:
+					(t1?.trackOctaveUnison as OctaveUnisonMode) ?? "none",
 				vocalOctave: t1?.vocalOctave ?? 0,
 				vocalVibrato: t1?.vocalVibrato ?? false,
 				vocalReverb: t1?.vocalReverb ?? 0,
@@ -1702,7 +1703,8 @@ export const mountDAW = (
 				vocalGender: t1?.vocalGender ?? 50,
 				vocalBreathiness: t1?.vocalBreathiness ?? 50,
 				vocalTension: t1?.vocalTension ?? 50,
-				vocalOctaveUnison: (t1?.vocalOctaveUnison as OctaveUnisonMode) ?? "none",
+				vocalOctaveUnison:
+					(t1?.vocalOctaveUnison as OctaveUnisonMode) ?? "none",
 				trackInstrument: t1?.trackInstrument ?? "",
 				trackCompression: t1?.trackCompression ?? 0,
 				trackWidth: t1?.trackWidth ?? 100,
