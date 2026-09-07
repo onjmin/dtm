@@ -57,6 +57,7 @@ export {
 } from "./compose-sections";
 export { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 export * from "./drum-config";
+export * from "./global-state";
 // ヘッドレス再生（DOM非依存・BGM向け）＋ 内蔵synthプリミティブ
 export {
 	type MmlPlayback,

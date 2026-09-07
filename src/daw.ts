@@ -432,7 +432,7 @@ const COMPOSE_INFO_HTML = `
     <tr><td>アウトロ</td><td>有り</td><td>低め</td><td>薄い</td><td>主音へ着地</td></tr>
   </table>
   <p>イントロと間奏はメロディを書きません（伴奏・ベース・ドラム・サブメロだけが鳴ります）。ここに歌メロを置くと、どのセクションも同じ顔になって「ずっと歌っている曲」になってしまうためです。セクションの頭ではドラムがクラッシュを叩き、終わりの1つ手前でフィルが入ります。</p>
-  <p>ノートを配置するだけで、楽器・音量・ミックスは変えません。音のバランスを整えたいときは「全体トラック設定」の<strong>おまかせマスタリング</strong>を続けて押してください。シンプルモードはトラックそのものが役割（メロディ／サブメロ／ベース／伴奏）なので、おまかせマスタリングはその役割どおりに楽器と音量を当てます。</p>
+  <p>ノートの配置に加えて、テンポ・ドラム・楽器・<strong>おまかせマスタリング</strong>（各トラックの音量バランス・定位・EQ・コンプレッサー・リバーブ・マスタ設定）も自動で一括設定されます。できた後に微調整したいときは、各トラックの設定や「全体トラック設定」から自由に変更できます。</p>
   <h4>曲の組み立て方</h4>
   <p>単純にランダムな音を並べているわけではありません。次の順番で組み立てています。</p>
   <ol>
@@ -5038,7 +5038,7 @@ export const mountDAW = (
 		refs.autoMasterInfoBtn.addEventListener("click", () => {
 			showModal("おまかせマスタリング解説", AUTO_MASTER_INFO_HTML);
 		});
-		refs.autoMasterBtn.addEventListener("click", () => {
+		const applyAutoMastering = (): void => {
 			// ゲインステージング（実測ベース）: 静的なノート情報だけでは「実際にどれだけ音圧が
 			// 積み上がって鳴っているか」（複数トラックの重なり・コンプ後の値等）は分からないため、
 			// 裏で溜めておいた実測ピーク（{@link startPeakSampling}）が十分あるときだけ、それを
@@ -5302,6 +5302,9 @@ export const mountDAW = (
 				}
 			}
 			updateTrackPanel();
+		};
+		refs.autoMasterBtn.addEventListener("click", () => {
+			applyAutoMastering();
 		});
 		refs.drumSelect.addEventListener("change", () => {
 			currentDrumPattern = refs.drumSelect.value;
@@ -5321,19 +5324,7 @@ export const mountDAW = (
 		refs.macroComposeInfo.addEventListener("click", () => {
 			showModal("作曲の解説", COMPOSE_INFO_HTML);
 		});
-		/**
-		 * 「作曲」が書き込んだベースのトラック。simple はID、advanced はレイアウト定義
-		 * （{@link ADVANCED_COMPOSE_LAYOUT}）から引く。
-		 */
-		const bassTracksForCompose = (): TrackState[] => {
-			if (!isAdvanced) {
-				const t = trackStates.find((x) => x.config.id === "bass");
-				return t ? [t] : [];
-			}
-			return ADVANCED_COMPOSE_LAYOUT.filter((l) => l.part === "bass")
-				.map((l) => trackStates[l.index])
-				.filter((t): t is TrackState => !!t);
-		};
+
 		/**
 		 * 「作曲」本体。確認を挟むかどうかは呼び出し側で決める。
 		 * `withVocal` を立てると、メロディトラックに歌詞を付けて歌わせる。
@@ -5636,16 +5627,6 @@ export const mountDAW = (
 					options.onInstrumentChange?.(song.instrument);
 				}
 
-				// ベースにだけは「おまかせマスタリング」を待たずにコンプを掛ける。
-				// トラックのコンプは既定0（＝無圧縮）で、押さなければ一切掛からない。
-				// ベースの「太さ」はコンプで作るものなので、作った直後の素の状態が
-				// 一番痩せて聞こえる、という状態になっていた。他のトラックは無圧縮でも
-				// 破綻しないのでここでは触らない（おまかせの領分）。
-				for (const t of bassTracksForCompose()) {
-					t.trackCompression = AUTO_ROLE_MIX.bass.compression;
-					options.onTrackCompressionChange?.(t.config.id, t.trackCompression);
-				}
-
 				// --- 歌入り ---
 				if (withVocal) {
 					// simple はメロディトラック、advanced はレイアウト上のメロディ（t0）。
@@ -5668,6 +5649,12 @@ export const mountDAW = (
 						fireLyricsChange(melodyTrack);
 					}
 				}
+
+				// 作曲・歌入り作曲の完了時におまかせマスタリングを実行する。
+				// 各トラックの役割（メロディ/サブメロ/ベース/伴奏/ボーカル）に応じた
+				// 楽器・音量・パン・コンプ・EQ・空間系（リバーブ/ディレイ）やマスタ設定が
+				// 自動で整い、生成直後からバランスの良いミックスで再生できる。
+				applyAutoMastering();
 
 				if (refs.composeKeyHint) {
 					refs.composeKeyHint.textContent = `${song.keyLabel} で作成`;
