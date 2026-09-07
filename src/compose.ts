@@ -1716,14 +1716,6 @@ const barDegrees = (
 	// 界隈曲らしさ：モチーフの内部構造（音程カーブ）を和音の都合で破壊しない。
 	for (let i = 0; i < out.length; i++) {
 		if (!slots[i].isStrong) continue;
-		if (
-			role === "motif" ||
-			role === "sequence" ||
-			role === "answer" ||
-			role === "climax"
-		) {
-			continue;
-		}
 		out[i] = semitoneToDegree(
 			nearestChordTone(
 				degreeToPitch(out[i]).semi,
@@ -3372,26 +3364,25 @@ const draw = (
 		const nextSec = sectionAt(sectionPlan, barIdx);
 		if (!nextSec.spec.melody || curSec !== nextSec) continue;
 
-		// 変化音はタイで伸ばすと経過音の音価上限を超えるため、ダイアトニック音のみ結合する
+		// 界隈曲らしさ：変化音（クロマチックテンション）であっても小節を跨ぐタイを許容し、強烈な食いを演出する。
 		const curSemi = Math.round(cur.pitchUnits / UNITS_PER_SEMITONE);
 		const nxtSemi = Math.round(nxt.pitchUnits / UNITS_PER_SEMITONE);
-		const curPc = pitchClass(curSemi);
-		const nxtPc = pitchClass(nxtSemi);
-		if (!DIATONIC_PCS.has(curPc) || !DIATONIC_PCS.has(nxtPc)) continue;
 
 		// 大きな跳躍がある場合はタイにしない（同音または順次・3度以内のスムーズな食い）
 		if (Math.abs(nxtSemi - curSemi) > 3) continue;
 
-		// nxt の次の音が変化音の場合、nxt を消すとその変化音へのアプローチが跳躍に化けるため保護
-		const afterNxt = melody[i + 2];
-		if (afterNxt) {
-			const afterSemi = Math.round(afterNxt.pitchUnits / UNITS_PER_SEMITONE);
-			const afterPc = pitchClass(afterSemi);
-			if (!DIATONIC_PCS.has(afterPc) && Math.abs(afterSemi - curSemi) > 2)
-				continue;
-		}
+		// 文脈（BarRole）に合わせたタイ（食い）の発生確率の制御
+		// motif (1回目) は原形を提示するためほぼ食わない
+		// sequence (2回目) は展開感を出すため積極的に食う
+		// climax は感情の爆発なので非常に高い確率で食う
+		const nextRole = barRoles[barIdx];
+		let tieProb = 0.4;
+		if (nextRole === "motif") tieProb = 0.05;
+		else if (nextRole === "sequence") tieProb = 0.75;
+		else if (nextRole === "climax") tieProb = 0.90;
+		else if (nextRole === "cadence") tieProb = 0.1;
 
-		if (rnd() < 0.28) {
+		if (rnd() < tieProb) {
 			// タイ結合：curをnxtの分まで伸ばし、nxtを吸収
 			cur.durationSteps += nxt.durationSteps;
 			melody.splice(i + 1, 1);
@@ -3408,6 +3399,37 @@ const draw = (
 				harmony.splice(hNxtIdx, 1);
 			}
 			i--;
+		}
+	}
+
+	// --- リズムの有機的な揺らぎ（Permutation） ---
+	// 全く同じリズムセルのコピペ感を消すため、確率で音符を分割し、ボーカル特有の「細かい言葉の詰め込み」を表現する。
+	for (let i = 0; i < melody.length; i++) {
+		const barIdx = Math.floor(melody[i].startStep / stepsPerBar);
+		if (barIdx >= totalBars) continue;
+		const role = barRoles[barIdx];
+
+		// 文脈（BarRole）に合わせたリズム分割の制御
+		// motif, sequence は言葉を割らずに原形を保つ
+		// climax は感情の爆発を表現するため高確率で割る
+		let splitProb = 0.15;
+		if (role === "motif" || role === "sequence") splitProb = 0.0;
+		else if (role === "climax") splitProb = 0.6;
+		else if (role === "cadence") splitProb = 0.0;
+
+		if (rnd() < splitProb && melody[i].durationSteps === quarterSteps) {
+			// 4分音符を8分音符2つに分割（同音連打）
+			const half = scaleStep(EIGHTH);
+			const newNote = { ...melody[i], startStep: melody[i].startStep + half, durationSteps: half };
+			melody[i].durationSteps = half;
+			melody.splice(i + 1, 0, newNote);
+			
+			// melodyDurations も同期
+			if (i < melodyDurations.length) {
+				melodyDurations[i] = half;
+				melodyDurations.splice(i + 1, 0, half);
+			}
+			i++;
 		}
 	}
 
