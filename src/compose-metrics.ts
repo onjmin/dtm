@@ -327,12 +327,37 @@ export type TensionFeatures = {
  * 音価で重み付けして集計したもの）。**この関数の存在意義は「1音ごとに使い捨てていた
  * 不協和度を時系列に積む」こと**で、材料は前からあった。
  */
-export const tensionFeatures = (barTension: number[]): TensionFeatures => {
-	if (barTension.length < 16) return { rise: 0, resolve: 0 };
+export const tensionFeatures = (
+	barTension: number[],
+	opts?: { verseBars?: number[]; chorusBars?: number[] },
+): TensionFeatures => {
+	if (barTension.length < 8) return { rise: 0, resolve: 0 };
 	const mean = (xs: number[]): number =>
 		xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
-	const a = mean(barTension.slice(0, 4));
-	const b = mean(barTension.slice(8, 12));
+
+	let a: number;
+	let b: number;
+	if (
+		opts?.verseBars &&
+		opts?.chorusBars &&
+		opts.verseBars.length > 0 &&
+		opts.chorusBars.length > 0
+	) {
+		a = mean(opts.verseBars.map((i) => barTension[i] ?? 0));
+		b = mean(opts.chorusBars.map((i) => barTension[i] ?? 0));
+	} else if (barTension.length >= 16 && barTension.length <= 24) {
+		a = mean(barTension.slice(0, 4));
+		b = mean(barTension.slice(8, 12));
+	} else {
+		// 任意の長さの場合：前半（Aメロ帯：15%〜35%）とサビ帯（55%〜75%）を比較
+		const q1Start = Math.floor(barTension.length * 0.15);
+		const q1End = Math.max(q1Start + 2, Math.floor(barTension.length * 0.35));
+		const q3Start = Math.floor(barTension.length * 0.55);
+		const q3End = Math.max(q3Start + 2, Math.floor(barTension.length * 0.75));
+		a = mean(barTension.slice(q1Start, q1End));
+		b = mean(barTension.slice(q3Start, q3End));
+	}
+
 	const all = mean(barTension);
 	const last = barTension[barTension.length - 1];
 	// 差そのものではなく「上がっているか」を0〜1へ。0.5緊張ぶん上がれば満点。

@@ -14,6 +14,7 @@ import {
 	buildSectionPlan,
 	DEFAULT_SECTIONS,
 	type SectionKind,
+	STRUCTURE_TEMPLATES,
 } from "./compose-sections";
 import { buildUI } from "./daw-ui";
 import type { DelayDivision } from "./delay";
@@ -5346,9 +5347,30 @@ export const mountDAW = (
 			const bars = plan.reduce((sum, x) => sum + x.bars, 0);
 			refs.composeSectionsLen.textContent = `${bars}小節`;
 		};
-		refs.composeSections.addEventListener("change", updateComposeSectionsLen);
+		refs.composeSections.addEventListener("change", () => {
+			if (refs.composeTemplate) {
+				refs.composeTemplate.value = "custom";
+			}
+			updateComposeSectionsLen();
+		});
 		if (refs.composeTemplate) {
-			refs.composeTemplate.addEventListener("change", updateComposeSectionsLen);
+			refs.composeTemplate.addEventListener("change", () => {
+				const tmplName = selectedComposeTemplate();
+				if (tmplName) {
+					const tmpl = STRUCTURE_TEMPLATES.find((t) => t.name === tmplName);
+					if (tmpl) {
+						const planSet = new Set(tmpl.plan);
+						const boxes =
+							refs.composeSections.querySelectorAll<HTMLInputElement>(
+								'input[type="checkbox"]',
+							);
+						for (const box of boxes) {
+							box.checked = planSet.has(box.value as SectionKind);
+						}
+					}
+				}
+				updateComposeSectionsLen();
+			});
 		}
 		updateComposeSectionsLen();
 

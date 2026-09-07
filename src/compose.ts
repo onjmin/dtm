@@ -816,14 +816,23 @@ export const RHYTHM_CELLS: RhythmCell[] = [
 const HALF_BAR_FIGURES: number[][] = [
 	[EIGHTH, EIGHTH, EIGHTH, EIGHTH], // タタタタ
 	[EIGHTH, EIGHTH, EIGHTH, EIGHTH],
-	[EIGHTH, EIGHTH, EIGHTH, EIGHTH],
-	[EIGHTH, EIGHTH, EIGHTH, EIGHTH],
 	[QUARTER, EIGHTH, EIGHTH], // ター・タタ
+	[QUARTER, EIGHTH, EIGHTH],
 	[EIGHTH, EIGHTH, QUARTER], // タタ・ター
 	[DOT_QUARTER, EIGHTH], // 食い（シンコペーション）
 	[DOT_QUARTER, EIGHTH],
 	[EIGHTH, QUARTER, EIGHTH], // 頭抜き
-	[HALF], // ロングトーン
+	// 4分音符主体・ロングトーン（J-POPの歌い上げるバラード〜ミドル向け。音数過多を是正）
+	[QUARTER, QUARTER], // ター・ター
+	[QUARTER, QUARTER],
+	[HALF], // ターーー
+	[HALF],
+	[-QUARTER, QUARTER], // 休・ター
+	[QUARTER, -QUARTER], // ター・休
+	// 弱起（アウフタクト）パターン：末尾から次へ飛び込む言い回し
+	[-DOT_QUARTER, EIGHTH], // 3拍半休みからの裏拍アウフタクト
+	[-QUARTER, EIGHTH, EIGHTH], // 2拍目裏からのアウフタクト（タタ）
+	[QUARTER, -EIGHTH, EIGHTH], // ター・休タ（8分裏弱起）
 	// 付点8分＋16分（タッカ）。歌モノで非常に多用される跳ね・推進力の型。
 	[DOT_EIGHTH, SIXTEENTH, EIGHTH, EIGHTH],
 	[EIGHTH, EIGHTH, DOT_EIGHTH, SIXTEENTH],
@@ -2401,8 +2410,26 @@ const draw = (
 	 * その小節が、どの小節の再現か。**同じ素材の楽句は音の並びごと歌い直す。**
 	 * これが「同じフレーズが返ってきた」という手応えの実体で、Aメロが2回出てくる
 	 * のに毎回別の音だったら、セクションとして成立しない。
+	 * 2番・3番のセクション（restatement === true）は、1番の対応小節を正確に再現する。
 	 */
 	const restatementOf = (bar: number): number | null => {
+		const curSec = sectionAt(sectionPlan, bar);
+		if (!curSec.spec.melody) return null;
+
+		// 2番・3番のセクション（restatement === true）の場合、1番の同一セクションの対応小節を再現
+		if (curSec.restatement) {
+			const firstSec = sectionPlan.find(
+				(s) => s.kind === curSec.kind && !s.restatement,
+			);
+			if (firstSec) {
+				const offset = bar - curSec.startBar;
+				if (offset < firstSec.bars) {
+					return firstSec.startBar + offset;
+				}
+			}
+		}
+
+		// 1コーラス内での楽句レベルの再現
 		const u = unitOf(bar);
 		if (units[u].source === "silent") return null;
 		for (let v = 0; v < u; v++) {
@@ -2513,47 +2540,73 @@ const draw = (
 	/**
 	 * 狙いの密度に近い型を引く。3本引いて一番近いものを採る——1本に絞ると
 	 * 密度が同じ曲ばかりになるので、**寄せるだけで固定はしない**。
+	/**
+	 * 狙いの密度に近い型を引く。
+	 * セクションごとの密度倍率（densityMul）を受け取れるようにし、
+	 * Aメロでは落ち着いた音数、Bメロ・サビでは詰まった音数を自然に引き当てる。
 	 */
-	const cellDistance = (c: RhythmCell): number =>
-		Math.abs(cellNotes(c) - targetNotesPerBar) +
-		Math.abs(cellRest(c) - targetRestRatio) * 8;
-	const pickCell = (pool: RhythmCell[]): RhythmCell => {
+	const cellDistance = (c: RhythmCell, densityMul = 1.0): number =>
+		Math.abs(cellNotes(c) - targetNotesPerBar * densityMul) +
+		Math.abs(cellRest(c) - targetRestRatio / Math.max(0.5, densityMul)) * 8;
+	const pickCell = (pool: RhythmCell[], densityMul = 1.0): RhythmCell => {
 		let best = pick(pool, rnd);
 		for (let i = 0; i < 2; i++) {
 			const c = pick(pool, rnd);
-			if (cellDistance(c) < cellDistance(best)) best = c;
+			if (cellDistance(c, densityMul) < cellDistance(best, densityMul))
+				best = c;
 		}
 		return best;
 	};
-	const motifCell = pickCell(motifPool);
+
+	// Aメロは控えめ（density: 0.85）
+	const motifCell = pickCell(motifPool, 0.85);
 	/** モチーフ2小節目。 */
 	const motifCell2 =
 		rnd() < 0.45
 			? motifCell
-			: pickCell(motifPool.filter((c) => c !== motifCell));
-	/** 対照的な楽句（サビ用）のモチーフ。A と別の型を引く。 */
+			: pickCell(
+					motifPool.filter((c) => c !== motifCell),
+					0.85,
+				);
+	/** 対照的な楽句（サビ用）のモチーフ。A と別の型を引く（density: 1.2）。 */
 	const motifB = pickCell(
 		motifPool.filter((c) => c !== motifCell && c !== motifCell2),
+		1.2,
 	);
-	const motifB2 = pickCell(motifPool.filter((c) => c !== motifB));
-	/** Bメロ（`a2`）のモチーフ。Aメロと同じ型を使い回さない。 */
+	const motifB2 = pickCell(
+		motifPool.filter((c) => c !== motifB),
+		1.2,
+	);
+	/** Bメロ（`a2`）のモチーフ。サビへの助走（density: 1.1）。 */
 	const motifA2 = pickCell(
 		motifPool.filter(
 			(c) => c !== motifCell && c !== motifCell2 && c !== motifB,
 		),
+		1.1,
 	);
 	const motifA22 =
-		rnd() < 0.45 ? motifA2 : pickCell(motifPool.filter((c) => c !== motifA2));
+		rnd() < 0.45
+			? motifA2
+			: pickCell(
+					motifPool.filter((c) => c !== motifA2),
+					1.1,
+				);
 
-	/** Cメロ（bridge）のモチーフ。A/Bとは完全に異なる。 */
+	/** Cメロ（bridge）のモチーフ。A/Bとは完全に異なる（density: 0.9）。 */
 	const motifC = pickCell(
 		motifPool.filter(
 			(c) =>
 				c !== motifCell && c !== motifCell2 && c !== motifB && c !== motifA2,
 		),
+		0.9,
 	);
 	const motifC2 =
-		rnd() < 0.45 ? motifC : pickCell(motifPool.filter((c) => c !== motifC));
+		rnd() < 0.45
+			? motifC
+			: pickCell(
+					motifPool.filter((c) => c !== motifC),
+					0.9,
+				);
 
 	/**
 	 * 応答・展開用のバリエーション型。
@@ -3437,7 +3490,16 @@ const evaluate = (
 		fromMelody(toMetricNotes(d.submelody)),
 		opts,
 	);
-	const tension = tensionFeatures(d.barTension);
+	const verseBars: number[] = [];
+	const chorusBars: number[] = [];
+	for (const s of d.sections) {
+		for (let b = s.startBar; b < s.startBar + s.bars; b++) {
+			if (s.kind === "verse") verseBars.push(b);
+			else if (s.kind === "chorus" || s.kind === "drop_chorus")
+				chorusBars.push(b);
+		}
+	}
+	const tension = tensionFeatures(d.barTension, { verseBars, chorusBars });
 	const density = densityFeatures(melodyFrom, opts);
 	const fingerprint = featureVector({
 		entropy,
@@ -3465,6 +3527,10 @@ const evaluate = (
 	 */
 	const atc = (key: keyof typeof CORPUS_BANDS, v: number): number =>
 		centeredBand(v, CORPUS_BANDS[key], CORPUS_MEDIANS[key]);
+	const peakBand: Band =
+		d.bars > 24
+			? [0, 1, Math.round(d.bars / 16), Math.round(d.bars / 8) + 2]
+			: HAND_BANDS.climaxPeaks;
 	const scoreBreakdown: Record<string, number> = {
 		entropy: atc("entropy", entropy),
 		valueKinds: atc("valueKinds", valueKinds),
@@ -3482,7 +3548,7 @@ const evaluate = (
 		sim8: atc("sim8", structure.sim8),
 		phraseBreath: atc("phraseBreath", structure.phraseBreath),
 		climaxPosition: atc("climaxPosition", structure.climaxPosition),
-		climaxPeaks: at(HAND_BANDS.climaxPeaks, structure.climaxPeaks),
+		climaxPeaks: at(peakBand, structure.climaxPeaks),
 		complementarity: at(HAND_BANDS.complementarity, structure.complementarity),
 		subDensity: at(HAND_BANDS.subDensity, d.submelody.length / d.bars),
 		tensionRise: tension.rise,
