@@ -25,7 +25,11 @@ import {
 	resolveComposeKey,
 } from "../src/compose-keys";
 import { structureFeatures } from "../src/compose-metrics";
-import { DRUM_KEYS, DRUM_PATTERNS, resolveDrumPattern } from "../src/drum-config";
+import {
+	DRUM_KEYS,
+	DRUM_PATTERNS,
+	resolveDrumPattern,
+} from "../src/drum-config";
 import { INSTRUMENT_PRESETS } from "../src/instrument-presets";
 import { UNITS_PER_SEMITONE } from "../src/tuning";
 
@@ -665,7 +669,11 @@ console.log("● 格子への乗り");
 	}
 	check("16分格子の上に乗る", offGrid === 0, `${offGrid}/${notes}音が格子外`);
 	// J-POPの疾走感を作るため、小節線をまたぐシンコペーションタイが適度に生成されていること。
-	check("小節線をまたぐシンコペーションがある", cross > 0, `${cross}/${notes}音がまたぎ`);
+	check(
+		"小節線をまたぐシンコペーションがある",
+		cross > 0,
+		`${cross}/${notes}音がまたぎ`,
+	);
 	console.log(`  ${N}曲: 格子外 ${offGrid}音 / 小節線またぎ ${cross}音`);
 }
 
@@ -761,6 +769,89 @@ console.log("● 変化音（調の外の音）");
 //     自動選択され、MMLにも実体のある名前が出力されること。
 // ============================================================
 
+// ============================================================
+// ハモリと掛け合い
+//   ハモリの定石: 3度か6度で当てる／完全5度は浮くので避ける／
+//   必ず和音構成音へ合わせる／全編ではなく要所（サビ・Bメロ）で入れる。
+// ============================================================
+
+console.log("● ハモリと掛け合い");
+{
+	const N = 60;
+	let harmNotes = 0;
+	let thirdOrSixth = 0;
+	let fifthOrUnison = 0;
+	let harmBars = 0;
+	let melodyBars = 0;
+	const duetStyles = new Set<string>();
+	for (let seed = 1; seed <= N; seed++) {
+		const song = composeSong({
+			stepsPerBar: STEPS_PER_BAR,
+			random: seededRandom(seed * 104729),
+			template: "jpop_standard",
+		});
+		duetStyles.add(song.vocal.duetStyle);
+
+		// ハモリが鳴る小節は、メロディのある小節の一部であること（全編に付けない）。
+		const mel = new Map(song.melody.map((n) => [n.startStep, n.pitchUnits]));
+		const hBars = new Set(
+			song.harmony.map((n) => Math.floor(n.startStep / STEPS_PER_BAR)),
+		);
+		const mBars = new Set(
+			song.melody.map((n) => Math.floor(n.startStep / STEPS_PER_BAR)),
+		);
+		harmBars += hBars.size;
+		melodyBars += mBars.size;
+		for (const b of hBars)
+			check(
+				`seed=${seed} ハモリはメロディのある小節にだけ乗る`,
+				mBars.has(b),
+				`bar${b + 1}`,
+			);
+
+		for (const h of song.harmony) {
+			const m = mel.get(h.startStep);
+			if (m === undefined) continue;
+			harmNotes++;
+			const gap =
+				Math.abs(Math.round((h.pitchUnits - m) / UNITS_PER_SEMITONE)) % 12;
+			if (gap === 3 || gap === 4 || gap === 8 || gap === 9) thirdOrSixth++;
+			if (gap === 0 || gap === 5 || gap === 7) fifthOrUnison++;
+		}
+
+		// 掛け合いの相手が歌う小節は、メロディのある小節の中から採られること。
+		for (const b of song.vocal.duetBars)
+			check(
+				`seed=${seed} 掛け合いはメロディのある小節から採る`,
+				b >= 0 && b < song.bars,
+				`bar${b + 1} / ${song.bars}小節`,
+			);
+	}
+	check(
+		"ハモリの8割以上が3度か6度",
+		thirdOrSixth / Math.max(1, harmNotes) >= 0.8,
+		`${((thirdOrSixth / Math.max(1, harmNotes)) * 100).toFixed(1)}%`,
+	);
+	check(
+		"完全5度・4度・同音のハモリは1割未満",
+		fifthOrUnison / Math.max(1, harmNotes) < 0.1,
+		`${((fifthOrUnison / Math.max(1, harmNotes)) * 100).toFixed(1)}%`,
+	);
+	check(
+		"ハモリは全編には付けない",
+		harmBars / Math.max(1, melodyBars) < 0.7,
+		`歌う小節の ${((harmBars / Math.max(1, melodyBars)) * 100).toFixed(0)}%`,
+	);
+	check(
+		"掛け合いの型が2種類以上出る",
+		duetStyles.size >= 2,
+		[...duetStyles].join(" "),
+	);
+	console.log(
+		`  ${N}曲: ハモリ 3度/6度 ${((thirdOrSixth / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 5度4度同音 ${((fifthOrUnison / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 歌う小節の ${((harmBars / Math.max(1, melodyBars)) * 100).toFixed(0)}% に付く / 掛け合い ${[...duetStyles].join(" ")}`,
+	);
+}
+
 console.log("● ドラム自動選択");
 {
 	const N = 40;
@@ -790,9 +881,7 @@ console.log("● ドラム自動選択");
 		drums.size >= 3,
 		`${drums.size}種: ${[...drums].join(",")}`,
 	);
-	console.log(
-		`  ${N}曲: 型${drums.size}種（${[...drums].join(" ")}）`,
-	);
+	console.log(`  ${N}曲: 型${drums.size}種（${[...drums].join(" ")}）`);
 }
 
 // ============================================================
@@ -885,30 +974,58 @@ console.log("● ベース調・雰囲気（調性格論）");
 	const minorKeys = keys.filter((k) => k.mode === "minor");
 	check("長調が12調ある", majorKeys.length === 12, `${majorKeys.length}`);
 	check("短調が12調ある", minorKeys.length === 12, `${minorKeys.length}`);
-	check("8つの雰囲気グループがある", COMPOSE_MOOD_GROUPS.length === 8, `${COMPOSE_MOOD_GROUPS.length}`);
+	check(
+		"8つの雰囲気グループがある",
+		COMPOSE_MOOD_GROUPS.length === 8,
+		`${COMPOSE_MOOD_GROUPS.length}`,
+	);
 
 	const allGroupedKeyIds = COMPOSE_MOOD_GROUPS.flatMap((g) => g.keyIds);
-	check("24調すべてがいずれかの雰囲気グループに属している", allGroupedKeyIds.length === 24, `${allGroupedKeyIds.length}`);
+	check(
+		"24調すべてがいずれかの雰囲気グループに属している",
+		allGroupedKeyIds.length === 24,
+		`${allGroupedKeyIds.length}`,
+	);
 
 	// 個別指定の解決
 	const keyD = resolveComposeKey("key_D");
-	check("key_D はニ長調 (rootShift=2, mode=major)", keyD.mode === "major" && keyD.rootShift === 2 && keyD.keyName === "D", JSON.stringify(keyD));
+	check(
+		"key_D はニ長調 (rootShift=2, mode=major)",
+		keyD.mode === "major" && keyD.rootShift === 2 && keyD.keyName === "D",
+		JSON.stringify(keyD),
+	);
 
 	const keyAm = resolveComposeKey("key_Am");
-	check("key_Am はイ短調 (rootShift=0, mode=minor)", keyAm.mode === "minor" && keyAm.rootShift === 0 && keyAm.keyName === "Am", JSON.stringify(keyAm));
+	check(
+		"key_Am はイ短調 (rootShift=0, mode=minor)",
+		keyAm.mode === "minor" && keyAm.rootShift === 0 && keyAm.keyName === "Am",
+		JSON.stringify(keyAm),
+	);
 
 	// 雰囲気からの抽選（決定的な乱数で確認）
 	const mockRnd0 = () => 0; // 最初のアイテムを選択
 	const mockRnd1 = () => 0.999; // 最後のアイテムを選択
 
 	const moodHappyFirst = resolveComposeKey("mood_happy", mockRnd0);
-	check("mood_happy の先頭は C (ハ長調)", moodHappyFirst.keyName === "C" && moodHappyFirst.mode === "major", JSON.stringify(moodHappyFirst));
+	check(
+		"mood_happy の先頭は C (ハ長調)",
+		moodHappyFirst.keyName === "C" && moodHappyFirst.mode === "major",
+		JSON.stringify(moodHappyFirst),
+	);
 
 	const moodTriumphant = resolveComposeKey("mood_triumphant", mockRnd0);
-	check("mood_triumphant の先頭は D (ニ長調)", moodTriumphant.keyName === "D" && moodTriumphant.mode === "major", JSON.stringify(moodTriumphant));
+	check(
+		"mood_triumphant の先頭は D (ニ長調)",
+		moodTriumphant.keyName === "D" && moodTriumphant.mode === "major",
+		JSON.stringify(moodTriumphant),
+	);
 
 	const moodPlaintive = resolveComposeKey("mood_plaintive", mockRnd0);
-	check("mood_plaintive の先頭は Cm (ハ短調)", moodPlaintive.keyName === "Cm" && moodPlaintive.mode === "minor", JSON.stringify(moodPlaintive));
+	check(
+		"mood_plaintive の先頭は Cm (ハ短調)",
+		moodPlaintive.keyName === "Cm" && moodPlaintive.mode === "minor",
+		JSON.stringify(moodPlaintive),
+	);
 
 	// composeSong への baseKey 指定
 	const songD = composeSong({
@@ -916,21 +1033,41 @@ console.log("● ベース調・雰囲気（調性格論）");
 		baseKey: "key_D",
 		random: seededRandom(42),
 	});
-	check("baseKey: key_D で生成された曲の rootShift は 2", songD.rootShift === 2, `rootShift=${songD.rootShift}`);
-	check("baseKey: key_D で生成された曲の keyName は D", songD.keyName === "D", `keyName=${songD.keyName}`);
+	check(
+		"baseKey: key_D で生成された曲の rootShift は 2",
+		songD.rootShift === 2,
+		`rootShift=${songD.rootShift}`,
+	);
+	check(
+		"baseKey: key_D で生成された曲の keyName は D",
+		songD.keyName === "D",
+		`keyName=${songD.keyName}`,
+	);
 
 	const songMinor = composeSong({
 		stepsPerBar: 192,
 		baseKey: "key_Am",
 		random: seededRandom(100),
 	});
-	check("baseKey: key_Am で生成された曲の rootShift は 0", songMinor.rootShift === 0, `rootShift=${songMinor.rootShift}`);
-	check("baseKey: key_Am で生成された曲の keyName は Am", songMinor.keyName === "Am", `keyName=${songMinor.keyName}`);
+	check(
+		"baseKey: key_Am で生成された曲の rootShift は 0",
+		songMinor.rootShift === 0,
+		`rootShift=${songMinor.rootShift}`,
+	);
+	check(
+		"baseKey: key_Am で生成された曲の keyName は Am",
+		songMinor.keyName === "Am",
+		`keyName=${songMinor.keyName}`,
+	);
 	// 短調進行のAメロの最初の和音は Am であること
 	const verseSection = songMinor.sections.find((s) => s.kind === "verse");
 	const verseStartBar = verseSection?.startBar ?? 0;
 	const verseChord = songMinor.chordProgression.split("|")[verseStartBar];
-	check("短調指定の曲のAメロ開始和音が Am", verseChord.startsWith("Am"), `verseChord=${verseChord}`);
+	check(
+		"短調指定の曲のAメロ開始和音が Am",
+		verseChord.startsWith("Am"),
+		`verseChord=${verseChord}`,
+	);
 }
 
 console.log("");

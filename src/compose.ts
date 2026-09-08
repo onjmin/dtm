@@ -1424,6 +1424,8 @@ export type ComposeResult = {
 	sections: PlacedSection[];
 	/** 曲の長さ（小節）。セクションの選び方で変わる。 */
 	bars: number;
+	/** 歌の割り当て（ハモリ・デュエット）。{@link VocalPlan} */
+	vocal: VocalPlan;
 	/** 曲に合わせて組み込みから自動選択されたドラムパターン名（DRUM_PATTERNS のキー）。 */
 	drum: string;
 	/** 曲に合わせて組み込みから自動選択された楽器プリセット名（INSTRUMENT_PRESETS のキー）。 */
@@ -1502,6 +1504,62 @@ const MELODY_LOW = 60;
 const MELODY_HIGH = 81;
 /** メロディの音域の中心。大きなうねり（{@link MelodyStyle.arcPeriod}）の基準。 */
 const MELODY_CENTER = (MELODY_LOW + MELODY_HIGH) / 2;
+
+/**
+ * ハモリの音を選ぶ。
+ *
+ * 歌モノのハモリの作り方として、解説はどれも同じ4点を言う。
+ *
+ * - **3度が基本**、6度もよく使う（3度をオクターブ動かせば6度になる）
+ * - **5度は避ける**。ハモリが浮いて聞こえ、ハーモニーの広がりも出ない
+ * - **必ずコード構成音へ合わせる**。単純に3度上下へ平行移動すると、伸ばした音が
+ *   不協和音になる（sus4 のときに3度を当てる、が典型的な失敗）
+ * - 上ハモは目立ち、下ハモは主旋律を支える
+ *
+ * 参考: Nomad Diary「曲にハモリやコーラスを入れる方法」
+ *
+ * ここでは狙いの度数へ寄せてから和音構成音へ吸着させ、**主旋律との音程が
+ * 完全5度・完全4度・同音になったら隣の構成音へ逃がす**。
+ */
+/** ハモリとして許す音程（半音）。3度と6度の長短だけ。 */
+const HARMONY_INTERVALS = new Set([3, 4, 8, 9]);
+
+const harmonyPitch = (
+	melodySemi: number,
+	tones: ChordTone[],
+	/** 上ハモなら true。 */
+	up: boolean,
+	/** 3度ではなく6度で当てるか。 */
+	wide: boolean,
+): ScaleDegree => {
+	const want = wide ? 9 : 4;
+	// **和音構成音の中から、3度／6度になるものだけを候補にする。**
+	// 「狙いの度数へ寄せてから和音へ吸着」だと、三和音では吸着先が限られるため
+	// 実測で3割が完全5度・4度・同音に着地していた。先に度数で絞る。
+	let best: ScaleDegree | null = null;
+	let bestCost = Number.POSITIVE_INFINITY;
+	for (const tone of tones) {
+		// `tones` の semi は和音の綴りそのままでオクターブが揃っていないので、
+		// 音名だけを取ってメロディの近くのオクターブから当たり直す。
+		const pc = pitchClass(tone.semi);
+		for (let oct = 0; oct <= 10; oct++) {
+			const semi = pc + oct * 12;
+			if (semi < MELODY_LOW - 12 || semi > MELODY_HIGH + 12) continue;
+			const delta = semi - melodySemi;
+			if (up ? delta <= 0 : delta >= 0) continue;
+			const gap = Math.abs(delta);
+			if (!HARMONY_INTERVALS.has(gap)) continue;
+			const cost = Math.abs(gap - want) + (3 - tone.weight) * 0.5;
+			if (cost < bestCost) {
+				bestCost = cost;
+				best = { semi, fifth: tone.fifth };
+			}
+		}
+	}
+	// 3度も6度も作れない和音（sus4 など）では、素直に近い構成音へ落とす。
+	// 度数を守って調子外れになるより、和音に乗るほうが優先。
+	return best ?? nearestChordTone(melodySemi + (up ? want : -want), tones, 2);
+};
 /** サブメロの音域。メロディの下・ベースの上に置く。 */
 const SUBMELODY_LOW = 55;
 const SUBMELODY_HIGH = 74;
@@ -2301,6 +2359,22 @@ const applyChromatic = (
 	}
 };
 
+/**
+ * 歌の割り当て。**歌入り作曲**が、どのトラックに誰の声を当てるかを決めるのに使う。
+ *
+ * 歌モノの定石として、ハモリはサビ（または Bメロ）から入り、デュエットでは
+ * 掛け合いで交互に歌う。どちらもトラックが潤沢な advanced モードでだけ展開する。
+ * **ユーザーの操作パラメータにはしない**——曲ごとに自動で引く。
+ */
+export type VocalPlan = {
+	/** 2人目（デュエットの相手）が歌う小節。空なら独唱。 */
+	duetBars: number[];
+	/** 掛け合いの単位。"section" はセクションごと、"phrase" は2小節ごとの交代。 */
+	duetStyle: "none" | "section" | "phrase";
+	/** ハモリが入るセクション種別（表示・検算用）。 */
+	harmonyKinds: SectionKind[];
+};
+
 /** 1回分の draw。点数を付けるのは呼び出し側（{@link evaluate}）の仕事。 */
 type Draw = Omit<ComposeResult, "stats" | "drum" | "instrument"> & {
 	melodyDurations: number[];
@@ -2391,6 +2465,51 @@ const draw = (
 			const shift = pick([-2, 3], rnd);
 			for (const s of sectionPlan) {
 				if (s.kind === "prechorus") s.keyShift = shift;
+			}
+		}
+	}
+
+	// --- 歌の設計（ハモリ・デュエット） ---
+	//
+	// **ハモリはサビから、曲によってはBメロから入る。** 歌モノの定石で、
+	// 全編に付けるものではない（「要所要所で登場させるほうが効果的」）。
+	// 上ハモはサビ、下ハモはAメロ・Bメロ・Cメロ、というのが解説の言う組み合わせ。
+	// 落ちサビはハモリを外す——伴奏を薄くして声だけを聞かせるのが「落ち」の実体なので、
+	// ここにハモリを重ねると意味が消える。
+	const harmonyFrom = pick<"chorus" | "prechorus">(
+		["chorus", "chorus", "prechorus"],
+		rnd,
+	);
+	/** ハモリを6度で当てるか（既定は3度）。 */
+	const harmonyWide = rnd() < 0.3;
+	const harmonyKinds: SectionKind[] =
+		harmonyFrom === "prechorus"
+			? ["prechorus", "chorus", "bridge"]
+			: ["chorus"];
+
+	// **掛け合い（デュエット）。** 2人で交互に歌う形。セクションごとに交代する形と、
+	// 2小節ごと（問い＝A、答え＝B）に交代する形の2つを用意する。サビは分けない
+	// ——サビは2人で歌うのが定石で、片方はハモリへ回る。
+	const duetStyle = pick<"none" | "section" | "phrase">(
+		["none", "none", "none", "section", "phrase"],
+		rnd,
+	);
+	const duetBars: number[] = [];
+	if (duetStyle !== "none") {
+		let melodySection = 0;
+		for (const section of sectionPlan) {
+			if (!section.spec.melody) continue;
+			const isChorus =
+				section.kind === "chorus" || section.kind === "drop_chorus";
+			const takeSection = melodySection % 2 === 1;
+			melodySection++;
+			if (isChorus) continue;
+			for (let b = section.startBar; b < section.startBar + section.bars; b++) {
+				if (duetStyle === "phrase") {
+					// 2小節ごとに交代する掛け合い。
+					if (Math.floor((b - section.startBar) / 2) % 2 === 1)
+						duetBars.push(b);
+				} else if (takeSection) duetBars.push(b);
 			}
 		}
 	}
@@ -3316,15 +3435,13 @@ const draw = (
 		}
 
 		// --- ハモリ ---
-		// メロディの3度上を歌う。サビセクションでのみ鳴らす。
+		// サビ（曲によってはBメロ）から入る。上ハモか下ハモかはセクションで決める
+		// （{@link harmonyPitch}）。落ちサビは声だけを聞かせる場所なので外す。
 		const barSec = sectionAt(sectionPlan, bar);
-		if (
-			!silent &&
-			(barSec.kind === "chorus" || barSec.kind === "drop_chorus")
-		) {
+		if (!silent && harmonyKinds.includes(barSec.kind)) {
+			const up = barSec.kind === "chorus";
 			for (let i = 0; i < slots.length; i++) {
-				const hSemi = pitches[i] + 3; // 3度上（短3度 or 長3度）
-				const hTone = nearestChordTone(hSemi, tones, 2);
+				const hTone = harmonyPitch(pitches[i], tones, up, harmonyWide);
 				const hClamped = clampSemi(hTone.semi, MELODY_LOW, MELODY_HIGH);
 				const k = barKeyShift[bar];
 				const fifthShift =
@@ -3706,6 +3823,7 @@ const draw = (
 		bpm,
 		sections: sectionPlan,
 		bars: totalBars,
+		vocal: { duetBars, duetStyle, harmonyKinds },
 		melody,
 		submelody,
 		bass,
@@ -3932,6 +4050,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			bpm: d.bpm,
 			sections: d.sections,
 			bars: d.bars,
+			vocal: d.vocal,
 			melody: d.melody,
 			submelody: d.submelody,
 			bass: d.bass,
@@ -4104,6 +4223,45 @@ const LYRIC_WORDS: string[] = [
  *
  * 読点（`、`）だけは音符を消費せず、直前の音節に息継ぎフラグを立てる。
  */
+/**
+ * 主旋律に付いた歌詞を、**同じ場所で歌う別のトラック**（ハモリ）へ写す。
+ *
+ * ハモリは主旋律と同じ言葉を別の高さで歌うものなので、`composeLyrics` を
+ * もう一度呼んで別の歌詞を当てると、2人が違う言葉を同時に歌うことになる。
+ * 発音位置で突き合わせて、同じ音節を並べ直す。
+ */
+export const alignLyrics = (
+	/** 歌詞が付いている側のノート列（主旋律）。 */
+	source: ComposedNote[],
+	/** その歌詞（{@link composeLyrics} の戻り値）。 */
+	lyrics: string,
+	/** 歌詞を写す先のノート列（ハモリ）。 */
+	target: ComposedNote[],
+	options: { stepsPerBar: number },
+): string => {
+	const sorted = [...source].sort((a, b) => a.startStep - b.startStep);
+	// 「、」は音符を消費しないので、写す前に外して1音1文字へ揃える。
+	const kana = [...lyrics].filter((c) => c !== "、");
+	const at = new Map<number, string>();
+	for (let i = 0; i < sorted.length && i < kana.length; i++)
+		at.set(sorted[i].startStep, kana[i]);
+
+	const { stepsPerBar } = options;
+	const tgt = [...target].sort((a, b) => a.startStep - b.startStep);
+	const out: string[] = [];
+	for (let i = 0; i < tgt.length; i++) {
+		out.push(at.get(tgt[i].startStep) ?? "ー");
+		const next = tgt[i + 1];
+		if (
+			next &&
+			Math.floor(tgt[i].startStep / (stepsPerBar * 4)) !==
+				Math.floor(next.startStep / (stepsPerBar * 4))
+		)
+			out.push("、");
+	}
+	return out.join("");
+};
+
 export const composeLyrics = (
 	melody: ComposedNote[],
 	options: { stepsPerBar: number; random?: () => number },

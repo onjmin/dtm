@@ -8,7 +8,12 @@
 import { GM_INSTRUMENT_NAMES } from "./audio-config";
 import { type ChordPlayerInstance, mountChordPlayer } from "./chord-player";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
-import { type ComposedNote, composeLyrics, composeSong } from "./compose";
+import {
+	alignLyrics,
+	type ComposedNote,
+	composeLyrics,
+	composeSong,
+} from "./compose";
 import { getComposeKeyDescription } from "./compose-keys";
 import {
 	buildSectionPlan,
@@ -70,11 +75,6 @@ import { MML_INFO_HTML } from "./mml-info";
 import { formatMmlMeta, parseMML } from "./mml-parser";
 import { mountMmlPlayer } from "./mml-player";
 import { readPanelOpen, writePanelOpen } from "./panel-state";
-import {
-	type Track1Settings,
-	readTrack1Settings,
-	writeTrack1Settings,
-} from "./track1-state";
 import { createRenderer, type Renderer } from "./renderer";
 import {
 	DEFAULT_REVERB_DECAY_SEC,
@@ -87,6 +87,11 @@ import {
 import { createSequencer, type Sequencer } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
+import {
+	readTrack1Settings,
+	type Track1Settings,
+	writeTrack1Settings,
+} from "./track1-state";
 import {
 	pitchV1ToUnits,
 	UNITS_PER_OCTAVE,
@@ -805,6 +810,7 @@ const ADVANCED_COMPOSE_LAYOUT: {
 		| "harmony"
 		| "pad"
 		| "uwamono"
+		| "duet"
 		| ChordPatternType;
 	octave: number;
 	volume: number;
@@ -820,6 +826,9 @@ const ADVANCED_COMPOSE_LAYOUT: {
 	{ index: 8, part: "arpeggio", octave: 0, volume: 54 },
 	{ index: 9, part: "offbeat", octave: 0, volume: 50 },
 	{ index: 10, part: "uwamono", octave: 1, volume: 56 },
+	// 掛け合い（デュエット）の相手。**歌入り作曲のときだけ**中身が入る。
+	// 作曲だけならメロディは t0 が全部持つので、ここは空のまま。
+	{ index: 11, part: "duet", octave: 0, volume: 104 },
 ];
 
 /** 内蔵モデルのカテゴリ定義（プルダウンの optgroup 表示用） */
@@ -5596,43 +5605,45 @@ export const mountDAW = (
 						const track = trackStates[layer.index];
 						if (!track) continue;
 						const notes =
-							layer.part === "melody"
-								? song.melody
-								: layer.part === "harmony"
-									? song.harmony
-									: layer.part === "submelody"
-										? song.submelody
-										: layer.part === "bass"
-											? song.bass
-											: layer.part === "pad"
-												? song.pad
-												: layer.part === "uwamono"
-													? buildChordPlacements({
-															edo: renderConfig.edo,
-															chordStr: song.chordProgression,
-															patternType: "arpeggio",
-															rootShift: song.rootShift,
-															bpm: song.bpm,
-															stepsPerBar: renderConfig.stepsPerBar,
-														}).map((p) => ({
-															startStep: p.startStep,
-															pitchUnits: p.pitchUnits,
-															durationSteps: p.durationSteps,
-															velocity: Math.max(30, p.velocity - 14),
-														}))
-													: buildChordPlacements({
-															edo: renderConfig.edo,
-															chordStr: song.chordProgression,
-															patternType: layer.part,
-															rootShift: song.rootShift,
-															bpm: song.bpm,
-															stepsPerBar: renderConfig.stepsPerBar,
-														}).map((p) => ({
-															startStep: p.startStep,
-															pitchUnits: p.pitchUnits,
-															durationSteps: p.durationSteps,
-															velocity: p.velocity,
-														}));
+							layer.part === "duet"
+								? []
+								: layer.part === "melody"
+									? song.melody
+									: layer.part === "harmony"
+										? song.harmony
+										: layer.part === "submelody"
+											? song.submelody
+											: layer.part === "bass"
+												? song.bass
+												: layer.part === "pad"
+													? song.pad
+													: layer.part === "uwamono"
+														? buildChordPlacements({
+																edo: renderConfig.edo,
+																chordStr: song.chordProgression,
+																patternType: "arpeggio",
+																rootShift: song.rootShift,
+																bpm: song.bpm,
+																stepsPerBar: renderConfig.stepsPerBar,
+															}).map((p) => ({
+																startStep: p.startStep,
+																pitchUnits: p.pitchUnits,
+																durationSteps: p.durationSteps,
+																velocity: Math.max(30, p.velocity - 14),
+															}))
+														: buildChordPlacements({
+																edo: renderConfig.edo,
+																chordStr: song.chordProgression,
+																patternType: layer.part,
+																rootShift: song.rootShift,
+																bpm: song.bpm,
+																stepsPerBar: renderConfig.stepsPerBar,
+															}).map((p) => ({
+																startStep: p.startStep,
+																pitchUnits: p.pitchUnits,
+																durationSteps: p.durationSteps,
+																velocity: p.velocity,
+															}));
 						writeTrackAt(layer.index, notes);
 						track.trackOctave = layer.octave;
 						track.volume = layer.volume;
@@ -5714,6 +5725,67 @@ export const mountDAW = (
 							stepsPerBar: renderConfig.stepsPerBar,
 						});
 						fireLyricsChange(melodyTrack);
+					}
+
+					// --- ハモリと掛け合い（上級者モードのみ）---
+					//
+					// 歌モノでは、ハモリはサビ（曲によってはBメロ）から入り、デュエットでは
+					// 掛け合いで交互に歌う。どちらもトラックが要るので、15本ある
+					// advanced のときだけ展開する（simple は4本しかなく、ハモリを置くと
+					// 伴奏かベースを潰すことになる）。**どこで何をするかは曲ごとに
+					// 自動で決まる**（`song.vocal`）ので、ユーザーの操作項目は増やさない。
+					if (isAdvanced && melodyTrack) {
+						const stepsPerBar = renderConfig.stepsPerBar;
+						const barOf = (n: ComposedNote): number =>
+							Math.floor(n.startStep / stepsPerBar);
+						const duet = new Set(song.vocal.duetBars);
+
+						/** 声を1つ引いて、そのトラックへ歌わせる。 */
+						const sing = (
+							track: (typeof trackStates)[number] | undefined,
+							notes: ComposedNote[],
+							voice: string,
+						): void => {
+							if (!track) return;
+							track.lyricModel = voice;
+							if (track.vocalOctave === 0) track.vocalOctave = -1;
+							track.lyrics = composeLyrics(notes, { stepsPerBar });
+							fireLyricsChange(track);
+						};
+
+						// 掛け合い。メロディを2人で分け、t0 と t11 へ書き分ける。
+						// 器楽側のメロディは t1（オクターブ上の重ね）が丸ごと持っているので、
+						// 分けても旋律線は途切れない。
+						if (duet.size > 0) {
+							const mine = song.melody.filter((n) => !duet.has(barOf(n)));
+							const yours = song.melody.filter((n) => duet.has(barOf(n)));
+							writeTrackAt(0, mine);
+							writeTrackAt(11, yours);
+							sing(melodyTrack, mine, melodyTrack.lyricModel);
+							sing(
+								trackStates[11],
+								yours,
+								pickComposeVocal(melodyTrack.lyricModel),
+							);
+						}
+
+						// ハモリ。**主旋律と同じ言葉**を、同じ場所で別の高さで歌う。
+						// 歌詞を引き直すと2人が別の言葉を同時に歌うことになるので、
+						// 主旋律の歌詞を発音位置で突き合わせて写す。
+						const harmonyTrack = trackStates[2];
+						if (song.harmony.length > 0 && harmonyTrack) {
+							harmonyTrack.lyricModel = pickComposeVocal(
+								melodyTrack.lyricModel,
+							);
+							if (harmonyTrack.vocalOctave === 0) harmonyTrack.vocalOctave = -1;
+							harmonyTrack.lyrics = alignLyrics(
+								song.melody,
+								melodyTrack.lyrics,
+								song.harmony,
+								{ stepsPerBar },
+							);
+							fireLyricsChange(harmonyTrack);
+						}
 					}
 				}
 
