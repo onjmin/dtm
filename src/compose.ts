@@ -603,6 +603,10 @@ const SECTION_A3_DERIVATIONS: ((a: string[], tonic: string) => string[])[] = [
 ];
 
 /** 伴奏の奏法。曲ごとにランダムに引く。 */
+/**
+ * 伴奏の奏法の候補。`arpeggio-fast` は速い曲だと伴奏がメロディを食うので、
+ * テンポで絞ってから引く（{@link chordPatternPool}）。
+ */
 const CHORD_PATTERNS: ChordPatternType[] = [
 	"block",
 	"arpeggio",
@@ -610,6 +614,9 @@ const CHORD_PATTERNS: ChordPatternType[] = [
 	"yatsume",
 	"alternating",
 ];
+/** テンポに応じた奏法の候補。 */
+const chordPatternPool = (bpm: number): ChordPatternType[] =>
+	bpm <= 130 ? [...CHORD_PATTERNS, "arpeggio-fast"] : CHORD_PATTERNS;
 
 /**
  * 和音構成音の重み。ルートからの音程（半音）で引く。
@@ -2450,11 +2457,11 @@ const draw = (
 	const chordProgression = progression
 		.map((chord, bar) => transposeChordName(chord, barKeyShift[bar]))
 		.join("|");
-	const chordPattern = pick(CHORD_PATTERNS, rnd);
 	// 調とテンポも曲ごとに引く。生成はハ長調で行い、最後にまとめて移調する
 	// （生成中に移調すると音域の折り返しが調ごとにずれ、輪郭が壊れる）。
 	const rootShift = resolvedKey.rootShift;
 	const bpm = pick(BPM_CHOICES, rnd);
+	const chordPattern = pick(chordPatternPool(bpm), rnd);
 
 	// --- 曲の骨格と書法を引く（ここが曲どうしの違いの出どころ） ---
 	// **A' と A'' は A の再現。** 初版は4つのセクションすべてを独立に引いていたため、
@@ -3956,14 +3963,27 @@ const pickBuiltinDrum = (song: ComposeResult, rnd: () => number): string => {
 		song.melody.filter((n) => n.durationSteps <= eighth).length /
 		Math.max(1, song.melody.length);
 
+	// 付点8分の比率。タッカ（付点8分＋16分）や3+3+2 が多い曲は跳ねているので、
+	// シャッフルのドラムが合う。
+	const dotted =
+		song.melody.filter(
+			(n) => n.durationSteps === Math.round((BASE_STEPS_PER_BAR * 3) / 16),
+		).length / Math.max(1, song.melody.length);
+
+	// **7種すべてに出番を作る。** 初版は分岐の条件が実際の生成物と噛み合っておらず、
+	// 300曲引いても dance / 16beat / disco / 4beat の4種しか出なかった。
+	// `short >= 0.6` はメロディの短音比率が中央値0.84なのでほぼ常に真になり、
+	// `8beat` と `bossa` の枝へ到達しない。`shuffle` はどのプールにも無かった。
 	const pool: string[] =
-		song.bpm >= 150
-			? ["4beat", "dance", "16beat", "disco"]
-			: short >= 0.6
-				? ["16beat", "dance", "4beat", "disco"]
-				: song.bpm <= 110 && short < 0.4
-					? ["bossa", "8beat"]
-					: ["8beat", "4beat", "16beat"];
+		dotted >= 0.08
+			? ["shuffle", "8beat", "16beat"]
+			: song.bpm >= 150
+				? ["4beat", "dance", "16beat", "disco"]
+				: short >= 0.85
+					? ["16beat", "dance", "disco"]
+					: song.bpm <= 115
+						? ["bossa", "8beat", "shuffle", "4beat"]
+						: ["8beat", "4beat", "16beat", "dance"];
 	return pick(pool, rnd);
 };
 
@@ -3997,8 +4017,10 @@ export const pickBuiltinInstrument = (
 	} else if (song.drum === "bossa") {
 		// ボサノバ: ジャズ、アコースティック、ピアノ
 		pool = ["jazz_night", "acoustic", "piano"];
-	} else if (song.bpm <= 105 && short < 0.4) {
-		// ゆったりした曲: アンビエント、アコースティック、オーケストラ、ピアノ
+	} else if (song.bpm <= 115) {
+		// ゆったりした曲: アンビエント、アコースティック、オーケストラ、ピアノ。
+		// `short < 0.4` を併せて要求していた頃は、メロディの短音比率が中央値0.84
+		// なのでこの枝へ入れず、`ambient_cloud` が600曲引いても一度も出なかった。
 		pool = ["ambient_cloud", "acoustic", "orchestra", "piano", "fantasy_rpg"];
 	} else if (song.bpm >= 145) {
 		// ハイスピード: ロック、シンセポップ、サイバーパンク、8-bit
