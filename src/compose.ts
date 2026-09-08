@@ -1521,8 +1521,27 @@ const MELODY_CENTER = (MELODY_LOW + MELODY_HIGH) / 2;
  * ここでは狙いの度数へ寄せてから和音構成音へ吸着させ、**主旋律との音程が
  * 完全5度・完全4度・同音になったら隣の構成音へ逃がす**。
  */
-/** ハモリとして許す音程（半音）。3度と6度の長短だけ。 */
+/** ハモリとして許す音程（半音）。3度と6度の長短。 */
 const HARMONY_INTERVALS = new Set([3, 4, 8, 9]);
+/**
+ * 主旋律がテンション音のときに許す音程。**完全4度を足す。**
+ *
+ * 解説は「主旋律がテンション音になっている場合、4度でハモると有効」と書いている。
+ * 理屈は測ってみると分かりやすい——主旋律が11th（Cコード上のF）のとき、
+ * 3度も6度も和音構成音へ届かないので、規則を守ろうとすると必ず外れる。
+ * 4度下ならルート（C）へ落ちる。エキゾチックな響きになるのはそのためで、
+ * 「5度は避ける」と同列に4度を禁じると、テンションの上でハモれなくなる。
+ */
+const HARMONY_INTERVALS_TENSION = new Set([3, 4, 5, 8, 9]);
+
+/**
+ * 主旋律がその瞬間の和音の構成音か。**構成音でなければテンション**（9th/11th/13th）
+ * か経過音で、ハモリの当て方を変える必要がある。
+ */
+const isChordTone = (semi: number, tones: ChordTone[]): boolean => {
+	const pc = pitchClass(semi);
+	return tones.some((t) => pitchClass(t.semi) === pc);
+};
 
 const harmonyPitch = (
 	melodySemi: number,
@@ -1532,33 +1551,46 @@ const harmonyPitch = (
 	/** 3度ではなく6度で当てるか。 */
 	wide: boolean,
 ): ScaleDegree => {
-	const want = wide ? 9 : 4;
-	// **和音構成音の中から、3度／6度になるものだけを候補にする。**
+	const tension = !isChordTone(melodySemi, tones);
+	const allowed = tension ? HARMONY_INTERVALS_TENSION : HARMONY_INTERVALS;
+	const want = tension ? 5 : wide ? 9 : 4;
+
+	// **和音構成音の中から、許した度数になるものだけを候補にする。**
 	// 「狙いの度数へ寄せてから和音へ吸着」だと、三和音では吸着先が限られるため
 	// 実測で3割が完全5度・4度・同音に着地していた。先に度数で絞る。
-	let best: ScaleDegree | null = null;
-	let bestCost = Number.POSITIVE_INFINITY;
-	for (const tone of tones) {
-		// `tones` の semi は和音の綴りそのままでオクターブが揃っていないので、
-		// 音名だけを取ってメロディの近くのオクターブから当たり直す。
-		const pc = pitchClass(tone.semi);
-		for (let oct = 0; oct <= 10; oct++) {
-			const semi = pc + oct * 12;
-			if (semi < MELODY_LOW - 12 || semi > MELODY_HIGH + 12) continue;
-			const delta = semi - melodySemi;
-			if (up ? delta <= 0 : delta >= 0) continue;
-			const gap = Math.abs(delta);
-			if (!HARMONY_INTERVALS.has(gap)) continue;
-			const cost = Math.abs(gap - want) + (3 - tone.weight) * 0.5;
-			if (cost < bestCost) {
-				bestCost = cost;
-				best = { semi, fifth: tone.fifth };
+	const search = (dir: boolean): ScaleDegree | null => {
+		let best: ScaleDegree | null = null;
+		let bestCost = Number.POSITIVE_INFINITY;
+		for (const tone of tones) {
+			// `tones` の semi は和音の綴りそのままでオクターブが揃っていないので、
+			// 音名だけを取ってメロディの近くのオクターブから当たり直す。
+			const pc = pitchClass(tone.semi);
+			for (let oct = 0; oct <= 10; oct++) {
+				const semi = pc + oct * 12;
+				if (semi < MELODY_LOW - 12 || semi > MELODY_HIGH + 12) continue;
+				const delta = semi - melodySemi;
+				if (dir ? delta <= 0 : delta >= 0) continue;
+				const gap = Math.abs(delta);
+				if (!allowed.has(gap)) continue;
+				const cost = Math.abs(gap - want) + (3 - tone.weight) * 0.5;
+				if (cost < bestCost) {
+					bestCost = cost;
+					best = { semi, fifth: tone.fifth };
+				}
 			}
 		}
-	}
-	// 3度も6度も作れない和音（sus4 など）では、素直に近い構成音へ落とす。
-	// 度数を守って調子外れになるより、和音に乗るほうが優先。
-	return best ?? nearestChordTone(melodySemi + (up ? want : -want), tones, 2);
+		return best;
+	};
+
+	// テンションの上では上下どちらか一方しか成立しないことが多い（11th の4度は下だけ）。
+	// 上ハモ／下ハモの向きより、和音に乗ることを優先する。
+	return (
+		search(up) ??
+		(tension ? search(!up) : null) ??
+		// 3度も6度も4度も作れない和音（sus4 など）では、素直に近い構成音へ落とす。
+		// 度数を守って調子外れになるより、和音に乗るほうが優先。
+		nearestChordTone(melodySemi + (up ? want : -want), tones, 2)
+	);
 };
 /** サブメロの音域。メロディの下・ベースの上に置く。 */
 const SUBMELODY_LOW = 55;

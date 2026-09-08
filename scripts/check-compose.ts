@@ -781,6 +781,8 @@ console.log("● ハモリと掛け合い");
 	let harmNotes = 0;
 	let thirdOrSixth = 0;
 	let fifthOrUnison = 0;
+	let fourthOnChordTone = 0;
+	let fourth = 0;
 	let harmBars = 0;
 	let melodyBars = 0;
 	const duetStyles = new Set<string>();
@@ -809,6 +811,7 @@ console.log("● ハモリと掛け合い");
 				`bar${b + 1}`,
 			);
 
+		const prog = song.chordProgression.split("|");
 		for (const h of song.harmony) {
 			const m = mel.get(h.startStep);
 			if (m === undefined) continue;
@@ -816,7 +819,20 @@ console.log("● ハモリと掛け合い");
 			const gap =
 				Math.abs(Math.round((h.pitchUnits - m) / UNITS_PER_SEMITONE)) % 12;
 			if (gap === 3 || gap === 4 || gap === 8 || gap === 9) thirdOrSixth++;
-			if (gap === 0 || gap === 5 || gap === 7) fifthOrUnison++;
+			if (gap === 0 || gap === 7) fifthOrUnison++;
+			if (gap === 5) fourth++;
+			if (gap !== 5) continue;
+			// **4度は主旋律がテンション音のときだけ。** 和音構成音の上で4度を当てるのは
+			// ただの外れで、テンションの上では逆に4度しか和音へ届かない。
+			let tonePcs: number[] = [];
+			try {
+				tonePcs = parseChord(
+					prog[Math.floor(h.startStep / STEPS_PER_BAR)] ?? "C",
+				).notes.map((v) => ((v % 12) + 12) % 12);
+			} catch {}
+			const melPc =
+				((Math.round(m / UNITS_PER_SEMITONE - song.rootShift) % 12) + 12) % 12;
+			if (tonePcs.length > 0 && tonePcs.includes(melPc)) fourthOnChordTone++;
 		}
 
 		// 掛け合いの相手が歌う小節は、メロディのある小節の中から採られること。
@@ -827,15 +843,21 @@ console.log("● ハモリと掛け合い");
 				`bar${b + 1} / ${song.bars}小節`,
 			);
 	}
+	// 3度・6度が基本で、テンションの上でだけ4度。この3つで9割を占めること。
 	check(
-		"ハモリの8割以上が3度か6度",
-		thirdOrSixth / Math.max(1, harmNotes) >= 0.8,
-		`${((thirdOrSixth / Math.max(1, harmNotes)) * 100).toFixed(1)}%`,
+		"ハモリの9割以上が3度・6度・テンション上の4度",
+		(thirdOrSixth + fourth - fourthOnChordTone) / Math.max(1, harmNotes) >= 0.9,
+		`3度6度 ${((thirdOrSixth / Math.max(1, harmNotes)) * 100).toFixed(1)}% / 4度 ${((fourth / Math.max(1, harmNotes)) * 100).toFixed(1)}%`,
 	);
 	check(
-		"完全5度・4度・同音のハモリは1割未満",
-		fifthOrUnison / Math.max(1, harmNotes) < 0.1,
+		"完全5度・同音のハモリは5%未満",
+		fifthOrUnison / Math.max(1, harmNotes) < 0.05,
 		`${((fifthOrUnison / Math.max(1, harmNotes)) * 100).toFixed(1)}%`,
+	);
+	check(
+		"4度のハモリは主旋律がテンション音のときだけ",
+		fourthOnChordTone / Math.max(1, harmNotes) < 0.01,
+		`和音構成音の上で4度 ${((fourthOnChordTone / Math.max(1, harmNotes)) * 100).toFixed(1)}%`,
 	);
 	check(
 		"ハモリは全編には付けない",
@@ -848,7 +870,7 @@ console.log("● ハモリと掛け合い");
 		[...duetStyles].join(" "),
 	);
 	console.log(
-		`  ${N}曲: ハモリ 3度/6度 ${((thirdOrSixth / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 5度4度同音 ${((fifthOrUnison / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 歌う小節の ${((harmBars / Math.max(1, melodyBars)) * 100).toFixed(0)}% に付く / 掛け合い ${[...duetStyles].join(" ")}`,
+		`  ${N}曲: ハモリ 3度/6度 ${((thirdOrSixth / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 4度（テンション上）${((fourth / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 完全5度・同音 ${((fifthOrUnison / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 歌う小節の ${((harmBars / Math.max(1, melodyBars)) * 100).toFixed(0)}% に付く / 掛け合い ${[...duetStyles].join(" ")}`,
 	);
 }
 
