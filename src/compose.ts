@@ -123,7 +123,12 @@ import {
 	semitonesToUnits,
 	spelledToUnits,
 } from "./chords";
-import { CORPUS_BANDS, CORPUS_MEDIANS, CORPUS_SIZE } from "./compose-corpus";
+import {
+	CORPUS_BANDS,
+	CORPUS_CELL_WEIGHTS,
+	CORPUS_MEDIANS,
+	CORPUS_SIZE,
+} from "./compose-corpus";
 import { type ResolvedComposeKey, resolveComposeKey } from "./compose-keys";
 import {
 	type Band,
@@ -215,12 +220,7 @@ const WEIGHTS = {
 	 */
 	notesPerBar: 0.8,
 	shortNoteRatio: 0.6,
-	/**
-	 * 小節ごとの音数のばらつきと「崖」。**平均だけを見ていたせいで見逃していた**項目。
-	 * 実測で、セクションの最終小節だけが 5.9音 → 1.3音（1/4以下）へ落ちていたのに、
-	 * 曲全体の平均・休符率・自己相似のどれも動かず、採点は満点のままだった。
-	 * 崖は参考曲では2%、生成物では11%あった（{@link file://./compose-metrics.ts}）。
-	 */
+	/** 小節ごとの音数のばらつきと崖。平均だけを見ていて見逃していた偏り。 */
 	barDensityCv: 0.6,
 	densityCliff: 1.0,
 	/** 順次進行の比率。跳躍率だけを見ていると、跳躍の帯の上端に張り付く。 */
@@ -235,23 +235,13 @@ const WEIGHTS = {
 	sim4: 1.4,
 	sim8: 1.4,
 	phraseBreath: 1.0,
-	/**
-	 * 折り返しの多さ。跳躍率・順次進行率が揃っていても、**同じ方向へ流れ続ける旋律**は
-	 * それらの指標に映らない（実測 参考0.47 / 生成0.42）。
-	 */
+	/** 折り返しの多さ。跳躍率・順次進行率が揃っていても、これは別に足りなくなる。 */
 	turnRatio: 0.8,
 	climaxPosition: 1.0,
 	climaxPeaks: 1.0,
 	/** メロディとサブメロが呼応しているか。 */
 	complementarity: 1.0,
-	/**
-	 * サブメロの音数と、その崖。
-	 *
-	 * `subDensity` は `scoreBreakdown` に入っていたのに **WEIGHTS に無く、
-	 * 計算しているだけで採点に使われていなかった**（重みの無いキーは採点ループで
-	 * 素通りする）。`HAND_BANDS.subDensity` のコメントが目標として書いている値が
-	 * 効いていなかったので、ここへ足す。
-	 */
+	/** サブメロの音数と、その崖。メロディと同じ物差しで見る。 */
 	subDensity: 0.6,
 	subDensityCliff: 0.5,
 	// --- 和声（コードが要るのでコーパスからは較正できない） ---
@@ -822,18 +812,12 @@ export const RHYTHM_CELLS: RhythmCell[] = [
 ];
 
 /**
- * 楽節の終わり（セクションの最終小節）に置く**息継ぎ**の型。
+ * 楽節の終わり（セクションの最終小節）に置く息継ぎの型。
  *
- * 初版は {@link RHYTHM_CELLS} の sparse から休符を含む型を1つ引いて使っていたが、
- * 候補12種のうち7種が1音しか持たない型だったため、セクションの最終小節だけが
- * **5.9音 → 1.3音（1/4以下）** へ落ちていた。参考曲91本を同じ物差しで測ると
- *
- *   1音だけの小節   参考 1% / 生成 10%
- *   3割以下への落差 参考 2% / 生成 11%
- *
- * で、人間の曲はここまで空けない。**息継ぎとは「着地してから息を継ぐ」ことであって、
- * 小節を空けることではない。** 2〜3音で着地し、末尾を休符で空ける型に絞る。
- * 合計は必ず1小節（{@link WHOLE}）。
+ * **息継ぎは「着地してから息を継ぐ」ことで、小節を空けることではない。**
+ * {@link RHYTHM_CELLS} の sparse から引いていた頃は候補の過半が1音の型で、
+ * 最終小節だけが 5.9音→1.3音へ落ちていた（1音の小節は参考曲1% / 生成10%）。
+ * 2〜4音で着地し、末尾を休符で空ける型に絞る。合計は必ず1小節。
  */
 const PHRASE_END_CELLS: RhythmCell[] = [
 	// 白玉で受けてから息を継ぐ（いちばん歌らしい終わり方）。
@@ -849,15 +833,17 @@ const PHRASE_END_CELLS: RhythmCell[] = [
 	{ value: [QUARTER, EIGHTH, EIGHTH, -HALF], density: "sparse" },
 	{ value: [QUARTER, QUARTER, QUARTER, -QUARTER], density: "sparse" },
 	{ value: [HALF, EIGHTH, EIGHTH, -QUARTER], density: "sparse" },
+	// 4音で言い切ってから息を継ぐ。周りが7音前後の曲では、2音まで落とすと崖になる。
+	{ value: [EIGHTH, EIGHTH, EIGHTH, EIGHTH, -HALF], density: "sparse" },
+	{ value: [QUARTER, EIGHTH, EIGHTH, QUARTER, -QUARTER], density: "sparse" },
+	{ value: [EIGHTH, EIGHTH, QUARTER, QUARTER, -QUARTER], density: "sparse" },
 ];
 
 /**
- * 小楽節の切れ目（8小節セクションの4小節目）に置く**軽い息継ぎ**の型。
+ * 小楽節の切れ目（8小節セクションの4小節目）に置く軽い息継ぎの型。
  *
- * 初版は息継ぎがセクション末尾の1回しか無く、8小節のセクションが
- * 「7小節ベタ詰め＋1小節スカ」という非対称な呼吸になっていた。人間の曲は
- * 2小節・4小節ごとに少しずつ息を継ぐので、ここにも切れ目を作る。
- * ただし**落とすのは1音ぶんまで**（4音前後）。ここを空けると崖がもう1つ増える。
+ * 息継ぎがセクション末尾の1回だけだと「7小節ベタ詰め＋1小節スカ」になる。
+ * ただし落とすのは1音ぶんまで（4音前後）。空けると崖がもう1つ増える。
  */
 const MID_BREATH_CELLS: RhythmCell[] = [
 	{ value: [QUARTER, EIGHTH, EIGHTH, QUARTER, -QUARTER], density: "medium" },
@@ -867,6 +853,45 @@ const MID_BREATH_CELLS: RhythmCell[] = [
 	{ value: [EIGHTH, EIGHTH, EIGHTH, EIGHTH, HALF], density: "medium" },
 	{ value: [QUARTER, EIGHTH, EIGHTH, DOT_QUARTER, EIGHTH], density: "medium" },
 ];
+
+/**
+ * リズム型を**参考曲の出現頻度で重み付けする**ための表。
+ *
+ * 語彙は2拍の言い回しの直積なので、一様に引くと誰も歌わない組み合わせが大量に混ざる
+ * （参考曲は上位10パターンで小節の57%を書くのに、生成は25%しか集中しなかった）。
+ *
+ * 参考曲に無い形も**外さずに低い重みで残す**。1回だけ出た形と0回の形の間に統計的な
+ * 断層は無く、語彙に無い形の95%は実在形と発音位置が1〜2個違うだけの微変種だった。
+ * 測り直しは `scripts/compare-vocabulary.ts`。
+ */
+const CELL_GRID = BASE_STEPS_PER_BAR / 16;
+const onsetKeyOf = (value: number[]): string => {
+	const on: number[] = [];
+	let at = 0;
+	for (const v of value) {
+		if (v > 0) on.push(Math.round(at / CELL_GRID));
+		at += Math.abs(v);
+	}
+	return on.join(",");
+};
+/** 参考曲に一度も現れない形の重み。1回だけ出た形の半分。 */
+const UNSEEN_CELL_WEIGHT = 0.5;
+/**
+ * 同じ発音パターンを持つ語彙エントリの数。頻度をエントリ数で割らないと、
+ * 直積で何通りにも書ける形だけが出現頻度の何倍も引かれてしまう。
+ */
+const cellEntryCount = new Map<string, number>();
+const cellWeightCache = new Map<number[], number>();
+const cellWeight = (c: RhythmCell): number => {
+	const cached = cellWeightCache.get(c.value);
+	if (cached !== undefined) return cached;
+	const key = onsetKeyOf(c.value);
+	const w =
+		(CORPUS_CELL_WEIGHTS[key] ?? UNSEEN_CELL_WEIGHT) /
+		Math.max(1, cellEntryCount.get(key) ?? 1);
+	cellWeightCache.set(c.value, w);
+	return w;
+};
 
 /**
  * モチーフに使うリズム型。5音前後で、音価に変化があり、覚えやすい形のものだけを選ぶ
@@ -1090,6 +1115,11 @@ export const MOTIF_CELLS: RhythmCell[] = [
 	...HAND_MOTIF_CELLS,
 ];
 
+for (const c of [...MOTIF_CELLS, ...RHYTHM_CELLS]) {
+	const key = onsetKeyOf(c.value);
+	cellEntryCount.set(key, (cellEntryCount.get(key) ?? 0) + 1);
+}
+
 // ============================================================
 // 曲の骨格
 // ============================================================
@@ -1153,12 +1183,9 @@ const groovyCells = (
 	const hasSixteenth = (c: RhythmCell): boolean =>
 		c.value.some((v) => Math.abs(v) <= SIXTEENTH);
 	if (groove === "eighth") {
-		// **丸ごと外すと薄くなりすぎる。** 実測で、16分を含む型を全部落とすと
-		// その曲が使える語彙は平均7.01音から4.60音へ落ち、8音以上の型は0.9%
-		// （最大8音）しか残らなかった。参考曲の1小節の最頻値は8音なので、
-		// 曲の半分が「ぎっしり歌う小節」を語彙のレベルで引けなくなっていた。
-		// 参考曲も「8分の曲」で16分の比率が中央値4.1%あり、ゼロではない。
-		// 素の型を地にして、16分入りを1割ほど混ぜる。
+		// **丸ごと外すと薄くなりすぎる。** 16分入りを全部落とすと使える語彙が
+		// 平均7.01音→4.60音、8音以上の型は0.9%しか残らない（参考曲の最頻値は8音）。
+		// 参考曲も8分の曲で16分を中央値4.1%含む。素の型を地に、1割ほど混ぜる。
 		const plain = cells.filter((c) => !hasSixteenth(c));
 		const spiced = cells.filter(hasSixteenth);
 		if (spiced.length === 0) return plain;
@@ -2474,13 +2501,18 @@ const draw = (
 			const isLast = u === unitCount - 1;
 			if (u % 2 === 0) {
 				// 問い。サビはオクターブ上げて聞かせどころにする。
+				// Cメロは「AメロともBメロとも違うメロディ」が役目なので、モチーフの
+				// 輪郭を借りずに `step` の書法（{@link MelodyStyle.stepShape} の
+				// アーチ・谷・波）で独立した線を書く。
 				units.push({
 					role:
-						section.kind === "chorus"
-							? "climax"
-							: src === "a2" || u > 0
-								? "sequence"
-								: "motif",
+						section.kind === "bridge"
+							? "step"
+							: section.kind === "chorus"
+								? "climax"
+								: src === "a2" || u > 0
+									? "sequence"
+									: "motif",
 					source: src,
 					landing: null,
 					section,
@@ -2497,6 +2529,13 @@ const draw = (
 		}
 	}
 	const barRoles: BarRole[] = units.flatMap((u) => [u.role, u.role]);
+	// Bメロの最後の小節はリズムだけビルドアップしていた（{@link buildUpCell}）。
+	// 走句の書法（{@link MelodyStyle.runShape}）を当てて、音の側も駆け上がらせる。
+	for (const section of sectionPlan) {
+		if (section.kind !== "prechorus") continue;
+		const last = section.startBar + section.bars - 1;
+		if (last < barRoles.length) barRoles[last] = "run";
+	}
 	/** その小節が楽句のどちら側か（0=前半、1=後半）。輪郭の読み出し位置に使う。 */
 	const barInUnit = (bar: number): number => bar % 2;
 	const unitOf = (bar: number): number => Math.floor(bar / 2);
@@ -2557,9 +2596,8 @@ const draw = (
 		// 人間の曲の跳躍率は p25〜p75 で 0.40〜0.55。上限が低いとその帯へ届かない。
 		leapAffinity: 0.08 + rnd() * 0.3,
 		// 界隈曲らしさ：調の外の音（クロマチック）や微小な逸脱を積極的に許容する。
-		// 実測で変化音が参考曲の1.75倍（中央値 0.07 対 0.04、p75 は 0.14 対 0.11）
-		// だったので下げる。刻みを細かくすると経過音の置き場所が増えるぶん、
-		// 同じ係数でも変化音は増える点に注意（一度下げ切れずに p75 が 0.25 まで伸びた）。
+		// 刻みを細かくすると経過音の置き場所が増えるので、同じ係数でも変化音は増える。
+		// 参考曲の1.75倍まで伸びていたぶんを引く。
 		chromaticAffinity: rnd() < 0.2 ? 0 : 0.12 + rnd() * 0.33,
 		barHeadWeight: rnd() < 0.5 ? 3 : 2,
 		bassStyle: pick<BassStyle>(
@@ -2603,17 +2641,8 @@ const draw = (
 	// 「ボーカルが一息で歌いきる長さ」という言い回しの単位を持てていなかった。
 	const motifPool = groovyCells(MOTIF_CELLS, style.groove, rnd);
 	/**
-	 * 曲ごとの「刻みの細かさ」の狙い（1小節あたりの音数）。
-	 *
-	 * **型をただ引くだけでは、曲の密度が引きの平均へ集まる。** 実測で生成物は
-	 * 1小節 5.15音（参考曲 5.0〜7.3、中央値5.9）に張り付き、候補を40本引いても
-	 * 中央値が1音も動かなかった——どの候補も同じ分布から引いているので、
-	 * 選抜では密度は変えられない。**曲ごとに狙いの密度を先に決めて、それに近い型を
-	 * 引く**ようにすると、曲どうしの差（詰め込んだ曲・空けた曲）も同時に出る。
-	 */
-	/**
-	 * 曲ごとの「刻みの細かさ」の狙い（1小節あたりの音数）。
-	 * 参考曲は中央値6.2（p25〜p75で5.4〜7.3）。狙いをこの帯に合わせる。
+	 * 曲ごとの「刻みの細かさ」の狙い（1小節あたりの音数）。参考曲は中央値6.2。
+	 * 型をただ引くと密度が引きの平均へ集まるので、狙いを先に決めて近い型を引く。
 	 */
 	const targetNotesPerBar = 4.5 + rnd() * 4.5;
 	/**
@@ -2635,20 +2664,27 @@ const draw = (
 		return total === 0 ? 0 : rest / total;
 	};
 	/**
-	 * 狙いの密度に近い型を引く。3本引いて一番近いものを採る——1本に絞ると
-	 * 密度が同じ曲ばかりになるので、**寄せるだけで固定はしない**。
-	/**
-	 * 狙いの密度に近い型を引く。
-	 * セクションごとの密度倍率（densityMul）を受け取れるようにし、
-	 * Aメロでは落ち着いた音数、Bメロ・サビでは詰まった音数を自然に引き当てる。
+	 * 狙いの密度からの遠さ。`densityMul` はセクションごとの倍率で、
+	 * Aメロは落ち着いた音数、Bメロ・サビは詰まった音数へ寄る。
 	 */
 	const cellDistance = (c: RhythmCell, densityMul = 1.0): number =>
 		Math.abs(cellNotes(c) - targetNotesPerBar * densityMul) +
 		Math.abs(cellRest(c) - targetRestRatio / Math.max(0.5, densityMul)) * 8;
+	/** 参考曲の出現頻度に比例して1本引く（{@link cellWeight}）。 */
+	const weightedPick = (pool: RhythmCell[]): RhythmCell => {
+		let total = 0;
+		for (const c of pool) total += cellWeight(c);
+		let r = rnd() * total;
+		for (const c of pool) {
+			r -= cellWeight(c);
+			if (r <= 0) return c;
+		}
+		return pool[pool.length - 1];
+	};
 	const pickCell = (pool: RhythmCell[], densityMul = 1.0): RhythmCell => {
-		let best = pick(pool, rnd);
+		let best = weightedPick(pool);
 		for (let i = 0; i < 2; i++) {
-			const c = pick(pool, rnd);
+			const c = weightedPick(pool);
 			if (cellDistance(c, densityMul) < cellDistance(best, densityMul))
 				best = c;
 		}
@@ -2658,9 +2694,9 @@ const draw = (
 	// Aメロは控えめ（density: 0.85）
 	const motifCell = pickCell(motifPool, 0.85);
 	/** モチーフ2小節目。 */
-	// **同じ型を2小節並べる。** 参考曲は隣り合う小節のリズムが29.8%で完全一致する
-	// のに対し、生成物は13.9%しかなかった（`scripts/compare-repetition.ts`）。
-	// 「似ている」ではなく「同一である」ことが、フレーズの手応えの実体。
+	// **同じ型を2小節並べる。** 参考曲は隣り合う小節のリズムが29.8%で完全一致する。
+	// 「似ている」（{@link StructureFeatures.sim1}）ではなく「同一である」ことが
+	// フレーズの手応えの実体で、`scripts/compare-repetition.ts` がそこを測る。
 	const motifCell2 =
 		rnd() < 0.72
 			? motifCell
@@ -2753,11 +2789,8 @@ const draw = (
 	).value;
 
 	/**
-	 * 答えの後半小節。**フレーズの終わりは着地してから息を継ぐ。**
-	 *
-	 * 曲全体で1つだけ引いていた頃は、どのセクションの終わりも寸分違わず同じ形で
-	 * 空いていた（＝崖が同じ場所に同じ深さで並ぶ）。セクションごとに引き直して、
-	 * 隣り合うセクションが同じ型にならないようにする。
+	 * 答えの後半小節。曲全体で1つだけ引くと、どのセクションの終わりも
+	 * 寸分違わず同じ形で空く。セクションごとに、隣と重ならないよう引き直す。
 	 */
 	const breathBySection = new Map<number, RhythmCell>();
 	{
@@ -2773,18 +2806,13 @@ const draw = (
 	/** 小楽節の切れ目に置く軽い息継ぎ。こちらは曲の型として1つに揃える。 */
 	const midBreathCell = pick(MID_BREATH_CELLS, rnd);
 
-	/**
-	 * 息継ぎの小節（＝フレーズの終わり）。ここへ前の小節からタイを食い込ませると、
-	 * ただでさえ薄い小節から1音を奪って**無音の小節**ができる。小節をまたぐタイの
-	 * 処理から除外するために覚えておく。
-	 */
+	/** 息継ぎの小節。ここへタイを食い込ませると無音の小節ができるので覚えておく。 */
 	const breathBars = new Set<number>();
 
 	/**
-	 * メロディのあるセクションの最終小節。**ここは形を作り込んである小節**なので、
-	 * 後段の「リズムの有機的な揺らぎ」で音を割らせない。4分音符を8分2つに割ると、
-	 * 受けのロングトーンが8分になって息継ぎが消える（実測で60曲中7曲が
-	 * 「末尾の音24ステップ／空き0」＝切れ目として受けられていなかった）。
+	 * メロディのあるセクションの最終小節。形を作り込んであるので、後段の
+	 * 「リズムの有機的な揺らぎ」で割らせない（割ると受けのロングトーンが8分になり、
+	 * 息継ぎが消える）。
 	 */
 	const phraseEndBars = new Set<number>();
 	for (const section of sectionPlan) {
@@ -3498,10 +3526,8 @@ const draw = (
 		const nextSec = sectionAt(sectionPlan, barIdx);
 		if (!nextSec.spec.melody || curSec !== nextSec) continue;
 
-		// **息継ぎの小節へは食い込ませない。** ガードはセクションをまたぐタイだけを
-		// 見ていたが、セクション末尾の息継ぎ小節は同じセクションの中にあるので素通り
-		// していた。そこへ前の小節の音が伸びると、2〜3音しか無い小節から1音が消え、
-		// 実測で**メロディが1音も無い小節**が生まれていた。
+		// **息継ぎの小節へは食い込ませない。** 2〜3音しか無い小節から1音が消えると、
+		// メロディが1音も無い小節が生まれる（セクション内なので上のガードは効かない）。
 		if (breathBars.has(barIdx)) continue;
 
 		// 界隈曲らしさ：変化音（クロマチックテンション）であっても小節を跨ぐタイを許容し、強烈な食いを演出する。
@@ -3511,12 +3537,9 @@ const draw = (
 		// 大きな跳躍がある場合はタイにしない（同音または順次・3度以内のスムーズな食い）
 		if (Math.abs(nxtSemi - curSemi) > 3) continue;
 
-		// **順次で入る変化音の足場を奪わない。**
-		//
-		// 変化音（経過音・アプローチ）は「順次で入って順次で出る」から通り過ぎる音に
-		// なる（{@link applyChromatic} の②）。その足場である直前の音をタイで吸収すると、
-		// 変化音は前の小節の音から**跳躍で掴まれた**形になり、通り過ぎる音ではなく
-		// 「調を外した音」として耳に残る。実測でこの形が浮いた変化音の全てだった。
+		// **順次で入る変化音の足場を奪わない。** 変化音は順次で入って順次で出るから
+		// 通り過ぎる音になる（{@link applyChromatic} の②）。足場をタイで吸収すると
+		// 跳躍で掴まれた形になり、「調を外した音」として耳に残る。
 		const after = melody[i + 2];
 		if (after && Math.floor(after.startStep / stepsPerBar) === barIdx) {
 			const afterSemi =
@@ -3530,23 +3553,17 @@ const draw = (
 		// sequence (2回目) は展開感を出すため積極的に食う
 		// climax は感情の爆発なので非常に高い確率で食う
 		const nextRole = barRoles[barIdx];
-		// **セクエンツ・サビで食いを積極的に入れると、モチーフの再来が別の形に化ける。**
-		// 提示（motif 0.05）と再来（sequence）で確率が大きく違うと、同じ型を置いた
-		// 小節どうしが食いの有無で食い違い、lag4 の完全一致が落ちる。差は残しつつ縮める。
+		// 提示（motif）と再来（sequence）で確率が違いすぎると、同じ型を置いた小節が
+		// 食いの有無で食い違い、4小節周期の完全一致が落ちる。差は残しつつ縮める。
 		let tieProb = 0.3;
 		if (nextRole === "motif") tieProb = 0.1;
 		else if (nextRole === "sequence") tieProb = 0.35;
 		else if (nextRole === "climax") tieProb = 0.45;
 		else if (nextRole === "cadence") tieProb = 0.1;
 
-		// **同じ型を置いた小節には同じ食いを入れる。**
-		//
-		// 食いは小節頭の音を前の小節へ吸収するので、発音位置が1つ消える。1小節ずつ
-		// 独立に抽選すると、せっかく同じリズム型を置いた2小節が、片方だけ食って
-		// 別の形になる。参考曲は隣り合う小節のリズムが29.8%で完全一致するのに
-		// 生成物が13.9%しか無かった原因の一つがこれで、**食いの量を減らさずに
-		// 一致率だけを上げられる**数少ない場所。リズム型と楽句内の位置が同じなら
-		// 同じ判定を使い回す。
+		// **同じ型を置いた小節には同じ食いを入れる。** 1小節ずつ独立に抽選すると、
+		// 同じリズム型を置いた2小節が片方だけ食って別の形になる。食いの量を減らさずに
+		// 完全一致率だけを上げられる数少ない場所。
 		const tieKey = `${barRhythms[barIdx].join(",")}|${barInUnit(barIdx)}`;
 		let tie = tieMemo.get(tieKey);
 		if (tie === undefined) {
@@ -3578,9 +3595,7 @@ const draw = (
 	// 全く同じリズムセルのコピペ感を消すため、確率で音符を分割し、ボーカル特有の「細かい言葉の詰め込み」を表現する。
 	/**
 	 * 割るかどうかの判定。**同じ型を置いた小節は同じ割り方をする。**
-	 * 1音ずつ独立に抽選すると、同じリズム型を置いた2小節が片方だけ割れて別の形になり、
-	 * 反復の完全一致が壊れる（実測でタイ・分割を止めると lag2 が 22.5%→30.8%、
-	 * lag4 が 33.3%→41.8% まで戻った）。揺らぎを残したまま一致率だけを上げる。
+	 * 1音ずつ独立に抽選すると、同じ型の2小節が片方だけ割れて反復の完全一致が壊れる。
 	 */
 	const splitMemo = new Map<string, boolean>();
 	let splitLastBar = -1;
@@ -3599,9 +3614,7 @@ const draw = (
 		// 文脈（BarRole）に合わせたリズム分割の制御
 		// motif, sequence は言葉を割らずに原形を保つ
 		// climax は感情の爆発を表現するため高確率で割る
-		// **分割は反復の完全一致を壊す。** 同じ型を置いた2小節でも、片方だけ4分が
-		// 割れると別の小節になる。参考曲との差（lag1 で 29.8% 対 13.9%）の一因なので、
-		// 「揺らぎ」は控えめにする。
+		// 分割は反復の完全一致を壊すので、「揺らぎ」は控えめにする。
 		let splitProb = 0.08;
 		if (role === "motif" || role === "sequence") splitProb = 0.0;
 		else if (role === "climax") splitProb = 0.3;
@@ -3788,9 +3801,7 @@ const evaluate = (
 		climaxPeaks: at(peakBand, structure.climaxPeaks),
 		complementarity: at(HAND_BANDS.complementarity, structure.complementarity),
 		subDensity: at(HAND_BANDS.subDensity, d.submelody.length / d.bars),
-		// **サブメロにも同じ崖の物差しを当てる。** メロディだけ測っていた頃、
-		// サブメロの崖率は 6.7%（メロディは修正後3.1%）で放置されていた。
-		// 帯はメロディから採ったものを流用する（同じ種類の量なので比較できる）。
+		// サブメロにも同じ崖の物差しを当てる。帯はメロディから採ったものを流用する。
 		subDensityCliff: atc(
 			"densityCliff",
 			densityFeatures(fromMelody(toMetricNotes(d.submelody)), opts)

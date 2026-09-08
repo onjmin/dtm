@@ -183,6 +183,31 @@ const sourceCounts: Record<string, number> = {};
 const GRID = STEPS_PER_BAR / 16;
 
 /**
+ * 小節の発音パターン（16分格子上の位置）ごとの出現小節数。
+ * リズム型の抽選を人が書く頻度へ寄せるために書き出す。
+ */
+const cellUsage = new Map<string, number>();
+const collectCellUsage = (notes: MetricNote[]): void => {
+	if (notes.length === 0) return;
+	const from = Math.floor(notes[0].startStep / STEPS_PER_BAR);
+	const to = Math.floor(
+		Math.max(...notes.map((n) => n.startStep)) / STEPS_PER_BAR,
+	);
+	for (let b = from; b <= to; b++) {
+		const on = [
+			...new Set(
+				notes
+					.filter((n) => Math.floor(n.startStep / STEPS_PER_BAR) === b)
+					.map((n) => Math.round((n.startStep - b * STEPS_PER_BAR) / GRID)),
+			),
+		].sort((a, x) => a - x);
+		if (on.length === 0) continue;
+		const key = on.join(",");
+		cellUsage.set(key, (cellUsage.get(key) ?? 0) + 1);
+	}
+};
+
+/**
  * 音価と位置を16分の格子へ丸める。
  *
  * 生成物は必ず格子の上に置かれるので、丸めずに比べると**人間の曲だけが不当に
@@ -463,6 +488,7 @@ const featuresOf = (buf: Buffer): SongFeatures | null => {
 	}
 	const played = durations.reduce((a, b) => a + b, 0);
 	const pitches = mono.map((n) => n.pitchSemi);
+	collectCellUsage(mono);
 
 	return {
 		...structureFeatures(mono, submelody, opts),
@@ -680,6 +706,11 @@ const main = async (): Promise<void> => {
 		);
 	}
 
+	const cellWeightLines = [...cellUsage.entries()]
+		.sort((a, b) => b[1] - a[1])
+		.map(([k, v]) => `\t"${k}": ${v},`)
+		.join("\n");
+
 	const body = `/**
  * **自動生成ファイル。手で編集しないこと。**
  *
@@ -711,6 +742,16 @@ ${keys.map((k) => `\t${k}: [${bands[k].join(", ")}] as Band,`).join("\n")}
 export const CORPUS_MEDIANS = {
 ${keys.map((k) => `\t${k}: ${medians[k]},`).join("\n")}
 } satisfies Record<keyof typeof CORPUS_BANDS, number>;
+/**
+ * 小節の発音パターンごとの出現小節数。キーは16分格子上の発音位置。
+ *
+ * リズム型の抽選を**人が実際に書く頻度**へ寄せるために使う。直積で作った語彙を
+ * 一様に引くと、参考曲の上位10パターンが小節の57%を占めるのに対し生成物は25%
+ * しか集中しない（scripts/compare-vocabulary.ts の③）。
+ */
+export const CORPUS_CELL_WEIGHTS: Record<string, number> = {
+${cellWeightLines}
+};
 `;
 	writeFileSync(new URL("../src/compose-corpus.ts", import.meta.url), body);
 	console.log("\n  → src/compose-corpus.ts を書き出しました");
