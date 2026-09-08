@@ -136,6 +136,14 @@ export type StructureFeatures = {
 	climaxPeaks: number;
 	/** メロディが鳴っていないステップに、サブメロの音が入っている比率（コール&レスポンス）。 */
 	complementarity: number;
+	/**
+	 * 音の進む向きが反転した割合（折り返しの多さ）。
+	 *
+	 * 跳躍率も順次進行率も参考曲と揃っているのに、**折り返しだけが足りない**
+	 * （実測 参考0.47 / 生成0.42）という差が残っていた。隣接2音しか見ない指標では
+	 * 「同じ方向に流れ続ける旋律」と「上って下りる旋律」を区別できない。
+	 */
+	turnRatio: number;
 };
 
 /** 自己相似プロファイル。小節が空（休符だけ）のペアは母数から外す。 */
@@ -254,6 +262,22 @@ export const complementarity = (
 	return free / submelody.length;
 };
 
+/** 音の進む向きが反転した割合。 */
+const turnRatio = (notes: MetricNote[]): number => {
+	const sorted = [...notes].sort((a, b) => a.startStep - b.startStep);
+	let turns = 0;
+	let intervals = 0;
+	let prevDir = 0;
+	for (let i = 1; i < sorted.length; i++) {
+		const dir = Math.sign(sorted[i].pitchSemi - sorted[i - 1].pitchSemi);
+		if (dir === 0) continue;
+		intervals++;
+		if (prevDir !== 0 && dir !== prevDir) turns++;
+		prevDir = dir;
+	}
+	return intervals === 0 ? 0 : turns / intervals;
+};
+
 export const structureFeatures = (
 	melody: MetricNote[],
 	submelody: MetricNote[],
@@ -261,6 +285,7 @@ export const structureFeatures = (
 ): StructureFeatures => {
 	const sigs = barSignatures(melody, opts);
 	return {
+		turnRatio: turnRatio(melody),
 		sim1: selfSimilarity(sigs, 1),
 		sim2: selfSimilarity(sigs, 2),
 		sim4: selfSimilarity(sigs, 4),

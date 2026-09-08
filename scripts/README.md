@@ -9,6 +9,9 @@
 | `check-compose.ts` | 自動作曲パイプラインの品質・回帰テスト（`pnpm test` から呼び出し） | `pnpm test` または `npx tsx scripts/check-compose.ts` |
 | `calibrate-corpus.ts` | 参考MIDIコーパス群から目標帯（`src/compose-corpus.ts`）を算出し校正するスクリプト | `npx tsx scripts/calibrate-corpus.ts --dir "<path>" --out src/compose-corpus.ts` |
 | `compare-corpus.ts` | 生成物と参考コーパスの音楽的特徴（周辺分布・中央値）を突き合わせて測定・比較するスクリプト | `npx tsx scripts/compare-corpus.ts --dir "<path>" --songs 80` |
+| `compare-bar-density.ts` | 小節ごとの音数の分布を参考コーパスと突き合わせるスクリプト（`--profile` で小節ごとの表） | `npx tsx scripts/compare-bar-density.ts --dir "<path>" --profile` |
+| `compare-vocabulary.ts` | リズム型の語彙の被覆率・集中度・モデル規模を参考コーパスと突き合わせるスクリプト | `npx tsx scripts/compare-vocabulary.ts --dir "<path>"` |
+| `compare-repetition.ts` | 小節のリズム・音高の輪郭が完全一致で反復する割合を参考コーパスと比べるスクリプト | `npx tsx scripts/compare-repetition.ts --dir "<path>"` |
 | `scratch-analyze.ts` | 生成曲の特徴量（音数、跳躍率、反復率、休符率等）をサンプリング測定するスクリプト | `npx tsx scripts/scratch-analyze.ts` |
 | `test-chord.ts` | MMLからの和音・コード解析およびカバレッジ測定を行うスクリプト | `npx tsx scripts/test-chord.ts` |
 | `downscale-assets.py` | アセット画像の縮小処理ユーティリティ | `python scripts/downscale-assets.py` |

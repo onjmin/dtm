@@ -235,10 +235,25 @@ const WEIGHTS = {
 	sim4: 1.4,
 	sim8: 1.4,
 	phraseBreath: 1.0,
+	/**
+	 * 折り返しの多さ。跳躍率・順次進行率が揃っていても、**同じ方向へ流れ続ける旋律**は
+	 * それらの指標に映らない（実測 参考0.47 / 生成0.42）。
+	 */
+	turnRatio: 0.8,
 	climaxPosition: 1.0,
 	climaxPeaks: 1.0,
 	/** メロディとサブメロが呼応しているか。 */
 	complementarity: 1.0,
+	/**
+	 * サブメロの音数と、その崖。
+	 *
+	 * `subDensity` は `scoreBreakdown` に入っていたのに **WEIGHTS に無く、
+	 * 計算しているだけで採点に使われていなかった**（重みの無いキーは採点ループで
+	 * 素通りする）。`HAND_BANDS.subDensity` のコメントが目標として書いている値が
+	 * 効いていなかったので、ここへ足す。
+	 */
+	subDensity: 0.6,
+	subDensityCliff: 0.5,
 	// --- 和声（コードが要るのでコーパスからは較正できない） ---
 	/** B部でテンションが上がるか。 */
 	tensionRise: 1.0,
@@ -888,6 +903,14 @@ const HALF_BAR_FIGURES: number[][] = [
 	[-DOT_QUARTER, EIGHTH], // 3拍半休みからの裏拍アウフタクト
 	[-QUARTER, EIGHTH, EIGHTH], // 2拍目裏からのアウフタクト（タタ）
 	[QUARTER, -EIGHTH, EIGHTH], // ター・休タ（8分裏弱起）
+	// **3+3+2（トレシーヨ）。** 参考曲91本で最も多かった「語彙に無い形」で、
+	// 174小節ぶんの穴が空いていた（`scripts/compare-vocabulary.ts` の①）。
+	// 付点8分が `[DOT_EIGHTH, SIXTEENTH]` の対でしか入っておらず、
+	// 付点8分を2つ並べる形が作れなかった。界隈曲・ボカロの推進力の中心。
+	[DOT_EIGHTH, DOT_EIGHTH, EIGHTH],
+	[DOT_EIGHTH, DOT_EIGHTH, EIGHTH],
+	// 4分音符が全部8分裏に来る形（食い）。参考曲で67小節ぶん取りこぼしていた。
+	[-EIGHTH, QUARTER, EIGHTH],
 	// 付点8分＋16分（タッカ）。歌モノで非常に多用される跳ね・推進力の型。
 	[DOT_EIGHTH, SIXTEENTH, EIGHTH, EIGHTH],
 	[EIGHTH, EIGHTH, DOT_EIGHTH, SIXTEENTH],
@@ -1129,7 +1152,21 @@ const groovyCells = (
 ): RhythmCell[] => {
 	const hasSixteenth = (c: RhythmCell): boolean =>
 		c.value.some((v) => Math.abs(v) <= SIXTEENTH);
-	if (groove === "eighth") return cells.filter((c) => !hasSixteenth(c));
+	if (groove === "eighth") {
+		// **丸ごと外すと薄くなりすぎる。** 実測で、16分を含む型を全部落とすと
+		// その曲が使える語彙は平均7.01音から4.60音へ落ち、8音以上の型は0.9%
+		// （最大8音）しか残らなかった。参考曲の1小節の最頻値は8音なので、
+		// 曲の半分が「ぎっしり歌う小節」を語彙のレベルで引けなくなっていた。
+		// 参考曲も「8分の曲」で16分の比率が中央値4.1%あり、ゼロではない。
+		// 素の型を地にして、16分入りを1割ほど混ぜる。
+		const plain = cells.filter((c) => !hasSixteenth(c));
+		const spiced = cells.filter(hasSixteenth);
+		if (spiced.length === 0) return plain;
+		const out = [...plain];
+		const take = Math.max(1, Math.round(plain.length * 0.1));
+		for (let i = 0; i < take; i++) out.push(pick(spiced, rnd));
+		return out;
+	}
 	const withSixteenth = cells.filter(hasSixteenth);
 	// 16分の曲でも全部の小節を16分で埋めると息が詰まるので、たまに素の型も通す。
 	return withSixteenth.length > 0 && rnd() < 0.75 ? withSixteenth : cells;
@@ -2520,7 +2557,10 @@ const draw = (
 		// 人間の曲の跳躍率は p25〜p75 で 0.40〜0.55。上限が低いとその帯へ届かない。
 		leapAffinity: 0.08 + rnd() * 0.3,
 		// 界隈曲らしさ：調の外の音（クロマチック）や微小な逸脱を積極的に許容する。
-		chromaticAffinity: rnd() < 0.1 ? 0 : 0.3 + rnd() * 0.6,
+		// 実測で変化音が参考曲の1.75倍（中央値 0.07 対 0.04、p75 は 0.14 対 0.11）
+		// だったので下げる。刻みを細かくすると経過音の置き場所が増えるぶん、
+		// 同じ係数でも変化音は増える点に注意（一度下げ切れずに p75 が 0.25 まで伸びた）。
+		chromaticAffinity: rnd() < 0.2 ? 0 : 0.12 + rnd() * 0.33,
 		barHeadWeight: rnd() < 0.5 ? 3 : 2,
 		bassStyle: pick<BassStyle>(
 			[
@@ -2575,7 +2615,7 @@ const draw = (
 	 * 曲ごとの「刻みの細かさ」の狙い（1小節あたりの音数）。
 	 * 参考曲は中央値6.2（p25〜p75で5.4〜7.3）。狙いをこの帯に合わせる。
 	 */
-	const targetNotesPerBar = 4.0 + rnd() * 4.0;
+	const targetNotesPerBar = 4.5 + rnd() * 4.5;
 	/**
 	 * 曲ごとの休符率の狙い。参考曲は中央値0.09（p25〜p75で0.03〜0.16）。
 	 * 短い息継ぎを中心にして、歌が程よく詰まるように寄せる。
@@ -2618,8 +2658,11 @@ const draw = (
 	// Aメロは控えめ（density: 0.85）
 	const motifCell = pickCell(motifPool, 0.85);
 	/** モチーフ2小節目。 */
+	// **同じ型を2小節並べる。** 参考曲は隣り合う小節のリズムが29.8%で完全一致する
+	// のに対し、生成物は13.9%しかなかった（`scripts/compare-repetition.ts`）。
+	// 「似ている」ではなく「同一である」ことが、フレーズの手応えの実体。
 	const motifCell2 =
-		rnd() < 0.45
+		rnd() < 0.72
 			? motifCell
 			: pickCell(
 					motifPool.filter((c) => c !== motifCell),
@@ -2642,7 +2685,7 @@ const draw = (
 		1.1,
 	);
 	const motifA22 =
-		rnd() < 0.45
+		rnd() < 0.72
 			? motifA2
 			: pickCell(
 					motifPool.filter((c) => c !== motifA2),
@@ -2658,7 +2701,7 @@ const draw = (
 		0.9,
 	);
 	const motifC2 =
-		rnd() < 0.45
+		rnd() < 0.72
 			? motifC
 			: pickCell(
 					motifPool.filter((c) => c !== motifC),
@@ -2796,7 +2839,7 @@ const draw = (
 			// 答えの小節で、問いのリズムから適度に発展・応答するバリエーション
 			const answerVar = prevSource === "b" ? motifBVar : motifVar;
 			if (half === 0) {
-				cell = rnd() < 0.4 ? answerVar : head;
+				cell = rnd() < 0.15 ? answerVar : head;
 			} else if (isPeriodEnd) {
 				// セクションの終わり。着地してから息を継ぐ。
 				cell = breathBySection.get(units[u].section.startBar) ?? tail;
@@ -2804,7 +2847,7 @@ const draw = (
 			} else {
 				// **小楽節の切れ目にも息継ぎを置く。** ここを普通の密度で埋めると、
 				// 8小節のセクションが「7小節ベタ詰め＋1小節スカ」になる。
-				cell = rnd() < 0.5 ? midBreathCell : rnd() < 0.35 ? answerVar : tail;
+				cell = rnd() < 0.28 ? midBreathCell : rnd() < 0.12 ? answerVar : tail;
 			}
 		} else {
 			const [head, tail] = pair();
@@ -3433,6 +3476,8 @@ const draw = (
 	// 約28%の確率でタイで小節線をまたがせる（前の音を伸ばして次の小節頭の音を吸収する）。
 	// これにより「小節ごとにぶつ切りになる」欠陥を根本から解消し、J-POP特有の疾走感と繋がりを生む。
 	const eighthSteps = scaleStep(EIGHTH);
+	/** 食うかどうかの判定。同じリズム型・同じ楽句内位置なら使い回す（下の説明）。 */
+	const tieMemo = new Map<string, boolean>();
 	for (let i = 0; i < melody.length - 1; i++) {
 		const cur = melody[i];
 		const nxt = melody[i + 1];
@@ -3485,13 +3530,31 @@ const draw = (
 		// sequence (2回目) は展開感を出すため積極的に食う
 		// climax は感情の爆発なので非常に高い確率で食う
 		const nextRole = barRoles[barIdx];
-		let tieProb = 0.4;
-		if (nextRole === "motif") tieProb = 0.05;
-		else if (nextRole === "sequence") tieProb = 0.75;
-		else if (nextRole === "climax") tieProb = 0.9;
+		// **セクエンツ・サビで食いを積極的に入れると、モチーフの再来が別の形に化ける。**
+		// 提示（motif 0.05）と再来（sequence）で確率が大きく違うと、同じ型を置いた
+		// 小節どうしが食いの有無で食い違い、lag4 の完全一致が落ちる。差は残しつつ縮める。
+		let tieProb = 0.3;
+		if (nextRole === "motif") tieProb = 0.1;
+		else if (nextRole === "sequence") tieProb = 0.35;
+		else if (nextRole === "climax") tieProb = 0.45;
 		else if (nextRole === "cadence") tieProb = 0.1;
 
-		if (rnd() < tieProb) {
+		// **同じ型を置いた小節には同じ食いを入れる。**
+		//
+		// 食いは小節頭の音を前の小節へ吸収するので、発音位置が1つ消える。1小節ずつ
+		// 独立に抽選すると、せっかく同じリズム型を置いた2小節が、片方だけ食って
+		// 別の形になる。参考曲は隣り合う小節のリズムが29.8%で完全一致するのに
+		// 生成物が13.9%しか無かった原因の一つがこれで、**食いの量を減らさずに
+		// 一致率だけを上げられる**数少ない場所。リズム型と楽句内の位置が同じなら
+		// 同じ判定を使い回す。
+		const tieKey = `${barRhythms[barIdx].join(",")}|${barInUnit(barIdx)}`;
+		let tie = tieMemo.get(tieKey);
+		if (tie === undefined) {
+			tie = rnd() < tieProb;
+			tieMemo.set(tieKey, tie);
+		}
+
+		if (tie) {
 			// タイ結合：curをnxtの分まで伸ばし、nxtを吸収
 			cur.durationSteps += nxt.durationSteps;
 			melody.splice(i + 1, 1);
@@ -3513,8 +3576,21 @@ const draw = (
 
 	// --- リズムの有機的な揺らぎ（Permutation） ---
 	// 全く同じリズムセルのコピペ感を消すため、確率で音符を分割し、ボーカル特有の「細かい言葉の詰め込み」を表現する。
+	/**
+	 * 割るかどうかの判定。**同じ型を置いた小節は同じ割り方をする。**
+	 * 1音ずつ独立に抽選すると、同じリズム型を置いた2小節が片方だけ割れて別の形になり、
+	 * 反復の完全一致が壊れる（実測でタイ・分割を止めると lag2 が 22.5%→30.8%、
+	 * lag4 が 33.3%→41.8% まで戻った）。揺らぎを残したまま一致率だけを上げる。
+	 */
+	const splitMemo = new Map<string, boolean>();
+	let splitLastBar = -1;
+	let splitIdxInBar = 0;
 	for (let i = 0; i < melody.length; i++) {
 		const barIdx = Math.floor(melody[i].startStep / stepsPerBar);
+		if (barIdx !== splitLastBar) {
+			splitLastBar = barIdx;
+			splitIdxInBar = 0;
+		} else splitIdxInBar++;
 		if (barIdx >= totalBars) continue;
 		// セクションの最終小節は息継ぎ（ロングトーン＋休符）を作り込んであるので割らない。
 		if (phraseEndBars.has(barIdx)) continue;
@@ -3523,12 +3599,24 @@ const draw = (
 		// 文脈（BarRole）に合わせたリズム分割の制御
 		// motif, sequence は言葉を割らずに原形を保つ
 		// climax は感情の爆発を表現するため高確率で割る
-		let splitProb = 0.15;
+		// **分割は反復の完全一致を壊す。** 同じ型を置いた2小節でも、片方だけ4分が
+		// 割れると別の小節になる。参考曲との差（lag1 で 29.8% 対 13.9%）の一因なので、
+		// 「揺らぎ」は控えめにする。
+		let splitProb = 0.08;
 		if (role === "motif" || role === "sequence") splitProb = 0.0;
-		else if (role === "climax") splitProb = 0.6;
+		else if (role === "climax") splitProb = 0.3;
 		else if (role === "cadence") splitProb = 0.0;
 
-		if (rnd() < splitProb && melody[i].durationSteps === quarterSteps) {
+		let doSplit = false;
+		if (melody[i].durationSteps === quarterSteps) {
+			const key = `${barRhythms[barIdx].join(",")}|${barInUnit(barIdx)}|${role}|${splitIdxInBar}`;
+			const memo = splitMemo.get(key);
+			if (memo === undefined) {
+				doSplit = rnd() < splitProb;
+				splitMemo.set(key, doSplit);
+			} else doSplit = memo;
+		}
+		if (doSplit) {
 			// 4分音符を8分音符2つに分割（同音連打）
 			const half = scaleStep(EIGHTH);
 			const newNote = {
@@ -3545,6 +3633,7 @@ const draw = (
 				melodyDurations.splice(i + 1, 0, half);
 			}
 			i++;
+			splitIdxInBar++;
 		}
 	}
 
@@ -3694,10 +3783,19 @@ const evaluate = (
 		sim4: atc("sim4", structure.sim4),
 		sim8: atc("sim8", structure.sim8),
 		phraseBreath: atc("phraseBreath", structure.phraseBreath),
+		turnRatio: atc("turnRatio", structure.turnRatio),
 		climaxPosition: atc("climaxPosition", structure.climaxPosition),
 		climaxPeaks: at(peakBand, structure.climaxPeaks),
 		complementarity: at(HAND_BANDS.complementarity, structure.complementarity),
 		subDensity: at(HAND_BANDS.subDensity, d.submelody.length / d.bars),
+		// **サブメロにも同じ崖の物差しを当てる。** メロディだけ測っていた頃、
+		// サブメロの崖率は 6.7%（メロディは修正後3.1%）で放置されていた。
+		// 帯はメロディから採ったものを流用する（同じ種類の量なので比較できる）。
+		subDensityCliff: atc(
+			"densityCliff",
+			densityFeatures(fromMelody(toMetricNotes(d.submelody)), opts)
+				.densityCliff,
+		),
 		tensionRise: tension.rise,
 		tensionResolve: tension.resolve,
 		novelty,

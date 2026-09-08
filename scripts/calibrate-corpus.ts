@@ -648,6 +648,7 @@ const main = async (): Promise<void> => {
 		"sim4",
 		"sim8",
 		"phraseBreath",
+		"turnRatio",
 		"climaxPosition",
 		"climaxPeaks",
 		"complementarity",
