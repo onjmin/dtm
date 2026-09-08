@@ -5,7 +5,7 @@
  * MIDI/コード解析も注入（parseMidi / parseChord / parseChords）。未注入なら該当UIを隠す。
  */
 
-import { GM_INSTRUMENT_NAMES } from "./audio-config";
+import { GM_INSTRUMENT_NAMES, programOfInstrumentName } from "./audio-config";
 import { type ChordPlayerInstance, mountChordPlayer } from "./chord-player";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import {
@@ -4777,18 +4777,34 @@ export const mountDAW = (
 		updateUndoRedo();
 	};
 
-	const exportMIDI = (): Blob =>
-		exportMIDIBlob({
-			tracks: trackStates.map((t) => ({
-				notes: playableNotes(t),
-				volume: t.volume,
-			})),
+	const exportMIDI = (): Blob => {
+		const autoPreset =
+			INSTRUMENT_PRESETS[currentInstrument] ?? INSTRUMENT_PRESETS.piano;
+		return exportMIDIBlob({
+			tracks: trackStates.map((t) => {
+				let program: number | undefined;
+				if (t.trackInstrument) {
+					const p = programOfInstrumentName(t.trackInstrument);
+					if (p !== null) program = p;
+				} else if (!t.lyricModel) {
+					const role = DECLARED_ROLE[t.config.id] ?? "melody";
+					const instName = autoPreset[role] ?? autoPreset.melody;
+					const p = programOfInstrumentName(instName);
+					if (p !== null) program = p;
+				}
+				return {
+					notes: playableNotes(t),
+					volume: t.volume,
+					program,
+				};
+			}),
 			getDrumPattern: (currentBar) =>
 				resolveDrumPattern(currentDrumPattern, drumPatterns, currentBar),
 			drumVolume,
 			bpm,
 			stepsPerBar: renderConfig.stepsPerBar,
 		});
+	};
 
 	const setBpm = (value: number): void => {
 		bpm = value;

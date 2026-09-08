@@ -13,9 +13,11 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { programOfInstrumentName } from "../src/audio-config";
 import { buildChordPlacements } from "../src/chords";
 import { composeSong } from "../src/compose";
 import { DRUM_PATTERNS, resolveDrumPattern } from "../src/drum-config";
+import { INSTRUMENT_PRESETS } from "../src/instrument-presets";
 import { exportMIDI } from "../src/midi-io";
 import type { Note } from "../src/types";
 
@@ -78,14 +80,21 @@ const main = async (): Promise<void> => {
 			bpm: song.bpm,
 			stepsPerBar: STEPS_PER_BAR,
 		});
+		const preset =
+			INSTRUMENT_PRESETS[song.instrument] ?? INSTRUMENT_PRESETS.piano;
+		const melProg = programOfInstrumentName(preset.melody) ?? 0;
+		const subProg = programOfInstrumentName(preset.submelody) ?? 11;
+		const bassProg = programOfInstrumentName(preset.bass) ?? 33;
+		const chordProg = programOfInstrumentName(preset.chord) ?? 89;
+
 		const blob = exportMIDI({
 			tracks: [
-				{ notes: toNotes(song.melody), volume: 100 },
-				{ notes: toNotes(song.submelody), volume: 70 },
-				{ notes: toNotes(song.harmony), volume: 60 },
-				{ notes: toNotes(song.bass), volume: 85 },
-				{ notes: toNotes(song.pad), volume: 50 },
-				{ notes: toNotes(chords), volume: 65 },
+				{ notes: toNotes(song.melody), volume: 100, program: melProg },
+				{ notes: toNotes(song.submelody), volume: 70, program: subProg },
+				{ notes: toNotes(song.harmony), volume: 60, program: melProg },
+				{ notes: toNotes(song.bass), volume: 85, program: bassProg },
+				{ notes: toNotes(song.pad), volume: 50, program: chordProg },
+				{ notes: toNotes(chords), volume: 65, program: chordProg },
 			],
 			getDrumPattern: (bar) =>
 				resolveDrumPattern(song.drum, DRUM_PATTERNS, bar),

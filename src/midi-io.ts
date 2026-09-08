@@ -490,8 +490,14 @@ const trackChunks = (arr: number[], func: (a: number[]) => void): void => {
 	arr.push(...a);
 };
 
+export type ExportMidiTrack = {
+	notes: Note[];
+	volume: number;
+	program?: number; // GMプログラム番号 (0-127)
+};
+
 export type ExportMidiOptions = {
-	tracks: { notes: Note[]; volume: number }[];
+	tracks: ExportMidiTrack[];
 	getDrumPattern?: (currentBar: number) => DrumPattern | null;
 	drumVolume?: number; // 0-100
 	bpm: number;
@@ -507,81 +513,132 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 	const tickPerStep = div / STEPS_PER_BEAT;
 	const midiTracks: { t: number; m: number[] }[][] = [];
 
-	// ── 微分音の書き出し（ピッチベンド多チャンネル方式）──
-	//
-	// MIDIのピッチベンドはチャンネル単位でノート単位ではないため、31平均律のように
-	// 整数MIDIノートへ乗らない音を出すには「同時に鳴るベンド値の種類だけチャンネルを
-	// 使い分ける」必要がある。ここでは曲全体で使われるベンド値を数え、1種類につき
-	// 1チャンネルを割り当てて曲頭で一度だけベンドを設定する。
-	//
-	// トラックの区別はMIDIのトラックチャンク側が担うので、チャンネルを転用しても
-	// トラックは混ざらない（dtmの書き出しはプログラムチェンジを出さないため、
-	// チャンネルに楽器の意味は乗っていない）。
-	//
-	// 使えるのはドラム(ch9)を除く15チャンネル。曲が15種類を超えるベンド値を使う場合は
-	// 頻度の低いものから最寄りの半音へ丸める（音は出るが微分音は失われる）。
-	const NOTE_CHANNELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15];
-	/** ベンドのレンジ（半音）。RPN 0,0 で明示するので受け側の既定に依存しない。 */
-	const BEND_RANGE_SEMITONES = 2;
-
 	const bendKey = (cents: number): number => Math.round(cents * 100);
-	const bendUse = new Map<number, number>();
-	for (const track of tracks) {
-		for (const n of track.notes) {
+	const hasMicrotones = tracks.some((track) =>
+		track.notes.some((n) => {
 			const { detuneCents } = unitsToMidiDetune(n.pitchUnits);
-			const k = bendKey(detuneCents);
-			bendUse.set(k, (bendUse.get(k) ?? 0) + 1);
-		}
-	}
-	// 使用頻度の高いベンド値から順にチャンネルを割り当てる
-	const bendChannel = new Map<number, number>();
-	const ordered = [...bendUse.entries()].sort((a, b) => b[1] - a[1]);
-	for (const [k] of ordered) {
-		if (bendChannel.size >= NOTE_CHANNELS.length) break;
-		bendChannel.set(k, NOTE_CHANNELS[bendChannel.size]);
-	}
+			return bendKey(detuneCents) !== 0;
+		}),
+	);
 
-	tracks.forEach((track) => {
-		if (track.notes.length === 0) return;
-		const events: { t: number; m: number[] }[] = [];
-		for (const n of track.notes) {
-			const { midi, detuneCents } = unitsToMidiDetune(n.pitchUnits);
-			const k = bendKey(detuneCents);
-			// 割り当てが溢れたベンド値は最寄りの半音へ丸めて鳴らす（ベンド0のチャンネル）
-			const channel = bendChannel.get(k) ?? bendChannel.get(0) ?? 0;
-			const note = Math.max(0, Math.min(127, midi));
-			const startTick = Math.round(n.startStep * tickPerStep);
-			const endTick = Math.round(
-				(n.startStep + (n.durationSteps || 1)) * tickPerStep,
-			);
-			// volume 0（ミュート）を 100 に化けさせないため ?? を使う（0 は有効値）
-			const vel = Math.round(
-				((n.velocity ?? DEFAULT_VELOCITY) * (track.volume ?? 100)) / 100,
-			);
-			events.push({ t: startTick, m: [0x90 | channel, note, vel] });
-			events.push({ t: endTick, m: [0x90 | channel, note, 0] });
-		}
-		events.sort((a, b) => a.t - b.t);
-		midiTracks.push(events);
-	});
-
-	/** 各チャンネルのベンドレンジ設定(RPN)とベンド値を曲頭へ置くイベント列。 */
 	const bendSetup: { t: number; m: number[] }[] = [];
-	for (const [k, channel] of bendChannel) {
-		const cents = k / 100;
-		// RPN 0,0 = ピッチベンド感度。Data Entry で 2半音0セントに固定する。
-		bendSetup.push({ t: 0, m: [0xb0 | channel, 101, 0] });
-		bendSetup.push({ t: 0, m: [0xb0 | channel, 100, 0] });
-		bendSetup.push({ t: 0, m: [0xb0 | channel, 6, BEND_RANGE_SEMITONES] });
-		bendSetup.push({ t: 0, m: [0xb0 | channel, 38, 0] });
-		// RPN null（以降の Data Entry が誤って感度へ効かないようにする）
-		bendSetup.push({ t: 0, m: [0xb0 | channel, 101, 127] });
-		bendSetup.push({ t: 0, m: [0xb0 | channel, 100, 127] });
-		// ベンド値。中央8192、±(BEND_RANGE_SEMITONES × 100)セントで全可動域。
-		const raw =
-			8192 + Math.round((cents / (BEND_RANGE_SEMITONES * 100)) * 8192);
-		const v = Math.max(0, Math.min(16383, raw));
-		bendSetup.push({ t: 0, m: [0xe0 | channel, v & 0x7f, (v >> 7) & 0x7f] });
+
+	if (hasMicrotones) {
+		// ── 微分音の書き出し（ピッチベンド多チャンネル方式）──
+		//
+		// MIDIのピッチベンドはチャンネル単位でノート単位ではないため、31平均律のように
+		// 整数MIDIノートへ乗らない音を出すには「同時に鳴るベンド値の種類だけチャンネルを
+		// 使い分ける」必要がある。曲全体で使われるベンド値を数え、1種類につき
+		// 1チャンネルを割り当てて曲頭で一度だけベンドを設定する。
+		//
+		// トラックの区別はMIDIのトラックチャンク側が担うので、チャンネルを転用しても
+		// トラックは混ざらない（dtmの書き出しはプログラムチェンジを出さないため、
+		// チャンネルに楽器の意味は乗っていない）。
+		//
+		// 使えるのはドラム(ch9)を除く15チャンネル。曲が15種類を超えるベンド値を使う場合は
+		// 頻度の低いものから最寄りの半音へ丸める（音は出るが微分音は失われる）。
+		const NOTE_CHANNELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15];
+		/** ベンドのレンジ（半音）。RPN 0,0 で明示するので受け側の既定に依存しない。 */
+		const BEND_RANGE_SEMITONES = 2;
+
+		const bendUse = new Map<number, number>();
+		for (const track of tracks) {
+			for (const n of track.notes) {
+				const { detuneCents } = unitsToMidiDetune(n.pitchUnits);
+				const k = bendKey(detuneCents);
+				bendUse.set(k, (bendUse.get(k) ?? 0) + 1);
+			}
+		}
+		// 使用頻度の高いベンド値から順にチャンネルを割り当てる
+		const bendChannel = new Map<number, number>();
+		const ordered = [...bendUse.entries()].sort((a, b) => b[1] - a[1]);
+		for (const [k] of ordered) {
+			if (bendChannel.size >= NOTE_CHANNELS.length) break;
+			bendChannel.set(k, NOTE_CHANNELS[bendChannel.size]);
+		}
+
+		tracks.forEach((track) => {
+			if (track.notes.length === 0) return;
+			const events: { t: number; m: number[] }[] = [];
+			for (const n of track.notes) {
+				const { midi, detuneCents } = unitsToMidiDetune(n.pitchUnits);
+				const k = bendKey(detuneCents);
+				// 割り当てが溢れたベンド値は最寄りの半音へ丸めて鳴らす（ベンド0のチャンネル）
+				const channel = bendChannel.get(k) ?? bendChannel.get(0) ?? 0;
+				const note = Math.max(0, Math.min(127, midi));
+				const startTick = Math.round(n.startStep * tickPerStep);
+				const endTick = Math.round(
+					(n.startStep + (n.durationSteps || 1)) * tickPerStep,
+				);
+				// volume 0（ミュート）を 100 に化けさせないため ?? を使う（0 は有効値）
+				const vel = Math.round(
+					((n.velocity ?? DEFAULT_VELOCITY) * (track.volume ?? 100)) / 100,
+				);
+				events.push({ t: startTick, m: [0x90 | channel, note, vel] });
+				events.push({ t: endTick, m: [0x90 | channel, note, 0] });
+			}
+			events.sort((a, b) => a.t - b.t);
+			midiTracks.push(events);
+		});
+
+		/** 各チャンネルのベンドレンジ設定(RPN)とベンド値を曲頭へ置くイベント列。 */
+		for (const [k, channel] of bendChannel) {
+			const cents = k / 100;
+			// RPN 0,0 = ピッチベンド感度。Data Entry で 2半音0セントに固定する。
+			bendSetup.push({ t: 0, m: [0xb0 | channel, 101, 0] });
+			bendSetup.push({ t: 0, m: [0xb0 | channel, 100, 0] });
+			bendSetup.push({ t: 0, m: [0xb0 | channel, 6, BEND_RANGE_SEMITONES] });
+			bendSetup.push({ t: 0, m: [0xb0 | channel, 38, 0] });
+			// RPN null（以降の Data Entry が誤って感度へ効かないようにする）
+			bendSetup.push({ t: 0, m: [0xb0 | channel, 101, 127] });
+			bendSetup.push({ t: 0, m: [0xb0 | channel, 100, 127] });
+			// ベンド値。中央8192、±(BEND_RANGE_SEMITONES × 100)セントで全可動域。
+			const raw =
+				8192 + Math.round((cents / (BEND_RANGE_SEMITONES * 100)) * 8192);
+			const v = Math.max(0, Math.min(16383, raw));
+			bendSetup.push({ t: 0, m: [0xe0 | channel, v & 0x7f, (v >> 7) & 0x7f] });
+		}
+	} else {
+		// ── 通常の書き出し（12平均律 / detuneなし）──
+		//
+		// GMの打楽器チャンネル(9 = MIDI ch10)を避ける。
+		// TRACK 01〜09 → ch1〜9 / TRACK 10〜15 → ch11〜16 に書き出す。
+		tracks.forEach((track, trIdx) => {
+			if (track.notes.length === 0) return;
+			const channel = trIdx < 9 ? trIdx : (trIdx + 1) & 0x0f;
+			const events: { t: number; m: number[] }[] = [];
+			if (
+				track.program !== undefined &&
+				track.program >= 0 &&
+				track.program <= 127
+			) {
+				events.push({ t: 0, m: [0xc0 | channel, track.program] });
+			}
+			for (const n of track.notes) {
+				const { midi } = unitsToMidiDetune(n.pitchUnits);
+				const note = Math.max(0, Math.min(127, midi));
+				const startTick = Math.round(n.startStep * tickPerStep);
+				const endTick = Math.round(
+					(n.startStep + (n.durationSteps || 1)) * tickPerStep,
+				);
+				// volume 0（ミュート）を 100 に化けさせないため ?? を使う（0 は有効値）
+				const vel = Math.round(
+					((n.velocity ?? DEFAULT_VELOCITY) * (track.volume ?? 100)) / 100,
+				);
+				events.push({ t: startTick, m: [0x90 | channel, note, vel] });
+				events.push({ t: endTick, m: [0x90 | channel, note, 0] });
+			}
+			events.sort((a, b) => {
+				if (a.t !== b.t) return a.t - b.t;
+				// 同一tickではプログラムチェンジ(0xC0)をノートオン(0x90)より先に出す
+				const typeA = a.m[0] & 0xf0;
+				const typeB = b.m[0] & 0xf0;
+				if (typeA === 0xc0 && typeB !== 0xc0) return -1;
+				if (typeB === 0xc0 && typeA !== 0xc0) return 1;
+				return 0;
+			});
+			midiTracks.push(events);
+		});
 	}
 
 	// ドラムトラック

@@ -171,3 +171,15 @@ export async function buildNameToKeyMapping(): Promise<Record<string, string>> {
 export const GM_INSTRUMENT_NAMES: string[] = FONT_NAME_SURIKOV.trim()
 	.split("\n")
 	.map((line) => line.slice(line.indexOf(" ") + 1));
+
+/**
+ * 楽器名（または正規化名）からGMプログラム番号(0-127)を取得する。見つからなければ null。
+ */
+export const programOfInstrumentName = (name: string): number | null => {
+	if (!name) return null;
+	const stripped = name.replace(/\s+/g, "").toLowerCase();
+	const idx = GM_INSTRUMENT_NAMES.findIndex(
+		(n) => n.replace(/\s+/g, "").toLowerCase() === stripped,
+	);
+	return idx >= 0 ? idx : null;
+};
