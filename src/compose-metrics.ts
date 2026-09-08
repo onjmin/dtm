@@ -294,18 +294,73 @@ export type DensityFeatures = {
 	notesPerBar: number;
 	/** 8分音符以下の短い音が占める比率。曲の「刻みの細かさ」。 */
 	shortNoteRatio: number;
+	/**
+	 * 小節ごとの音数の変動係数（標準偏差÷平均）。歌っている小節だけを母数にする。
+	 *
+	 * {@link notesPerBar} は曲全体の平均なので、**どの小節に音が集まっているか**を
+	 * 何も言わない。実際、生成物と参考曲91本は平均こそ近いのに、生成物は
+	 * 「7小節ベタ詰め＋1小節スカ」を繰り返していた。平均だけを見ている限り
+	 * この形は検出できない。
+	 */
+	barDensityCv: number;
+	/**
+	 * 音数の「崖」の割合。直前の小節が3音以上あり、そこから**3割以下**へ落ちる
+	 * 小節が、隣接する小節の組のうちどれだけあるか。
+	 *
+	 * 実測で参考曲は 2%、生成物は 11%（5倍）だった。人間の曲もフレーズの切れ目で
+	 * 音数を落とすが、5.9音 → 1.3音のような落とし方はしない。
+	 * **完全な無音（0音）の小節は数えない**——間奏や落ちのように、そこで歌を
+	 * 止めること自体は曲の構造として正しいため。
+	 */
+	densityCliff: number;
+};
+
+/** 小節ごとの音数。{@link MetricOptions.bars} ぶん、音が無い小節は 0。 */
+const barNoteCounts = (notes: MetricNote[], opts: MetricOptions): number[] => {
+	const out = new Array(Math.max(1, opts.bars)).fill(0);
+	for (const n of notes) {
+		const bar = Math.floor(n.startStep / opts.stepsPerBar);
+		if (bar >= 0 && bar < out.length) out[bar]++;
+	}
+	return out;
 };
 
 export const densityFeatures = (
 	notes: MetricNote[],
 	opts: MetricOptions,
 ): DensityFeatures => {
-	if (notes.length === 0) return { notesPerBar: 0, shortNoteRatio: 0 };
+	if (notes.length === 0)
+		return {
+			notesPerBar: 0,
+			shortNoteRatio: 0,
+			barDensityCv: 0,
+			densityCliff: 0,
+		};
 	const eighth = opts.stepsPerBar / 8;
 	const short = notes.filter((n) => n.durationSteps <= eighth).length;
+
+	const counts = barNoteCounts(notes, opts);
+	// 母数は「歌っている小節」だけ。イントロ・間奏まで入れると、
+	// 構成の違い（イントロが長い曲）がそのままばらつきとして出てしまう。
+	const sung = counts.filter((c) => c > 0);
+	const mean = sung.reduce((a, b) => a + b, 0) / Math.max(1, sung.length);
+	const variance =
+		sung.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, sung.length);
+	let cliffs = 0;
+	let pairs = 0;
+	for (let i = 1; i < counts.length; i++) {
+		// 直前が薄い小節（3音未満）からの落差は「崖」と呼べない。
+		// 落ちた先が無音の小節は、間奏・落ちとして正しい形なので数えない。
+		if (counts[i - 1] < 3 || counts[i] === 0) continue;
+		pairs++;
+		if (counts[i] <= counts[i - 1] * 0.3) cliffs++;
+	}
+
 	return {
 		notesPerBar: notes.length / Math.max(1, opts.bars),
 		shortNoteRatio: short / notes.length,
+		barDensityCv: mean === 0 ? 0 : Math.sqrt(variance) / mean,
+		densityCliff: pairs === 0 ? 0 : cliffs / pairs,
 	};
 };
 

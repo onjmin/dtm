@@ -641,6 +641,8 @@ const main = async (): Promise<void> => {
 		"melodyRange",
 		"notesPerBar",
 		"shortNoteRatio",
+		"barDensityCv",
+		"densityCliff",
 		"sim1",
 		"sim2",
 		"sim4",

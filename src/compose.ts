@@ -215,6 +215,14 @@ const WEIGHTS = {
 	 */
 	notesPerBar: 0.8,
 	shortNoteRatio: 0.6,
+	/**
+	 * 小節ごとの音数のばらつきと「崖」。**平均だけを見ていたせいで見逃していた**項目。
+	 * 実測で、セクションの最終小節だけが 5.9音 → 1.3音（1/4以下）へ落ちていたのに、
+	 * 曲全体の平均・休符率・自己相似のどれも動かず、採点は満点のままだった。
+	 * 崖は参考曲では2%、生成物では11%あった（{@link file://./compose-metrics.ts}）。
+	 */
+	barDensityCv: 0.6,
+	densityCliff: 1.0,
 	/** 順次進行の比率。跳躍率だけを見ていると、跳躍の帯の上端に張り付く。 */
 	stepRatio: 0.8,
 	/** 調の外の音。0のままだと全曲が同じ音階をなぞるだけになる。 */
@@ -796,6 +804,53 @@ export const RHYTHM_CELLS: RhythmCell[] = [
 		],
 		density: "dense",
 	},
+];
+
+/**
+ * 楽節の終わり（セクションの最終小節）に置く**息継ぎ**の型。
+ *
+ * 初版は {@link RHYTHM_CELLS} の sparse から休符を含む型を1つ引いて使っていたが、
+ * 候補12種のうち7種が1音しか持たない型だったため、セクションの最終小節だけが
+ * **5.9音 → 1.3音（1/4以下）** へ落ちていた。参考曲91本を同じ物差しで測ると
+ *
+ *   1音だけの小節   参考 1% / 生成 10%
+ *   3割以下への落差 参考 2% / 生成 11%
+ *
+ * で、人間の曲はここまで空けない。**息継ぎとは「着地してから息を継ぐ」ことであって、
+ * 小節を空けることではない。** 2〜3音で着地し、末尾を休符で空ける型に絞る。
+ * 合計は必ず1小節（{@link WHOLE}）。
+ */
+const PHRASE_END_CELLS: RhythmCell[] = [
+	// 白玉で受けてから息を継ぐ（いちばん歌らしい終わり方）。
+	{ value: [HALF, QUARTER, -QUARTER], density: "sparse" },
+	{ value: [DOT_QUARTER, EIGHTH, HALF], density: "sparse" },
+	{ value: [QUARTER, DOT_QUARTER, EIGHTH, -QUARTER], density: "sparse" },
+	// 2音で降りてから息を継ぐ。
+	{ value: [QUARTER, QUARTER, -HALF], density: "sparse" },
+	{ value: [DOT_QUARTER, EIGHTH, -HALF], density: "sparse" },
+	{ value: [HALF, -QUARTER, QUARTER], density: "sparse" },
+	// 3音で言い切ってから息を継ぐ。
+	{ value: [EIGHTH, EIGHTH, QUARTER, -HALF], density: "sparse" },
+	{ value: [QUARTER, EIGHTH, EIGHTH, -HALF], density: "sparse" },
+	{ value: [QUARTER, QUARTER, QUARTER, -QUARTER], density: "sparse" },
+	{ value: [HALF, EIGHTH, EIGHTH, -QUARTER], density: "sparse" },
+];
+
+/**
+ * 小楽節の切れ目（8小節セクションの4小節目）に置く**軽い息継ぎ**の型。
+ *
+ * 初版は息継ぎがセクション末尾の1回しか無く、8小節のセクションが
+ * 「7小節ベタ詰め＋1小節スカ」という非対称な呼吸になっていた。人間の曲は
+ * 2小節・4小節ごとに少しずつ息を継ぐので、ここにも切れ目を作る。
+ * ただし**落とすのは1音ぶんまで**（4音前後）。ここを空けると崖がもう1つ増える。
+ */
+const MID_BREATH_CELLS: RhythmCell[] = [
+	{ value: [QUARTER, EIGHTH, EIGHTH, QUARTER, -QUARTER], density: "medium" },
+	{ value: [EIGHTH, EIGHTH, QUARTER, QUARTER, -QUARTER], density: "medium" },
+	{ value: [DOT_QUARTER, EIGHTH, QUARTER, QUARTER], density: "medium" },
+	{ value: [QUARTER, QUARTER, EIGHTH, EIGHTH, -QUARTER], density: "medium" },
+	{ value: [EIGHTH, EIGHTH, EIGHTH, EIGHTH, HALF], density: "medium" },
+	{ value: [QUARTER, EIGHTH, EIGHTH, DOT_QUARTER, EIGHTH], density: "medium" },
 ];
 
 /**
@@ -2655,14 +2710,44 @@ const draw = (
 	).value;
 
 	/**
-	 * 答えの後半小節。**フレーズの終わりは白玉で受けて息継ぎを空ける。**
+	 * 答えの後半小節。**フレーズの終わりは着地してから息を継ぐ。**
+	 *
+	 * 曲全体で1つだけ引いていた頃は、どのセクションの終わりも寸分違わず同じ形で
+	 * 空いていた（＝崖が同じ場所に同じ深さで並ぶ）。セクションごとに引き直して、
+	 * 隣り合うセクションが同じ型にならないようにする。
 	 */
-	const breathCell = pick(
-		RHYTHM_CELLS.filter(
-			(c) => c.density === "sparse" && c.value.some((v) => v < 0),
-		),
-		rnd,
-	);
+	const breathBySection = new Map<number, RhythmCell>();
+	{
+		let prev: RhythmCell | null = null;
+		for (const section of sectionPlan) {
+			if (!section.spec.melody) continue;
+			const pool = PHRASE_END_CELLS.filter((c) => c !== prev);
+			const cell = pick(pool.length > 0 ? pool : PHRASE_END_CELLS, rnd);
+			breathBySection.set(section.startBar, cell);
+			prev = cell;
+		}
+	}
+	/** 小楽節の切れ目に置く軽い息継ぎ。こちらは曲の型として1つに揃える。 */
+	const midBreathCell = pick(MID_BREATH_CELLS, rnd);
+
+	/**
+	 * 息継ぎの小節（＝フレーズの終わり）。ここへ前の小節からタイを食い込ませると、
+	 * ただでさえ薄い小節から1音を奪って**無音の小節**ができる。小節をまたぐタイの
+	 * 処理から除外するために覚えておく。
+	 */
+	const breathBars = new Set<number>();
+
+	/**
+	 * メロディのあるセクションの最終小節。**ここは形を作り込んである小節**なので、
+	 * 後段の「リズムの有機的な揺らぎ」で音を割らせない。4分音符を8分2つに割ると、
+	 * 受けのロングトーンが8分になって息継ぎが消える（実測で60曲中7曲が
+	 * 「末尾の音24ステップ／空き0」＝切れ目として受けられていなかった）。
+	 */
+	const phraseEndBars = new Set<number>();
+	for (const section of sectionPlan) {
+		if (!section.spec.melody) continue;
+		phraseEndBars.add(section.startBar + section.bars - 1);
+	}
 
 	const barRhythms: number[][] = [];
 	for (let bar = 0; bar < totalBars; bar++) {
@@ -2672,6 +2757,7 @@ const draw = (
 		if (source !== null) {
 			// 同じ素材の楽句は、リズムもそのまま歌い直す。
 			barRhythms.push(barRhythms[source]);
+			if (breathBars.has(source)) breathBars.add(bar);
 			continue;
 		}
 		const isB = units[u].source === "b";
@@ -2709,16 +2795,17 @@ const draw = (
 						: [motifCell, motifCell2];
 			// 答えの小節で、問いのリズムから適度に発展・応答するバリエーション
 			const answerVar = prevSource === "b" ? motifBVar : motifVar;
-			cell =
-				half === 0
-					? rnd() < 0.4
-						? answerVar
-						: head
-					: isPeriodEnd
-						? breathCell
-						: rnd() < 0.35
-							? answerVar
-							: tail;
+			if (half === 0) {
+				cell = rnd() < 0.4 ? answerVar : head;
+			} else if (isPeriodEnd) {
+				// セクションの終わり。着地してから息を継ぐ。
+				cell = breathBySection.get(units[u].section.startBar) ?? tail;
+				breathBars.add(bar);
+			} else {
+				// **小楽節の切れ目にも息継ぎを置く。** ここを普通の密度で埋めると、
+				// 8小節のセクションが「7小節ベタ詰め＋1小節スカ」になる。
+				cell = rnd() < 0.5 ? midBreathCell : rnd() < 0.35 ? answerVar : tail;
+			}
 		} else {
 			const [head, tail] = pair();
 			cell = half === 0 ? head : tail;
@@ -3366,12 +3453,32 @@ const draw = (
 		const nextSec = sectionAt(sectionPlan, barIdx);
 		if (!nextSec.spec.melody || curSec !== nextSec) continue;
 
+		// **息継ぎの小節へは食い込ませない。** ガードはセクションをまたぐタイだけを
+		// 見ていたが、セクション末尾の息継ぎ小節は同じセクションの中にあるので素通り
+		// していた。そこへ前の小節の音が伸びると、2〜3音しか無い小節から1音が消え、
+		// 実測で**メロディが1音も無い小節**が生まれていた。
+		if (breathBars.has(barIdx)) continue;
+
 		// 界隈曲らしさ：変化音（クロマチックテンション）であっても小節を跨ぐタイを許容し、強烈な食いを演出する。
 		const curSemi = Math.round(cur.pitchUnits / UNITS_PER_SEMITONE);
 		const nxtSemi = Math.round(nxt.pitchUnits / UNITS_PER_SEMITONE);
 
 		// 大きな跳躍がある場合はタイにしない（同音または順次・3度以内のスムーズな食い）
 		if (Math.abs(nxtSemi - curSemi) > 3) continue;
+
+		// **順次で入る変化音の足場を奪わない。**
+		//
+		// 変化音（経過音・アプローチ）は「順次で入って順次で出る」から通り過ぎる音に
+		// なる（{@link applyChromatic} の②）。その足場である直前の音をタイで吸収すると、
+		// 変化音は前の小節の音から**跳躍で掴まれた**形になり、通り過ぎる音ではなく
+		// 「調を外した音」として耳に残る。実測でこの形が浮いた変化音の全てだった。
+		const after = melody[i + 2];
+		if (after && Math.floor(after.startStep / stepsPerBar) === barIdx) {
+			const afterSemi =
+				Math.round(after.pitchUnits / UNITS_PER_SEMITONE) -
+				(barKeyShift[barIdx] ?? 0);
+			if (!DIATONIC_PCS.has(pitchClass(afterSemi))) continue;
+		}
 
 		// 文脈（BarRole）に合わせたタイ（食い）の発生確率の制御
 		// motif (1回目) は原形を提示するためほぼ食わない
@@ -3409,6 +3516,8 @@ const draw = (
 	for (let i = 0; i < melody.length; i++) {
 		const barIdx = Math.floor(melody[i].startStep / stepsPerBar);
 		if (barIdx >= totalBars) continue;
+		// セクションの最終小節は息継ぎ（ロングトーン＋休符）を作り込んであるので割らない。
+		if (phraseEndBars.has(barIdx)) continue;
 		const role = barRoles[barIdx];
 
 		// 文脈（BarRole）に合わせたリズム分割の制御
@@ -3576,6 +3685,8 @@ const evaluate = (
 		melodyRange: atc("melodyRange", d.melodyRange),
 		notesPerBar: atc("notesPerBar", density.notesPerBar),
 		shortNoteRatio: atc("shortNoteRatio", density.shortNoteRatio),
+		barDensityCv: atc("barDensityCv", density.barDensityCv),
+		densityCliff: atc("densityCliff", density.densityCliff),
 		stepRatio: atc("stepRatio", d.stepRatio),
 		chromaticRatio: atc("chromaticRatio", d.chromaticRatio),
 		sim1: atc("sim1", structure.sim1),
