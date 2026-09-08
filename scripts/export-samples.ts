@@ -107,7 +107,7 @@ const main = async (): Promise<void> => {
 			song.harmony.map((n) => Math.floor(n.startStep / STEPS_PER_BAR)),
 		).size;
 		console.log(
-			`   歌: ハモリ ${song.vocal.harmonyKinds.join("/")} ${harmonyBars}小節  掛け合い ${song.vocal.duetStyle}${song.vocal.duetBars.length ? `（${song.vocal.duetBars.length}小節）` : ""}`,
+			`   歌: ハモリ ${song.vocal.harmonyKinds.join("/")} ${harmonyBars}小節  掛け合い ${song.vocal.duetStyle}${song.vocal.duetSpans.length ? `（${song.vocal.duetSpans.length}区間）` : ""}`,
 		);
 	}
 };
