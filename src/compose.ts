@@ -181,9 +181,9 @@ const STEP_SEMITONES = 2;
  * 180本を測ると**最大跳躍の p05 が9・p25〜p75 が12〜17半音**で、9で頭打ちにすると
  * 目標帯の下限にすら届かない（採点0）ことが分かったので12（オクターブ）にした。
  */
-const MAX_LEAP_SEMITONES = 12;
+const MAX_LEAP_SEMITONES = 10;
 /** 小節をまたぐときに許す跳躍（半音）。 */
-const MAX_BAR_LEAP_SEMITONES = 12;
+const MAX_BAR_LEAP_SEMITONES = 10;
 
 /**
  * ハード制約。**満たさない曲は「音楽として壊れている」ので点数を付ける前に捨てる。**
@@ -1492,7 +1492,7 @@ const nearestChordTone = (
 
 /** メロディの音域（半音・MIDIノート番号相当）。C4〜C6あたりに収める。 */
 const MELODY_LOW = 60;
-const MELODY_HIGH = 84;
+const MELODY_HIGH = 81;
 /** メロディの音域の中心。大きなうねり（{@link MelodyStyle.arcPeriod}）の基準。 */
 const MELODY_CENTER = (MELODY_LOW + MELODY_HIGH) / 2;
 /** サブメロの音域。メロディの下・ベースの上に置く。 */
@@ -1906,9 +1906,21 @@ const fitMotif = (
 	quarterSteps: number,
 	/** ペンタトニックの歩数で移調するか。ダイアトニックで組んだモチーフには掛けない。 */
 	pentatonic: boolean,
-): number[] => {
+	/**
+	 * 同じ素材を置いた小節が前に使った移調量。**輪郭が返ってきたと耳で分かるのは、
+	 * 同じ高さで返ってきたときだけ。** 度数の並びが同じでも移調量が違えば、音階の
+	 * 都合で音程の並びが変わる（ドレミ→レミファ は 2,2半音 が 2,1半音 になる）。
+	 * 実測で、参考曲は2小節後に音程の並びがそのまま返る割合が18.8%あるのに
+	 * 生成物は4.0%しかなく、その差の大半がここだった。和音の当たりが大きく
+	 * 悪化しないかぎり、前と同じ移調量を使う。
+	 */
+	preferShift: number | null,
+): { degrees: number[]; shift: number } => {
 	let best = degrees;
+	let bestShift = 0;
 	let bestScore = Number.NEGATIVE_INFINITY;
+	let preferScore = Number.NEGATIVE_INFINITY;
+	let preferMoved: number[] | null = null;
 	// ペンタトニックで組んだモチーフは**ペンタトニックの歩数**で移調する。
 	// ダイアトニックの度数で ±1 するとミ→ファのような半音移動が混ざり、輪郭が崩れる。
 	// 逆に、ダイアトニックで組んだモチーフをペンタトニックの歩数で動かすと、
@@ -1936,12 +1948,20 @@ const fitMotif = (
 			MELODY_HIGH,
 		);
 		score -= Math.max(0, Math.abs(head - prevSemi) - MAX_BAR_LEAP_SEMITONES);
+		if (shift === preferShift) {
+			preferScore = score;
+			preferMoved = moved;
+		}
 		if (score > bestScore) {
 			bestScore = score;
+			bestShift = shift;
 			best = moved;
 		}
 	}
-	return best;
+	// 前と同じ移調量が「まずまず」なら、そちらを採る。1音ぶんの重み（3点）まで譲る。
+	if (preferMoved !== null && preferScore >= bestScore - 3)
+		return { degrees: preferMoved, shift: preferShift as number };
+	return { degrees: best, shift: bestShift };
 };
 
 const shapeBar = (
@@ -2580,8 +2600,9 @@ const draw = (
 		groove: pick<Groove>(["eighth", "sixteenth"], rnd),
 		arcPeriod: pick([4, 8, 8, 16], rnd),
 		arcPhase: pick([0, 1, 2], rnd),
-		arcAmp: 3 + rnd() * 4,
-		octaveAffinity: 0.14 + rnd() * 0.2,
+		arcAmp: 2 + rnd() * 3,
+		// オクターブ跳躍は参考曲では音程の1.0%しかない。上げすぎると音域が広がる。
+		octaveAffinity: 0.06 + rnd() * 0.12,
 		pentatonicMotif: rnd() < 0.55,
 		runShape: pick<RunShape>(["scale", "turn", "broken", "zigzag"], rnd),
 		stepShape: pick<StepShape>(
@@ -2593,8 +2614,10 @@ const draw = (
 			["descend", "five-three-one", "leap-up", "hold-tonic"],
 			rnd,
 		),
-		// 人間の曲の跳躍率は p25〜p75 で 0.40〜0.55。上限が低いとその帯へ届かない。
-		leapAffinity: 0.08 + rnd() * 0.3,
+		// 参考曲の跳躍率は p25〜p75 で 0.28〜0.41、最大跳躍の中央値は9半音。
+		// 2声を交互に書いたチャンネルを主旋律と誤検出していた頃は 0.31〜0.65 に
+		// 見えており、それに合わせて上限を高く取っていた。
+		leapAffinity: 0.05 + rnd() * 0.2,
 		// 界隈曲らしさ：調の外の音（クロマチック）や微小な逸脱を積極的に許容する。
 		// 刻みを細かくすると経過音の置き場所が増えるので、同じ係数でも変化音は増える。
 		// 参考曲の1.75倍まで伸びていたぶんを引く。
@@ -2907,6 +2930,8 @@ const draw = (
 
 	/** 小節ごとに実際に使った音の並び（度数）。A' / A'' の再現で読み直す。 */
 	const plannedDegrees: (number[] | null)[] = new Array(totalBars).fill(null);
+	/** 同じ度数の並びに対して前回使った移調量（{@link fitMotif} の preferShift）。 */
+	const motifShiftMemo = new Map<string, number>();
 	const melody: ComposedNote[] = [];
 	const submelody: ComposedNote[] = [];
 	const bass: ComposedNote[] = [];
@@ -3058,42 +3083,43 @@ const draw = (
 			role === "sequence" ||
 			role === "climax" ||
 			role === "answer";
-		const pitches = shapeBar(
-			isMotifBar
-				? fitMotif(
-						degrees,
-						slots,
-						tones,
-						prevSemi,
-						quarterSteps,
-						style.pentatonicMotif,
-					)
-				: degrees,
-			slots,
-			tones,
-			prevSemi,
-			{
-				allowLeap: role === "climax",
-				allowArpeggio:
-					role === "climax" ||
-					(role === "run" && style.runShape === "broken") ||
-					(role === "cadence" && style.cadenceShape !== "descend"),
+		let fitted = degrees;
+		if (isMotifBar) {
+			// 同じ度数の並びを置いた小節どうしは、同じ移調量で置く（{@link fitMotif}）。
+			const shiftKey = degrees.join(",");
+			const r = fitMotif(
+				degrees,
+				slots,
+				tones,
+				prevSemi,
 				quarterSteps,
-				// モチーフの小節はオクターブ移動を入れない。モチーフは輪郭が命なので、
-				// 後から音を1つ跳ばすと「同じフレーズが返ってきた」と分からなくなる。
-				// モチーフ側は {@link MOTIF_ARCHETYPES} が自前でオクターブを持つ。
-				// モチーフ・セクエンツ・サビの小節はオクターブ移動を入れない
-				// （輪郭が命なので、後から音を1つ跳ばすと同じフレーズと分からなくなる）。
-				// 答えの小節は輪郭を借りているだけなので許す。
-				octaveAffinity:
-					role === "motif" || role === "sequence" || role === "climax"
-						? 0
-						: style.octaveAffinity,
-				chromaticAffinity: style.chromaticAffinity,
-				rnd,
-				preserveContour: isMotifBar,
-			},
-		);
+				style.pentatonicMotif,
+				motifShiftMemo.get(shiftKey) ?? null,
+			);
+			fitted = r.degrees;
+			motifShiftMemo.set(shiftKey, r.shift);
+		}
+		const pitches = shapeBar(fitted, slots, tones, prevSemi, {
+			allowLeap: role === "climax",
+			allowArpeggio:
+				role === "climax" ||
+				(role === "run" && style.runShape === "broken") ||
+				(role === "cadence" && style.cadenceShape !== "descend"),
+			quarterSteps,
+			// モチーフの小節はオクターブ移動を入れない。モチーフは輪郭が命なので、
+			// 後から音を1つ跳ばすと「同じフレーズが返ってきた」と分からなくなる。
+			// モチーフ側は {@link MOTIF_ARCHETYPES} が自前でオクターブを持つ。
+			// モチーフ・セクエンツ・サビの小節はオクターブ移動を入れない
+			// （輪郭が命なので、後から音を1つ跳ばすと同じフレーズと分からなくなる）。
+			// 答えの小節は輪郭を借りているだけなので許す。
+			octaveAffinity:
+				role === "motif" || role === "sequence" || role === "climax"
+					? 0
+					: style.octaveAffinity,
+			chromaticAffinity: style.chromaticAffinity,
+			rnd,
+			preserveContour: isMotifBar,
+		});
 
 		if (landing !== null && barInUnit(bar) === 1) landPitch(pitches, landing);
 

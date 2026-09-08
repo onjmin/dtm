@@ -270,6 +270,35 @@ export const isPlausibleMelody = (ns: MetricNote[]): boolean => {
 			Math.abs(mono[i].pitchSemi - mono[i - 1].pitchSemi),
 		);
 	if (maxLeap > 19) return false; // 1オクターブ+5度超の跳躍が出る＝和音の潰れ
+
+	// **2声を交互に書いたチャンネルを弾く。**
+	//
+	// 同時発音の検出（上）は、和音を縦に積んだ伴奏しか捕まえられない。主旋律と
+	// そのオクターブ下の線を**交互に**置いたチャンネルはすり抜けて、単旋律へ均すと
+	// 「オクターブを行き来し続けるメロディ」になる。実測で、全曲の音を足すと
+	// 9半音以上の跳躍が22.3%（生成物は8.1%）もあり、目標帯が跳躍側へ引っぱられて
+	// いた。曲ごとに見ると中央値は2.2%で、p90 が80.3% ——ごく一部の曲が集計を
+	// 支配していただけだった。オクターブで跳んですぐ戻る形が続くのが目印。
+	const iv: number[] = [];
+	for (let i = 1; i < mono.length; i++)
+		iv.push(mono[i].pitchSemi - mono[i - 1].pitchSemi);
+	let wide = 0;
+	let octave = 0;
+	let octaveBack = 0;
+	for (let i = 0; i < iv.length; i++) {
+		if (Math.abs(iv[i]) >= 9) wide++;
+		if (iv[i] >= 12) {
+			octave++;
+			if (i + 1 < iv.length && iv[i + 1] <= -12) octaveBack++;
+		}
+	}
+	if (
+		wide / Math.max(1, iv.length) > 0.1 &&
+		octave > 0 &&
+		octaveBack / octave > 0.5
+	)
+		return false;
+
 	const end = Math.max(...mono.map((n) => n.startStep + n.durationSteps));
 	return end >= STEPS_PER_BAR * 8;
 };
