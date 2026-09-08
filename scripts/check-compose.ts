@@ -783,6 +783,8 @@ console.log("● ハモリと掛け合い");
 	let fifthOrUnison = 0;
 	let fourthOnChordTone = 0;
 	let fourth = 0;
+	let duetSpans = 0;
+	let anticipated = 0;
 	let harmBars = 0;
 	let melodyBars = 0;
 	const duetStyles = new Set<string>();
@@ -835,13 +837,19 @@ console.log("● ハモリと掛け合い");
 			if (tonePcs.length > 0 && tonePcs.includes(melPc)) fourthOnChordTone++;
 		}
 
-		// 掛け合いの相手が歌う小節は、メロディのある小節の中から採られること。
-		for (const b of song.vocal.duetBars)
+		// 掛け合いの区間は曲の中に収まり、前後が入れ替わらないこと。
+		let prevEnd = -1;
+		for (const [a, b] of song.vocal.duetSpans) {
 			check(
-				`seed=${seed} 掛け合いはメロディのある小節から採る`,
-				b >= 0 && b < song.bars,
-				`bar${b + 1} / ${song.bars}小節`,
+				`seed=${seed} 掛け合いの区間が曲の中に収まる`,
+				a >= 0 && b <= song.bars * STEPS_PER_BAR && a < b && a >= prevEnd,
+				`[${a}, ${b}) / ${song.bars * STEPS_PER_BAR}ステップ`,
 			);
+			prevEnd = b;
+			// 受け渡しが小節線ぴったりでない（食い気味に入る）ことがあるか数える。
+			if (a % STEPS_PER_BAR !== 0) anticipated++;
+			duetSpans++;
+		}
 	}
 	// 3度・6度が基本で、テンションの上でだけ4度。この3つで9割を占めること。
 	check(
@@ -865,12 +873,18 @@ console.log("● ハモリと掛け合い");
 		`歌う小節の ${((harmBars / Math.max(1, melodyBars)) * 100).toFixed(0)}%`,
 	);
 	check(
-		"掛け合いの型が2種類以上出る",
-		duetStyles.size >= 2,
+		"掛け合いの型が3種類以上出る",
+		duetStyles.size >= 3,
 		[...duetStyles].join(" "),
 	);
+	// 小節線でぴったり交代し続けると受け渡しが機械的に聞こえる。
+	check(
+		"掛け合いの受け渡しが食い気味に入ることがある",
+		duetSpans === 0 || anticipated / duetSpans > 0.2,
+		`${anticipated}/${duetSpans}`,
+	);
 	console.log(
-		`  ${N}曲: ハモリ 3度/6度 ${((thirdOrSixth / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 4度（テンション上）${((fourth / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 完全5度・同音 ${((fifthOrUnison / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 歌う小節の ${((harmBars / Math.max(1, melodyBars)) * 100).toFixed(0)}% に付く / 掛け合い ${[...duetStyles].join(" ")}`,
+		`  ${N}曲: ハモリ 3度/6度 ${((thirdOrSixth / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 4度（テンション上）${((fourth / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 完全5度・同音 ${((fifthOrUnison / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 歌う小節の ${((harmBars / Math.max(1, melodyBars)) * 100).toFixed(0)}% に付く / 掛け合い ${[...duetStyles].join(" ")}（食い ${duetSpans === 0 ? 0 : Math.round((anticipated / duetSpans) * 100)}%）`,
 	);
 }
 

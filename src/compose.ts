@@ -2398,11 +2398,28 @@ const applyChromatic = (
  * 掛け合いで交互に歌う。どちらもトラックが潤沢な advanced モードでだけ展開する。
  * **ユーザーの操作パラメータにはしない**——曲ごとに自動で引く。
  */
+export type DuetStyle =
+	/** 独唱。 */
+	| "none"
+	/** セクションごとに交代（1番のAメロはA、2番のAメロはB）。 */
+	| "section"
+	/** Aメロ・Bメロで2小節ごとに交代（問い＝A、答え＝B）。 */
+	| "phrase"
+	/** サビで2小節ごとに交代する掛け合いサビ。 */
+	| "chorus"
+	/** Aメロだけ交代し、あとは1人が歌う。 */
+	| "verse";
+
 export type VocalPlan = {
-	/** 2人目（デュエットの相手）が歌う小節。空なら独唱。 */
-	duetBars: number[];
-	/** 掛け合いの単位。"section" はセクションごと、"phrase" は2小節ごとの交代。 */
-	duetStyle: "none" | "section" | "phrase";
+	/**
+	 * 2人目（デュエットの相手）が歌う区間。`[開始ステップ, 終了ステップ)` の並び。
+	 *
+	 * **小節番号ではなく区間で持つ。** 小節線でぴったり交代すると、受け渡しが
+	 * 機械的に聞こえる。歌モノの掛け合いは次の人が小節線の手前から食い気味に
+	 * 入ってくるので、境目を音価の単位でずらせるようにしてある。
+	 */
+	duetSpans: [number, number][];
+	duetStyle: DuetStyle;
 	/** ハモリが入るセクション種別（表示・検算用）。 */
 	harmonyKinds: SectionKind[];
 };
@@ -2519,29 +2536,74 @@ const draw = (
 			? ["prechorus", "chorus", "bridge"]
 			: ["chorus"];
 
-	// **掛け合い（デュエット）。** 2人で交互に歌う形。セクションごとに交代する形と、
-	// 2小節ごと（問い＝A、答え＝B）に交代する形の2つを用意する。サビは分けない
-	// ——サビは2人で歌うのが定石で、片方はハモリへ回る。
-	const duetStyle = pick<"none" | "section" | "phrase">(
-		["none", "none", "none", "section", "phrase"],
+	// **掛け合い（デュエット）。**
+	//
+	// どこで交代するかを曲ごとに引く。セクションまるごと・Aメロ内で2小節ごと・
+	// 掛け合いサビ・Aメロだけ、の4通り。同じ「2小節交代」でも、どのセクションで
+	// やるかで曲の顔が変わる。
+	const duetStyle = pick<DuetStyle>(
+		[
+			"none",
+			"none",
+			"none",
+			"none",
+			"none",
+			"section",
+			"phrase",
+			"chorus",
+			"verse",
+		],
 		rnd,
 	);
-	const duetBars: number[] = [];
+	/** 小節ごとの担当（false=1人目 / true=2人目）。 */
+	const duetOwner = new Array<boolean>(totalBars).fill(false);
 	if (duetStyle !== "none") {
 		let melodySection = 0;
 		for (const section of sectionPlan) {
 			if (!section.spec.melody) continue;
 			const isChorus =
 				section.kind === "chorus" || section.kind === "drop_chorus";
+			const isVerse = section.kind === "verse";
 			const takeSection = melodySection % 2 === 1;
 			melodySection++;
-			if (isChorus) continue;
+			/** このセクションで2小節ごとに交代するか。 */
+			const alternate =
+				duetStyle === "phrase"
+					? !isChorus
+					: duetStyle === "chorus"
+						? isChorus
+						: duetStyle === "verse"
+							? isVerse
+							: false;
+			if (!alternate && !(duetStyle === "section" && takeSection && !isChorus))
+				continue;
 			for (let b = section.startBar; b < section.startBar + section.bars; b++) {
-				if (duetStyle === "phrase") {
-					// 2小節ごとに交代する掛け合い。
+				if (alternate) {
 					if (Math.floor((b - section.startBar) / 2) % 2 === 1)
-						duetBars.push(b);
-				} else if (takeSection) duetBars.push(b);
+						duetOwner[b] = true;
+				} else duetOwner[b] = true;
+			}
+		}
+	}
+
+	// 小節の担当を区間へ畳み、**受け渡しを食い気味にする**。
+	// 次の人は小節線の手前（8分〜付点4分）から入ってくることがある。
+	const duetSpans: [number, number][] = [];
+	{
+		let from = -1;
+		for (let b = 0; b <= totalBars; b++) {
+			const owned = b < totalBars && duetOwner[b];
+			if (owned && from < 0) from = b;
+			if (!owned && from >= 0) {
+				// 入りだけ食う。歌い終わりまでずらすと、次の人の頭を食ってしまう。
+				const lead =
+					from === 0
+						? 0
+						: scaleStep(
+								pick([0, 0, EIGHTH, EIGHTH, QUARTER, DOT_QUARTER], rnd),
+							);
+				duetSpans.push([from * stepsPerBar - lead, b * stepsPerBar]);
+				from = -1;
 			}
 		}
 	}
@@ -3855,7 +3917,7 @@ const draw = (
 		bpm,
 		sections: sectionPlan,
 		bars: totalBars,
-		vocal: { duetBars, duetStyle, harmonyKinds },
+		vocal: { duetSpans, duetStyle, harmonyKinds },
 		melody,
 		submelody,
 		bass,

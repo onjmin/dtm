@@ -5729,62 +5729,71 @@ export const mountDAW = (
 
 					// --- ハモリと掛け合い（上級者モードのみ）---
 					//
-					// 歌モノでは、ハモリはサビ（曲によってはBメロ）から入り、デュエットでは
-					// 掛け合いで交互に歌う。どちらもトラックが要るので、15本ある
-					// advanced のときだけ展開する（simple は4本しかなく、ハモリを置くと
-					// 伴奏かベースを潰すことになる）。**どこで何をするかは曲ごとに
-					// 自動で決まる**（`song.vocal`）ので、ユーザーの操作項目は増やさない。
+					// トラックが要るので、15本ある advanced のときだけ展開する
+					// （simple は4本しかなく、ハモリを置くと伴奏かベースを潰す）。
+					// **どこで何をするかは曲ごとに自動で決まる**（`song.vocal`）ので、
+					// ユーザーの操作項目は増やさない。
 					if (isAdvanced && melodyTrack) {
 						const stepsPerBar = renderConfig.stepsPerBar;
-						const barOf = (n: ComposedNote): number =>
-							Math.floor(n.startStep / stepsPerBar);
-						const duet = new Set(song.vocal.duetBars);
+						const spans = song.vocal.duetSpans;
+						const inDuet = (n: ComposedNote): boolean =>
+							spans.some(([a, b]) => n.startStep >= a && n.startStep < b);
 
-						/** 声を1つ引いて、そのトラックへ歌わせる。 */
+						/** そのトラックへ歌わせる。 */
 						const sing = (
 							track: (typeof trackStates)[number] | undefined,
-							notes: ComposedNote[],
+							lyrics: string,
 							voice: string,
 						): void => {
 							if (!track) return;
 							track.lyricModel = voice;
 							if (track.vocalOctave === 0) track.vocalOctave = -1;
-							track.lyrics = composeLyrics(notes, { stepsPerBar });
+							track.lyrics = lyrics;
 							fireLyricsChange(track);
 						};
 
-						// 掛け合い。メロディを2人で分け、t0 と t11 へ書き分ける。
-						// 器楽側のメロディは t1（オクターブ上の重ね）が丸ごと持っているので、
-						// 分けても旋律線は途切れない。
-						if (duet.size > 0) {
-							const mine = song.melody.filter((n) => !duet.has(barOf(n)));
-							const yours = song.melody.filter((n) => duet.has(barOf(n)));
+						// --- 掛け合い ---
+						// メロディを2人で分け、t0 と t11 へ書き分ける。器楽側のメロディは
+						// t1（オクターブ上の重ね）が丸ごと持っているので旋律線は途切れない。
+						// 受け渡しは小節線ぴったりではなく、次の人が食い気味に入る
+						// （区間は `duetSpans` がステップ単位で持つ）。
+						const partnerVoice = pickComposeVocal(melodyTrack.lyricModel);
+						const duetting = spans.length > 0;
+						if (duetting) {
+							const mine = song.melody.filter((n) => !inDuet(n));
+							const yours = song.melody.filter((n) => inDuet(n));
 							writeTrackAt(0, mine);
 							writeTrackAt(11, yours);
-							sing(melodyTrack, mine, melodyTrack.lyricModel);
+							// 歌詞は主旋律まるごとから起こして担当ぶんだけ写す。2人が別々に
+							// 引くと、掛け合いの前後で言葉が繋がらない。
+							const full = melodyTrack.lyrics;
+							sing(
+								melodyTrack,
+								alignLyrics(song.melody, full, mine, { stepsPerBar }),
+								melodyTrack.lyricModel,
+							);
 							sing(
 								trackStates[11],
-								yours,
-								pickComposeVocal(melodyTrack.lyricModel),
+								alignLyrics(song.melody, full, yours, { stepsPerBar }),
+								partnerVoice,
 							);
 						}
 
-						// ハモリ。**主旋律と同じ言葉**を、同じ場所で別の高さで歌う。
-						// 歌詞を引き直すと2人が別の言葉を同時に歌うことになるので、
-						// 主旋律の歌詞を発音位置で突き合わせて写す。
+						// --- ハモリ ---
+						// **同じ歌い手が、同じ言葉を別の高さで重ねる。** Bメロやサビから
+						// これが入ると、そのパートだけ声が厚くなって豪華に聞こえる。
+						// 別人の声を当てるとデュエットになってしまい、狙いが変わる。
+						// ただし掛け合いの曲では、一緒に歌うサビで相方がハモリへ回る
+						// （2人で同じ音を歌うユニゾンにはしない）。
 						const harmonyTrack = trackStates[2];
 						if (song.harmony.length > 0 && harmonyTrack) {
-							harmonyTrack.lyricModel = pickComposeVocal(
-								melodyTrack.lyricModel,
+							sing(
+								harmonyTrack,
+								alignLyrics(song.melody, melodyTrack.lyrics, song.harmony, {
+									stepsPerBar,
+								}),
+								duetting ? partnerVoice : melodyTrack.lyricModel,
 							);
-							if (harmonyTrack.vocalOctave === 0) harmonyTrack.vocalOctave = -1;
-							harmonyTrack.lyrics = alignLyrics(
-								song.melody,
-								melodyTrack.lyrics,
-								song.harmony,
-								{ stepsPerBar },
-							);
-							fireLyricsChange(harmonyTrack);
 						}
 					}
 				}
