@@ -452,6 +452,18 @@ const SECTION_A_PROGRESSIONS: string[][] = [
 	["Am", "C", "F", "G"], // マイナー始まりの4536
 	["FM7", "G7", "CM7", "Am7"], // ジャズ寄りの2-5-1
 	["Dm7", "G7", "Em7", "Am7"], // 2-5-3-6
+	// --- ライン・クリシェ（内声が半音ずつ動く） ---
+	// 和音の1声だけを半音で動かして、和音記号は変わるのに響きは繋がったまま進む。
+	// J-POPのサビ後半やAメロの定番。
+	["Am", "AmM7", "Am7", "Am6"], // ラ→ソ#→ソ→ファ# の下行
+	["C", "CM7", "C7", "F"], // ド→シ→シb→ラ
+	["Am", "AmM7", "Am7", "D7"], // クリシェからドリアンのIVへ
+	["F", "Fm", "CM7", "Am7"], // サブドミナントマイナーのクリシェ
+	// --- ペダルポイント（ベースを保続する） ---
+	// ベースだけ動かさずに上の和音を変える。緊張感が出る。分数和音のルートを
+	// {@link chordTones} が先頭で返すので、ベースは自然に保続音になる。
+	["C", "Am/C", "F/C", "G/C"],
+	["Am", "Em/A", "F/A", "G/A"],
 	// --- 借用和音（同主短調・ミクソリディアンから借りる） ---
 	// **調の外の和音を進行そのものに持たせる。** ここまでの候補は全部ハ長調／イ短調の
 	// ダイアトニックで、セカンダリドミナント以外に調の外の音が出てこなかった。
@@ -2307,6 +2319,11 @@ export type TonalPlan = {
 	 * 仲介の和音も要らずに明暗だけが入れ替わる（`keyShift` は 0 のまま）。
 	 */
 	relativeKinds: SectionKind[];
+	/**
+	 * 平行調なら 0、同主調なら ±3。平行調は調号が変わらないのが利点なので 0 のまま、
+	 * 同主調（ハ長調→ハ短調）は主音を保ったまま調号が3つ変わるので ±3 になる。
+	 */
+	relativeShift: number;
 	/** トニックを避けて浮遊感を出す曲か。主和音を鳴らさず、主音へも着地しない。 */
 	floating: boolean;
 };
@@ -2377,18 +2394,27 @@ const draw = (
 	const totalBars = sectionPlan.reduce((sum, s) => sum + s.bars, 0);
 
 	/**
-	 * **平行調へ振るセクション。** ハ長調とイ短調は同じ音の集合なので、調号も変えず、
-	 * 仲介の和音（ピボット・コード）も要らずに明暗だけを入れ替えられる。半音上げの
-	 * 転調と違って `keyShift` は 0 のままで、**進行と着地音の中心だけが移る**。
-	 * Bメロで陰らせてサビで開ける、というのがいちばん効く置き方。
+	 * **進行と着地音を平行調側へ振るセクション。** ハ長調とイ短調は同じ音の集合なので、
+	 * 調号も仲介の和音も要らずに明暗だけを入れ替えられる。`keyShift` は 0 のままで、
+	 * **進行と着地音の中心だけが移る**。Bメロで陰らせてサビで開けるのが効く置き方。
+	 *
+	 * 同主調（ハ長調→ハ短調）も同じ仕組みを使う。ハ短調はイ短調の3半音上なので、
+	 * 短調側の進行を引いて `keyShift` を +3 すれば主音が動かないまま暗くなる。
 	 */
 	const relativeKinds = new Set<SectionKind>();
-	if (rnd() < 0.3)
+	/** 同主調のときだけ 0 以外。平行調は 0（調号が変わらないのが平行調の利点）。 */
+	let relativeShift = 0;
+	if (rnd() < 0.25) {
+		// **Aメロは含めない。** 調を名乗る場所なので、最初のAメロが平行調だと
+		// その曲が何調なのかが決まらないまま進む。陰らせるのはBメロ・Cメロ。
 		for (const kind of pick<SectionKind[]>(
-			[["prechorus"], ["bridge"], ["prechorus", "bridge"], ["verse"]],
+			[["prechorus"], ["bridge"], ["prechorus", "bridge"]],
 			rnd,
 		))
 			relativeKinds.add(kind);
+		// 3回に1回は同主調にする。平行調より遠い（調号が3つ変わる）ぶん陰りが強い。
+		if (rnd() < 0.33) relativeShift = resolvedKey.mode === "minor" ? -3 : 3;
+	}
 
 	/**
 	 * **トニックを避ける（浮遊感）。** 主和音を鳴らさず主音へも着地しないと、明るいのか
@@ -2397,34 +2423,50 @@ const draw = (
 	 */
 	const floating = rnd() < 0.12;
 
-	// 約35%の曲でセクションごとの曲中転調（ラスサビ転調・Bメロ転調）を入れる。
-	// 伴奏トラックは rootShift が曲全体に掛かるため、曲中の調変化は各小節のコード名を移調し、
-	// メロディ・サブメロ・ベースの各トラックもそのセクションの小節だけ音高をシフトする。
-	// 平行調の曲では半音の転調を重ねない（明暗の入れ替えが埋もれる）。浮遊感の曲でも
+	// --- 曲中転調 ---
+	//
+	// **五度圏で近いほど自然、遠いほどドラマチック。** 属調（+7）と下属調（+5）は
+	// 五度圏で隣なので共通の和音が多く、橋渡しを置けば違和感なく移れる。半音上げは
+	// 理屈の上では遠いが、ポピュラーでは「サビへの直接転調」として定番になっている。
+	//
+	// 伴奏は `rootShift` が曲全体に掛かるので、曲中の調変化は小節ごとにコード名を
+	// 移調し、メロディ・サブメロ・ベースもその小節だけ音高をずらす。
+	//
+	// 平行調・同主調の曲では重ねない（明暗の入れ替えが埋もれる）。浮遊感の曲でも
 	// 掛けない——移調すると避けていたはずの和音が主和音の位置へ来てしまう。
-	if (relativeKinds.size === 0 && !floating && rnd() < 0.35) {
-		const modType = pick<"chorus_up" | "prechorus_down">(
-			["chorus_up", "chorus_up", "prechorus_down"],
+	if (relativeKinds.size > 0 && relativeShift !== 0)
+		for (const s of sectionPlan)
+			if (relativeKinds.has(s.kind)) s.keyShift = relativeShift;
+
+	if (relativeKinds.size === 0 && !floating && rnd() < 0.32) {
+		const modType = pick<"chorus_up" | "color" | "dominant" | "subdominant">(
+			["chorus_up", "chorus_up", "color", "dominant", "subdominant"],
 			rnd,
 		);
 		if (modType === "chorus_up") {
-			// サビで +1 半音（または +2 半音）転調して盛り上げる（J-POP/ボカロの王道）
+			// ラスサビで +1 半音（または +2 半音）。理屈の橋渡しは無く、直接転調で上げる。
 			const shift = pick([1, 1, 2], rnd);
 			let lastChorusIdx = -1;
 			for (let i = 0; i < sectionPlan.length; i++) {
 				if (sectionPlan[i].kind === "chorus") lastChorusIdx = i;
 			}
-			if (lastChorusIdx >= 0) {
-				for (let i = lastChorusIdx; i < sectionPlan.length; i++) {
+			if (lastChorusIdx >= 0)
+				for (let i = lastChorusIdx; i < sectionPlan.length; i++)
 					sectionPlan[i].keyShift = shift;
-				}
-			}
 		} else {
-			// Bメロで一時的に転調（-2 長2度下 または +3 短3度上）して陰影を付け、サビで主調に戻る
-			const shift = pick([-2, 3], rnd);
-			for (const s of sectionPlan) {
-				if (s.kind === "prechorus") s.keyShift = shift;
-			}
+			// Bメロ／Cメロを一時的に別の調へ振り、サビで主調へ戻る。
+			const shift =
+				modType === "dominant"
+					? 7
+					: modType === "subdominant"
+						? 5
+						: pick([-2, 3], rnd);
+			const kinds: SectionKind[] = pick(
+				[["prechorus"], ["bridge"], ["prechorus", "bridge"]],
+				rnd,
+			);
+			for (const s of sectionPlan)
+				if (kinds.includes(s.kind)) s.keyShift = shift;
 		}
 	}
 
@@ -2603,6 +2645,49 @@ const draw = (
 	}
 	progression.length = totalBars;
 	// 伴奏トラック用のコード文字列。転調セクションはコード名そのものを移調して出力する。
+	// --- 転調の橋渡し ---
+	//
+	// 調が変わる直前の1小節を橋渡しに使う。やり方は2つ。
+	//
+	// - **ピボットコード**: 両方の調にあるダイアトニックコードを、**前の調のまま**置く。
+	//   聴き手は前の調として聴いていた和音が、次の小節から新しい調の一員として
+	//   機能し始めるのを追いかけることになる。五度圏で隣（属調・下属調）でしか成立しない。
+	// - **ドミナントモーション**: 新しい調のV7を、**新しい調で**置く。共通の和音が
+	//   無くてもどこへでも移れる代わりに、転調したことがはっきり聞こえる。
+	//
+	// 半音上げ（ラスサビ）には橋渡しを置かない。準備の無い直接転調そのものが
+	// あの効果の正体なので、滑らかにすると狙いが消える。
+	/** 移調量ごとの、元の調と共通するダイアトニックコード（ハ長調の綴りで書く）。 */
+	const PIVOT_CHORDS: Record<number, string[]> = {
+		7: ["C", "Em7", "G", "Am"], // 属調（ト長調）と共通
+		5: ["C", "Dm7", "F", "Am"], // 下属調（ヘ長調）と共通
+	};
+	for (let bar = 1; bar < totalBars; bar++) {
+		const shift = barKeyShift[bar];
+		const prev = barKeyShift[bar - 1];
+		if (shift === prev) continue;
+		// **役目の決まっている小節は潰さない。** Bメロ末尾はサビへの助走（半終止）、
+		// サビ・アウトロ末尾は全終止で、そこを橋渡しに使うと役目が競合する。
+		const prevSec = sectionAt(sectionPlan, bar - 1);
+		if (
+			prevSec.kind === "prechorus" ||
+			prevSec.kind === "chorus" ||
+			prevSec.kind === "outro"
+		)
+			continue;
+		// 転調のたびに毎回は置かない。置きすぎると進行が橋渡しだらけになる。
+		if (rnd() < 0.35) continue;
+		const pivots = PIVOT_CHORDS[(((shift - prev) % 12) + 12) % 12];
+		if (pivots && rnd() < 0.6) {
+			// ピボット: 前の調のまま、共通の和音を鳴らす。
+			progression[bar - 1] = pick(pivots, rnd);
+		} else if (Math.abs(shift - prev) !== 1 && Math.abs(shift - prev) !== 2) {
+			// ドミナントモーション: 新しい調のV7を1小節先取りする。
+			progression[bar - 1] = "G7";
+			barKeyShift[bar - 1] = shift;
+		}
+	}
+
 	const chordProgression = progression
 		.map((chord, bar) => transposeChordName(chord, barKeyShift[bar]))
 		.join("|");
@@ -3853,7 +3938,7 @@ const draw = (
 		sections: sectionPlan,
 		bars: totalBars,
 		vocal: { duetSpans, duetStyle, harmonyKinds },
-		tonal: { relativeKinds: [...relativeKinds], floating },
+		tonal: { relativeKinds: [...relativeKinds], relativeShift, floating },
 		melody,
 		submelody,
 		bass,

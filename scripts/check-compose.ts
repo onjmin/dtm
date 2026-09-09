@@ -786,6 +786,8 @@ console.log("● 平行調とトニック回避");
 	let floating = 0;
 	let floatingNoTonic = 0;
 	let relativeAndShift = 0;
+	let parallelKey = 0;
+	const modKinds = new Set<string>();
 	for (let seed = 1; seed <= N; seed++) {
 		const song = composeSong({
 			stepsPerBar: STEPS_PER_BAR,
@@ -799,14 +801,35 @@ console.log("● 平行調とトニック回避");
 
 		if (song.tonal.relativeKinds.length > 0) {
 			relative++;
-			// 平行調は調号を変えずに明暗だけを入れ替える手法なので、半音の転調と
-			// 混ぜない（混ぜると何が起きているのか聞き分けられない）。
-			if (song.sections.some((x) => x.keyShift !== 0)) relativeAndShift++;
+			if (song.tonal.relativeShift !== 0) parallelKey++;
+			// 平行調（relativeShift 0）は調号を変えないのが利点なので、keyShift は
+			// 動かない。同主調（±3）はそのセクションだけがその量で動く。
+			const allowed = new Set([0, song.tonal.relativeShift]);
+			if (song.sections.some((x) => !allowed.has(x.keyShift)))
+				relativeAndShift++;
 		}
 		if (song.tonal.floating) {
 			floating++;
 			if (!chords.some(isTonic)) floatingNoTonic++;
 		}
+		const shifts = [...new Set(song.sections.map((x) => x.keyShift))].filter(
+			(v) => v !== 0,
+		);
+		modKinds.add(
+			song.tonal.relativeShift !== 0
+				? "同主調"
+				: song.tonal.relativeKinds.length > 0
+					? "平行調"
+					: shifts.length === 0
+						? "無し"
+						: shifts.includes(7)
+							? "属調"
+							: shifts.includes(5)
+								? "下属調"
+								: shifts.some((v) => v === 1 || v === 2)
+									? "半音上げ"
+									: "色付け",
+		);
 	}
 	check(
 		"平行調のセクションを持つ曲が2〜5割",
@@ -814,9 +837,17 @@ console.log("● 平行調とトニック回避");
 		`${((relative / N) * 100).toFixed(0)}%`,
 	);
 	check(
-		"平行調と半音の転調を同じ曲で重ねない",
+		"平行調・同主調の曲に別の転調を重ねない",
 		relativeAndShift === 0,
 		`${relativeAndShift}曲`,
+	);
+	check("同主調の曲も出る", parallelKey > 0, `${parallelKey}/${relative}曲`);
+	// 五度圏の近い調（属調・下属調）から遠い直接転調（半音上げ）まで、
+	// 生成の幅として一通り出ること。
+	check(
+		"転調の種類が5通り以上出る",
+		modKinds.size >= 5,
+		[...modKinds].join(" "),
 	);
 	check(
 		"浮遊感の曲が1割前後",
@@ -829,7 +860,7 @@ console.log("● 平行調とトニック回避");
 		`${floatingNoTonic}/${floating}`,
 	);
 	console.log(
-		`  ${N}曲: 平行調 ${((relative / N) * 100).toFixed(0)}% / 浮遊感 ${((floating / N) * 100).toFixed(0)}%（うちトニック皆無 ${floating ? Math.round((floatingNoTonic / floating) * 100) : 0}%）`,
+		`  ${N}曲: 転調の型 ${[...modKinds].join("・")} / 平行調 ${(((relative - parallelKey) / N) * 100).toFixed(0)}% / 同主調 ${((parallelKey / N) * 100).toFixed(0)}% / 浮遊感 ${((floating / N) * 100).toFixed(0)}%（うちトニック皆無 ${floating ? Math.round((floatingNoTonic / floating) * 100) : 0}%）`,
 	);
 }
 
