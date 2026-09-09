@@ -1497,17 +1497,25 @@ const MELODY_CENTER = (MELODY_LOW + MELODY_HIGH) / 2;
  * ハモリ（`ぺぽよ/±0/220715.mid` の ch6/ch7、同じ位置で鳴る597音）を突き合わせると、
  * 平行ハモリとは似ても似つかない性質が出る。
  *
- *   上 26% / 下 63% / ユニゾン 11%     ← 下が主。ユニゾンも普通に混ざる
- *   最頻の音程は**完全4度下（−5）で24.5%** ← 3度ではない
- *   隣の音への平均移動 主旋律 3.07半音 / ハモリ 1.23半音  ← 1/2.5しか動かない
- *   同音を繰り返す割合 主旋律 30% / ハモリ 54%
+ * 参考曲4本のハモリの組を測ると、**動き方が2種類**ある。
  *
- * つまりハモリは**主旋律より動かない線**で、主旋律が跳ねている間も同じ音に留まる。
- * その結果として音程は刻々と変わり、ユニゾンにも完全4度にもなる。度数を固定して
- * 平行移動させると、この性質はどうやっても出ない。
+ *   曲                        移動比  上/ユニ/下      多い音程
+ *   ±0 ch6↔ch7               2.49倍   26/11/63%   −5:24% 0:11% +3:10%
+ *   ヤツメ穴 ch1↔ch0          2.84倍  100/ 0/ 0%   +3:49% +4:25% +6:13%
+ *   チョウチン少女 ch1↔ch0     1.00倍   40/18/42%    0:18% +5:16% −5:10%
+ *   チョウチン少女 ch11↔ch13   1.01倍  100/ 0/ 0%   +9:32% +4:21% +7:16%
+ *   チョウチン少女 ch12↔ch11   1.43倍   38/19/43%   −5:21% 0:19% +5:11%
  *
- * ここでは和音構成音の中から**直前のハモリの音に近いこと**を最優先で選ぶ。
- * 動かない線を作れば、音程の分布は勝手に付いてくる。
+ * - **静的**（移動比2.5倍前後）… 主旋律が跳ねている間もハモリは同じ音に留まる。
+ *   その結果として音程が刻々と変わり、ユニゾンにも完全4度にもなる
+ * - **並走**（移動比1.0倍前後）… 主旋律と同じだけ動く、いわゆる3度・6度ハモリ
+ *
+ * 度数を固定して平行移動させる書き方では静的なほうが作れないし、直前の音に
+ * 貼り付ける書き方では並走が作れない。**両方を生成の幅として持つ。**
+ *
+ * 音程も、解説が「避けろ」と言う完全5度（+7）が並走ハモリで16%出ているし、
+ * 6度上（+9）が32%で最頻の組もある。平行ハモリを前提にした規則をそのまま
+ * 当てはめると、実際に使われている形を落とすことになる。
  */
 const harmonyPitch = (
 	melodySemi: number,
@@ -1516,7 +1524,12 @@ const harmonyPitch = (
 	prevHarmony: number | null,
 	/** 曲ごとの居場所（主旋律から何半音ずれた辺りに置くか）。負が下。 */
 	offset: number,
+	/** 主旋律と同じだけ動く並走ハモリか。false なら動かない静的ハモリ。 */
+	parallel: boolean,
 ): ScaleDegree => {
+	// 探す範囲は居場所の周り。上ハモの曲で上を切ると、6度上（+9）が作れない。
+	const lo = Math.max(-12, Math.min(offset, 0) - 7);
+	const hi = Math.min(12, Math.max(offset, 0) + 7);
 	let best: ScaleDegree | null = null;
 	let bestCost = Number.POSITIVE_INFINITY;
 	for (const tone of tones) {
@@ -1524,15 +1537,20 @@ const harmonyPitch = (
 		for (let oct = 0; oct <= 10; oct++) {
 			const semi = pc + oct * 12;
 			const delta = semi - melodySemi;
-			// 主旋律より上へ大きく出ない・下へ離れすぎない。
-			if (delta > 5 || delta < -12) continue;
-			// **直前の音から大きく動かないことを最優先。** これがハモリを平行線ではなく
-			// 独立した線にする。参考曲のハモリは「よく動くが1〜2半音ずつ」なので、
-			// 順次進行はほぼ無料、跳躍だけを高くする。次に、曲ごとの居場所からの遠さ。
+			if (delta > hi || delta < lo) continue;
 			const move = prevHarmony === null ? 0 : Math.abs(semi - prevHarmony);
-			const stay = move <= 2 ? move * 0.04 : 0.1 + (move - 2) * 0.9;
+			// 静的は「動かないこと」を、並走は「居場所を保つこと」を優先する。
+			// 静的側は、参考曲のハモリが「よく動くが1〜2半音ずつ」なので
+			// 順次進行をほぼ無料にして跳躍だけ高くする。
+			const stay = parallel
+				? move * 0.06
+				: move <= 2
+					? move * 0.04
+					: 0.1 + (move - 2) * 0.9;
 			const cost =
-				stay + Math.abs(delta - offset) * 0.7 + (3 - tone.weight) * 0.4;
+				stay +
+				Math.abs(delta - offset) * (parallel ? 1.4 : 0.7) +
+				(3 - tone.weight) * 0.4;
 			if (cost < bestCost) {
 				bestCost = cost;
 				best = { semi, fifth: tone.fifth };
@@ -2524,11 +2542,16 @@ const draw = (
 		["chorus", "chorus", "prechorus"],
 		rnd,
 	);
+	/** 主旋律と同じだけ動く並走ハモリか（{@link harmonyPitch}）。 */
+	const harmonyParallel = rnd() < 0.45;
 	/**
-	 * ハモリの居場所（主旋律から何半音ずれた辺りに置くか）。参考曲は下が63%・
-	 * 最頻が完全4度下なので、下を主にして時々3度上へ回す。
+	 * ハモリの居場所（主旋律から何半音ずれた辺りに置くか）。参考曲7組を集計すると
+	 * 上が62%で、音程は +3 / −5 / +5 / +4 が10〜13%ずつ並ぶ広い分布になる。
+	 * 並走ハモリのほうが上へ行きやすい。
 	 */
-	const harmonyOffset = pick([-5, -5, -4, -3, -7, 3, 4], rnd);
+	const harmonyOffset = harmonyParallel
+		? pick([3, 4, 5, 9, 7, 0, -5], rnd)
+		: pick([3, 4, 5, 0, -5, -4, -7], rnd);
 	/** 直前のハモリの音。小節をまたいで持ち越す（動かない線を作るため）。 */
 	let prevHarmony: number | null = null;
 	const harmonyKinds: SectionKind[] =
@@ -3657,8 +3680,15 @@ const draw = (
 					tones,
 					prevHarmony,
 					harmonyOffset,
+					harmonyParallel,
 				);
-				const hClamped = clampSemi(hTone.semi, MELODY_LOW - 12, MELODY_HIGH);
+				// 折り返す範囲を主旋律の音域より広く取る。ここを MELODY_HIGH で切ると、
+				// 高いところの上ハモがオクターブ下へ畳まれて下ハモに化ける。
+				const hClamped = clampSemi(
+					hTone.semi,
+					MELODY_LOW - 12,
+					MELODY_HIGH + 7,
+				);
 				prevHarmony = hClamped;
 				const k = barKeyShift[bar];
 				const fifthShift =

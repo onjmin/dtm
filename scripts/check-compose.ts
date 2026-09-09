@@ -930,7 +930,7 @@ console.log("● ハモリと掛け合い");
 			const gap = Math.round((h.pitchUnits - m) / UNITS_PER_SEMITONE);
 			if (gap > 0) above++;
 			else if (gap === 0) unison++;
-			if (gap > 5 || gap < -12) outOfRange++;
+			if (gap > 12 || gap < -12) outOfRange++;
 		}
 
 		// 掛け合いの区間は曲の中に収まり、前後が入れ替わらないこと。
@@ -947,22 +947,26 @@ console.log("● ハモリと掛け合い");
 			duetSpans++;
 		}
 	}
+	// 参考曲7組（±0 / ヤツメ穴 / チョウチン少女×3 / とべない深海魚×2、1705音）を
+	// 集計した目標: 上62% ユニゾン8% 下30%、移動 主旋律2.58 / ハモリ1.73（1.49倍）。
 	const harmAvg = harmMove / Math.max(1, harmSteps);
 	const melAvg = melMove / Math.max(1, melSteps);
 	check(
 		"ハモリは主旋律より動かない",
-		harmAvg < melAvg * 0.75,
-		`主旋律 ${melAvg.toFixed(2)} / ハモリ ${harmAvg.toFixed(2)}半音（参考 3.07 / 1.23）`,
+		harmAvg < melAvg * 0.9,
+		`主旋律 ${melAvg.toFixed(2)} / ハモリ ${harmAvg.toFixed(2)}半音（参考 2.58 / 1.73）`,
 	);
 	check(
-		"ハモリは下が主（参考 上26% / ユニゾン11% / 下63%）",
-		above / Math.max(1, harmNotes) < 0.45,
-		`上 ${((above / Math.max(1, harmNotes)) * 100).toFixed(0)}% / ユニゾン ${((unison / Math.max(1, harmNotes)) * 100).toFixed(0)}%`,
+		"上ハモが主だが、下ハモとユニゾンも出る",
+		above / Math.max(1, harmNotes) > 0.4 &&
+			above / Math.max(1, harmNotes) < 0.75 &&
+			unison > 0,
+		`上 ${((above / Math.max(1, harmNotes)) * 100).toFixed(0)}% / ユニゾン ${((unison / Math.max(1, harmNotes)) * 100).toFixed(0)}%（参考 62 / 8）`,
 	);
 	check(
-		"ハモリが主旋律から離れすぎない",
+		"ハモリが主旋律から1オクターブより離れない",
 		outOfRange === 0,
-		`${outOfRange}音が +5〜-12半音の外`,
+		`${outOfRange}音が ±12半音の外`,
 	);
 	check(
 		"ハモリは全編には付けない",
