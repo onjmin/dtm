@@ -1429,6 +1429,17 @@ export type ComposeResult = {
 	octave: ComposedNote[];
 	/** コードパッド。ストリングス/シンセパッド的なロングトーン。Bメロ以降で鳴る。 */
 	pad: ComposedNote[];
+	/**
+	 * 間奏の器楽ソロ。**間奏の小節にしか音が入らない**ので、専用トラックへ
+	 * そのまま書き込めば、その1本だけ別の楽器（ギターソロ等）に割り当てられる。
+	 * 歌メロと同時には鳴らない（歌が休む場所を引き取る声部）。
+	 */
+	solo: ComposedNote[];
+	/**
+	 * 上級者モードの編曲プラン。どの層をどのセクションでどの奏法で鳴らすか。
+	 * {@link ArrangePlan}
+	 */
+	arrange: ArrangePlan;
 	stats: ComposeStats;
 };
 
@@ -2411,6 +2422,62 @@ export type VocalPlan = {
 	octaveLayer: boolean;
 };
 
+/**
+ * 編曲の1層。伴奏・装飾・重ねを同じ形で表す。
+ *
+ * `sections` が `null` なら曲全体。`octave` はトラック側のオクターブ設定
+ * （ノート自体は動かさない）。
+ */
+export type ArrangeLayer = {
+	pattern: ChordPatternType;
+	sections: SectionKind[] | null;
+	octave: number;
+};
+
+/**
+ * 上級者モードの編曲プラン。**曲ごとに引く。**
+ *
+ * ここが無かったころ、編曲は「どのトラックが何を鳴らすか」を書いた静的な表だった。
+ * ベースの奏法もサブメロの書法もハモリの範囲も曲ごとに引き直しているのに、編曲だけ
+ * 全曲同じ——伴奏3種が最初から最後まで鳴りっぱなしで、セクションが変わっても伴奏の
+ * 手触りが変わらなかった。
+ *
+ * ## オクターブの重ねを主役にしない
+ *
+ * 「既にあるトラックを1オクターブ動かして別トラックへ写す」層は、音楽的な価値が高くない。
+ * 人の耳はオクターブ違いを**同じ音**として聞く（オクターブ等価）ので、写した層は新しい
+ * 声部にならず、音量と音色がわずかに変わるだけになる。強調としての意味はあるので
+ * 全否定はしないが、**常設にする理由は無い**。
+ *
+ * そこで、
+ *
+ * - 伴奏の層は**奏法そのものを変える**（{@link ArrangeLayer.pattern}）。同じ和音でも
+ *   ブロック・アルペジオ・裏拍・八分食い・分散では鳴る音の位置が違うので、写しではない。
+ * - 主旋律に重ねる層（{@link ArrangePlan.lead}）は**オクターブ上だけでなくユニゾンも引く**。
+ *   同じ高さを別の楽器で重ねると合成音色になり、オクターブ転写より情報量が多い。
+ * - ベースの重ね（{@link ArrangePlan.bassLayer}）は既定で**出さない**。出すときも
+ *   オクターブ下ではなく上へ、盛り上がる場所だけに置く。下へ重ねると 30Hz 前後まで
+ *   落ちて、強調どころか輪郭が濁る。
+ */
+export type ArrangePlan = {
+	/**
+	 * 伴奏の層。1本目は曲全体の「地」で、2本目以降はセクションを絞って足す。
+	 * 長さは1〜3。
+	 */
+	backing: ArrangeLayer[];
+	/** きらびやかな装飾（ウワモノ）。`null` なら出さない。 */
+	sparkle: ArrangeLayer | null;
+	/** コードパッドを鳴らすセクション。 */
+	padSections: SectionKind[];
+	/**
+	 * 主旋律に重ねる別音色の層。`null` なら重ねない。
+	 * `octave` が 0 ならユニゾン（音色だけが変わる）、1 ならオクターブ上。
+	 */
+	lead: { sections: SectionKind[]; octave: number } | null;
+	/** ベースの重ね。`null` なら出さない（多くの曲はこちら）。 */
+	bassLayer: { sections: SectionKind[]; octave: number } | null;
+};
+
 /** 曲の調のふるまい。 */
 export type TonalPlan = {
 	/**
@@ -2428,7 +2495,7 @@ export type TonalPlan = {
 };
 
 /** 1回分の draw。点数を付けるのは呼び出し側（{@link evaluate}）の仕事。 */
-type Draw = Omit<ComposeResult, "stats" | "drum" | "instrument"> & {
+type Draw = Omit<ComposeResult, "stats" | "drum" | "instrument" | "arrange"> & {
 	melodyDurations: number[];
 	restSteps: number;
 	totalSteps: number;
@@ -2881,7 +2948,7 @@ const draw = (
 	type Unit = {
 		role: BarRole;
 		/** どのモチーフを使うか。同じ素材の楽句は音の並びごと再現する。 */
-		source: "a" | "a2" | "b" | "c" | "answer" | "silent";
+		source: "a" | "a2" | "b" | "c" | "answer" | "silent" | "solo";
 		/** セクションの終わりの着地音（主音からの音階度数）。途中は null。 */
 		landing: number | null;
 		section: PlacedSection;
@@ -2928,9 +2995,20 @@ const draw = (
 		const src = sourceOf(section.kind);
 		for (let u = 0; u < unitCount; u++) {
 			if (!section.spec.melody) {
+				// **間奏は「歌が休む場所」であって「音楽が休む場所」ではない。**
+				// 歌メロを置かないのは正しいが、伴奏だけにすると曲の中で最も
+				// のっぺりした4〜8小節になる。ここには器楽のソロ（`solo`）を書き、
+				// 別トラック＋別楽器で鳴らす。素材はサビと同じ（{@link sourceOf} の
+				// "b"）なので、間奏がサビの主題を先取り／反芻する形になる。
+				//
+				// イントロはソロを置かない。曲の頭で聞かせどころを使い切ると、
+				// サビが来たときに上がり幅が無くなる。
+				const solo = section.kind === "interlude";
 				units.push({
-					role: "hold",
-					source: "silent",
+					// 見せ場なので走句と山を交互に置く。`hold` のままだと
+					// リズム型が最も薄いものになり、ソロにならない。
+					role: solo ? (u % 2 === 0 ? "run" : "climax") : "hold",
+					source: solo ? "solo" : "silent",
 					landing: null,
 					section,
 				});
@@ -3273,7 +3351,9 @@ const draw = (
 			if (breathBars.has(source)) breathBars.add(bar);
 			continue;
 		}
-		const isB = units[u].source === "b";
+		// ソロ（間奏）はサビと同じ素材で書く。{@link sourceOf} が interlude を "b" に
+		// 割り当てているのと同じ理由で、間奏だけ無関係な語彙にすると曲から浮く。
+		const isB = units[u].source === "b" || units[u].source === "solo";
 		const isA2 = units[u].source === "a2";
 		const isC = units[u].source === "c";
 		const isPrechorusEnd =
@@ -3357,6 +3437,8 @@ const draw = (
 	const harmony: ComposedNote[] = [];
 	const harmony2: ComposedNote[] = [];
 	const pad: ComposedNote[] = [];
+	/** 間奏の器楽ソロ。主旋律とは別のトラック・別の楽器で鳴らす。 */
+	const solo: ComposedNote[] = [];
 	const melodyDurations: number[] = [];
 	/** 小節ごとの緊張度（0〜1）。和音が無い小節は0のまま。 */
 	const barTension: number[] = new Array(totalBars).fill(0);
@@ -3555,10 +3637,15 @@ const draw = (
 			rnd,
 		});
 
-		// **イントロと間奏はメロディを書かない。** ここに歌メロを置くと、
+		// **イントロと間奏は歌メロを書かない。** ここに歌メロを置くと、
 		// どのセクションも同じ顔になり「ずっと歌っている曲」になってしまう。
 		// 伴奏・ベース・ドラム（とサブメロ）は鳴るので、無音にはならない。
-		const silent = units[unitOf(bar)].source === "silent";
+		//
+		// 間奏だけは、同じ音の並びを `melody` ではなく `solo` へ書く。歌が休む場所を
+		// 器楽が引き取る形で、別トラック・別楽器で鳴らせば「間奏はギターソロ」になる。
+		const unitSource = units[unitOf(bar)].source;
+		const isSolo = unitSource === "solo";
+		const silent = unitSource === "silent" || isSolo;
 
 		// メロディ
 		const barHead = pitches[0];
@@ -3572,7 +3659,11 @@ const draw = (
 			const semi = pitches[i];
 			tensionSum += ((3 - toneWeight(semi, tones)) / 3) * slots[i].value;
 			tensionSteps += slots[i].value;
-			if (role !== "climax") {
+			// **跳躍・順次の統計は歌う小節だけで測る。** 休符率を `sungBars` で測って
+			// いるのと同じ理由で、歌メロの無い小節（イントロ・間奏のソロ）をここへ
+			// 混ぜると「間奏で走句を弾く曲＝跳躍の多い歌」に見えてしまい、採点が
+			// 旋律の性格ではなく構成の選び方に引きずられる。
+			if (!silent && role !== "climax") {
 				const gap = Math.abs(semi - prevSemi);
 				maxLeap = Math.max(maxLeap, gap);
 				intervals++;
@@ -3581,6 +3672,27 @@ const draw = (
 			}
 			const slot = slots[i];
 			if (silent) {
+				if (isSolo) {
+					const ks = barKeyShift[bar];
+					const fifthShiftSolo =
+						ks === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((ks % 12) + 12) % 12];
+					solo.push({
+						startStep: barStart + slot.at,
+						pitchUnits: spelledToUnits(
+							semi + ks,
+							fifths[i] + fifthShiftSolo,
+							edo,
+						),
+						durationSteps: slot.value,
+						// ソロは前に出る声部なので、歌メロより気持ち強く弾く。
+						velocity:
+							slot.at === 0
+								? 116
+								: slot.value <= scaleStep(SIXTEENTH)
+									? 96
+									: 106,
+					});
+				}
 				prevSemi = semi;
 				continue;
 			}
@@ -4069,12 +4181,20 @@ const draw = (
 				melodyDurations[i] += melodyDurations[i + 1];
 				melodyDurations.splice(i + 1, 1);
 			}
-			// harmony も同位置にあればタイ結合
-			const hCurIdx = harmony.findIndex((h) => h.startStep === cur.startStep);
-			const hNxtIdx = harmony.findIndex((h) => h.startStep === nxt.startStep);
-			if (hCurIdx >= 0 && hNxtIdx >= 0) {
-				harmony[hCurIdx].durationSteps += harmony[hNxtIdx].durationSteps;
-				harmony.splice(hNxtIdx, 1);
+			// **ハモリも一緒に食わせる。** 主旋律だけタイで伸ばすと、小節頭で
+			// ハモリだけが新しい音を出し、既に鳴っていない音に対してハモる形になる
+			// （実測で1%弱の曲が、主旋律から13〜15半音離れたハモリを出していた）。
+			// 直前の音へ繋げられないとき（間引かれていて伸ばす先が無いとき）は落とす。
+			// ハモリはもともと主旋律の一部にしか付けない声部なので、1音減っても穴には
+			// ならない。2声目（{@link ComposeResult.harmony2}）も同じ扱いにする——
+			// 以前はここが1声目だけで、3声の曲だけ食い違っていた。
+			for (const voice of [harmony, harmony2]) {
+				const nxtIdx = voice.findIndex((h) => h.startStep === nxt.startStep);
+				if (nxtIdx < 0) continue;
+				const curIdx = voice.findIndex((h) => h.startStep === cur.startStep);
+				if (curIdx >= 0)
+					voice[curIdx].durationSteps += voice[nxtIdx].durationSteps;
+				voice.splice(nxtIdx, 1);
 			}
 			i--;
 		}
@@ -4149,7 +4269,7 @@ const draw = (
 	// 曲全体を同じ量だけずらす。units は絶対音高なので、綴りの関係は保たれたまま動く。
 	const shiftUnits = semitonesToUnits(rootShift, edo);
 	if (shiftUnits !== 0)
-		for (const list of [melody, submelody, bass, harmony, harmony2, pad])
+		for (const list of [melody, submelody, bass, harmony, harmony2, pad, solo])
 			for (const n of list) n.pitchUnits = (n.pitchUnits + shiftUnits) as Units;
 
 	// **オクターブ重ねは主旋律の全部にはかけない。** 参考曲の重ねの層は主旋律の
@@ -4189,6 +4309,7 @@ const draw = (
 		harmony2,
 		octave,
 		pad,
+		solo,
 		melodyDurations,
 		restSteps,
 		totalSteps: Math.max(1, sungBars) * stepsPerBar,
@@ -4399,10 +4520,11 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 		bestScore = stats.score;
 		bestIsValid = ok;
 		best = {
-			// ドラム・楽器は勝った候補にだけ後から付ける（メロディに依存しないので
-			// 候補ごとに引いても採点は動かず、40本ぶん無駄になる）。
+			// ドラム・楽器・編曲プランは勝った候補にだけ後から付ける（メロディに
+			// 依存しないので候補ごとに引いても採点は動かず、40本ぶん無駄になる）。
 			drum: "",
 			instrument: "",
+			arrange: EMPTY_ARRANGE,
 			chordProgression: d.chordProgression,
 			chordPattern: d.chordPattern,
 			rootShift: d.rootShift,
@@ -4421,6 +4543,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			harmony2: d.harmony2,
 			octave: d.octave,
 			pad: d.pad,
+			solo: d.solo,
 			stats: { ...stats, attempts: attempt, rejected },
 		};
 	}
@@ -4431,6 +4554,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	result.stats.rejected = rejected;
 	result.drum = pickBuiltinDrum(result, rnd);
 	result.instrument = pickBuiltinInstrument(result, rnd);
+	result.arrange = buildArrangePlan(result, rnd);
 	return result;
 };
 
@@ -4469,6 +4593,135 @@ const pickBuiltinDrum = (song: ComposeResult, rnd: () => number): string => {
 						? ["bossa", "8beat", "shuffle", "4beat"]
 						: ["8beat", "4beat", "16beat", "dance"];
 	return pick(pool, rnd);
+};
+
+/** 勝った候補へ差し替えるまでの仮の編曲プラン。 */
+const EMPTY_ARRANGE: ArrangePlan = {
+	backing: [],
+	sparkle: null,
+	padSections: [],
+	lead: null,
+	bassLayer: null,
+};
+
+/** 盛り上がる側のセクション。層を「足す」場所の候補。 */
+const LOUD_KINDS: SectionKind[] = ["prechorus", "chorus", "bridge"];
+/** 落ち着いている側のセクション。地の伴奏だけで十分な場所。 */
+const QUIET_KINDS: SectionKind[] = [
+	"intro",
+	"verse",
+	"interlude",
+	"drop_chorus",
+	"outro",
+];
+/** サビ。音色を変えて「ここが聞かせどころ」を作る場所。 */
+const CHORUS_KINDS: SectionKind[] = ["chorus", "drop_chorus"];
+
+/**
+ * 上級者モードの編曲プランを1つ引く（{@link ArrangePlan}）。
+ *
+ * **曲に実在するセクションだけを割り当てる。** 「Bメロで足す」と決めても曲にBメロが
+ * 無ければその層は無音になり、引いた意味が消える。候補と実在するセクションの積を取り、
+ * 空になったら曲全体へ倒す。
+ */
+const buildArrangePlan = (
+	song: ComposeResult,
+	rnd: () => number,
+): ArrangePlan => {
+	const present = new Set(song.sections.map((s) => s.kind));
+	/** 曲に実在するものだけへ絞る。1つも残らなければ null（＝全編）。 */
+	const narrow = (kinds: SectionKind[]): SectionKind[] | null => {
+		const hit = kinds.filter((k) => present.has(k));
+		return hit.length === 0 ? null : hit;
+	};
+
+	// --- 伴奏 ---
+	// 地は曲の奏法（simpleモードの伴奏トラックと同じもの）。ここを引き直すと
+	// 「同じ曲なのにモードで伴奏が違う」ことになる。
+	const base: ArrangeLayer = {
+		pattern: song.chordPattern,
+		sections: null,
+		octave: 0,
+	};
+	/** 地と重ならない奏法。**同じ奏法を2本重ねても音が濃くなるだけ。** */
+	const others = chordPatternPool(song.bpm).filter((p) => p !== base.pattern);
+	const backing: ArrangeLayer[] = [base];
+
+	// 2本目。足す場所を引く。全編に足すと、セクションで手触りが変わらない元の形に戻る。
+	const addKinds = pick(
+		[LOUD_KINDS, CHORUS_KINDS, LOUD_KINDS, QUIET_KINDS],
+		rnd,
+	);
+	const second = pick(others, rnd);
+	backing.push({
+		pattern: second,
+		sections: narrow(addKinds),
+		octave: 0,
+	});
+
+	// 3本目は必ずしも要らない。3本ぶんの和音が常に鳴っていると、どの奏法も聞こえない。
+	if (rnd() < 0.55) {
+		const rest = others.filter((p) => p !== second);
+		backing.push({
+			pattern: pick(rest.length > 0 ? rest : others, rnd),
+			// 2本目と逆側へ置く（両方サビに寄せると、サビだけ団子になる）。
+			sections: narrow(addKinds === QUIET_KINDS ? LOUD_KINDS : QUIET_KINDS),
+			octave: 0,
+		});
+	}
+
+	// --- 装飾（ウワモノ）---
+	// **地と同じ奏法をオクターブ上げただけの層にはしない。** それは写しであって装飾ではない。
+	// ブロックも外す——和音を丸ごとオクターブ上で鳴らすのは装飾ではなく壁になる。
+	const sparklePool = chordPatternPool(song.bpm).filter(
+		(p) => p !== "block" && !backing.some((b) => b.pattern === p),
+	);
+	const sparkle: ArrangeLayer | null =
+		sparklePool.length > 0 && rnd() < 0.7
+			? {
+					pattern: pick(sparklePool, rnd),
+					sections:
+						narrow(pick([LOUD_KINDS, CHORUS_KINDS], rnd)) ?? CHORUS_KINDS,
+					octave: 1,
+				}
+			: null;
+
+	// --- コードパッド ---
+	// 生成側が音を置いているのは Bメロ以降だけ（{@link ComposeResult.pad}）なので、
+	// ここで広げることはできない。狭める方向にだけ引く。
+	const padSections =
+		narrow(
+			pick(
+				[
+					["prechorus", "chorus", "bridge", "drop_chorus"],
+					["chorus", "drop_chorus"],
+					["prechorus", "chorus", "bridge", "drop_chorus"],
+					["bridge", "chorus"],
+				] as SectionKind[][],
+				rnd,
+			),
+		) ?? [];
+
+	// --- 主旋律に重ねる別音色 ---
+	// オクターブ上（従来の重ね）とユニゾン（音色だけ変える）の両方を引く。
+	const lead =
+		rnd() < 0.75
+			? {
+					sections:
+						narrow(pick([CHORUS_KINDS, LOUD_KINDS], rnd)) ?? CHORUS_KINDS,
+					octave: rnd() < 0.5 ? 0 : 1,
+				}
+			: null;
+
+	// --- ベースの重ね ---
+	// **既定は出さない。** 出すときもオクターブ上（可聴域で輪郭が立つ側）へ、
+	// 盛り上がる場所だけに置く。
+	const bassLayer =
+		rnd() < 0.25
+			? { sections: narrow(CHORUS_KINDS) ?? CHORUS_KINDS, octave: 1 }
+			: null;
+
+	return { backing, sparkle, padSections, lead, bassLayer };
 };
 
 /**

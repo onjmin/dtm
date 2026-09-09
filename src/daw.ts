@@ -9,8 +9,10 @@ import { GM_INSTRUMENT_NAMES, programOfInstrumentName } from "./audio-config";
 import { type ChordPlayerInstance, mountChordPlayer } from "./chord-player";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import {
+	type ArrangePlan,
 	alignLyrics,
 	type ComposedNote,
+	type ComposeResult,
 	composeLyrics,
 	composeSong,
 } from "./compose";
@@ -471,6 +473,7 @@ const COMPOSE_INFO_HTML = `
     <li><strong>メロディの書法</strong>——走句の形（音階／折り返し／分散和音／ジグザグ）、つなぎの形（山なり／谷／上行／下行／うねり／軸音まわり）、終止の形（順次下降／ソミド／跳ね上がり／ロングトーン）、モチーフの原型、跳躍の混ぜ具合、開始音、基準の刻み（8分／16分／三連）、スウィング量</li>
     <li><strong>ベースの奏法</strong>（4分打ち／オルタネイト／2分／8分ドライブ／シンコペ／ウォーキング／オクターブ）</li>
     <li><strong>サブメロの書き方</strong>——合いの手（メロディが休んだ隙間にだけ入る）、ハモリ（メロディのリズムをなぞって3度・6度下を歌う）、対旋律（8分でメロディと反行する）、保続音（同じ音を伸ばし続ける）、パッド。小節ごとに、メロディが息継ぎしている場所では自動で合いの手に切り替わります。</li>
+    <li><strong>編曲プラン</strong>（上級者モードのみ）——伴奏を何層にするか、それぞれどの奏法でどのセクションを鳴らすか、サビの重ねを出すか・ユニゾンかオクターブ上か、装飾をどこに置くか。400曲引くと392通りの型が出ます。</li>
   </ul>
   <p>さらに、直前に作った5曲と特徴が似ている候補には減点しています。続けて押したときに似た曲が並ばないようにするためです。</p>
   <h4>できあがりの選び方</h4>
@@ -489,6 +492,16 @@ const COMPOSE_INFO_HTML = `
     <li><strong>掛け合い（デュエット）</strong> — 4割ほどの曲が2人歌いになります。セクションごと／Aメロで2小節ごと／掛け合いサビ／Aメロだけ、の4通り。<strong>受け渡しは小節線ぴったりではなく、次の人が手前から食い気味に入ります。</strong>一緒に歌うサビでは相方がハモリへ回ります（同じ音をなぞるユニゾンにはしません）。</li>
   </ul>
   <p>シンプルモード（4トラック）は独唱です。4本が埋まっていてハモリの置き場所が無いためです。</p>
+  <h4>セクションで楽器・伴奏が変わる（上級者モードのみ）</h4>
+  <p>1本のトラックは、曲の最初から最後まで1つの楽器で鳴ります。つまり<strong>「サビだけ別の楽器にする」は、1本のトラックの中では作れません</strong>。作れるのは、鳴らしたい区間を別のトラックへ書き分けたときだけです。上級者モード（15トラック）が15本あるのはそのためで、「作曲」は場所ごとにトラックを分けます。</p>
+  <ul>
+    <li><strong>伴奏の手触りがセクションで変わる</strong> — 同じコード進行を、ブロック・アルペジオ・裏拍・八分食い・分散の中から<strong>別々の奏法</strong>で1〜3層に重ねます。どの奏法をどのセクションで鳴らすかは曲ごとに引くので、Aメロとサビで伴奏の刻み方そのものが変わります。曲全体を通る「地」の層が1つあり、残りは足す場所を絞ります。</li>
+    <li><strong>サビの重ね</strong> — 主旋律をもう1本の別楽器（プリセットによってブラス・ストリングス・グロッケンなど）で重ねます。<strong>オクターブ上とユニゾンの両方を引きます</strong>——同じ高さを別の楽器で重ねると2つの音色が溶けて別の音色になるので、オクターブ上げるより情報量が多いことがあります。重ねない曲もあります。</li>
+    <li><strong>間奏のソロ</strong> — 間奏は歌が休む場所であって、音楽が休む場所ではありません。歌メロの代わりに器楽のソロを書き、専用のトラックで鳴らします。プリセットによって歪みギター・サックス・尺八などに変わります。素材はサビと同じなので、間奏がサビの主題を弾く形になります。</li>
+    <li><strong>ウワモノ</strong> — きらびやかな装飾を、盛り上がるセクションにだけオクターブ上で足します。<strong>地の伴奏と同じ奏法は使いません</strong>——同じものをオクターブ上げただけの層は装飾ではなく写しだからです。ブロックも外します（和音を丸ごとオクターブ上で鳴らすのは装飾ではなく壁になります）。</li>
+  </ul>
+  <p><strong>オクターブの重ねを主役にしていません。</strong>「既にあるトラックを1オクターブ動かして別トラックへ写す」層は、音楽的な価値が高くありません。人の耳はオクターブ違いを<strong>同じ音</strong>として聞くので（オクターブ等価）、写した層は新しい声部にならず、音量と音色がわずかに変わるだけです。強調としての意味はあるので使いはしますが、常設にはしません。ベースのオクターブ下の重ねは特に、30Hz前後まで落ちて輪郭が濁るので既定では出しません（出すときも上のオクターブへ、盛り上がる場所だけに置きます）。</p>
+  <p>「作曲」が決めたこれらの楽器は、おまかせマスタリングの役割推定より優先されます（演奏内容だけを見ると、間奏のソロもサビの重ねも「音の少ない単旋律」で、主旋律と区別が付かないためです）。楽器を手で選び直したトラックは、以後どちらにも上書きされません。</p>
   <h4>そのほか</h4>
   <ul>
     <li><strong>曲の途中で転調します</strong>（およそ半分の曲）。五度圏で近い属調・下属調へは共通する和音（ピボットコード）か新しい調のドミナントで橋渡しし、ラスサビの半音上げは準備なしの直接転調にします。調号を変えずに明暗だけ入れ替える<strong>平行調</strong>（ハ長調↔イ短調）と、主音を保ったまま暗くする<strong>同主調</strong>（ハ長調→ハ短調）も引きます。1割強の曲は主和音を避けて「明るいのか暗いのか分からない」浮遊感で通します。</li>
@@ -792,57 +805,176 @@ const pickComposeVocal = (exclude?: string | null): string => {
 	return list[Math.floor(Math.random() * list.length)] ?? "klatt";
 };
 
+/** プリセット（{@link INSTRUMENT_PRESETS}）の音色スロット。 */
+type PresetSlot = AutoRole | "solo" | "chorusLead";
+
 /**
  * 上級者モード（15トラック）で「作曲」が展開する編曲。
  *
  * 15本あるからといって同じ素材を15回コピーしても、音数が増えて濁るだけで
  * 「高度」にはならない。ここで並べるのは**役割の違う声部**:
  *
- * - メロディと、その1オクターブ上の重ね（芯と輝きを作る編曲の定石。重ねる側は弱く）
+ * - メロディ（と、要所だけのオクターブ重ね）
  * - ハモリ（サビで3度上を歌う専用トラック）
  * - サブメロ（対旋律・合いの手）
- * - ベースと、その1オクターブ下の重ね（低域の土台）
+ * - ベース
  * - コードパッド（Bメロ〜サビのロングトーン。ストリングス/シンセ）
- * - 同じコード進行を別の奏法で3通り——パッド（ブロック）・アルペジオ・オフビート。
- * - ウワモノ（オクターブ上のきらびやかなアルペジオ装飾）
+ * - 同じコード進行を**別の奏法**で1〜3通り
+ * - ウワモノ（きらびやかな装飾）
+ * - 間奏のソロ（歌が休む場所を器楽が引き取る）
  *
- * 11トラックを使い、残り4本は空けておく（ユーザーが足す余地）。
- * `octave` は {@link TrackState.trackOctave}、`volume` はベロシティ基準値。
+ * ## セクションで楽器を変える
+ *
+ * 1トラックは曲の最初から最後まで1つの楽器で鳴る（{@link TrackState.trackInstrument}）。
+ * つまり「サビだけ別の楽器にする」「間奏はギターソロにする」は、**1本のトラックの中では
+ * 原理的に作れない**。作れるのは、**セクションごとに別のトラックへ書き分けたとき**だけ。
+ * トラックが15本あるのはそのためで、`sections`（そのセクションの小節にだけ音を置く）と
+ * `slot`（{@link INSTRUMENT_PRESETS} のどの音色を引くか）の2つでそれを表す。
+ *
+ * ## 何を並べるかは曲ごとに引く
+ *
+ * 以前ここは静的な表だった。ベースの奏法もサブメロの書法もハモリの範囲も曲ごとに
+ * 引き直しているのに、編曲だけ全曲同じ——伴奏3種が最初から最後まで鳴りっぱなしで、
+ * セクションが変わっても伴奏の手触りが変わらなかった。いまは
+ * {@link ComposeResult.arrange} が曲ごとの割り当てを持ち、この関数はそれを
+ * トラック番号へ写すだけ。**トラック番号と役割の対応は固定**にしてある——ピアノロールの
+ * どこに何があるかが曲ごとに動くと、ユーザーが編集できない。
+ *
+ * ## オクターブ転写を常設にしない
+ *
+ * 「既にあるトラックを1オクターブ動かして別トラックへ写す」層は、音楽的な価値が高くない
+ * （オクターブ等価。人の耳は同じ音として聞く）。強調の意味はあるので全否定はしないが、
+ * 常設にする理由は無い。伴奏の層は**奏法そのもの**を変え、主旋律の重ねはユニゾンも引き、
+ * ベースの重ねは既定で出さない（{@link ArrangePlan}）。
  */
-const ADVANCED_COMPOSE_LAYOUT: {
+type AdvancedLayer = {
 	index: number;
-	part:
-		| "melody"
-		| "submelody"
-		| "bass"
-		| "harmony"
-		| "pad"
-		| "uwamono"
-		| "duet"
-		| "harmony2"
-		| ChordPatternType;
+	notes: ComposedNote[];
 	octave: number;
 	volume: number;
-}[] = [
-	{ index: 0, part: "melody", octave: 0, volume: 104 },
-	{ index: 1, part: "melody", octave: 1, volume: 62 },
-	{ index: 2, part: "harmony", octave: 0, volume: 82 },
-	{ index: 3, part: "submelody", octave: 0, volume: 86 },
-	{ index: 4, part: "bass", octave: 0, volume: 92 },
-	{ index: 5, part: "bass", octave: -1, volume: 58 },
-	{ index: 6, part: "pad", octave: 0, volume: 64 },
-	{ index: 7, part: "block", octave: 0, volume: 62 },
-	{ index: 8, part: "arpeggio", octave: 0, volume: 54 },
-	{ index: 9, part: "offbeat", octave: 0, volume: 50 },
-	{ index: 10, part: "uwamono", octave: 1, volume: 56 },
-	// 掛け合い（デュエット）の相手。**歌入り作曲のときだけ**中身が入る。
-	// 作曲だけならメロディは t0 が全部持つので、ここは空のまま。
-	{ index: 11, part: "duet", octave: 0, volume: 104 },
-	// 2声目のハモリ（主旋律を上下から挟む3声）と、主旋律のオクターブ下の重ね。
-	// どちらも曲ごとに出るかどうかが決まる（`song.vocal`）。
-	{ index: 12, part: "harmony2", octave: 0, volume: 74 },
-	{ index: 13, part: "melody", octave: -1, volume: 56 },
-];
+	/** 引く音色スロット。省略すると役割推定にまかせる。 */
+	slot?: PresetSlot;
+};
+
+/**
+ * 編曲プランを15トラックへ写す。
+ *
+ * `duet`（t11）は歌入り作曲だけが後から埋めるので、ここでは空で置く。
+ */
+const buildAdvancedLayers = (
+	song: ComposeResult,
+	config: { edo?: number; stepsPerBar: number },
+): AdvancedLayer[] => {
+	const { edo, stepsPerBar } = config;
+	const kindAtBar = (bar: number): SectionKind | null =>
+		song.sections.find(
+			(sec) => bar >= sec.startBar && bar < sec.startBar + sec.bars,
+		)?.kind ?? null;
+	/**
+	 * 指定したセクションの小節にある音だけ残す。**これがセクション別の楽器替えの実体**
+	 * ——1トラックは1楽器なので、別の音色で鳴らしたい区間は別のトラックへ抜き出すしかない。
+	 */
+	const onlyIn = (
+		notes: ComposedNote[],
+		kinds: SectionKind[] | null,
+	): ComposedNote[] => {
+		if (!kinds) return notes;
+		const want = new Set(kinds);
+		return notes.filter((n) => {
+			const kind = kindAtBar(Math.floor(n.startStep / stepsPerBar));
+			return kind !== null && want.has(kind);
+		});
+	};
+	/** コード進行を1つの奏法で展開する。 */
+	const chordNotes = (
+		pattern: ChordPatternType,
+		velocityShift = 0,
+	): ComposedNote[] =>
+		buildChordPlacements({
+			edo,
+			chordStr: song.chordProgression,
+			patternType: pattern,
+			rootShift: song.rootShift,
+			bpm: song.bpm,
+			stepsPerBar,
+		}).map((p) => ({
+			startStep: p.startStep,
+			pitchUnits: p.pitchUnits,
+			durationSteps: p.durationSteps,
+			velocity: Math.max(30, p.velocity + velocityShift),
+		}));
+
+	const plan = song.arrange;
+	const layers: AdvancedLayer[] = [
+		{ index: 0, notes: song.melody, octave: 0, volume: 104, slot: "melody" },
+		{
+			index: 1,
+			notes: plan.lead ? onlyIn(song.melody, plan.lead.sections) : [],
+			octave: plan.lead?.octave ?? 0,
+			// ユニゾンで重ねるときは、オクターブ上より前に出やすいので少し引く。
+			volume: plan.lead?.octave === 0 ? 54 : 62,
+			slot: "chorusLead",
+		},
+		{ index: 2, notes: song.harmony, octave: 0, volume: 82 },
+		{
+			index: 3,
+			notes: song.submelody,
+			octave: 0,
+			volume: 86,
+			slot: "submelody",
+		},
+		{ index: 4, notes: song.bass, octave: 0, volume: 92, slot: "bass" },
+		{
+			index: 5,
+			notes: plan.bassLayer ? onlyIn(song.bass, plan.bassLayer.sections) : [],
+			octave: plan.bassLayer?.octave ?? 0,
+			volume: 58,
+			slot: "bass",
+		},
+		{
+			index: 6,
+			notes: onlyIn(song.pad, plan.padSections),
+			octave: 0,
+			volume: 64,
+			slot: "chord",
+		},
+	];
+
+	// 伴奏は t7〜t9。プランが2本しか持たなければ3本目は空のまま。
+	const backingVolumes = [62, 54, 50];
+	for (let i = 0; i < 3; i++) {
+		const layer = plan.backing[i];
+		layers.push({
+			index: 7 + i,
+			notes: layer ? onlyIn(chordNotes(layer.pattern), layer.sections) : [],
+			octave: layer?.octave ?? 0,
+			volume: backingVolumes[i],
+			slot: "chord",
+		});
+	}
+
+	layers.push(
+		{
+			index: 10,
+			notes: plan.sparkle
+				? onlyIn(chordNotes(plan.sparkle.pattern, -14), plan.sparkle.sections)
+				: [],
+			octave: plan.sparkle?.octave ?? 0,
+			volume: 56,
+			slot: "chord",
+		},
+		// 掛け合い（デュエット）の相手。**歌入り作曲のときだけ**中身が入る。
+		{ index: 11, notes: [], octave: 0, volume: 104, slot: "melody" },
+		// 2声目のハモリ（主旋律を上下から挟む3声）と、主旋律のオクターブ下の重ね。
+		// どちらも曲ごとに出るかどうかが決まる（`song.vocal`）。
+		{ index: 12, notes: song.harmony2, octave: 0, volume: 74 },
+		{ index: 13, notes: song.octave, octave: -1, volume: 56, slot: "melody" },
+		// **間奏のソロ。** 音が入るのは間奏の小節だけなので、この1本だけを
+		// 別の楽器にしても他のセクションの鳴りは変わらない。
+		{ index: 14, notes: song.solo, octave: 0, volume: 100, slot: "solo" },
+	);
+	return layers;
+};
 
 /** 内蔵モデルのカテゴリ定義（プルダウンの optgroup 表示用） */
 const LYRIC_MODEL_CATEGORIES = [
@@ -1177,6 +1309,18 @@ type TrackState = {
 	/** トラック個別の楽器名（GM楽器名）。空文字でプリセット適用 */
 	trackInstrument: string;
 	/**
+	 * 「作曲」がこのトラックへ割り当てた音色スロット（{@link buildAdvancedLayers}）。
+	 *
+	 * おまかせマスタリングは**演奏内容から役割を推定して**楽器を当て直すが、
+	 * 間奏のソロやサビ専用の重ねは「音の入っている小節が少ない一本の旋律」でしかなく、
+	 * 推定では主旋律と見分けが付かない。生成時に決まっている割り当てをここへ控えて
+	 * おき、推定より優先する。GM楽器名ではなくスロット名で持つのは、あとからプリセット
+	 * （音色セット）を切り替えたときに、そちらへ追随させるため。
+	 *
+	 * ユーザーが楽器を手で選んだら消す（以後は推定にも上書きさせない）。
+	 */
+	composeSlot: PresetSlot | null;
+	/**
 	 * このトラックのコンプレッサー（音圧強化）量 0-100。既定0（無圧縮）。
 	 * ボーカル・楽器を問わずトラック全体に掛かる（歌詞トラック固有のvocalGender等とは別軸）。
 	 */
@@ -1254,7 +1398,7 @@ export const mountDAW = (
 		showChord,
 		showMidiSearch,
 		// 「作曲」は simple では役割固定の4トラックへ、advanced では15トラックへ
-		// 編曲を展開する（{@link ADVANCED_COMPOSE_LAYOUT}）。どちらでも出す。
+		// 編曲を展開する（{@link buildAdvancedLayers}）。どちらでも出す。
 		showCompose: true,
 	});
 	refs.masterVolume.value = String(options.masterVolume ?? 50);
@@ -1566,6 +1710,15 @@ export const mountDAW = (
 		while (customVocalsMap.has(`custom${n}`)) n++;
 		return `custom${n}`;
 	};
+	/** 歌唱モデル名（lyricModel）から、うっすら表示用のアイコン画像URLを引く（未選択なら undefined） */
+	const getVocalIconSrc = (lyricModel: string): string | undefined => {
+		if (!lyricModel) return undefined;
+		const customDef = customVocalsMap.get(lyricModel);
+		if (customDef !== undefined)
+			return customDef.iconUrl || FALLBACK_VOCAL_ICON;
+		const imgKey = VOICE_IMAGE_KEY[lyricModel.toLowerCase()];
+		return imgKey ? VOICE_IMAGES[imgKey] : undefined;
+	};
 
 	// 選択・コピー
 	let selectedNotes: Note[] = [];
@@ -1735,6 +1888,7 @@ export const mountDAW = (
 				vocalOctaveUnison:
 					(t1?.vocalOctaveUnison as OctaveUnisonMode) ?? "none",
 				trackInstrument: t1?.trackInstrument ?? "",
+				composeSlot: null,
 				trackCompression: t1?.trackCompression ?? 0,
 				trackWidth: t1?.trackWidth ?? 100,
 				trackReverbSend: t1?.trackReverbSend ?? 0,
@@ -3049,26 +3203,40 @@ export const mountDAW = (
 		refs.redoBtn.disabled = !core.canRedo();
 	};
 
-	const updateTrackPanel = (): void => {
-		// トラックピル（色分け・常時表示）
+	/** トラックピル（色分け・常時表示・ボーカル選択中はうっすらアイコン表示）だけを再構築する */
+	const updateTrackTabs = (): void => {
 		refs.trackTabs.innerHTML = "";
 		trackPillEls.clear();
 		for (const [i, t] of trackStates.entries()) {
 			const [r, g, b] = t.config.color;
 			const isActive = t.config.id === activeTrackId;
 			const btn = document.createElement("button");
-			btn.className = `dtm-pill ${isActive ? "dtm-pill--active" : ""}`;
+			const vocalIconSrc = getVocalIconSrc(t.lyricModel);
+			btn.className = `dtm-pill ${isActive ? "dtm-pill--active" : ""} ${vocalIconSrc ? "dtm-pill--vocal" : ""}`;
 			btn.style.setProperty("--dtm-pill-color", `rgb(${r},${g},${b})`);
+			if (vocalIconSrc) {
+				btn.style.setProperty(
+					"--dtm-pill-icon",
+					`url(${JSON.stringify(vocalIconSrc)})`,
+				);
+			}
 			btn.title = `Track ${i + 1}: ${t.config.name}`;
 			btn.setAttribute(
 				"aria-label",
-				`Track ${i + 1}: ${t.config.name}${isActive ? " (選択中)" : ""}`,
+				`Track ${i + 1}: ${t.config.name}${isActive ? " (選択中)" : ""}${vocalIconSrc ? "（ボーカル選択中）" : ""}`,
 			);
-			btn.textContent = String(i + 1);
+			const labelEl = document.createElement("span");
+			labelEl.className = "dtm-pill__label";
+			labelEl.textContent = String(i + 1);
+			btn.appendChild(labelEl);
 			btn.addEventListener("click", () => switchTrack(t.config.id));
 			refs.trackTabs.appendChild(btn);
 			trackPillEls.set(t.config.id, btn);
 		}
+	};
+
+	const updateTrackPanel = (): void => {
+		updateTrackTabs();
 		// ボディ
 		const active = getActive();
 		const activeIndex = trackStates.findIndex(
@@ -3410,6 +3578,8 @@ export const mountDAW = (
 		syncInstDisabled();
 		instSel.addEventListener("change", () => {
 			active.trackInstrument = instSel.value;
+			// 手で選んだ楽器は、次のおまかせマスタリングでも書き換えない。
+			active.composeSlot = null;
 			const trackIndex = trackStates.indexOf(active);
 			options.onTrackInstrumentChange?.(trackIndex, active.trackInstrument);
 			persistTrack1(active);
@@ -3860,6 +4030,7 @@ export const mountDAW = (
 				redrawAll(); // モデル「なし」への切り替えで歌詞表示も消す
 				fireLyricsChange(active);
 				reloadVoicesForModel(active.lyricModel);
+				updateTrackTabs(); // トラックタブのボーカルアイコン表示を切り替える
 			});
 			lyricCustomGuide.addEventListener("click", () => {
 				showModal("カスタム音声(.koe)の使い方", KOE_INFO_HTML);
@@ -4502,6 +4673,10 @@ export const mountDAW = (
 		// トラック個別楽器を復元する（URLエンコーダがスペースを除去するため正規化して復元）
 		trackStates.forEach((t, i) => {
 			if (applyActiveOnly && i !== activeTrackIndex) return;
+			// 別の曲を読み込んだのだから、前の曲で「作曲」が決めた音色スロットは捨てる。
+			// 残すと、読み込んだ曲におまかせマスタリングを掛けたときに、いま鳴っている
+			// 演奏とは関係のない割り当て（間奏のソロ等）で楽器が決まってしまう。
+			t.composeSlot = null;
 			const name = normalizeInstrumentName(meta.trackInstruments?.[i] ?? "");
 			if (t.trackInstrument !== name) {
 				t.trackInstrument = name;
@@ -4800,7 +4975,7 @@ export const mountDAW = (
 					const p = programOfInstrumentName(t.trackInstrument);
 					if (p !== null) program = p;
 				} else if (!t.lyricModel) {
-					const role = DECLARED_ROLE[t.config.id] ?? "melody";
+					const role = t.composeSlot ?? DECLARED_ROLE[t.config.id] ?? "melody";
 					const instName = autoPreset[role] ?? autoPreset.melody;
 					const p = programOfInstrumentName(instName);
 					if (p !== null) program = p;
@@ -5279,7 +5454,13 @@ export const mountDAW = (
 					DECLARED_ROLE[t.config.id] ??
 					classifyTrackRole(stats, t.config.id === topSingleVoiceId);
 				roleByTrackId.set(t.config.id, role);
-				const instName = autoPreset[role];
+				// **「作曲」が決めた音色は推定より優先する。** 間奏のソロもサビ専用の
+				// 重ねも、演奏内容だけ見れば「音が少ない単旋律」で、推定では主旋律と
+				// 区別できない。ここを推定にまかせると、せっかくセクションごとに
+				// 分けたトラックが全部同じ楽器へ揃ってしまう（音色が変わらない）。
+				// 音量・定位・コンプは引き続き推定した役割で決める（ソロは主旋律と
+				// 同じ扱いでよく、そこまで分ける必要が無い）。
+				const instName = autoPreset[t.composeSlot ?? role] ?? autoPreset[role];
 				t.trackInstrument = instName;
 				const trackIndex = trackStates.indexOf(t);
 				options.onTrackInstrumentChange?.(trackIndex, instName);
@@ -5634,69 +5815,39 @@ export const mountDAW = (
 				if (isAdvanced) {
 					// --- 上級者モード（15トラック）---
 					// 同じ素材をむやみに複製すると音数だけ増えて濁るので、
-					// **役割の違う声部**を並べる。伴奏は同じ進行を別の奏法で3通り展開し、
-					// メロディとベースはオクターブの重ねで芯を作る（編曲の定石）。
-					// 使うのは8トラックで、残りはユーザーが自由に足せるよう空けておく。
-					for (const layer of ADVANCED_COMPOSE_LAYOUT) {
+					// **役割の違う声部**を並べる。伴奏は同じ進行を別の奏法で展開する。
+					// どの層をどのセクションでどの奏法で鳴らすかは曲ごとに引く
+					// （{@link ComposeResult.arrange}）。ここはそれをトラックへ写すだけ。
+					const layers = buildAdvancedLayers(song, {
+						edo: renderConfig.edo,
+						stepsPerBar: renderConfig.stepsPerBar,
+					});
+					for (const layer of layers) {
 						const track = trackStates[layer.index];
 						if (!track) continue;
-						const notes =
-							layer.part === "duet"
-								? []
-								: layer.part === "harmony2"
-									? song.harmony2
-									: layer.index === 13
-										? song.octave
-										: layer.part === "melody"
-											? song.melody
-											: layer.part === "harmony"
-												? song.harmony
-												: layer.part === "submelody"
-													? song.submelody
-													: layer.part === "bass"
-														? song.bass
-														: layer.part === "pad"
-															? song.pad
-															: layer.part === "uwamono"
-																? buildChordPlacements({
-																		edo: renderConfig.edo,
-																		chordStr: song.chordProgression,
-																		patternType: "arpeggio",
-																		rootShift: song.rootShift,
-																		bpm: song.bpm,
-																		stepsPerBar: renderConfig.stepsPerBar,
-																	}).map((p) => ({
-																		startStep: p.startStep,
-																		pitchUnits: p.pitchUnits,
-																		durationSteps: p.durationSteps,
-																		velocity: Math.max(30, p.velocity - 14),
-																	}))
-																: buildChordPlacements({
-																		edo: renderConfig.edo,
-																		chordStr: song.chordProgression,
-																		patternType: layer.part,
-																		rootShift: song.rootShift,
-																		bpm: song.bpm,
-																		stepsPerBar: renderConfig.stepsPerBar,
-																	}).map((p) => ({
-																		startStep: p.startStep,
-																		pitchUnits: p.pitchUnits,
-																		durationSteps: p.durationSteps,
-																		velocity: p.velocity,
-																	}));
-						writeTrackAt(layer.index, notes);
+						writeTrackAt(layer.index, layer.notes);
 						track.trackOctave = layer.octave;
 						track.volume = layer.volume;
 						track.core.setVolume(layer.volume);
+						// 音色スロットを控えておく。実際の楽器名は、この後の
+						// おまかせマスタリングが選択中のプリセットから引く。
+						// 音の入らなかった層（プランが引かなかった層）は、前の曲の割り当てを
+						// 残さないよう捨てる。
+						track.composeSlot =
+							layer.notes.length > 0 ? (layer.slot ?? null) : null;
 					}
-					// 使わないトラックは空にしておく（前の曲の残骸を残さない）。
+					// レイアウトの外のトラックは空にしておく（前の曲の残骸を残さない）。
 					for (let i = 0; i < trackStates.length; i++) {
-						if (ADVANCED_COMPOSE_LAYOUT.some((l) => l.index === i)) continue;
+						if (layers.some((l) => l.index === i)) continue;
 						writeTrackAt(i, []);
+						const t = trackStates[i];
+						if (t) t.composeSlot = null;
 					}
 				} else {
-					// **`song.harmony` は使わない。** 4本が埋まっていて置き場所が無く、
-					// ボーカルアレンジは advanced 限定という判断（解説にも書いてある）。
+					// **`song.harmony` と `song.solo` は使わない。** 4本が埋まっていて
+					// 置き場所が無く、ボーカルアレンジもセクション別の楽器替えも
+					// advanced 限定という判断（解説にも書いてある）。
+					for (const t of trackStates) t.composeSlot = null;
 					writeTrack("melody", song.melody);
 					writeTrack("submelody", song.submelody);
 					writeTrack("bass", song.bass);
@@ -5797,8 +5948,9 @@ export const mountDAW = (
 						};
 
 						// --- 掛け合い ---
-						// メロディを2人で分けて t0 と t11 へ書き分ける。器楽側は t1
-						// （オクターブ上の重ね）が丸ごと持つので旋律線は途切れない。
+						// メロディを2人で分けて t0 と t11 へ書き分ける。2本を合わせると
+						// 主旋律の全部になるので、旋律線そのものは途切れない
+						// （どちらも歌なので、聞こえ方としても繋がる）。
 						const partnerVoice = pickComposeVocal(melodyTrack.lyricModel);
 						const duetting = spans.length > 0;
 						if (duetting) {
@@ -7203,6 +7355,8 @@ export const mountDAW = (
 			if (!t) return;
 			const name = normalizeInstrumentName(instrumentName);
 			t.trackInstrument = name;
+			// 外から明示的に指定された楽器なので、「作曲」の割り当ては捨てる。
+			t.composeSlot = null;
 			// アクティブトラックのパネルが表示中なら楽器プルダウンを更新
 			if (t.config.id === activeTrackId) updateTrackPanel();
 		},

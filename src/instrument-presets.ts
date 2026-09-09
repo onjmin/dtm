@@ -16,6 +16,19 @@ export type InstrumentPreset = {
 	submelody: string;
 	bass: string;
 	chord: string;
+	/**
+	 * 間奏のソロを弾く楽器。**歌が休んでいる場所を担当する**ので、`melody` と
+	 * 同じでも構わない（ロックの間奏がボーカルと同じ歪みギターなのは正しい）。
+	 * 逆に、ここを持たせないと間奏が「伴奏だけの空白」になる。
+	 */
+	solo: string;
+	/**
+	 * サビでだけ重ねる楽器。主旋律のオクターブ上に薄く足して、サビの手前と
+	 * 音色そのものを変える。1トラック1楽器という制約の下で
+	 * 「セクションで楽器が変わる」を作る唯一の方法が、**セクションごとに
+	 * 別トラックへ書き分けること**。
+	 */
+	chorusLead: string;
 };
 
 export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
@@ -27,6 +40,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		submelody: "Vibraphone",
 		bass: "Electric Bass (finger)",
 		chord: "Pad 2 (warm)",
+		solo: "Electric Guitar (clean)",
+		chorusLead: "Glockenspiel",
 	},
 	acoustic: {
 		displayName: "アコースティック",
@@ -35,6 +50,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		submelody: "Harmonica",
 		bass: "Acoustic Bass",
 		chord: "Acoustic Guitar (nylon)",
+		solo: "Overdriven Guitar",
+		chorusLead: "String Ensemble 1",
 	},
 	jazz_night: {
 		displayName: "ジャズ・ナイト",
@@ -43,6 +60,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		submelody: "Flute",
 		bass: "Acoustic Bass",
 		chord: "Electric Guitar (jazz)",
+		solo: "Tenor Sax",
+		chorusLead: "Muted Trumpet",
 	},
 
 	// --- MODERN & VIBE: エッジの効いた現代的な響き ---
@@ -53,6 +72,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		submelody: "Lead 4 (chiff)",
 		bass: "Synth Bass 2",
 		chord: "Pad 3 (polysynth)",
+		solo: "Distortion Guitar",
+		chorusLead: "Synth Brass 1",
 	},
 	cyber_punk: {
 		displayName: "サイバーパンク",
@@ -61,6 +82,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		submelody: "Lead 5 (charang)",
 		bass: "Synth Bass 2",
 		chord: "Pad 8 (sweep)",
+		solo: "Distortion Guitar",
+		chorusLead: "Lead 7 (fifths)",
 	},
 	rock: {
 		displayName: "ハードロック",
@@ -69,6 +92,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		submelody: "Rock Organ",
 		bass: "Electric Bass (pick)",
 		chord: "Overdriven Guitar",
+		solo: "Distortion Guitar",
+		chorusLead: "Brass Section",
 	},
 
 	// --- WORLD & CLASSIC: 特定のジャンル・地域 ---
@@ -79,6 +104,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		submelody: "Pizzicato Strings",
 		bass: "Cello",
 		chord: "Tremolo Strings",
+		solo: "Violin",
+		chorusLead: "Trumpet",
 	},
 	japanese_wa: {
 		displayName: "和風・雅",
@@ -87,6 +114,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		submelody: "Shamisen",
 		bass: "Taiko Drum",
 		chord: "Shakuhachi",
+		solo: "Shakuhachi",
+		chorusLead: "Glockenspiel",
 	},
 	arabic_exotic: {
 		displayName: "エキゾチック",
@@ -95,6 +124,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		submelody: "Bagpipe",
 		bass: "Fretless Bass",
 		chord: "Kalimba",
+		solo: "Shanai",
+		chorusLead: "Steel Drums",
 	},
 
 	// --- FANTASY & ATMOSPHERE: 雰囲気と余韻 ---
@@ -105,6 +136,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		submelody: "Celesta",
 		bass: "Timpani",
 		chord: "Orchestral Harp",
+		solo: "Pan Flute",
+		chorusLead: "Choir Aahs",
 	},
 	ambient_cloud: {
 		displayName: "アンビエント",
@@ -113,6 +146,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		submelody: "Music Box",
 		bass: "Synth Bass 1",
 		chord: "Pad 7 (halo)",
+		solo: "Lead 3 (calliope)",
+		chorusLead: "Synth Choir",
 	},
 	retro_game: {
 		displayName: "8-bit レトロ",
@@ -121,5 +156,7 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		submelody: "Lead 2 (sawtooth)",
 		bass: "Synth Bass 1",
 		chord: "Clavinet",
+		solo: "Lead 8 (bass + lead)",
+		chorusLead: "Lead 4 (chiff)",
 	},
 };

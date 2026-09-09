@@ -480,6 +480,22 @@ export const DAW_CSS = `
   opacity: 0.85;
 }
 .dtm-pill:not(.dtm-pill--active):active { transform: translate(1px,1px); box-shadow: none; }
+/* ボーカルが選択されているトラックのタブに、うっすら声のアイコンを重ねる（背景色・サイズは変えない） */
+.dtm-pill--vocal::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--dtm-pill-icon);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: right center;
+  opacity: 0.4;
+  pointer-events: none;
+}
+.dtm-pill__label {
+  position: relative;
+  z-index: 1;
+}
 /* 再生中、実際に発音した瞬間だけ点灯（どのタブが今鳴っているか視覚的に分かるように） */
 .dtm-pill--sounding {
   filter: brightness(1.6);
