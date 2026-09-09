@@ -868,10 +868,13 @@ console.log("● ハモリと掛け合い");
 {
 	const N = 60;
 	let harmNotes = 0;
-	let thirdOrSixth = 0;
-	let fifthOrUnison = 0;
-	let fourthOnChordTone = 0;
-	let fourth = 0;
+	let above = 0;
+	let unison = 0;
+	let outOfRange = 0;
+	let harmMove = 0;
+	let harmSteps = 0;
+	let melMove = 0;
+	let melSteps = 0;
 	let duetSpans = 0;
 	let anticipated = 0;
 	let harmBars = 0;
@@ -902,28 +905,32 @@ console.log("● ハモリと掛け合い");
 				`bar${b + 1}`,
 			);
 
-		const prog = song.chordProgression.split("|");
+		// **ハモリは主旋律より動かない別の旋律線であること。**
+		// 参考曲（`ぺぽよ/±0/220715.mid` ch6/ch7）を測ると、隣の音への平均移動が
+		// 主旋律3.07半音に対しハモリ1.23半音、同音を繰り返す割合が30%対54%だった。
+		// 平行3度を並べると、この差は原理的に出ない。
+		const hs = [...song.harmony]
+			.sort((a, b) => a.startStep - b.startStep)
+			.map((n) => Math.round(n.pitchUnits / UNITS_PER_SEMITONE));
+		for (let i = 1; i < hs.length; i++) {
+			harmMove += Math.abs(hs[i] - hs[i - 1]);
+			harmSteps++;
+		}
+		const ms = [...song.melody]
+			.sort((a, b) => a.startStep - b.startStep)
+			.map((n) => Math.round(n.pitchUnits / UNITS_PER_SEMITONE));
+		for (let i = 1; i < ms.length; i++) {
+			melMove += Math.abs(ms[i] - ms[i - 1]);
+			melSteps++;
+		}
 		for (const h of song.harmony) {
 			const m = mel.get(h.startStep);
 			if (m === undefined) continue;
 			harmNotes++;
-			const gap =
-				Math.abs(Math.round((h.pitchUnits - m) / UNITS_PER_SEMITONE)) % 12;
-			if (gap === 3 || gap === 4 || gap === 8 || gap === 9) thirdOrSixth++;
-			if (gap === 0 || gap === 7) fifthOrUnison++;
-			if (gap === 5) fourth++;
-			if (gap !== 5) continue;
-			// **4度は主旋律がテンション音のときだけ。** 和音構成音の上で4度を当てるのは
-			// ただの外れで、テンションの上では逆に4度しか和音へ届かない。
-			let tonePcs: number[] = [];
-			try {
-				tonePcs = parseChord(
-					prog[Math.floor(h.startStep / STEPS_PER_BAR)] ?? "C",
-				).notes.map((v) => ((v % 12) + 12) % 12);
-			} catch {}
-			const melPc =
-				((Math.round(m / UNITS_PER_SEMITONE - song.rootShift) % 12) + 12) % 12;
-			if (tonePcs.length > 0 && tonePcs.includes(melPc)) fourthOnChordTone++;
+			const gap = Math.round((h.pitchUnits - m) / UNITS_PER_SEMITONE);
+			if (gap > 0) above++;
+			else if (gap === 0) unison++;
+			if (gap > 5 || gap < -12) outOfRange++;
 		}
 
 		// 掛け合いの区間は曲の中に収まり、前後が入れ替わらないこと。
@@ -940,21 +947,22 @@ console.log("● ハモリと掛け合い");
 			duetSpans++;
 		}
 	}
-	// 3度・6度が基本で、テンションの上でだけ4度。この3つで9割を占めること。
+	const harmAvg = harmMove / Math.max(1, harmSteps);
+	const melAvg = melMove / Math.max(1, melSteps);
 	check(
-		"ハモリの9割以上が3度・6度・テンション上の4度",
-		(thirdOrSixth + fourth - fourthOnChordTone) / Math.max(1, harmNotes) >= 0.9,
-		`3度6度 ${((thirdOrSixth / Math.max(1, harmNotes)) * 100).toFixed(1)}% / 4度 ${((fourth / Math.max(1, harmNotes)) * 100).toFixed(1)}%`,
+		"ハモリは主旋律より動かない",
+		harmAvg < melAvg * 0.75,
+		`主旋律 ${melAvg.toFixed(2)} / ハモリ ${harmAvg.toFixed(2)}半音（参考 3.07 / 1.23）`,
 	);
 	check(
-		"完全5度・同音のハモリは5%未満",
-		fifthOrUnison / Math.max(1, harmNotes) < 0.05,
-		`${((fifthOrUnison / Math.max(1, harmNotes)) * 100).toFixed(1)}%`,
+		"ハモリは下が主（参考 上26% / ユニゾン11% / 下63%）",
+		above / Math.max(1, harmNotes) < 0.45,
+		`上 ${((above / Math.max(1, harmNotes)) * 100).toFixed(0)}% / ユニゾン ${((unison / Math.max(1, harmNotes)) * 100).toFixed(0)}%`,
 	);
 	check(
-		"4度のハモリは主旋律がテンション音のときだけ",
-		fourthOnChordTone / Math.max(1, harmNotes) < 0.01,
-		`和音構成音の上で4度 ${((fourthOnChordTone / Math.max(1, harmNotes)) * 100).toFixed(1)}%`,
+		"ハモリが主旋律から離れすぎない",
+		outOfRange === 0,
+		`${outOfRange}音が +5〜-12半音の外`,
 	);
 	check(
 		"ハモリは全編には付けない",
@@ -973,7 +981,7 @@ console.log("● ハモリと掛け合い");
 		`${anticipated}/${duetSpans}`,
 	);
 	console.log(
-		`  ${N}曲: ハモリ 3度/6度 ${((thirdOrSixth / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 4度（テンション上）${((fourth / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 完全5度・同音 ${((fifthOrUnison / Math.max(1, harmNotes)) * 100).toFixed(0)}% / 歌う小節の ${((harmBars / Math.max(1, melodyBars)) * 100).toFixed(0)}% に付く / 掛け合い ${[...duetStyles].join(" ")}（食い ${duetSpans === 0 ? 0 : Math.round((anticipated / duetSpans) * 100)}%）`,
+		`  ${N}曲: ハモリ 上${((above / Math.max(1, harmNotes)) * 100).toFixed(0)}%/ユニゾン${((unison / Math.max(1, harmNotes)) * 100).toFixed(0)}%/下${(((harmNotes - above - unison) / Math.max(1, harmNotes)) * 100).toFixed(0)}% 移動${harmAvg.toFixed(2)}(主旋律${melAvg.toFixed(2)}) / 歌う小節の ${((harmBars / Math.max(1, melodyBars)) * 100).toFixed(0)}% に付く / 掛け合い ${[...duetStyles].join(" ")}（食い ${duetSpans === 0 ? 0 : Math.round((anticipated / duetSpans) * 100)}%）`,
 	);
 }
 

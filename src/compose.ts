@@ -1490,65 +1490,56 @@ const MELODY_HIGH = 81;
 /** メロディの音域の中心。大きなうねり（{@link MelodyStyle.arcPeriod}）の基準。 */
 const MELODY_CENTER = (MELODY_LOW + MELODY_HIGH) / 2;
 
-/** ハモリとして許す音程（半音）。3度と6度の長短。5度は浮くので入れない。 */
-const HARMONY_INTERVALS = new Set([3, 4, 8, 9]);
 /**
- * 主旋律がテンション音のときに許す音程。完全4度を足す。11th（Cの上のF）では
- * 3度も6度も和音構成音へ届かず、4度下だけがルートへ落ちる。
+ * ハモリの音を選ぶ。
+ *
+ * **平行3度を並べるのではなく、「似ているが別の旋律線」を書く。** 参考曲の主旋律と
+ * ハモリ（`ぺぽよ/±0/220715.mid` の ch6/ch7、同じ位置で鳴る597音）を突き合わせると、
+ * 平行ハモリとは似ても似つかない性質が出る。
+ *
+ *   上 26% / 下 63% / ユニゾン 11%     ← 下が主。ユニゾンも普通に混ざる
+ *   最頻の音程は**完全4度下（−5）で24.5%** ← 3度ではない
+ *   隣の音への平均移動 主旋律 3.07半音 / ハモリ 1.23半音  ← 1/2.5しか動かない
+ *   同音を繰り返す割合 主旋律 30% / ハモリ 54%
+ *
+ * つまりハモリは**主旋律より動かない線**で、主旋律が跳ねている間も同じ音に留まる。
+ * その結果として音程は刻々と変わり、ユニゾンにも完全4度にもなる。度数を固定して
+ * 平行移動させると、この性質はどうやっても出ない。
+ *
+ * ここでは和音構成音の中から**直前のハモリの音に近いこと**を最優先で選ぶ。
+ * 動かない線を作れば、音程の分布は勝手に付いてくる。
  */
-const HARMONY_INTERVALS_TENSION = new Set([3, 4, 5, 8, 9]);
-
-/** 主旋律がその瞬間の和音の構成音か。外れていればテンションか経過音。 */
-const isChordTone = (semi: number, tones: ChordTone[]): boolean => {
-	const pc = pitchClass(semi);
-	return tones.some((t) => pitchClass(t.semi) === pc);
-};
-
 const harmonyPitch = (
 	melodySemi: number,
 	tones: ChordTone[],
-	/** 上ハモなら true。 */
-	up: boolean,
-	/** 3度ではなく6度で当てるか。 */
-	wide: boolean,
+	/** 直前のハモリの音。無ければ null。 */
+	prevHarmony: number | null,
+	/** 曲ごとの居場所（主旋律から何半音ずれた辺りに置くか）。負が下。 */
+	offset: number,
 ): ScaleDegree => {
-	const tension = !isChordTone(melodySemi, tones);
-	const allowed = tension ? HARMONY_INTERVALS_TENSION : HARMONY_INTERVALS;
-	const want = tension ? 5 : wide ? 9 : 4;
-
-	// **和音構成音のうち、許した度数になるものだけを候補にする。** 度数へ寄せてから
-	// 和音へ吸着させると、三和音では吸着先が限られて3割が5度・4度・同音になった。
-	const search = (dir: boolean): ScaleDegree | null => {
-		let best: ScaleDegree | null = null;
-		let bestCost = Number.POSITIVE_INFINITY;
-		for (const tone of tones) {
-			// `tones` の semi はオクターブが揃っていないので音名だけ使う。
-			const pc = pitchClass(tone.semi);
-			for (let oct = 0; oct <= 10; oct++) {
-				const semi = pc + oct * 12;
-				if (semi < MELODY_LOW - 12 || semi > MELODY_HIGH + 12) continue;
-				const delta = semi - melodySemi;
-				if (dir ? delta <= 0 : delta >= 0) continue;
-				const gap = Math.abs(delta);
-				if (!allowed.has(gap)) continue;
-				const cost = Math.abs(gap - want) + (3 - tone.weight) * 0.5;
-				if (cost < bestCost) {
-					bestCost = cost;
-					best = { semi, fifth: tone.fifth };
-				}
+	let best: ScaleDegree | null = null;
+	let bestCost = Number.POSITIVE_INFINITY;
+	for (const tone of tones) {
+		const pc = pitchClass(tone.semi);
+		for (let oct = 0; oct <= 10; oct++) {
+			const semi = pc + oct * 12;
+			const delta = semi - melodySemi;
+			// 主旋律より上へ大きく出ない・下へ離れすぎない。
+			if (delta > 5 || delta < -12) continue;
+			// **直前の音から大きく動かないことを最優先。** これがハモリを平行線ではなく
+			// 独立した線にする。参考曲のハモリは「よく動くが1〜2半音ずつ」なので、
+			// 順次進行はほぼ無料、跳躍だけを高くする。次に、曲ごとの居場所からの遠さ。
+			const move = prevHarmony === null ? 0 : Math.abs(semi - prevHarmony);
+			const stay = move <= 2 ? move * 0.04 : 0.1 + (move - 2) * 0.9;
+			const cost =
+				stay + Math.abs(delta - offset) * 0.7 + (3 - tone.weight) * 0.4;
+			if (cost < bestCost) {
+				bestCost = cost;
+				best = { semi, fifth: tone.fifth };
 			}
 		}
-		return best;
-	};
-
-	// テンションの上では片側しか成立しないことが多い（11th の4度は下だけ）ので、
-	// 上下の向きより和音に乗ることを優先する。どの度数も作れない和音（sus4 など）は
-	// 度数を諦めて構成音へ落とす。
-	return (
-		search(up) ??
-		(tension ? search(!up) : null) ??
-		nearestChordTone(melodySemi + (up ? want : -want), tones, 2)
-	);
+	}
+	return best ?? nearestChordTone(melodySemi + offset, tones, 2);
 };
 /** サブメロの音域。メロディの下・ベースの上に置く。 */
 const SUBMELODY_LOW = 55;
@@ -2533,8 +2524,13 @@ const draw = (
 		["chorus", "chorus", "prechorus"],
 		rnd,
 	);
-	/** ハモリを6度で当てるか（既定は3度）。 */
-	const harmonyWide = rnd() < 0.3;
+	/**
+	 * ハモリの居場所（主旋律から何半音ずれた辺りに置くか）。参考曲は下が63%・
+	 * 最頻が完全4度下なので、下を主にして時々3度上へ回す。
+	 */
+	const harmonyOffset = pick([-5, -5, -4, -3, -7, 3, 4], rnd);
+	/** 直前のハモリの音。小節をまたいで持ち越す（動かない線を作るため）。 */
+	let prevHarmony: number | null = null;
 	const harmonyKinds: SectionKind[] =
 		harmonyFrom === "prechorus"
 			? ["prechorus", "chorus", "bridge"]
@@ -3655,10 +3651,15 @@ const draw = (
 		// 上ハモか下ハモかはセクションで決める（{@link harmonyPitch}）。
 		const barSec = sectionAt(sectionPlan, bar);
 		if (!silent && harmonyKinds.includes(barSec.kind)) {
-			const up = barSec.kind === "chorus";
 			for (let i = 0; i < slots.length; i++) {
-				const hTone = harmonyPitch(pitches[i], tones, up, harmonyWide);
-				const hClamped = clampSemi(hTone.semi, MELODY_LOW, MELODY_HIGH);
+				const hTone = harmonyPitch(
+					pitches[i],
+					tones,
+					prevHarmony,
+					harmonyOffset,
+				);
+				const hClamped = clampSemi(hTone.semi, MELODY_LOW - 12, MELODY_HIGH);
+				prevHarmony = hClamped;
 				const k = barKeyShift[bar];
 				const fifthShift =
 					k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
