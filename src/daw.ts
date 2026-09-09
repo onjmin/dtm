@@ -32,7 +32,11 @@ import {
 	resolveDrumPattern,
 } from "./drum-config";
 import { icon } from "./icons";
-import { INSTRUMENT_PRESETS } from "./instrument-presets";
+import {
+	fitInstrumentOctave,
+	INSTRUMENT_PRESETS,
+	type InstrumentPreset,
+} from "./instrument-presets";
 import {
 	buildStreamVoiceNotes,
 	displayKana,
@@ -500,6 +504,8 @@ const COMPOSE_INFO_HTML = `
     <li><strong>間奏のソロ</strong> — 間奏は歌が休む場所であって、音楽が休む場所ではありません。歌メロの代わりに器楽のソロを書き、専用のトラックで鳴らします。プリセットによって歪みギター・サックス・尺八などに変わります。素材はサビと同じなので、間奏がサビの主題を弾く形になります。</li>
     <li><strong>ウワモノ</strong> — きらびやかな装飾を、盛り上がるセクションにだけオクターブ上で足します。<strong>地の伴奏と同じ奏法は使いません</strong>——同じものをオクターブ上げただけの層は装飾ではなく写しだからです。ブロックも外します（和音を丸ごとオクターブ上で鳴らすのは装飾ではなく壁になります）。</li>
   </ul>
+  <p><strong>楽器の音域に合わせてオクターブを下げます。</strong>1トラック1楽器で、しかも層ごとにオクターブを変えるので、決めたオクターブがその楽器の出せない高さになることがあります。実測すると、サビの重ねを1オクターブ上げる指定はミュートトランペットやトランペットで14半音ぶん、コードパッド（実音77〜93）はナイロンギターで10半音・カリンバで9半音ぶん音域を突き抜けていました。サンプルが引き伸ばされて<strong>金切り音</strong>になり、聴き手には「耳が痛い」としか感じられません。そこで、鳴らす音域がその楽器の実用上限に収まるところまで<strong>オクターブを下げてから</strong>置きます（トラックのオクターブ設定は、まさにこういう「得意な音域が偏った音源」を使えるようにするために在るものです）。<strong>下げる方向にしか動かしません</strong>——上げる側が痛みを作る側なので。</p>
+  <p>実物の音域に収まっていても痛くなる音色があります。グロッケンは実物の音域がG5〜C8なので、旋律の音域（〜C6）は「余裕で範囲内」ですが、金属体の倍音は人の耳がいちばん敏感な2〜4kHzに集まるため、その高さで鳴らし続けると刺さります。こういう音色には音域とは別に<strong>明るさの上限</strong>を持たせてあり、グロッケンならC5より上で鳴らないところまで下げます。<strong>候補から外すのではなく置き場所を変えます</strong>——外すと音色の幅がそのぶん減るだけで、低く鳴らしたグロッケンはポップスで普通に使われる柔らかい音です。</p>
   <p><strong>オクターブの重ねを主役にしていません。</strong>「既にあるトラックを1オクターブ動かして別トラックへ写す」層は、音楽的な価値が高くありません。人の耳はオクターブ違いを<strong>同じ音</strong>として聞くので（オクターブ等価）、写した層は新しい声部にならず、音量と音色がわずかに変わるだけです。強調としての意味はあるので使いはしますが、常設にはしません。ベースのオクターブ下の重ねは特に、30Hz前後まで落ちて輪郭が濁るので既定では出しません（出すときも上のオクターブへ、盛り上がる場所だけに置きます）。</p>
   <p>「作曲」が決めたこれらの楽器は、おまかせマスタリングの役割推定より優先されます（演奏内容だけを見ると、間奏のソロもサビの重ねも「音の少ない単旋律」で、主旋律と区別が付かないためです）。楽器を手で選び直したトラックは、以後どちらにも上書きされません。</p>
   <h4>そのほか</h4>
@@ -863,9 +869,38 @@ type AdvancedLayer = {
  */
 const buildAdvancedLayers = (
 	song: ComposeResult,
-	config: { edo?: number; stepsPerBar: number },
+	config: {
+		edo?: number;
+		stepsPerBar: number;
+		/** この曲で鳴らす音色セット。層のオクターブを楽器の音域へ合わせるのに要る。 */
+		preset: InstrumentPreset;
+	},
 ): AdvancedLayer[] => {
-	const { edo, stepsPerBar } = config;
+	const { edo, stepsPerBar, preset } = config;
+	/** ノート列が使う音域（半音）。空なら null。 */
+	const semitoneRange = (notes: ComposedNote[]): [number, number] | null => {
+		if (notes.length === 0) return null;
+		let lo = Number.POSITIVE_INFINITY;
+		let hi = Number.NEGATIVE_INFINITY;
+		for (const n of notes) {
+			const semi = n.pitchUnits / UNITS_PER_SEMITONE;
+			if (semi < lo) lo = semi;
+			if (semi > hi) hi = semi;
+		}
+		return [Math.round(lo), Math.round(hi)];
+	};
+	/**
+	 * 編曲が指定したオクターブを、その楽器が無理なく鳴らせる位置まで下げる。
+	 *
+	 * **足す層にだけ掛ける。** 主旋律・サブメロ・ベースの音域は曲の骨格そのもので、
+	 * 楽器の都合で勝手に1オクターブ動かすと別の曲になる（そちらは音色の選び方の問題
+	 * なので、`scripts/check-registers.ts` が報告して人が直す）。
+	 */
+	const fit = (
+		notes: ComposedNote[],
+		slot: PresetSlot,
+		wanted: number,
+	): number => fitInstrumentOctave(semitoneRange(notes), preset[slot], wanted);
 	const kindAtBar = (bar: number): SectionKind | null =>
 		song.sections.find(
 			(sec) => bar >= sec.startBar && bar < sec.startBar + sec.bars,
@@ -905,16 +940,42 @@ const buildAdvancedLayers = (
 		}));
 
 	const plan = song.arrange;
+
+	// --- 楽器の音域に合わせてから並べる層 ---
+	// サビの重ね。編曲は「オクターブ上」を引くことがあるが、その楽器が届かなければ
+	// ユニゾンへ落ちる。実測では、トランペットやブラス・合唱で12〜14半音ぶん
+	// 音域を突き抜けていた（＝金切り音）。
+	const leadNotes = plan.lead ? onlyIn(song.melody, plan.lead.sections) : [];
+	const leadOctave = fit(leadNotes, "chorusLead", plan.lead?.octave ?? 0);
+	const leadLayer: AdvancedLayer = {
+		index: 1,
+		notes: leadNotes,
+		octave: leadOctave,
+		// ユニゾンで重ねるときは、オクターブ上より前に出やすいので少し引く。
+		volume: leadOctave === 0 ? 54 : 62,
+		slot: "chorusLead",
+	};
+
+	// ベースの重ね。**楽器へ合わせた結果オクターブ上でなくなったら落とす**——
+	// ベース本体と同じ楽器・同じ音・同じ高さになり、ただの重複になるため
+	// （ティンパニやタイコは上へ4半音も伸ばせない）。
+	const bassNotes = plan.bassLayer
+		? onlyIn(song.bass, plan.bassLayer.sections)
+		: [];
+	const bassOctave = fit(bassNotes, "bass", plan.bassLayer?.octave ?? 0);
+	const bassLayer: AdvancedLayer = {
+		index: 5,
+		notes: bassOctave === 0 ? [] : bassNotes,
+		octave: bassOctave,
+		volume: 58,
+		slot: "bass",
+	};
+
+	const padNotes = onlyIn(song.pad, plan.padSections);
+
 	const layers: AdvancedLayer[] = [
 		{ index: 0, notes: song.melody, octave: 0, volume: 104, slot: "melody" },
-		{
-			index: 1,
-			notes: plan.lead ? onlyIn(song.melody, plan.lead.sections) : [],
-			octave: plan.lead?.octave ?? 0,
-			// ユニゾンで重ねるときは、オクターブ上より前に出やすいので少し引く。
-			volume: plan.lead?.octave === 0 ? 54 : 62,
-			slot: "chorusLead",
-		},
+		leadLayer,
 		{ index: 2, notes: song.harmony, octave: 0, volume: 82 },
 		{
 			index: 3,
@@ -924,17 +985,14 @@ const buildAdvancedLayers = (
 			slot: "submelody",
 		},
 		{ index: 4, notes: song.bass, octave: 0, volume: 92, slot: "bass" },
-		{
-			index: 5,
-			notes: plan.bassLayer ? onlyIn(song.bass, plan.bassLayer.sections) : [],
-			octave: plan.bassLayer?.octave ?? 0,
-			volume: 58,
-			slot: "bass",
-		},
+		bassLayer,
+		// **パッドは伴奏用の楽器で、伴奏より1.5オクターブ高いところを鳴らす。**
+		// そのまま置くとナイロンギターで10半音、カリンバで9半音、尺八で7半音ぶん
+		// 音域を突き抜ける。楽器に合わせて下げる。
 		{
 			index: 6,
-			notes: onlyIn(song.pad, plan.padSections),
-			octave: 0,
+			notes: padNotes,
+			octave: fit(padNotes, "chord", 0),
 			volume: 64,
 			slot: "chord",
 		},
@@ -953,13 +1011,14 @@ const buildAdvancedLayers = (
 		});
 	}
 
+	const sparkleNotes = plan.sparkle
+		? onlyIn(chordNotes(plan.sparkle.pattern, -14), plan.sparkle.sections)
+		: [];
 	layers.push(
 		{
 			index: 10,
-			notes: plan.sparkle
-				? onlyIn(chordNotes(plan.sparkle.pattern, -14), plan.sparkle.sections)
-				: [],
-			octave: plan.sparkle?.octave ?? 0,
+			notes: sparkleNotes,
+			octave: fit(sparkleNotes, "chord", plan.sparkle?.octave ?? 0),
 			volume: 56,
 			slot: "chord",
 		},
@@ -970,8 +1029,15 @@ const buildAdvancedLayers = (
 		{ index: 12, notes: song.harmony2, octave: 0, volume: 74 },
 		{ index: 13, notes: song.octave, octave: -1, volume: 56, slot: "melody" },
 		// **間奏のソロ。** 音が入るのは間奏の小節だけなので、この1本だけを
-		// 別の楽器にしても他のセクションの鳴りは変わらない。
-		{ index: 14, notes: song.solo, octave: 0, volume: 100, slot: "solo" },
+		// 別の楽器にしても他のセクションの鳴りは変わらない。歌の音域をそのまま
+		// 渡すと管楽器が上へ抜ける（テナーサックスで10半音）ので、ここも合わせる。
+		{
+			index: 14,
+			notes: song.solo,
+			octave: fit(song.solo, "solo", 0),
+			volume: 100,
+			slot: "solo",
+		},
 	);
 	return layers;
 };
@@ -5812,6 +5878,22 @@ export const mountDAW = (
 					// 2つ並び、1回目の Undo が何も変わらない空振りになる。
 					track.core.endBatch();
 				};
+				// **楽器プリセットは、ノートを書く前に決める。** 上級者モードの編曲は
+				// 層のオクターブを楽器の音域へ合わせる（{@link fitInstrumentOctave}）ので、
+				// 何の音色で鳴るかが先に分かっていないと合わせようが無い。
+				// ユーザーが手動で特定のプリセットを選んでいない（未選択、"auto"、または
+				// 前回自動で選ばれたプリセットのまま）ときは、曲調連動で選ばれた
+				// song.instrument を適用する。自分で選んだプリセットは尊重して維持する。
+				const shouldAutoInstrument =
+					!currentInstrument ||
+					currentInstrument === "auto" ||
+					currentInstrument === autoComposeInstrument;
+				if (shouldAutoInstrument && song.instrument) {
+					currentInstrument = song.instrument;
+					autoComposeInstrument = song.instrument;
+					options.onInstrumentChange?.(song.instrument);
+				}
+
 				if (isAdvanced) {
 					// --- 上級者モード（15トラック）---
 					// 同じ素材をむやみに複製すると音数だけ増えて濁るので、
@@ -5821,6 +5903,8 @@ export const mountDAW = (
 					const layers = buildAdvancedLayers(song, {
 						edo: renderConfig.edo,
 						stepsPerBar: renderConfig.stepsPerBar,
+						preset:
+							INSTRUMENT_PRESETS[currentInstrument] ?? INSTRUMENT_PRESETS.piano,
 					});
 					for (const layer of layers) {
 						const track = trackStates[layer.index];
@@ -5832,9 +5916,15 @@ export const mountDAW = (
 						// 音色スロットを控えておく。実際の楽器名は、この後の
 						// おまかせマスタリングが選択中のプリセットから引く。
 						// 音の入らなかった層（プランが引かなかった層）は、前の曲の割り当てを
-						// 残さないよう捨てる。
+						// 残さないよう捨てる。おまかせマスタリングは**音の無いトラックの役割を
+						// 推定できない**ので素通りする＝前の曲の楽器名が残ってしまうため、
+						// 楽器名もここで消す（鳴らないので実害は無いが、パネルに嘘が出る）。
 						track.composeSlot =
 							layer.notes.length > 0 ? (layer.slot ?? null) : null;
+						if (layer.notes.length === 0 && track.trackInstrument) {
+							track.trackInstrument = "";
+							options.onTrackInstrumentChange?.(layer.index, "");
+						}
 					}
 					// レイアウトの外のトラックは空にしておく（前の曲の残骸を残さない）。
 					for (let i = 0; i < trackStates.length; i++) {
@@ -5875,20 +5965,6 @@ export const mountDAW = (
 				refs.drumSelect.value = song.drum;
 				options.onDrumChange?.(song.drum);
 				applyDrumPatternFont(song.drum);
-
-				// 楽器プリセットも曲に合わせて自動選択する。
-				// ユーザーが手動で特定のプリセットを選んでいない（未選択、"auto"、または
-				// 前回自動で選ばれたプリセットのまま）ときは、曲調連動で選ばれた
-				// song.instrument を適用する。ユーザーが自分で選んだプリセットは尊重して維持する。
-				const shouldAutoInstrument =
-					!currentInstrument ||
-					currentInstrument === "auto" ||
-					currentInstrument === autoComposeInstrument;
-				if (shouldAutoInstrument && song.instrument) {
-					currentInstrument = song.instrument;
-					autoComposeInstrument = song.instrument;
-					options.onInstrumentChange?.(song.instrument);
-				}
 
 				// --- 歌入り ---
 				if (withVocal) {
