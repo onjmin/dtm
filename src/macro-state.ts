@@ -1,7 +1,7 @@
 /**
  * マクロアコーディオン内で選択された設定値の localStorage 永続化
  *
- * 構成プリセット、作る部分（セクション）、ベース調、全体シフト、移調の
+ * 構成プリセット、作る部分（セクション）、ベース調、音階、全体シフト、移調の
  * 選択状態を保持し、次回ロード時に復元できるようにする。
  */
 
@@ -9,6 +9,7 @@ export const MACRO_STORAGE_KEYS = {
 	template: "dtm-macro:template",
 	sections: "dtm-macro:sections",
 	key: "dtm-macro:key",
+	scale: "dtm-macro:scale",
 	shift: "dtm-macro:shift",
 	transpose: "dtm-macro:transpose",
 } as const;

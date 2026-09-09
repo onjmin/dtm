@@ -17,6 +17,7 @@ import {
 	composeSong,
 } from "./compose";
 import { getComposeKeyDescription } from "./compose-keys";
+import { getComposeScaleDescription } from "./compose-scales";
 import {
 	buildSectionPlan,
 	DEFAULT_SECTIONS,
@@ -5751,6 +5752,16 @@ export const mountDAW = (
 			}
 		}
 
+		const savedScale = readMacroSetting("scale");
+		if (savedScale && refs.composeScale) {
+			const hasOption = Array.from(refs.composeScale.options).some(
+				(opt) => opt.value === savedScale,
+			);
+			if (hasOption) {
+				refs.composeScale.value = savedScale;
+			}
+		}
+
 		const savedShift = readMacroSetting("shift");
 		if (savedShift && refs.shiftSelect) {
 			const hasOption = Array.from(refs.shiftSelect.options).some(
@@ -5817,6 +5828,20 @@ export const mountDAW = (
 			});
 			updateComposeKeyHint();
 		}
+		const updateComposeScaleHint = (): void => {
+			if (!refs.composeScale || !refs.composeScaleHint) return;
+			const desc = getComposeScaleDescription(refs.composeScale.value);
+			refs.composeScaleHint.textContent = desc;
+			refs.composeScaleHint.title = desc;
+		};
+		const composeScale = refs.composeScale;
+		if (composeScale) {
+			composeScale.addEventListener("change", () => {
+				writeMacroSetting("scale", composeScale.value);
+				updateComposeScaleHint();
+			});
+			updateComposeScaleHint();
+		}
 		if (refs.shiftSelect) {
 			refs.shiftSelect.addEventListener("change", () => {
 				writeMacroSetting("shift", refs.shiftSelect.value);
@@ -5838,6 +5863,7 @@ export const mountDAW = (
 					sections: selectedComposeSections(),
 					template: tmpl,
 					baseKey: refs.composeKey?.value ?? "any",
+					scale: refs.composeScale?.value ?? "auto",
 					// 直近に作った曲の特徴を渡すと、それらから離れた候補に加点される。
 					// 「作曲」を続けて押したときに似た曲が並ぶのを防ぐ。
 					recent: recentComposeFingerprints,

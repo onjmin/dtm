@@ -24,6 +24,11 @@ import {
 	COMPOSE_MOOD_GROUPS,
 	resolveComposeKey,
 } from "../src/compose-keys";
+import {
+	COMPOSE_SCALE_IDS,
+	COMPOSE_SCALES,
+	resolveCenter,
+} from "../src/compose-scales";
 import { structureFeatures } from "../src/compose-metrics";
 import {
 	DRUM_KEYS,
@@ -1207,6 +1212,112 @@ console.log("● ベース調・雰囲気（調性格論）");
 		verseChord.startsWith("Am"),
 		`verseChord=${verseChord}`,
 	);
+}
+
+
+// ============================================================
+// 6. 音階のテスト
+// ============================================================
+//
+// **音階は「その音を使わないこと」で成り立つ。** 琉球音階の色はレとラを抜く
+// ことそのものなので、生成物にレとラが混ざれば音階を選んだ意味が消える。
+// ここでは音階ごとに曲を作り、実際に鳴った音のピッチクラスを数えて、
+// 中核の5音から外れた音がどれだけ紛れ込んだかを測る。
+
+console.log("● 音階");
+{
+	/** ハ長調の7音（主音からの半音）。度数 → ピッチクラス。 */
+	const MAJOR_PCS = [0, 2, 4, 5, 7, 9, 11];
+	const SCALE_SEEDS = 24;
+
+	for (const id of COMPOSE_SCALE_IDS) {
+		const scale = COMPOSE_SCALES[id];
+		const corePcs = new Set(scale.core.map((d) => MAJOR_PCS[d]));
+		const tag = scale.label;
+		const seen = new Set<number>();
+		let notes = 0;
+		let outside = 0;
+		let tonicChordBars = 0;
+		const center = resolveCenter(scale);
+
+		for (let seed = 1; seed <= SCALE_SEEDS; seed++) {
+			const song = composeSong({
+				stepsPerBar: STEPS_PER_BAR,
+				edo: 12,
+				scale: id,
+				random: seededRandom(seed * 31 + 7),
+			});
+			check(
+				`${tag} seed=${seed} 音階IDが結果に載る`,
+				song.scaleId === id,
+				`${song.scaleId}`,
+			);
+			check(
+				`${tag} seed=${seed} 総合点`,
+				song.stats.score >= 0.6,
+				`${song.stats.score.toFixed(3)}`,
+			);
+			check(
+				`${tag} seed=${seed} メロディが同じ音の連打になっていない`,
+				song.stats.melodyRange >= 3,
+				`${song.stats.melodyRange}半音`,
+			);
+			for (const n of song.melody) {
+				// 曲全体の移調を戻して、ハ長調の座標で数える。
+				const semi = Math.round(n.pitchUnits / UNITS_PER_SEMITONE);
+				const pc = (((semi - song.rootShift) % 12) + 12) % 12;
+				notes++;
+				if (corePcs.has(pc)) seen.add(pc);
+				else if (MAJOR_PCS.includes(pc)) outside++;
+			}
+			// 進行が音階の主音を指しているか。**旋律だけモードにして和音が
+			// ハ長調のトニックを指していると、曲は結局ハ長調に聞こえる。**
+			if (center) {
+				const chords = song.chordProgression.split("|");
+				if (chords.some((c) => center.tonicPattern.test(c))) tonicChordBars++;
+			}
+		}
+
+		check(
+			`${tag} 中核の5音がすべて使われる`,
+			seen.size === corePcs.size,
+			`${seen.size}/${corePcs.size}音`,
+		);
+		// **strict な音階（本物の5音音階）は中核の外を8%まで。** 陽・民謡と
+		// モードは中核の外も音階の構成音なので、ここは緩い上限にする。
+		const ratio = notes === 0 ? 1 : outside / notes;
+		const limit = scale.strict ? 0.08 : 0.2;
+		check(
+			`${tag} 中核外の音が ${(limit * 100).toFixed(0)}% 以下`,
+			ratio <= limit,
+			`${(ratio * 100).toFixed(1)}%`,
+		);
+		if (center)
+			check(
+				`${tag} 進行が音階の主和音を含む`,
+				tonicChordBars === SCALE_SEEDS,
+				`${tonicChordBars}/${SCALE_SEEDS}曲`,
+			);
+		console.log(
+			`  ${tag.padEnd(20)} 中核外 ${(ratio * 100).toFixed(1)}% / 進行の中心 ${center ? center.tonic : "長調・短調の既定"}`,
+		);
+	}
+
+	// 未指定は従来どおり（陽＝長調／民謡＝短調）。
+	const auto = composeSong({
+		stepsPerBar: STEPS_PER_BAR,
+		edo: 12,
+		baseKey: "key_Am",
+		random: seededRandom(1),
+	});
+	check("音階未指定 + 短調は民謡音階", auto.scaleId === "minyo", auto.scaleId);
+	const autoMajor = composeSong({
+		stepsPerBar: STEPS_PER_BAR,
+		edo: 12,
+		baseKey: "key_C",
+		random: seededRandom(1),
+	});
+	check("音階未指定 + 長調は陽音階", autoMajor.scaleId === "yo", autoMajor.scaleId);
 }
 
 console.log("");

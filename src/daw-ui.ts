@@ -101,6 +101,8 @@ export type DawUIRefs = {
 	composeSectionsLen: HTMLElement;
 	composeKey: HTMLSelectElement;
 	composeKeyHint: HTMLElement;
+	composeScale: HTMLSelectElement;
+	composeScaleHint: HTMLElement;
 	macroComposeVocal: HTMLButtonElement;
 	macroComposeInfo: HTMLButtonElement;
 	macroClear: HTMLButtonElement;
@@ -485,6 +487,28 @@ export const buildUI = (
           <span class="dtm-grow"></span>
           <span class="dtm-hint" data-dtm="compose-key-hint"></span>
         </div>
+        <div class="dtm-row" data-dtm="compose-scale-row">
+          <span class="dtm-label">音階</span>
+          <select class="dtm-select" data-dtm="compose-scale" title="旋律が使う音階を選びます。ベース調（主音の高さ）とは独立した設定です">
+            <option value="auto" title="ベース調の長短に合わせて、陽音階（長調）か民謡音階（短調）を使います">おまかせ（従来どおり）</option>
+            <option value="any" title="9つの音階からランダムに抽選します">希望なし（全音階から抽選）</option>
+            <optgroup label="ペンタトニック（5音音階）">
+              <option value="yo" title="J-POPの標準。明るく素直で歌いやすい。従来の長調と同じ">陽音階（長調ペンタ）</option>
+              <option value="minyo" title="わらべ歌・民謡の音階。翳りがあるが暗すぎない。従来の短調と同じ">民謡音階（短調ペンタ）</option>
+              <option value="ryukyu" title="沖縄音階。レとラを抜き、ファとシを柱にする。明るく跳ねる">琉球音階（沖縄）</option>
+              <option value="miyakobushi" title="『さくらさくら』の音階。主音のすぐ上が半音で、翳りが濃い">都節音階（陰音階）</option>
+              <option value="ritsu" title="雅楽・声明の音階。半音を含まず、平らで荘重に流れる">律音階（雅楽）</option>
+            </optgroup>
+            <optgroup label="チャーチモード（7音音階）">
+              <option value="dorian" title="短調だが6度が明るい。ケルト・ロック・シティポップ">ドリアン</option>
+              <option value="phrygian" title="主音の上が半音。スパニッシュ／メタルの緊迫した響き">フリジアン</option>
+              <option value="lydian" title="4度が高く、浮遊して広がる。映画音楽・ゲームの空の色">リディアン</option>
+              <option value="mixolydian" title="長調だが7度が低い。ブルースロック・民族音楽の土くささ">ミクソリディアン</option>
+            </optgroup>
+          </select>
+          <span class="dtm-grow"></span>
+          <span class="dtm-hint" data-dtm="compose-scale-hint"></span>
+        </div>
       </div>
       <div class="dtm-row">
         <span class="dtm-label">全体シフト</span>
@@ -691,6 +715,8 @@ export const buildUI = (
 		composeSectionsLen: sel("compose-sections-len"),
 		composeKey: sel("compose-key"),
 		composeKeyHint: sel("compose-key-hint"),
+		composeScale: sel("compose-scale"),
+		composeScaleHint: sel("compose-scale-hint"),
 		macroComposeVocal: sel("macro-compose-vocal"),
 		macroComposeInfo: sel("macro-compose-info"),
 		macroClear: sel("macro-clear"),

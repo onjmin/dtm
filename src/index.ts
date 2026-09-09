@@ -45,6 +45,17 @@ export {
 	type TensionFeatures,
 	tensionFeatures,
 } from "./compose-metrics";
+// 音階（琉球・都節・律・チャーチモード）
+export {
+	COMPOSE_SCALE_IDS,
+	COMPOSE_SCALES,
+	type ComposeScale,
+	type ComposeScaleId,
+	getComposeScaleDescription,
+	resolveComposeScale,
+	type TonicCenter,
+	type TonicDegree,
+} from "./compose-scales";
 export {
 	buildSectionPlan,
 	DEFAULT_SECTIONS,

@@ -62,6 +62,16 @@ import {
 	tensionFeatures,
 } from "./compose-metrics";
 import {
+	type ComposeScale,
+	type ComposeScaleId,
+	coreToDegree,
+	degreeToCore,
+	isCoreDegree,
+	resolveCenter,
+	resolveComposeScale,
+	type TonicCenter,
+} from "./compose-scales";
+import {
 	buildSectionPlan,
 	DEFAULT_SECTIONS,
 	type PlacedSection,
@@ -382,58 +392,22 @@ const walk = (semi: number, delta: number): number =>
 	degreeToPitch(semitoneToDegree(semi) + delta).semi;
 
 /**
- * ペンタトニックから外れる度数。**ファ（4度）とシ（7度）**の2つ。
+ * 音階の中核音から外れた音か。**陽音階（従来の長調）ならファ・シ**の2つ。
  *
- * 歌メロの解説はどれも「まずペンタトニック（ド・レ・ミ・ソ・ラ）に絞れ」と言う。
- * ハ長調でもイ短調でも外れるのはこの2音で（イ短調のペンタトニックは
- * ラ・ド・レ・ミ・ソ）、どちらも半音上に隣の音が迫っていて主張が強い。
- *
- * この2音を無条件に使うと、**スケールの上をなぞっただけのメロディ**になる。
- * 使ってよいのは次の2つの場合だけ、というのが共通して書かれている規則。
+ * 歌メロの解説はどれも「まずペンタトニックに絞れ」と言う。中核5音から外れる2音は
+ * どちらも半音の隣に音が迫っていて主張が強く、無条件に使うと**スケールの上を
+ * なぞっただけのメロディ**になる。使ってよいのは次の2つの場合だけ、というのが
+ * 共通して書かれている規則。
  *
  * - その瞬間の和音の構成音であるとき（F の上のファ、G7 の上のシは和音の芯）
  * - **前後を順次進行で挟むとき**（経過音・刺繍音として通り過ぎるだけ）
  *
- * 生成物はここを一切見ておらず、7音を無差別に使っていた。
+ * **どの5音を中核にするかは曲の音階が決める**（{@link ComposeScale.core}）。
+ * 琉球音階はまさにこのファ・シを柱にしてレ・ラを外すので、陽音階とは
+ * 通す音と逃がす音がそっくり入れ替わる。
  */
-const NON_PENTATONIC_DEGREES = new Set([3, 6]); // ファ・シ
-
-/** その音がペンタトニックの外（ファ・シ）か。 */
-const isNonPentatonic = (semi: number): boolean =>
-	NON_PENTATONIC_DEGREES.has(((semitoneToDegree(semi) % 7) + 7) % 7);
-
-/** ペンタトニックの5音を、ダイアトニックの度数で表したもの（ド・レ・ミ・ソ・ラ）。 */
-const PENTATONIC_DEGREES = [0, 1, 2, 4, 5];
-
-/**
- * ペンタトニックの度数（5音で1オクターブ）→ ダイアトニックの度数。
- *
- * **モチーフはこちらの度数で組み立てる。** ダイアトニックの度数で輪郭を作ると、
- * 「1つ上」が文脈によってミ→ファ（半音）にもなり、モチーフを移調したとたんに
- * ファやシが紛れ込む。ペンタトニックの度数で持てば、どこへ移調しても
- * ペンタトニックのままでいられる。
- */
-const pentaToDegree = (penta: number): number => {
-	const index = ((penta % 5) + 5) % 5;
-	const octave = Math.floor(penta / 5);
-	return PENTATONIC_DEGREES[index] + octave * 7;
-};
-
-/** ダイアトニックの度数 → 最も近いペンタトニックの度数。 */
-const degreeToPenta = (degree: number): number => {
-	const index = ((degree % 7) + 7) % 7;
-	const octave = Math.floor(degree / 7);
-	let best = 0;
-	let bestDist = Number.POSITIVE_INFINITY;
-	for (let i = 0; i < PENTATONIC_DEGREES.length; i++) {
-		const dist = Math.abs(PENTATONIC_DEGREES[i] - index);
-		if (dist < bestDist) {
-			bestDist = dist;
-			best = i;
-		}
-	}
-	return octave * 5 + best;
-};
+const isOutsideScale = (scale: ComposeScale, semi: number): boolean =>
+	!isCoreDegree(scale, semitoneToDegree(semi));
 
 // ============================================================
 // コード進行
@@ -562,6 +536,39 @@ const SECTION_DECEPTIVE_DERIVATIONS: ((
 	(a, t) => [a[0], a[1], "G7", t === "Am" ? "F" : "Am"],
 	(a, t) => [a[0], "Dm7", "G7", t === "Am" ? "FM7" : "Am7"],
 	(a, t) => [a[0], "F", "G7", t === "Am" ? "F" : "Am7"],
+];
+
+/**
+ * モードの曲の締めの4小節。**セカンダリドミナントを使わずに終止を作る。**
+ *
+ * 長調・短調の終止（{@link SECTION_A3_DERIVATIONS}）は V7→I の引力に頼るが、
+ * モードでその和音を鳴らすと導音が出て、その瞬間に主音がドへ引き戻される
+ * （D ドリアンの `A7` は C♯ を持ち、耳はニ短調＝ハ長調の外だと解釈する）。
+ * ここでは**主和音を尻に置いて中心を示す**ことだけで終止を作り、
+ * 手前には {@link TonicCenter.half} を置く。
+ */
+const MODAL_FULL_DERIVATIONS: ((a: string[], c: TonicCenter) => string[])[] = [
+	(a, c) => [a[0], a[1], c.half, c.tonic],
+	(a, c) => [a[0], c.half, a[2], c.tonic],
+	(a, c) => [a[0], a[1], a[2], c.tonic],
+	(a, c) => [c.tonic, c.half, a[2], c.tonic],
+];
+
+/** モードの曲の半終止（「まだ続く」で止める4小節）。 */
+const MODAL_HALF_DERIVATIONS: ((a: string[], c: TonicCenter) => string[])[] = [
+	(a, c) => [a[0], a[1], a[2], c.half],
+	(a, c) => [a[0], a[1], c.tonic, c.half],
+	(a, c) => [a[0], c.tonic, a[2], c.half],
+];
+
+/** モードの曲の偽終止（主和音の代理へ落とす4小節）。 */
+const MODAL_DECEPTIVE_DERIVATIONS: ((
+	a: string[],
+	c: TonicCenter,
+) => string[])[] = [
+	(a, c) => [a[0], a[1], c.half, c.deceptive],
+	(a, c) => [a[0], c.half, a[2], c.deceptive],
+	(a, c) => [a[0], a[1], a[2], c.deceptive],
 ];
 
 /** 伴奏の奏法。曲ごとにランダムに引く。 */
@@ -1382,6 +1389,12 @@ export type ComposeOptions = {
 	 * 省略時は "any"（全24調からランダム抽選）。
 	 */
 	baseKey?: string;
+	/**
+	 * 音階の指定（`"auto"` | `"any"` | 音階ID）。省略時は `"auto"` で、
+	 * ベース調の長短に合わせて陽音階（長調）／民謡音階（短調）を使う——
+	 * **つまり指定しなければ以前と同じ曲が出る**。{@link COMPOSE_SCALES}
+	 */
+	scale?: string;
 };
 
 export type ComposeResult = {
@@ -1399,6 +1412,10 @@ export type ComposeResult = {
 	keyName: string;
 	/** 曲の調の表示ラベル（例: "ハ長調 (C)", "イ短調 (Am)"）。 */
 	keyLabel: string;
+	/** 曲の音階の識別子（例: "yo", "ryukyu"）。{@link COMPOSE_SCALES} */
+	scaleId: ComposeScaleId;
+	/** 曲の音階の表示ラベル（例: "琉球音階"）。 */
+	scaleLabel: string;
 	/** 雰囲気カテゴリのラベル（該当する場合）。 */
 	moodLabel?: string;
 	/** 曲のテンポ（BPM）。 */
@@ -1773,6 +1790,8 @@ const barDegrees = (
 	slots: Slot[],
 	tones: ChordTone[],
 	style: MelodyStyle,
+	/** 曲の音階。モチーフの輪郭はこの中核音の歩数で組み立てる。 */
+	scale: ComposeScale,
 	motifContour: number[],
 	startDegree: number,
 	/**
@@ -1814,11 +1833,12 @@ const barDegrees = (
 					? 5 // ペンタトニックの5歩＝1オクターブ
 					: 0) + repeatShift;
 		if (style.pentatonicMotif) {
-			const startPenta = degreeToPenta(startDegree);
+			const startCore = degreeToCore(scale, startDegree);
 			for (let i = 0; i < noteCount; i++)
 				out.push(
-					pentaToDegree(
-						startPenta +
+					coreToDegree(
+						scale,
+						startCore +
 							shift +
 							motifContour[(contourOffset + i) % motifContour.length],
 					),
@@ -2007,6 +2027,8 @@ const fitMotif = (
 	tones: ChordTone[],
 	prevSemi: number,
 	quarterSteps: number,
+	/** 曲の音階。移調も中核音の歩数で数える。 */
+	scale: ComposeScale,
 	/** ペンタトニックの歩数で移調するか。ダイアトニックで組んだモチーフには掛けない。 */
 	pentatonic: boolean,
 	/**
@@ -2030,7 +2052,9 @@ const fitMotif = (
 	// せっかく輪郭に入れたファ・シがその場で潰れる（実測でペンタ外が9%から動かなかった）。
 	for (let shift = -3; shift <= 3; shift++) {
 		const moved = degrees.map((d) =>
-			pentatonic ? pentaToDegree(degreeToPenta(d) + shift) : d + shift,
+			pentatonic
+				? coreToDegree(scale, degreeToCore(scale, d) + shift)
+				: d + shift,
 		);
 		let score = 0;
 		for (let i = 0; i < moved.length; i++) {
@@ -2076,6 +2100,8 @@ const shapeBar = (
 		allowLeap: boolean;
 		allowArpeggio: boolean;
 		quarterSteps: number;
+		/** 曲の音階。中核音の外へ出た音を整理するのに要る。 */
+		scale: ComposeScale;
 		/** 弱拍でオクターブ跳躍を入れる確率。 */
 		octaveAffinity: number;
 		/** アボイドノートを半音上の和音構成音へ解決させる確率。 */
@@ -2172,7 +2198,14 @@ const shapeBar = (
 		out.push(semi);
 		prev = semi;
 	}
-	applyPentatonic(out, slots, tones, prevSemi, opts.quarterSteps / 2);
+	applyPentatonic(
+		out,
+		slots,
+		tones,
+		prevSemi,
+		opts.quarterSteps / 2,
+		opts.scale,
+	);
 	applyOctaveJumps(out, slots, opts.octaveAffinity, opts.rnd);
 	return out;
 };
@@ -2232,12 +2265,20 @@ const applyPentatonic = (
 	tones: ChordTone[],
 	prevSemi: number,
 	shortSteps: number,
+	/** 曲の音階。どの5音を柱にするかがここで決まる。 */
+	scale: ComposeScale,
 ): void => {
 	for (let i = 0; i < out.length; i++) {
 		const semi = out[i];
-		if (!isNonPentatonic(semi)) continue;
-		// 和音構成音なら触らない。
-		if (tones.some((t) => pitchClass(t.semi) === pitchClass(semi))) continue;
+		if (!isOutsideScale(scale, semi)) continue;
+		// 和音構成音なら触らない。**ただし本物の5音音階（{@link ComposeScale.strict}）は
+		// 別。** 琉球音階の `F` はラを、`G` はレを持っていて、そこを無条件に通すと
+		// 「レとラを抜く」という音階の定義そのものが崩れる。
+		if (
+			!scale.strict &&
+			tones.some((t) => pitchClass(t.semi) === pitchClass(semi))
+		)
+			continue;
 		const before = i === 0 ? prevSemi : out[i - 1];
 		const after = i + 1 < out.length ? out[i + 1] : null;
 		const inByStep = Math.abs(semi - before) <= STEP_SEMITONES;
@@ -2246,15 +2287,21 @@ const applyPentatonic = (
 		// **順次で入るか順次で出るか、どちらかを満たせば通す。** 両方を要求すると
 		// ファ・シが実測7%まで減り、参考曲の23%に遠く届かない。半音の動きも
 		// 一緒に消えてしまう（隣接音程の1半音が 9%→3% に落ちていた）。
-		if (inByStep || outByStep) continue;
+		//
+		// **本物の5音音階（{@link ComposeScale.strict}）だけは両側を要求する。**
+		// あちらは中核の外＝音階に無い音なので、経過音として通り過ぎる形以外で
+		// 出てはいけない。琉球音階はドとミ、ソとシの間が3半音空いていて、
+		// 片側だけの条件だと抜いたはずのレとラが順次進行の受け皿として居座る。
+		if (scale.strict ? inByStep && outByStep : inByStep || outByStep) continue;
 		// 短い弱拍の音は通り過ぎるだけなので、そのまま通す。ここまで縛ると
 		// 「ペンタトニックをなぞるだけ」になって、今度は別の単調さが出る。
-		if (!slots[i].isStrong && slots[i].value <= shortSteps) continue;
+		if (!scale.strict && !slots[i].isStrong && slots[i].value <= shortSteps)
+			continue;
 		const up = clampSemi(walk(semi, 1), MELODY_LOW, MELODY_HIGH);
 		const down = clampSemi(walk(semi, -1), MELODY_LOW, MELODY_HIGH);
 		// ファの隣はミとソ、シの隣はラとド。どちらもペンタトニックの音になる。
 		const score = (s: number): number =>
-			(isNonPentatonic(s) ? -4 : 0) +
+			(isOutsideScale(scale, s) ? -4 : 0) +
 			toneWeight(s, tones) +
 			(s === before ? -3 : 0) +
 			(after !== null ? -Math.abs(after - s) / 12 : 0);
@@ -2515,8 +2562,17 @@ type Draw = Omit<ComposeResult, "stats" | "drum" | "instrument" | "arrange"> & {
 const draw = (
 	options: ComposeOptions,
 	resolvedKey: ResolvedComposeKey,
+	/** 曲の音階。40本引く候補すべてで同じものを使う。 */
+	scale: ComposeScale,
 	rnd: () => number,
 ): Draw => {
+	/**
+	 * **主音がドでもラでもない曲は、進行プールごと差し替える。**
+	 * 既存のプールは全部ハ長調／イ短調のトニックを前提に書いてあるので、
+	 * D ドリアンの曲にそのまま使うと和音が主音を指さず、旋律だけがモードになる。
+	 * ド（陽・琉球）とラ（民謡）は従来どおりなので `null` になり、以前と同じ道を通る。
+	 */
+	const center = resolveCenter(scale);
 	const stepsPerBar = options.stepsPerBar;
 	const edo = options.edo === 31 ? 31 : 12;
 	// 音価は192ステップ基準で書いてあるので、実際の stepsPerBar へ比率で写す。
@@ -2570,7 +2626,10 @@ const draw = (
 	const relativeKinds = new Set<SectionKind>();
 	/** 同主調のときだけ 0 以外。平行調は 0（調号が変わらないのが平行調の利点）。 */
 	let relativeShift = 0;
-	if (rnd() < 0.25) {
+	// **モードの曲では平行調・同主調へ振らない。** 明暗の入れ替えは長調と短調が
+	// 同じ音集合を共有していることに乗った仕掛けで、主音がドでもラでもない曲には
+	// 対応する「平行調」が無い。`rnd()` は必ず消費して、従来の曲の抽選を変えない。
+	if (rnd() < 0.25 && !center) {
 		// **Aメロは含めない。** 調を名乗る場所なので、最初のAメロが平行調だと
 		// その曲が何調なのかが決まらないまま進む。陰らせるのはBメロ・Cメロ。
 		for (const kind of pick<SectionKind[]>(
@@ -2763,8 +2822,9 @@ const draw = (
 	// イントロがサビの和音で始まるのは「曲の顔を先に見せる」定石で、
 	// 間奏も同じ理由でサビ側を使う。
 	// ベース調が長調／短調に指定されている場合は進行をそれに合わせる。
-	const progAPool =
-		resolvedKey.mode === "major"
+	const progAPool = center
+		? center.a
+		: resolvedKey.mode === "major"
 			? SECTION_A_PROGRESSIONS.filter((p) => !p[0].startsWith("Am"))
 			: resolvedKey.mode === "minor"
 				? SECTION_A_PROGRESSIONS.filter((p) => p[0].startsWith("Am"))
@@ -2773,17 +2833,25 @@ const draw = (
 	const withoutTonic = (pool: string[][], root: string): string[][] => {
 		// "CM7" は C のトニック、"Cm" は別物。ルートの文字だけで判定する。
 		const isTonic = (c: string): boolean =>
-			root === "Am" ? /^Am/.test(c) : /^C(?![#b]|m)/.test(c);
+			center
+				? center.tonicPattern.test(c)
+				: root === "Am"
+					? /^Am/.test(c)
+					: /^C(?![#b]|m)/.test(c);
 		const out = pool.filter((p) => !p.some(isTonic));
 		return out.length > 0 ? out : pool;
 	};
-	const homeRoot = resolvedKey.mode === "minor" ? "Am" : "C";
+	const homeRoot = center
+		? center.tonic
+		: resolvedKey.mode === "minor"
+			? "Am"
+			: "C";
 	const progA = pick(
 		floating ? withoutTonic(progAPool, homeRoot) : progAPool,
 		rnd,
 	);
 	// サビはAメロと質感を変えるのが役目なので、同じ進行を引いたら引き直す。
-	const progBPool = SECTION_B_PROGRESSIONS.filter(
+	const progBPool = (center ? center.b : SECTION_B_PROGRESSIONS).filter(
 		(p) => p.join("|") !== progA.join("|"),
 	);
 	const progB = pick(
@@ -2794,29 +2862,37 @@ const draw = (
 	 * 平行調の進行。長調の曲ならイ短調側、短調の曲ならハ長調側から引く。
 	 * 同じ音階の上に居るので、移調も仲介の和音も要らない。
 	 */
-	const progRelativePool = SECTION_A_PROGRESSIONS.filter((p) =>
-		resolvedKey.mode === "minor"
-			? !p[0].startsWith("Am")
-			: p[0].startsWith("Am"),
-	);
+	const progRelativePool = center
+		? center.a
+		: SECTION_A_PROGRESSIONS.filter((p) =>
+				resolvedKey.mode === "minor"
+					? !p[0].startsWith("Am")
+					: p[0].startsWith("Am"),
+			);
 	const progRelative = pick(
 		floating ? withoutTonic(progRelativePool, homeRoot) : progRelativePool,
 		rnd,
 	);
-	const progCPool = SECTION_C_PROGRESSIONS.filter(
+	const progCPool = (center ? center.c : SECTION_C_PROGRESSIONS).filter(
 		(p) => p.join("|") !== progA.join("|") && p.join("|") !== progB.join("|"),
 	);
 	const progC = pick(
 		floating ? withoutTonic(progCPool, homeRoot) : progCPool,
 		rnd,
 	);
-	const tonic = progA[0].startsWith("Am") ? "Am" : "C";
+	const tonic = center ? center.tonic : progA[0].startsWith("Am") ? "Am" : "C";
 	/** ドミナントで終わる4小節（Bメロの末尾＝サビへの助走に使う）。 */
-	const progHalf = pick(SECTION_A2_DERIVATIONS, rnd)(progA);
+	const progHalf = center
+		? pick(MODAL_HALF_DERIVATIONS, rnd)(progA, center)
+		: pick(SECTION_A2_DERIVATIONS, rnd)(progA);
 	/** 主音で終わる4小節（セクションの締めに使う）。 */
-	const progFull = pick(SECTION_A3_DERIVATIONS, rnd)(progA, tonic);
+	const progFull = center
+		? pick(MODAL_FULL_DERIVATIONS, rnd)(progA, center)
+		: pick(SECTION_A3_DERIVATIONS, rnd)(progA, tonic);
 	/** 主和音の代理へ落とす4小節（途中のサビを続けるのに使う）。 */
-	const progDeceptive = pick(SECTION_DECEPTIVE_DERIVATIONS, rnd)(progA, tonic);
+	const progDeceptive = center
+		? pick(MODAL_DECEPTIVE_DERIVATIONS, rnd)(progA, center)
+		: pick(SECTION_DECEPTIVE_DERIVATIONS, rnd)(progA, tonic);
 	/** 曲の最後のサビ。ここだけは全終止で締める。 */
 	let lastChorusBar = -1;
 	for (const section of sectionPlan)
@@ -2912,7 +2988,9 @@ const draw = (
 	// --- モーダルインターチェンジ ---
 	// 同主短調から1和音だけ借りる（{@link MODAL_BORROW}）。**次が主和音の小節**に
 	// だけ置くので、借りた響きは必ず解決先を持つ。
-	if (rnd() < 0.3) {
+	// モードの曲では借りない。同主短調から借りる仕掛けは主音がドかラであることに
+	// 乗っているうえ、借用和音が入った瞬間にモードの色が上書きされる。
+	if (rnd() < 0.3 && !center) {
 		const tonicNames = tonic === "Am" ? ["Am", "Am7"] : ["C", "CM7"];
 		const spots: number[] = [];
 		for (let bar = 0; bar + 1 < totalBars; bar++) {
@@ -2981,10 +3059,19 @@ const draw = (
 		// 度数で書いてあるので、短調ならそのぶんずらす。ここを 0 のままにしていた頃は、
 		// 短調の曲が平行長調の主音（ド）へ着地していて、自分の調へ解決していなかった。
 		// 平行調のセクションは長短が入れ替わるので、ずらす／ずらさないも入れ替わる。
-		const minorHere =
-			(resolvedKey.mode === "minor") !== relativeKinds.has(section.kind);
-		let landing = (section.spec.landing + (minorHere ? 5 : 0)) % 7;
-		if (floating && landing === (minorHere ? 5 : 0))
+		// **音階の主音のぶんだけずらす。** {@link SECTION_SPECS} の着地音はハ長調の
+		// 度数で書いてあるので、主音がラ（民謡＝従来の短調）なら +5、レ（律・ドリアン）
+		// なら +1 する。ここを 0 のままにしていた頃は、短調の曲が平行長調の主音へ
+		// 着地していて、自分の調へ解決していなかった。
+		// 平行調のセクションは長短が入れ替わるので、ずらす／ずらさないも入れ替わる。
+		const relativeHere = relativeKinds.has(section.kind);
+		const tonicDegree = relativeHere
+			? scale.tonic === 5
+				? 0
+				: 5
+			: scale.tonic;
+		let landing = (section.spec.landing + tonicDegree) % 7;
+		if (floating && landing === tonicDegree)
 			landing = (landing + pick([2, 4], rnd)) % 7;
 		return landing;
 	};
@@ -3100,7 +3187,10 @@ const draw = (
 		arcAmp: 2 + rnd() * 3,
 		// オクターブ跳躍は参考曲では音程の1.0%しかない。上げすぎると音域が広がる。
 		octaveAffinity: 0.06 + rnd() * 0.12,
-		pentatonicMotif: rnd() < 0.55,
+		// **本物の5音音階は必ず中核音の歩数で組む。** ダイアトニックの度数で輪郭を
+		// 作ると、琉球音階なのにレやラが輪郭の中に入り込む。ファ・シを自由に使う
+		// 陽・民謡だけが、曲ごとに掛けたり掛けなかったりする（{@link ComposeScale.strict}）。
+		pentatonicMotif: rnd() < 0.55 || scale.strict,
 		runShape: pick<RunShape>(["scale", "turn", "broken", "zigzag"], rnd),
 		stepShape: pick<StepShape>(
 			["arch", "valley", "ascend", "descend", "wave", "pivot"],
@@ -3118,7 +3208,12 @@ const draw = (
 		// 界隈曲らしさ：調の外の音（クロマチック）や微小な逸脱を積極的に許容する。
 		// 刻みを細かくすると経過音の置き場所が増えるので、同じ係数でも変化音は増える。
 		// 参考曲の1.75倍まで伸びていたぶんを引く。
-		chromaticAffinity: rnd() < 0.2 ? 0 : 0.12 + rnd() * 0.33,
+		// **本物の5音音階は変化音を控える。** 半音の経過音は長調・短調の泣きメロの
+		// 芯だが、琉球・都節・律ではその半音が音階の外にしか無く、入れたぶんだけ
+		// 音階の色が薄まる（実測で嬰ヘが3%出て、音階内のラ2%より多いという逆転が
+		// 起きていた）。0 にはしない——民族音階の実際の曲にも装飾の半音は出る。
+		chromaticAffinity:
+			(rnd() < 0.2 ? 0 : 0.12 + rnd() * 0.33) * (scale.strict ? 0.4 : 1),
 		barHeadWeight: rnd() < 0.5 ? 3 : 2,
 		bassStyle: pick<BassStyle>(
 			[
@@ -3553,6 +3648,7 @@ const draw = (
 			slots,
 			tones,
 			style,
+			scale,
 			motifContour,
 			semitoneToDegree(headSemi),
 			contourOffset,
@@ -3595,6 +3691,7 @@ const draw = (
 				tones,
 				prevSemi,
 				quarterSteps,
+				scale,
 				style.pentatonicMotif,
 				motifShiftMemo.get(shiftKey) ?? null,
 			);
@@ -3602,6 +3699,7 @@ const draw = (
 			motifShiftMemo.set(shiftKey, r.shift);
 		}
 		const pitches = shapeBar(fitted, slots, tones, prevSemi, {
+			scale,
 			allowLeap: role === "climax",
 			allowArpeggio:
 				role === "climax" ||
@@ -4290,6 +4388,8 @@ const draw = (
 		rootShift,
 		keyName: resolvedKey.keyName,
 		keyLabel: resolvedKey.keyLabel,
+		scaleId: scale.id,
+		scaleLabel: scale.label,
 		moodLabel: resolvedKey.moodLabel,
 		bpm,
 		sections: sectionPlan,
@@ -4504,6 +4604,11 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	const recent = options.recent ?? [];
 	const count = Math.max(1, options.drawCount ?? DRAW_COUNT);
 	const resolvedKey = resolveComposeKey(options.baseKey, rnd);
+	const scale = resolveComposeScale(
+		options.scale,
+		resolvedKey.mode === "minor",
+		rnd,
+	);
 
 	let best: ComposeResult | null = null;
 	let bestScore = Number.NEGATIVE_INFINITY;
@@ -4511,7 +4616,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	let rejected = 0;
 
 	for (let attempt = 1; attempt <= count; attempt++) {
-		const d = draw(options, resolvedKey, rnd);
+		const d = draw(options, resolvedKey, scale, rnd);
 		const { stats, ok } = evaluate(d, recent);
 		if (!ok) rejected++;
 		// ハード制約を通った候補は、通らなかった候補より必ず優先する。
@@ -4530,6 +4635,8 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			rootShift: d.rootShift,
 			keyName: d.keyName,
 			keyLabel: d.keyLabel,
+			scaleId: scale.id,
+			scaleLabel: scale.label,
 			moodLabel: d.moodLabel,
 			bpm: d.bpm,
 			sections: d.sections,
