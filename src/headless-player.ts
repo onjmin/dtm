@@ -36,6 +36,7 @@ import {
 	MAX_REVERB_PREDELAY_MS,
 	reverbAmountToGain,
 } from "./reverb";
+import { createSafetyLimiter } from "./safety-limiter";
 import { createSequencer, type SequencerTrack } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { createSynth, type Synth } from "./synth";
@@ -191,7 +192,7 @@ export const playPlacements = (
 
 	// ── エフェクトチェーン（DAWエディタと同一構成をヘッドレスでも常時適用する）──
 	// [各トラックのチャンネルストリップ] → masterGain(ドライ) ─┐
-	//                     └→ reverbSend → preDelay → convolver → wetGain ─┴→ finalMix → destination
+	//                     └→ reverbSend → preDelay → convolver → wetGain ─┴→ finalMix → 安全リミッター → destination
 	// 画面を持たないプレイヤーだが、エディタで聴いた音圧・EQ・リバーブ感をそのまま
 	// 再現するため、常にこのストリップを経由させる（bypassオプションは設けない）。
 	const finalMix = ctx.createGain();
@@ -212,7 +213,10 @@ export const playPlacements = (
 	reverbConvolver.connect(reverbWetGain);
 	reverbWetGain.connect(finalMix);
 
-	finalMix.connect(rawDestination);
+	// 出力直前の安全リミッター。各トラックはチャンネルストリップのコンプを通るが、
+	// その「和」は誰も抑えていないので、同時発音が増えると合計が ±1.0 を超えて
+	// デバイス側でハードクリップし、プチノイズになる（エディタ経路には元からある）。
+	finalMix.connect(createSafetyLimiter(ctx, rawDestination));
 
 	// トラック単位チャンネルストリップ（コンプレッサー＋EQ＋ステレオワイド＋リバーブ送り）。
 	// trackIndex ごとに1本ずつ遅延生成してキャッシュする。

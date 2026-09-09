@@ -28,7 +28,6 @@ type Zone = {
 	buffer?: AudioBuffer;
 	_param?: {
 		playbackRate: number;
-		max: number;
 		src: { loop: boolean; loopStart?: number; loopEnd?: number };
 	};
 };
@@ -58,6 +57,12 @@ export class SoundFont {
 	// ファミリごとに変える。
 	/** アタック（無音からピークまで）秒。クリック防止の最小限。全楽器共通。 */
 	static attackSec = 0.005;
+	/**
+	 * 消え際に最低限確保する秒数。アタックと対になるクリック防止で、**サンプルが
+	 * 終わるまでに**必ずここまでに 0 へ落とし切る。振幅が残ったままバッファが尽きたり
+	 * `stop()` が来たりすると、その瞬間の値がそのまま段差になりプチノイズが出る。
+	 */
+	static minReleaseSec = 0.004;
 	/**
 	 * 減衰の型ごとのエンベロープ。
 	 *
@@ -339,10 +344,16 @@ export class SoundFont {
 
 		const env =
 			SoundFont.envelopes[this.style.env] ?? SoundFont.envelopes.sustain;
+		// 実際の再生速度。ゾーンのピッチ補正（_param.playbackRate）だけでなく、発音ごとの
+		// detune（ヒューマナイズ＋31平均律の残差補正）も掛かる。detune を勘定しないと
+		// サンプルが鳴り終わる時刻を読み違え、まだ鳴っている途中で stop してしまう
+		// （＝段差＝プチノイズ）。下方向に振れた回だけ起きるので再現しにくい。
+		const playRate =
+			_param.playbackRate * 2 ** ((humanizeCents + detuneCents) / 1200);
+		/** サンプルを最後まで鳴らし切る時刻。startOffsetSec はバッファ上の秒数なので速度で割る。 */
+		const sampleEnd = _when + (buffer.duration - startOffsetSec) / playRate;
 		// ループしないサンプルはバッファの終わりより先へは伸ばせない。
-		const limit = src.loop
-			? Number.POSITIVE_INFINITY
-			: _when + _param.max - startOffsetSec;
+		const limit = src.loop ? Number.POSITIVE_INFINITY : sampleEnd;
 		// 各点は「直前の点以降」かつ「サンプルの終わり以前」に収める。こうしないと
 		// 短いサンプルでオートメーションの時刻が前後してエンベロープが壊れる。
 		const attackEnd = Math.min(startGainTime + SoundFont.attackSec, limit);
@@ -350,10 +361,20 @@ export class SoundFont {
 			Math.max(attackEnd, attackEnd + env.decaySec),
 			limit,
 		);
-		const noteOff = Math.min(Math.max(decayEnd, _when + duration), limit);
+		// リリースぶんの余白をサンプルの終わりに残しておく。ここを詰めて noteOff を
+		// 終端まで伸ばすと、0 への降下がバッファの尽きた後ろへはみ出し、サステイン音量の
+		// まま音が途切れる（音符が非ループサンプルより長いときに起きていた）。
+		const tailRoom = Math.min(
+			SoundFont.minReleaseSec,
+			Math.max(0, limit - decayEnd),
+		);
+		const noteOff = Math.min(
+			Math.max(decayEnd, _when + duration),
+			limit - tailRoom,
+		);
 		const end = isDrum
-			? _when + buffer.duration - startOffsetSec
-			: Math.max(Math.min(noteOff + env.releaseSec, limit), noteOff + 0.001);
+			? sampleEnd
+			: Math.max(Math.min(noteOff + env.releaseSec, limit), noteOff + tailRoom);
 
 		if (!isDrum) {
 			const sustainVolume = effectiveVolume * env.sustain;
@@ -363,6 +384,13 @@ export class SoundFont {
 			g.gain.linearRampToValueAtTime(0, end);
 		} else {
 			g.gain.linearRampToValueAtTime(effectiveVolume, attackEnd);
+			// ドラムは減衰し切る前にサンプルが終わる音（クラッシュ等）があるので、
+			// 終端で必ず 0 へ落とす。旧実装はここが無く、切れ目がそのまま出ていた。
+			const releaseStart = Math.max(attackEnd, end - SoundFont.minReleaseSec);
+			if (releaseStart > attackEnd) {
+				g.gain.setValueAtTime(effectiveVolume, releaseStart);
+			}
+			g.gain.linearRampToValueAtTime(0, end);
 		}
 
 		if (filter) src.connect(filter).connect(g);
@@ -646,11 +674,9 @@ const addParam = (zone: Zone, pitch: number): void => {
 		fineTune,
 		sampleRate,
 		delay,
-		buffer,
 	} = zone;
 	const baseDetune = originalPitch - 100 * coarseTune - fineTune;
 	const playbackRate = 2 ** ((100 * pitch - baseDetune) / 1200);
-	const max = (buffer?.duration ?? 0) / playbackRate;
 	const src: { loop: boolean; loopStart?: number; loopEnd?: number } = {
 		loop: loopStart >= 1 && loopStart < loopEnd,
 	};
@@ -658,5 +684,5 @@ const addParam = (zone: Zone, pitch: number): void => {
 		[src.loopStart, src.loopEnd] = [loopStart, loopEnd].map(
 			(v) => v / sampleRate + delay,
 		);
-	zone._param = { playbackRate, max, src };
+	zone._param = { playbackRate, src };
 };

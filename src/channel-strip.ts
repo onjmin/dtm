@@ -253,13 +253,34 @@ export const createChannelStrip = (
 	duckGain.gain.value = 1;
 	/** ダッキングの立ち下がり時間（秒）。速すぎるとクリックになる。 */
 	const DUCK_ATTACK_SEC = 0.008;
+	/** 直近に予約したダッキングの復帰完了時刻。次回の始点アンカーの要否判定に使う。 */
+	let duckReleaseEndAt = 0;
 	const duck = (atTime: number, depth = 0.3, releaseSec = 0.18): void => {
 		const t = Math.max(atTime, ctx.currentTime);
 		const floor = clamp(1 - depth, 0, 1);
-		// 先に予約済みの復帰ランプを打ち消さない（打ち消すと値が飛んでクリックになる）。
-		// ランプは直前の予約値から始まるので、キックが連続しても自然につながる。
-		duckGain.gain.linearRampToValueAtTime(floor, t + DUCK_ATTACK_SEC);
-		duckGain.gain.linearRampToValueAtTime(1, t + DUCK_ATTACK_SEC + releaseSec);
+		const param = duckGain.gain;
+		// `linearRampToValueAtTime` の始点は「**直前の自動化イベントの終了時刻**」であって
+		// 「今」ではない。前回のダッキングが既に終わっていると、その終了時刻（＝過去）から
+		// 今回の下降ランプが引かれる。つまり再生済みの区間にまたがるランプになり、
+		// オーディオスレッドは現在時刻でゲインを一段飛ばす＝それがプチノイズになる。
+		// （キックが疎な箇所やブレイク明けの一発目だけ鳴る、の正体がこれ。）
+		// 下降を始めたい時刻に必ずアンカーを1つ置いてからランプを積む。
+		if (t >= duckReleaseEndAt) {
+			// 前回のダッキングは完了済み（初回もここ）。t 時点の値は 1 と分かっているので
+			// 1 で固定して始点にする。**cancelAndHoldAtTime ではここを代用できない** —
+			// 保持すべき予約が1つも無い場合はイベントを挿さないので、ランプが
+			// 「自動化の開始時刻」まで遡ってしまう（初回キックが顕著）。
+			param.setValueAtTime(1, t);
+		} else if (typeof param.cancelAndHoldAtTime === "function") {
+			// 前回の復帰ランプの途中にキックが来た場合。t 以降の予約だけを取り消し、
+			// t 時点の値をその場に固定するので、値が飛ばずに次の下降へ繋がる。
+			param.cancelAndHoldAtTime(t);
+		}
+		// 非対応環境でこの分岐へ来たときはアンカー無しで積む。書き換わるのは全て
+		// 未来の予約（再生済みの区間ではない）なので、飛びは生じない。
+		param.linearRampToValueAtTime(floor, t + DUCK_ATTACK_SEC);
+		param.linearRampToValueAtTime(1, t + DUCK_ATTACK_SEC + releaseSec);
+		duckReleaseEndAt = t + DUCK_ATTACK_SEC + releaseSec;
 	};
 
 	// input → 音作り段 → EQ(低→中→高) → compressor → ダッキング → M/Sワイド → パン → destination

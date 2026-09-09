@@ -73,6 +73,7 @@ import {
 	MIN_REVERB_PREDELAY_MS,
 	reverbAmountToGain,
 } from "./reverb";
+import { createSafetyLimiter } from "./safety-limiter";
 import { SoundFont } from "./sf/SoundFont";
 import { SoundFont_drum } from "./sf/SoundFont_drum";
 import { SoundFont_list } from "./sf/SoundFont_list";
@@ -658,30 +659,47 @@ export const createDtmStudio = async (
 	const setMasterCompression = (amount: number): void =>
 		applyGlueCompression(amount);
 
-	const safetyLimiter = audioCtx.createDynamicsCompressor();
-	safetyLimiter.threshold.value = -1;
-	safetyLimiter.knee.value = 0;
-	safetyLimiter.ratio.value = 20;
-	safetyLimiter.attack.value = 0.001;
-	safetyLimiter.release.value = 0.1;
-	glueMakeup.connect(safetyLimiter);
-
 	// 曲頭/曲尾のフェード。安全リミッターの後段（最後）に置き、他のどの処理よりも
 	// 優先して音量0まで落とせるようにする。既定は常に1（フェードなし）。
 	const fadeGain = audioCtx.createGain();
 	fadeGain.gain.value = 1;
-	safetyLimiter.connect(fadeGain);
 	fadeGain.connect(options.destination ?? audioCtx.destination);
 
+	// 安全リミッター（保険）。ヘッドレス再生・内蔵synth経路とも共通のものを使う。
+	const safetyLimiter = createSafetyLimiter(audioCtx, fadeGain);
+	glueMakeup.connect(safetyLimiter);
+
 	/**
-	 * 1回の play() で使うフェードスケジュールを適用する。null で解除（音量1へ即戻す）。
+	 * フェード解除に掛ける秒数。1 へ即座に飛ばすと、リバーブ／ディレイの残響が鳴っている
+	 * 最中だと波形がその瞬間に段差を作り、プチノイズになる。20msあれば聴感上は即時。
+	 */
+	const FADE_RESTORE_SEC = 0.02;
+	/** fadeGain を現在値から滑らかに 1 へ戻す。予約済みランプの解除は呼び出し側の責任。 */
+	const rampFadeGainToUnity = (from: number, at: number): void => {
+		fadeGain.gain.setValueAtTime(from, at);
+		fadeGain.gain.linearRampToValueAtTime(1, at + FADE_RESTORE_SEC);
+	};
+	/** フェードで音量が下がったままなら通常音量へ戻す（プレビュー試聴・再生開始時）。 */
+	const restoreFadeGainIfMuted = (): void => {
+		const current = fadeGain.gain.value;
+		if (current >= 1) return;
+		const now = audioCtx.currentTime;
+		fadeGain.gain.cancelScheduledValues(now);
+		// 残響が鳴っている最中に 1 へ飛ばすとそこが段差になるので、必ず傾きを付ける。
+		rampFadeGainToUnity(current, now);
+	};
+
+	/**
+	 * 1回の play() で使うフェードスケジュールを適用する。null で解除（音量1へ戻す）。
 	 * pause/stop 時に必ず null を渡してもらう想定 — 途中で止めた場合に半端な音量や
 	 * 予約済みランプが残らないようにするため。
 	 */
 	const scheduleFade = (params: FadeScheduleParams | null): void => {
-		fadeGain.gain.cancelScheduledValues(audioCtx.currentTime);
+		const now = audioCtx.currentTime;
+		const current = fadeGain.gain.value;
+		fadeGain.gain.cancelScheduledValues(now);
 		if (!params) {
-			fadeGain.gain.setValueAtTime(1, audioCtx.currentTime);
+			rampFadeGainToUnity(current, now);
 			return;
 		}
 		const { fadeInStartAt, fadeInEndAt, fadeOutStartAt, fadeOutEndAt } = params;
@@ -689,7 +707,7 @@ export const createDtmStudio = async (
 			fadeGain.gain.setValueAtTime(0, fadeInStartAt);
 			fadeGain.gain.linearRampToValueAtTime(1, fadeInEndAt);
 		} else {
-			fadeGain.gain.setValueAtTime(1, audioCtx.currentTime);
+			rampFadeGainToUnity(current, now);
 		}
 		if (fadeOutStartAt !== undefined && fadeOutEndAt !== undefined) {
 			fadeGain.gain.setValueAtTime(1, fadeOutStartAt);
@@ -697,8 +715,7 @@ export const createDtmStudio = async (
 			// フェードアウト完了後は、リバーブやディレイの残響が完全に減衰するまで 0 を保つ。
 			// 0 のまま放置すると停止後のプレビュー試聴がミュートされるのを防ぐため、
 			// 残響が消え去った十分な時間後（2秒後）に自動で通常音量 1 へ復帰させる。
-			fadeGain.gain.setValueAtTime(0, fadeOutEndAt + 2.0);
-			fadeGain.gain.setValueAtTime(1, fadeOutEndAt + 2.0);
+			rampFadeGainToUnity(0, fadeOutEndAt + 2.0);
 		}
 	};
 
@@ -802,9 +819,9 @@ export const createDtmStudio = async (
 
 	const resumeAudio = (): Promise<void> => {
 		// 先行して走っていた別プレイヤー等のフェードアウトで gain が 0 に張り付いている
-		// 可能性を排除するため、再生開始時に fadeGain を即座に通常音量 1 へリセットする。
-		fadeGain.gain.cancelScheduledValues(audioCtx.currentTime);
-		fadeGain.gain.setValueAtTime(1, audioCtx.currentTime);
+		// 可能性を排除するため、再生開始時に fadeGain を通常音量 1 へリセットする。
+		// （残響が残っていることがあるので、飛ばさず FADE_RESTORE_SEC の傾きを付ける）
+		restoreFadeGainIfMuted();
 
 		// Safari は new AudioContext() 直後に state が "running" と報告するが、
 		// ユーザー操作前はオーディオ出力が実際には有効化されていない場合がある。
@@ -1110,13 +1127,6 @@ export const createDtmStudio = async (
 	await listReady;
 	nameToKey = await buildNameToKeyMapping();
 	await Promise.all([drumReady, loadPreset(defaultPreset)]);
-
-	const restoreFadeGainIfMuted = (): void => {
-		if (fadeGain.gain.value < 1) {
-			fadeGain.gain.cancelScheduledValues(audioCtx.currentTime);
-			fadeGain.gain.setValueAtTime(1, audioCtx.currentTime);
-		}
-	};
 
 	// ── 発音ハンドラ（ドラムは曲全体共通。楽器音は編集UI/再生UIごとにプリセットを解決） ──
 	const playDrum = (e: PlayDrumEvent): void => {
@@ -2060,7 +2070,9 @@ export const createDtmStudio = async (
 
 	const setMasterVolume = (volume: number): void => {
 		const g = Math.max(0, Math.min(100, volume)) / 100;
-		masterGain.gain.setValueAtTime(g, audioCtx.currentTime);
+		// スライダーのドラッグは input ごとにここへ来るので、値を飛ばすと段差の連続＝
+		// ジリジリしたノイズになる。他のつまみ（EQ・幅・センド）と同じ 20ms で追従させる。
+		masterGain.gain.setTargetAtTime(g, audioCtx.currentTime, 0.02);
 	};
 
 	let recordDestNode: MediaStreamAudioDestinationNode | null = null;

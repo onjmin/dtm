@@ -27,6 +27,7 @@ import {
 	vocalVolumeToGain,
 } from "./lyrics";
 import { parseMML } from "./mml-parser";
+import { createSafetyLimiter } from "./safety-limiter";
 import {
 	createSequencer,
 	resolveLoopPoint,
@@ -130,8 +131,11 @@ export const playSingingMML = async (
 	// AudioContext & Synth
 	const ownsCtx = !options.audioContext;
 	const ctx = options.audioContext ?? new AudioContext();
-	const destination = options.destination ?? ctx.destination;
+	const rawDestination = options.destination ?? ctx.destination;
 	const useSynth = options.synth ?? !options.onPlayNote;
+	// 楽器・ドラム・歌声の合計が ±1.0 を超えるとデバイス側でハードクリップして
+	// プチノイズになるため、出力直前に安全リミッターを挟む（エディタ経路と同じ保険）。
+	const destination: AudioNode = createSafetyLimiter(ctx, rawDestination);
 	const synth: Synth | null = useSynth ? createSynth(ctx, destination) : null;
 
 	const pauseWhenHidden = options.pauseWhenHidden ?? ownsCtx;

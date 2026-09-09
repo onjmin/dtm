@@ -38,6 +38,7 @@ import {
 } from "./lyrics";
 import { MML_INFO_HTML } from "./mml-info";
 import { parseMML } from "./mml-parser";
+import { createSafetyLimiter } from "./safety-limiter";
 import { createSequencer, type SequencerTrack } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
@@ -537,10 +538,21 @@ export const mountMmlPlayer = (
 		if (!audioCtx) audioCtx = new AudioContext();
 		return audioCtx;
 	};
+	// 出力直前の安全リミッター（ctx と同様に遅延生成）。楽器・ドラム・歌声の合計が
+	// ±1.0 を超えるとデバイス側でハードクリップしてプチノイズになるため、
+	// 内蔵synthも歌声もここを通してから destination へ出す（エディタ経路と同じ保険）。
+	let limiterNode: AudioNode | null = null;
+	const ensureOutput = (): AudioNode => {
+		const ctx = ensureCtx();
+		if (!limiterNode) limiterNode = createSafetyLimiter(ctx, ctx.destination);
+		return limiterNode;
+	};
 	// 発音器は ctx と同様に遅延生成（synth.ts に切り出した共有ロジック）
 	let synthInstance: Synth | null = null;
 	const ensureSynth = (): Synth => {
-		if (!synthInstance) synthInstance = createSynth(ensureCtx());
+		if (!synthInstance) {
+			synthInstance = createSynth(ensureCtx(), ensureOutput());
+		}
 		return synthInstance;
 	};
 
@@ -549,8 +561,7 @@ export const mountMmlPlayer = (
 	const ensureVoices = (): SingingVoices => {
 		if (options.singingVoices) return options.singingVoices;
 		if (!voices) {
-			const ctx = ensureCtx();
-			voices = createSingingVoices(ctx, ctx.destination);
+			voices = createSingingVoices(ensureCtx(), ensureOutput());
 			voices.setVolume((trackVolume / 100) * (masterVolume / 100));
 		}
 		return voices;
