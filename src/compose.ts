@@ -1420,6 +1420,8 @@ export type ComposeResult = {
 	bass: ComposedNote[];
 	/** ハモリトラック。メロディの3度/6度上。サビセクションでのみ鳴る。 */
 	harmony: ComposedNote[];
+	/** 2声目のハモリ。{@link VocalPlan.harmony2} が true のときだけ中身が入る。 */
+	harmony2: ComposedNote[];
 	/** コードパッド。ストリングス/シンセパッド的なロングトーン。Bメロ以降で鳴る。 */
 	pad: ComposedNote[];
 	stats: ComposeStats;
@@ -2374,6 +2376,13 @@ export type VocalPlan = {
 	duetStyle: DuetStyle;
 	/** ハモリが入るセクション種別。 */
 	harmonyKinds: SectionKind[];
+	/**
+	 * 2声目のハモリを鳴らすか。参考曲（チョウチン少女 ch12/ch11/ch13）では
+	 * **1声目が下〜ユニゾン寄り、2声目が上**で主旋律を挟む形になっていた。
+	 */
+	harmony2: boolean;
+	/** 主旋律のオクターブ下を重ねるか（ハモリではなく厚みの層）。 */
+	octaveLayer: boolean;
 };
 
 /** 曲の調のふるまい。 */
@@ -2545,15 +2554,31 @@ const draw = (
 	/** 主旋律と同じだけ動く並走ハモリか（{@link harmonyPitch}）。 */
 	const harmonyParallel = rnd() < 0.45;
 	/**
+	 * **ハモリは主旋律の全部には付かない。** 参考7組の被覆率は66〜100%（平均85%）で、
+	 * 短い音や走句を飛ばして要所だけ重なる。全音に付けると輪郭が主旋律と一体化する。
+	 */
+	const harmonyCoverage = 0.7 + rnd() * 0.3;
+	/** 2声目のハモリ（主旋律を上下から挟む3声）。 */
+	const useHarmony2 = rnd() < 0.3;
+	/** 主旋律のオクターブ下の重ね。3声のときは声を増やしすぎるので出さない。 */
+	const useOctaveLayer = !useHarmony2 && rnd() < 0.25;
+	/**
 	 * ハモリの居場所（主旋律から何半音ずれた辺りに置くか）。参考曲7組を集計すると
 	 * 上が62%で、音程は +3 / −5 / +5 / +4 が10〜13%ずつ並ぶ広い分布になる。
 	 * 並走ハモリのほうが上へ行きやすい。
 	 */
-	const harmonyOffset = harmonyParallel
-		? pick([3, 4, 5, 9, 7, 0, -5], rnd)
-		: pick([3, 4, 5, 0, -5, -4, -7], rnd);
+	const harmonyOffset = useHarmony2
+		? // 3声のときは1声目を下〜ユニゾン側へ寄せ、2声目を上へ回して主旋律を挟む
+			// （参考: チョウチン少女 ch12/ch11/ch13）。
+			pick([-5, -4, -3, 0], rnd)
+		: harmonyParallel
+			? pick([3, 4, 5, 9, 7, 0, -5], rnd)
+			: pick([3, 4, 5, 0, -5, -4, -7], rnd);
 	/** 直前のハモリの音。小節をまたいで持ち越す（動かない線を作るため）。 */
 	let prevHarmony: number | null = null;
+	let prevHarmony2: number | null = null;
+	/** 2声目の居場所。主旋律の上へ置く（参考曲は +7〜+9 が7割）。 */
+	const harmony2Offset = pick([7, 8, 9, 9, 4], rnd);
 	const harmonyKinds: SectionKind[] =
 		harmonyFrom === "prechorus"
 			? ["prechorus", "chorus", "bridge"]
@@ -3298,6 +3323,7 @@ const draw = (
 	const submelody: ComposedNote[] = [];
 	const bass: ComposedNote[] = [];
 	const harmony: ComposedNote[] = [];
+	const harmony2: ComposedNote[] = [];
 	const pad: ComposedNote[] = [];
 	const melodyDurations: number[] = [];
 	/** 小節ごとの緊張度（0〜1）。和音が無い小節は0のまま。 */
@@ -3671,39 +3697,63 @@ const draw = (
 		}
 
 		// --- ハモリ ---
-		// 上ハモか下ハモかはセクションで決める（{@link harmonyPitch}）。
+		// 居場所と動き方は曲ごとに引く（{@link harmonyPitch}）。参考曲では主旋律の
+		// 66〜100%（平均85%）にしか付かないので、短い音を中心に間引く。
 		const barSec = sectionAt(sectionPlan, bar);
 		if (!silent && harmonyKinds.includes(barSec.kind)) {
-			for (let i = 0; i < slots.length; i++) {
-				const hTone = harmonyPitch(
-					pitches[i],
-					tones,
-					prevHarmony,
-					harmonyOffset,
-					harmonyParallel,
-				);
-				// 折り返す範囲を主旋律の音域より広く取る。ここを MELODY_HIGH で切ると、
-				// 高いところの上ハモがオクターブ下へ畳まれて下ハモに化ける。
-				const hClamped = clampSemi(
-					hTone.semi,
-					MELODY_LOW - 12,
-					MELODY_HIGH + 7,
-				);
-				prevHarmony = hClamped;
-				const k = barKeyShift[bar];
-				const fifthShift =
-					k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
-				harmony.push({
-					startStep: barStart + slots[i].at,
-					pitchUnits: spelledToUnits(
-						hClamped + k,
-						hTone.fifth + fifthShift,
-						edo,
-					),
-					durationSteps: slots[i].value,
-					velocity: slots[i].at === 0 ? 82 : 76,
-				});
-			}
+			const k = barKeyShift[bar];
+			const fifthShift =
+				k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
+			/** 1声ぶんのハモリを書く。`prev` を返して次の小節へ持ち越す。 */
+			const writeHarmony = (
+				out: ComposedNote[],
+				prev: number | null,
+				offset: number,
+			): number | null => {
+				let last = prev;
+				for (let i = 0; i < slots.length; i++) {
+					const hTone = harmonyPitch(
+						pitches[i],
+						tones,
+						last,
+						offset,
+						harmonyParallel,
+					);
+					// 折り返す範囲を主旋律の音域より広く取る。ここを MELODY_HIGH で切ると、
+					// 高いところの上ハモがオクターブ下へ畳まれて下ハモに化ける。
+					let hClamped = clampSemi(
+						hTone.semi,
+						MELODY_LOW - 12,
+						MELODY_HIGH + 7,
+					);
+					// 音域の折り返しで主旋律から1オクターブ以上離れたら、戻す。
+					// 離れるとハモリではなく別の声部に聞こえる。
+					while (hClamped - pitches[i] > 12) hClamped -= 12;
+					while (hClamped - pitches[i] < -12) hClamped += 12;
+					last = hClamped;
+					// 間引き。強拍と長い音は残し、短い弱拍から落とす。
+					const keep =
+						slots[i].isStrong ||
+						slots[i].value >= quarterSteps ||
+						rnd() < harmonyCoverage;
+					if (!keep) continue;
+					out.push({
+						startStep: barStart + slots[i].at,
+						pitchUnits: spelledToUnits(
+							hClamped + k,
+							hTone.fifth + fifthShift,
+							edo,
+						),
+						durationSteps: slots[i].value,
+						velocity: slots[i].at === 0 ? 82 : 76,
+					});
+				}
+				return last;
+			};
+			prevHarmony = writeHarmony(harmony, prevHarmony, harmonyOffset);
+			// 2声目は1声目と反対側。主旋律を上下から挟む形になる。
+			if (useHarmony2)
+				prevHarmony2 = writeHarmony(harmony2, prevHarmony2, harmony2Offset);
 		}
 
 		// --- コードパッド ---
@@ -4057,7 +4107,7 @@ const draw = (
 	// 曲全体を同じ量だけずらす。units は絶対音高なので、綴りの関係は保たれたまま動く。
 	const shiftUnits = semitonesToUnits(rootShift, edo);
 	if (shiftUnits !== 0)
-		for (const list of [melody, submelody, bass, harmony, pad])
+		for (const list of [melody, submelody, bass, harmony, harmony2, pad])
 			for (const n of list) n.pitchUnits = (n.pitchUnits + shiftUnits) as Units;
 
 	return {
@@ -4070,12 +4120,19 @@ const draw = (
 		bpm,
 		sections: sectionPlan,
 		bars: totalBars,
-		vocal: { duetSpans, duetStyle, harmonyKinds },
+		vocal: {
+			duetSpans,
+			duetStyle,
+			harmonyKinds,
+			harmony2: useHarmony2,
+			octaveLayer: useOctaveLayer,
+		},
 		tonal: { relativeKinds: [...relativeKinds], relativeShift, floating },
 		melody,
 		submelody,
 		bass,
 		harmony,
+		harmony2,
 		pad,
 		melodyDurations,
 		restSteps,
@@ -4306,6 +4363,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			submelody: d.submelody,
 			bass: d.bass,
 			harmony: d.harmony,
+			harmony2: d.harmony2,
 			pad: d.pad,
 			stats: { ...stats, attempts: attempt, rejected },
 		};

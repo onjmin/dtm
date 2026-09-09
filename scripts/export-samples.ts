@@ -92,6 +92,7 @@ const main = async (): Promise<void> => {
 				{ notes: toNotes(song.melody), volume: 100, program: melProg },
 				{ notes: toNotes(song.submelody), volume: 70, program: subProg },
 				{ notes: toNotes(song.harmony), volume: 60, program: melProg },
+				{ notes: toNotes(song.harmony2), volume: 52, program: melProg },
 				{ notes: toNotes(song.bass), volume: 85, program: bassProg },
 				{ notes: toNotes(song.pad), volume: 50, program: chordProg },
 				{ notes: toNotes(chords), volume: 65, program: chordProg },
@@ -116,7 +117,7 @@ const main = async (): Promise<void> => {
 			song.harmony.map((n) => Math.floor(n.startStep / STEPS_PER_BAR)),
 		).size;
 		console.log(
-			`   歌: ハモリ ${song.vocal.harmonyKinds.join("/")} ${harmonyBars}小節  掛け合い ${song.vocal.duetStyle}${song.vocal.duetSpans.length ? `（${song.vocal.duetSpans.length}区間）` : ""}`,
+			`   歌: ハモリ ${song.vocal.harmonyKinds.join("/")} ${harmonyBars}小節${song.vocal.harmony2 ? "・2声" : ""}${song.vocal.octaveLayer ? "・オクターブ重ね" : ""}  掛け合い ${song.vocal.duetStyle}${song.vocal.duetSpans.length ? `（${song.vocal.duetSpans.length}区間）` : ""}`,
 		);
 	}
 };

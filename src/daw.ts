@@ -819,6 +819,7 @@ const ADVANCED_COMPOSE_LAYOUT: {
 		| "pad"
 		| "uwamono"
 		| "duet"
+		| "harmony2"
 		| ChordPatternType;
 	octave: number;
 	volume: number;
@@ -837,6 +838,10 @@ const ADVANCED_COMPOSE_LAYOUT: {
 	// 掛け合い（デュエット）の相手。**歌入り作曲のときだけ**中身が入る。
 	// 作曲だけならメロディは t0 が全部持つので、ここは空のまま。
 	{ index: 11, part: "duet", octave: 0, volume: 104 },
+	// 2声目のハモリ（主旋律を上下から挟む3声）と、主旋律のオクターブ下の重ね。
+	// どちらも曲ごとに出るかどうかが決まる（`song.vocal`）。
+	{ index: 12, part: "harmony2", octave: 0, volume: 74 },
+	{ index: 13, part: "melody", octave: -1, volume: 56 },
 ];
 
 /** 内蔵モデルのカテゴリ定義（プルダウンの optgroup 表示用） */
@@ -5631,43 +5636,49 @@ export const mountDAW = (
 						const notes =
 							layer.part === "duet"
 								? []
-								: layer.part === "melody"
-									? song.melody
-									: layer.part === "harmony"
-										? song.harmony
-										: layer.part === "submelody"
-											? song.submelody
-											: layer.part === "bass"
-												? song.bass
-												: layer.part === "pad"
-													? song.pad
-													: layer.part === "uwamono"
-														? buildChordPlacements({
-																edo: renderConfig.edo,
-																chordStr: song.chordProgression,
-																patternType: "arpeggio",
-																rootShift: song.rootShift,
-																bpm: song.bpm,
-																stepsPerBar: renderConfig.stepsPerBar,
-															}).map((p) => ({
-																startStep: p.startStep,
-																pitchUnits: p.pitchUnits,
-																durationSteps: p.durationSteps,
-																velocity: Math.max(30, p.velocity - 14),
-															}))
-														: buildChordPlacements({
-																edo: renderConfig.edo,
-																chordStr: song.chordProgression,
-																patternType: layer.part,
-																rootShift: song.rootShift,
-																bpm: song.bpm,
-																stepsPerBar: renderConfig.stepsPerBar,
-															}).map((p) => ({
-																startStep: p.startStep,
-																pitchUnits: p.pitchUnits,
-																durationSteps: p.durationSteps,
-																velocity: p.velocity,
-															}));
+								: layer.part === "harmony2"
+									? song.harmony2
+									: layer.index === 13
+										? song.vocal.octaveLayer
+											? song.melody
+											: []
+										: layer.part === "melody"
+											? song.melody
+											: layer.part === "harmony"
+												? song.harmony
+												: layer.part === "submelody"
+													? song.submelody
+													: layer.part === "bass"
+														? song.bass
+														: layer.part === "pad"
+															? song.pad
+															: layer.part === "uwamono"
+																? buildChordPlacements({
+																		edo: renderConfig.edo,
+																		chordStr: song.chordProgression,
+																		patternType: "arpeggio",
+																		rootShift: song.rootShift,
+																		bpm: song.bpm,
+																		stepsPerBar: renderConfig.stepsPerBar,
+																	}).map((p) => ({
+																		startStep: p.startStep,
+																		pitchUnits: p.pitchUnits,
+																		durationSteps: p.durationSteps,
+																		velocity: Math.max(30, p.velocity - 14),
+																	}))
+																: buildChordPlacements({
+																		edo: renderConfig.edo,
+																		chordStr: song.chordProgression,
+																		patternType: layer.part,
+																		rootShift: song.rootShift,
+																		bpm: song.bpm,
+																		stepsPerBar: renderConfig.stepsPerBar,
+																	}).map((p) => ({
+																		startStep: p.startStep,
+																		pitchUnits: p.pitchUnits,
+																		durationSteps: p.durationSteps,
+																		velocity: p.velocity,
+																	}));
 						writeTrackAt(layer.index, notes);
 						track.trackOctave = layer.octave;
 						track.volume = layer.volume;
@@ -5813,6 +5824,25 @@ export const mountDAW = (
 								}),
 								duetting ? partnerVoice : melodyTrack.lyricModel,
 							);
+						}
+
+						// 3声目とオクターブ重ね。**掛け合いの曲では歌わせない**——
+						// 同時に鳴る声が増えすぎて歌の輪郭が潰れる（合成の負荷も上がる）。
+						if (!duetting) {
+							if (song.harmony2.length > 0)
+								sing(
+									trackStates[12],
+									alignLyrics(song.melody, melodyTrack.lyrics, song.harmony2, {
+										stepsPerBar,
+									}),
+									melodyTrack.lyricModel,
+								);
+							const octaveTrack = trackStates[13];
+							if (song.vocal.octaveLayer && octaveTrack) {
+								// 同じ歌い手が1オクターブ下でなぞる。ハモリではなく厚みの層。
+								sing(octaveTrack, melodyTrack.lyrics, melodyTrack.lyricModel);
+								octaveTrack.vocalOctave = -2;
+							}
 						}
 					}
 				}

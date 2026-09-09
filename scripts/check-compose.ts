@@ -909,6 +909,8 @@ console.log("● ハモリと掛け合い");
 		// 参考曲（`ぺぽよ/±0/220715.mid` ch6/ch7）を測ると、隣の音への平均移動が
 		// 主旋律3.07半音に対しハモリ1.23半音、同音を繰り返す割合が30%対54%だった。
 		// 平行3度を並べると、この差は原理的に出ない。
+		// 参考曲の7組には1声目と2声目の両方が入っているので、こちらも両方を数える。
+		const allHarmony = [...song.harmony, ...song.harmony2];
 		const hs = [...song.harmony]
 			.sort((a, b) => a.startStep - b.startStep)
 			.map((n) => Math.round(n.pitchUnits / UNITS_PER_SEMITONE));
@@ -923,7 +925,7 @@ console.log("● ハモリと掛け合い");
 			melMove += Math.abs(ms[i] - ms[i - 1]);
 			melSteps++;
 		}
-		for (const h of song.harmony) {
+		for (const h of allHarmony) {
 			const m = mel.get(h.startStep);
 			if (m === undefined) continue;
 			harmNotes++;
