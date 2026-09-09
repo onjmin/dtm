@@ -1444,6 +1444,13 @@ export const mountDAW = (
 	 * 次の作曲で別の声へ引き直す。null は「まだ一度も自動で当てていない」。
 	 */
 	let autoComposeVocal: string | null = null;
+	/**
+	 * 直前の「歌入り作曲」が自動で歌わせたトラックと、そのとき当てた声の対応。
+	 * 「作曲」（歌なし）を続けて押したときに、この記録どおり（＝ユーザーが
+	 * 手で触っていない）なら歌唱設定を解除する。ユーザーが選び直した声や
+	 * 手入力の歌詞まで消さないよう、値が一致する場合だけ消す。
+	 */
+	const autoComposeVocalTracks = new Map<TrackState, string>();
 	let currentDrumFont = options.drumFont ?? "FluidR3_GM_sf2_file:0";
 	refs.drumFontSelect.value = currentDrumFont;
 	/**
@@ -5734,6 +5741,9 @@ export const mountDAW = (
 
 				// --- 歌入り ---
 				if (withVocal) {
+					// 今回の歌入り作曲が当てる声を記録し直す（古い記録が残っていると
+					// 次の「作曲」（歌なし）で消してよいトラックの判定を誤る）。
+					autoComposeVocalTracks.clear();
 					// simple はメロディトラック、advanced はレイアウト上のメロディ（t0）。
 					const melodyTrack = isAdvanced
 						? trackStates[0]
@@ -5755,6 +5765,7 @@ export const mountDAW = (
 							}
 							melodyTrack.lyricModel = pickComposeVocal(autoComposeVocal);
 							autoComposeVocal = melodyTrack.lyricModel;
+							autoComposeVocalTracks.set(melodyTrack, melodyTrack.lyricModel);
 						}
 						melodyTrack.lyrics = composeLyrics(song.melody, {
 							stepsPerBar: renderConfig.stepsPerBar,
@@ -5779,6 +5790,7 @@ export const mountDAW = (
 						): void => {
 							if (!track) return;
 							track.lyricModel = voice;
+							autoComposeVocalTracks.set(track, voice);
 							if (track.vocalOctave === 0) track.vocalOctave = -1;
 							track.lyrics = lyrics;
 							fireLyricsChange(track);
@@ -5850,6 +5862,20 @@ export const mountDAW = (
 							}
 						}
 					}
+				} else {
+					// 「作曲」（歌なし）。直前の「歌入り作曲」がボーカルを当てたままの
+					// トラックが残っていると、ノートだけ新しい曲に差し替わって歌詞と
+					// ずれた状態で歌い続けてしまう（意図しない挙動）。ユーザーが自分で
+					// 選んだ声・書いた歌詞は尊重し、まだ自動で当てたままのトラックだけ
+					// 「なし」に戻す。
+					for (const [track, voice] of autoComposeVocalTracks) {
+						if (track.lyricModel === voice) {
+							track.lyrics = "";
+							track.lyricModel = "";
+							fireLyricsChange(track);
+						}
+					}
+					autoComposeVocalTracks.clear();
 				}
 
 				// 作曲・歌入り作曲の完了時におまかせマスタリングを実行する。
