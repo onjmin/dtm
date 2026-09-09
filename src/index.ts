@@ -45,14 +45,22 @@ export {
 	type TensionFeatures,
 	tensionFeatures,
 } from "./compose-metrics";
-// 音階（琉球・都節・律・チャーチモード）
+// 音階（琉球・都節・律・チャーチモード・和声的短音階・ヒジャーズ・ハンガリアン・ブルース）
 export {
+	BLUES_SCALE,
 	COMPOSE_SCALE_IDS,
 	COMPOSE_SCALES,
 	type ComposeScale,
 	type ComposeScaleId,
 	getComposeScaleDescription,
+	HARMONIC_MINOR_SCALE,
+	HUNGARIAN_SCALE,
+	MAJOR_SCALE,
+	resolveCenter,
 	resolveComposeScale,
+	type ScaleDegree,
+	scaleDegrees,
+	scaleSize,
 	type TonicCenter,
 	type TonicDegree,
 } from "./compose-scales";

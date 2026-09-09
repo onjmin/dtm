@@ -66,10 +66,17 @@ import {
 	type ComposeScaleId,
 	coreToDegree,
 	degreeToCore,
-	isCoreDegree,
+	degreeToPitch,
+	isOutsideCore,
 	resolveCenter,
 	resolveComposeScale,
+	type ScaleDegree,
+	scaleFifth,
+	scalePcs,
+	scaleSize,
+	semitoneToDegree,
 	type TonicCenter,
+	walk,
 } from "./compose-scales";
 import {
 	buildSectionPlan,
@@ -342,72 +349,11 @@ const BPM_CHOICES = [
 // ============================================================
 // 音階
 // ============================================================
-
-/**
- * ダイアトニック音階の1オクターブ分。`semi` は主音からの半音、`fifth` は五度圏
- * インデックス（綴りを保持するために持つ。31平均律で増4度と減5度を区別するのに要る）。
- */
-type ScaleDegree = { semi: number; fifth: number };
-
-/** ハ長調（イ短調も同じ音の集合で、主音の取り方だけが違う）。 */
-const MAJOR_SCALE: ScaleDegree[] = [
-	{ semi: 0, fifth: 0 }, // C
-	{ semi: 2, fifth: 2 }, // D
-	{ semi: 4, fifth: 4 }, // E
-	{ semi: 5, fifth: -1 }, // F
-	{ semi: 7, fifth: 1 }, // G
-	{ semi: 9, fifth: 3 }, // A
-	{ semi: 11, fifth: 5 }, // B
-];
-
-/**
- * 音階の度数 → 綴り付きの音。`degree` はオクターブを跨いで連続する整数
- * （7 で1オクターブ上、-1 で1つ下）。
- */
-const degreeToPitch = (degree: number): ScaleDegree => {
-	const index = ((degree % 7) + 7) % 7;
-	const octave = Math.floor(degree / 7);
-	const d = MAJOR_SCALE[index];
-	return { semi: d.semi + octave * 12, fifth: d.fifth };
-};
-
-/** 半音 → 音階の度数（最も近い構成音）。順次進行の起点を探すのに使う。 */
-const semitoneToDegree = (semi: number): number => {
-	const octave = Math.floor(semi / 12);
-	const within = semi - octave * 12;
-	let best = 0;
-	let bestDist = Number.POSITIVE_INFINITY;
-	for (let i = 0; i < MAJOR_SCALE.length; i++) {
-		const dist = Math.abs(MAJOR_SCALE[i].semi - within);
-		if (dist < bestDist) {
-			bestDist = dist;
-			best = i;
-		}
-	}
-	return octave * 7 + best;
-};
-
-/** 音階上を `delta` 度動かす（半音でなく度数で動かすのでスケールから外れない）。 */
-const walk = (semi: number, delta: number): number =>
-	degreeToPitch(semitoneToDegree(semi) + delta).semi;
-
-/**
- * 音階の中核音から外れた音か。**陽音階（従来の長調）ならファ・シ**の2つ。
- *
- * 歌メロの解説はどれも「まずペンタトニックに絞れ」と言う。中核5音から外れる2音は
- * どちらも半音の隣に音が迫っていて主張が強く、無条件に使うと**スケールの上を
- * なぞっただけのメロディ**になる。使ってよいのは次の2つの場合だけ、というのが
- * 共通して書かれている規則。
- *
- * - その瞬間の和音の構成音であるとき（F の上のファ、G7 の上のシは和音の芯）
- * - **前後を順次進行で挟むとき**（経過音・刺繍音として通り過ぎるだけ）
- *
- * **どの5音を中核にするかは曲の音階が決める**（{@link ComposeScale.core}）。
- * 琉球音階はまさにこのファ・シを柱にしてレ・ラを外すので、陽音階とは
- * 通す音と逃がす音がそっくり入れ替わる。
- */
-const isOutsideScale = (scale: ComposeScale, semi: number): boolean =>
-	!isCoreDegree(scale, semitoneToDegree(semi));
+//
+// 音程の計算は `compose-scales.ts` にある。**どれも曲の音階を第1引数に取る**——
+// 音程集合そのものが曲ごとに変わる（{@link ComposeScale.parent}）ので、
+// モジュールの定数として持てない。旋律はここの度数だけで組み立て、
+// 最後に {@link applyChromatic} が音階の外の音を通す。
 
 // ============================================================
 // コード進行
@@ -1553,6 +1499,14 @@ const MELODY_CENTER = (MELODY_LOW + MELODY_HIGH) / 2;
  * 当てはめると、実際に使われている形を落とすことになる。
  */
 const harmonyPitch = (
+	/**
+	 * 曲の音階。**ハモリも歌声なので、音階の外を歌えばその曲の音階の色が薄まる。**
+	 * ハモリは和音構成音から選ぶ作りで、琉球音階の `F` の上ではラ、ブルース音階の
+	 * `G7` の上ではシやレという、音階に無い音が和音の側から供給されてしまう。
+	 * 本物の5音音階（{@link ComposeScale.strict}）ではそこに罰則を置いて、
+	 * 同じ和音の中でも音階に居る構成音を選ばせる。
+	 */
+	scale: ComposeScale,
 	melodySemi: number,
 	tones: ChordTone[],
 	/** 直前のハモリの音。無ければ null。 */
@@ -1602,9 +1556,14 @@ const harmonyPitch = (
 							? 0.5
 							: 1.2;
 			}
+			// 和音構成音であっても音階の中核から外れていれば重く見る。1.5 は
+			// 「居場所が2半音ずれる」よりやや重く、「3度が5度に変わる」より軽い——
+			// 音階に居る構成音があればそちらを選び、無ければ諦めて和音に従う。
+			const offCore = scale.strict && isOutsideCore(scale, semi) ? 1.5 : 0;
 			const cost =
 				stay +
 				clash +
+				offCore +
 				Math.abs(delta - offset) * (parallel ? 1.4 : 0.7) +
 				(3 - tone.weight) * 0.4;
 			if (cost < bestCost) {
@@ -1752,14 +1711,19 @@ const leapTarget = (
  * まだ続く**という言い分けになる。これが無いと、どのフレーズも同じように
  * 終わってしまい、問いと答えの関係が生まれない。
  */
-const landOn = (degrees: number[], scaleIndex: number): void => {
+const landOn = (
+	scale: ComposeScale,
+	degrees: number[],
+	scaleIndex: number,
+): void => {
 	if (degrees.length === 0) return;
+	const size = scaleSize(scale);
 	const last = degrees[degrees.length - 1];
-	const index = ((last % 7) + 7) % 7;
+	const index = ((last % size) + size) % size;
 	let delta = scaleIndex - index;
 	// 近い方へ寄せる（7度上ではなく2度下、のように）。
-	if (delta > 3) delta -= 7;
-	if (delta < -3) delta += 7;
+	if (delta > size / 2) delta -= size;
+	if (delta < -size / 2) delta += size;
 	degrees[degrees.length - 1] = last + delta;
 };
 
@@ -1770,16 +1734,21 @@ const landOn = (degrees: number[], scaleIndex: number): void => {
  * 書き換えてしまう（実測で200曲中4曲、全終止が主音から外れた）。着地は
  * フレーズの意味そのものなので、最後に上書きし直す。
  */
-const landPitch = (pitches: number[], scaleIndex: number): void => {
+const landPitch = (
+	scale: ComposeScale,
+	pitches: number[],
+	scaleIndex: number,
+): void => {
 	if (pitches.length === 0) return;
+	const size = scaleSize(scale);
 	const last = pitches[pitches.length - 1];
-	const degree = semitoneToDegree(last);
-	const index = ((degree % 7) + 7) % 7;
+	const degree = semitoneToDegree(scale, last);
+	const index = ((degree % size) + size) % size;
 	let delta = scaleIndex - index;
-	if (delta > 3) delta -= 7;
-	if (delta < -3) delta += 7;
+	if (delta > size / 2) delta -= size;
+	if (delta < -size / 2) delta += size;
 	pitches[pitches.length - 1] = clampSemi(
-		degreeToPitch(degree + delta).semi,
+		degreeToPitch(scale, degree + delta).semi,
 		MELODY_LOW,
 		MELODY_HIGH,
 	);
@@ -1869,10 +1838,10 @@ const barDegrees = (
 		} else if (style.runShape === "broken") {
 			// 分散和音の走句。3度・4度の跳躍が並ぶので順次進行の走句と質感が変わる。
 			const arp = tones
-				.map((t) => semitoneToDegree(clampSemi(t.semi, 60, 71)))
+				.map((t) => semitoneToDegree(scale, clampSemi(t.semi, 60, 71)))
 				.sort((a, b) => a - b);
 			for (let i = 0; i < noteCount; i++) {
-				const oct = Math.floor(i / arp.length) * 7;
+				const oct = Math.floor(i / arp.length) * scaleSize(scale);
 				const idx =
 					dir > 0 ? i % arp.length : arp.length - 1 - (i % arp.length);
 				out.push(arp[idx] + dir * oct);
@@ -1902,7 +1871,10 @@ const barDegrees = (
 
 	if (role === "cadence") {
 		// 終止。主音（C）へ着地するのは共通で、そこへ至る形を曲ごとに変える。
-		const tonic = semitoneToDegree(clampSemi(72, MELODY_LOW, MELODY_HIGH));
+		const tonic = semitoneToDegree(
+			scale,
+			clampSemi(72, MELODY_LOW, MELODY_HIGH),
+		);
 		for (let i = 0; i < noteCount; i++) {
 			if (style.cadenceShape === "descend") {
 				out.push(tonic + noteCount - 1 - i);
@@ -1912,7 +1884,11 @@ const barDegrees = (
 				out.push(tonic + shape[Math.min(i, shape.length - 1)]);
 			} else if (style.cadenceShape === "leap-up") {
 				// 下からソ→ドへ跳ね上がって終わる。
-				out.push(i === noteCount - 1 ? tonic : tonic - 7 + Math.min(i, 4));
+				out.push(
+					i === noteCount - 1
+						? tonic
+						: tonic - scaleSize(scale) + Math.min(i, 4),
+				);
 			} else {
 				// 主音のロングトーン。手前に刺繍音を1つだけ置く。
 				out.push(i === 0 && noteCount > 1 ? tonic + 1 : tonic);
@@ -1961,8 +1937,9 @@ const barDegrees = (
 	for (let i = 0; i < out.length; i++) {
 		if (!slots[i].isStrong) continue;
 		out[i] = semitoneToDegree(
+			scale,
 			nearestChordTone(
-				degreeToPitch(out[i]).semi,
+				degreeToPitch(scale, out[i]).semi,
 				tones,
 				barHeadWeight,
 				preferColor,
@@ -1986,9 +1963,9 @@ const barDegrees = (
 			// 適当に足していた頃は、和音と関係ない音へ跳んで着地するので、
 			// 跳躍のたびに調子外れに聞こえていた。
 			if (rnd() < style.leapAffinity) {
-				const from = degreeToPitch(out[i - 1]).semi;
+				const from = degreeToPitch(scale, out[i - 1]).semi;
 				const target = leapTarget(from, tones, rnd);
-				if (target !== null) out[i] = semitoneToDegree(target);
+				if (target !== null) out[i] = semitoneToDegree(scale, target);
 			}
 			continue;
 		}
@@ -2059,7 +2036,7 @@ const fitMotif = (
 		let score = 0;
 		for (let i = 0; i < moved.length; i++) {
 			const semi = clampSemi(
-				degreeToPitch(moved[i]).semi,
+				degreeToPitch(scale, moved[i]).semi,
 				MELODY_LOW,
 				MELODY_HIGH,
 			);
@@ -2070,7 +2047,7 @@ const fitMotif = (
 		}
 		// 前の小節からのつながり。跳びすぎる置き方は避ける。
 		const head = clampSemi(
-			degreeToPitch(moved[0]).semi,
+			degreeToPitch(scale, moved[0]).semi,
 			MELODY_LOW,
 			MELODY_HIGH,
 		);
@@ -2127,7 +2104,7 @@ const shapeBar = (
 		// 音域の端をまたぐ動きがその場で潰れ、跳んだ先が跳ぶ前と同じ音になる
 		// （実測でオクターブの隣接音程が 4% 止まりだった原因）。輪郭を保つのが
 		// この分岐の役目なので、収める操作も輪郭を壊さない形で行う。
-		const raw = degrees.map((d) => degreeToPitch(d).semi);
+		const raw = degrees.map((d) => degreeToPitch(opts.scale, d).semi);
 		const lo = Math.min(...raw);
 		const hi = Math.max(...raw);
 		let shift = 0;
@@ -2144,14 +2121,14 @@ const shapeBar = (
 	}
 	for (let i = 0; i < degrees.length; i++) {
 		let semi = clampSemi(
-			degreeToPitch(degrees[i]).semi,
+			degreeToPitch(opts.scale, degrees[i]).semi,
 			MELODY_LOW,
 			MELODY_HIGH,
 		);
 		const limit = i === 0 ? MAX_BAR_LEAP_SEMITONES : MAX_LEAP_SEMITONES;
 		if (!opts.allowLeap && Math.abs(semi - prev) > limit) {
 			semi = clampSemi(
-				walk(prev, Math.sign(semi - prev) * 3),
+				walk(opts.scale, prev, Math.sign(semi - prev) * 3),
 				MELODY_LOW,
 				MELODY_HIGH,
 			);
@@ -2163,7 +2140,11 @@ const shapeBar = (
 			Math.abs(out[i - 1] - out[i - 2]) > STEP_SEMITONES
 		) {
 			const back = -Math.sign(out[i - 1] - out[i - 2]);
-			semi = clampSemi(walk(out[i - 1], back), MELODY_LOW, MELODY_HIGH);
+			semi = clampSemi(
+				walk(opts.scale, out[i - 1], back),
+				MELODY_LOW,
+				MELODY_HIGH,
+			);
 		}
 		// アボイドノートは強拍・長い音では鳴らさない。逃がす先は上下どちらでもよいが、
 		// **直前と同じ音になる方は選ばない**——ここで同音へ潰すと、せっかく作った
@@ -2181,15 +2162,23 @@ const shapeBar = (
 			const resolved = semi + 1;
 			const useResolved =
 				resolved <= MELODY_HIGH &&
-				!DIATONIC_PCS.has(pitchClass(resolved)) &&
+				!scalePcs(opts.scale).has(pitchClass(resolved)) &&
 				toneWeight(resolved, tones) >= 2 &&
 				resolved !== prev &&
 				opts.rnd() < opts.chromaticAffinity;
 			if (useResolved) {
 				semi = resolved;
 			} else {
-				const up = clampSemi(walk(semi, 1), MELODY_LOW, MELODY_HIGH);
-				const down = clampSemi(walk(semi, -1), MELODY_LOW, MELODY_HIGH);
+				const up = clampSemi(
+					walk(opts.scale, semi, 1),
+					MELODY_LOW,
+					MELODY_HIGH,
+				);
+				const down = clampSemi(
+					walk(opts.scale, semi, -1),
+					MELODY_LOW,
+					MELODY_HIGH,
+				);
 				const score = (s: number) =>
 					toneWeight(s, tones) * 2 + (i > 0 && s === prev ? -3 : 0);
 				semi = score(down) >= score(up) ? down : up;
@@ -2270,10 +2259,11 @@ const applyPentatonic = (
 ): void => {
 	for (let i = 0; i < out.length; i++) {
 		const semi = out[i];
-		if (!isOutsideScale(scale, semi)) continue;
-		// 和音構成音なら触らない。**ただし本物の5音音階（{@link ComposeScale.strict}）は
-		// 別。** 琉球音階の `F` はラを、`G` はレを持っていて、そこを無条件に通すと
-		// 「レとラを抜く」という音階の定義そのものが崩れる。
+		if (!isOutsideCore(scale, semi)) continue;
+		// 和音構成音なら触らない。**ただし音階を厳しく締める曲（{@link ComposeScale.strict}）
+		// は別。** 琉球音階の `F` はラを、`G` はレを持っていて、そこを無条件に通すと
+		// 「レとラを抜く」という音階の定義そのものが崩れる。ブルース音階も同じで、
+		// `C7` の長3度を通すと短3度で歌うという前提が消える。
 		if (
 			!scale.strict &&
 			tones.some((t) => pitchClass(t.semi) === pitchClass(semi))
@@ -2288,7 +2278,7 @@ const applyPentatonic = (
 		// ファ・シが実測7%まで減り、参考曲の23%に遠く届かない。半音の動きも
 		// 一緒に消えてしまう（隣接音程の1半音が 9%→3% に落ちていた）。
 		//
-		// **本物の5音音階（{@link ComposeScale.strict}）だけは両側を要求する。**
+		// **音階を厳しく締める曲（{@link ComposeScale.strict}）だけは両側を要求する。**
 		// あちらは中核の外＝音階に無い音なので、経過音として通り過ぎる形以外で
 		// 出てはいけない。琉球音階はドとミ、ソとシの間が3半音空いていて、
 		// 片側だけの条件だと抜いたはずのレとラが順次進行の受け皿として居座る。
@@ -2297,11 +2287,11 @@ const applyPentatonic = (
 		// 「ペンタトニックをなぞるだけ」になって、今度は別の単調さが出る。
 		if (!scale.strict && !slots[i].isStrong && slots[i].value <= shortSteps)
 			continue;
-		const up = clampSemi(walk(semi, 1), MELODY_LOW, MELODY_HIGH);
-		const down = clampSemi(walk(semi, -1), MELODY_LOW, MELODY_HIGH);
+		const up = clampSemi(walk(scale, semi, 1), MELODY_LOW, MELODY_HIGH);
+		const down = clampSemi(walk(scale, semi, -1), MELODY_LOW, MELODY_HIGH);
 		// ファの隣はミとソ、シの隣はラとド。どちらもペンタトニックの音になる。
 		const score = (s: number): number =>
-			(isOutsideScale(scale, s) ? -4 : 0) +
+			(isOutsideCore(scale, s) ? -4 : 0) +
 			toneWeight(s, tones) +
 			(s === before ? -3 : 0) +
 			(after !== null ? -Math.abs(after - s) / 12 : 0);
@@ -2314,11 +2304,6 @@ const applyPentatonic = (
 // ============================================================
 
 /**
- * ハ長調のピッチクラス。ここに無い音が「調の外の音（変化音）」。
- */
-const DIATONIC_PCS = new Set(MAJOR_SCALE.map((d) => d.semi));
-
-/**
  * ピッチクラス → 五度圏インデックス。**上行の変化音はシャープ、下行はフラット**で
  * 綴る（C→C#→D と上がるならド・ド#・レ、E→Eb→D と下がるならミ・ミb・レ）。
  * 綴りが要るのは31平均律で C# と Db が別の音になるためで、12平均律でも
@@ -2326,10 +2311,6 @@ const DIATONIC_PCS = new Set(MAJOR_SCALE.map((d) => d.semi));
  */
 const SHARP_FIFTHS = [0, 7, 2, 9, 4, -1, 6, 1, 8, 3, 10, 5];
 const FLAT_FIFTHS = [0, -5, 2, -3, 4, -1, -6, 1, -4, 3, -2, 5];
-
-/** 音階上の音の綴り。変化音でない音はこちらで綴る。 */
-const diatonicFifth = (semi: number): number =>
-	degreeToPitch(semitoneToDegree(semi)).fifth;
 
 /** `semi` と同じピッチクラスのうち、`near` にいちばん近い高さ。 */
 const nearestOctaveOf = (near: number, semi: number): number => {
@@ -2362,6 +2343,8 @@ const nearestOctaveOf = (near: number, semi: number): number => {
  * {@link MelodyStyle.chromaticAffinity} を引くので、変化音を使わない曲も混ざる。
  */
 const applyChromatic = (
+	/** 曲の音階。「調の外」の基準がここで決まる。 */
+	scale: ComposeScale,
 	pitches: number[],
 	fifths: number[],
 	slots: Slot[],
@@ -2385,7 +2368,8 @@ const applyChromatic = (
 		if (tone) fifths[i] = tone.fifth;
 	}
 	// ① 和音の変化音を採る。
-	const altered = tones.filter((t) => !DIATONIC_PCS.has(pitchClass(t.semi)));
+	const pcs = scalePcs(scale);
+	const altered = tones.filter((t) => !pcs.has(pitchClass(t.semi)));
 	for (let i = 0; i < pitches.length; i++) {
 		if (opts.keepLast && i === last) continue;
 		if (!slots[i].isStrong && slots[i].value < opts.quarterSteps) continue;
@@ -2423,7 +2407,7 @@ const applyChromatic = (
 		// 経過音（全音の間を埋める）と、アプローチ（全音で入って半音で出る）。
 		const target = span === 2 ? before + dir : span === 3 ? after - dir : null;
 		if (target === null) continue;
-		if (DIATONIC_PCS.has(pitchClass(target))) continue; // 変化音になる場合だけ
+		if (pcs.has(pitchClass(target))) continue; // 変化音になる場合だけ
 		if (target === before || target === after) continue;
 		if (target < MELODY_LOW || target > MELODY_HIGH) continue;
 		pitches[i] = target;
@@ -3070,9 +3054,11 @@ const draw = (
 				? 0
 				: 5
 			: scale.tonic;
-		let landing = (section.spec.landing + tonicDegree) % 7;
+		// 音階の長さで回す。ブルース音階は6音なので7で割ると度数が1つずれる。
+		const size = scaleSize(scale);
+		let landing = (section.spec.landing + tonicDegree) % size;
 		if (floating && landing === tonicDegree)
-			landing = (landing + pick([2, 4], rnd)) % 7;
+			landing = (landing + pick([2, 4], rnd)) % size;
 		return landing;
 	};
 
@@ -3187,7 +3173,7 @@ const draw = (
 		arcAmp: 2 + rnd() * 3,
 		// オクターブ跳躍は参考曲では音程の1.0%しかない。上げすぎると音域が広がる。
 		octaveAffinity: 0.06 + rnd() * 0.12,
-		// **本物の5音音階は必ず中核音の歩数で組む。** ダイアトニックの度数で輪郭を
+		// **音階を厳しく締める曲は必ず中核音の歩数で組む。** ダイアトニックの度数で輪郭を
 		// 作ると、琉球音階なのにレやラが輪郭の中に入り込む。ファ・シを自由に使う
 		// 陽・民謡だけが、曲ごとに掛けたり掛けなかったりする（{@link ComposeScale.strict}）。
 		pentatonicMotif: rnd() < 0.55 || scale.strict,
@@ -3208,7 +3194,7 @@ const draw = (
 		// 界隈曲らしさ：調の外の音（クロマチック）や微小な逸脱を積極的に許容する。
 		// 刻みを細かくすると経過音の置き場所が増えるので、同じ係数でも変化音は増える。
 		// 参考曲の1.75倍まで伸びていたぶんを引く。
-		// **本物の5音音階は変化音を控える。** 半音の経過音は長調・短調の泣きメロの
+		// **音階を厳しく締める曲は変化音を控える。** 半音の経過音は長調・短調の泣きメロの
 		// 芯だが、琉球・都節・律ではその半音が音階の外にしか無く、入れたぶんだけ
 		// 音階の色が薄まる（実測で嬰ヘが3%出て、音階内のラ2%より多いという逆転が
 		// 起きていた）。0 にはしない——民族音階の実際の曲にも装飾の半音は出る。
@@ -3650,7 +3636,7 @@ const draw = (
 			style,
 			scale,
 			motifContour,
-			semitoneToDegree(headSemi),
+			semitoneToDegree(scale, headSemi),
 			contourOffset,
 			repeatShift,
 			headWeight,
@@ -3670,7 +3656,8 @@ const draw = (
 			);
 		// 楽句の最後の小節は、着地音を決めて終わる（半終止／全終止）。
 		const landing = units[unitOf(bar)].landing;
-		if (landing !== null && barInUnit(bar) === 1) landOn(degrees, landing);
+		if (landing !== null && barInUnit(bar) === 1)
+			landOn(scale, degrees, landing);
 		plannedDegrees[bar] = [...degrees];
 
 		// モチーフ系と再現の小節は「塊ごと移調して輪郭を保つ」、それ以外は従来どおり
@@ -3721,13 +3708,14 @@ const draw = (
 			preserveContour: isMotifBar,
 		});
 
-		if (landing !== null && barInUnit(bar) === 1) landPitch(pitches, landing);
+		if (landing !== null && barInUnit(bar) === 1)
+			landPitch(scale, pitches, landing);
 
 		// **最後に変化音を通す。** ここまでの音は全部ハ長調の音階の上にあり、
 		// セカンダリドミナントの上でも和音の変化音を採れていなかった
 		// （実測で非ダイアトニック音が1音も出ない＝調が固定に聞こえる原因）。
-		const fifths = pitches.map(diatonicFifth);
-		applyChromatic(pitches, fifths, slots, tones, {
+		const fifths = pitches.map((semi) => scaleFifth(scale, semi));
+		applyChromatic(scale, pitches, fifths, slots, tones, {
 			affinity: style.chromaticAffinity,
 			quarterSteps,
 			shortSteps: scaleStep(EIGHTH),
@@ -3794,7 +3782,7 @@ const draw = (
 				prevSemi = semi;
 				continue;
 			}
-			if (!DIATONIC_PCS.has(pitchClass(semi))) chromaticNotes++;
+			if (!scalePcs(scale).has(pitchClass(semi))) chromaticNotes++;
 			const k = barKeyShift[bar];
 			const fifthShift =
 				k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
@@ -3882,7 +3870,7 @@ const draw = (
 						subSemi = pushSub(
 							cursor,
 							step,
-							i === 0 ? subSemi : walk(subSemi, subDir),
+							i === 0 ? subSemi : walk(scale, subSemi, subDir),
 						);
 						placed++;
 					}
@@ -3917,7 +3905,7 @@ const draw = (
 						step,
 						index === 0
 							? subSemi
-							: walk(subSemi, subDir * (index % 2 === 0 ? 1 : -1)),
+							: walk(scale, subSemi, subDir * (index % 2 === 0 ? 1 : -1)),
 					);
 					index++;
 				}
@@ -3928,7 +3916,11 @@ const draw = (
 			pushSub(0, stepsPerBar, subSemi);
 		} else if (subStyle === "long-short") {
 			subSemi = pushSub(0, scaleStep(DOT_HALF), subSemi);
-			pushSub(scaleStep(DOT_HALF), scaleStep(QUARTER), walk(subSemi, subDir));
+			pushSub(
+				scaleStep(DOT_HALF),
+				scaleStep(QUARTER),
+				walk(scale, subSemi, subDir),
+			);
 		} else if (role === "cadence") {
 			// 終止だけは和音を支えたいので小節を通して伸ばす。
 			pushSub(0, stepsPerBar, subSemi);
@@ -3960,6 +3952,7 @@ const draw = (
 				const written: (number | null)[] = [];
 				for (let i = 0; i < slots.length; i++) {
 					const hTone = harmonyPitch(
+						scale,
 						pitches[i],
 						tones,
 						last,
@@ -4052,6 +4045,7 @@ const draw = (
 		const nextTones = chordTones(progression[(bar + 1) % totalBars]);
 		const A = clampSemi(
 			walk(
+				scale,
 				nextTones[0] ? clampSemi(nextTones[0].semi, BASS_LOW, BASS_HIGH) : R,
 				-1,
 			),
@@ -4125,7 +4119,7 @@ const draw = (
 						? (fifthTone?.fifth ?? rootTone.fifth)
 						: semi === T
 							? (thirdTone?.fifth ?? rootTone.fifth)
-							: degreeToPitch(semitoneToDegree(semi)).fifth;
+							: scaleFifth(scale, semi);
 			const k = barKeyShift[bar];
 			const fifthShift =
 				k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
@@ -4244,7 +4238,7 @@ const draw = (
 			const afterSemi =
 				Math.round(after.pitchUnits / UNITS_PER_SEMITONE) -
 				(barKeyShift[barIdx] ?? 0);
-			if (!DIATONIC_PCS.has(pitchClass(afterSemi))) continue;
+			if (!scalePcs(scale).has(pitchClass(afterSemi))) continue;
 		}
 
 		// 文脈（BarRole）に合わせたタイ（食い）の発生確率の制御

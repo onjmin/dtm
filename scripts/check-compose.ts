@@ -24,12 +24,15 @@ import {
 	COMPOSE_MOOD_GROUPS,
 	resolveComposeKey,
 } from "../src/compose-keys";
+import { structureFeatures } from "../src/compose-metrics";
 import {
 	COMPOSE_SCALE_IDS,
 	COMPOSE_SCALES,
+	corePcs,
 	resolveCenter,
+	scaleDegrees,
+	scalePcs,
 } from "../src/compose-scales";
-import { structureFeatures } from "../src/compose-metrics";
 import {
 	DRUM_KEYS,
 	DRUM_PATTERNS,
@@ -1214,7 +1217,6 @@ console.log("● ベース調・雰囲気（調性格論）");
 	);
 }
 
-
 // ============================================================
 // 6. 音階のテスト
 // ============================================================
@@ -1226,17 +1228,20 @@ console.log("● ベース調・雰囲気（調性格論）");
 
 console.log("● 音階");
 {
-	/** ハ長調の7音（主音からの半音）。度数 → ピッチクラス。 */
-	const MAJOR_PCS = [0, 2, 4, 5, 7, 9, 11];
 	const SCALE_SEEDS = 24;
 
 	for (const id of COMPOSE_SCALE_IDS) {
 		const scale = COMPOSE_SCALES[id];
-		const corePcs = new Set(scale.core.map((d) => MAJOR_PCS[d]));
+		// **音程集合は音階ごとに違う**（{@link ComposeScale.parent}）。ハ長調決め打ちで
+		// 数えると、ブルース音階のミ♭がハ長調に無いというだけで「調の外」に化ける。
+		const core = corePcs(scale);
+		const inScale = scalePcs(scale);
 		const tag = scale.label;
 		const seen = new Set<number>();
 		let notes = 0;
 		let outside = 0;
+		let harmonyNotes = 0;
+		let harmonyOutside = 0;
 		let tonicChordBars = 0;
 		const center = resolveCenter(scale);
 
@@ -1267,8 +1272,16 @@ console.log("● 音階");
 				const semi = Math.round(n.pitchUnits / UNITS_PER_SEMITONE);
 				const pc = (((semi - song.rootShift) % 12) + 12) % 12;
 				notes++;
-				if (corePcs.has(pc)) seen.add(pc);
-				else if (MAJOR_PCS.includes(pc)) outside++;
+				if (core.has(pc)) seen.add(pc);
+				else if (inScale.has(pc)) outside++;
+			}
+			// **ハモリも歌声。** 和音構成音から選ぶ作りなので、放っておくと音階の外を
+			// 歌う（琉球音階の `F` の上でラ、など）。旋律と同じ物差しで測る。
+			for (const n of [...song.harmony, ...song.harmony2]) {
+				const semi = Math.round(n.pitchUnits / UNITS_PER_SEMITONE);
+				const pc = (((semi - song.rootShift) % 12) + 12) % 12;
+				harmonyNotes++;
+				if (!core.has(pc) && inScale.has(pc)) harmonyOutside++;
 			}
 			// 進行が音階の主音を指しているか。**旋律だけモードにして和音が
 			// ハ長調のトニックを指していると、曲は結局ハ長調に聞こえる。**
@@ -1280,18 +1293,31 @@ console.log("● 音階");
 
 		check(
 			`${tag} 中核の5音がすべて使われる`,
-			seen.size === corePcs.size,
-			`${seen.size}/${corePcs.size}音`,
+			seen.size === core.size,
+			`${seen.size}/${core.size}音`,
 		);
-		// **strict な音階（本物の5音音階）は中核の外を8%まで。** 陽・民謡と
-		// モードは中核の外も音階の構成音なので、ここは緩い上限にする。
+		// **strict な音階（本物の5音音階）は中核の外を8%まで。** 陽・民謡・モード・
+		// 和声的短音階は中核の外も音階の構成音なので、絶対値ではなく
+		// 「偶然そうなった水準」と比べる——音階の音を均等に使えば中核の外は
+		// (音数 - 中核数) / 音数（7音音階なら28.6%）になるので、その3/4を上限に置く。
 		const ratio = notes === 0 ? 1 : outside / notes;
-		const limit = scale.strict ? 0.08 : 0.2;
+		const size = scaleDegrees(scale).length;
+		const limit = scale.strict
+			? 0.08
+			: ((size - scale.core.length) / size) * 0.75;
 		check(
 			`${tag} 中核外の音が ${(limit * 100).toFixed(0)}% 以下`,
 			ratio <= limit,
 			`${(ratio * 100).toFixed(1)}%`,
 		);
+		// ハモリは和音に従う都合上、旋律ほどは締められない。倍までを許す。
+		const hRatio = harmonyNotes === 0 ? 0 : harmonyOutside / harmonyNotes;
+		if (scale.strict)
+			check(
+				`${tag} ハモリの中核外が ${(limit * 200).toFixed(0)}% 以下`,
+				hRatio <= limit * 2,
+				`${(hRatio * 100).toFixed(1)}%`,
+			);
 		if (center)
 			check(
 				`${tag} 進行が音階の主和音を含む`,
@@ -1299,7 +1325,49 @@ console.log("● 音階");
 				`${tonicChordBars}/${SCALE_SEEDS}曲`,
 			);
 		console.log(
-			`  ${tag.padEnd(20)} 中核外 ${(ratio * 100).toFixed(1)}% / 進行の中心 ${center ? center.tonic : "長調・短調の既定"}`,
+			`  ${tag.padEnd(20)} 旋律の中核外 ${(ratio * 100).toFixed(1)}% / ハモリ ${(hRatio * 100).toFixed(1)}% / 進行の中心 ${center ? center.tonic : "長調・短調の既定"}`,
+		);
+	}
+
+	// **31平均律でも綴りが決まるか。** 音程集合を差し替えた音階はソ♯やミ♭を
+	// 持つので、五度圏インデックス（{@link ScaleDegree.fifth}）を書き間違えると
+	// 31平均律で異名同音が別の高さへ散る。12の倍数（＝31平均律の1度）に
+	// 乗っていない音が出たら、綴りがどこかで落ちている。
+	for (const id of COMPOSE_SCALE_IDS) {
+		const scale = COMPOSE_SCALES[id];
+		const song = composeSong({
+			stepsPerBar: STEPS_PER_BAR,
+			edo: 31,
+			scale: id,
+			random: seededRandom(4242),
+		});
+		const offGrid = [
+			...song.melody,
+			...song.submelody,
+			...song.bass,
+			...song.harmony,
+		].filter((n) => n.pitchUnits % 12 !== 0).length;
+		check(
+			`${scale.label} 31平均律で格子に乗る`,
+			offGrid === 0,
+			`${offGrid}音が格子外`,
+		);
+	}
+
+	// **親音階を差し替える音階は進行プールを自前で持つ。** 持たないとハ長調の
+	// 和音が当たり、音階に無い音が伴奏から鳴る。
+	for (const id of COMPOSE_SCALE_IDS) {
+		const scale = COMPOSE_SCALES[id];
+		if (!scale.parent) continue;
+		check(
+			`${scale.label} は専用の進行プールを持つ`,
+			scale.center !== undefined,
+			"center が無い",
+		);
+		check(
+			`${scale.label} の主音は音程集合の中にある`,
+			scale.tonic < scaleDegrees(scale).length,
+			`tonic=${scale.tonic} / ${scaleDegrees(scale).length}音`,
 		);
 	}
 
@@ -1317,7 +1385,11 @@ console.log("● 音階");
 		baseKey: "key_C",
 		random: seededRandom(1),
 	});
-	check("音階未指定 + 長調は陽音階", autoMajor.scaleId === "yo", autoMajor.scaleId);
+	check(
+		"音階未指定 + 長調は陽音階",
+		autoMajor.scaleId === "yo",
+		autoMajor.scaleId,
+	);
 }
 
 console.log("");

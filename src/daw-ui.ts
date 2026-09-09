@@ -505,6 +505,12 @@ export const buildUI = (
               <option value="lydian" title="4度が高く、浮遊して広がる。映画音楽・ゲームの空の色">リディアン</option>
               <option value="mixolydian" title="長調だが7度が低い。ブルースロック・民族音楽の土くささ">ミクソリディアン</option>
             </optgroup>
+            <optgroup label="特殊音階（音程集合ごと入れ替わる）">
+              <option value="harmonic_minor" title="導音ソ♯を持つ短調。増2度が泣きを作る。クラシック・V系・劇伴">和声的短音階</option>
+              <option value="hijaz" title="主音の上が半音、主和音は長三和音。中東・スパニッシュ・メタル">ヒジャーズ（フリジアン・ドミナント）</option>
+              <option value="hungarian" title="増2度が2か所。音階の中でいちばん跳ねた、異国めいた響き">ハンガリアン・マイナー（ジプシー）</option>
+              <option value="blues" title="ブルーノート入りの6音音階。短3度で歌い、伴奏は長3度で鳴る">ブルース音階</option>
+            </optgroup>
           </select>
           <span class="dtm-grow"></span>
           <span class="dtm-hint" data-dtm="compose-scale-hint"></span>
