@@ -342,11 +342,14 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 			12) +
 			12) %
 		12;
-	check(
-		`${tag} 終止音が調の主音（移調後）`,
-		lastPc === 0,
-		`移調 ${song.rootShift}+${lastKeyShift} 半音 / 終止音のハ長調換算 ${lastPc}`,
-	);
+	// 浮遊感の曲（{@link TonalPlan.floating}）は主音へ着地しないのが狙いなので、
+	// 移調が揃っているかだけを別の形で見る（伴奏との照合は下のコード展開で行う）。
+	if (!song.tonal.floating)
+		check(
+			`${tag} 終止音が調の主音（移調後）`,
+			lastPc === 0,
+			`移調 ${song.rootShift}+${lastKeyShift} 半音 / 終止音のハ長調換算 ${lastPc}`,
+		);
 	check(
 		`${tag} テンポが妥当`,
 		song.bpm >= 60 && song.bpm <= 200,
@@ -401,8 +404,9 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	if (verse && chorus)
 		check(`${tag} サビの進行がAメロと違う`, verse !== chorus, `A=${verse}`);
 	// Bメロはサビへの助走なので、ドミナントで宙吊りにして終わる。
+	// 平行調へ振ったセクションは主調のドミナントを通らない（明暗の入れ替えが目的）。
 	const pre = song.sections.find((x) => x.kind === "prechorus");
-	if (pre) {
+	if (pre && !song.tonal.relativeKinds.includes("prechorus")) {
 		const last = progBars[pre.startBar + pre.bars - 1];
 		const expG = transposeChordName("G", pre.keyShift);
 		const expG7 = transposeChordName("G7", pre.keyShift);
@@ -412,10 +416,10 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 			`${last} (期待 ${expG})`,
 		);
 	}
-	// サビとアウトロは主音へ着地して締める。
+	// サビとアウトロは主音へ着地して締める。浮遊感の曲は解決しないのが狙いなので除く。
 	for (const kind of ["chorus", "outro"]) {
 		const sec = song.sections.find((x) => x.kind === kind);
-		if (!sec) continue;
+		if (!sec || song.tonal.floating) continue;
 		const last = progBars[sec.startBar + sec.bars - 1];
 		const expC = transposeChordName("C", sec.keyShift);
 		const expAm = transposeChordName("Am", sec.keyShift);
@@ -774,6 +778,60 @@ console.log("● 変化音（調の外の音）");
 //   ハモリの定石: 3度か6度で当てる／完全5度は浮くので避ける／
 //   必ず和音構成音へ合わせる／全編ではなく要所（サビ・Bメロ）で入れる。
 // ============================================================
+
+console.log("● 平行調とトニック回避");
+{
+	const N = 300;
+	let relative = 0;
+	let floating = 0;
+	let floatingNoTonic = 0;
+	let relativeAndShift = 0;
+	for (let seed = 1; seed <= N; seed++) {
+		const song = composeSong({
+			stepsPerBar: STEPS_PER_BAR,
+			random: seededRandom(seed * 104729),
+			template: "jpop_standard",
+		});
+		const chords = song.chordProgression.split("|");
+		const minor = song.keyName.endsWith("m");
+		const isTonic = (c: string): boolean =>
+			minor ? /^Am/.test(c) : /^C(?![#b]|m)/.test(c);
+
+		if (song.tonal.relativeKinds.length > 0) {
+			relative++;
+			// 平行調は調号を変えずに明暗だけを入れ替える手法なので、半音の転調と
+			// 混ぜない（混ぜると何が起きているのか聞き分けられない）。
+			if (song.sections.some((x) => x.keyShift !== 0)) relativeAndShift++;
+		}
+		if (song.tonal.floating) {
+			floating++;
+			if (!chords.some(isTonic)) floatingNoTonic++;
+		}
+	}
+	check(
+		"平行調のセクションを持つ曲が2〜5割",
+		relative / N >= 0.2 && relative / N <= 0.5,
+		`${((relative / N) * 100).toFixed(0)}%`,
+	);
+	check(
+		"平行調と半音の転調を同じ曲で重ねない",
+		relativeAndShift === 0,
+		`${relativeAndShift}曲`,
+	);
+	check(
+		"浮遊感の曲が1割前後",
+		floating / N >= 0.05 && floating / N <= 0.2,
+		`${((floating / N) * 100).toFixed(0)}%`,
+	);
+	check(
+		"浮遊感の曲の3割以上がトニックを一度も鳴らさない",
+		floating === 0 || floatingNoTonic / floating >= 0.3,
+		`${floatingNoTonic}/${floating}`,
+	);
+	console.log(
+		`  ${N}曲: 平行調 ${((relative / N) * 100).toFixed(0)}% / 浮遊感 ${((floating / N) * 100).toFixed(0)}%（うちトニック皆無 ${floating ? Math.round((floatingNoTonic / floating) * 100) : 0}%）`,
+	);
+}
 
 console.log("● ハモリと掛け合い");
 {

@@ -1343,6 +1343,8 @@ export type ComposeResult = {
 	bars: number;
 	/** 歌の割り当て（ハモリ・デュエット）。{@link VocalPlan} */
 	vocal: VocalPlan;
+	/** 調のふるまい（平行調・トニック回避）。{@link TonalPlan} */
+	tonal: TonalPlan;
 	/** 曲に合わせて組み込みから自動選択されたドラムパターン名（DRUM_PATTERNS のキー）。 */
 	drum: string;
 	/** 曲に合わせて組み込みから自動選択された楽器プリセット名（INSTRUMENT_PRESETS のキー）。 */
@@ -2298,6 +2300,17 @@ export type VocalPlan = {
 	harmonyKinds: SectionKind[];
 };
 
+/** 曲の調のふるまい。 */
+export type TonalPlan = {
+	/**
+	 * 平行調へ振ったセクション種別。ハ長調とイ短調は同じ音の集合なので、調号も
+	 * 仲介の和音も要らずに明暗だけが入れ替わる（`keyShift` は 0 のまま）。
+	 */
+	relativeKinds: SectionKind[];
+	/** トニックを避けて浮遊感を出す曲か。主和音を鳴らさず、主音へも着地しない。 */
+	floating: boolean;
+};
+
 /** 1回分の draw。点数を付けるのは呼び出し側（{@link evaluate}）の仕事。 */
 type Draw = Omit<ComposeResult, "stats" | "drum" | "instrument"> & {
 	melodyDurations: number[];
@@ -2363,10 +2376,33 @@ const draw = (
 	);
 	const totalBars = sectionPlan.reduce((sum, s) => sum + s.bars, 0);
 
+	/**
+	 * **平行調へ振るセクション。** ハ長調とイ短調は同じ音の集合なので、調号も変えず、
+	 * 仲介の和音（ピボット・コード）も要らずに明暗だけを入れ替えられる。半音上げの
+	 * 転調と違って `keyShift` は 0 のままで、**進行と着地音の中心だけが移る**。
+	 * Bメロで陰らせてサビで開ける、というのがいちばん効く置き方。
+	 */
+	const relativeKinds = new Set<SectionKind>();
+	if (rnd() < 0.3)
+		for (const kind of pick<SectionKind[]>(
+			[["prechorus"], ["bridge"], ["prechorus", "bridge"], ["verse"]],
+			rnd,
+		))
+			relativeKinds.add(kind);
+
+	/**
+	 * **トニックを避ける（浮遊感）。** 主和音を鳴らさず主音へも着地しないと、明るいのか
+	 * 暗いのか決まらない浮いた感じになる。近年のポップスやゲーム・アニメの劇伴で定番。
+	 * 曲全体でやると芯が無くなるので、1割強の曲でだけ引く。
+	 */
+	const floating = rnd() < 0.12;
+
 	// 約35%の曲でセクションごとの曲中転調（ラスサビ転調・Bメロ転調）を入れる。
 	// 伴奏トラックは rootShift が曲全体に掛かるため、曲中の調変化は各小節のコード名を移調し、
 	// メロディ・サブメロ・ベースの各トラックもそのセクションの小節だけ音高をシフトする。
-	if (rnd() < 0.35) {
+	// 平行調の曲では半音の転調を重ねない（明暗の入れ替えが埋もれる）。浮遊感の曲でも
+	// 掛けない——移調すると避けていたはずの和音が主和音の位置へ来てしまう。
+	if (relativeKinds.size === 0 && !floating && rnd() < 0.35) {
 		const modType = pick<"chorus_up" | "prechorus_down">(
 			["chorus_up", "chorus_up", "prechorus_down"],
 			rnd,
@@ -2493,16 +2529,45 @@ const draw = (
 			: resolvedKey.mode === "minor"
 				? SECTION_A_PROGRESSIONS.filter((p) => p[0].startsWith("Am"))
 				: SECTION_A_PROGRESSIONS;
-	const progA = pick(progAPool, rnd);
+	/** トニックを含まない進行だけに絞る（浮遊感の曲用）。 */
+	const withoutTonic = (pool: string[][], root: string): string[][] => {
+		// "CM7" は C のトニック、"Cm" は別物。ルートの文字だけで判定する。
+		const isTonic = (c: string): boolean =>
+			root === "Am" ? /^Am/.test(c) : /^C(?![#b]|m)/.test(c);
+		const out = pool.filter((p) => !p.some(isTonic));
+		return out.length > 0 ? out : pool;
+	};
+	const homeRoot = resolvedKey.mode === "minor" ? "Am" : "C";
+	const progA = pick(
+		floating ? withoutTonic(progAPool, homeRoot) : progAPool,
+		rnd,
+	);
 	// サビはAメロと質感を変えるのが役目なので、同じ進行を引いたら引き直す。
 	const progBPool = SECTION_B_PROGRESSIONS.filter(
 		(p) => p.join("|") !== progA.join("|"),
 	);
-	const progB = pick(progBPool, rnd);
+	const progB = pick(
+		floating ? withoutTonic(progBPool, homeRoot) : progBPool,
+		rnd,
+	);
+	/**
+	 * 平行調の進行。長調の曲ならイ短調側、短調の曲ならハ長調側から引く。
+	 * 同じ音階の上に居るので、移調も仲介の和音も要らない。
+	 */
+	const progRelativePool = SECTION_A_PROGRESSIONS.filter((p) =>
+		resolvedKey.mode === "minor"
+			? !p[0].startsWith("Am")
+			: p[0].startsWith("Am"),
+	);
+	const progRelative = pick(
+		floating ? withoutTonic(progRelativePool, homeRoot) : progRelativePool,
+		rnd,
+	);
+	const progCPool = SECTION_C_PROGRESSIONS.filter(
+		(p) => p.join("|") !== progA.join("|") && p.join("|") !== progB.join("|"),
+	);
 	const progC = pick(
-		SECTION_C_PROGRESSIONS.filter(
-			(p) => p.join("|") !== progA.join("|") && p.join("|") !== progB.join("|"),
-		),
+		floating ? withoutTonic(progCPool, homeRoot) : progCPool,
 		rnd,
 	);
 	const tonic = progA[0].startsWith("Am") ? "Am" : "C";
@@ -2512,8 +2577,9 @@ const draw = (
 	const progFull = pick(SECTION_A3_DERIVATIONS, rnd)(progA, tonic);
 	const progression: string[] = [];
 	for (const section of sectionPlan) {
-		const base =
-			section.spec.progression === "c"
+		const base = relativeKinds.has(section.kind)
+			? progRelative
+			: section.spec.progression === "c"
 				? progC
 				: section.spec.progression === "b"
 					? progB
@@ -2526,9 +2592,12 @@ const draw = (
 				progression.push(...base);
 				continue;
 			}
-			if (section.kind === "prechorus") progression.push(...progHalf);
+			// 浮遊感の曲は主音で締めない（{@link floating}）。締めの進行は
+			// 定義上トニックで終わるので、ドミナントで宙吊りのまま渡す。
+			if (relativeKinds.has(section.kind)) progression.push(...base);
+			else if (section.kind === "prechorus") progression.push(...progHalf);
 			else if (section.kind === "chorus" || section.kind === "outro")
-				progression.push(...progFull);
+				progression.push(...(floating ? progHalf : progFull));
 			else progression.push(...base);
 		}
 	}
@@ -2573,6 +2642,23 @@ const draw = (
 				: kind === "bridge"
 					? "c"
 					: "a";
+	/**
+	 * そのセクションの着地音（主音からの音階度数）。
+	 *
+	 * - **平行調のセクションは平行調の主音へ着地する。** ハ長調のイ短調セクションなら
+	 *   ラ（6度＝度数5）。和音だけ平行調にして着地音を主調のままにすると、進行と
+	 *   旋律が別の調を向いて宙に浮く。
+	 * - **浮遊感の曲は主音へ着地しない。** 3度か5度で止めると、明るいのか暗いのかが
+	 *   決まらないまま終われる。
+	 */
+	const landingOf = (section: PlacedSection): number | null => {
+		let landing = section.spec.landing;
+		if (landing === null) return null;
+		if (relativeKinds.has(section.kind)) landing = (landing + 5) % 7;
+		if (floating && landing === 0) landing = pick([2, 4], rnd);
+		return landing;
+	};
+
 	const units: Unit[] = [];
 	for (const section of sectionPlan) {
 		const unitCount = Math.max(1, Math.round(section.bars / 2));
@@ -2608,10 +2694,11 @@ const draw = (
 				});
 			} else {
 				// 答え。セクションの最後だけ、そのセクションの役目に応じて着地する。
+				const landing = landingOf(section);
 				units.push({
-					role: isLast && section.spec.landing === 0 ? "cadence" : "answer",
+					role: isLast && landing === 0 ? "cadence" : "answer",
 					source: "answer",
-					landing: isLast ? section.spec.landing : null,
+					landing: isLast ? landing : null,
 					section,
 				});
 			}
@@ -3766,6 +3853,7 @@ const draw = (
 		sections: sectionPlan,
 		bars: totalBars,
 		vocal: { duetSpans, duetStyle, harmonyKinds },
+		tonal: { relativeKinds: [...relativeKinds], floating },
 		melody,
 		submelody,
 		bass,
@@ -3901,7 +3989,9 @@ const evaluate = (
 				.densityCliff,
 		),
 		tensionRise: tension.rise,
-		tensionResolve: tension.resolve,
+		// **浮遊感の曲に「終止で解決しろ」は要求しない。** 解決しないことが狙いなので、
+		// この項目で減点すると候補40本の選抜で必ず負けて、狙って引いた曲が出てこない。
+		tensionResolve: d.tonal.floating ? 1 : tension.resolve,
 		novelty,
 	};
 
@@ -3993,6 +4083,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			sections: d.sections,
 			bars: d.bars,
 			vocal: d.vocal,
+			tonal: d.tonal,
 			melody: d.melody,
 			submelody: d.submelody,
 			bass: d.bass,
