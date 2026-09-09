@@ -93,6 +93,7 @@ const main = async (): Promise<void> => {
 				{ notes: toNotes(song.submelody), volume: 70, program: subProg },
 				{ notes: toNotes(song.harmony), volume: 60, program: melProg },
 				{ notes: toNotes(song.harmony2), volume: 52, program: melProg },
+				{ notes: toNotes(song.octave), volume: 44, program: melProg },
 				{ notes: toNotes(song.bass), volume: 85, program: bassProg },
 				{ notes: toNotes(song.pad), volume: 50, program: chordProg },
 				{ notes: toNotes(chords), volume: 65, program: chordProg },

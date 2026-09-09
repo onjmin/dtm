@@ -5639,9 +5639,7 @@ export const mountDAW = (
 								: layer.part === "harmony2"
 									? song.harmony2
 									: layer.index === 13
-										? song.vocal.octaveLayer
-											? song.melody
-											: []
+										? song.octave
 										: layer.part === "melody"
 											? song.melody
 											: layer.part === "harmony"
@@ -5838,9 +5836,16 @@ export const mountDAW = (
 									melodyTrack.lyricModel,
 								);
 							const octaveTrack = trackStates[13];
-							if (song.vocal.octaveLayer && octaveTrack) {
+							if (song.octave.length > 0 && octaveTrack) {
 								// 同じ歌い手が1オクターブ下でなぞる。ハモリではなく厚みの層。
-								sing(octaveTrack, melodyTrack.lyrics, melodyTrack.lyricModel);
+								// 主旋律の一部にしか乗らないので、歌詞も担当ぶんだけ写す。
+								sing(
+									octaveTrack,
+									alignLyrics(song.melody, melodyTrack.lyrics, song.octave, {
+										stepsPerBar,
+									}),
+									melodyTrack.lyricModel,
+								);
 								octaveTrack.vocalOctave = -2;
 							}
 						}

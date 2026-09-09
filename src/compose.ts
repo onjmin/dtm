@@ -1422,6 +1422,11 @@ export type ComposeResult = {
 	harmony: ComposedNote[];
 	/** 2声目のハモリ。{@link VocalPlan.harmony2} が true のときだけ中身が入る。 */
 	harmony2: ComposedNote[];
+	/**
+	 * 主旋律のオクターブ下の重ね（{@link VocalPlan.octaveLayer}）。音高は主旋律の
+	 * ままで、トラック側のオクターブ設定で下げる。要所だけなので主旋律の一部。
+	 */
+	octave: ComposedNote[];
 	/** コードパッド。ストリングス/シンセパッド的なロングトーン。Bメロ以降で鳴る。 */
 	pad: ComposedNote[];
 	stats: ComposeStats;
@@ -1528,6 +1533,13 @@ const harmonyPitch = (
 	offset: number,
 	/** 主旋律と同じだけ動く並走ハモリか。false なら動かない静的ハモリ。 */
 	parallel: boolean,
+	/**
+	 * 同時に鳴るもう1声（3声のときの1声目）。**ハモリどうしも協和する。**
+	 * 参考曲（チョウチン少女 ch11/ch13）では、2声の間が3度・6度・5度・オクターブに
+	 * なる割合が90%（+9:32% +4:21% +7:16% +12:14%）。主旋律との関係だけで
+	 * 独立に決めると、ここが濁る。
+	 */
+	against: number | null,
 ): ScaleDegree => {
 	// 探す範囲は居場所の周り。上ハモの曲で上を切ると、6度上（+9）が作れない。
 	const lo = Math.max(-12, Math.min(offset, 0) - 7);
@@ -1549,8 +1561,22 @@ const harmonyPitch = (
 				: move <= 2
 					? move * 0.04
 					: 0.1 + (move - 2) * 0.9;
+			// もう1声との音程。3度・6度・5度を良しとし、同じ音名（ユニゾン・
+			// オクターブ）は3声に聞こえないので少し避ける。参考曲でも +12 は14%で、
+			// 3度・6度・5度が7割を占める。
+			let clash = 0;
+			if (against !== null) {
+				const g = Math.abs(semi - against) % 12;
+				clash =
+					g === 3 || g === 4 || g === 8 || g === 9 || g === 7
+						? 0
+						: g === 0
+							? 0.5
+							: 1.2;
+			}
 			const cost =
 				stay +
+				clash +
 				Math.abs(delta - offset) * (parallel ? 1.4 : 0.7) +
 				(3 - tone.weight) * 0.4;
 			if (cost < bestCost) {
@@ -2562,6 +2588,8 @@ const draw = (
 	const useHarmony2 = rnd() < 0.3;
 	/** 主旋律のオクターブ下の重ね。3声のときは声を増やしすぎるので出さない。 */
 	const useOctaveLayer = !useHarmony2 && rnd() < 0.25;
+	/** その重ねが主旋律のどれだけを覆うか。参考曲は29〜59%。 */
+	const octaveCoverage = 0.3 + rnd() * 0.3;
 	/**
 	 * ハモリの居場所（主旋律から何半音ずれた辺りに置くか）。参考曲7組を集計すると
 	 * 上が62%で、音程は +3 / −5 / +5 / +4 が10〜13%ずつ並ぶ広い分布になる。
@@ -2570,15 +2598,19 @@ const draw = (
 	const harmonyOffset = useHarmony2
 		? // 3声のときは1声目を下〜ユニゾン側へ寄せ、2声目を上へ回して主旋律を挟む
 			// （参考: チョウチン少女 ch12/ch11/ch13）。
-			pick([-5, -4, -3, 0], rnd)
+			pick([-5, -3, 0, 0, 3], rnd)
 		: harmonyParallel
 			? pick([3, 4, 5, 9, 7, 0, -5], rnd)
 			: pick([3, 4, 5, 0, -5, -4, -7], rnd);
 	/** 直前のハモリの音。小節をまたいで持ち越す（動かない線を作るため）。 */
 	let prevHarmony: number | null = null;
 	let prevHarmony2: number | null = null;
-	/** 2声目の居場所。主旋律の上へ置く（参考曲は +7〜+9 が7割）。 */
-	const harmony2Offset = pick([7, 8, 9, 9, 4], rnd);
+	/**
+	 * 2声目の居場所。**1声目から3度・6度・5度**の位置に置く。主旋律との関係だけで
+	 * 独立に決めると2声がオクターブで重なりやすく、3声に聞こえない
+	 * （参考曲のハモ1→ハモ2は +9:32% +4:21% +7:16% で、+12 は14%しかない）。
+	 */
+	const harmony2Offset = harmonyOffset + pick([9, 9, 9, 8, 7], rnd);
 	const harmonyKinds: SectionKind[] =
 		harmonyFrom === "prechorus"
 			? ["prechorus", "chorus", "bridge"]
@@ -3704,13 +3736,18 @@ const draw = (
 			const k = barKeyShift[bar];
 			const fifthShift =
 				k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
-			/** 1声ぶんのハモリを書く。`prev` を返して次の小節へ持ち越す。 */
+			/**
+			 * 1声ぶんのハモリを書く。`prev` を返して次の小節へ持ち越す。
+			 * `against` にもう1声の音を渡すと、そこと協和する音を選ぶ。
+			 */
 			const writeHarmony = (
 				out: ComposedNote[],
 				prev: number | null,
 				offset: number,
-			): number | null => {
+				against: (number | null)[] | null,
+			): (number | null)[] => {
 				let last = prev;
+				const written: (number | null)[] = [];
 				for (let i = 0; i < slots.length; i++) {
 					const hTone = harmonyPitch(
 						pitches[i],
@@ -3718,6 +3755,7 @@ const draw = (
 						last,
 						offset,
 						harmonyParallel,
+						against?.[i] ?? null,
 					);
 					// 折り返す範囲を主旋律の音域より広く取る。ここを MELODY_HIGH で切ると、
 					// 高いところの上ハモがオクターブ下へ畳まれて下ハモに化ける。
@@ -3731,6 +3769,7 @@ const draw = (
 					while (hClamped - pitches[i] > 12) hClamped -= 12;
 					while (hClamped - pitches[i] < -12) hClamped += 12;
 					last = hClamped;
+					written.push(hClamped);
 					// 間引き。強拍と長い音は残し、短い弱拍から落とす。
 					const keep =
 						slots[i].isStrong ||
@@ -3748,12 +3787,15 @@ const draw = (
 						velocity: slots[i].at === 0 ? 82 : 76,
 					});
 				}
-				return last;
+				return written;
 			};
-			prevHarmony = writeHarmony(harmony, prevHarmony, harmonyOffset);
-			// 2声目は1声目と反対側。主旋律を上下から挟む形になる。
-			if (useHarmony2)
-				prevHarmony2 = writeHarmony(harmony2, prevHarmony2, harmony2Offset);
+			const h1 = writeHarmony(harmony, prevHarmony, harmonyOffset, null);
+			prevHarmony = h1[h1.length - 1] ?? prevHarmony;
+			// 2声目は主旋律の上へ。1声目と協和する音を選ぶ。
+			if (useHarmony2) {
+				const h2 = writeHarmony(harmony2, prevHarmony2, harmony2Offset, h1);
+				prevHarmony2 = h2[h2.length - 1] ?? prevHarmony2;
+			}
 		}
 
 		// --- コードパッド ---
@@ -4110,6 +4152,18 @@ const draw = (
 		for (const list of [melody, submelody, bass, harmony, harmony2, pad])
 			for (const n of list) n.pitchUnits = (n.pitchUnits + shiftUnits) as Units;
 
+	// **オクターブ重ねは主旋律の全部にはかけない。** 参考曲の重ねの層は主旋律の
+	// 29〜59%にしか乗っておらず、要所だけ厚くする使い方だった。長い音を残して
+	// 短い音から落とす。移調が済んだ後の音をそのまま写す（トラック側のオクターブ
+	// 設定で下げるので、ここでは音高を触らない）。
+	const octave: ComposedNote[] = useOctaveLayer
+		? melody
+				.filter(
+					(n) => n.durationSteps >= quarterSteps || rnd() < octaveCoverage,
+				)
+				.map((n) => ({ ...n, velocity: Math.max(40, n.velocity - 26) }))
+		: [];
+
 	return {
 		chordProgression,
 		chordPattern,
@@ -4133,6 +4187,7 @@ const draw = (
 		bass,
 		harmony,
 		harmony2,
+		octave,
 		pad,
 		melodyDurations,
 		restSteps,
@@ -4364,6 +4419,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			bass: d.bass,
 			harmony: d.harmony,
 			harmony2: d.harmony2,
+			octave: d.octave,
 			pad: d.pad,
 			stats: { ...stats, attempts: attempt, rejected },
 		};
