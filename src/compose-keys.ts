@@ -408,13 +408,20 @@ export const resolveComposeKey = (
 		};
 	}
 
-	// 5. 希望なし (any): 長調・短調の制約なし、全24調からランダム抽選
+	// 5. 希望なし (any): 全24調からランダム抽選。
+	//
+	// **引いた調の長短を必ず返す。** `mode: undefined` を返してコード進行の長短制約を
+	// 外していた頃は、進行の長短が調の名前と無関係に決まっていた。短調は Am からの、
+	// 長調は C からの移調量で `rootShift` を持つので、名前だけ短調で進行が長調だと
+	// 実際の主音がずれる——実測で65%の曲が「名乗っている調と主音が食い違う」状態
+	// （例: 「ホ短調」と表示してト長調の曲を出す）。UIはこの名前をそのまま出すので、
+	// 進行の側を名前に合わせる。
 	const allKeyIds = Object.keys(COMPOSE_KEYS);
 	const pickedKeyId = pickItem(allKeyIds, rnd);
 	const target = COMPOSE_KEYS[pickedKeyId];
 	const targetMood = COMPOSE_MOOD_GROUPS.find((m) => m.id === target.moodId);
 	return {
-		mode: undefined, // コード進行の長短制約は掛けず従来通りランダム
+		mode: target.mode,
 		rootShift: target.rootShift,
 		keyName: target.name,
 		keyLabel: target.label,

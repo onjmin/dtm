@@ -262,6 +262,15 @@ const FLAT_NOTE_NAMES = [
  * 半音シフト量（0〜11）に対応する五度圏インデックスの変化量。
  * 12平均律・31平均律ともに五度圏インデックスを保つために用いる。
  */
+/**
+ * 2つの調が五度圏で何歩離れているか（0〜6）。近いほど共通するダイアトニックコードが
+ * 多く、転調が自然になる。属調・下属調が1歩、長2度・短3度が2〜3歩、半音上げは5歩。
+ */
+const fifthsDistance = (semitones: number): number => {
+	const steps = (((semitones * 7) % 12) + 12) % 12;
+	return Math.min(steps, 12 - steps);
+};
+
 const SEMITONE_TO_FIFTH_SHIFT = [
 	0, // 0: C
 	7, // 1: C# (+7)
@@ -520,18 +529,63 @@ const SECTION_A2_DERIVATIONS: ((a: string[]) => string[])[] = [
 ];
 
 /**
- * A''（13〜16小節）の作り方。**必ず主音（C か Am）へ着地させる**（全終止）。
- * `tonic` は A部の始まりが Am 系かどうかで決める。
+ * セクションの締めの4小節。`tonic` は A部の始まりが Am 系かどうかで決める。
+ *
+ * 終止形は主音へ落とすものばかりではない。解説の言う4種類を持つ。
+ *
+ * - **全終止**（V→I）… いちばん強い終わり方。曲の終わりと大きな区切りに
+ * - **アーメン終止**（IV→I）… 静かに落ち着く。柔らかく終わりたいところに
+ * - **サブドミナントマイナー終止**（IVm→I）… アーメン終止の変形で、独特の色が付く
+ * - **偽終止**（V→VI）… 主和音が来ると思わせて代理和音へ落とす。**曲を続けたい**
+ *   ところに置く。VIm は I とよく似た響きなので、着地したのに終わっていない
  */
 const SECTION_A3_DERIVATIONS: ((a: string[], tonic: string) => string[])[] = [
 	(a, t) => [a[0], a[1], "G7", t],
 	(a, t) => [a[0], "Dm7", "G7", t],
-	(a, t) => [a[0], "F", "G7", t],
 	(a, t) => [a[0], a[1], "Em7", t],
-	(a, t) => [a[0], "FM7", "G7", t],
+	// アーメン終止（IV→I）
+	(a, t) => [a[0], "G7", "F", t],
+	(a, t) => [a[0], "Dm7", "FM7", t],
+	// サブドミナントマイナー終止（IVm→I）
+	(a, t) => [a[0], "G7", "Fm", t],
+	(a, t) => [a[0], "F", "Fm", t],
+];
+
+/**
+ * 偽終止の4小節。主和音の代わりに、その代理（長調なら VIm、短調なら VI）へ落とす。
+ * **途中のサビ**に置く——ここで全終止すると曲がそのたびに終わってしまう。
+ */
+const SECTION_DECEPTIVE_DERIVATIONS: ((
+	a: string[],
+	tonic: string,
+) => string[])[] = [
+	(a, t) => [a[0], a[1], "G7", t === "Am" ? "F" : "Am"],
+	(a, t) => [a[0], "Dm7", "G7", t === "Am" ? "FM7" : "Am7"],
+	(a, t) => [a[0], "F", "G7", t === "Am" ? "F" : "Am7"],
 ];
 
 /** 伴奏の奏法。曲ごとにランダムに引く。 */
+/**
+ * **モーダルインターチェンジ（借用和音）。** 同主短調（ハ長調に対するハ短調）の
+ * ダイアトニックコードを1つだけ借りて差し込む。意外性のある響きが付く代わりに、
+ * 解説はどれも「調性感を失いやすい」と警告しているので、
+ *
+ * - 借りるのは1曲に1和音だけ
+ * - **主和音へ向かう手前**に置く。IV→IVm→I のように解決先があれば調は壊れない
+ *
+ * という2点を守る。キーはハ長調のダイアトニック、値が同主短調から借りた形。
+ */
+const MODAL_BORROW: Record<string, string> = {
+	F: "Fm", // IV → IVm（サブドミナントマイナー。いちばん定番）
+	FM7: "Fm7",
+	Am: "Ab", // VIm → ♭VI
+	Am7: "Ab",
+	G: "Bb", // V → ♭VII（ミクソリディアン）
+	G7: "Bb",
+	Em7: "Eb", // IIIm → ♭III
+	Dm7: "Dm7-5", // IIm7 → IIm7♭5（エオリアン）
+};
+
 /**
  * 伴奏の奏法の候補。`arpeggio-fast` は速い曲だと伴奏がメロディを食うので、
  * テンポで絞ってから引く（{@link chordPatternPool}）。
@@ -2207,7 +2261,8 @@ const nearestOctaveOf = (near: number, semi: number): number => {
  * 音は音数比で中央値4%、生成物は0%だった。これが「調が固定に聞こえる」の実体。
  *
  * 通すのは3つ。**和音の変化音**（`E7` の `G#`）は強拍と長い音で、半音〜全音以内に
- * あるときだけ寄せる——ここが泣きメロの芯になる。**半音の経過音**と**半音のアプローチ**
+ * あるときだけ寄せる——ここが泣きメロの芯になり、クリシェの小節では実測54%で
+ * メロディが半音の動きを歌う（ソプラノ・クリシェ）。**半音の経過音**と**半音のアプローチ**
  * は弱拍・短い音でだけ作るので、調の感じは壊れない。曲ごとに
  * {@link MelodyStyle.chromaticAffinity} を引くので、変化音を使わない曲も混ざる。
  */
@@ -2617,6 +2672,13 @@ const draw = (
 	const progHalf = pick(SECTION_A2_DERIVATIONS, rnd)(progA);
 	/** 主音で終わる4小節（セクションの締めに使う）。 */
 	const progFull = pick(SECTION_A3_DERIVATIONS, rnd)(progA, tonic);
+	/** 主和音の代理へ落とす4小節（途中のサビを続けるのに使う）。 */
+	const progDeceptive = pick(SECTION_DECEPTIVE_DERIVATIONS, rnd)(progA, tonic);
+	/** 曲の最後のサビ。ここだけは全終止で締める。 */
+	let lastChorusBar = -1;
+	for (const section of sectionPlan)
+		if (section.kind === "chorus" || section.kind === "outro")
+			lastChorusBar = section.startBar;
 	const progression: string[] = [];
 	for (const section of sectionPlan) {
 		const base = relativeKinds.has(section.kind)
@@ -2639,7 +2701,15 @@ const draw = (
 			if (relativeKinds.has(section.kind)) progression.push(...base);
 			else if (section.kind === "prechorus") progression.push(...progHalf);
 			else if (section.kind === "chorus" || section.kind === "outro")
-				progression.push(...(floating ? progHalf : progFull));
+				// **途中のサビは偽終止で続ける。** 毎回主音へ全終止すると、サビのたびに
+				// 曲が終わってしまう。全終止は最後のサビ（またはアウトロ）だけ。
+				progression.push(
+					...(floating
+						? progHalf
+						: section.startBar === lastChorusBar
+							? progFull
+							: progDeceptive),
+				);
 			else progression.push(...base);
 		}
 	}
@@ -2666,6 +2736,12 @@ const draw = (
 		const shift = barKeyShift[bar];
 		const prev = barKeyShift[bar - 1];
 		if (shift === prev) continue;
+		// **五度圏で何歩離れたかで、橋渡しの要否と種類が決まる。**
+		//   1歩（属調・下属調）… 共通の和音が多い。ピボットが効く
+		//   2〜3歩（長2度・短3度）… 共通が減る。新しい調のドミナントで引っぱる
+		//   5歩（半音上げ）… 遠い。準備の無さそのものが効果なので何も置かない
+		const distance = fifthsDistance(shift - prev);
+		if (distance >= 4) continue;
 		// **役目の決まっている小節は潰さない。** Bメロ末尾はサビへの助走（半終止）、
 		// サビ・アウトロ末尾は全終止で、そこを橋渡しに使うと役目が競合する。
 		const prevSec = sectionAt(sectionPlan, bar - 1);
@@ -2678,13 +2754,33 @@ const draw = (
 		// 転調のたびに毎回は置かない。置きすぎると進行が橋渡しだらけになる。
 		if (rnd() < 0.35) continue;
 		const pivots = PIVOT_CHORDS[(((shift - prev) % 12) + 12) % 12];
-		if (pivots && rnd() < 0.6) {
+		if (distance <= 1 && pivots && rnd() < 0.6) {
 			// ピボット: 前の調のまま、共通の和音を鳴らす。
 			progression[bar - 1] = pick(pivots, rnd);
-		} else if (Math.abs(shift - prev) !== 1 && Math.abs(shift - prev) !== 2) {
+		} else {
 			// ドミナントモーション: 新しい調のV7を1小節先取りする。
-			progression[bar - 1] = "G7";
-			barKeyShift[bar - 1] = shift;
+			// **小節の調（`barKeyShift`）は動かさない。** 動かすとその小節だけ
+			// セクションと別の調になり、旋律も検算もセクション単位の前提が崩れる。
+			// 和音の名前を移調して書き込めば、鳴る音は同じで前提だけ保たれる。
+			progression[bar - 1] = transposeChordName("G7", shift - prev);
+		}
+	}
+
+	// --- モーダルインターチェンジ ---
+	// 同主短調から1和音だけ借りる（{@link MODAL_BORROW}）。**次が主和音の小節**に
+	// だけ置くので、借りた響きは必ず解決先を持つ。
+	if (rnd() < 0.3) {
+		const tonicNames = tonic === "Am" ? ["Am", "Am7"] : ["C", "CM7"];
+		const spots: number[] = [];
+		for (let bar = 0; bar + 1 < totalBars; bar++) {
+			if (barKeyShift[bar] !== barKeyShift[bar + 1]) continue;
+			if (!MODAL_BORROW[progression[bar]]) continue;
+			if (!tonicNames.includes(progression[bar + 1])) continue;
+			spots.push(bar);
+		}
+		if (spots.length > 0) {
+			const at = pick(spots, rnd);
+			progression[at] = MODAL_BORROW[progression[at]];
 		}
 	}
 
@@ -2737,10 +2833,16 @@ const draw = (
 	 *   決まらないまま終われる。
 	 */
 	const landingOf = (section: PlacedSection): number | null => {
-		let landing = section.spec.landing;
-		if (landing === null) return null;
-		if (relativeKinds.has(section.kind)) landing = (landing + 5) % 7;
-		if (floating && landing === 0) landing = pick([2, 4], rnd);
+		if (section.spec.landing === null) return null;
+		// **短調の曲の主音はラ（度数5）。** {@link SECTION_SPECS} の着地音はハ長調の
+		// 度数で書いてあるので、短調ならそのぶんずらす。ここを 0 のままにしていた頃は、
+		// 短調の曲が平行長調の主音（ド）へ着地していて、自分の調へ解決していなかった。
+		// 平行調のセクションは長短が入れ替わるので、ずらす／ずらさないも入れ替わる。
+		const minorHere =
+			(resolvedKey.mode === "minor") !== relativeKinds.has(section.kind);
+		let landing = (section.spec.landing + (minorHere ? 5 : 0)) % 7;
+		if (floating && landing === (minorHere ? 5 : 0))
+			landing = (landing + pick([2, 4], rnd)) % 7;
 		return landing;
 	};
 
