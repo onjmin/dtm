@@ -81,8 +81,35 @@ export const DEFAULT_SECTIONS: SectionKind[] = [
 ];
 
 export type SectionSpec = {
-	/** 小節数。 */
+	/**
+	 * 小節数の代表値。`rnd` を渡さずに {@link buildSectionPlan} を呼んだときの長さで、
+	 * 「押す前に曲の長さを見せる」UI 表示などが使う。実際の作曲は
+	 * {@link SectionSpec.barChoices} から seed ごとに引く。
+	 */
 	bars: number;
+	/**
+	 * seed ごとに引くセクション長の候補（要素の重複が重み）。
+	 *
+	 * **なぜ定数をやめたか。** 長さが定数だと、BPM も調もメロディ型も引き直している
+	 * のに**曲の骨格だけが全 seed で同一**になる。曲の頭からの小節割りが毎回同じなのは
+	 * 生成器の指紋そのもので、参考曲と一致しているかどうか以前の問題。加えて
+	 * `scripts/compare-reach.ts` の教訓（`scripts/README.md` の4番）どおり、
+	 * **候補に一度も現れない長さは、採点の重みをどう変えても出てこない**。
+	 *
+	 * **なぜ4の倍数か。** 参考コーパス91本の主旋律を1小節以上の休みで切って
+	 * ブロック長を測ると、71%が4の倍数・82%が偶数で、8/16/24/32小節に山が立つ。
+	 * 加えてコード進行を4小節単位のまとまりで組んでいる（`compose.ts` の `progression`）
+	 * ので、4の倍数から外れた長さは締めの4小節が途中で切れる。
+	 *
+	 * イントロだけは実測がはっきりしている。曲頭から主旋律が入るまでの小節数は
+	 * 0小節が33%・8小節が30%・4小節が15%で、**8小節が4小節の約2倍**。曲の長さとの
+	 * 相関は r=0.01 で、長い曲ほどイントロが長いという関係は無い（＝曲長の関数に
+	 * してはいけない）。0小節はここでは引かない。「イントロを作るか」は UI の
+	 * チェックで表明されているので、チェックが付いているのに消すのは筋が違う。
+	 *
+	 * 省略時は {@link SectionSpec.bars} 固定（外から独自の spec を渡す場合のため）。
+	 */
+	barChoices?: number[];
 	/** メロディを書くか。イントロと間奏は伴奏だけ。 */
 	melody: boolean;
 	/**
@@ -108,8 +135,10 @@ export type SectionSpec = {
 
 export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 	// イントロは曲の顔を先に見せる場所なので、和音はサビのものを使う。
+	// 長さは実測（8小節が4小節の約2倍）に合わせて引く。
 	intro: {
 		bars: 4,
+		barChoices: [4, 4, 8, 8, 8],
 		melody: false,
 		registerShift: 0,
 		density: 0.6,
@@ -119,6 +148,7 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 	},
 	verse: {
 		bars: 8,
+		barChoices: [8, 8, 8, 16],
 		melody: true,
 		registerShift: -3,
 		density: 0.85,
@@ -129,6 +159,7 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 	// Bメロはサビへの助走。音域を上げ、密度も上げ、最後をドミナントで宙吊りにする。
 	prechorus: {
 		bars: 4,
+		barChoices: [4, 4, 4, 8],
 		melody: true,
 		registerShift: 0,
 		density: 1.1,
@@ -138,6 +169,7 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 	},
 	chorus: {
 		bars: 8,
+		barChoices: [8, 8, 8, 16],
 		melody: true,
 		registerShift: 4,
 		density: 1.2,
@@ -150,6 +182,7 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 	// 専用のコード進行 "c" を持ち、AメロともBメロとも雰囲気が違う。
 	bridge: {
 		bars: 4,
+		barChoices: [4, 4, 8, 8],
 		melody: true,
 		registerShift: 2,
 		density: 0.9,
@@ -161,6 +194,7 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 	// density と drumLevel だけ下げ、メロディはサビと同じものを使う。
 	drop_chorus: {
 		bars: 4,
+		barChoices: [4, 4, 8],
 		melody: true,
 		registerShift: 4, // サビと同じ高さ
 		density: 0.6, // 薄い（ここが「落ち」の実体）
@@ -170,6 +204,7 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 	},
 	interlude: {
 		bars: 4,
+		barChoices: [4, 4, 8],
 		melody: false,
 		registerShift: 0,
 		density: 0.8,
@@ -179,6 +214,7 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 	},
 	outro: {
 		bars: 4,
+		barChoices: [4, 4, 8],
 		melody: true,
 		registerShift: -3,
 		density: 0.6,
@@ -312,6 +348,20 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 	},
 ];
 
+/** {@link buildSectionPlan} の並び順を決める（テンプレート優先、無ければチェック）。 */
+const orderedKinds = (
+	kinds: SectionKind[],
+	templateName?: string,
+): SectionKind[] => {
+	if (templateName) {
+		const tmpl = STRUCTURE_TEMPLATES.find((t) => t.name === templateName);
+		return tmpl ? tmpl.plan : DEFAULT_SECTIONS;
+	}
+	const wanted = kinds.length > 0 ? kinds : DEFAULT_SECTIONS;
+	// 並び順は SECTION_ORDER に従う（チェックの付け外しの順に依存させない）。
+	return SECTION_ORDER.filter((k) => wanted.includes(k));
+};
+
 /**
  * 選ばれたセクションを並べて、曲の設計図にする。
  *
@@ -322,19 +372,37 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
  *
  * 同じ種別が2回以上現れた場合、2回目以降は `restatement: true` が付く。
  * compose側はこのフラグを見て、1回目のメロディ・リズムを再現する。
+ *
+ * `rnd` を渡すと、セクション長を {@link SectionSpec.barChoices} から引く
+ * （渡さなければ {@link SectionSpec.bars} の代表値。UI の長さ表示など、
+ * 引くたびに答えが変わっては困る場所のため）。
+ *
+ * **長さは種別ごとに1回だけ引く。** 1番のAメロが8小節で2番が16小節、という
+ * 曲は書けなくはないが、`restatement` は1番の対応小節をそのまま歌い直す仕組み
+ * なので、長さが違うと後半だけ別のフレーズになる。同じ名前のセクションは同じ
+ * 長さで揃えるほうが「同じフレーズが返ってきた」という手応えを壊さない。
  */
 export const buildSectionPlan = (
 	kinds: SectionKind[],
 	templateName?: string,
+	rnd?: () => number,
 ): PlacedSection[] => {
-	let ordered: SectionKind[];
-	if (templateName) {
-		const tmpl = STRUCTURE_TEMPLATES.find((t) => t.name === templateName);
-		ordered = tmpl ? tmpl.plan : DEFAULT_SECTIONS;
-	} else {
-		const wanted = kinds.length > 0 ? kinds : DEFAULT_SECTIONS;
-		// 並び順は SECTION_ORDER に従う（チェックの付け外しの順に依存させない）。
-		ordered = SECTION_ORDER.filter((k) => wanted.includes(k));
+	const ordered = orderedKinds(kinds, templateName);
+
+	/** 種別ごとの長さ。同じ種別は曲中で同じ長さに揃える。 */
+	const barsOf = new Map<SectionKind, number>();
+	for (const kind of ordered) {
+		if (barsOf.has(kind)) continue;
+		const spec = SECTION_SPECS[kind];
+		const choices = spec.barChoices ?? [];
+		barsOf.set(
+			kind,
+			rnd && choices.length > 0
+				? choices[
+						Math.min(choices.length - 1, Math.floor(rnd() * choices.length))
+					]
+				: spec.bars,
+		);
 	}
 
 	const plan: PlacedSection[] = [];
@@ -343,19 +411,44 @@ export const buildSectionPlan = (
 	const seen = new Map<SectionKind, number>();
 	for (const kind of ordered) {
 		const spec = SECTION_SPECS[kind];
+		const bars = barsOf.get(kind) ?? spec.bars;
 		const count = seen.get(kind) ?? 0;
 		plan.push({
 			kind,
 			startBar: bar,
-			bars: spec.bars,
+			bars,
 			spec,
 			keyShift: 0,
 			restatement: count > 0,
 		});
 		seen.set(kind, count + 1);
-		bar += spec.bars;
+		bar += bars;
 	}
 	return plan;
+};
+
+/**
+ * その構成で曲が何小節になりうるか（最短・最長・代表値）。
+ *
+ * セクション長を seed ごとに引くようにしたので、「押す前に何小節か」を
+ * 1つの数で見せることはできない。UI はここが返す幅を出す。
+ */
+export const sectionPlanBarRange = (
+	kinds: SectionKind[],
+	templateName?: string,
+): { min: number; max: number; typical: number } => {
+	const ordered = orderedKinds(kinds, templateName);
+	let min = 0;
+	let max = 0;
+	let typical = 0;
+	for (const kind of ordered) {
+		const spec = SECTION_SPECS[kind];
+		const choices = spec.barChoices?.length ? spec.barChoices : [spec.bars];
+		min += Math.min(...choices);
+		max += Math.max(...choices);
+		typical += spec.bars;
+	}
+	return { min, max, typical };
 };
 
 /** その小節が属するセクション。 */

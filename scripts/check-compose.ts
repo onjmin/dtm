@@ -810,6 +810,9 @@ console.log("● 平行調とトニック回避");
 	let relative = 0;
 	let floating = 0;
 	let floatingNoTonic = 0;
+	let floatingTonicSum = 0;
+	let other = 0;
+	let otherTonicSum = 0;
 	let relativeAndShift = 0;
 	let parallelKey = 0;
 	const modKinds = new Set<string>();
@@ -833,9 +836,14 @@ console.log("● 平行調とトニック回避");
 			if (song.sections.some((x) => !allowed.has(x.keyShift)))
 				relativeAndShift++;
 		}
+		const tonicShare = chords.filter(isTonic).length / chords.length;
 		if (song.tonal.floating) {
 			floating++;
+			floatingTonicSum += tonicShare;
 			if (!chords.some(isTonic)) floatingNoTonic++;
+		} else {
+			other++;
+			otherTonicSum += tonicShare;
 		}
 		const shifts = [...new Set(song.sections.map((x) => x.keyShift))].filter(
 			(v) => v !== 0,
@@ -856,6 +864,8 @@ console.log("● 平行調とトニック回避");
 									: "色付け",
 		);
 	}
+	const floatingTonicShare = floating === 0 ? 0 : floatingTonicSum / floating;
+	const otherTonicShare = other === 0 ? 0 : otherTonicSum / other;
 	// 下限に**サンプリング誤差のぶんの余裕**を持たせてある。
 	// 平行調の抽選は `rnd() < 0.25`（さらにモードの曲は除外）なので実効の設計値は20%強。
 	// N=300 の二項分布の標準偏差は約2.3%あり、下限を設計値と同じ 0.20 に置くと
@@ -885,10 +895,23 @@ console.log("● 平行調とトニック回避");
 		floating / N >= 0.05 && floating / N <= 0.2,
 		`${((floating / N) * 100).toFixed(0)}%`,
 	);
+	// ここも上と同じ理由で**サンプリング誤差ぶんの余裕**を持たせる。浮遊感の曲は
+	// N=300 のうち40本前後しか出ないので、皆無率の標準偏差は 7〜8% ある。実測（1200 seed）
+	// では 41% で安定しているが、下限を 0.3 に置くと**乱数列がずれるだけで落ちる**。
+	// 実際、セクション長を seed ごとに引くようにした（長さの定数をやめた）だけで
+	// 29%（12/41）に振れて落ちた。1200 seed で測り直すと 41% で、長さとの関係は無い。
 	check(
-		"浮遊感の曲の3割以上がトニックを一度も鳴らさない",
-		floating === 0 || floatingNoTonic / floating >= 0.3,
+		"浮遊感の曲の2割以上がトニックを一度も鳴らさない",
+		floating === 0 || floatingNoTonic / floating >= 0.2,
 		`${floatingNoTonic}/${floating}`,
+	);
+	// 「一度も鳴らさない」は0か1かなので、曲が長いほど当たりにくくなる。狙いそのもの
+	// （＝トニックを避けている）は占有率で見るほうが曲の長さに左右されない。
+	// 実測: 浮遊感 14.3% / それ以外 23.7%（1200 seed）。
+	check(
+		"浮遊感の曲はトニック和音の占有率が低い",
+		floating === 0 || floatingTonicShare < otherTonicShare * 0.8,
+		`浮遊感 ${(floatingTonicShare * 100).toFixed(1)}% / それ以外 ${(otherTonicShare * 100).toFixed(1)}%`,
 	);
 	console.log(
 		`  ${N}曲: 転調の型 ${[...modKinds].join("・")} / 平行調 ${(((relative - parallelKey) / N) * 100).toFixed(0)}% / 同主調 ${((parallelKey / N) * 100).toFixed(0)}% / 浮遊感 ${((floating / N) * 100).toFixed(0)}%（うちトニック皆無 ${floating ? Math.round((floatingNoTonic / floating) * 100) : 0}%）`,

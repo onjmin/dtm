@@ -74,6 +74,7 @@ export {
 	SECTION_SPECS,
 	type SectionKind,
 	type SectionSpec,
+	sectionPlanBarRange,
 } from "./compose-sections";
 export { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 export * from "./drum-config";

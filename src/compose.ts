@@ -2742,9 +2742,13 @@ const draw = (
 	// **どこがイントロで、どこがサビなのかを持つ。** これが無いと、どの小節も
 	// 同じ密度・同じ音域で鳴り、聴き手が最初に掴む「セクションの切り替わり」が
 	// 生まれない（{@link file://./compose-sections.ts} 参照）。
+	// **セクション長も seed ごとに引く。** 定数のままだと BPM も調もメロディ型も
+	// 引き直しているのに骨格だけが全 seed で同一になり、候補40本が同じ小節割りの
+	// 中でしか競わない（{@link SectionSpec.barChoices}）。
 	const sectionPlan = buildSectionPlan(
 		options.sections ?? DEFAULT_SECTIONS,
 		options.template,
+		rnd,
 	);
 	const totalBars = sectionPlan.reduce((sum, s) => sum + s.bars, 0);
 
@@ -3044,25 +3048,35 @@ const draw = (
 			const isLastPhrase = i + 4 >= section.bars;
 			// セクションの最後の4小節は、そのセクションの役目に合わせて締める。
 			// Bメロは半終止（ドミナント）でサビへ渡し、サビとアウトロは全終止。
+			//
+			// **押し込める小節数だけ入れる。** 進行は4小節ひとまとまりで書いてあるが、
+			// セクション長は {@link SectionSpec.barChoices} から引くので、4の倍数で
+			// ない長さも来うる。丸ごと push すると、そのセクションの余りぶんだけ
+			// 後続の和音が後ろへずれ、最後に {@link totalBars} で切られて曲の末尾が
+			// 落ちる（＝セクション境界と和音が合わなくなる）。
+			const room = Math.min(4, section.bars - i);
+			const put = (cells: string[]): void => {
+				progression.push(...cells.slice(0, room));
+			};
 			if (!isLastPhrase) {
-				progression.push(...base);
+				put(base);
 				continue;
 			}
 			// 浮遊感の曲は主音で締めない（{@link floating}）。締めの進行は
 			// 定義上トニックで終わるので、ドミナントで宙吊りのまま渡す。
-			if (relativeKinds.has(section.kind)) progression.push(...base);
-			else if (section.kind === "prechorus") progression.push(...progHalf);
+			if (relativeKinds.has(section.kind)) put(base);
+			else if (section.kind === "prechorus") put(progHalf);
 			else if (section.kind === "chorus" || section.kind === "outro")
 				// **途中のサビは偽終止で続ける。** 毎回主音へ全終止すると、サビのたびに
 				// 曲が終わってしまう。全終止は最後のサビ（またはアウトロ）だけ。
-				progression.push(
-					...(floating
+				put(
+					floating
 						? progHalf
 						: section.startBar === lastChorusBar
 							? progFull
-							: progDeceptive),
+							: progDeceptive,
 				);
-			else progression.push(...base);
+			else put(base);
 		}
 	}
 	progression.length = totalBars;

@@ -25,10 +25,10 @@ import {
 import { getComposeKeyDescription } from "./compose-keys";
 import { getComposeScaleDescription } from "./compose-scales";
 import {
-	buildSectionPlan,
 	DEFAULT_SECTIONS,
 	type SectionKind,
 	STRUCTURE_TEMPLATES,
+	sectionPlanBarRange,
 } from "./compose-sections";
 import { buildUI } from "./daw-ui";
 import type { DelayDivision } from "./delay";
@@ -5514,12 +5514,24 @@ export const mountDAW = (
 				.map((b) => b.value as SectionKind);
 			return picked.length > 0 ? picked : DEFAULT_SECTIONS;
 		};
-		/** 選んだセクションで曲が何小節になるかを、押す前に表示する。 */
+		/**
+		 * 選んだセクションで曲が何小節になるかを、押す前に表示する。
+		 *
+		 * セクション長は作曲のたびに引き直す（{@link SectionSpec.barChoices}）ので、
+		 * ここは1つの数ではなく**幅**を出す。押す前の表示と実際の曲の長さが違うと、
+		 * 「表示が壊れている」としか受け取れない。
+		 */
+		const composeBarsLabel = (): string => {
+			const range = sectionPlanBarRange(
+				selectedComposeSections(),
+				selectedComposeTemplate(),
+			);
+			return range.min === range.max
+				? `${range.min}小節`
+				: `${range.min}〜${range.max}小節`;
+		};
 		const updateComposeSectionsLen = (): void => {
-			const tmpl = selectedComposeTemplate();
-			const plan = buildSectionPlan(selectedComposeSections(), tmpl);
-			const bars = plan.reduce((sum, x) => sum + x.bars, 0);
-			refs.composeSectionsLen.textContent = `${bars}小節`;
+			refs.composeSectionsLen.textContent = composeBarsLabel();
 		};
 		// マクロパネルの選択値を localStorage から復元
 		const savedTemplate = readMacroSetting("template");
@@ -5976,12 +5988,7 @@ export const mountDAW = (
 			if (hasNotes) {
 				showConfirm(
 					withVocal ? "歌入り作曲" : "作曲",
-					`今あるノートをすべて消して、${buildSectionPlan(
-						selectedComposeSections(),
-					).reduce(
-						(sum, x) => sum + x.bars,
-						0,
-					)}小節の曲を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
+					`今あるノートをすべて消して、${composeBarsLabel()}の曲を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
 					() => runCompose(withVocal),
 					"compose",
 				);
