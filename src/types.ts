@@ -274,8 +274,8 @@ export type LyricSyllable = {
 	 */
 	kind?: LyricSyllableKind;
 	/**
-	 * `kind === "tie"` のとき、直前ピッチから滑らかに繋ぐ（`〜`）。
-	 * false（`ー`）なら階段状に切り替える。
+	 * `kind === "tie"` のとき、直前ピッチから時間を掛けて滑る（`〜`）。
+	 * false（`ー`）なら素早く移る。どちらもピッチは連続に動き、違いは掛ける時間だけ。
 	 */
 	portamento?: boolean;
 	/**

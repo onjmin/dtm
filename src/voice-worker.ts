@@ -108,7 +108,13 @@ const renderComposite = async (
 	const targetHz = unitsToFreq(pitch);
 	const audio = worldline.renderNote({
 		pcm: spliced.pcm,
-		pitch: pitchCurveFor(targetHz, pitchSegments, spliced.preMs, !!vibrato),
+		pitch: pitchCurveFor(
+			targetHz,
+			pitchSegments,
+			spliced.preMs,
+			!!vibrato,
+			durationMs,
+		),
 		durationMs,
 		preMs: spliced.preMs,
 		consonantMs: spliced.consonantMs,
@@ -153,7 +159,13 @@ const renderAlias = async (
 	if (worldline) {
 		const audio = worldline.renderNote({
 			pcm,
-			pitch: pitchCurveFor(targetHz, pitchSegments, lead.preMs, !!vibrato),
+			pitch: pitchCurveFor(
+				targetHz,
+				pitchSegments,
+				lead.preMs,
+				!!vibrato,
+				durationMs,
+			),
 			durationMs,
 			...lead,
 			gender,

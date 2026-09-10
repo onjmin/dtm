@@ -19,9 +19,8 @@
 import { leadInFromEntry, VoiceBank, Worldline } from "@onjmin/koe";
 import type { PitchSegment } from "./pitch-curve";
 import {
-	PORTAMENTO_MS,
+	glideMsForSegments,
 	pitchCurveFor,
-	STEP_GLIDE_MS,
 	segmentsCacheKey,
 	transposeSegments,
 } from "./pitch-curve";
@@ -143,9 +142,16 @@ const VOWEL_KANA: Record<string, string> = {
 	o: "お",
 };
 
-/** 継続記号（階段）。直前の音を言い直さずに保ち、ピッチだけを切り替える。 */
+/**
+ * 継続記号。直前の音を言い直さずに保ち、ピッチだけを次の音へ移す。
+ * 声が繋がっている以上ピッチも繋がっているべきなので、移動は音価に比例した
+ * 短いグライドで行う（瞬間移動させると耳が「言い直した」と受け取る）。
+ */
 export const TIE_MARK = "ー";
-/** 継続記号（ポルタメント）。{@link TIE_MARK} と同じだが、ピッチを滑らかに繋ぐ。 */
+/**
+ * 継続記号（ポルタメント）。{@link TIE_MARK} と同じだが、区間の大半を掛けて
+ * ゆっくり滑る＝しゃくり・スラーになる。違いは掛ける時間だけ。
+ */
 export const PORTAMENTO_MARK = "〜";
 /** 促音。ノートを消費し、無音の閉鎖として間を作る。 */
 export const STOP_MARK = "っ";
@@ -983,14 +989,17 @@ export const createKlattVoice = (
 		// klatt は生きたオシレータなので、境界へ周波数オートメーションを置くだけでよい。
 		// AudioParam.value はスケジュール済みの自動化を反映しないため、直前ピッチは
 		// ここで自前に持ち回る（value を読むと毎回先頭ピッチへ戻ってしまう）。
-		for (const seg of e.pitchSegments ?? []) {
+		// グライド長は koe 側と同じ規則で決める（音源ごとに滑り方が変わらないように）。
+		const segs = e.pitchSegments ?? [];
+		const glides = glideMsForSegments(segs, e.duration * 1000);
+		segs.forEach((seg, i) => {
 			const hz = Math.max(1, unitsToFreq(seg.pitch));
-			const glideS = (seg.portamento ? PORTAMENTO_MS : STEP_GLIDE_MS) / 1000;
+			const glideS = glides[i] / 1000;
 			const from = Math.max(t0, t0 + Math.max(0, seg.atSec) - glideS / 2);
 			osc.frequency.setValueAtTime(oscHz, from);
 			osc.frequency.exponentialRampToValueAtTime(hz, from + glideS);
 			oscHz = hz;
-		}
+		});
 
 		const makeFormant = (
 			freq: number,
@@ -1466,7 +1475,13 @@ const createLocalBackend = async (
 		const targetHz = unitsToFreq(pitch);
 		const audio = worldline.renderNote({
 			pcm: spliced.pcm,
-			pitch: pitchCurveFor(targetHz, pitchSegments, spliced.preMs, !!vibrato),
+			pitch: pitchCurveFor(
+				targetHz,
+				pitchSegments,
+				spliced.preMs,
+				!!vibrato,
+				durationMs,
+			),
 			durationMs,
 			preMs: spliced.preMs,
 			consonantMs: spliced.consonantMs,
@@ -1505,7 +1520,13 @@ const createLocalBackend = async (
 		if (worldline) {
 			const audio = worldline.renderNote({
 				pcm,
-				pitch: pitchCurveFor(targetHz, pitchSegments, lead.preMs, !!vibrato),
+				pitch: pitchCurveFor(
+					targetHz,
+					pitchSegments,
+					lead.preMs,
+					!!vibrato,
+					durationMs,
+				),
 				durationMs,
 				...lead,
 				gender: expr?.gender,
