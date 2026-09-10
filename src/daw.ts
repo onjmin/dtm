@@ -813,7 +813,7 @@ const pickComposeVocal = (exclude?: string | null): string => {
 };
 
 /** プリセット（{@link INSTRUMENT_PRESETS}）の音色スロット。 */
-type PresetSlot = AutoRole | "solo" | "chorusLead";
+type PresetSlot = AutoRole | "solo" | "chorusLead" | "chordAlt" | "sparkle";
 
 /**
  * 上級者モード（15トラック）で「作曲」が展開する編曲。
@@ -1000,6 +1000,12 @@ const buildAdvancedLayers = (
 	];
 
 	// 伴奏は t7〜t9。プランが2本しか持たなければ3本目は空のまま。
+	//
+	// **音色を交互にする。** 奏法（`ChordPatternType`）は層ごとに別のものを引いていて、
+	// 実測でも発音位置の一致は中央 Jaccard 0.13・ほぼ完全一致は4%しかない——つまり
+	// リズムは書き分けられている。にもかかわらず t6〜t10 の**5本すべてが `chord` の
+	// 1楽器**だったため、書き分けた層が同じ音色で重なって団子になっていた。
+	// パッド(t6)=chord に対して交互に置き、隣り合う層が必ず違う音色になるようにする。
 	const backingVolumes = [62, 54, 50];
 	for (let i = 0; i < 3; i++) {
 		const layer = plan.backing[i];
@@ -1008,7 +1014,7 @@ const buildAdvancedLayers = (
 			notes: layer ? onlyIn(chordNotes(layer.pattern), layer.sections) : [],
 			octave: layer?.octave ?? 0,
 			volume: backingVolumes[i],
-			slot: "chord",
+			slot: i % 2 === 0 ? "chordAlt" : "chord",
 		});
 	}
 
@@ -1019,16 +1025,59 @@ const buildAdvancedLayers = (
 		{
 			index: 10,
 			notes: sparkleNotes,
-			octave: fit(sparkleNotes, "chord", plan.sparkle?.octave ?? 0),
+			// 装飾は伴奏と別の音色にする（以前はここも `chord` の使い回しだった）。
+			octave: fit(sparkleNotes, "sparkle", plan.sparkle?.octave ?? 0),
 			volume: 56,
-			slot: "chord",
+			slot: "sparkle",
 		},
 		// 掛け合い（デュエット）の相手。**歌入り作曲のときだけ**中身が入る。
 		{ index: 11, notes: [], octave: 0, volume: 104, slot: "melody" },
 		// 2声目のハモリ（主旋律を上下から挟む3声）と、主旋律のオクターブ下の重ね。
 		// どちらも曲ごとに出るかどうかが決まる（`song.vocal`）。
 		{ index: 12, notes: song.harmony2, octave: 0, volume: 74 },
-		{ index: 13, notes: song.octave, octave: -1, volume: 56, slot: "melody" },
+		// t13。既定は**主旋律のオクターブ下の重ね**で、歌入り作曲ではここに歌詞が付く
+		// （オクターブ下でハモる歌手。単なる写しではない）。
+		//
+		// ただしこの層は曲ごとに出るかどうかが決まり、実測で**18%しか鳴らない**。
+		// 残り82%はトラックが1本まるごと遊ぶ。オクターブ等価の写しに常設の価値は
+		// 無いが、**空けておく価値はもっと無い**ので、層が無い曲では
+		// 「t1（サビ重ね）が担当しないセクションの主旋律を、別の楽器でなぞる」層に回す。
+		// t1 は CHORUS/LOUD 側を持つので、こちらは静かな側を持つ——結果として
+		// **セクションの境目で主旋律に付く音色が入れ替わる**。1トラック1楽器の制約下で
+		// 「パートごとに楽器が変わる」を作れるのは、この書き分けだけ。
+		song.octave.length > 0
+			? {
+					index: 13,
+					notes: song.octave,
+					octave: -1,
+					volume: 56,
+					slot: "melody" as PresetSlot,
+				}
+			: (() => {
+					const leadKinds = new Set(plan.lead?.sections ?? []);
+					const quiet = song.sections
+						.filter((sec) => sec.spec.melody && !leadKinds.has(sec.kind))
+						.map((sec) => sec.kind);
+					const notes = quiet.length > 0 ? onlyIn(song.melody, quiet) : [];
+					// **主旋律とも伴奏とも同じ楽器になっては意味が無い。** プリセットによっては
+					// `solo` が `melody` と同じ（ハードロックはどちらも歪みギター）だったり、
+					// `chord` と同じ（和風はどちらも尺八）だったりする。そのまま使うと
+					// 「同じ音を同じ音色で重ねる」——直したはずの被りに戻る。
+					// 主旋律とも伴奏とも違う音色になる最初のスロットを採る。
+					const slot: PresetSlot =
+						(["solo", "chorusLead", "submelody", "chordAlt"] as const).find(
+							(k) => preset[k] !== preset.melody && preset[k] !== preset.chord,
+						) ?? "submelody";
+					return {
+						index: 13,
+						notes,
+						// ユニゾンで置く。**音色だけを変えるのが狙い**なので、
+						// オクターブを動かすと「オクターブ写し」に戻ってしまう。
+						octave: fit(notes, slot, 0),
+						volume: 58,
+						slot,
+					};
+				})(),
 		// **間奏のソロ。** 音が入るのは間奏の小節だけなので、この1本だけを
 		// 別の楽器にしても他のセクションの鳴りは変わらない。歌の音域をそのまま
 		// 渡すと管楽器が上へ抜ける（テナーサックスで10半音）ので、ここも合わせる。

@@ -24,7 +24,6 @@
  * 個別の推測ではなく実測で順番を決めるためのもの。
  */
 
-import { readFileSync } from "node:fs";
 import { composeSong } from "../src/compose";
 import {
 	CORPUS_BANDS,

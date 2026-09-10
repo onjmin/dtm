@@ -29,6 +29,21 @@ export type InstrumentPreset = {
 	 * 別トラックへ書き分けること**。
 	 */
 	chorusLead: string;
+	/**
+	 * 伴奏の2色目。**同じ進行を別の奏法で鳴らす層を、別の音色にするため**にある。
+	 *
+	 * 上級者モードは伴奏を t7〜t9 の3本に書き分けていて、奏法（`ChordPatternType`）は
+	 * 実際に別のリズムになっている——発音位置の一致は中央 Jaccard 0.13、ほぼ完全一致は
+	 * 4%しかない。にもかかわらず**t6〜t10 の5本すべてが `chord` の1楽器**だったため、
+	 * せっかく書き分けた層が同じ音色で重なって団子になっていた。
+	 * `chord` と喧嘩しない、かつ他のスロットと被らないものを選ぶこと。
+	 */
+	chordAlt: string;
+	/**
+	 * ウワモノ（装飾）の楽器。高い位置で薄く鳴らす、きらびやかな音。
+	 * ここも以前は `chord` を使い回していた。
+	 */
+	sparkle: string;
 };
 
 export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
@@ -41,10 +56,15 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		bass: "Electric Bass (finger)",
 		chord: "Pad 2 (warm)",
 		solo: "Electric Guitar (clean)",
-		// グロッケンは実物の音域が G5(79)〜 の高音楽器で、旋律の音域へそのまま置くと
-		// 金切り音になる。**外すのではなくオクターブで下げて使う**
-		// （{@link GM_BRIGHT_CEILING} / {@link fitInstrumentOctave}）。
-		chorusLead: "Glockenspiel",
+		// **Glockenspiel は使わない。音源側のサンプルが音程を外している**（実聴で確認）。
+		// 音域の問題（G5〜の高音楽器）なら {@link GM_BRIGHT_CEILING} で下げれば済むが、
+		// ピッチそのものがずれているものは置き場所を変えても直らない。同じ役割
+		// （サビの上に乗る明るい音板）で、素直に鳴る Celesta へ差し替えてある。
+		// ※ {@link GM_INSTRUMENT_RANGE} / {@link GM_BRIGHT_CEILING} の Glockenspiel の
+		//    項は残す。手で選んだときの置き場所の判断はそのまま要るため。
+		chorusLead: "Celesta",
+		chordAlt: "Electric Piano 1",
+		sparkle: "Music Box",
 	},
 	acoustic: {
 		displayName: "アコースティック",
@@ -55,6 +75,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chord: "Acoustic Guitar (nylon)",
 		solo: "Overdriven Guitar",
 		chorusLead: "String Ensemble 1",
+		chordAlt: "Acoustic Grand Piano",
+		sparkle: "Celesta",
 	},
 	jazz_night: {
 		displayName: "ジャズ・ナイト",
@@ -65,6 +87,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chord: "Electric Guitar (jazz)",
 		solo: "Tenor Sax",
 		chorusLead: "Muted Trumpet",
+		chordAlt: "Vibraphone",
+		sparkle: "Celesta",
 	},
 
 	// --- MODERN & VIBE: エッジの効いた現代的な響き ---
@@ -77,6 +101,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chord: "Pad 3 (polysynth)",
 		solo: "Distortion Guitar",
 		chorusLead: "Synth Brass 1",
+		chordAlt: "Electric Piano 2",
+		sparkle: "FX 3 (crystal)",
 	},
 	cyber_punk: {
 		displayName: "サイバーパンク",
@@ -87,6 +113,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chord: "Pad 8 (sweep)",
 		solo: "Distortion Guitar",
 		chorusLead: "Lead 7 (fifths)",
+		chordAlt: "Pad 4 (choir)",
+		sparkle: "FX 3 (crystal)",
 	},
 	rock: {
 		displayName: "ハードロック",
@@ -97,6 +125,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chord: "Overdriven Guitar",
 		solo: "Distortion Guitar",
 		chorusLead: "Brass Section",
+		chordAlt: "Electric Guitar (clean)",
+		sparkle: "Electric Guitar (muted)",
 	},
 
 	// --- WORLD & CLASSIC: 特定のジャンル・地域 ---
@@ -109,6 +139,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chord: "Tremolo Strings",
 		solo: "Violin",
 		chorusLead: "Trumpet",
+		chordAlt: "String Ensemble 1",
+		sparkle: "Orchestral Harp",
 	},
 	japanese_wa: {
 		displayName: "和風・雅",
@@ -118,7 +150,10 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		bass: "Taiko Drum",
 		chord: "Shakuhachi",
 		solo: "Shakuhachi",
-		chorusLead: "Glockenspiel",
+		// piano プリセットと同じ理由で Glockenspiel を避ける（音源のピッチずれ）。
+		chorusLead: "Celesta",
+		chordAlt: "Kalimba",
+		sparkle: "Music Box",
 	},
 	arabic_exotic: {
 		displayName: "エキゾチック",
@@ -129,6 +164,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chord: "Kalimba",
 		solo: "Shanai",
 		chorusLead: "Steel Drums",
+		chordAlt: "Orchestral Harp",
+		sparkle: "Tinkle Bell",
 	},
 
 	// --- FANTASY & ATMOSPHERE: 雰囲気と余韻 ---
@@ -141,6 +178,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chord: "Orchestral Harp",
 		solo: "Pan Flute",
 		chorusLead: "Choir Aahs",
+		chordAlt: "String Ensemble 2",
+		sparkle: "Tinkle Bell",
 	},
 	ambient_cloud: {
 		displayName: "アンビエント",
@@ -151,6 +190,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chord: "Pad 7 (halo)",
 		solo: "Lead 3 (calliope)",
 		chorusLead: "Synth Choir",
+		chordAlt: "Pad 5 (bowed)",
+		sparkle: "FX 3 (crystal)",
 	},
 	retro_game: {
 		displayName: "8-bit レトロ",
@@ -161,6 +202,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chord: "Clavinet",
 		solo: "Lead 8 (bass + lead)",
 		chorusLead: "Lead 4 (chiff)",
+		chordAlt: "Lead 5 (charang)",
+		sparkle: "Xylophone",
 	},
 };
 

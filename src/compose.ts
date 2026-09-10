@@ -1204,6 +1204,8 @@ type Groove = "eighth" | "sixteenth";
  *   展開する。J-POPの歌モノの作り。
  * - `ostinato` … **同じ型を曲全体で回す。**変形しない。対比は編曲（ドラム・楽器・
  *   レイヤ）の側が担う。
+ * - `through` … **通し作曲。**同じ楽句を再現せず、書き進める。
+ *   反復が戻ってこない側の作り。
  *
  * ## なぜ要るか
  *
@@ -1217,8 +1219,11 @@ type Groove = "eighth" | "sixteenth";
  * コーパス91本のうち27本へ到達できず、**その原因の1位が sim4/sim8 の各19本**だった。
  * 通し作曲（低い側）にも静的なリフ（高い側・ヤツメ穴の sim1 は 0.97）にもなれない。
  * 採点式をどう直してもこれは出ないので、生成の型そのものを増やす。
+ *
+ * `ostinato` を入れて上限を開けた後も、未到達26本の原因1位は依然 sim系だった
+ * （下側が空いたまま）。そこで `through` を足して反復の**下限**も開けている。
  */
-export type MelodyForm = "motif" | "ostinato";
+export type MelodyForm = "motif" | "ostinato" | "through";
 
 /**
  * `form` の指定を解く。省略時（`"auto"`）は曲ごとに引く。
@@ -1229,8 +1234,11 @@ const resolveMelodyForm = (
 	rnd: () => number,
 ): MelodyForm => {
 	const c = (choice ?? "").trim() || "auto";
-	if (c === "motif" || c === "ostinato") return c;
-	return rnd() < 0.3 ? "ostinato" : "motif";
+	if (c === "motif" || c === "ostinato" || c === "through") return c;
+	const r = rnd();
+	if (r < 0.25) return "ostinato";
+	if (r < 0.4) return "through";
+	return "motif";
 };
 
 /**
@@ -3246,13 +3254,21 @@ const draw = (
 					role:
 						form === "ostinato"
 							? "motif"
-							: section.kind === "bridge"
-								? "step"
-								: section.kind === "chorus"
-									? "climax"
-									: src === "a2" || u > 0
-										? "sequence"
-										: "motif",
+							: form === "through"
+								? // 通し作曲は素材を戻さない。`step` の書法（アーチ・谷・波）で
+									// 独立した線を書き、たまに走句と山を挟んで単調さを避ける。
+									u % 3 === 2
+									? "run"
+									: u % 3 === 1
+										? "climax"
+										: "step"
+								: section.kind === "bridge"
+									? "step"
+									: section.kind === "chorus"
+										? "climax"
+										: src === "a2" || u > 0
+											? "sequence"
+											: "motif",
 					// リフ型は素材も1つに揃える（`sourceOf` でセクションごとに
 					// 変えると、そこだけ別の型が始まってオスティナートにならない）。
 					source: form === "ostinato" ? "a" : src,
@@ -3266,7 +3282,16 @@ const draw = (
 				// それ以外は同じ型を回す。
 				const riff = form === "ostinato" && !(isLast && landing === 0);
 				units.push({
-					role: isLast && landing === 0 ? "cadence" : riff ? "motif" : "answer",
+					role:
+						isLast && landing === 0
+							? "cadence"
+							: riff
+								? "motif"
+								: // 通し作曲は「問いと答え」で閉じない。answer は問いのリズムを
+									// 受けて着地音だけ変える形なので、そのままだと反復が戻る。
+									form === "through"
+									? "step"
+									: "answer",
 					source: riff ? "a" : "answer",
 					landing: isLast ? landing : null,
 					section,
@@ -3295,6 +3320,11 @@ const draw = (
 	const restatementOf = (bar: number): number | null => {
 		const curSec = sectionAt(sectionPlan, bar);
 		if (!curSec.spec.melody) return null;
+		// **通し作曲は楽句を再現しない。** ここを通すと、2番のAメロが1番をそのまま
+		// 歌い直し、楽句レベルでも同じ形が戻ってきて、結局 sim が下がらない。
+		// 「同じフレーズが返ってくる」ことこそが歌モノの手応えなので、
+		// それを外すのが通し作曲という型の中身になる。
+		if (form === "through") return null;
 
 		// 2番・3番のセクション（restatement === true）の場合、1番の同一セクションの対応小節を再現
 		if (curSec.restatement) {
