@@ -3442,11 +3442,6 @@ const draw = (
 	// 「ボーカルが一息で歌いきる長さ」という言い回しの単位を持てていなかった。
 	const motifPool = groovyCells(MOTIF_CELLS, style.groove, rnd);
 	/**
-	 * 曲ごとの「刻みの細かさ」の狙い（1小節あたりの音数）。参考曲は中央値6.2。
-	 * 型をただ引くと密度が引きの平均へ集まるので、狙いを先に決めて近い型を引く。
-	 */
-	const targetNotesPerBar = 4.5 + rnd() * 4.5;
-	/**
 	 * 曲ごとの休符率の狙い。参考曲は中央値0.09（p25〜p75で0.03〜0.16）。
 	 * 短い息継ぎを中心にして、歌が程よく詰まるように寄せる。
 	 */
@@ -3462,6 +3457,25 @@ const draw = (
 	 * 中央値0.149に近い）。歌モノは詰まっているのが普通で、スカスカな曲は少数派。
 	 */
 	const targetRestRatio = 0.02 + rnd() ** 2 * 0.42;
+	/**
+	 * 曲ごとの「刻みの細かさ」の狙い（1小節あたりの音数）。参考曲は中央値6.2。
+	 * 型をただ引くと密度が引きの平均へ集まるので、狙いを先に決めて近い型を引く。
+	 *
+	 * ## 休符率と連動させる理由
+	 *
+	 * 以前は `4.5 + rnd() * 4.5` と**独立に**引いていた。その結果「休符率0.40なのに
+	 * 音数9.0」のような**両立しない狙い**が出て、{@link cellDistance} が音数の項と
+	 * 休符の項で引っぱり合い、どちらも達成できなかった。実測で、狙いの p90 が 0.358 なのに
+	 * 実現値は 0.181——**上半分が丸ごと圧縮**されていた。
+	 *
+	 * コーパス91本では両者に負の相関がある（r = -0.29）。休符の少ない曲は
+	 * 1小節7.21音、多い曲は5.25音。その回帰線（およそ `7.4 - 6.0 * rest`）を中心に、
+	 * ±2音の幅で引く。**矛盾しない狙いを与えるのが先**で、型の引き方を変えるのは後。
+	 */
+	const targetNotesPerBar = Math.max(
+		2.8,
+		Math.min(9.5, 7.4 - 6.0 * targetRestRatio + (rnd() * 4 - 2)),
+	);
 	/** 1小節の型が持つ音数。 */
 	const cellNotes = (c: RhythmCell): number =>
 		c.value.filter((v) => v > 0).length;
@@ -3493,10 +3507,31 @@ const draw = (
 		}
 		return pool[pool.length - 1];
 	};
+	/**
+	 * 型を1本引く。**狙いの休符率でプールを絞ってから**、その中を参考曲の頻度で引く。
+	 *
+	 * ## なぜ絞る必要があるか
+	 *
+	 * {@link cellWeight} は参考曲での出現頻度なので、上位は
+	 * `0,2,4,6,8,10,12,14`（8分で埋めた小節・584回）のような**休符ゼロの密な型**が
+	 * 占める。そこから3本引いて狙いに近いものを選ぶ形だと、休符の多い型（50個中7個）は
+	 * ほぼ当たらない。実測で、狙いの休符率の p90 が 0.358 なのに実現値は 0.181 と
+	 * **上半分が丸ごと圧縮**されていた——「メロディが休まない曲」しか作れない状態。
+	 *
+	 * 引く本数を増やしても頭打ちで（13本引きでも p90 は 0.244）、狙いと音数の
+	 * 連動だけでも動かなかった。**頻度で引く前に、狙いの帯へ入る型だけを残す**のが要点。
+	 * 頻度の情報は帯の中で効かせるので「人が実際に書く形」からは離れない。
+	 */
 	const pickCell = (pool: RhythmCell[], densityMul = 1.0): RhythmCell => {
-		let best = weightedPick(pool);
+		const want = targetRestRatio / Math.max(0.5, densityMul);
+		// 帯の幅は狙いに比例させる。休符の少ない曲まで細かく絞ると、
+		// 「休符ゼロ」しか残らず語彙が痩せる。
+		const tol = Math.max(0.08, want * 0.6);
+		const near = pool.filter((c) => Math.abs(cellRest(c) - want) <= tol);
+		const from = near.length > 0 ? near : pool;
+		let best = weightedPick(from);
 		for (let i = 0; i < 2; i++) {
-			const c = weightedPick(pool);
+			const c = weightedPick(from);
 			if (cellDistance(c, densityMul) < cellDistance(best, densityMul))
 				best = c;
 		}
