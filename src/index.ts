@@ -14,6 +14,7 @@ export {
 	type ComposeStats,
 	composeSong,
 	durationEntropy,
+	type MelodyForm,
 } from "./compose";
 // 作曲の採点に使う目標帯（人間の曲から実測したもの）
 export { CORPUS_BANDS, CORPUS_SIZE } from "./compose-corpus";

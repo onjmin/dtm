@@ -34,9 +34,12 @@ import {
 import { join } from "node:path";
 import { durationEntropy } from "../src/compose";
 import {
+	type Band,
 	type DensityFeatures,
 	densityFeatures,
 	type MetricNote,
+	nearestProfileDistance,
+	normalizeByBand,
 	type StructureFeatures,
 	structureFeatures,
 } from "../src/compose-metrics";
@@ -735,6 +738,66 @@ const main = async (): Promise<void> => {
 		);
 	}
 
+	// --- 曲ごとの特徴ベクトル（最近傍の採点に使う） ---
+	//
+	// 帯と中央値は**周辺分布**なので、「どの項目も人間の範囲だが、そんな曲は1本も
+	// 存在しない」点を満点にしてしまう。曲ごとの点をそのまま持っておき、
+	// 生成物は**いちばん近い1曲**との距離で測る（compose-metrics.ts の
+	// nearestProfileDistance）。
+	const profileOf = (r: SongFeatures): number[] =>
+		keys.map(
+			(k) =>
+				Math.round(normalizeByBand(r[k] as number, bands[k] as Band) * 1000) /
+				1000,
+		);
+	const profiles = rows.map(profileOf);
+
+	// 近傍の半径は**コーパス自身の最近傍距離**から採る（leave-one-out）。
+	// 「人間の曲どうしが普通どれだけ離れているか」がそのまま尺度になるので、
+	// ここも手で決めた定数にならずに済む。
+	const nnDistances = profiles.map((p, i) =>
+		nearestProfileDistance(
+			p,
+			profiles.filter((_, j) => j !== i),
+		),
+	);
+	const sortedNn = [...nnDistances].sort((a, b) => a - b);
+	const nnRadius = Math.round(percentile(sortedNn, 0.75) * 1000) / 1000;
+	console.log(
+		`\n  最近傍距離（コーパス自身・leave-one-out）: p25=${percentile(sortedNn, 0.25).toFixed(3)} 中央=${percentile(sortedNn, 0.5).toFixed(3)} p75=${nnRadius} p95=${percentile(sortedNn, 0.95).toFixed(3)}`,
+	);
+
+	// 逸脱の予算。**コーパスの曲が普通いくつの帯を外すか**を数え、その p75 を採る。
+	const outOfBand = rows.map((r) => {
+		let n = 0;
+		for (const k of keys) {
+			const b = bands[k];
+			const v = r[k] as number;
+			if (!(v >= b[1] && v <= b[2])) n++;
+		}
+		return n;
+	});
+	const zeroCount = rows.map((r) => {
+		let n = 0;
+		for (const k of keys) {
+			const b = bands[k];
+			const v = r[k] as number;
+			if (v <= b[0] || v >= b[3]) n++;
+		}
+		return n;
+	});
+	const sortedZero = [...zeroCount].sort((a, b) => a - b);
+	const budget = Math.round(percentile(sortedZero, 0.75));
+	console.log(
+		`  帯(p25〜p75)を外す項目数: 中央=${percentile(
+			[...outOfBand].sort((a, b) => a - b),
+			0.5,
+		)} / ${keys.length}項目`,
+	);
+	console.log(
+		`  素点0になる項目数       : 中央=${percentile(sortedZero, 0.5)} p75=${budget}  → 逸脱の予算 ${budget}`,
+	);
+
 	const cellWeightLines = [...cellUsage.entries()]
 		.sort((a, b) => b[1] - a[1])
 		.map(([k, v]) => `\t"${k}": ${v},`)
@@ -771,6 +834,42 @@ ${keys.map((k) => `\t${k}: [${bands[k].join(", ")}] as Band,`).join("\n")}
 export const CORPUS_MEDIANS = {
 ${keys.map((k) => `\t${k}: ${medians[k]},`).join("\n")}
 } satisfies Record<keyof typeof CORPUS_BANDS, number>;
+
+/** {@link CORPUS_PROFILES} の各成分がどの指標なのか。並び順がそのまま列の意味。 */
+export const CORPUS_PROFILE_KEYS = [
+${keys.map((k) => `\t"${k}",`).join("\n")}
+] as const satisfies readonly (keyof typeof CORPUS_BANDS)[];
+
+/**
+ * **曲ごとの特徴ベクトル ${rows.length}本ぶん。** 各成分は帯の p05〜p95 を 0〜1 とする尺度
+ * （compose-metrics.ts の normalizeByBand）。
+ *
+ * 帯と中央値だけだと「どの項目も人間の範囲に収まっているが、そんな曲は1本も
+ * 実在しない」点を満点にしてしまう。生成物は**この中でいちばん近い1曲**との
+ * 距離で測る（nearestProfileDistance）。中央から離れることではなく、
+ * **人が1本も居ない場所に居ること**を罰するための材料。
+ */
+export const CORPUS_PROFILES: readonly (readonly number[])[] = [
+${profiles.map((p) => `\t[${p.join(", ")}],`).join("\n")}
+];
+
+/**
+ * 「実在する曲に似ている」とみなす距離。コーパス自身の最近傍距離（leave-one-out）の
+ * p75。**人間の曲どうしが普通どれだけ離れているか**をそのまま尺度にしている。
+ */
+export const CORPUS_NN_RADIUS = ${nnRadius};
+
+/**
+ * 逸脱の予算＝**素点0の項目を何本まで見逃すか**。コーパスの曲が実際に素点0を
+ * 出す項目数の p75（中央値は ${percentile(sortedZero, 0.5)}本）。
+ *
+ * 人間の曲は20項目のうち中央値で${percentile(
+		[...outOfBand].sort((a, b) => a - b),
+		0.5,
+ )}項目が帯の外にある。全項目を同時に満たすことを
+ * 要求すると、**基準を満たせるのは生成物だけで、較正元の曲が落ちる**。
+ */
+export const CORPUS_DEVIATION_BUDGET = ${budget};
 /**
  * 小節の発音パターンごとの出現小節数。キーは16分格子上の発音位置。
  *

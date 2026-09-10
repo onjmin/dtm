@@ -16,13 +16,29 @@
  * ## 引いて、測って、選ぶ
  *
  * {@link DRAW_COUNT} 本の候補を独立に引き、{@link HARD} に触れたものだけを捨てて、
- * 残りから点数最大のものを返す（{@link evaluate}）。合否ではなく点数にしてあるのは
- * 「構造は良いが休符率が 0.09 だったので捨てる」を避けるため。
+ * 残りから**確率的に**引く（{@link evaluate}・{@link SELECT_TEMPERATURE}）。合否ではなく
+ * 点数にしてあるのは「構造は良いが休符率が 0.09 だったので捨てる」を避けるため。
+ * 最大値を必ず取っていた頃は、**引く本数を増やすほど分布が狭まっていた**——
+ * 順次進行の幅が 0.25〜0.86（1本）→ 0.32〜0.65（40本）と、採点式の頂点1点へ収束する。
  *
  * 採点の目標帯（{@link CORPUS_BANDS}）は**人間が書いたMIDIから実測した分布**で、手で
- * 決めた定数ではない。較正は `scripts/calibrate-corpus.ts`。帯の内側にも中央値へ向かう
- * 傾斜を付けてある（`centeredBand`）——周辺分布を一律に満点にすると、全項目が帯の端へ
- * 同時に寄った曲（スカスカで跳ねてばかりの曲）も満点を取れてしまう。
+ * 決めた定数ではない。較正は `scripts/calibrate-corpus.ts`。
+ *
+ * ## 「中央値へ寄せる」のをやめた理由
+ *
+ * 以前は帯の内側にも中央値へ向かう傾斜を付けていた（`centeredBand`）。全項目が帯の端へ
+ * 同時に寄った曲を弾くためだったが、**目標帯は21項目を独立に採った周辺分布**なので、
+ * その中央値は「どの曲でもない平均的な一点」でしかない。コーパス91本を自分の帯で
+ * 測り直すと、人間の曲は中央値で**10項目が帯の外**にあり、素点の中央値は 0.673——
+ * **生成物（0.851）のほうが較正元より高い点を取っていた**。選抜を完全に切っても
+ * 生成物 0.970 対 人間 0.921 で、選抜ではなく採点式そのものが中央を報酬にしていた。
+ *
+ * そこで周辺分布の項目は「人間の範囲に居るか」の確認だけに格下げし（`plausibleBand`）、
+ * 「人間が書いた曲の形か」の判断は**項目の組み合わせ**——コーパス91本のうち
+ * **いちばん近い1曲との距離**（`nearestProfileDistance`、重み `typicality`）——へ渡した。
+ * 中央から離れることではなく、**人が1本も居ない場所に居ること**を罰する形にしてある。
+ * さらに、人間の曲が普通いくつの軸を外すかを実測して {@link DEVIATION_BUDGET} とし、
+ * その本数だけは減点を見逃す。検算は `scripts/check-evaluator.ts`。
  *
  * 指標に最適化した結果として全曲が同じ統計値へ寄るのを防ぐため、直近に作った曲との
  * 距離も加点する（{@link ComposeOptions.recent}）。
@@ -43,19 +59,20 @@ import {
 import {
 	CORPUS_BANDS,
 	CORPUS_CELL_WEIGHTS,
-	CORPUS_MEDIANS,
+	CORPUS_DEVIATION_BUDGET,
+	CORPUS_PROFILE_KEYS,
 	CORPUS_SIZE,
 } from "./compose-corpus";
 import { type ResolvedComposeKey, resolveComposeKey } from "./compose-keys";
 import {
 	type Band,
 	band,
-	centeredBand,
 	type DensityFeatures,
 	densityFeatures,
 	featureDistance,
 	featureVector,
 	type MetricNote,
+	plausibleBand,
 	type StructureFeatures,
 	structureFeatures,
 	type TensionFeatures,
@@ -116,6 +133,15 @@ const STEP_SEMITONES = 2;
  * 目標帯の下限にすら届かない（採点0）ことが分かったので12（オクターブ）にした。
  */
 const MAX_LEAP_SEMITONES = 10;
+/**
+ * 曲ごとの跳躍上限の候補。**上限を固定値にしていると、跳躍で歌う曲が作れない。**
+ *
+ * 参考コーパスの最大跳躍の帯は p05〜p95 が 5〜16半音で、生成系は 7〜21 と
+ * 一見足りているように見えるが、これは `octaveAffinity` のオクターブ跳躍が
+ * 稼いでいた数字で、**曲の書法としての跳躍**は10半音で頭打ちだった。
+ * 到達できない曲のうち6本がこの軸で外れる（`scripts/compare-reach.ts`）。
+ */
+const LEAP_CEILINGS = [7, 8, 9, 10, 10, 12, 14, 16];
 /** 小節をまたぐときに許す跳躍（半音）。 */
 const MAX_BAR_LEAP_SEMITONES = 10;
 
@@ -187,6 +213,48 @@ const WEIGHTS = {
 	novelty: 1.2,
 } as const;
 
+// **コーパスへの「近さ」は採点しない。**
+//
+// 一時期ここに `typicality`（コーパス91本のうち最も近い1曲との距離）を重み2.0で
+// 置いていた。中央値へ寄せる `centeredBand` の代わりのつもりだったが、これは
+// **罰の半径を広げただけで同じ誤り**だった。コーパスが示すのは「これらは成立する」
+// という*十分性*であって、「これら以外は成立しない」という*必要性*ではない。
+// 人間の曲が、人の居ない領域の曲より音楽的に優れていると言える根拠が無い以上、
+// 「人が1本も居ない場所に居ること」を減点する理由も無い。
+//
+// 加えて、これは実際に何も解決していなかった。採点を完全に切って1500本引いても
+// ヤツメ穴型（音域5半音の静的リフ）には 0.308 までしか近づけず、コーパス91本のうち
+// **到達できるのは58本(64%)** しかない。**フィルタは引けたものを選ぶことしかできない**ので、
+// 出てこない曲の原因は採点式ではなく生成系の側にある。
+
+/**
+ * 素点の低い項目を何本まで採点から外すか（{@link CORPUS_DEVIATION_BUDGET}）。
+ *
+ * ## なぜ要るか
+ *
+ * 目標帯は21項目を**独立に**採った周辺分布なので、「全項目を同時に満たせ」は
+ * 人間の曲が実際にやっていることではない。コーパス91本を自分の帯で測り直すと
+ *
+ *   - 帯（p25〜p75）の外にある項目数 … **中央値10 / 21項目**
+ *   - 素点0（p05〜p95 の外）の項目数 … 中央値2・p75で4
+ *   - 当時の採点での素点 … **中央値 0.673**（生成物の中央値は 0.851）
+ *
+ * ——**生成物が較正元のコーパスより高い点を取っていた**。「良い曲を作るには評価機を
+ * 意図的に外さねばならない」形になっていて、これは基準の側の誤り。
+ *
+ * そこで、周辺分布の項目のうち**最も点の低い数項目を採点から外す**。
+ * 「1つの軸で振り切っていてよい、ただし残りは人間の範囲に居ろ」という基準になる。
+ * 壊れた曲は {@link HARD} が別に落とすので、ここを緩めても底は抜けない。
+ */
+const DEVIATION_BUDGET = CORPUS_DEVIATION_BUDGET;
+
+/**
+ * 予算の対象＝コーパスから較正した周辺分布の項目。
+ * 手で決めた帯（{@link HAND_BANDS}）・和声・novelty・typicality は対象外で、
+ * **必ず採点される**。予算で見逃してよいのは「人間の曲もよく外す軸」だけ。
+ */
+const BUDGETED_KEYS: ReadonlySet<string> = new Set<string>(CORPUS_PROFILE_KEYS);
+
 /**
  * コーパスから較正できない指標の目標帯（手で決めたもの）。
  *
@@ -204,8 +272,23 @@ const HAND_BANDS = {
 	climaxPeaks: [0, 1, 2, 5] as Band,
 } as const;
 
-/** 1曲作るのに引く候補数。この中から一番点数の高いものを返す。 */
-const DRAW_COUNT = 40;
+/**
+ * 1曲作るのに引く候補数。
+ *
+ * 40本から最高点を選んでいた頃は、**引く本数を増やすほど分布が狭まっていた**——
+ * 実測で、順次進行の幅が 0.25〜0.86（1本）→ 0.32〜0.65（40本）、音域が
+ * 14.9〜23.1 → 17.0〜24.0 と、候補を増やすほど「採点式の頂点」1点へ収束する。
+ * 選抜そのものが多様性を削っていたので、本数を減らし、選び方も
+ * {@link SELECT_TEMPERATURE} で確率的にした。
+ */
+const DRAW_COUNT = 12;
+
+/**
+ * 候補の選び方の温度。0 なら最高点を必ず選ぶ（＝従来）、大きいほど点差を無視して
+ * 均等に引く。**点差が僅差の候補まで切り捨てない**ためのもので、採点式の細かい上下は
+ * 「どちらが良い曲か」を判定できるほどの分解能を持っていない、という前提に立つ。
+ */
+const SELECT_TEMPERATURE = 0.05;
 
 // ============================================================
 // 音価（1小節 = stepsPerBar。既定192ステップ ＝ 4分音符48ステップ）
@@ -1115,6 +1198,42 @@ type CadenceShape = "descend" | "five-three-one" | "leap-up" | "hold-tonic";
 type Groove = "eighth" | "sixteenth";
 
 /**
+ * 曲の**展開の仕方**。
+ *
+ * - `motif` … 2小節のモチーフを反復・セクエンツ・オクターブ上げの3通りに変形して
+ *   展開する。J-POPの歌モノの作り。
+ * - `ostinato` … **同じ型を曲全体で回す。**変形しない。対比は編曲（ドラム・楽器・
+ *   レイヤ）の側が担う。
+ *
+ * ## なぜ要るか
+ *
+ * 初版は `motif` しか無く、しかも小節の役割が**セクション種別で決め打ち**だった
+ * （サビは必ず `climax` ＝オクターブ上げ、それ以外はほぼ `sequence`）。その結果、
+ * 生成系の反復プロファイルが**上にも下にも詰まった**狭い帯に固定されていた。
+ *
+ *   自己相似 sim1 の生成系レンジ 0.31〜0.76／sim4 0.58〜0.86
+ *
+ * 実測（`scripts/compare-reach.ts`）で、採点を完全に切って1500本引いても
+ * コーパス91本のうち27本へ到達できず、**その原因の1位が sim4/sim8 の各19本**だった。
+ * 通し作曲（低い側）にも静的なリフ（高い側・ヤツメ穴の sim1 は 0.97）にもなれない。
+ * 採点式をどう直してもこれは出ないので、生成の型そのものを増やす。
+ */
+export type MelodyForm = "motif" | "ostinato";
+
+/**
+ * `form` の指定を解く。省略時（`"auto"`）は曲ごとに引く。
+ * リフ型を少数派にしてあるのは、歌モノが既定の作風だから。
+ */
+const resolveMelodyForm = (
+	choice: string | undefined,
+	rnd: () => number,
+): MelodyForm => {
+	const c = (choice ?? "").trim() || "auto";
+	if (c === "motif" || c === "ostinato") return c;
+	return rnd() < 0.3 ? "ostinato" : "motif";
+};
+
+/**
  * リズム型をグルーヴで絞る。8分の曲からは16分を含む型を丸ごと外し、16分の曲では
  * 16分を含む型を優先する。**16分は曲の性格であって、装飾ではない。**
  */
@@ -1336,6 +1455,11 @@ export type ComposeOptions = {
 	 */
 	baseKey?: string;
 	/**
+	 * 展開の仕方（`"auto"` | `"motif"` | `"ostinato"`）。省略時は `"auto"` で曲ごとに引く。
+	 * `"ostinato"` は同じ型を曲全体で回すリフ主体の作り。{@link MelodyForm}
+	 */
+	form?: string;
+	/**
 	 * 音階の指定（`"auto"` | `"any"` | 音階ID）。省略時は `"auto"` で、
 	 * ベース調の長短に合わせて陽音階（長調）／民謡音階（短調）を使う——
 	 * **つまり指定しなければ以前と同じ曲が出る**。{@link COMPOSE_SCALES}
@@ -1362,6 +1486,8 @@ export type ComposeResult = {
 	scaleId: ComposeScaleId;
 	/** 曲の音階の表示ラベル（例: "琉球音階"）。 */
 	scaleLabel: string;
+	/** 曲の展開の仕方。{@link MelodyForm} */
+	form: MelodyForm;
 	/** 雰囲気カテゴリのラベル（該当する場合）。 */
 	moodLabel?: string;
 	/** 曲のテンポ（BPM）。 */
@@ -1624,6 +1750,8 @@ type MelodyStyle = {
 	arcAmp: number;
 	/** 弱拍でオクターブ跳躍を入れる確率。 */
 	octaveAffinity: number;
+	/** その曲で許す跳躍の上限（半音）。{@link LEAP_CEILINGS} */
+	maxLeap: number;
 	/**
 	 * モチーフをペンタトニックの度数で組むか。
 	 *
@@ -1675,6 +1803,8 @@ const leapTarget = (
 	from: number,
 	tones: ChordTone[],
 	rnd: () => number,
+	/** その曲で許す跳躍の上限（半音）。{@link LEAP_CEILINGS} */
+	maxLeap: number = MAX_LEAP_SEMITONES,
 ): number | null => {
 	const candidates: number[] = [];
 	for (const tone of tones) {
@@ -1683,7 +1813,7 @@ const leapTarget = (
 			const semi = base + oct * 12;
 			if (semi < MELODY_LOW || semi > MELODY_HIGH) continue;
 			const gap = Math.abs(semi - from);
-			if (gap >= 3 && gap <= MAX_LEAP_SEMITONES) candidates.push(semi);
+			if (gap >= 3 && gap <= maxLeap) candidates.push(semi);
 		}
 	}
 	if (candidates.length === 0) return null;
@@ -1964,7 +2094,7 @@ const barDegrees = (
 			// 跳躍のたびに調子外れに聞こえていた。
 			if (rnd() < style.leapAffinity) {
 				const from = degreeToPitch(scale, out[i - 1]).semi;
-				const target = leapTarget(from, tones, rnd);
+				const target = leapTarget(from, tones, rnd, style.maxLeap);
 				if (target !== null) out[i] = semitoneToDegree(scale, target);
 			}
 			continue;
@@ -2017,6 +2147,15 @@ const fitMotif = (
 	 * 悪化しないかぎり、前と同じ移調量を使う。
 	 */
 	preferShift: number | null,
+	/**
+	 * 移調を何歩まで許すか。既定は3歩（ペンタトニックなら±7半音相当）。
+	 *
+	 * **0 を渡すと輪郭が一切動かない。** リフ型（{@link MelodyForm}）の曲で使う——
+	 * 和音が変わっても同じセルを回し続けるのがオスティナートなので、小節ごとに
+	 * 和音へ寄せてしまうとその時点で別の作りになる。実測でも、ここが±3ある限り
+	 * 音域の床が10半音から下がらず、参考曲のリフ（5半音）へ到達できなかった。
+	 */
+	maxShift = 3,
 ): { degrees: number[]; shift: number } => {
 	let best = degrees;
 	let bestShift = 0;
@@ -2027,7 +2166,7 @@ const fitMotif = (
 	// ダイアトニックの度数で ±1 するとミ→ファのような半音移動が混ざり、輪郭が崩れる。
 	// 逆に、ダイアトニックで組んだモチーフをペンタトニックの歩数で動かすと、
 	// せっかく輪郭に入れたファ・シがその場で潰れる（実測でペンタ外が9%から動かなかった）。
-	for (let shift = -3; shift <= 3; shift++) {
+	for (let shift = -maxShift; shift <= maxShift; shift++) {
 		const moved = degrees.map((d) =>
 			pentatonic
 				? coreToDegree(scale, degreeToCore(scale, d) + shift)
@@ -2081,6 +2220,8 @@ const shapeBar = (
 		scale: ComposeScale;
 		/** 弱拍でオクターブ跳躍を入れる確率。 */
 		octaveAffinity: number;
+		/** その曲で許す跳躍の上限（半音）。{@link LEAP_CEILINGS} */
+		maxLeap: number;
 		/** アボイドノートを半音上の和音構成音へ解決させる確率。 */
 		chromaticAffinity: number;
 		rnd: () => number;
@@ -2125,7 +2266,7 @@ const shapeBar = (
 			MELODY_LOW,
 			MELODY_HIGH,
 		);
-		const limit = i === 0 ? MAX_BAR_LEAP_SEMITONES : MAX_LEAP_SEMITONES;
+		const limit = i === 0 ? MAX_BAR_LEAP_SEMITONES : opts.maxLeap;
 		if (!opts.allowLeap && Math.abs(semi - prev) > limit) {
 			semi = clampSemi(
 				walk(opts.scale, prev, Math.sign(semi - prev) * 3),
@@ -3062,6 +3203,10 @@ const draw = (
 		return landing;
 	};
 
+	// **展開の仕方は小節の役割を決める前に引く。** `style` は下で引いているが、
+	// 役割の割り当てはそれより前なので、ここで独立に持つ。
+	const form = resolveMelodyForm(options.form, rnd);
+
 	const units: Unit[] = [];
 	for (const section of sectionPlan) {
 		const unitCount = Math.max(1, Math.round(section.bars / 2));
@@ -3094,24 +3239,35 @@ const draw = (
 				// 輪郭を借りずに `step` の書法（{@link MelodyStyle.stepShape} の
 				// アーチ・谷・波）で独立した線を書く。
 				units.push({
+					// リフ主体の曲は**変形しない**。セクエンツもオクターブ上げも入れず、
+					// 同じ型を回し続ける。セクションの対比は編曲側（ドラム・楽器・レイヤ）
+					// が担う——ヤツメ穴型の曲がまさにその作りで、120小節を通して
+					// 5半音のセルが変わらない。
 					role:
-						section.kind === "bridge"
-							? "step"
-							: section.kind === "chorus"
-								? "climax"
-								: src === "a2" || u > 0
-									? "sequence"
-									: "motif",
-					source: src,
+						form === "ostinato"
+							? "motif"
+							: section.kind === "bridge"
+								? "step"
+								: section.kind === "chorus"
+									? "climax"
+									: src === "a2" || u > 0
+										? "sequence"
+										: "motif",
+					// リフ型は素材も1つに揃える（`sourceOf` でセクションごとに
+					// 変えると、そこだけ別の型が始まってオスティナートにならない）。
+					source: form === "ostinato" ? "a" : src,
 					landing: null,
 					section,
 				});
 			} else {
 				// 答え。セクションの最後だけ、そのセクションの役目に応じて着地する。
 				const landing = landingOf(section);
+				// リフ型は「問いと答え」で書かない。曲の最後だけ着地させて、
+				// それ以外は同じ型を回す。
+				const riff = form === "ostinato" && !(isLast && landing === 0);
 				units.push({
-					role: isLast && landing === 0 ? "cadence" : "answer",
-					source: "answer",
+					role: isLast && landing === 0 ? "cadence" : riff ? "motif" : "answer",
+					source: riff ? "a" : "answer",
 					landing: isLast ? landing : null,
 					section,
 				});
@@ -3166,13 +3322,27 @@ const draw = (
 		return null;
 	};
 
+	/**
+	 * 音域をどれだけ広げる曲か（0〜1）。うねりの振幅とオクターブ跳躍の出やすさに掛ける。
+	 *
+	 * 初版は `arcAmp` も `octaveAffinity` も下限が0でなかったため、**どの曲も必ず
+	 * 音域が広がった**（生成系の実測は12〜26半音）。参考コーパスには音域5半音の
+	 * リフ曲があり、到達できない27本のうち9本がこの軸で外れていた。
+	 *
+	 * リフ型（{@link MelodyForm}）は狭い側へ寄せる。同じ型を回す曲が
+	 * オクターブを跳んで回っていたら、それはもうオスティナートではない。
+	 */
+	const registerSpread =
+		form === "ostinato" ? rnd() ** 2 * 0.5 : 0.25 + rnd() * 0.75;
+
 	const style: MelodyStyle = {
 		groove: pick<Groove>(["eighth", "sixteenth"], rnd),
 		arcPeriod: pick([4, 8, 8, 16], rnd),
 		arcPhase: pick([0, 1, 2], rnd),
-		arcAmp: 2 + rnd() * 3,
+		arcAmp: 5 * registerSpread,
 		// オクターブ跳躍は参考曲では音程の1.0%しかない。上げすぎると音域が広がる。
-		octaveAffinity: 0.06 + rnd() * 0.12,
+		octaveAffinity: 0.18 * registerSpread,
+		maxLeap: pick(LEAP_CEILINGS, rnd),
 		// **音階を厳しく締める曲は必ず中核音の歩数で組む。** ダイアトニックの度数で輪郭を
 		// 作ると、琉球音階なのにレやラが輪郭の中に入り込む。ファ・シを自由に使う
 		// 陽・民謡だけが、曲ごとに掛けたり掛けなかったりする（{@link ComposeScale.strict}）。
@@ -3250,7 +3420,18 @@ const draw = (
 	 * 曲ごとの休符率の狙い。参考曲は中央値0.09（p25〜p75で0.03〜0.16）。
 	 * 短い息継ぎを中心にして、歌が程よく詰まるように寄せる。
 	 */
-	const targetRestRatio = 0.02 + rnd() * 0.1;
+	/**
+	 * 曲ごとの狙いの休符率。
+	 *
+	 * 初版は `0.02 + rnd() * 0.1`（＝0.02〜0.12）で、生成系の実測レンジが 0.01〜0.25
+	 * にしかならなかった。参考コーパスの帯は p05〜p95 が **0.016〜0.464** で、
+	 * 到達できない27本のうち**15本がこの軸で外れていた**（`scripts/compare-reach.ts`）。
+	 * メロディが休まない曲しか作れない、ということ。
+	 *
+	 * 帯の全域を覆いつつ、二乗で低い側へ寄せる（中央値は約0.12で、コーパスの
+	 * 中央値0.149に近い）。歌モノは詰まっているのが普通で、スカスカな曲は少数派。
+	 */
+	const targetRestRatio = 0.02 + rnd() ** 2 * 0.42;
 	/** 1小節の型が持つ音数。 */
 	const cellNotes = (c: RhythmCell): number =>
 		c.value.filter((v) => v > 0).length;
@@ -3681,12 +3862,15 @@ const draw = (
 				scale,
 				style.pentatonicMotif,
 				motifShiftMemo.get(shiftKey) ?? null,
+				// リフ型は和音へ寄せない。同じセルを回し続けるのが役目。
+				form === "ostinato" ? 0 : 3,
 			);
 			fitted = r.degrees;
 			motifShiftMemo.set(shiftKey, r.shift);
 		}
 		const pitches = shapeBar(fitted, slots, tones, prevSemi, {
 			scale,
+			maxLeap: style.maxLeap,
 			allowLeap: role === "climax",
 			allowArpeggio:
 				role === "climax" ||
@@ -4377,6 +4561,7 @@ const draw = (
 		: [];
 
 	return {
+		form,
 		chordProgression,
 		chordPattern,
 		rootShift,
@@ -4494,12 +4679,21 @@ const evaluate = (
 
 	const at = (b: Band, v: number): number => band(v, b[0], b[1], b[2], b[3]);
 	/**
-	 * コーパスから採った項目は**中央値へ寄っているほど高い点**にする。
-	 * 帯（p25〜p75）を一律に満点にしていた頃は、全項目が帯の端へ同時に寄った曲
-	 * ——スカスカで跳ねてばかりの曲——も満点を取れていた（{@link centeredBand}）。
+	 * コーパスから採った項目は**「人間の範囲に居るか」だけ**を見る
+	 * （{@link plausibleBand}）。
+	 *
+	 * ここは以前 {@link centeredBand} で中央値へ寄せていた。「全項目が帯の端へ同時に
+	 * 寄った曲」を弾くためだったが、周辺分布の中央値は**どの曲でもない平均的な一点**で、
+	 * そこへ寄せると人間の曲そのものが落ちる（{@link DEVIATION_BUDGET} の実測）。
+	 * p25〜p75 を満点にする {@link band} でも傾斜は残るので、そこも外した。
+	 *
+	 * 「全項目が端に同時に寄った曲」は、ここでは弾かない。弾こうとすると必ず
+	 * 「コーパスの真ん中に寄れ」という形になり、人間の曲そのものが落ちるため
+	 * （上の実測）。壊れているものは {@link HARD} が落とす。
 	 */
 	const atc = (key: keyof typeof CORPUS_BANDS, v: number): number =>
-		centeredBand(v, CORPUS_BANDS[key], CORPUS_MEDIANS[key]);
+		plausibleBand(v, CORPUS_BANDS[key]);
+
 	const peakBand: Band =
 		d.bars > 24
 			? [0, 1, Math.round(d.bars / 16), Math.round(d.bars / 8) + 2]
@@ -4540,9 +4734,27 @@ const evaluate = (
 		novelty,
 	};
 
+	// --- 逸脱の予算：周辺分布の項目のうち、最も損している数本を採点から外す ---
+	//
+	// 「損している」は重み込みの不足分 `weight * (1 - score)` で見る。重み1.4の項目で
+	// 0.5落とすことと、重み0.4の項目で丸ごと0点になることを同じ土俵に載せるため。
+	const forgiven = new Set<string>(
+		Object.entries(WEIGHTS)
+			.filter(([key]) => BUDGETED_KEYS.has(key))
+			.map(([key, weight]) => ({
+				key,
+				deficit: weight * (1 - (scoreBreakdown[key] ?? 0)),
+			}))
+			.sort((a, b) => b.deficit - a.deficit)
+			.slice(0, DEVIATION_BUDGET)
+			.filter((e) => e.deficit > 0)
+			.map((e) => e.key),
+	);
+
 	let weighted = 0;
 	let weightSum = 0;
 	for (const [key, weight] of Object.entries(WEIGHTS)) {
+		if (forgiven.has(key)) continue;
 		weighted += (scoreBreakdown[key] ?? 0) * weight;
 		weightSum += weight;
 	}
@@ -4604,53 +4816,76 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 		rnd,
 	);
 
-	let best: ComposeResult | null = null;
-	let bestScore = Number.NEGATIVE_INFINITY;
-	let bestIsValid = false;
+	type Candidate = { d: Draw; stats: ReturnType<typeof evaluate>["stats"] };
+	const valid: Candidate[] = [];
+	const invalid: Candidate[] = [];
 	let rejected = 0;
 
 	for (let attempt = 1; attempt <= count; attempt++) {
 		const d = draw(options, resolvedKey, scale, rnd);
 		const { stats, ok } = evaluate(d, recent);
-		if (!ok) rejected++;
-		// ハード制約を通った候補は、通らなかった候補より必ず優先する。
-		const better = ok === bestIsValid ? stats.score > bestScore : ok;
-		if (!better) continue;
-		bestScore = stats.score;
-		bestIsValid = ok;
-		best = {
-			// ドラム・楽器・編曲プランは勝った候補にだけ後から付ける（メロディに
-			// 依存しないので候補ごとに引いても採点は動かず、40本ぶん無駄になる）。
-			drum: "",
-			instrument: "",
-			arrange: EMPTY_ARRANGE,
-			chordProgression: d.chordProgression,
-			chordPattern: d.chordPattern,
-			rootShift: d.rootShift,
-			keyName: d.keyName,
-			keyLabel: d.keyLabel,
-			scaleId: scale.id,
-			scaleLabel: scale.label,
-			moodLabel: d.moodLabel,
-			bpm: d.bpm,
-			sections: d.sections,
-			bars: d.bars,
-			vocal: d.vocal,
-			tonal: d.tonal,
-			melody: d.melody,
-			submelody: d.submelody,
-			bass: d.bass,
-			harmony: d.harmony,
-			harmony2: d.harmony2,
-			octave: d.octave,
-			pad: d.pad,
-			solo: d.solo,
-			stats: { ...stats, attempts: attempt, rejected },
-		};
+		if (ok) valid.push({ d, stats });
+		else {
+			rejected++;
+			invalid.push({ d, stats });
+		}
 	}
 
-	// best は必ず入っている（候補を1本以上引いているため）。
-	const result = best as ComposeResult;
+	// ハード制約を通った候補は、通らなかった候補より必ず優先する。
+	const pool = valid.length > 0 ? valid : invalid;
+
+	// **最高点を必ず選ぶのをやめる。**
+	//
+	// 採点式は「壊れた曲」と「そうでない曲」を分ける分解能はあっても、0.85 と 0.87 の
+	// どちらが良い曲かを言えるほどの分解能は無い。それでも必ず最大値を取ると、
+	// 引く本数を増やすほど**採点式の頂点1点へ収束する**（{@link DRAW_COUNT} の実測）。
+	// 点差を温度で均し、僅差の候補からは確率的に引く。
+	const top = Math.max(...pool.map((c) => c.stats.score));
+	const weights = pool.map((c) =>
+		Math.exp((c.stats.score - top) / SELECT_TEMPERATURE),
+	);
+	const total = weights.reduce((a, b) => a + b, 0);
+	let ticket = rnd() * total;
+	let chosen = pool[pool.length - 1];
+	for (let i = 0; i < pool.length; i++) {
+		ticket -= weights[i];
+		if (ticket <= 0) {
+			chosen = pool[i];
+			break;
+		}
+	}
+
+	const d = chosen.d;
+	const result: ComposeResult = {
+		// ドラム・楽器・編曲プランは勝った候補にだけ後から付ける（メロディに
+		// 依存しないので候補ごとに引いても採点は動かず、候補数ぶん無駄になる）。
+		drum: "",
+		instrument: "",
+		arrange: EMPTY_ARRANGE,
+		chordProgression: d.chordProgression,
+		chordPattern: d.chordPattern,
+		rootShift: d.rootShift,
+		keyName: d.keyName,
+		keyLabel: d.keyLabel,
+		scaleId: scale.id,
+		scaleLabel: scale.label,
+		form: d.form,
+		moodLabel: d.moodLabel,
+		bpm: d.bpm,
+		sections: d.sections,
+		bars: d.bars,
+		vocal: d.vocal,
+		tonal: d.tonal,
+		melody: d.melody,
+		submelody: d.submelody,
+		bass: d.bass,
+		harmony: d.harmony,
+		harmony2: d.harmony2,
+		octave: d.octave,
+		pad: d.pad,
+		solo: d.solo,
+		stats: { ...chosen.stats, attempts: count, rejected },
+	};
 	result.stats.attempts = count;
 	result.stats.rejected = rejected;
 	result.drum = pickBuiltinDrum(result, rnd);

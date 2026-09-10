@@ -453,16 +453,50 @@ export const band = (
 	idealHi: number,
 	hi: number,
 ): number => {
-	if (v <= lo || v >= hi) return 0;
+	// **満点の台地を、外側の判定より先に見る。**
+	//
+	// コーパスによっては p05 と p25 が同じ値になる——「そこがいちばん人の書く値」
+	// という意味なのに、`v <= lo` を先に見ると**その値がまるごと0点**になる。
+	// densityCliff の帯 [0, 0, 0.043, 0.125] が実際にそれで、91本のうち72本（79%）が
+	// 重み1.0の項目で0点を取っていた。phraseBreath・chromaticRatio も同じ形をしている。
 	if (v >= idealLo && v <= idealHi) return 1;
-	// コーパスによっては p05 と p25（p75 と p95）が一致し、坂の幅が0になりうる。
-	// そのまま割ると NaN が採点へ混ざるので、幅が無いときは崖として扱う。
+	if (v <= lo || v >= hi) return 0;
+	// 坂の幅が0のとき（p05 と p25 が一致）は、そのまま割ると NaN が採点へ混ざる。
+	// 上の台地判定を通り抜けてここへ来るのは幅がある場合だけだが、防御として残す。
 	if (v < idealLo) return idealLo === lo ? 0 : (v - lo) / (idealLo - lo);
 	return hi === idealHi ? 0 : (hi - v) / (hi - idealHi);
 };
 
 /** 目標帯。`scripts/calibrate-corpus.ts` が人間の曲から採った値をこの形で出す。 */
 export type Band = [lo: number, idealLo: number, idealHi: number, hi: number];
+
+/**
+ * **「壊れていないか」だけを見る当てはめ。** p05〜p95 の内側なら一律1点、
+ * その外側で 0 へ落ちる。
+ *
+ * ## なぜ {@link band} と分けるか
+ *
+ * `band` は p25〜p75 を満点にして、そこから離れるほど減点する。これは
+ * **「各指標の真ん中に居るほど良い曲」**と言っているのと同じで、目標帯が21項目を
+ * 独立に採った周辺分布である以上、その真ん中は**どの曲でもない平均的な一点**でしかない。
+ *
+ * 実測すると、選抜を完全に切って（候補1本）もなお
+ *
+ *   人間の曲 中央 0.921 ／ 生成物 中央 0.970
+ *
+ * と生成物のほうが高い。選抜のせいではなく、**採点式そのものが中央を報酬にしていた**。
+ * 人間の曲は散らばるので、周辺分布の傾斜がある限り必ず生成物に負ける。
+ *
+ * そこで周辺分布の項目は「人間の範囲に居るか」の確認だけに格下げし、
+ * 「人間が書いた曲の形をしているか」の判断は
+ * {@link nearestProfileDistance}（項目の**組み合わせ**を見る）へ渡す。
+ * 帯の外側は、帯幅の半分ぶんかけて 0 へ落とす（崖にすると僅差で全部落ちる）。
+ */
+export const plausibleBand = (v: number, b: Band): number => {
+	const span = b[3] - b[0];
+	const margin = span > 0 ? span * 0.5 : 1;
+	return band(v, b[0] - margin, b[0], b[3], b[3] + margin);
+};
 
 /**
  * 帯の内側で、**コーパスの中央値へ寄っているほど高い**点を返す（0.85〜1.0）。
@@ -529,3 +563,77 @@ export const featureDistance = (a: number[], b: number[]): number => {
 		sum += (a[i] - b[i]) ** 2;
 	return Math.sqrt(sum);
 };
+
+// ============================================================
+// 実在する曲との近さ（**採点には使わない。測定専用**）
+// ============================================================
+//
+// 一時期これを `typicality` として採点へ入れていたが撤去した。コーパスが示すのは
+// 「これらは成立する」という*十分性*であって「これら以外は成立しない」という
+// *必要性*ではなく、**人の居ない領域の曲が劣ると言える根拠が無い**以上、
+// 近さを報酬にする理由が無い（`src/compose.ts` の WEIGHTS 直後のコメント）。
+//
+// いま残してあるのは**生成系がコーパスのどこへ到達できるかを測る**ため。
+// 採点を完全に切って1500本引いても届かない曲が91本中33本あり、そこが
+// 生成系を広げる作業の入口になる。`scripts/compare-reach.ts`。
+
+/**
+ * 指標の値を、帯の p05〜p95 を 0〜1 とする尺度へ写す。
+ *
+ * 項目ごとに単位が違う（半音・比率・個数）ので、そのまま距離を取ると
+ * `maxLeap` の 1 と `restRatio` の 1 が同じ重みになってしまう。帯の幅で割ることで
+ * 「コーパスの散らばりを1とした距離」に揃う。外れ値が距離を支配しないよう、
+ * 帯の外側は ±0.5 ぶんで頭打ちにする。
+ */
+export const normalizeByBand = (v: number, b: Band): number => {
+	const span = b[3] - b[0];
+	if (!(span > 0)) return 0;
+	return Math.max(-0.5, Math.min(1.5, (v - b[0]) / span));
+};
+
+/**
+ * 正規化済みベクトルどうしの平均絶対差（各成分がおおよそ 0〜1 なので、これも 0〜1）。
+ * ユークリッドではなく L1 の平均にしてあるのは、**1項目だけ大きく外れた曲**を
+ * 二乗で過大に罰しないため——それこそが人間の曲の特徴だった。
+ */
+export const profileDistance = (a: number[], b: number[]): number => {
+	const n = Math.min(a.length, b.length);
+	if (n === 0) return 1;
+	let sum = 0;
+	for (let i = 0; i < n; i++) sum += Math.abs(a[i] - b[i]);
+	return sum / n;
+};
+
+/**
+ * **コーパスの中で最も近い1曲との距離**。0 に近いほど「実在する曲に似ている」。
+ *
+ * 「似ている＝良い」ではないので採点には使わない（上のコメント）。
+ * 使い道は**生成系の到達範囲の測定**——ある曲の形へ、生成系が何本引いても
+ * どこまでしか近づけないかを見る。
+ */
+export const nearestProfileDistance = (
+	v: number[],
+	profiles: readonly (readonly number[])[],
+	/**
+	 * 距離がこれ未満の相手を「自分自身」とみなして数えない。
+	 * コーパスの曲そのものを採点するとき（`scripts/check-evaluator.ts`）に要る——
+	 * 自分と一致する点が必ず1つあるので、そのままだと全曲が距離0になり、
+	 * 「人間の曲は必ず満点」という無意味な検算になってしまう。
+	 */
+	excludeWithin = 0,
+): number => {
+	let best = Number.POSITIVE_INFINITY;
+	for (const p of profiles) {
+		const d = profileDistance(v, p as number[]);
+		if (d < excludeWithin) continue;
+		best = Math.min(best, d);
+	}
+	return Number.isFinite(best) ? best : 1;
+};
+
+/**
+ * 最近傍距離を 0〜1 の読みやすい尺度へ写す。半径（コーパス自身の最近傍距離の p75）で
+ * 0.5、その2倍離れて 0。**測定結果を人が読むための換算**であって採点ではない。
+ */
+export const typicalityOf = (nearest: number, radius: number): number =>
+	Math.max(0, Math.min(1, 1 - nearest / Math.max(radius * 2, 1e-9)));

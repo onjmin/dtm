@@ -598,18 +598,27 @@ console.log("● フレーズ構造");
 		// lag1（0.48〜0.71）と lag4（0.57〜0.80）は重なっている。曲ごとには
 		// 「小楽節が戻ってきている」ことだけを見て、大小関係は全体の平均で見る。
 		check(`${tag} 4小節で形が戻る`, f.sim4 >= 0.4, `lag4 ${f.sim4.toFixed(2)}`);
-		// フレーズの切れ目（2小節ごと）で息継ぎがあること。
-		check(
-			`${tag} フレーズの切れ目で息継ぎ`,
-			f.phraseBreath >= 0.1,
-			`${f.phraseBreath.toFixed(2)}`,
-		);
+		// フレーズの切れ目（2小節ごと）で息継ぎがあること。リフ型は上と同じ理由で除く。
+		if (song.form !== "ostinato")
+			check(
+				`${tag} フレーズの切れ目で息継ぎ`,
+				f.phraseBreath >= 0.1,
+				`${f.phraseBreath.toFixed(2)}`,
+			);
 		// 楽句は2小節。**メロディのあるセクションの末尾**は必ずロングトーンか
 		// 休符で受ける（歌手の息継ぎ）。小節番号で固定していた頃は、セクションの
 		// 選び方で位置が変わると成立しなくなっていた。
-		const endBars = song.sections
-			.filter((x) => x.spec.melody)
-			.map((x) => x.startBar + x.bars - 1);
+		//
+		// **リフ型（`form === "ostinato"`）には要求しない。** 同じ型を曲全体で回すのが
+		// その作りで、セクションの切れ目は編曲（ドラム・楽器・レイヤ）が示す。
+		// 参考コーパスのリフ曲も実際に息継ぎしない（イワシの phraseBreath は 0.00、
+		// ヤツメ穴は 0.25）。ここを全曲に課すと、歌モノ以外を作れない生成系に戻る。
+		const endBars =
+			song.form === "ostinato"
+				? []
+				: song.sections
+						.filter((x) => x.spec.melody)
+						.map((x) => x.startBar + x.bars - 1);
 		for (const bar of endBars) {
 			const inBar = song.melody.filter(
 				(n) =>
