@@ -44,6 +44,17 @@ export type InstrumentPreset = {
 	 * ここも以前は `chord` を使い回していた。
 	 */
 	sparkle: string;
+	/**
+	 * ベースの2色目。**セクションでベースの音色を替える**ために使う。
+	 * t4 が静かな側、t5 が盛り上がる側を持ち、**同じ音を二度鳴らさずに**
+	 * 境目で音色だけが入れ替わる。`bass` と喧嘩しない同族を選ぶこと。
+	 */
+	bassAlt: string;
+	/**
+	 * ハモリの2色目。同じくセクションで音色を替えるため（t2 が静かな側、
+	 * t12 が盛り上がる側）。ハモリは声部なので、声もの・柔らかい持続音が合う。
+	 */
+	harmonyAlt: string;
 };
 
 export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
@@ -65,6 +76,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chorusLead: "Celesta",
 		chordAlt: "Electric Piano 1",
 		sparkle: "Music Box",
+		bassAlt: "Acoustic Bass",
+		harmonyAlt: "Choir Aahs",
 	},
 	acoustic: {
 		displayName: "アコースティック",
@@ -77,6 +90,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chorusLead: "String Ensemble 1",
 		chordAlt: "Acoustic Grand Piano",
 		sparkle: "Celesta",
+		bassAlt: "Electric Bass (finger)",
+		harmonyAlt: "Choir Aahs",
 	},
 	jazz_night: {
 		displayName: "ジャズ・ナイト",
@@ -89,6 +104,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chorusLead: "Muted Trumpet",
 		chordAlt: "Vibraphone",
 		sparkle: "Celesta",
+		bassAlt: "Electric Bass (finger)",
+		harmonyAlt: "Choir Aahs",
 	},
 
 	// --- MODERN & VIBE: エッジの効いた現代的な響き ---
@@ -103,6 +120,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chorusLead: "Synth Brass 1",
 		chordAlt: "Electric Piano 2",
 		sparkle: "FX 3 (crystal)",
+		bassAlt: "Synth Bass 1",
+		harmonyAlt: "Synth Choir",
 	},
 	cyber_punk: {
 		displayName: "サイバーパンク",
@@ -115,6 +134,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chorusLead: "Lead 7 (fifths)",
 		chordAlt: "Pad 4 (choir)",
 		sparkle: "FX 3 (crystal)",
+		bassAlt: "Synth Bass 1",
+		harmonyAlt: "Synth Choir",
 	},
 	rock: {
 		displayName: "ハードロック",
@@ -127,6 +148,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chorusLead: "Brass Section",
 		chordAlt: "Electric Guitar (clean)",
 		sparkle: "Electric Guitar (muted)",
+		bassAlt: "Electric Bass (finger)",
+		harmonyAlt: "Choir Aahs",
 	},
 
 	// --- WORLD & CLASSIC: 特定のジャンル・地域 ---
@@ -141,6 +164,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chorusLead: "Trumpet",
 		chordAlt: "String Ensemble 1",
 		sparkle: "Orchestral Harp",
+		bassAlt: "Contrabass",
+		harmonyAlt: "Choir Aahs",
 	},
 	japanese_wa: {
 		displayName: "和風・雅",
@@ -154,6 +179,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chorusLead: "Celesta",
 		chordAlt: "Kalimba",
 		sparkle: "Music Box",
+		bassAlt: "Acoustic Bass",
+		harmonyAlt: "Choir Aahs",
 	},
 	arabic_exotic: {
 		displayName: "エキゾチック",
@@ -166,6 +193,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chorusLead: "Steel Drums",
 		chordAlt: "Orchestral Harp",
 		sparkle: "Tinkle Bell",
+		bassAlt: "Acoustic Bass",
+		harmonyAlt: "Choir Aahs",
 	},
 
 	// --- FANTASY & ATMOSPHERE: 雰囲気と余韻 ---
@@ -180,6 +209,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chorusLead: "Choir Aahs",
 		chordAlt: "String Ensemble 2",
 		sparkle: "Tinkle Bell",
+		bassAlt: "Contrabass",
+		harmonyAlt: "Choir Aahs",
 	},
 	ambient_cloud: {
 		displayName: "アンビエント",
@@ -192,6 +223,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chorusLead: "Synth Choir",
 		chordAlt: "Pad 5 (bowed)",
 		sparkle: "FX 3 (crystal)",
+		bassAlt: "Synth Bass 2",
+		harmonyAlt: "Synth Choir",
 	},
 	retro_game: {
 		displayName: "8-bit レトロ",
@@ -204,6 +237,8 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		chorusLead: "Lead 4 (chiff)",
 		chordAlt: "Lead 5 (charang)",
 		sparkle: "Xylophone",
+		bassAlt: "Synth Bass 2",
+		harmonyAlt: "Lead 6 (voice)",
 	},
 };
 
