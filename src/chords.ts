@@ -299,12 +299,18 @@ export const buildChordPlacements = (
 						}
 					}
 				} else if (patternType === "alternating") {
+					const quarterSteps = Math.floor(stepsPerBar / 4);
 					notes.forEach((noteOffset, i) => {
-						const stepOffset = i * Math.floor(stepsPerBar / 4);
+						const stepOffset = i * quarterSteps;
+						const isLast = i === notes.length - 1;
+						// 最後の音は拍4まで引き延ばして埋める。3音なら3拍目、2音（パワーコード等）なら2拍目が伸びる。
+						const durationSteps = isLast
+							? Math.max(12, noteLength - stepOffset)
+							: Math.max(12, quarterSteps);
 						placements.push({
 							startStep: chord.whenStep + stepOffset,
 							pitchUnits: toUnits(noteOffset),
-							durationSteps: Math.max(12, Math.floor(stepsPerBar / 4)),
+							durationSteps,
 							velocity: 100,
 						});
 					});
