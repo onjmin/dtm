@@ -28,6 +28,7 @@ import {
 import { type Units, units } from "./tuning";
 import type {
 	CustomVocalDef,
+	FadeStop,
 	LyricSyllable,
 	LyricTrack,
 	OctaveUnisonMode,
@@ -155,6 +156,9 @@ export const BREATH_MARK = "、";
 /**
  * デクレッシェンド。ノートは消費せず、直前の音（継続で結合されていればその全体）を
  * 歌いながら声量0へ落とす。`あーーーーー↓` で「あ」を伸ばしたまま消えていく。
+ *
+ * 1音へ複数書くと、書いた位置が減り方の中継点になる（`ぎ↓ー↓` = 50%→0%）。
+ * 詳細は {@link buildFadeCurve}。
  */
 export const FADE_OUT_MARK = "↓";
 /**
@@ -810,6 +814,8 @@ export type VoiceModel = {
 		fadeOut?: boolean,
 		/** 歌いながら声量を上げる（`↑`）。両方立てるとスウェルになる。 */
 		fadeIn?: boolean,
+		/** 記号を複数書いたときの声量の中継点列（{@link buildFadeCurve}）。 */
+		fadeCurve?: FadeStop[],
 	) => void;
 	/** スケジュール済みの発音をすべて即停止する（停止・一時停止・シーク時）。 */
 	stopAll?: () => void;
@@ -834,6 +840,8 @@ const FADE_OUT_FLOOR = 0.02;
  * - `fadeOut` … 最大で入ってサステイン終端で最小（デクレッシェンド）
  * - 両方 … 小さく入って中央で最大、そこから最小（スウェル／messa di voce）
  * - どちらも無し … 従来どおりサステイン一定
+ * - `curve` … 記号を複数書いたときの中継点列（{@link buildFadeCurve}）。
+ *   サステイン区間を 0〜1 で見た位置へ写して折れ線で繋ぐ。スウェルとは併用しない。
  *
  * `exponentialRampToValueAtTime` は0を受け付けないので、下限は
  * {@link FADE_OUT_FLOOR} 倍で止める。芯を残したほうが「消えていった」と聞こえる。
@@ -847,14 +855,31 @@ const applyDynamicsEnvelope = (
 		peak: number;
 		fadeIn?: boolean;
 		fadeOut?: boolean;
+		/** 記号を複数書いたときの中継点列。スウェル（fadeIn かつ fadeOut）では無視する。 */
+		curve?: FadeStop[];
 	},
 ): void => {
-	const { startAt, attackEnd, sustainEnd, peak, fadeIn, fadeOut } = o;
+	const { startAt, attackEnd, sustainEnd, peak, fadeIn, fadeOut, curve } = o;
 	const floor = Math.max(0.0001, peak * FADE_OUT_FLOOR);
 	gain.setValueAtTime(0.0001, startAt);
 	// クレッシェンドは「小さく入る」ので、立ち上がりの到達点が下限になる。
 	gain.exponentialRampToValueAtTime(fadeIn ? floor : peak, attackEnd);
-	if (fadeIn && fadeOut) {
+	if (curve?.length && !(fadeIn && fadeOut)) {
+		// 中継点を順に繋ぐ。時刻はサステイン区間内へ写し、逆行しないよう単調化する
+		// （AudioParam は過去へ向かうランプを受け付けない）。
+		const span = Math.max(0, sustainEnd - attackEnd);
+		let prev = attackEnd;
+		let last = fadeIn ? floor : peak;
+		for (const stop of curve) {
+			const at = Math.min(1, Math.max(0, stop.at));
+			const t = Math.min(sustainEnd, Math.max(prev, attackEnd + span * at));
+			last = Math.max(floor, peak * Math.min(1, Math.max(0, stop.level)));
+			gain.exponentialRampToValueAtTime(last, t);
+			prev = t;
+		}
+		// 最後の中継点が終端より手前で終わっていたら、その声量のまま終端まで保つ。
+		if (prev < sustainEnd) gain.setValueAtTime(last, sustainEnd);
+	} else if (fadeIn && fadeOut) {
 		const mid = attackEnd + (sustainEnd - attackEnd) / 2;
 		gain.exponentialRampToValueAtTime(peak, mid);
 		gain.exponentialRampToValueAtTime(floor, sustainEnd);
@@ -990,6 +1015,7 @@ export const createKlattVoice = (
 			peak,
 			fadeIn: syllable.fadeIn,
 			fadeOut: syllable.fadeOut,
+			curve: e.fadeCurve,
 		});
 		env.gain.exponentialRampToValueAtTime(0.0001, sustainEnd + release);
 
@@ -1722,6 +1748,7 @@ export const createKoeVoice = async (
 		continuation = false,
 		fadeOut = false,
 		fadeIn = false,
+		fadeCurve?: FadeStop[],
 	): void => {
 		// トラック単位チャンネルストリップの入口が指定されていればそちらへ。
 		const dest = destOverride ?? destination;
@@ -1781,6 +1808,7 @@ export const createKoeVoice = async (
 			peak,
 			fadeIn,
 			fadeOut,
+			curve: fadeCurve,
 		});
 		env.gain.exponentialRampToValueAtTime(0.0001, endAt);
 
@@ -1876,6 +1904,7 @@ export const createKoeVoice = async (
 		continuation,
 		fadeOut,
 		fadeIn,
+		fadeCurve,
 	) => {
 		const r = renderCache.get(key);
 		if (r)
@@ -1890,6 +1919,7 @@ export const createKoeVoice = async (
 				continuation,
 				fadeOut,
 				fadeIn,
+				fadeCurve,
 			);
 	};
 
@@ -1946,6 +1976,11 @@ export type StreamVoiceNote = {
 	fadeOut?: boolean;
 	/** このノートを歌いながら声量を上げていく（`↑`）。{@link StreamVoiceNote.fadeOut} の対。 */
 	fadeIn?: boolean;
+	/**
+	 * 声量の中継点列（`↓` / `↑` を1音へ複数書いたとき）。{@link buildFadeCurve} 参照。
+	 * 記号が1つだけ／スウェルのときは付かない（＝従来どおり1音まるごと）。
+	 */
+	fadeCurve?: FadeStop[];
 };
 
 /**
@@ -1966,6 +2001,45 @@ const BREATH_PEAK_SCALE = 0.16;
 
 /** ブレスで削ってよい直前ノートの割合の上限（短い音符を消してしまわないため）。 */
 const BREATH_MAX_RATIO = 0.4;
+
+/**
+ * `↓` / `↑` を1音へ複数書いたときの、声量の中継点列を作る。
+ *
+ * k個書くと、i番目の記号が付いた区間の**終わり**で声量が (k-i)/k 倍になる
+ * （`↑` なら i/k 倍）。`ぎ↓ー↓` は「ぎ」の終わりで50%・音の終わりで0%、
+ * `ぎ↓ー↓ー↓` は 66%→33%→0%。どこで減らすかを書いた位置で刻めるので、
+ * 「後半で一気に消える」「先に半分落としてから粘る」を書き分けられる。
+ *
+ * 最後の1つだけは、書いた位置に関わらず**結合後の音の終端**へ置く。記号が1つの
+ * ときに「付けた位置に関係なく一続き全体へ掛かる」のと辻褄を合わせるためで、
+ * これが無いと `ぎ↓ー↓ー` のように末尾に記号が無いとき、消えたあとに無音の
+ * 余りがぶら下がる。
+ *
+ * @param markedParts 記号が付いた区間の index（`partStarts` の添字）。書いた順。
+ * @param partStarts  結合された各区間の開始秒（先頭からの相対）。
+ * @param durationSec 結合後の全長（秒）。
+ * @param rising      `↑`（クレッシェンド）なら true。
+ */
+const buildFadeCurve = (
+	markedParts: number[],
+	partStarts: number[],
+	durationSec: number,
+	rising: boolean,
+): FadeStop[] => {
+	const k = markedParts.length;
+	let prev = 0;
+	return markedParts.map((part, idx) => {
+		const i = idx + 1;
+		// 記号が付いた区間の終わり = 次の区間の開始（最後の区間なら音の終端）。
+		const endSec = partStarts[part + 1] ?? durationSec;
+		const at =
+			i === k || durationSec <= 0
+				? 1
+				: Math.min(1, Math.max(prev, endSec / durationSec));
+		prev = at;
+		return { at, level: rising ? i / k : (k - i) / k };
+	});
+};
 
 /** {@link buildStreamVoiceNotes} が受け取る演奏ノート（startStep 昇順で渡すこと）。 */
 export type TieSourceNote = {
@@ -2040,8 +2114,10 @@ export const buildStreamVoiceNotes = (
 		let breath = !!syl.breathAfter;
 		// デクレッシェンドは結合を切らない（音量の話であって息の切れ目ではない）。
 		// グループ内のどこに付いていても、結合後の1音全体へ掛ける。
-		let fadeOut = !!syl.fadeOut;
-		let fadeIn = !!syl.fadeIn;
+		// 複数書かれていたときだけ、書いた位置を中継点として拾う（{@link buildFadeCurve}）。
+		const partStarts: number[] = [0];
+		const fadeOutParts: number[] = syl.fadeOut ? [0] : [];
+		const fadeInParts: number[] = syl.fadeIn ? [0] : [];
 		while (
 			sungHead &&
 			i < count &&
@@ -2053,17 +2129,21 @@ export const buildStreamVoiceNotes = (
 				TIE_MERGE_MAX_SEC
 		) {
 			const n = sorted[i];
+			const atSec = (n.startStep - head.startStep) * secondsPerStep;
 			segments.push({
 				pitch: pitchOf(n),
-				atSec: (n.startStep - head.startStep) * secondsPerStep,
+				atSec,
 				portamento: !!syllables[i].portamento,
 			});
+			partStarts.push(atSec);
+			if (syllables[i].fadeOut) fadeOutParts.push(partStarts.length - 1);
+			if (syllables[i].fadeIn) fadeInParts.push(partStarts.length - 1);
 			last = n;
 			breath = !!syllables[i].breathAfter;
-			if (syllables[i].fadeOut) fadeOut = true;
-			if (syllables[i].fadeIn) fadeIn = true;
 			i++;
 		}
+		const fadeOut = fadeOutParts.length > 0;
+		const fadeIn = fadeInParts.length > 0;
 
 		// 結合後の全長 = 先頭の開始から最終区間の（ゲート適用済み）終端まで。
 		let durationSec =
@@ -2075,6 +2155,17 @@ export const buildStreamVoiceNotes = (
 			);
 		}
 
+		// 中継点は「同じ向きの記号が2つ以上」のときだけ。スウェル（`↑` と `↓` の
+		// 併記）は中央で最大という別の形なので、従来どおり刻まない。
+		const fadeCurve =
+			fadeOut && fadeIn
+				? undefined
+				: fadeOutParts.length > 1
+					? buildFadeCurve(fadeOutParts, partStarts, durationSec, false)
+					: fadeInParts.length > 1
+						? buildFadeCurve(fadeInParts, partStarts, durationSec, true)
+						: undefined;
+
 		out.push({
 			syllable: syl,
 			pitch: pitchOf(head),
@@ -2085,6 +2176,7 @@ export const buildStreamVoiceNotes = (
 			...(breath ? { breath: true } : {}),
 			...(fadeOut ? { fadeOut: true } : {}),
 			...(fadeIn ? { fadeIn: true } : {}),
+			...(fadeCurve ? { fadeCurve } : {}),
 		});
 	}
 	return out;
@@ -2672,6 +2764,7 @@ export const createSingingVoices = (
 											note.continuation,
 											note.fadeOut,
 											note.fadeIn,
+											note.fadeCurve,
 										);
 										opts?.onScheduled?.(track, note, t0);
 									} else {
@@ -2714,6 +2807,7 @@ export const createSingingVoices = (
 								delaySend: track.delaySend,
 								destination: dest,
 								pitchSegments,
+								fadeCurve: note.fadeCurve,
 							});
 							opts?.onScheduled?.(track, note, t0);
 						}
