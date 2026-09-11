@@ -295,6 +295,7 @@ studio.mountEditor(editorEl, { mode: "advanced", tracks: TRACKS_ADVANCED });
 **対象となるケース**
 - 5 トラック以上（ドラムトラック除く）の MML を初心者モードで読み込む
 - 5 トラック以上（ドラムトラック除く）の MIDI を初心者モードで読み込む
+- 選択中のトラックから順に入れると**トラックが足りない**本数の UST を初心者モードで読み込む
 
 ダイアログで「はい」を選ぶと上級者モードに切り替わり、コンテンツをそのまま引き継ぎます。
 「いいえ」を選ぶと初心者モードのまま読み込みます（トラックは合算されます）。
@@ -594,6 +595,57 @@ const cp = mountChordPlayer(document.getElementById("chord-app"), "| C | G | Am 
   `createSingingVoices` の戻り値を `mountDAW` / `mountMmlPlayer` の `singingVoices` に渡してください。
 
 重い WORLD 再合成は専用 Web Worker で実行してメインスレッド（楽器・UI）を塞がず、複数ボーカルは音源ごとに並列合成されます。
+
+---
+
+## UST（UTAU）の読み込み・書き出し
+
+UTAU の曲データ（`.ust`）を、**音符と歌詞をまとめて**取り込めます（MIDI へ書き出す必要はありません）。
+UI は「MIDI / UST / MML 入力」パネルの UST 欄、書き出しは「MIDI / UST / MML 出力」の「UST 出力」です。
+
+### 読み込み
+
+- **複数ファイルを一度に選べます**。UST は 1 ファイル＝1 パートなので、ハモリ等で分かれたファイルを
+  **選択中のトラックから順に、隣・その隣…へ 1 ファイルずつ**割り当てます。あぶれたぶんは読み込まず、
+  何件落としたかを UI に表示します（初心者モードでトラックが足りないときは上級者モードへの切り替えを提案します）。
+- 並び順は**ファイル名順**です（`01_main.ust` / `02_harmony.ust` のように番号を付けると狙った順に入ります）。
+- 文字コードは Shift_JIS / UTF-8 を自動判別します。BPM は UST の `Tempo` に合わせます。
+- 歌う音源（`lyricModel`）が未選択のトラックには自動で 1 つ割り当てます（選択済みならそのまま）。
+- MIDI 読み込みと違い**全消去はしません**。伴奏を残したままメロディのパートだけ差し替えられます。
+- 「現在のトラックのみ対象とする」が有効なときは、隣へこぼさず先頭の 1 ファイルだけを読み込みます。
+
+歌詞は 1 ノート 1 音節へ落とします。
+
+| UST の `Lyric` | 取り込み結果 |
+| --- | --- |
+| `か` / `カ` | `か`（カタカナはひらがなへ寄せる） |
+| `a か` / `- か`（連続音） | `か`（空白区切りの最後の語が実体） |
+| `かC4` / `か強`（サフィックス付き） | `か`（先頭のかな列だけ） |
+| `ka` / `kya` / `shi`（ローマ字命名） | `か` / `きゃ` / `し` |
+| `R` | 休符（ノートを作らず位置だけ進む＝ピアノロールの隙間） |
+| `+`（前の歌詞を続ける） | 継続記号 `ー` |
+| 読み取れない綴り（CVVC の `a k` など） | 継続記号 `ー`（言い直さず繋ぐ。件数は UI に表示） |
+
+### 書き出し
+
+「UST 出力」は**選択中のトラック 1 本だけ**を書き出します。UST は単旋律 1 パートのフォーマットなので、
+和音・重なりは先勝ちで 1 本へ潰し、ノートの隙間は `R`（休符）ノートとして書きます。文字コードは
+UTF-8（`Charset=UTF-8` 付き）、改行は CRLF です。31 平均律の微分音は UST に書けないため最寄りの半音へ丸めます。
+
+### API
+
+```ts
+import { parseUst, buildUst } from "@onjmin/dtm";
+
+const part = parseUst(await file.arrayBuffer().then((b) => new Uint8Array(b)), file.name);
+part.bpm;      // UST の Tempo（無ければ null）
+part.notes;    // { startStep, pitch(MIDIノート番号), durationSteps, velocity }[]
+part.lyrics;   // ノート数と同じ音節数のかな歌詞
+
+const text = buildUst({ notes, syllables, bpm: 120 }); // .ust テキスト
+```
+
+`DawInstance` には `exportUST()`（選択中トラックの Blob）と `applyUstParsed(ustTracks, startIndex?)` があります。
 
 ---
 

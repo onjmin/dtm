@@ -143,5 +143,7 @@ export { createSynth, freqFromPitch, type Synth } from "./synth";
 export * from "./tuning";
 export type { NoteData, NoteRemove } from "./types";
 export * from "./types";
+// UST（UTAU）入出力 — 歌詞付きで読み込み、選択中のトラックを書き出す
+export * from "./ust-io";
 export { VOICE_IMAGES } from "./voice-images";
 export { concatFloat32, encodeWavPCM16 } from "./wav-export";

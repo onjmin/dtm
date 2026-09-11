@@ -711,6 +711,8 @@ export type DawInstance = {
 	loadMML: (mml: string) => void;
 	loadMIDI: (bytes: Uint8Array) => void | Promise<void>;
 	exportMIDI: () => Blob;
+	/** 選択中のトラック1本をUST（UTAU）テキストのBlobで返す。 */
+	exportUST: () => Blob;
 	setBpm: (bpm: number) => void;
 	/** 現在のループ再生状態（ON/OFF）を返す */
 	getLoop: () => boolean;
@@ -781,6 +783,14 @@ export type DawInstance = {
 	};
 	/** パース済みMIDIオブジェクトと選択トラックインデックスを直接適用する（上級者モード切替後の再ロード用）。 */
 	applyMidiParsed?: (midi: unknown, selectedIndices: number[]) => void;
+	/**
+	 * 解析済みUSTを `startIndex` のトラックから順に適用する
+	 * （上級者モード切替後の再ロード用。省略時は選択中のトラックから）。
+	 */
+	applyUstParsed?: (
+		ustTracks: import("./ust-io").UstTrackData[],
+		startIndex?: number,
+	) => void;
 	destroy: () => void;
 };
 

@@ -85,6 +85,10 @@ export type DawUIRefs = {
 	midiTrackSelection: HTMLElement;
 	midiPanel: HTMLElement;
 	midiSearchOpenBtn: HTMLButtonElement;
+	ustInput: HTMLInputElement;
+	ustLoadBtn: HTMLButtonElement;
+	ustInfoBtn: HTMLButtonElement;
+	ustLoadNote: HTMLElement;
 	mmlInput: HTMLTextAreaElement;
 	mmlLoadBtn: HTMLButtonElement;
 	mmlLoadNote: HTMLElement;
@@ -111,6 +115,7 @@ export type DawUIRefs = {
 	macroMono: HTMLButtonElement;
 	// output
 	exportMidiBtn: HTMLButtonElement;
+	exportUstBtn: HTMLButtonElement;
 	exportWavBtn: HTMLButtonElement;
 	drumJsonExportBtn: HTMLButtonElement;
 	drumJsonOutput: HTMLElement;
@@ -370,7 +375,7 @@ export const buildUI = (
   </details>
 
   <details class="dtm-panel ${showMidi ? "" : "dtm-hidden"}" data-dtm="midi-panel" data-dtm-acc="io-in">
-    <summary>MIDI / MML 入力</summary>
+    <summary>MIDI / UST / MML 入力</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row" style="flex-wrap:nowrap">
         <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
@@ -381,6 +386,15 @@ export const buildUI = (
         <button class="dtm-btn dtm-btn--success" data-dtm="midi-load" style="flex-shrink:0">読込</button>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
+          <span class="dtm-label" style="line-height: 1;">UST</span>
+          <button class="dtm-infobtn" data-dtm="ust-info" title="USTの読み込み解説">${icon("info", 12)}</button>
+        </div>
+        <input type="file" class="dtm-input dtm-grow" accept=".ust" multiple data-dtm="ust-input" style="min-width:0">
+        <button class="dtm-btn dtm-btn--success" data-dtm="ust-load" style="flex-shrink:0">読込</button>
+      </div>
+      <p class="dtm-load-note dtm-hidden" data-dtm="ust-load-note"></p>
       <div class="dtm-row" style="flex-wrap:nowrap">
         <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
           <span class="dtm-label" style="line-height: 1;">MML</span>
@@ -563,10 +577,11 @@ export const buildUI = (
   </details>
 
   <details class="dtm-panel" data-dtm-acc="io-out">
-    <summary>MIDI / MML 出力</summary>
+    <summary>MIDI / UST / MML 出力</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row">
         <button class="dtm-btn dtm-btn--accent" data-dtm="export-midi">MIDI出力</button>
+        <button class="dtm-btn dtm-btn--accent" data-dtm="export-ust" title="現在選択中のトラックだけをUSTで書き出します">UST出力</button>
         <button class="dtm-btn dtm-btn--success" data-dtm="generate-mml">MML生成</button>
         <button class="dtm-btn dtm-btn--primary dtm-hidden" data-dtm="export-wav">WAV書き出し</button>
       </div>
@@ -706,6 +721,10 @@ export const buildUI = (
 		midiTrackSelection: sel("midi-track-selection"),
 		midiPanel: sel("midi-panel"),
 		midiSearchOpenBtn: sel("midi-search-open"),
+		ustInput: sel("ust-input"),
+		ustLoadBtn: sel("ust-load"),
+		ustInfoBtn: sel("ust-info"),
+		ustLoadNote: sel("ust-load-note"),
 		mmlInput: sel("mml-input"),
 		mmlLoadBtn: sel("mml-load"),
 		mmlLoadNote: sel("mml-load-note"),
@@ -730,6 +749,7 @@ export const buildUI = (
 		macroHarmonic: sel("macro-harmonic"),
 		macroMono: sel("macro-mono"),
 		exportMidiBtn: sel("export-midi"),
+		exportUstBtn: sel("export-ust"),
 		exportWavBtn: sel("export-wav") as HTMLButtonElement,
 		drumJsonExportBtn: sel("drum-json-export"),
 		drumJsonOutput: sel("drum-json-output"),

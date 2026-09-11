@@ -139,6 +139,7 @@ import {
 	PITCH_RANGE_START,
 	unitsPerRow,
 } from "./types";
+import { buildUst, parseUst, type UstTrackData } from "./ust-io";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "./voice-images";
 
 const CHORD_INFO_HTML = `
@@ -597,13 +598,42 @@ const MIDI_INFO_HTML = `
   <p style="margin-top:4px;"><small>みんながMIDIを投稿できる投稿型プラットフォーム: <a href="http://picotune.me/" target="_blank" rel="noopener">picotune.me</a>（いろんなジャンルのMIDIを無料ダウンロードできます。サイト上ではチップチューン風に再生されます）</small></p>
   <p style="margin-top:4px;"><small>※検索で見つかる配布サイトは、個人運営のものから権利的にグレーなものまで様々です。そのため、それらへの直接リンクは載せていません。利用の際は配布元や権利関係をご自身でご確認ください。</small></p>
 
-  <h4>5. UST（UTAU）の歌詞を使う</h4>
-  <p>UTAUのUSTファイルから歌詞だけを取り出して、歌わせることもできます。</p>
+  <h4>5. UST（UTAU）から読み込む</h4>
+  <p>UTAUのUSTファイルは、音符と歌詞をまとめて直接読み込めます（MIDIへ書き出す必要はありません）。下の「UST」欄をお使いください。</p>
+</div>
+`;
+
+const UST_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>1. USTファイルとは</h4>
+  <p>UTAU（歌声合成ソフト）の曲データ（拡張子 <code>.ust</code>）です。音符に加えて<strong>歌詞（かな）も入っている</strong>ので、読み込めばそのまま歌わせられます。</p>
+
+  <h4>2. 読み込みのしかた</h4>
   <ul>
-    <li>音符: UTAUなどでUSTをMIDIに書き出し、上の手順で読み込みます。</li>
-    <li>歌詞: 下記サイトでUSTから歌詞テキストを抜き出し、MML/歌詞入力欄の <code>@@</code> 構文に貼り付けます。</li>
+    <li>「ファイルを選択」から <code>.ust</code> ファイルを選び、「読込」を押します。</li>
+    <li>歌う音源（UTAU欄）が「なし」のトラックには、音源が自動で選ばれます。あとから変更できます。</li>
+    <li>BPMはUSTに書かれたテンポに合わせます。</li>
   </ul>
-  <p style="margin-top:4px;"><small>歌詞の抽出: <a href="https://rpgen3.github.io/ust2txt/" target="_blank" rel="noopener">ust2txt</a></small></p>
+
+  <h4>3. ハモリなど複数パートを一度に読み込む</h4>
+  <p>USTは1ファイル＝1パートです。<strong>複数ファイルをまとめて選べます</strong>（ファイル選択のダイアログで Ctrl / Shift を押しながら選ぶ、またはフォルダの中身を全選択）。</p>
+  <ul>
+    <li><strong>選択中のトラック</strong>から順に、隣・その隣…へ1ファイルずつ入ります。</li>
+    <li>並び順はファイル名順です。<code>01_main.ust</code> <code>02_harmony.ust</code> のように番号を付けておくと狙った順に入ります。</li>
+    <li>トラックが足りないぶんは読み込まれません（上級者モードなら15トラックまで入ります）。</li>
+    <li>下の「現在のトラックのみ対象とする」が有効なときは、隣へこぼさず先頭の1ファイルだけを読み込みます。</li>
+  </ul>
+
+  <h4>4. 歌詞の解釈</h4>
+  <ul>
+    <li>連続音（<code>a か</code>）・ローマ字（<code>ka</code>）の原音名も、かなへ寄せて取り込みます。</li>
+    <li><code>R</code>（休符）は音符の無い隙間になります。</li>
+    <li><code>+</code>（前の歌詞を続ける）は継続記号 <code>ー</code> になります。</li>
+    <li>読み取れなかった歌詞は継続記号になります。歌詞欄で直せます。</li>
+  </ul>
+
+  <h4>5. 書き出し</h4>
+  <p>「MIDI / UST / MML 出力」の「UST出力」で、<strong>選択中のトラック1本だけ</strong>をUSTに書き出せます（USTは単旋律1パートのフォーマットなので、和音は上から1本に潰れます）。</p>
 </div>
 `;
 
@@ -4862,6 +4892,102 @@ export const mountDAW = (
 		updateUndoRedo();
 	};
 
+	/** 選択中のトラックの index（見つからなければ先頭）。 */
+	const activeTrackIndexOf = (): number =>
+		Math.max(
+			0,
+			trackStates.findIndex((t) => t.config.id === activeTrackId),
+		);
+
+	/**
+	 * 選択したUSTのうち、実際に読み込める本数。
+	 *
+	 * 「現在のトラックのみ対象とする」が有効なら、隣へこぼさず1本だけに絞る
+	 * （他のトラックを触らないという指定なので、複数ファイルより指定を優先する）。
+	 */
+	const ustAppliedCount = (count: number, from: number): number =>
+		Math.max(
+			0,
+			Math.min(
+				count,
+				refs.applyActiveOnly?.checked ? 1 : trackStates.length - from,
+			),
+		);
+
+	/**
+	 * 取り込んだUSTを、選択中のトラックから順に流し込む。
+	 *
+	 * USTは1ファイル＝1パートなので、ハモリ等で分かれた複数ファイルは
+	 * **選択中のトラックを先頭に、隣・その隣へと詰めて**割り当てる。
+	 * トラックが足りないぶんは捨て、何本入ったかを戻り値で返す。
+	 *
+	 * MIDI取り込みと違って全消去はしない。歌のパートを1本だけ差し替える使い方
+	 * （伴奏はそのまま、メロディのUSTだけ入れ直す）を壊さないため。
+	 */
+	const applyUstTracks = (
+		ustTracks: UstTrackData[],
+		startIndex?: number,
+	): { applied: number; dropped: number } => {
+		stop();
+		const from = Math.max(0, startIndex ?? activeTrackIndexOf());
+		const targets = ustTracks.slice(0, ustAppliedCount(ustTracks.length, from));
+		// 歌わせる音源。ハモリは同じ声で重ねるのが普通なので、割り当て先の先頭
+		// トラックの音源（未選択なら1つ引く）を、音源未選択のパートへ配る。
+		const voice = trackStates[from]?.lyricModel || pickComposeVocal();
+		targets.forEach((ust, i) => {
+			const t = trackStates[from + i];
+			t.core.setLoadMode(true);
+			t.core.clearNotesWithoutHistory();
+			for (const n of ust.notes) {
+				// USTのピッチは半音（MIDIノート番号）。units へ変換し現在の音律の格子へ丸める。
+				t.core.addNote(n.startStep, snapToEdoGrid(pitchV1ToUnits(n.pitch)), {
+					noteLengthSteps: n.durationSteps,
+					velocity: n.velocity,
+				});
+			}
+			t.core.setLoadMode(false);
+			t.core.addHistoryOnce();
+			t.lyrics = ust.lyrics;
+			if (!t.lyricModel) t.lyricModel = voice;
+			fireLyricsChange(t);
+		});
+		const bpmFromUst = targets.find((u) => u.bpm !== null)?.bpm;
+		if (bpmFromUst) setBpm(Math.round(bpmFromUst));
+		playStartStep = 0;
+		currentOffsetX = 0;
+		const firstPitch = getFirstDetectedPitch();
+		centerPitch(firstPitch ?? pitchV1ToUnits(60));
+		redrawAll();
+		updateTrackPanel();
+		updateUndoRedo();
+		return {
+			applied: targets.length,
+			dropped: ustTracks.length - targets.length,
+		};
+	};
+
+	/**
+	 * 選択中のトラック1本だけをUSTへ書き出す。
+	 *
+	 * USTは単旋律1パートのフォーマットなので、曲全体ではなく「いま見ているパート」
+	 * を渡すのが素直（複数パートが要るなら、パートごとに書き出して並べる）。
+	 * 歌詞は再生と同じ規則（startStep昇順のindexで音節と1:1）で割り当てる。
+	 */
+	const exportUST = (): Blob => {
+		const t = getActive();
+		const syllables = normalizeLyrics(t.lyrics).map(displayKana);
+		const notes = [...t.core.getNotes()].sort(
+			(a, b) => a.startStep - b.startStep,
+		);
+		const text = buildUst({
+			notes,
+			syllables,
+			bpm,
+			projectName: t.config.name,
+		});
+		return new Blob([text], { type: "text/plain;charset=utf-8" });
+	};
+
 	const exportMIDI = (): Blob => {
 		const autoPreset =
 			INSTRUMENT_PRESETS[currentInstrument] ?? INSTRUMENT_PRESETS.piano;
@@ -6060,14 +6186,22 @@ export const mountDAW = (
 
 		// 出力
 		refs.generateMmlBtn.addEventListener("click", showMML);
-		refs.exportMidiBtn.addEventListener("click", () => {
-			const blob = exportMIDI();
+		/** Blobを名前付きでダウンロードさせる（出力ボタン共通）。 */
+		const download = (blob: Blob, fileName: string): void => {
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement("a");
 			a.href = url;
-			a.download = "dtm.mid";
+			a.download = fileName;
 			a.click();
 			URL.revokeObjectURL(url);
+		};
+		refs.exportMidiBtn.addEventListener("click", () => {
+			download(exportMIDI(), "dtm.mid");
+		});
+		refs.exportUstBtn.addEventListener("click", () => {
+			// USTは1パート1ファイル。どのトラックを書き出したか分かる名前にする。
+			const name = getActive().config.name.replace(/[/:*?"<>|\s]+/g, "_");
+			download(exportUST(), `dtm_${name}.ust`);
 		});
 		if (options.onExportWav) {
 			refs.exportWavBtn.classList.remove("dtm-hidden");
@@ -6338,7 +6472,10 @@ export const mountDAW = (
 			showModal("移調の解説", TRANSPOSE_INFO_HTML);
 		});
 
-		if (showMidi) wireMidi();
+		if (showMidi) {
+			wireMidi();
+			wireUst();
+		}
 		if (showMidiSearch) wireMidiSearch();
 
 		// キーボードショートカット
@@ -6457,6 +6594,102 @@ export const mountDAW = (
 				}
 			}
 			overlayDuring(() => applyMidiSelection(pendingMidi, selected));
+		});
+	};
+
+	/** 選択済みで、まだ「読込」を押されていないUST。 */
+	let pendingUsts: UstTrackData[] = [];
+	/** UST欄の下に出す注意書き。空文字なら隠す。 */
+	const setUstNote = (text: string): void => {
+		refs.ustLoadNote.textContent = text;
+		refs.ustLoadNote.classList.toggle("dtm-hidden", text === "");
+	};
+	/** 読み込まれないファイルが出た理由（トラック不足か、1本だけの指定か）。 */
+	const ustDropReason = (): string =>
+		refs.applyActiveOnly?.checked
+			? "「現在のトラックのみ」が有効なため"
+			: "トラック不足のため";
+	/** 選択したUSTがどのトラックへ入るかの予告（読込前に見せる）。 */
+	const ustAssignmentNote = (ustTracks: UstTrackData[]): string => {
+		const from = activeTrackIndexOf();
+		const applied = ustAppliedCount(ustTracks.length, from);
+		if (applied <= 0) return "読み込めるトラックがありません";
+		const names = ustTracks
+			.slice(0, applied)
+			.map((u, i) => `${trackStates[from + i].config.name}←${u.name}`)
+			.join(" / ");
+		const dropped = ustTracks.length - applied;
+		return dropped > 0
+			? `${names}（${ustDropReason()}${dropped}ファイルは読み込みません）`
+			: names;
+	};
+	const wireUst = (): void => {
+		refs.ustInfoBtn.addEventListener("click", () => {
+			showModal("USTの読み込み解説", UST_INFO_HTML);
+		});
+		refs.ustInput.addEventListener("change", async () => {
+			const files = [...(refs.ustInput.files ?? [])];
+			pendingUsts = [];
+			if (files.length === 0) {
+				setUstNote("");
+				return;
+			}
+			refs.overlay.hidden = false;
+			setLoading(true);
+			// 複数選択の並びはブラウザ任せなので、ファイル名順に固定する
+			// （`01_main.ust` `02_harmony.ust` のような番号付けが素直に効くように）。
+			files.sort((a, b) =>
+				a.name.localeCompare(b.name, "ja", { numeric: true }),
+			);
+			for (const file of files) {
+				const bytes = new Uint8Array(await file.arrayBuffer());
+				pendingUsts.push(parseUst(bytes, file.name));
+			}
+			setUstNote(ustAssignmentNote(pendingUsts));
+			refs.overlay.hidden = true;
+			setLoading(false);
+		});
+		refs.ustLoadBtn.addEventListener("click", async () => {
+			if (pendingUsts.length === 0) return;
+			const activeIndex = activeTrackIndexOf();
+			// 初心者モードは4トラックしかない。ハモリを全部入れるには足りないので、
+			// MIDI読込と同じように上級者モードへの切り替えを提案する
+			// （「現在のトラックのみ」が有効なら、そもそも1本しか入れないので聞かない）。
+			if (
+				!isAdvanced &&
+				options.onRequestAdvancedMode &&
+				!refs.applyActiveOnly?.checked &&
+				pendingUsts.length > trackStates.length - activeIndex
+			) {
+				const confirmed = await showConfirmModal(
+					"初心者モードではトラックが足りず、一部のUSTを読み込めません。<br>上級者モードに切り替えますか？",
+				);
+				if (confirmed) {
+					const ustTracks = pendingUsts.slice();
+					options.onRequestAdvancedMode(undefined, (newDaw) => {
+						newDaw.applyUstParsed?.(ustTracks, 0);
+					});
+					return;
+				}
+			}
+			const ustTracks = pendingUsts.slice();
+			overlayDuring(() => {
+				const { applied, dropped } = applyUstTracks(ustTracks);
+				const unknown = ustTracks
+					.slice(0, applied)
+					.reduce((sum, u) => sum + u.unknownLyricCount, 0);
+				setUstNote(
+					[
+						`${applied}ファイルを読み込みました`,
+						dropped > 0
+							? `（${ustDropReason()}${dropped}ファイルは未読込）`
+							: "",
+						unknown > 0
+							? `／読み取れない歌詞${unknown}音は継続記号にしました`
+							: "",
+					].join(""),
+				);
+			});
 		});
 	};
 
@@ -7167,7 +7400,11 @@ export const mountDAW = (
 		applyMidiParsed: (midi: unknown, selectedIndices: number[]): void => {
 			overlayDuring(() => applyMidiSelection(midi, selectedIndices));
 		},
+		applyUstParsed: (ustTracks: UstTrackData[], startIndex?: number): void => {
+			overlayDuring(() => applyUstTracks(ustTracks, startIndex));
+		},
 		exportMIDI,
+		exportUST,
 		setBpm,
 		getLoop: () => loopEnabled,
 		setLoop: (loop: boolean) => applyLoop(loop),
