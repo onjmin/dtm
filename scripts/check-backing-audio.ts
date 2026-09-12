@@ -239,45 +239,53 @@ console.log("■ URLの // を行コメントと誤認しない");
 	check("URLの後ろの音符が生き残る", parsed.placements.length, 3);
 }
 
-console.log("■ 「イントロも鳴らす」のシフト");
+console.log("■ 前奏を鳴らす指定（音符は動かさない）");
 {
-	// イントロぶん（＝何十秒＝数千ステップ）まとめて後ろへずらす操作。
-	// 1ノートずつ moveNote で動かしていた頃は「いまの曲の長さ＋1小節」で
-	// クランプされ、大きくずらすと末尾へ団子になっていた。
-	const { MMLCore } =
-		require("../src/mml-core") as typeof import("../src/mml-core");
-	const core = new MMLCore(
-		{ onMMLGenerated: () => {}, onNotesChanged: () => {} },
-		100,
-		() => ({
-			stepsPerBar: 192,
-			keyCount: 128,
-			pitchRangeStart: 0,
-			keyHeight: 12,
-			stepWidth: 8,
-		}),
+	// 前奏を鳴らす＝「曲の開始を前奏ぶん後ろへ置く」だけで表す。音源側の呼び出しは
+	// 時刻と音源位置を同じだけずらすので、曲と音源の対応（どこで歌が入るか）は変わらない。
+	const startSec = 34.2;
+	const atSongStart = backingMediaSec({
+		fromStep: 0,
+		atStep: 0,
+		startSec,
+		secondsPerStep: SPS,
+	});
+	check("前奏なし: 曲頭で音源は34.2秒地点", atSongStart, 34.2);
+	// 前奏ありのときに音源へ渡す値（呼び出し側が preRoll ぶん両方から引く）
+	check("前奏あり: 音源は頭(0秒)から鳴り出す", atSongStart - startSec, 0);
+	// 曲の途中から再生したときは前奏を鳴らす場面ではない＝引かない
+	const fromMiddle = backingMediaSec({
+		fromStep: 384,
+		atStep: 0,
+		startSec,
+		secondsPerStep: SPS,
+	});
+	check("途中再生: 前奏を挟まずその位置の音源が鳴る", fromMiddle, 38.2);
+
+	// MMLへの往復（前奏の指定）
+	const line = formatMmlMeta(
+		{
+			audio: "https://example.com/a.mp3",
+			audioStart: startSec,
+			audioIntro: true,
+		},
+		" ",
 	);
-	core.addNote(0, pitchV1ToUnits(60), { noteLengthSteps: 48 });
-	core.addNote(96, pitchV1ToUnits(62), { noteLengthSteps: 48 });
-	// 34.2秒 ≒ 3283ステップ（BPM120）。元の曲の長さ（144ステップ）よりずっと遠い。
-	const steps = Math.round(34.2 / SPS);
-	shiftNotes([core], steps);
 	check(
-		"曲の長さを超えるシフトでも、間隔を保ったまま後ろへ動く",
-		core.getNotes().map((n) => n.startStep),
-		[steps, steps + 96],
+		"前奏の指定がMMLへ出る",
+		line,
+		"#audio=https://example.com/a.mp3 #audiostart=34.2 #audiointro=on",
+	);
+	check("読み戻せる", parseMmlMeta(line).audioIntro, true);
+	check(
+		"既定（前奏なし）は書かない",
+		formatMmlMeta({ audio: "https://example.com/a.mp3", audioIntro: false }),
+		"#audio=https://example.com/a.mp3",
 	);
 	check(
-		"音価は変わらない",
-		core.getNotes().map((n) => n.durationSteps),
-		[48, 48],
-	);
-	// 前へずらすと、0より前へ出たものは捨てる（従来のシフトと同じ約束）。
-	shiftNotes([core], -steps - 48);
-	check(
-		"0より前へ出たノートは捨てる",
-		core.getNotes().map((n) => n.startStep),
-		[48],
+		"宣言は本文から取り除かれる",
+		stripMmlMeta("#audiointro=on @0 c;").trim(),
+		"@0 c;",
 	);
 }
 

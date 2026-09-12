@@ -450,6 +450,13 @@ export const mountMmlPlayer = (
 	const backingStartSec = meta.audioStart ?? 0;
 	const backingEndSec = meta.audioEnd ?? 0;
 	const backingAtStep = meta.audioAt ?? 0;
+	/** 前奏を鳴らしてから曲を始めるか（`#audiointro=on`）。 */
+	const backingPlayIntro = meta.audioIntro ?? false;
+	/** この再生で前奏として先に鳴らす秒数（曲頭から再生したときだけ効く）。 */
+	const backingPreRollSec = (fromStep: number): number =>
+		backingPlayIntro && fromStep <= 0 && backingAudio?.isLoaded()
+			? backingStartSec
+			: 0;
 	const secondsPerStep = 60 / bpm / STEPS_PER_BEAT;
 	let loopEnabled = options.loop ?? parseLoopMeta(mml) ?? false;
 
@@ -1689,17 +1696,20 @@ export const mountMmlPlayer = (
 			if (!playing || activePlayer !== instance || skipSinging) return;
 		}
 		lastFromStep = fromStep;
-		seq.start(fromStep);
-		// 伴奏音源を、楽器・歌声と同じアンカーへ合わせる。
+		// 前奏を鳴らす指定なら、そのぶん曲の開始を後ろへ置く（音符の位置は変えない）。
+		const preRollSec = backingPreRollSec(fromStep);
+		seq.start(fromStep, preRollSec);
+		// 伴奏音源を、楽器・歌声と同じアンカーへ合わせる（前奏ぶんだけ手前から鳴らす）。
 		if (backingAudio?.isLoaded()) {
 			backingAudio.start({
-				atTime: seq.getStartTime(),
-				mediaSec: backingMediaSec({
-					fromStep,
-					atStep: backingAtStep,
-					startSec: backingStartSec,
-					secondsPerStep,
-				}),
+				atTime: seq.getStartTime() - preRollSec,
+				mediaSec:
+					backingMediaSec({
+						fromStep,
+						atStep: backingAtStep,
+						startSec: backingStartSec,
+						secondsPerStep,
+					}) - preRollSec,
 				endSec: backingEndSec || undefined,
 			});
 		}
@@ -1757,7 +1767,7 @@ export const mountMmlPlayer = (
 						atStep: backingAtStep,
 						startSec: backingStartSec,
 						secondsPerStep,
-					}),
+					}) - backingPreRollSec(fromStep),
 				);
 				if (!playing || activePlayer !== instance) return;
 			}

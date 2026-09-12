@@ -96,7 +96,7 @@ export type DawUIRefs = {
 	audioBarInput: HTMLInputElement;
 	audioBeatInput: HTMLInputElement;
 	audioAtTimeInput: HTMLInputElement;
-	audioShiftIntroBtn: HTMLButtonElement;
+	audioPlayIntro: HTMLInputElement;
 	// io
 	midiInput: HTMLInputElement;
 	midiLoadBtn: HTMLButtonElement;
@@ -430,7 +430,9 @@ export const buildUI = (
         <input type="text" class="dtm-input" data-dtm="audio-end" placeholder="最後まで" style="width:88px" title="音源のどこで止めるか（分:秒.ミリ秒）。空欄なら最後まで">
       </div>
       <div class="dtm-row">
-        <button class="dtm-btn dtm-btn--primary" data-dtm="audio-shift-intro" title="飛ばしていたイントロも鳴らすように切り替えます。打ち込み全体をイントロのぶんだけ後ろへずらすので、聞こえ方（音源のどこで歌が入るか）は変わりません">イントロも鳴らす</button>
+        <label class="dtm-checkbox-label" title="ONにすると音源を頭から鳴らし、打ち込みは「音源の開始」の位置まで待ってから入ります（音符は動かしません）">
+          <input type="checkbox" class="dtm-checkbox" data-dtm="audio-play-intro"> 「音源の開始」まで待つ（前奏を鳴らす）
+        </label>
       </div>
       <div class="dtm-row">
         <span class="dtm-label">曲の開始</span>
@@ -806,7 +808,7 @@ export const buildUI = (
 		audioBarInput: sel("audio-bar"),
 		audioBeatInput: sel("audio-beat"),
 		audioAtTimeInput: sel("audio-at-time"),
-		audioShiftIntroBtn: sel("audio-shift-intro"),
+		audioPlayIntro: sel("audio-play-intro"),
 		midiInput: sel("midi-input"),
 		midiLoadBtn: sel("midi-load"),
 		midiInfoBtn: sel("midi-info"),

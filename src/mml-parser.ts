@@ -144,6 +144,13 @@ export type MmlMeta = {
 	audioAt?: number;
 	/** 伴奏音源の音量 0-100。`#audiovol=` で埋め込む。省略時は80。 */
 	audioVolume?: number;
+	/**
+	 * 伴奏音源の前奏を鳴らしてから曲を始めるか（`#audiointro=on`）。省略時はオフ。
+	 *
+	 * オンのとき、音源は頭から鳴り、曲（打ち込み）は {@link audioStart} の位置まで
+	 * 待ってから始まる。音符の位置は変わらない——待つのは再生の開始時刻だけ。
+	 */
+	audioIntro?: boolean;
 };
 
 /** `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...` `#loop=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア・コロン） */
@@ -158,6 +165,9 @@ const AUDIO_URL_DIRECTIVE = /#audio=([^\s#;\r\n]+)/gi;
 
 /** `#audiostart=` `#audioend=` `#audioat=` `#audiovol=` にマッチする（小数・符号つき） */
 const AUDIO_NUM_DIRECTIVE = /#audio(start|end|at|vol)=(-?\d+(?:\.\d+)?)/gi;
+
+/** `#audiointro=on` にマッチする（前奏を鳴らしてから曲を始めるか） */
+const AUDIO_INTRO_DIRECTIVE = /#audiointro=(\w+)/gi;
 
 /** `#t<n>inst=<GM楽器名>` にマッチする（値は`;` `#` 改行以外の任意文字） */
 const TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
@@ -254,6 +264,10 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 		else if (key === "at") meta.audioAt = Math.max(0, Math.round(value));
 		else if (key === "vol") meta.audioVolume = clamp(Math.round(value), 0, 100);
 	}
+	for (const m of mml.matchAll(AUDIO_INTRO_DIRECTIVE)) {
+		const v = m[1].toLowerCase();
+		meta.audioIntro = v === "on" || v === "1" || v === "true";
+	}
 	for (const m of mml.matchAll(TRACK_INST_DIRECTIVE)) {
 		const idx = Number.parseInt(m[1], 10);
 		const name = m[2].trim();
@@ -335,6 +349,7 @@ export const stripMmlMeta = (mml: string): string =>
 		.replace(META_DIRECTIVE, "")
 		.replace(AUDIO_URL_DIRECTIVE, "")
 		.replace(AUDIO_NUM_DIRECTIVE, "")
+		.replace(AUDIO_INTRO_DIRECTIVE, "")
 		.replace(TRACK_INST_DIRECTIVE, "")
 		.replace(TRACK_COMP_DIRECTIVE, "")
 		.replace(TRACK_WIDTH_DIRECTIVE, "")
@@ -384,6 +399,7 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 		if (meta.audioAt) parts.push(`#audioat=${Math.round(meta.audioAt)}`);
 		if (meta.audioVolume !== undefined && meta.audioVolume !== 80)
 			parts.push(`#audiovol=${meta.audioVolume}`);
+		if (meta.audioIntro) parts.push("#audiointro=on");
 	}
 	if (meta.trackInstruments) {
 		for (const [idx, name] of Object.entries(meta.trackInstruments)) {

@@ -68,7 +68,11 @@ export type SequencerOptions = {
 };
 
 export type Sequencer = {
-	start: (fromStep?: number) => void;
+	/**
+	 * 再生を始める。`preRollSec` を渡すと、その秒数だけ**待ってから**曲を走らせる
+	 * （伴奏音源の前奏を先に鳴らす用途。曲データには手を触れない）。
+	 */
+	start: (fromStep?: number, preRollSec?: number) => void;
 	stop: () => void;
 	isActive: () => boolean;
 	/**
@@ -369,7 +373,9 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		const sps = secondsPerStep();
 		const time = options.getAudioTime() - startTime;
 		try {
-			options.onTick(getWrappedPlayStep(time, sps));
+			// 前奏の待ち時間（time < 0）はまだ曲が始まっていない。
+			// 再生位置を戻さず開始位置に留めておく（プレイヘッドが曲頭より前へ出ない）。
+			options.onTick(Math.max(fromStepValue, getWrappedPlayStep(time, sps)));
 		} catch (err) {
 			console.error("[sequencer] error in onTick callback:", err);
 		}
@@ -390,7 +396,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 
 	const START_DELAY = 0.1; // 100msの安全先読みバッファ
 
-	const start = (fromStep?: number): void => {
+	const start = (fromStep?: number, preRollSec = 0): void => {
 		stop();
 		fromStepValue = fromStep ?? options.getPlayStartStep();
 		buildTimeline(fromStepValue);
@@ -403,7 +409,9 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		)
 			return;
 		active = true;
-		startTime = options.getAudioTime() + START_DELAY;
+		// 前奏ぶんの待ちは、曲の開始時刻を後ろへ置くだけで作る。
+		// こうすると歌声・フェードなど「開始時刻に揃える側」は何も知らなくてよい。
+		startTime = options.getAudioTime() + START_DELAY + Math.max(0, preRollSec);
 
 		const sps = secondsPerStep();
 		nowIndex = 0;

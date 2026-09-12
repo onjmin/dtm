@@ -663,17 +663,25 @@ const AUDIO_INFO_HTML = `
   <ul>
     <li><strong>音源の開始</strong>: 音源のどこから鳴らすか。<code>0:12.500</code> のように<strong>分:秒.ミリ秒</strong>で書きます（<code>12.5</code> のように秒だけでも可）。</li>
     <li><strong>終了</strong>: 音源のどこで止めるか。空欄なら最後まで。</li>
-    <li><strong>曲の開始</strong>: 上の「音源の開始」を、曲の何小節目・何拍目に合わせるか。曲の途中から重ねられます。</li>
+    <li><strong>曲の開始</strong>: 上の「音源の開始」を、曲のどこに合わせるか。小節・拍と時間のどちらでも指定でき、連動します。曲の途中から重ねられます。</li>
   </ul>
+
+  <h4>4. 前奏の長い音源に合わせる</h4>
+  <p>前奏が長い音源では、<strong>前奏を飛ばす</strong>か<strong>前奏も聴かせて歌を後から入れる</strong>かの2通りがあります。「<strong>「音源の開始」まで待つ</strong>」で切り替えます。</p>
+  <ul>
+    <li><strong>OFF（既定）</strong>: 音源は「音源の開始」から鳴り、曲と同時に始まります（前奏は飛ばされます）。</li>
+    <li><strong>ON</strong>: 音源は<strong>頭から</strong>鳴り、打ち込みは「音源の開始」の位置まで<strong>待ってから</strong>始まります。</li>
+  </ul>
+  <p style="margin-top:4px;"><small>ONにしても<strong>音符は動きません</strong>。遅れるのは再生の開始だけなので、いつでもOFFに戻せます。曲の途中から再生したときは待ちません（その位置の音源がすぐ鳴ります）。</small></p>
   <p style="margin-top:4px;"><small>ズレを感じたら「音源の開始」をミリ秒単位で前後させて詰めてください。再生中に直しても、その場で合わせ直します。</small></p>
 
-  <h4>4. MML出力での扱い</h4>
+  <h4>5. MML出力での扱い</h4>
   <ul>
     <li><strong>URLで読み込んだ音源は <code>#audio=</code> としてMMLに残ります</strong>（開始位置・音量も一緒に）。</li>
     <li><strong>アップロードしたファイルはMMLに含まれません</strong>。受け取った人の環境にそのファイルが無いためです。ファイルで作った設定を共有したいときは、音源をどこかに置いてURLで読み込み直してください。</li>
   </ul>
 
-  <h4>5. 注意</h4>
+  <h4>6. 注意</h4>
   <ul>
     <li>CORSを許可していない配布URLは直接再生に切り替わります。鳴りますが、WAV書き出し・録音には入りません（YouTubeも同じです）。</li>
     <li>YouTubeは外部プレイヤーを操作する都合で、同期の精度が音声ファイルより落ちます。</li>
@@ -3008,6 +3016,14 @@ export const mountDAW = (
 		endSec: 0,
 		/** 音源の開始位置を貼り付ける曲側のステップ。 */
 		atStep: 0,
+		/**
+		 * 「音源の開始」まで待ってから曲を始めるか（前奏を鳴らす）。
+		 *
+		 * 前奏の長い音源では「イントロを飛ばして頭を揃える」か「イントロを聴かせて
+		 * 打ち込みの開始を遅らせる」かの2通りがある。後者を**音符を動かさずに**表すための
+		 * 切り替えで、再生開始を前奏のぶんだけ後ろへ置くだけ（曲データには触れない）。
+		 */
+		playIntro: false,
 		volume: DEFAULT_BACKING_VOLUME,
 		muted: false,
 	};
@@ -3063,6 +3079,7 @@ export const mountDAW = (
 		refs.audioVolume.value = String(backing.volume);
 		refs.audioVolumeLabel.textContent = `${backing.volume}%`;
 		refs.audioMute.checked = backing.muted;
+		refs.audioPlayIntro.checked = backing.playIntro;
 	};
 
 	/** 時間入力欄を読む。読めない書き方のときは直前の値へ戻す（黙って0にしない）。 */
@@ -3102,18 +3119,40 @@ export const mountDAW = (
 		return Math.max(0, until - mediaSec);
 	};
 
-	/** いまの設定で伴奏音源を鳴らし始める（`atTime` は打ち込みと共通のアンカー）。 */
-	const startBacking = (fromStep: number, atTime: number): void => {
+	/**
+	 * いまの再生で、曲が始まる前に先に鳴らす秒数（＝前奏の長さ）。
+	 *
+	 * 「音源の開始」まで待つ設定のときだけ効く。曲の途中から再生したときは
+	 * 前奏を鳴らす場面ではないので0（待たずにその位置の音源が鳴る）。
+	 */
+	const backingPreRollSec = (fromStep: number): number =>
+		backing.playIntro && fromStep <= 0 && backingAudio?.isLoaded()
+			? backing.startSec
+			: 0;
+
+	/**
+	 * いまの設定で伴奏音源を鳴らし始める。
+	 *
+	 * `atTime` は打ち込みの開始時刻（＝前奏ぶん後ろへ置かれた時刻）で、音源のほうは
+	 * そこから前奏ぶん**手前**から鳴り出す。時刻と音源位置を同じだけずらしているので、
+	 * 「曲のどこで音源のどこが鳴るか」の関係は前奏の有無で変わらない。
+	 */
+	const startBacking = (
+		fromStep: number,
+		atTime: number,
+		preRollSec = 0,
+	): void => {
 		backingFromStep = fromStep;
 		if (!backingAudio?.isLoaded()) return;
 		backingAudio.start({
-			atTime,
-			mediaSec: backingMediaSec({
-				fromStep,
-				atStep: backing.atStep,
-				startSec: backing.startSec,
-				secondsPerStep: 60 / bpm / BACKING_STEPS_PER_BEAT,
-			}),
+			atTime: atTime - preRollSec,
+			mediaSec:
+				backingMediaSec({
+					fromStep,
+					atStep: backing.atStep,
+					startSec: backing.startSec,
+					secondsPerStep: 60 / bpm / BACKING_STEPS_PER_BEAT,
+				}) - preRollSec,
 			endSec: backing.endSec || undefined,
 		});
 	};
@@ -3121,7 +3160,12 @@ export const mountDAW = (
 	/** 再生中に開始位置を動かしたとき、その場で合わせ直す（耳で追い込めるように）。 */
 	const resyncBackingWhilePlaying = (): void => {
 		if (playbackState !== "playing" || !backingAudio?.isLoaded()) return;
-		startBacking(currentPlayStep, getAudioTime() + 0.05);
+		const preRollSec = backingPreRollSec(currentPlayStep);
+		startBacking(
+			currentPlayStep,
+			getAudioTime() + 0.05 + preRollSec,
+			preRollSec,
+		);
 	};
 
 	/** 音源を読み込む（URL文字列 or アップロードされたファイル）。 */
@@ -3162,45 +3206,6 @@ export const mountDAW = (
 		refs.audioYoutube.innerHTML = "";
 		refs.audioYoutubeRow.classList.add("dtm-hidden");
 		setBackingStatus("");
-	};
-
-	/**
-	 * 飛ばしていたイントロも鳴らすように切り替える。
-	 *
-	 * 「音源の開始」を0へ戻し、そのぶん**打ち込み全体を後ろへずらす**。音源と打ち込みの
-	 * 相対関係は変わらないので、歌が入る場所（音源のどこで歌が始まるか）は同じまま、
-	 * 前奏が鳴るようになる。
-	 *
-	 * 「イントロが長いので、そのぶんボーカルの開始を遅らせたい」は、専用の遅延設定を
-	 * 足すよりこちらのほうが素直に表せる——ピアノロール上でも歌が実際にその位置へ動くので、
-	 * 見た目と聞こえ方が一致する。戻したいときはUndoで戻せる。
-	 */
-	const shiftSongForIntro = (): void => {
-		if (!backingAudio?.isLoaded()) return;
-		const secondsPerStep = 60 / bpm / BACKING_STEPS_PER_BEAT;
-		const steps = Math.round(backing.startSec / secondsPerStep);
-		if (steps <= 0) {
-			setBackingStatus(
-				"「音源の開始」が0:00.000なので、すでにイントロから鳴っています",
-				true,
-			);
-			return;
-		}
-		overlayDuring(() => {
-			shiftNotes(
-				trackStates.map((t) => t.core),
-				steps,
-			);
-			const shifted = formatTimeSec(backing.startSec);
-			backing.startSec = 0;
-			updateBackingInputs();
-			redrawAll();
-			updateUndoRedo();
-			resyncBackingWhilePlaying();
-			setBackingStatus(
-				`打ち込みを ${shifted} 後ろへずらし、音源をイントロから鳴らすようにしました（聞こえ方は同じです）`,
-			);
-		});
 	};
 
 	const wireBackingAudio = (): void => {
@@ -3260,7 +3265,10 @@ export const mountDAW = (
 			updateBackingInputs();
 			resyncBackingWhilePlaying();
 		});
-		refs.audioShiftIntroBtn.addEventListener("click", shiftSongForIntro);
+		refs.audioPlayIntro.addEventListener("change", () => {
+			backing.playIntro = refs.audioPlayIntro.checked;
+			resyncBackingWhilePlaying();
+		});
 	};
 
 	const play = async (): Promise<void> => {
@@ -3339,6 +3347,9 @@ export const mountDAW = (
 			}
 		}
 
+		// 前奏を鳴らす設定なら、そのぶん曲の開始を後ろへ置く（音符は動かさない）。
+		const preRollSec = backingPreRollSec(fromStep);
+
 		// 伴奏音源は鳴り始めるまでに待ちが要ることがある（YouTubeのバッファ等）。
 		// シーケンサを走らせる前に目的位置を用意させ、頭が欠けないようにする。
 		if (backingAudio?.isLoaded()) {
@@ -3348,7 +3359,7 @@ export const mountDAW = (
 					atStep: backing.atStep,
 					startSec: backing.startSec,
 					secondsPerStep,
-				}),
+				}) - preRollSec,
 			);
 		}
 
@@ -3363,7 +3374,7 @@ export const mountDAW = (
 			renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 		}
 		playbackState = "playing";
-		sequencer.start(fromStep);
+		sequencer.start(fromStep, preRollSec);
 		startPeakSampling();
 
 		// 伴奏音源を打ち込みと同じアンカーへ合わせる。ノートが1つも無いとシーケンサは
@@ -3371,8 +3382,8 @@ export const mountDAW = (
 		if (backingAudio?.isLoaded()) {
 			const anchor = sequencer.isActive()
 				? sequencer.getStartTime()
-				: getAudioTime() + 0.1;
-			startBacking(fromStep, anchor);
+				: getAudioTime() + 0.1 + preRollSec;
+			startBacking(fromStep, anchor, preRollSec);
 		}
 
 		// フェードイン/アウトのスケジュール。フェードインは曲頭（fromStep===0）から
@@ -4609,6 +4620,7 @@ export const mountDAW = (
 				audioEnd: backing.endSec || undefined,
 				audioAt: backing.atStep || undefined,
 				audioVolume: backing.volume,
+				audioIntro: backing.playIntro || undefined,
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
@@ -4645,6 +4657,7 @@ export const mountDAW = (
 				audioEnd: backing.endSec || undefined,
 				audioAt: backing.atStep || undefined,
 				audioVolume: backing.volume,
+				audioIntro: backing.playIntro || undefined,
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
@@ -4972,6 +4985,7 @@ export const mountDAW = (
 					backing.endSec = meta.audioEnd ?? 0;
 					backing.atStep = meta.audioAt ?? 0;
 					backing.volume = meta.audioVolume ?? DEFAULT_BACKING_VOLUME;
+					backing.playIntro = meta.audioIntro ?? false;
 					updateBackingInputs();
 					if (meta.audio !== backing.url) {
 						refs.audioUrlInput.value = meta.audio;
