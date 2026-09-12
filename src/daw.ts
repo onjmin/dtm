@@ -12,6 +12,12 @@ import {
 	type PresetSlot,
 } from "./advanced-layers";
 import { GM_INSTRUMENT_NAMES, programOfInstrumentName } from "./audio-config";
+import {
+	backingMediaSec,
+	formatTimeSec,
+	isYoutubeUrl,
+	parseTimeSec,
+} from "./backing-audio";
 import { type ChordPlayerInstance, mountChordPlayer } from "./chord-player";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
 import {
@@ -634,6 +640,46 @@ const UST_INFO_HTML = `
 
   <h4>5. 書き出し</h4>
   <p>「MIDI / UST / MML 出力」の「UST出力」で、<strong>選択中のトラック1本だけ</strong>をUSTに書き出せます（USTは単旋律1パートのフォーマットなので、和音は上から1本に潰れます）。</p>
+</div>
+`;
+
+/** 伴奏音源の既定音量（0-100）。打ち込みを主役にしたいので少し下げてある。 */
+const DEFAULT_BACKING_VOLUME = 80;
+/** 1拍あたりのステップ数（他ファイルの STEPS_PER_BEAT と同じ）。 */
+const BACKING_STEPS_PER_BEAT = 48;
+
+const AUDIO_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>1. できること</h4>
+  <p>mp3 / wav などの音声ファイルや、音声・YouTubeのURLを、打ち込みと<strong>一緒に鳴らせます</strong>。カラオケ音源に合わせてメロディを打ち込む、既存曲に重ねてハモリを作る、といった使い方ができます。</p>
+
+  <h4>2. 読み込み</h4>
+  <ul>
+    <li><strong>ファイル</strong>: 手元の音声ファイルを選びます。正確に同期し、WAV書き出し・録音にも入ります。</li>
+    <li><strong>URL</strong>: mp3 / wav などの直リンク、またはYouTubeのURLを入れて「読込」。</li>
+  </ul>
+
+  <h4>3. 開始位置（いらないパートを飛ばす）</h4>
+  <ul>
+    <li><strong>音源の開始</strong>: 音源のどこから鳴らすか。<code>0:12.500</code> のように<strong>分:秒.ミリ秒</strong>で書きます（<code>12.5</code> のように秒だけでも可）。</li>
+    <li><strong>終了</strong>: 音源のどこで止めるか。空欄なら最後まで。</li>
+    <li><strong>曲の開始</strong>: 上の「音源の開始」を、曲の何小節目・何拍目に合わせるか。曲の途中から重ねられます。</li>
+  </ul>
+  <p style="margin-top:4px;"><small>ズレを感じたら「音源の開始」をミリ秒単位で前後させて詰めてください。再生中に直しても、その場で合わせ直します。</small></p>
+
+  <h4>4. MML出力での扱い</h4>
+  <ul>
+    <li><strong>URLで読み込んだ音源は <code>#audio=</code> としてMMLに残ります</strong>（開始位置・音量も一緒に）。</li>
+    <li><strong>アップロードしたファイルはMMLに含まれません</strong>。受け取った人の環境にそのファイルが無いためです。ファイルで作った設定を共有したいときは、音源をどこかに置いてURLで読み込み直してください。</li>
+  </ul>
+
+  <h4>5. 注意</h4>
+  <ul>
+    <li>CORSを許可していない配布URLは直接再生に切り替わります。鳴りますが、WAV書き出し・録音には入りません（YouTubeも同じです）。</li>
+    <li>YouTubeは外部プレイヤーを操作する都合で、同期の精度が音声ファイルより落ちます。</li>
+    <li>ループ再生をONにしても、伴奏音源はループせずそのまま流れます。</li>
+    <li>音源の権利にご注意ください。人の曲を公開する形で使う場合は、配布元・権利者の条件に従ってください。</li>
+  </ul>
 </div>
 `;
 
@@ -1306,6 +1352,10 @@ export const mountDAW = (
 	};
 	const showMidi = !!options.parseMidi;
 	const showChord = !isAdvanced;
+	// 伴奏音源のUIは、再生器（AudioContextを持つ利用側が作る）が注入されたときだけ出す。
+	// ライブラリ自身は音を出さないので、注入が無ければ鳴らしようがない。
+	const backingAudio = options.backingAudio ?? null;
+	const showAudio = !!backingAudio;
 	const midiSearchClient = options.midiSearch
 		? new MidiSearchClient(options.midiSearch)
 		: undefined;
@@ -1323,6 +1373,7 @@ export const mountDAW = (
 		defaultBpm: options.defaultBpm ?? DEFAULT_BPM,
 		showMidi,
 		showChord,
+		showAudio,
 		showMidiSearch,
 		// 「作曲」は simple では役割固定の4トラックへ、advanced では15トラックへ
 		// 編曲を展開する（{@link buildAdvancedLayers}）。どちらでも出す。
@@ -2913,6 +2964,7 @@ export const mountDAW = (
 			}
 			redrawAll();
 		},
+		getMinEndSec: () => backingRemainingSec(),
 		onEnd: (interrupted) => {
 			// 曲が自然終了した際、フェードアウト直後に即座に scheduleFade(null) で
 			// gain を 1 に戻すと、リバーブやディレイ、ノート・ドラムのリリース残響が
@@ -2920,6 +2972,9 @@ export const mountDAW = (
 			// 発生する。フェードアウト時は fadeOutEndAt + 2.0s に自動復帰が予約されており、
 			// プレビュー試聴や次回再生時にも 1 に復帰するため、自然終了時は即時解除しない。
 			// 割り込み停止時（interrupted）のみ即時解除する。
+			// トランスポートが止まったのに伴奏音源だけ鳴り続けるのはおかしいので、
+			// 曲の終わり（＝ノートと音源のどちらも尽きた時点）で一緒に止める。
+			backingAudio?.stop();
 			if (interrupted) {
 				options.onScheduleFade?.(null);
 				playbackState = "paused";
@@ -2934,6 +2989,227 @@ export const mountDAW = (
 		stepsPerBar: renderConfig.stepsPerBar,
 	});
 
+	// ============================================================
+	// 伴奏音源（mp3 / wav / YouTube の同時再生）
+	// ============================================================
+
+	/**
+	 * 伴奏音源の設定。
+	 *
+	 * `url` は**MMLへ書き出せる唯一の身元**で、アップロードされたファイルのときは空になる。
+	 * 受け取った相手の環境にそのファイルは無く、`blob:` URLも他人からは開けないので、
+	 * ファイル読み込みのときは音源関連の宣言ごとMMLから落とす。
+	 */
+	const backing = {
+		url: "",
+		/** 音源のどこから鳴らすか（秒）。頭のいらない部分を飛ばす。 */
+		startSec: 0,
+		/** 音源のどこで止めるか（秒）。0なら最後まで。 */
+		endSec: 0,
+		/** 音源の開始位置を貼り付ける曲側のステップ。 */
+		atStep: 0,
+		volume: DEFAULT_BACKING_VOLUME,
+		muted: false,
+	};
+
+	const setBackingStatus = (text: string, warn = false): void => {
+		refs.audioStatus.textContent = text;
+		refs.audioStatus.classList.toggle("dtm-hidden", text === "");
+		refs.audioStatus.classList.toggle("dtm-audio-note--warn", warn);
+	};
+
+	/** 読み込み結果を「何ができて何ができないか」まで含めて1行で伝える。 */
+	const describeBacking = (
+		info: import("./backing-audio").BackingLoaded,
+		fromFile: boolean,
+	): string => {
+		const length =
+			info.durationSec > 0 ? `（${formatTimeSec(info.durationSec)}）` : "";
+		const how =
+			info.mode === "buffer"
+				? "打ち込みと同じ時計で鳴らします"
+				: info.mode === "youtube"
+					? "YouTubeは同期が粗く、WAV書き出し・録音には入りません"
+					: "直接再生のため、WAV書き出し・録音には入りません";
+		const mml = fromFile ? "／MML出力には含まれません" : "";
+		return `${info.label}${length} — ${how}${mml}`;
+	};
+
+	/** 曲側の開始位置（小節・拍の入力欄）をステップへ。 */
+	const backingAtStepFromInputs = (): number => {
+		const barRaw = Number.parseInt(refs.audioBarInput.value, 10);
+		const beatRaw = Number.parseInt(refs.audioBeatInput.value, 10);
+		const bar = Number.isFinite(barRaw) ? Math.max(1, barRaw) : 1;
+		const beat = Number.isFinite(beatRaw) ? Math.max(1, beatRaw) : 1;
+		return (
+			(bar - 1) * renderConfig.stepsPerBar + (beat - 1) * BACKING_STEPS_PER_BEAT
+		);
+	};
+
+	/** 設定を伴奏音源パネルの各入力欄へ書き戻す。 */
+	const updateBackingInputs = (): void => {
+		const spb = renderConfig.stepsPerBar;
+		refs.audioStartInput.value = formatTimeSec(backing.startSec);
+		refs.audioEndInput.value = backing.endSec
+			? formatTimeSec(backing.endSec)
+			: "";
+		refs.audioBarInput.value = String(Math.floor(backing.atStep / spb) + 1);
+		refs.audioBeatInput.value = String(
+			Math.floor((backing.atStep % spb) / BACKING_STEPS_PER_BEAT) + 1,
+		);
+		refs.audioVolume.value = String(backing.volume);
+		refs.audioVolumeLabel.textContent = `${backing.volume}%`;
+		refs.audioMute.checked = backing.muted;
+	};
+
+	/** 時間入力欄を読む。読めない書き方のときは直前の値へ戻す（黙って0にしない）。 */
+	const readBackingTimes = (): void => {
+		const start = parseTimeSec(refs.audioStartInput.value);
+		if (start !== null && start >= 0) backing.startSec = start;
+		const endRaw = refs.audioEndInput.value.trim();
+		if (endRaw === "") backing.endSec = 0;
+		else {
+			const end = parseTimeSec(endRaw);
+			if (end !== null && end > 0) backing.endSec = end;
+		}
+	};
+
+	/** 直近の再生開始ステップ（伴奏音源の残り時間を測る基準）。 */
+	let backingFromStep = 0;
+
+	/**
+	 * いまの再生で伴奏音源が鳴り終わるまでの秒数（再生開始からの相対秒）。
+	 *
+	 * 打ち込みより音源のほうが長いことは普通にあるので、シーケンサへ「ここまでは
+	 * 曲が続いている」と伝えるために使う（伝えないと音源の途中で再生が終わる）。
+	 */
+	const backingRemainingSec = (): number => {
+		const info = backingAudio?.getLoaded();
+		if (!info) return 0;
+		const mediaSec = backingMediaSec({
+			fromStep: backingFromStep,
+			atStep: backing.atStep,
+			startSec: backing.startSec,
+			secondsPerStep: 60 / bpm / BACKING_STEPS_PER_BEAT,
+		});
+		const until =
+			backing.endSec > 0
+				? Math.min(backing.endSec, info.durationSec || backing.endSec)
+				: info.durationSec;
+		return Math.max(0, until - mediaSec);
+	};
+
+	/** いまの設定で伴奏音源を鳴らし始める（`atTime` は打ち込みと共通のアンカー）。 */
+	const startBacking = (fromStep: number, atTime: number): void => {
+		backingFromStep = fromStep;
+		if (!backingAudio?.isLoaded()) return;
+		backingAudio.start({
+			atTime,
+			mediaSec: backingMediaSec({
+				fromStep,
+				atStep: backing.atStep,
+				startSec: backing.startSec,
+				secondsPerStep: 60 / bpm / BACKING_STEPS_PER_BEAT,
+			}),
+			endSec: backing.endSec || undefined,
+		});
+	};
+
+	/** 再生中に開始位置を動かしたとき、その場で合わせ直す（耳で追い込めるように）。 */
+	const resyncBackingWhilePlaying = (): void => {
+		if (playbackState !== "playing" || !backingAudio?.isLoaded()) return;
+		startBacking(currentPlayStep, getAudioTime() + 0.05);
+	};
+
+	/** 音源を読み込む（URL文字列 or アップロードされたファイル）。 */
+	const loadBackingSource = async (src: string | File): Promise<void> => {
+		if (!backingAudio) return;
+		stop();
+		const fromFile = typeof src !== "string";
+		const youtube = !fromFile && isYoutubeUrl(src);
+		// YouTubeはプレイヤーを枠の中に作るので、読み込む前に枠を見せておく。
+		refs.audioYoutubeRow.classList.toggle("dtm-hidden", !youtube);
+		setBackingStatus("読み込み中…");
+		try {
+			const info = await backingAudio.load(src);
+			backing.url = fromFile ? "" : src;
+			backingAudio.setVolume(backing.volume);
+			backingAudio.setMuted(backing.muted);
+			refs.audioYoutubeRow.classList.toggle(
+				"dtm-hidden",
+				info.mode !== "youtube",
+			);
+			setBackingStatus(describeBacking(info, fromFile));
+		} catch (e) {
+			backing.url = "";
+			refs.audioYoutubeRow.classList.add("dtm-hidden");
+			setBackingStatus(
+				`読み込めませんでした: ${e instanceof Error ? e.message : String(e)}`,
+				true,
+			);
+		}
+	};
+
+	/** 音源を外す（設定そのものは残さない＝MMLからも消える）。 */
+	const clearBacking = (): void => {
+		backingAudio?.clear();
+		backing.url = "";
+		refs.audioFileInput.value = "";
+		refs.audioUrlInput.value = "";
+		refs.audioYoutube.innerHTML = "";
+		refs.audioYoutubeRow.classList.add("dtm-hidden");
+		setBackingStatus("");
+	};
+
+	const wireBackingAudio = (): void => {
+		refs.audioInfoBtn.addEventListener("click", () => {
+			showModal("オーディオ同時再生の解説", AUDIO_INFO_HTML);
+		});
+		refs.audioFileInput.addEventListener("change", () => {
+			const file = refs.audioFileInput.files?.[0];
+			if (!file) return;
+			refs.audioUrlInput.value = "";
+			void loadBackingSource(file);
+		});
+		refs.audioUrlLoadBtn.addEventListener("click", () => {
+			const url = refs.audioUrlInput.value.trim();
+			if (!url) return;
+			if (!isValidHttpUrl(url)) {
+				setBackingStatus("http / https のURLを入力してください", true);
+				return;
+			}
+			refs.audioFileInput.value = "";
+			void loadBackingSource(url);
+		});
+		refs.audioClearBtn.addEventListener("click", clearBacking);
+		refs.audioVolume.addEventListener("input", () => {
+			const v = Number.parseInt(refs.audioVolume.value, 10);
+			backing.volume = Number.isFinite(v)
+				? clamp(v, 0, 100)
+				: DEFAULT_BACKING_VOLUME;
+			refs.audioVolumeLabel.textContent = `${backing.volume}%`;
+			backingAudio?.setVolume(backing.volume);
+		});
+		refs.audioMute.addEventListener("change", () => {
+			backing.muted = refs.audioMute.checked;
+			backingAudio?.setMuted(backing.muted);
+		});
+		for (const el of [refs.audioStartInput, refs.audioEndInput]) {
+			el.addEventListener("change", () => {
+				readBackingTimes();
+				updateBackingInputs();
+				resyncBackingWhilePlaying();
+			});
+		}
+		for (const el of [refs.audioBarInput, refs.audioBeatInput]) {
+			el.addEventListener("change", () => {
+				backing.atStep = backingAtStepFromInputs();
+				updateBackingInputs();
+				resyncBackingWhilePlaying();
+			});
+		}
+	};
+
 	const play = async (): Promise<void> => {
 		if (playbackState === "playing") return;
 		// AudioContext の resume は非同期。suspended（currentTime 凍結）のまま
@@ -2943,6 +3219,8 @@ export const mountDAW = (
 
 		const fromStep =
 			playbackState === "paused" ? pausedPlayStep : playStartStep;
+		// シーケンサへ「伴奏音源がここまで鳴る」を答えるのに要るので、start より先に置く。
+		backingFromStep = fromStep;
 
 		options.singingVoices?.reset();
 
@@ -3008,6 +3286,19 @@ export const mountDAW = (
 			}
 		}
 
+		// 伴奏音源は鳴り始めるまでに待ちが要ることがある（YouTubeのバッファ等）。
+		// シーケンサを走らせる前に目的位置を用意させ、頭が欠けないようにする。
+		if (backingAudio?.isLoaded()) {
+			await backingAudio.arm(
+				backingMediaSec({
+					fromStep,
+					atStep: backing.atStep,
+					startSec: backing.startSec,
+					secondsPerStep,
+				}),
+			);
+		}
+
 		if (playbackState !== "paused") {
 			// 再生開始位置までスクロール
 			const canvas = renderer.getGridCanvas();
@@ -3021,6 +3312,15 @@ export const mountDAW = (
 		playbackState = "playing";
 		sequencer.start(fromStep);
 		startPeakSampling();
+
+		// 伴奏音源を打ち込みと同じアンカーへ合わせる。ノートが1つも無いとシーケンサは
+		// 走らない（＝getStartTime が前回のまま）ので、そのときだけ自前で先読み分を足す。
+		if (backingAudio?.isLoaded()) {
+			const anchor = sequencer.isActive()
+				? sequencer.getStartTime()
+				: getAudioTime() + 0.1;
+			startBacking(fromStep, anchor);
+		}
 
 		// フェードイン/アウトのスケジュール。フェードインは曲頭（fromStep===0）から
 		// 再生したときだけ、フェードアウトは現在のノート終端に向けて掛ける。
@@ -3083,6 +3383,7 @@ export const mountDAW = (
 		if (playbackState !== "playing") return;
 		pausedPlayStep = currentPlayStep;
 		sequencer.stop();
+		backingAudio?.stop();
 		options.singingVoices?.stopStream();
 		clearSoundTimers();
 		options.onScheduleFade?.(null);
@@ -3101,6 +3402,7 @@ export const mountDAW = (
 	};
 	const stop = (): void => {
 		sequencer.stop();
+		backingAudio?.stop();
 		options.singingVoices?.stopStream();
 		clearSoundTimers();
 		options.onScheduleFade?.(null);
@@ -4248,6 +4550,12 @@ export const mountDAW = (
 				mode: mode,
 				edo: renderConfig.edo,
 				loop: loopEnabled ? true : undefined,
+				// アップロードされたファイルは url が空＝音源関連の宣言ごと出力されない
+				audio: backing.url || undefined,
+				audioStart: backing.startSec || undefined,
+				audioEnd: backing.endSec || undefined,
+				audioAt: backing.atStep || undefined,
+				audioVolume: backing.volume,
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
@@ -4278,6 +4586,12 @@ export const mountDAW = (
 				mode: mode,
 				edo: renderConfig.edo,
 				loop: loopEnabled ? true : undefined,
+				// アップロードされたファイルは url が空＝音源関連の宣言ごと出力されない
+				audio: backing.url || undefined,
+				audioStart: backing.startSec || undefined,
+				audioEnd: backing.endSec || undefined,
+				audioAt: backing.atStep || undefined,
+				audioVolume: backing.volume,
 				trackInstruments: trackInstMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
@@ -4595,6 +4909,24 @@ export const mountDAW = (
 				fadeOutSec = meta.fadeOut / 10;
 				refs.fadeOut.value = String(fadeOutSec);
 				refs.fadeOutLabel.textContent = `${fadeOutSec.toFixed(1)}s`;
+			}
+			// 伴奏音源。URLを持つMMLだけが音源を連れてくる（ファイル読み込みは出力されない）。
+			// 別の曲を読み込んだのに前の曲の音源が鳴り続けるのはおかしいので、
+			// 宣言が無ければ外す。
+			if (backingAudio) {
+				if (meta.audio) {
+					backing.startSec = meta.audioStart ?? 0;
+					backing.endSec = meta.audioEnd ?? 0;
+					backing.atStep = meta.audioAt ?? 0;
+					backing.volume = meta.audioVolume ?? DEFAULT_BACKING_VOLUME;
+					updateBackingInputs();
+					if (meta.audio !== backing.url) {
+						refs.audioUrlInput.value = meta.audio;
+						void loadBackingSource(meta.audio);
+					}
+				} else if (backingAudio.isLoaded()) {
+					clearBacking();
+				}
 			}
 		}
 		// トラック個別楽器を復元する（URLエンコーダがスペースを除去するため正規化して復元）
@@ -6476,6 +6808,10 @@ export const mountDAW = (
 			wireMidi();
 			wireUst();
 		}
+		if (showAudio) {
+			wireBackingAudio();
+			updateBackingInputs();
+		}
 		if (showMidiSearch) wireMidiSearch();
 
 		// キーボードショートカット
@@ -7559,6 +7895,9 @@ export const mountDAW = (
 		},
 		destroy: () => {
 			sequencer.stop();
+			// 伴奏音源はこのエディタ専用に作られて渡されるので、ここで後始末する
+			// （YouTubeのiframeはDOMを消すだけでは音が止まらないことがある）。
+			backingAudio?.destroy();
 			options.singingVoices?.stopStream();
 			unsubscribeClip?.();
 			stopPeakSampling();

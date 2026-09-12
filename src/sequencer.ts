@@ -55,6 +55,14 @@ export type SequencerOptions = {
 	onPlayDrum: (e: PlayDrumEvent) => void;
 	/** 毎フレーム currentPlayStep を通知（プレイヘッド/オートスクロール用） */
 	onTick: (currentPlayStep: number) => void;
+	/**
+	 * ノートが尽きても、ここで返す秒数（再生開始からの相対秒）までは曲を終わらせない。
+	 *
+	 * 伴奏音源（mp3等）を一緒に鳴らしているとき、打ち込みが先に終わっても曲は
+	 * まだ続いている。これが無いと音源の途中で「終了」してしまい、プレイヘッドも
+	 * 止まる。ノートが1つも無くても、これが正なら再生自体は走る。
+	 */
+	getMinEndSec?: () => number;
 	onEnd: (interrupted?: boolean) => void;
 	stepsPerBar: number;
 };
@@ -348,7 +356,8 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 
 		// 終了判定（ループ時は曲末で止めない）
 		if (!isLooping) {
-			if (nowIndex >= timeline.length && time > maxTimelineEndSec + 0.1) {
+			const endSec = Math.max(maxTimelineEndSec, options.getMinEndSec?.() ?? 0);
+			if (nowIndex >= timeline.length && time > endSec + 0.1) {
 				stop();
 				options.onEnd(false);
 			}
@@ -385,7 +394,14 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		stop();
 		fromStepValue = fromStep ?? options.getPlayStartStep();
 		buildTimeline(fromStepValue);
-		if (timeline.length === 0 && !options.getDrumPattern(1)?.length) return;
+		// 鳴らすものが何も無ければ走らせない。伴奏音源だけが鳴る場合
+		// （getMinEndSec が正）は、プレイヘッドを進めたいので走らせる。
+		if (
+			timeline.length === 0 &&
+			!options.getDrumPattern(1)?.length &&
+			(options.getMinEndSec?.() ?? 0) <= 0
+		)
+			return;
 		active = true;
 		startTime = options.getAudioTime() + START_DELAY;
 

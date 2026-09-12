@@ -126,11 +126,38 @@ export type MmlMeta = {
 	 * 省略時はオフ。
 	 */
 	loop?: boolean;
+	/**
+	 * 同時再生する伴奏音源のURL（mp3 / wav / YouTube）。`#audio=` で埋め込む。
+	 *
+	 * URLだけを持ち、**アップロードされたファイルは持たない**（受け取った相手が
+	 * 再生できないMMLになるため、ファイル読み込み時は音源関連の宣言ごと出力しない）。
+	 */
+	audio?: string;
+	/** 伴奏音源のどこから鳴らすか（秒）。`#audiostart=` で埋め込む。省略時は0（頭から）。 */
+	audioStart?: number;
+	/** 伴奏音源のどこで止めるか（秒）。`#audioend=` で埋め込む。省略時は最後まで。 */
+	audioEnd?: number;
+	/**
+	 * 伴奏音源を貼り付ける曲側の位置（ステップ。1小節=192）。`#audioat=` で埋め込む。
+	 * 省略時は0（曲頭）。`audioStart` と合わせて「音源のどこを曲のどこに置くか」を決める。
+	 */
+	audioAt?: number;
+	/** 伴奏音源の音量 0-100。`#audiovol=` で埋め込む。省略時は80。 */
+	audioVolume?: number;
 };
 
 /** `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...` `#loop=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア・コロン） */
 const META_DIRECTIVE =
 	/#(inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|mastercomp|fadein|fadeout|mode|edo|loop)=([\w:-]+)/gi;
+
+/**
+ * `#audio=<URL>` にマッチする（伴奏音源のURL。値は空白・`;`・`#`以外）。
+ * 値にスラッシュやクエリを含むため {@link META_DIRECTIVE} とは別の文字集合で拾う。
+ */
+const AUDIO_URL_DIRECTIVE = /#audio=([^\s#;\r\n]+)/gi;
+
+/** `#audiostart=` `#audioend=` `#audioat=` `#audiovol=` にマッチする（小数・符号つき） */
+const AUDIO_NUM_DIRECTIVE = /#audio(start|end|at|vol)=(-?\d+(?:\.\d+)?)/gi;
 
 /** `#t<n>inst=<GM楽器名>` にマッチする（値は`;` `#` 改行以外の任意文字） */
 const TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
@@ -206,6 +233,26 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 			const v = m[2].toLowerCase();
 			meta.loop = v === "on" || v === "1" || v === "true";
 		}
+	}
+	for (const m of mml.matchAll(AUDIO_URL_DIRECTIVE)) {
+		// http/https のみ受ける（javascript: 等を弾く）。長すぎるものも読まない。
+		const url = m[1];
+		if (url.length > 2048) continue;
+		try {
+			const u = new URL(url);
+			if (u.protocol === "http:" || u.protocol === "https:") meta.audio = url;
+		} catch {
+			// URLとして壊れている宣言は無視する（読み込み自体は継続する）
+		}
+	}
+	for (const m of mml.matchAll(AUDIO_NUM_DIRECTIVE)) {
+		const value = Number.parseFloat(m[2]);
+		if (!Number.isFinite(value)) continue;
+		const key = m[1].toLowerCase();
+		if (key === "start") meta.audioStart = Math.max(0, value);
+		else if (key === "end") meta.audioEnd = Math.max(0, value);
+		else if (key === "at") meta.audioAt = Math.max(0, Math.round(value));
+		else if (key === "vol") meta.audioVolume = clamp(Math.round(value), 0, 100);
 	}
 	for (const m of mml.matchAll(TRACK_INST_DIRECTIVE)) {
 		const idx = Number.parseInt(m[1], 10);
@@ -286,6 +333,8 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 export const stripMmlMeta = (mml: string): string =>
 	mml
 		.replace(META_DIRECTIVE, "")
+		.replace(AUDIO_URL_DIRECTIVE, "")
+		.replace(AUDIO_NUM_DIRECTIVE, "")
 		.replace(TRACK_INST_DIRECTIVE, "")
 		.replace(TRACK_COMP_DIRECTIVE, "")
 		.replace(TRACK_WIDTH_DIRECTIVE, "")
@@ -295,6 +344,9 @@ export const stripMmlMeta = (mml: string): string =>
 		.replace(TRACK_EQHIGH_DIRECTIVE, "")
 		.replace(TRACK_PAN_DIRECTIVE, "")
 		.replace(TRACK_DELAYSEND_DIRECTIVE, "");
+
+/** 秒を小数3桁までへ丸めて文字列にする（末尾の0は落とす）。 */
+const round3 = (sec: number): string => String(Math.round(sec * 1000) / 1000);
 
 /** メタ情報を `#inst=… #drum=… #volume=… #mode=…` のMML宣言文字列へ直列化する（空なら空文字） */
 export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
@@ -324,6 +376,15 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	if (meta.mode) parts.push(`#mode=${meta.mode}`);
 	if (meta.edo !== undefined && meta.edo !== 12) parts.push(`#edo=${meta.edo}`);
 	if (meta.loop) parts.push("#loop=on");
+	// 伴奏音源。URLが無いとき（未設定・アップロードされたファイル）は関連宣言ごと出さない。
+	if (meta.audio) {
+		parts.push(`#audio=${meta.audio}`);
+		if (meta.audioStart) parts.push(`#audiostart=${round3(meta.audioStart)}`);
+		if (meta.audioEnd) parts.push(`#audioend=${round3(meta.audioEnd)}`);
+		if (meta.audioAt) parts.push(`#audioat=${Math.round(meta.audioAt)}`);
+		if (meta.audioVolume !== undefined && meta.audioVolume !== 80)
+			parts.push(`#audiovol=${meta.audioVolume}`);
+	}
 	if (meta.trackInstruments) {
 		for (const [idx, name] of Object.entries(meta.trackInstruments)) {
 			if (name) parts.push(`#t${idx}inst=${name}`);
@@ -472,13 +533,20 @@ export const parseMML = (
 	//    宣言自体の解析は利用側（daw.ts の loadMML 等）が parseCustomVocals で行う。
 	const noCustomVocals = stripCustomVocals(mml);
 
+	// 0.5 伴奏音源の `#audio=<URL>` も、カスタムボーカル宣言と同じ理由でコメント除去より
+	//     前に取り出して本文から外す。URL の "//" を行コメントと誤認すると、1行MMLでは
+	//     そこから後ろ（音源の開始位置や以降の宣言）が丸ごと消えてしまう。
+	const audioUrl = parseMmlMeta(noCustomVocals).audio;
+	const noAudioUrl = noCustomVocals.replace(AUDIO_URL_DIRECTIVE, "");
+
 	// 1. コメント除去。歌詞行（@@n）の解析・除去は改行を畳み込む前に行う
-	const noComments = noCustomVocals
+	const noComments = noAudioUrl
 		.replace(/\/\*[\s\S]*?\*\//g, "") // ブロックコメント
 		.replace(/\/\/.*$/gm, ""); // 行コメント
 
 	// 2. トップレベル宣言（#inst= / #drum=）を抽出してから除去する
 	const meta = parseMmlMeta(noComments);
+	if (audioUrl) meta.audio = audioUrl;
 	const noMeta = stripMmlMeta(noComments);
 
 	const lyrics = collectLyrics ? parseLyrics(noMeta) : undefined;

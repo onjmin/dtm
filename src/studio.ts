@@ -17,6 +17,7 @@
 import { parseArrayBuffer } from "midi-json-parser";
 import type { InstrumentTone } from "./amp-sim";
 import { buildNameToKeyMapping } from "./audio-config";
+import { createBackingAudio } from "./backing-audio";
 import { type ChannelStrip, createChannelStrip } from "./channel-strip";
 import {
 	type ChordPlayerInstance,
@@ -1268,8 +1269,19 @@ export const createDtmStudio = async (
 			await loadInstrument(key);
 		};
 
+		// 伴奏音源（mp3/wav/YouTube）の同時再生器。エディタ1つにつき1つ作り、
+		// masterGain へ繋ぐ（＝マスタ音量が効き、録音・WAV書き出しにも乗る）。
+		// YouTubeプレイヤーの枠はDAWのUIが持つので、mountDAW の後に解決する。
+		const backingAudio = createBackingAudio({
+			audioContext: audioCtx,
+			destination: masterGain,
+			getYoutubeContainer: () =>
+				target.querySelector<HTMLElement>('[data-dtm="audio-youtube"]'),
+		});
+
 		const base: DawOptions = {
 			getAudioTime: () => audioCtx.currentTime,
+			backingAudio,
 			onResumeAudio: async () => {
 				await resumeAudio();
 				if (daw) {

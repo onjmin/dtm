@@ -4,6 +4,20 @@
 
 // 設定・プリセット
 export * from "./audio-config";
+// 伴奏音源（mp3 / wav / YouTube）の同時再生
+export {
+	type BackingAudio,
+	type BackingAudioOptions,
+	type BackingLoaded,
+	type BackingMode,
+	type BackingStartOptions,
+	backingMediaSec,
+	createBackingAudio,
+	formatTimeSec,
+	isYoutubeUrl,
+	parseTimeSec,
+	parseYoutubeId,
+} from "./backing-audio";
 export * from "./chord-player";
 export * from "./chords";
 // 自動作曲（コード進行→リズム→モチーフ展開で16小節を組み立てる）

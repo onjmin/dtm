@@ -27,7 +27,7 @@
 		"dev": "rimraf dist && tsup && biome format src --write && tsx demo/server.ts",
 		"build": "rimraf dist && tsup && biome format src --write",
 		"check": "biome check src --write",
-		"test": "tsx scripts/check-compose.ts && tsx scripts/check-registers.ts && tsx scripts/check-tracks.ts && tsx scripts/check-lyrics-fade.ts && tsx scripts/check-pitch-glide.ts && tsx scripts/check-ust.ts",
+		"test": "tsx scripts/check-compose.ts && tsx scripts/check-registers.ts && tsx scripts/check-tracks.ts && tsx scripts/check-lyrics-fade.ts && tsx scripts/check-pitch-glide.ts && tsx scripts/check-ust.ts && tsx scripts/check-backing-audio.ts",
 		"prepublishOnly": "pnpm run build",
 		"patch": "pnpm version patch",
 		"minor": "pnpm version minor",

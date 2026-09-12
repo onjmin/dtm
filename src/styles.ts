@@ -1048,6 +1048,20 @@ export const DAW_CSS = `
   opacity: 1.0;
 }
 .dtm-load-note::before { content: "⚠ "; }
+/* 伴奏音源（mp3/wav/YouTube）の状態表示。読み込み結果の報告なので警告色にはしない。 */
+.dtm-audio-note {
+  margin: 6px 0 0;
+  padding: 0 2px;
+  font-family: var(--dtm-font);
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: .04em;
+  color: var(--dtm-muted);
+}
+.dtm-audio-note--warn { color: var(--dtm-warn); font-weight: bold; }
+/* YouTubeプレイヤーの枠。APIが中の要素を iframe へ差し替えるので、枠側で寸法を決める。 */
+.dtm-audio-yt { width: 100%; max-width: 320px; aspect-ratio: 16 / 9; }
+.dtm-audio-yt iframe { display: block; width: 100%; height: 100%; border: 0; }
 .dtm-grow { flex: 1 1 auto; }
 .dtm-lyric-icon {
   flex: 0 0 auto;

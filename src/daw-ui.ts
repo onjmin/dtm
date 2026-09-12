@@ -78,6 +78,23 @@ export type DawUIRefs = {
 	drumFontSelect: HTMLSelectElement;
 	drumVolume: HTMLInputElement;
 	drumVolumeLabel: HTMLElement;
+	// audio（伴奏音源）
+	audioPanel: HTMLElement;
+	audioFileInput: HTMLInputElement;
+	audioUrlInput: HTMLInputElement;
+	audioUrlLoadBtn: HTMLButtonElement;
+	audioClearBtn: HTMLButtonElement;
+	audioInfoBtn: HTMLButtonElement;
+	audioStatus: HTMLElement;
+	audioYoutubeRow: HTMLElement;
+	audioYoutube: HTMLElement;
+	audioVolume: HTMLInputElement;
+	audioVolumeLabel: HTMLElement;
+	audioMute: HTMLInputElement;
+	audioStartInput: HTMLInputElement;
+	audioEndInput: HTMLInputElement;
+	audioBarInput: HTMLInputElement;
+	audioBeatInput: HTMLInputElement;
 	// io
 	midiInput: HTMLInputElement;
 	midiLoadBtn: HTMLButtonElement;
@@ -154,6 +171,8 @@ export type BuildUIOptions = {
 	defaultBpm: number;
 	showMidi: boolean;
 	showChord: boolean;
+	/** 伴奏音源（mp3/wav/YouTube）のパネルを出すか。再生器が注入されたときだけ出す。 */
+	showAudio: boolean;
 	showMidiSearch: boolean;
 	/** 「作曲」ボタンを出すか。役割が固定の4トラック（シンプルモード）でしか成立しない。 */
 	showCompose: boolean;
@@ -173,6 +192,7 @@ export const buildUI = (
 		showMidi,
 		showMidiSearch,
 		showCompose,
+		showAudio,
 	} = options;
 
 	const drumOptions = [`<option value="none">なし</option>`]
@@ -370,6 +390,51 @@ export const buildUI = (
         <span class="dtm-label">音量</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="drum-volume" value="80" min="0" max="100">
         <span class="dtm-label" data-dtm="drum-volume-label">80%</span>
+      </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel ${showAudio ? "" : "dtm-hidden"}" data-dtm="audio-panel" data-dtm-acc="audio">
+    <summary>オーディオ同時再生</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
+          <span class="dtm-label" style="line-height: 1;">音源</span>
+          <button class="dtm-infobtn" data-dtm="audio-info" title="オーディオ同時再生の解説">${icon("info", 12)}</button>
+        </div>
+        <input type="file" class="dtm-input dtm-grow" accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac" data-dtm="audio-file" style="min-width:0">
+      </div>
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <span class="dtm-label" style="flex-shrink:0">URL</span>
+        <input type="url" class="dtm-input dtm-grow" data-dtm="audio-url" placeholder="mp3 / wav / YouTube のURL" style="min-width:0">
+        <button class="dtm-btn dtm-btn--success" data-dtm="audio-url-load" style="flex-shrink:0">読込</button>
+      </div>
+      <p class="dtm-audio-note dtm-hidden" data-dtm="audio-status"></p>
+      <div class="dtm-row dtm-hidden" data-dtm="audio-youtube-row">
+        <div class="dtm-audio-yt" data-dtm="audio-youtube"></div>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">音量</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="audio-volume" value="80" min="0" max="100">
+        <span class="dtm-label" data-dtm="audio-volume-label">80%</span>
+        <label class="dtm-checkbox-label" title="打ち込みだけを聴きたいときに外す">
+          <input type="checkbox" class="dtm-checkbox" data-dtm="audio-mute"> ミュート
+        </label>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">音源の開始</span>
+        <input type="text" class="dtm-input" data-dtm="audio-start" value="0:00.000" placeholder="0:00.000" style="width:88px" title="音源のどこから鳴らすか（分:秒.ミリ秒）。いらないイントロを飛ばせます">
+        <span class="dtm-label">終了</span>
+        <input type="text" class="dtm-input" data-dtm="audio-end" placeholder="最後まで" style="width:88px" title="音源のどこで止めるか（分:秒.ミリ秒）。空欄なら最後まで">
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">曲の開始</span>
+        <input type="number" class="dtm-input dtm-input--num" data-dtm="audio-bar" value="1" min="1" step="1" title="音源の開始位置を、曲のこの小節に合わせます">
+        <span class="dtm-label">小節</span>
+        <input type="number" class="dtm-input dtm-input--num" data-dtm="audio-beat" value="1" min="1" step="1" title="小節内の拍">
+        <span class="dtm-label">拍</span>
+        <span class="dtm-grow"></span>
+        <button class="dtm-btn dtm-btn--danger" data-dtm="audio-clear">外す</button>
       </div>
     </div>
   </details>
@@ -715,6 +780,22 @@ export const buildUI = (
 		drumFontSelect: sel("drum-font-select"),
 		drumVolume: sel("drum-volume"),
 		drumVolumeLabel: sel("drum-volume-label"),
+		audioPanel: sel("audio-panel"),
+		audioFileInput: sel("audio-file"),
+		audioUrlInput: sel("audio-url"),
+		audioUrlLoadBtn: sel("audio-url-load"),
+		audioClearBtn: sel("audio-clear"),
+		audioInfoBtn: sel("audio-info"),
+		audioStatus: sel("audio-status"),
+		audioYoutubeRow: sel("audio-youtube-row"),
+		audioYoutube: sel("audio-youtube"),
+		audioVolume: sel("audio-volume"),
+		audioVolumeLabel: sel("audio-volume-label"),
+		audioMute: sel("audio-mute"),
+		audioStartInput: sel("audio-start"),
+		audioEndInput: sel("audio-end"),
+		audioBarInput: sel("audio-bar"),
+		audioBeatInput: sel("audio-beat"),
 		midiInput: sel("midi-input"),
 		midiLoadBtn: sel("midi-load"),
 		midiInfoBtn: sel("midi-info"),

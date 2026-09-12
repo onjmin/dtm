@@ -640,6 +640,13 @@ export type DawOptions = {
 	/** 歌唱合成の先読みや制御を行うヘルパ（.koe音源の再生前プリロードに使用） */
 	singingVoices?: SingingVoices;
 	/**
+	 * 伴奏音源（mp3 / wav / YouTube）の同時再生器。
+	 *
+	 * ライブラリ自身は音を出さないので、AudioContextを持つ利用側（`createDtmStudio` 等）が
+	 * `createBackingAudio` で作って渡す。渡さないとオーディオ同時再生のUIごと出ない。
+	 */
+	backingAudio?: import("./backing-audio").BackingAudio;
+	/**
 	 * 編集中の音割れ検知メーター（マスタの安全リミッター手前を監視）。
 	 * 渡すとDAW UIにクリップ警告バッジを表示できる。studio.mountEditor が自動的に渡す。
 	 */
