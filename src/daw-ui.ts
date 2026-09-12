@@ -95,6 +95,8 @@ export type DawUIRefs = {
 	audioEndInput: HTMLInputElement;
 	audioBarInput: HTMLInputElement;
 	audioBeatInput: HTMLInputElement;
+	audioAtTimeInput: HTMLInputElement;
+	audioShiftIntroBtn: HTMLButtonElement;
 	// io
 	midiInput: HTMLInputElement;
 	midiLoadBtn: HTMLButtonElement;
@@ -428,11 +430,18 @@ export const buildUI = (
         <input type="text" class="dtm-input" data-dtm="audio-end" placeholder="最後まで" style="width:88px" title="音源のどこで止めるか（分:秒.ミリ秒）。空欄なら最後まで">
       </div>
       <div class="dtm-row">
+        <button class="dtm-btn dtm-btn--primary" data-dtm="audio-shift-intro" title="飛ばしていたイントロも鳴らすように切り替えます。打ち込み全体をイントロのぶんだけ後ろへずらすので、聞こえ方（音源のどこで歌が入るか）は変わりません">イントロも鳴らす</button>
+      </div>
+      <div class="dtm-row">
         <span class="dtm-label">曲の開始</span>
         <input type="number" class="dtm-input dtm-input--num" data-dtm="audio-bar" value="1" min="1" step="1" title="音源の開始位置を、曲のこの小節に合わせます">
         <span class="dtm-label">小節</span>
         <input type="number" class="dtm-input dtm-input--num" data-dtm="audio-beat" value="1" min="1" step="1" title="小節内の拍">
         <span class="dtm-label">拍</span>
+        <span class="dtm-label">＝</span>
+        <input type="text" class="dtm-input" data-dtm="audio-at-time" value="0:00.000" style="width:88px" title="同じ位置を時間で指定できます（分:秒.ミリ秒）。小節・拍と連動します">
+      </div>
+      <div class="dtm-row">
         <span class="dtm-grow"></span>
         <button class="dtm-btn dtm-btn--danger" data-dtm="audio-clear">外す</button>
       </div>
@@ -796,6 +805,8 @@ export const buildUI = (
 		audioEndInput: sel("audio-end"),
 		audioBarInput: sel("audio-bar"),
 		audioBeatInput: sel("audio-beat"),
+		audioAtTimeInput: sel("audio-at-time"),
+		audioShiftIntroBtn: sel("audio-shift-intro"),
 		midiInput: sel("midi-input"),
 		midiLoadBtn: sel("midi-load"),
 		midiInfoBtn: sel("midi-info"),

@@ -34,6 +34,10 @@ loader._load = (request, ...rest) =>
 
 const { formatMmlMeta, parseMML, parseMmlMeta, stripMmlMeta } =
 	require("../src/mml-parser") as typeof import("../src/mml-parser");
+const { shiftNotes } =
+	require("../src/macros") as typeof import("../src/macros");
+const { pitchV1ToUnits } =
+	require("../src/tuning") as typeof import("../src/tuning");
 
 let failed = 0;
 const check = (label: string, got: unknown, expect: unknown): void => {
@@ -233,6 +237,48 @@ console.log("■ URLの // を行コメントと誤認しない");
 		["https://example.com/a.mp3", 1.25, 192],
 	);
 	check("URLの後ろの音符が生き残る", parsed.placements.length, 3);
+}
+
+console.log("■ 「イントロも鳴らす」のシフト");
+{
+	// イントロぶん（＝何十秒＝数千ステップ）まとめて後ろへずらす操作。
+	// 1ノートずつ moveNote で動かしていた頃は「いまの曲の長さ＋1小節」で
+	// クランプされ、大きくずらすと末尾へ団子になっていた。
+	const { MMLCore } =
+		require("../src/mml-core") as typeof import("../src/mml-core");
+	const core = new MMLCore(
+		{ onMMLGenerated: () => {}, onNotesChanged: () => {} },
+		100,
+		() => ({
+			stepsPerBar: 192,
+			keyCount: 128,
+			pitchRangeStart: 0,
+			keyHeight: 12,
+			stepWidth: 8,
+		}),
+	);
+	core.addNote(0, pitchV1ToUnits(60), { noteLengthSteps: 48 });
+	core.addNote(96, pitchV1ToUnits(62), { noteLengthSteps: 48 });
+	// 34.2秒 ≒ 3283ステップ（BPM120）。元の曲の長さ（144ステップ）よりずっと遠い。
+	const steps = Math.round(34.2 / SPS);
+	shiftNotes([core], steps);
+	check(
+		"曲の長さを超えるシフトでも、間隔を保ったまま後ろへ動く",
+		core.getNotes().map((n) => n.startStep),
+		[steps, steps + 96],
+	);
+	check(
+		"音価は変わらない",
+		core.getNotes().map((n) => n.durationSteps),
+		[48, 48],
+	);
+	// 前へずらすと、0より前へ出たものは捨てる（従来のシフトと同じ約束）。
+	shiftNotes([core], -steps - 48);
+	check(
+		"0より前へ出たノートは捨てる",
+		core.getNotes().map((n) => n.startStep),
+		[48],
+	);
 }
 
 if (failed > 0) {

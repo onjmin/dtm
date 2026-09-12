@@ -200,17 +200,10 @@ export const applyMonophonic = (
  */
 export const shiftNotes = (cores: MMLCore[], shiftSteps: number): void => {
 	if (shiftSteps === 0) return;
-	for (const core of cores) {
-		const notes = [...core.getNotes()];
-		for (const note of notes) {
-			const newStart = note.startStep + shiftSteps;
-			if (newStart < 0) core.deleteNoteById(note.id);
-			else core.moveNote(note.id, newStart, note.pitchUnits);
-		}
-		// moveNote は履歴を残さないため、シフト全体を1操作としてここで確定する。
-		// これが無いとシフト後のUndoが直前の編集まで巻き戻してしまう。
-		core.saveHistory();
-	}
+	// 1ノートずつ moveNote で動かすと「いまの曲の長さ」でクランプされ、
+	// 大きくずらしたときに末尾へ団子になる。コア側の一括シフトへ委ねる
+	// （履歴もそちらで1操作として確定する）。
+	for (const core of cores) core.shiftAllNotes(shiftSteps);
 };
 
 /**

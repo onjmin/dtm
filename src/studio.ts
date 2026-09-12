@@ -1681,6 +1681,16 @@ export const createDtmStudio = async (
 			onPlayNote: playPlayerNote,
 			onPlayDrum: playDrum,
 			singingVoices,
+			// `#audio=` の伴奏音源。YouTubeの枠はプレイヤーUIの中にあるので、
+			// エディタと同じ data 属性で後から解決する。
+			backingAudio: meta.audio
+				? createBackingAudio({
+						audioContext: audioCtx,
+						destination: masterGain,
+						getYoutubeContainer: () =>
+							target.querySelector<HTMLElement>('[data-dtm="audio-youtube"]'),
+					})
+				: undefined,
 		});
 		mountedPlayers.push(player);
 		// destroy 時に内部リストからも外す（多数の再生UIを生成し続けても溜まらないように）。

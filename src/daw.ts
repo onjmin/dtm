@@ -3057,6 +3057,9 @@ export const mountDAW = (
 		refs.audioBeatInput.value = String(
 			Math.floor((backing.atStep % spb) / BACKING_STEPS_PER_BEAT) + 1,
 		);
+		refs.audioAtTimeInput.value = formatTimeSec(
+			backing.atStep * (60 / bpm / BACKING_STEPS_PER_BEAT),
+		);
 		refs.audioVolume.value = String(backing.volume);
 		refs.audioVolumeLabel.textContent = `${backing.volume}%`;
 		refs.audioMute.checked = backing.muted;
@@ -3161,6 +3164,45 @@ export const mountDAW = (
 		setBackingStatus("");
 	};
 
+	/**
+	 * 飛ばしていたイントロも鳴らすように切り替える。
+	 *
+	 * 「音源の開始」を0へ戻し、そのぶん**打ち込み全体を後ろへずらす**。音源と打ち込みの
+	 * 相対関係は変わらないので、歌が入る場所（音源のどこで歌が始まるか）は同じまま、
+	 * 前奏が鳴るようになる。
+	 *
+	 * 「イントロが長いので、そのぶんボーカルの開始を遅らせたい」は、専用の遅延設定を
+	 * 足すよりこちらのほうが素直に表せる——ピアノロール上でも歌が実際にその位置へ動くので、
+	 * 見た目と聞こえ方が一致する。戻したいときはUndoで戻せる。
+	 */
+	const shiftSongForIntro = (): void => {
+		if (!backingAudio?.isLoaded()) return;
+		const secondsPerStep = 60 / bpm / BACKING_STEPS_PER_BEAT;
+		const steps = Math.round(backing.startSec / secondsPerStep);
+		if (steps <= 0) {
+			setBackingStatus(
+				"「音源の開始」が0:00.000なので、すでにイントロから鳴っています",
+				true,
+			);
+			return;
+		}
+		overlayDuring(() => {
+			shiftNotes(
+				trackStates.map((t) => t.core),
+				steps,
+			);
+			const shifted = formatTimeSec(backing.startSec);
+			backing.startSec = 0;
+			updateBackingInputs();
+			redrawAll();
+			updateUndoRedo();
+			resyncBackingWhilePlaying();
+			setBackingStatus(
+				`打ち込みを ${shifted} 後ろへずらし、音源をイントロから鳴らすようにしました（聞こえ方は同じです）`,
+			);
+		});
+	};
+
 	const wireBackingAudio = (): void => {
 		refs.audioInfoBtn.addEventListener("click", () => {
 			showModal("オーディオ同時再生の解説", AUDIO_INFO_HTML);
@@ -3208,6 +3250,17 @@ export const mountDAW = (
 				resyncBackingWhilePlaying();
 			});
 		}
+		// 曲側の位置は時間でも指定できる。小節・拍がグリッド（拍）刻みなのに対し、
+		// こちらはステップ単位まで置けるので、拍に乗らない位置へも合わせられる。
+		refs.audioAtTimeInput.addEventListener("change", () => {
+			const sec = parseTimeSec(refs.audioAtTimeInput.value);
+			if (sec !== null && sec >= 0) {
+				backing.atStep = Math.round(sec / (60 / bpm / BACKING_STEPS_PER_BEAT));
+			}
+			updateBackingInputs();
+			resyncBackingWhilePlaying();
+		});
+		refs.audioShiftIntroBtn.addEventListener("click", shiftSongForIntro);
 	};
 
 	const play = async (): Promise<void> => {
@@ -5353,6 +5406,9 @@ export const mountDAW = (
 		bpm = value;
 		refs.bpmInput.value = String(value);
 		for (const t of trackStates) t.core.setTempo(value);
+		// 伴奏音源の「曲の開始」は小節位置なので、テンポが変われば対応する時間も変わる。
+		// 表示だけの追従だが、ズレたまま残ると合わせ込みの判断を誤らせる。
+		if (showAudio) updateBackingInputs();
 		options.onBpmChange?.(value);
 	};
 

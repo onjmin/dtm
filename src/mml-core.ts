@@ -279,6 +279,30 @@ export class MMLCore {
 		this.saveHistory();
 	}
 
+	/**
+	 * 全ノートをまとめて時間方向へずらす（マクロの「シフト」用）。
+	 *
+	 * {@link moveNote} は「いまの曲の長さ＋1小節」でクランプするが、こちらはしない。
+	 * 曲の頭に無音を作る操作＝曲を伸ばす操作なので、いまの長さで頭打ちにすると
+	 * 大きくずらしたときにノートが末尾へ団子になってしまう。
+	 * 0より前へはみ出したノートは捨てる（従来のシフトと同じ）。
+	 */
+	public shiftAllNotes(steps: number): void {
+		if (steps === 0) return;
+		const kept: Note[] = [];
+		for (const note of this.notes) {
+			const startStep = note.startStep + steps;
+			if (startStep < 0) continue;
+			note.startStep = startStep;
+			kept.push(note);
+		}
+		this.notes = kept;
+		this.notes.sort((a, b) => a.startStep - b.startStep);
+		// シフト全体で1操作。ここで確定しないとUndoが直前の編集まで巻き戻る。
+		this.saveHistory();
+		this.generateAndNotify();
+	}
+
 	// ============== 状態取得 (外部API) ==============
 
 	public getNotes(): Note[] {
