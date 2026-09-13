@@ -39,9 +39,11 @@ export type BackingStartOptions = {
 	atTime: number;
 	/**
 	 * `atTime` の瞬間に鳴っているべき音源内の位置（秒）。
-	 * 負なら「まだ鳴らさない」区間で、0に達した時刻から鳴り始める。
+	 * {@link rangeStartSec} より手前なら「まだ鳴らさない」区間で、そこへ達した時刻から鳴り始める。
 	 */
 	mediaSec: number;
+	/** 音源を鳴らし始める位置（秒）。未指定なら頭から。ここより手前は鳴らさない。 */
+	rangeStartSec?: number;
 	/** 音源を止める位置（秒）。0/未指定なら最後まで。 */
 	endSec?: number;
 };
@@ -84,19 +86,39 @@ export type BackingAudioOptions = {
 /**
  * 再生開始時点における音源内の位置（秒）を求める。
  *
- * `atStep`（曲側の開始位置）に音源の `startSec` が来るように貼るので、
- * そこから `fromStep` までのぶんだけ音源側も進める。`fromStep` が `atStep` より
- * 手前なら負になり、「その秒数だけ待ってから鳴らす」意味になる。
+ * 音源と打ち込みのずれは「**どちらが何秒先に始まるか**」の1つの符号付きの数
+ * （{@link BackingOffset.offsetSec}）だけで決まる。
+ *
+ * - `offsetSec > 0` … 音源が先。その秒数だけ音源を鳴らしてから打ち込みが始まる。
+ * - `offsetSec < 0` … 打ち込みが先。その秒数だけ経ってから音源が鳴り出す。
+ * - `offsetSec = 0` … 同時。
+ *
+ * 戻り値が再生範囲の開始より手前なら、そこへ届くまで音源は鳴らない（負なら待ち時間）。
  */
-export const backingMediaSec = (o: {
+export const backingMediaSec = (o: BackingOffset): number =>
+	o.rangeStartSec + o.offsetSec + o.fromStep * o.secondsPerStep;
+
+/** {@link backingMediaSec} の引数。 */
+export type BackingOffset = {
 	/** 打ち込みの再生開始ステップ。 */
 	fromStep: number;
-	/** 音源を貼り付ける曲側のステップ。 */
-	atStep: number;
-	/** 音源のどこから鳴らすか（秒）。頭の不要部分を飛ばす。 */
-	startSec: number;
+	/** 開始のずれ（秒）。正=音源が先、負=打ち込みが先。 */
+	offsetSec: number;
+	/** 音源の再生範囲の開始（秒）。頭のいらない部分を飛ばす。 */
+	rangeStartSec: number;
 	secondsPerStep: number;
-}): number => o.startSec + (o.fromStep - o.atStep) * o.secondsPerStep;
+};
+
+/**
+ * 曲が始まるまでに先に鳴らす音源の秒数（＝前奏の長さ）。
+ *
+ * 音源が先に始まる指定のときだけ正になる。曲の途中から再生したときは
+ * 前奏を鳴らす場面ではないので0（その位置の音源がすぐ鳴る）。
+ */
+export const backingPreRollSec = (o: {
+	fromStep: number;
+	offsetSec: number;
+}): number => (o.fromStep <= 0 ? Math.max(0, o.offsetSec) : 0);
 
 /**
  * `1:23.456` / `83.456` / `1:02:03` のような時間表記を秒へ直す。
@@ -294,9 +316,11 @@ const driveExternalMedia = (
 		media.pause();
 	};
 
+	const rangeStart = Math.max(0, o.rangeStartSec ?? 0);
+
 	const begin = (): void => {
 		if (stopped) return;
-		const at = Math.max(0, expectedAt(o.now()));
+		const at = Math.max(rangeStart, expectedAt(o.now()));
 		media.seek(at);
 		media.play();
 		// 鳴り始めの遅れを実測して一度だけ詰める。
@@ -346,12 +370,12 @@ const driveExternalMedia = (
 		}, DRIFT_CHECK_MS);
 	};
 
-	// 音源の頭出し位置が負＝まだ鳴らさない区間。`expectedAt` が0になる時刻
-	// （atTime - mediaSec）まで待ってから始める。正のときは atTime ちょうど。
+	// 再生範囲の頭より手前を指されている＝まだ鳴らさない区間。`expectedAt` が
+	// 範囲の頭に届く時刻まで待ってから始める。届いているなら atTime ちょうど。
 	const waitSec = Math.max(
 		0,
 		o.atTime - o.now(),
-		o.atTime - o.mediaSec - o.now(),
+		o.atTime + (rangeStart - o.mediaSec) - o.now(),
 	);
 	const delayMs = waitSec * 1000;
 	if (delayMs < 1) begin();
@@ -582,14 +606,15 @@ export const createBackingAudio = (
 		if (!loaded) return;
 		stopSources();
 		const now = (): number => audioContext.currentTime;
+		const rangeStart = Math.max(0, o.rangeStartSec ?? 0);
 		if (loaded.mode === "buffer" && buffer) {
 			if (o.mediaSec >= buffer.duration) return; // 音源の終端より後ろから再生した
 			const src = audioContext.createBufferSource();
 			src.buffer = buffer;
 			src.connect(gain);
-			const offset = Math.max(0, o.mediaSec);
-			// 音源の頭出しが負＝その秒数だけ待ってから鳴らす。
-			const when = o.atTime + Math.max(0, -o.mediaSec);
+			const offset = Math.max(rangeStart, o.mediaSec);
+			// 再生範囲の頭より手前を指されていたら、そこへ届く時刻まで待ってから鳴らす。
+			const when = o.atTime + Math.max(0, rangeStart - o.mediaSec);
 			const until = o.endSec && o.endSec > offset ? o.endSec : buffer.duration;
 			src.start(when, offset, Math.max(0, until - offset));
 			source = src;

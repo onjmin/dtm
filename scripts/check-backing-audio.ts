@@ -16,6 +16,7 @@ import Module from "node:module";
 
 import {
 	backingMediaSec,
+	backingPreRollSec,
 	formatTimeSec,
 	parseTimeSec,
 	parseYoutubeId,
@@ -55,51 +56,46 @@ const check = (label: string, got: unknown, expect: unknown): void => {
 /** BPM120・1拍=48ステップなので 1ステップ = 0.0104166…秒、1小節(192)=2秒。 */
 const SPS = 60 / 120 / 48;
 
-console.log("■ 開始位置（音源のどこから × 曲のどこで）");
+console.log("■ 開始のずれ（4パターン）");
 {
-	// 頭から重ねる素直な例。
-	check(
-		"曲頭から再生＝音源の開始位置そのもの",
+	// 「どちらが何秒先に始まるか」を符号付きの1つの数で表す。
+	// 正＝音源が先、負＝打ち込みが先。0なら同時。
+	const media = (offsetSec: number, fromStep = 0, rangeStartSec = 0) =>
 		backingMediaSec({
-			fromStep: 0,
-			atStep: 0,
-			startSec: 12.5,
+			fromStep,
+			offsetSec,
+			rangeStartSec,
 			secondsPerStep: SPS,
-		}),
-		12.5,
-	);
-	// 曲の途中（3小節目 = 384step = 4秒）から再生したら、音源も4秒ぶん進んだ位置。
+		});
+	const preRoll = (offsetSec: number, fromStep = 0) =>
+		backingPreRollSec({ fromStep, offsetSec });
+
+	// ① 同時に始まる
+	check("同時: 曲頭で音源も頭", media(0), 0);
+	check("同時: 待ち時間なし", preRoll(0), 0);
+
+	// ② 音源が先（6.207秒後に打ち込み）＝前奏の長い音源に合わせる
+	check("音源が先: 曲が始まる時点で音源は6.207秒地点", media(6.207), 6.207);
+	check("音源が先: その6.207秒ぶんを先に鳴らす", preRoll(6.207), 6.207);
+
+	// ③ 打ち込みが先（6.207秒後に音源）＝曲の途中から音源を重ねる
 	check(
-		"途中から再生すると音源も同じだけ進む",
-		backingMediaSec({
-			fromStep: 384,
-			atStep: 0,
-			startSec: 12.5,
-			secondsPerStep: SPS,
-		}),
-		16.5,
+		"打ち込みが先: 曲頭では音源はまだ-6.207秒（＝待ち）",
+		media(-6.207),
+		-6.207,
 	);
-	// 音源を5小節目(768step=8秒)に貼った場合、曲頭から再生すると8秒待ってから鳴る。
+	check("打ち込みが先: 先に鳴らすものは無い", preRoll(-6.207), 0);
+
+	// ④ 音源の頭を飛ばす指定との組み合わせ
 	check(
-		"曲の途中へ貼ると、その手前は負（＝待ち時間）になる",
-		backingMediaSec({
-			fromStep: 0,
-			atStep: 768,
-			startSec: 0,
-			secondsPerStep: SPS,
-		}),
-		-8,
+		"範囲の開始を飛ばしても、ずれの意味は変わらない",
+		+media(6.207, 0, 34.2).toFixed(3),
+		40.407,
 	);
-	check(
-		"貼った位置ちょうどから再生すれば、音源の開始位置に戻る",
-		backingMediaSec({
-			fromStep: 768,
-			atStep: 768,
-			startSec: 3,
-			secondsPerStep: SPS,
-		}),
-		3,
-	);
+
+	// 途中から再生したとき
+	check("途中再生: 音源も同じだけ進む", media(0, 384), 4);
+	check("途中再生: 前奏の待ちは挟まない", preRoll(6.207, 384), 0);
 }
 
 console.log("■ 時間表記");
@@ -157,14 +153,14 @@ console.log("■ MMLへの往復");
 		audio: "https://example.com/karaoke.mp3",
 		audioStart: 12.5,
 		audioEnd: 200.25,
-		audioAt: 768,
+		audioOffset: -8,
 		audioVolume: 60,
 	};
 	const line = formatMmlMeta(meta, " ");
 	check(
 		"URL・開始・終了・貼り付け位置・音量が出力される",
 		line,
-		"#audio=https://example.com/karaoke.mp3 #audiostart=12.5 #audioend=200.25 #audioat=768 #audiovol=60",
+		"#audio=https://example.com/karaoke.mp3 #audiostart=12.5 #audioend=200.25 #audiooffset=-8 #audiovol=60",
 	);
 	const back = parseMmlMeta(`${line} @0 t120 o4 c;`);
 	check(
@@ -173,14 +169,14 @@ console.log("■ MMLへの往復");
 			back.audio,
 			back.audioStart,
 			back.audioEnd,
-			back.audioAt,
+			back.audioOffset,
 			back.audioVolume,
 		],
 		[
 			meta.audio,
 			meta.audioStart,
 			meta.audioEnd,
-			meta.audioAt,
+			meta.audioOffset,
 			meta.audioVolume,
 		],
 	);
@@ -191,7 +187,7 @@ console.log("■ MMLへの往復");
 		formatMmlMeta({
 			audioStart: 12.5,
 			audioEnd: 200.25,
-			audioAt: 768,
+			audioOffset: -8,
 			audioVolume: 60,
 			volume: 100,
 		}),
@@ -226,66 +222,57 @@ console.log("■ URLの // を行コメントと誤認しない");
 	// 1行MMLでは、URLの "//" から後ろが行コメントとして丸ごと消えてしまう。
 	// 宣言も音符も落ちるのに読み込み自体は成功するので、気付きにくい壊れ方をする。
 	const mml = [
-		"#volume=50 #audio=https://example.com/a.mp3 #audiostart=1.25 #audioat=192;",
+		"#volume=50 #audio=https://example.com/a.mp3 #audiostart=1.25 #audiooffset=-3;",
 		"@0 t120 o4 c d e;",
 		"#end;",
 	].join("\n");
 	const parsed = parseMML(mml, {});
 	check(
 		"URLの後ろの宣言が生き残る",
-		[parsed.meta.audio, parsed.meta.audioStart, parsed.meta.audioAt],
-		["https://example.com/a.mp3", 1.25, 192],
+		[parsed.meta.audio, parsed.meta.audioStart, parsed.meta.audioOffset],
+		["https://example.com/a.mp3", 1.25, -3],
 	);
 	check("URLの後ろの音符が生き残る", parsed.placements.length, 3);
 }
 
-console.log("■ 前奏を鳴らす指定（音符は動かさない）");
+console.log("■ ずれのMML往復");
 {
-	// 前奏を鳴らす＝「曲の開始を前奏ぶん後ろへ置く」だけで表す。音源側の呼び出しは
-	// 時刻と音源位置を同じだけずらすので、曲と音源の対応（どこで歌が入るか）は変わらない。
-	const startSec = 34.2;
-	const atSongStart = backingMediaSec({
-		fromStep: 0,
-		atStep: 0,
-		startSec,
-		secondsPerStep: SPS,
-	});
-	check("前奏なし: 曲頭で音源は34.2秒地点", atSongStart, 34.2);
-	// 前奏ありのときに音源へ渡す値（呼び出し側が preRoll ぶん両方から引く）
-	check("前奏あり: 音源は頭(0秒)から鳴り出す", atSongStart - startSec, 0);
-	// 曲の途中から再生したときは前奏を鳴らす場面ではない＝引かない
-	const fromMiddle = backingMediaSec({
-		fromStep: 384,
-		atStep: 0,
-		startSec,
-		secondsPerStep: SPS,
-	});
-	check("途中再生: 前奏を挟まずその位置の音源が鳴る", fromMiddle, 38.2);
-
-	// MMLへの往復（前奏の指定）
 	const line = formatMmlMeta(
-		{
-			audio: "https://example.com/a.mp3",
-			audioStart: startSec,
-			audioIntro: true,
-		},
+		{ audio: "https://example.com/a.mp3", audioOffset: 6.207 },
 		" ",
 	);
 	check(
-		"前奏の指定がMMLへ出る",
+		"音源が先のずれが出力される",
 		line,
-		"#audio=https://example.com/a.mp3 #audiostart=34.2 #audiointro=on",
+		"#audio=https://example.com/a.mp3 #audiooffset=6.207",
 	);
-	check("読み戻せる", parseMmlMeta(line).audioIntro, true);
+	check("読み戻せる", parseMmlMeta(line).audioOffset, 6.207);
 	check(
-		"既定（前奏なし）は書かない",
-		formatMmlMeta({ audio: "https://example.com/a.mp3", audioIntro: false }),
+		"打ち込みが先（負のずれ）も往復する",
+		parseMmlMeta(
+			formatMmlMeta({
+				audio: "https://example.com/a.mp3",
+				audioOffset: -6.207,
+			}),
+		).audioOffset,
+		-6.207,
+	);
+	check(
+		"同時（0）は書かない",
+		formatMmlMeta({ audio: "https://example.com/a.mp3", audioOffset: 0 }),
 		"#audio=https://example.com/a.mp3",
 	);
 	check(
 		"宣言は本文から取り除かれる",
-		stripMmlMeta("#audiointro=on @0 c;").trim(),
+		stripMmlMeta("#audiooffset=-6.207 @0 c;").trim(),
 		"@0 c;",
+	);
+	// 旧形式（音源を曲のこのステップへ置く）も読めること。利用側でテンポを使って
+	// 「打ち込みが先」のずれへ読み替える。
+	check(
+		"旧形式 #audioat= も読める",
+		parseMmlMeta("#audioat=384 @0 c;").audioAt,
+		384,
 	);
 }
 

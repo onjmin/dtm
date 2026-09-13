@@ -14,7 +14,7 @@ import {
 	detectProgression,
 	type TimedNote,
 } from "@onjmin/chord-parser";
-import { backingMediaSec } from "./backing-audio";
+import { backingMediaSec, backingPreRollSec } from "./backing-audio";
 import {
 	type AnyDrumPattern,
 	DRUM_PATTERNS,
@@ -447,17 +447,23 @@ export const mountMmlPlayer = (
 	const backingAudio = meta.audio ? (options.backingAudio ?? null) : null;
 	/** 直近の再生開始ステップ（伴奏音源の残り時間を測る基準）。 */
 	let lastFromStep = 0;
-	const backingStartSec = meta.audioStart ?? 0;
+	const backingRangeStartSec = meta.audioStart ?? 0;
 	const backingEndSec = meta.audioEnd ?? 0;
-	const backingAtStep = meta.audioAt ?? 0;
-	/** 前奏を鳴らしてから曲を始めるか（`#audiointro=on`）。 */
-	const backingPlayIntro = meta.audioIntro ?? false;
-	/** この再生で前奏として先に鳴らす秒数（曲頭から再生したときだけ効く）。 */
-	const backingPreRollSec = (fromStep: number): number =>
-		backingPlayIntro && fromStep <= 0 && backingAudio?.isLoaded()
-			? backingStartSec
-			: 0;
 	const secondsPerStep = 60 / bpm / STEPS_PER_BEAT;
+	/**
+	 * 伴奏音源と打ち込みの開始のずれ（秒）。正なら音源が先。
+	 * 旧形式の `#audioat=`（音源を曲のこのステップへ置く）は「打ち込みが先」のずれへ読み替える。
+	 */
+	const backingOffsetSec =
+		meta.audioOffset ?? (meta.audioAt ? -meta.audioAt * secondsPerStep : 0);
+	/** いまの設定での「再生開始時点の音源内の位置」。 */
+	const backingMediaSecAt = (fromStep: number): number =>
+		backingMediaSec({
+			fromStep,
+			offsetSec: backingOffsetSec,
+			rangeStartSec: backingRangeStartSec,
+			secondsPerStep,
+		});
 	let loopEnabled = options.loop ?? parseLoopMeta(mml) ?? false;
 
 	// placements を trackIndex ごとにまとめ、ノートを持つトラックだけ採用
@@ -1540,12 +1546,7 @@ export const mountMmlPlayer = (
 		getMinEndSec: () => {
 			const info = backingAudio?.getLoaded();
 			if (!info) return 0;
-			const mediaSec = backingMediaSec({
-				fromStep: lastFromStep,
-				atStep: backingAtStep,
-				startSec: backingStartSec,
-				secondsPerStep,
-			});
+			const mediaSec = backingMediaSecAt(lastFromStep);
 			const until =
 				backingEndSec > 0
 					? Math.min(backingEndSec, info.durationSec || backingEndSec)
@@ -1696,20 +1697,17 @@ export const mountMmlPlayer = (
 			if (!playing || activePlayer !== instance || skipSinging) return;
 		}
 		lastFromStep = fromStep;
-		// 前奏を鳴らす指定なら、そのぶん曲の開始を後ろへ置く（音符の位置は変えない）。
-		const preRollSec = backingPreRollSec(fromStep);
+		// 音源が先に始まる指定なら、そのぶん曲の開始を後ろへ置く（音符の位置は変えない）。
+		const preRollSec = backingAudio?.isLoaded()
+			? backingPreRollSec({ fromStep, offsetSec: backingOffsetSec })
+			: 0;
 		seq.start(fromStep, preRollSec);
-		// 伴奏音源を、楽器・歌声と同じアンカーへ合わせる（前奏ぶんだけ手前から鳴らす）。
+		// 伴奏音源を、楽器・歌声と同じアンカーへ合わせる（先行ぶんだけ手前から鳴らす）。
 		if (backingAudio?.isLoaded()) {
 			backingAudio.start({
 				atTime: seq.getStartTime() - preRollSec,
-				mediaSec:
-					backingMediaSec({
-						fromStep,
-						atStep: backingAtStep,
-						startSec: backingStartSec,
-						secondsPerStep,
-					}) - preRollSec,
+				mediaSec: backingMediaSecAt(fromStep) - preRollSec,
+				rangeStartSec: backingRangeStartSec,
 				endSec: backingEndSec || undefined,
 			});
 		}
@@ -1762,12 +1760,8 @@ export const mountMmlPlayer = (
 			// 鳴り始めに待ちが要る音源（YouTube等）へ、目的位置を先に用意させる。
 			if (backingAudio?.isLoaded()) {
 				await backingAudio.arm(
-					backingMediaSec({
-						fromStep,
-						atStep: backingAtStep,
-						startSec: backingStartSec,
-						secondsPerStep,
-					}) - backingPreRollSec(fromStep),
+					backingMediaSecAt(fromStep) -
+						backingPreRollSec({ fromStep, offsetSec: backingOffsetSec }),
 				);
 				if (!playing || activePlayer !== instance) return;
 			}

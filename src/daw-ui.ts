@@ -93,10 +93,9 @@ export type DawUIRefs = {
 	audioMute: HTMLInputElement;
 	audioStartInput: HTMLInputElement;
 	audioEndInput: HTMLInputElement;
-	audioBarInput: HTMLInputElement;
-	audioBeatInput: HTMLInputElement;
-	audioAtTimeInput: HTMLInputElement;
-	audioPlayIntro: HTMLInputElement;
+	audioLeadSelect: HTMLSelectElement;
+	audioOffsetInput: HTMLInputElement;
+	audioOffsetTail: HTMLElement;
 	// io
 	midiInput: HTMLInputElement;
 	midiLoadBtn: HTMLButtonElement;
@@ -424,24 +423,20 @@ export const buildUI = (
         </label>
       </div>
       <div class="dtm-row">
-        <span class="dtm-label">音源の開始</span>
-        <input type="text" class="dtm-input" data-dtm="audio-start" value="0:00.000" placeholder="0:00.000" style="width:88px" title="音源のどこから鳴らすか（分:秒.ミリ秒）。いらないイントロを飛ばせます">
-        <span class="dtm-label">終了</span>
+        <span class="dtm-label">音源の範囲</span>
+        <input type="text" class="dtm-input" data-dtm="audio-start" value="0:00.000" placeholder="0:00.000" style="width:88px" title="音源のどこから鳴らすか（分:秒.ミリ秒）。いらない部分を飛ばせます">
+        <span class="dtm-label">〜</span>
         <input type="text" class="dtm-input" data-dtm="audio-end" placeholder="最後まで" style="width:88px" title="音源のどこで止めるか（分:秒.ミリ秒）。空欄なら最後まで">
       </div>
-      <div class="dtm-row">
-        <label class="dtm-checkbox-label" title="ONにすると音源を頭から鳴らし、打ち込みは「音源の開始」の位置まで待ってから入ります（音符は動かしません）">
-          <input type="checkbox" class="dtm-checkbox" data-dtm="audio-play-intro"> 「音源の開始」まで待つ（前奏を鳴らす）
-        </label>
-      </div>
-      <div class="dtm-row">
-        <span class="dtm-label">曲の開始</span>
-        <input type="number" class="dtm-input dtm-input--num" data-dtm="audio-bar" value="1" min="1" step="1" title="音源の開始位置を、曲のこの小節に合わせます">
-        <span class="dtm-label">小節</span>
-        <input type="number" class="dtm-input dtm-input--num" data-dtm="audio-beat" value="1" min="1" step="1" title="小節内の拍">
-        <span class="dtm-label">拍</span>
-        <span class="dtm-label">＝</span>
-        <input type="text" class="dtm-input" data-dtm="audio-at-time" value="0:00.000" style="width:88px" title="同じ位置を時間で指定できます（分:秒.ミリ秒）。小節・拍と連動します">
+      <div class="dtm-row" style="flex-wrap:wrap">
+        <span class="dtm-label">開始のずれ</span>
+        <select class="dtm-select" data-dtm="audio-lead" title="音源と打ち込みのどちらを先に始めるか">
+          <option value="audio">音源</option>
+          <option value="song">打ち込み</option>
+        </select>
+        <span class="dtm-label">が先、</span>
+        <input type="text" class="dtm-input" data-dtm="audio-offset" value="0:00.000" placeholder="0:00.000" style="width:88px" title="もう一方が始まるまでの時間（分:秒.ミリ秒）。0なら同時に始まります">
+        <span class="dtm-label" data-dtm="audio-offset-tail">後に打ち込み開始</span>
       </div>
       <div class="dtm-row">
         <span class="dtm-grow"></span>
@@ -805,10 +800,9 @@ export const buildUI = (
 		audioMute: sel("audio-mute"),
 		audioStartInput: sel("audio-start"),
 		audioEndInput: sel("audio-end"),
-		audioBarInput: sel("audio-bar"),
-		audioBeatInput: sel("audio-beat"),
-		audioAtTimeInput: sel("audio-at-time"),
-		audioPlayIntro: sel("audio-play-intro"),
+		audioLeadSelect: sel("audio-lead"),
+		audioOffsetInput: sel("audio-offset"),
+		audioOffsetTail: sel("audio-offset-tail"),
 		midiInput: sel("midi-input"),
 		midiLoadBtn: sel("midi-load"),
 		midiInfoBtn: sel("midi-info"),
