@@ -11,6 +11,7 @@ export const MACRO_STORAGE_KEYS = {
 	key: "dtm-macro:key",
 	scale: "dtm-macro:scale",
 	shift: "dtm-macro:shift",
+	shiftActiveOnly: "dtm-macro:shift-active-only",
 	transpose: "dtm-macro:transpose",
 } as const;
 

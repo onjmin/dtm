@@ -6185,6 +6185,11 @@ export const mountDAW = (
 			}
 		}
 
+		const savedShiftActiveOnly = readMacroSetting("shiftActiveOnly");
+		if (savedShiftActiveOnly && refs.shiftActiveOnly) {
+			refs.shiftActiveOnly.checked = savedShiftActiveOnly === "1";
+		}
+
 		const savedTranspose = readMacroSetting("transpose");
 		if (savedTranspose && refs.transposeSelect) {
 			const hasOption = Array.from(refs.transposeSelect.options).some(
@@ -6258,6 +6263,14 @@ export const mountDAW = (
 		if (refs.shiftSelect) {
 			refs.shiftSelect.addEventListener("change", () => {
 				writeMacroSetting("shift", refs.shiftSelect.value);
+			});
+		}
+		if (refs.shiftActiveOnly) {
+			refs.shiftActiveOnly.addEventListener("change", () => {
+				writeMacroSetting(
+					"shiftActiveOnly",
+					refs.shiftActiveOnly.checked ? "1" : "0",
+				);
 			});
 		}
 		if (refs.transposeSelect) {
@@ -6896,8 +6909,12 @@ export const mountDAW = (
 		});
 		refs.shiftApplyBtn.addEventListener("click", () =>
 			overlayDuring(() => {
+				// 「このトラックのみ」が入っていれば、いま開いているトラックだけを動かす。
+				const targets = refs.shiftActiveOnly?.checked
+					? [getActive()]
+					: trackStates;
 				shiftNotes(
-					trackStates.map((t) => t.core),
+					targets.map((t) => t.core),
 					Number.parseInt(refs.shiftSelect.value, 10) || 0,
 				);
 				redrawAll();

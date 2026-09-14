@@ -113,6 +113,7 @@ export type DawUIRefs = {
 	applyActiveOnly: HTMLInputElement;
 	shiftSelect: HTMLSelectElement;
 	shiftApplyBtn: HTMLButtonElement;
+	shiftActiveOnly: HTMLInputElement;
 	transposeSelect: HTMLSelectElement;
 	transposeApplyBtn: HTMLButtonElement;
 	transposeInfoBtn: HTMLButtonElement;
@@ -618,6 +619,9 @@ export const buildUI = (
           <option value="1536">+8小節</option>
         </select>
         <button class="dtm-btn dtm-btn--primary" data-dtm="shift-apply">適用</button>
+        <label class="dtm-checkbox-label" title="有効にすると、いま開いているトラックだけをシフトします">
+          <input type="checkbox" class="dtm-checkbox" data-dtm="shift-active-only"> このトラックのみ
+        </label>
       </div>
       <div class="dtm-row">
         <span class="dtm-label">移調</span>
@@ -819,6 +823,7 @@ export const buildUI = (
 		applyActiveOnly: sel("apply-active-only"),
 		shiftSelect: sel("shift-select"),
 		shiftApplyBtn: sel("shift-apply"),
+		shiftActiveOnly: sel("shift-active-only"),
 		transposeSelect: sel("transpose-select"),
 		transposeApplyBtn: sel("transpose-apply"),
 		transposeInfoBtn: sel("transpose-info"),
