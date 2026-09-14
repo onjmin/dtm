@@ -16,6 +16,7 @@ import Module from "node:module";
 
 import {
 	backingMediaSec,
+	backingPreRollFromRoll,
 	backingPreRollSec,
 	formatTimeSec,
 	parseTimeSec,
@@ -96,6 +97,51 @@ console.log("■ 開始のずれ（4パターン）");
 	// 途中から再生したとき
 	check("途中再生: 音源も同じだけ進む", media(0, 384), 4);
 	check("途中再生: 前奏の待ちは挟まない", preRoll(6.207, 384), 0);
+}
+
+console.log("■ 鳴り始めの実測から曲の開始を決める");
+{
+	// 外部プレイヤー（YouTube / <audio>）は「再生要求 → 実際に鳴る」までの遅れが
+	// 読めない。先に鳴らして実測し、音源がその位置へ達する時刻に曲を始める。
+	const preRoll = (
+		rolled: { atTime: number; mediaSec: number } | null,
+		mediaAtSongStart: number,
+		now: number,
+		fallbackPreRollSec = 0,
+	) =>
+		+backingPreRollFromRoll({
+			rolled,
+			mediaAtSongStart,
+			now,
+			startDelaySec: 0.1,
+			fallbackPreRollSec,
+		}).toFixed(3);
+
+	// 時刻100.0に音源が0.4秒地点にいた。曲は音源が6.207秒に来たら始めたい
+	// → あと5.807秒。いまが100.2なら、開始までの待ちは 5.607 - 0.1(先読み)。
+	check(
+		"遅れて鳴り出しても、曲の開始はその実測から決まる",
+		preRoll({ atTime: 100, mediaSec: 0.4 }, 6.207, 100.2),
+		5.507,
+	);
+	// 鳴り出しが遅いほど、曲の開始も同じだけ後ろへ動く（対応関係は変わらない）
+	check(
+		"鳴り出しが1秒遅れれば、曲の開始も1秒後ろへ",
+		preRoll({ atTime: 101, mediaSec: 0.4 }, 6.207, 100.2),
+		6.507,
+	);
+	// 既に通り過ぎていたら待てない（0）。音源側を snap で詰める前提。
+	check(
+		"もう通り過ぎていたら待たない",
+		preRoll({ atTime: 100, mediaSec: 6.5 }, 6.207, 100.2),
+		0,
+	);
+	// 実測できない（デコード済み・時間切れ）なら、指定どおりの待ちを使う
+	check(
+		"実測できなければ指定どおり",
+		preRoll(null, 6.207, 100.2, 6.207),
+		6.207,
+	);
 }
 
 console.log("■ 時間表記");

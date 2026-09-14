@@ -14,6 +14,7 @@ import {
 import { GM_INSTRUMENT_NAMES, programOfInstrumentName } from "./audio-config";
 import {
 	backingMediaSec,
+	backingPreRollFromRoll,
 	backingPreRollSec,
 	formatTimeSec,
 	isYoutubeUrl,
@@ -104,7 +105,11 @@ import {
 	MIN_REVERB_DECAY_SEC,
 	MIN_REVERB_PREDELAY_MS,
 } from "./reverb";
-import { createSequencer, type Sequencer } from "./sequencer";
+import {
+	createSequencer,
+	SEQUENCER_START_DELAY,
+	type Sequencer,
+} from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import {
@@ -3246,8 +3251,15 @@ export const mountDAW = (
 		});
 	};
 
+	/**
+	 * 再生の世代。`play()` は音源の鳴り始めを待つ間に停止・再再生されうるので、
+	 * 待っている間に割り込まれた古い再生は捨てる。
+	 */
+	let playGeneration = 0;
+
 	const play = async (): Promise<void> => {
 		if (playbackState === "playing") return;
+		const generation = ++playGeneration;
 		// AudioContext の resume は非同期。suspended（currentTime 凍結）のまま
 		// sequencer.start すると resume 完了の瞬間に先読み予約が一斉発音され、冒頭で
 		// 「ピチュ」という潰れた音が鳴る。resume の完了を待ってからスケジュールを始める。
@@ -3327,11 +3339,56 @@ export const mountDAW = (
 			? backingPreRollSec({ fromStep, offsetSec: backing.offsetSec })
 			: 0;
 
-		// 伴奏音源は鳴り始めるまでに待ちが要ることがある（YouTubeのバッファ等）。
-		// シーケンサを走らせる前に目的位置を用意させ、頭が欠けないようにする。
-		if (backingAudio?.isLoaded()) {
-			await backingAudio.arm(backingMediaSecAt(fromStep) - preRollSec);
+		// 曲が始まる時点で音源が既に鳴っているか（同時 or 音源が先）。
+		const mediaAtSongStart = backingMediaSecAt(fromStep);
+		const audioRollsFirst =
+			!!backingAudio?.isLoaded() && mediaAtSongStart >= backing.rangeStartSec;
+
+		/**
+		 * 音源の「鳴り始め」を実測して、曲の開始時刻をそこから決める。
+		 *
+		 * 再生要求から実際に音が出るまでの遅れは環境依存で事前に読めない
+		 * （YouTubeのバッファ、初回再生のウォームアップ等）。音源側を後から
+		 * 引きずって直すと頭が飛ぶので、**先に音源を鳴らし、実測してから打ち込みを始める**。
+		 * デコード済みの音源は予約が正確なので、この待ち合わせは起きない。
+		 */
+		let rolled: { atTime: number; mediaSec: number } | null = null;
+		if (audioRollsFirst && backingAudio) {
+			const waiting = backingAudio.getLoaded()?.mode !== "buffer";
+			if (waiting) {
+				setBackingStatus("音源が鳴り始めるのを待っています…");
+				setLoading(true);
+			}
+			rolled = await backingAudio.startRolling({
+				mediaSec: mediaAtSongStart - preRollSec,
+				rangeStartSec: backing.rangeStartSec,
+				endSec: backing.endSec || undefined,
+			});
+			if (waiting) {
+				setLoading(false);
+				setBackingStatus(
+					rolled
+						? ""
+						: "音源が鳴り始めませんでした（ズレる場合は再生し直してください）",
+					!rolled,
+				);
+			}
+			if (playGeneration !== generation) return; // 待っている間に停止・再再生された
+		} else if (backingAudio?.isLoaded()) {
+			// 後から入る音源は、目的位置を先に用意させておく（頭が欠けないように）。
+			await backingAudio.arm(mediaAtSongStart - preRollSec);
+			if (playGeneration !== generation) return;
 		}
+
+		// 実測できたなら「音源がその位置へ達する時刻」に曲の開始を合わせる。
+		// 間に合わない（もう過ぎている）ときは最短で始め、音源側を snap で詰める。
+		const effectivePreRoll = backingPreRollFromRoll({
+			rolled,
+			mediaAtSongStart,
+			now: getAudioTime(),
+			startDelaySec: SEQUENCER_START_DELAY,
+			fallbackPreRollSec: preRollSec,
+		});
 
 		if (playbackState !== "paused") {
 			// 再生開始位置までスクロール
@@ -3344,7 +3401,7 @@ export const mountDAW = (
 			renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 		}
 		playbackState = "playing";
-		sequencer.start(fromStep, preRollSec);
+		sequencer.start(fromStep, effectivePreRoll);
 		startPeakSampling();
 
 		// 伴奏音源を打ち込みと同じアンカーへ合わせる。ノートが1つも無いとシーケンサは
@@ -3352,8 +3409,19 @@ export const mountDAW = (
 		if (backingAudio?.isLoaded()) {
 			const anchor = sequencer.isActive()
 				? sequencer.getStartTime()
-				: getAudioTime() + 0.1 + preRollSec;
-			startBacking(fromStep, anchor, preRollSec);
+				: getAudioTime() + SEQUENCER_START_DELAY + effectivePreRoll;
+			backingFromStep = fromStep;
+			if (rolled) {
+				// 既に鳴っている。曲の開始時刻が決まったので、音源の追従先だけ揃える。
+				// 曲の開始が決まった。まだ鳴らし始めたばかりなので、
+				// ズレが残っていれば飛ばして揃える（じわじわ寄せるより気にならない）。
+				backingAudio.rebase(
+					{ atTime: anchor, mediaSec: mediaAtSongStart },
+					{ snap: true },
+				);
+			} else {
+				startBacking(fromStep, anchor, preRollSec);
+			}
 		}
 
 		// フェードイン/アウトのスケジュール。フェードインは曲頭（fromStep===0）から
@@ -3415,6 +3483,7 @@ export const mountDAW = (
 	};
 	const pause = (): void => {
 		if (playbackState !== "playing") return;
+		playGeneration++;
 		pausedPlayStep = currentPlayStep;
 		sequencer.stop();
 		backingAudio?.stop();
@@ -3435,6 +3504,7 @@ export const mountDAW = (
 		void play();
 	};
 	const stop = (): void => {
+		playGeneration++;
 		sequencer.stop();
 		backingAudio?.stop();
 		options.singingVoices?.stopStream();

@@ -25,6 +25,11 @@ const STEPS_PER_BEAT = 48;
 // renderNote の最大ブロック(~200ms)を十分上回る値にする。
 const PLAN_TIME = 0.5;
 const TICK_INTERVAL_MS = 20;
+/**
+ * `start()` してから実際に曲が始まるまでの安全先読みバッファ（秒）。
+ * 開始時刻を外から逆算したい呼び出し側（伴奏音源との待ち合わせ等）が使う。
+ */
+export const SEQUENCER_START_DELAY = 0.1;
 /** ステップ位置の比較に使う許容誤差（浮動小数の丸め対策）。 */
 const STEP_EPSILON = 1e-4;
 
@@ -394,7 +399,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		active = false;
 	};
 
-	const START_DELAY = 0.1; // 100msの安全先読みバッファ
+	const START_DELAY = SEQUENCER_START_DELAY;
 
 	const start = (fromStep?: number, preRollSec = 0): void => {
 		stop();

@@ -59,6 +59,33 @@ export type BackingAudio = {
 	 */
 	arm: (mediaSec: number) => Promise<void>;
 	start: (options: BackingStartOptions) => void;
+	/**
+	 * 音源を**今すぐ**鳴らし始め、本当に音が進み出すまで待ってから、
+	 * 「その瞬間の時計（`getAudioTime` と同じ絶対秒）と、そのとき音源がいた位置」を返す。
+	 *
+	 * 再生要求から実際に鳴り出すまでの遅れは環境依存で事前に読めない
+	 * （YouTubeのバッファ、`<audio>` のデコード、初回再生のウォームアップ等）。
+	 * 呼び出し側はこの実測値を見て、**打ち込み側の開始時刻を決められる**。
+	 *
+	 * - デコード済み（`buffer`）… 予約がサンプル単位で正確なので待つ必要がなく `null`。
+	 * - 時間内に鳴り始めなかった … `null`（呼び出し側は従来どおり予約で始める）。
+	 */
+	startRolling: (options: {
+		mediaSec: number;
+		rangeStartSec?: number;
+		endSec?: number;
+		/** 鳴り始めを待つ上限（秒）。既定5。 */
+		timeoutSec?: number;
+	}) => Promise<{ atTime: number; mediaSec: number } | null>;
+	/**
+	 * 鳴らしたまま、合わせる先（時刻と音源位置の対応）だけ差し替える。
+	 * {@link startRolling} の実測で打ち込み側の開始時刻がずれたときに、
+	 * 音源をそこへ合わせ直すために使う。
+	 */
+	rebase: (
+		line: { atTime: number; mediaSec: number },
+		options?: { snap?: boolean },
+	) => void;
 	stop: () => void;
 	/** 0-100。 */
 	setVolume: (volume: number) => void;
@@ -119,6 +146,38 @@ export const backingPreRollSec = (o: {
 	fromStep: number;
 	offsetSec: number;
 }): number => (o.fromStep <= 0 ? Math.max(0, o.offsetSec) : 0);
+
+/**
+ * 実測した「鳴り始め」から、打ち込みを始めるまでの待ち時間を求める。
+ *
+ * 外部プレイヤーは再生要求から音が出るまでの遅れが読めないので、先に鳴らして
+ * 「いつ・どこを鳴らしていたか」を実測し（{@link BackingAudio.startRolling}）、
+ * **音源がその位置へ達する時刻**に打ち込みを始める。こうすると遅れの大きさが
+ * 毎回変わっても、音源と打ち込みの対応は変わらない。
+ *
+ * 既に通り過ぎていた（＝待つ余地が無い）ときは0。呼び出し側は音源側を
+ * 実測で詰め直すこと（{@link BackingAudio.rebase} の `snap`）。
+ */
+export const backingPreRollFromRoll = (o: {
+	/** 実測値。取れなかった（デコード済み・時間切れ）なら null。 */
+	rolled: { atTime: number; mediaSec: number } | null;
+	/** 曲の開始時点で音源がいるべき位置（秒）。 */
+	mediaAtSongStart: number;
+	/** いまの時刻（`getAudioTime` と同じ時計）。 */
+	now: number;
+	/** 再生開始の要求から実際に走り出すまでの余裕（秒）。 */
+	startDelaySec: number;
+	/** 実測が取れなかったときに使う待ち時間（秒）。 */
+	fallbackPreRollSec: number;
+}): number =>
+	o.rolled
+		? Math.max(
+				0,
+				o.rolled.atTime +
+					(o.mediaAtSongStart - o.rolled.mediaSec) -
+					(o.now + o.startDelaySec),
+			)
+		: o.fallbackPreRollSec;
 
 /**
  * `1:23.456` / `83.456` / `1:02:03` のような時間表記を秒へ直す。
@@ -263,8 +322,23 @@ type ExternalMedia = {
 	setRate: (rate: number) => void;
 };
 
+/** {@link driveExternalMedia} のハンドル。 */
+type MediaDrive = {
+	stop: () => void;
+	/**
+	 * 合わせる先の直線を差し替える（再生は止めない）。
+	 * `snap` を付けると、その場で1回だけ実測して線の上へ乗せ直す。
+	 */
+	rebase: (
+		line: { atTime: number; mediaSec: number },
+		options?: { snap?: boolean },
+	) => void;
+};
+
 /** ドリフトを見に行く間隔（ms）。 */
 const DRIFT_CHECK_MS = 250;
+/** 鳴り始めたかを見に行く間隔（ms）。実測の誤差はここまでに収まる。 */
+const ROLL_POLL_MS = 40;
 /**
  * 鳴らし始めてから、実測で1回だけ合わせ直すまでの時間（ms）。
  *
@@ -275,6 +349,11 @@ const DRIFT_CHECK_MS = 250;
 const INITIAL_FIX_MS = 120;
 /** 鳴り始めるのを待つ上限（ms）。これを過ぎたら、進んでいなくても1回だけ詰めて諦める。 */
 const INITIAL_FIX_TIMEOUT_MS = 1500;
+/**
+ * 鳴り始めに実測で詰める回数の上限。
+ * seek のたびに立ち上がりの遅れが乗るので、1回では詰め切れないことがある。
+ */
+const SNAP_MAX_PASSES = 3;
 /** これ以上ズレたら speed では戻せないので seek で直す（秒）。 */
 const HARD_SEEK_SEC = 0.3;
 /** この範囲は許容して何もしない（秒）。詰めすぎると速度が揺れて気持ち悪い。 */
@@ -294,15 +373,22 @@ const MAX_RATE_NUDGE = 0.02;
  */
 const driveExternalMedia = (
 	media: ExternalMedia,
-	o: BackingStartOptions & { now: () => number },
-): (() => void) => {
+	o: BackingStartOptions & {
+		now: () => number;
+		/** 既に鳴っている音源に後から追従だけ始める（頭出しと再生はしない）。 */
+		alreadyRolling?: boolean;
+	},
+): MediaDrive => {
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let initialFix: ReturnType<typeof setTimeout> | null = null;
 	let interval: ReturnType<typeof setInterval> | null = null;
 	let stopped = false;
+	/** 合わせる先の直線。時刻 `atTime` に音源が `mediaSec` にいる、という1点で決まる。 */
+	let line = { atTime: o.atTime, mediaSec: o.mediaSec };
 
-	/** `atTime` を起点に、いま鳴っているべき音源内の位置。 */
-	const expectedAt = (now: number): number => o.mediaSec + (now - o.atTime);
+	/** `line` を起点に、いま鳴っているべき音源内の位置。 */
+	const expectedAt = (now: number): number =>
+		line.mediaSec + (now - line.atTime);
 
 	const stop = (): void => {
 		stopped = true;
@@ -324,16 +410,26 @@ const driveExternalMedia = (
 		media.seek(at);
 		media.play();
 		// 鳴り始めの遅れを実測して一度だけ詰める。
-		//
-		// 厄介なのは、`currentTime` が「実際に鳴り始めてから」しか進まないこと。
-		// 再生開始（と seek のやり直し）には毎回同じだけの立ち上がり時間が掛かるので、
-		// 素直に「あるべき位置」へ seek しても、その seek の立ち上がりぶんだけまた遅れる。
-		// なので**測った遅れを足した先**へ撃つ。1回で系統的なズレが消える。
+		snapToLine(at);
+		watch();
+	};
+
+	/**
+	 * 実測したズレを1回で詰める。
+	 *
+	 * 厄介なのは、`currentTime` が「実際に鳴り始めてから」しか進まないこと。
+	 * 再生開始（と seek のやり直し）には毎回同じだけの立ち上がり時間が掛かるので、
+	 * 素直に「あるべき位置」へ seek しても、その seek の立ち上がりぶんだけまた遅れる。
+	 * なので**測った遅れを足した先**へ撃つ。1回で系統的なズレが消える。
+	 *
+	 * @param from まだ動き出していないことを判定する基準位置。
+	 */
+	const snapToLine = (from: number, pass = 1): void => {
 		let waited = 0;
 		const fix = (): void => {
 			initialFix = null;
 			if (stopped) return;
-			const moving = media.currentTime() > at + 0.01;
+			const moving = media.currentTime() > from + 0.01;
 			waited += INITIAL_FIX_MS;
 			// まだ進み始めていないなら測っても無意味なので、動き出すまで待つ
 			if (!moving && waited < INITIAL_FIX_TIMEOUT_MS) {
@@ -341,9 +437,22 @@ const driveExternalMedia = (
 				return;
 			}
 			const lag = expectedAt(o.now()) - media.currentTime();
-			if (lag > 0.015) media.seek(expectedAt(o.now()) + lag);
+			if (Math.abs(lag) <= 0.015) return; // 十分揃っている
+			// 遅れているぶんを足した先へ撃つ（seek 自体の立ち上がりを見越す）。
+			// 進みすぎているときは足すぶんが無いので、seek の立ち上がりぶんだけ
+			// 今度は遅れる——そのぶんをもう1回だけ測って詰める。
+			media.seek(expectedAt(o.now()) + Math.max(0, lag));
+			if (pass < SNAP_MAX_PASSES) {
+				snapToLine(Number.NEGATIVE_INFINITY, pass + 1);
+			}
 		};
+		if (initialFix !== null) clearTimeout(initialFix);
 		initialFix = setTimeout(fix, INITIAL_FIX_MS);
+	};
+
+	/** 鳴っている音源のズレを見張って詰め続ける。 */
+	const watch = (): void => {
+		if (stopped || interval !== null) return;
 		interval = setInterval(() => {
 			const now = o.now();
 			const expected = expectedAt(now);
@@ -370,18 +479,32 @@ const driveExternalMedia = (
 		}, DRIFT_CHECK_MS);
 	};
 
-	// 再生範囲の頭より手前を指されている＝まだ鳴らさない区間。`expectedAt` が
-	// 範囲の頭に届く時刻まで待ってから始める。届いているなら atTime ちょうど。
-	const waitSec = Math.max(
-		0,
-		o.atTime - o.now(),
-		o.atTime + (rangeStart - o.mediaSec) - o.now(),
-	);
-	const delayMs = waitSec * 1000;
-	if (delayMs < 1) begin();
-	else timer = setTimeout(begin, delayMs);
+	if (o.alreadyRolling) {
+		// 既に鳴っている＝頭出しも待ちも要らない。追従だけ始める。
+		watch();
+	} else {
+		// 再生範囲の頭より手前を指されている＝まだ鳴らさない区間。`expectedAt` が
+		// 範囲の頭に届く時刻まで待ってから始める。届いているなら atTime ちょうど。
+		const waitSec = Math.max(
+			0,
+			o.atTime - o.now(),
+			o.atTime + (rangeStart - o.mediaSec) - o.now(),
+		);
+		const delayMs = waitSec * 1000;
+		if (delayMs < 1) begin();
+		else timer = setTimeout(begin, delayMs);
+	}
 
-	return stop;
+	return {
+		stop,
+		// 合わせる先だけ差し替える。既に鳴っている音は止めない。
+		// `snap` 付きなら、その場で1回だけ実測して線の上へ乗せ直す
+		// （鳴らし始めた直後は、じわじわ寄せるより飛ばしたほうが気にならない）。
+		rebase: (next, opts) => {
+			line = { ...next };
+			if (opts?.snap) snapToLine(Number.NEGATIVE_INFINITY);
+		},
+	};
 };
 
 // ============================================================
@@ -411,8 +534,8 @@ export const createBackingAudio = (
 	let ytReady: Promise<void> | null = null;
 	/** blob: URL を作ったら、解放できるよう覚えておく。 */
 	let objectUrl: string | null = null;
-	/** グラフ外音源の停止ハンドル（再生中のみ）。 */
-	let stopExternal: (() => void) | null = null;
+	/** グラフ外音源の追従ハンドル（再生中のみ）。 */
+	let drive: MediaDrive | null = null;
 
 	const gainValue = (): number => (muted ? 0 : volume / 100);
 
@@ -433,8 +556,8 @@ export const createBackingAudio = (
 			source.disconnect();
 			source = null;
 		}
-		stopExternal?.();
-		stopExternal = null;
+		drive?.stop();
+		drive = null;
 	};
 
 	const clear = (): void => {
@@ -602,6 +725,100 @@ export const createBackingAudio = (
 		}
 	};
 
+	/** いまの音源を {@link ExternalMedia} として扱う口（グラフ外の音源だけ）。 */
+	const externalMediaOf = (): ExternalMedia | null => {
+		if (loaded?.mode === "element" && element) {
+			const el = element;
+			return {
+				seek: (sec) => {
+					el.currentTime = sec;
+				},
+				play: () => {
+					void el.play().catch((err) => {
+						options.onError?.(
+							`音源を再生できませんでした: ${err instanceof Error ? err.message : String(err)}`,
+						);
+					});
+				},
+				pause: () => el.pause(),
+				currentTime: () => el.currentTime,
+				canNudgeRate: true,
+				setRate: (rate) => {
+					el.playbackRate = rate;
+				},
+			};
+		}
+		if (loaded?.mode === "youtube" && ytPlayer) {
+			const player = ytPlayer;
+			return {
+				seek: (sec) => player.seekTo(sec, true),
+				play: () => player.playVideo(),
+				pause: () => player.pauseVideo(),
+				currentTime: () => player.getCurrentTime(),
+				// YouTubeの再生速度は離散値（0.25/0.5/1/1.25…）しか受け付けないので、
+				// 微調整はできない。ズレたら seek で直す。
+				canNudgeRate: false,
+				setRate: () => {},
+			};
+		}
+		return null;
+	};
+
+	/**
+	 * 鳴らし始めて、**読み取り値が動いた瞬間**を捕まえる。
+	 *
+	 * 現在位置をそのまま読むと、YouTubeのように更新が粗い（数百ms刻み）プレイヤーでは
+	 * 「いつの値か」が分からず、遅れて見える。値が変わった瞬間なら、その値は
+	 * たった今のものだと分かるので、誤差をポーリング間隔まで押し込める。
+	 */
+	const rollNow = async (
+		media: ExternalMedia,
+		target: number,
+		timeoutSec: number,
+	): Promise<{ atTime: number; mediaSec: number } | null> => {
+		media.seek(target);
+		media.play();
+		const deadline = audioContext.currentTime + timeoutSec;
+		let previous = media.currentTime();
+		while (audioContext.currentTime < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, ROLL_POLL_MS));
+			if (!loaded) return null; // 待っている間に音源が外された
+			const current = media.currentTime();
+			if (current !== previous && current > target + 0.001) {
+				return { atTime: audioContext.currentTime, mediaSec: current };
+			}
+			previous = current;
+		}
+		return null;
+	};
+
+	const startRolling = async (o: {
+		mediaSec: number;
+		rangeStartSec?: number;
+		endSec?: number;
+		timeoutSec?: number;
+	}): Promise<{ atTime: number; mediaSec: number } | null> => {
+		if (!loaded) return null;
+		const media = externalMediaOf();
+		if (!media) return null; // デコード済みは予約が正確なので待つ必要がない
+		stopSources();
+		const target = Math.max(0, o.rangeStartSec ?? 0, o.mediaSec);
+		const rolled = await rollNow(media, target, o.timeoutSec ?? 5);
+		if (!loaded) return null;
+		const line = rolled ?? {
+			atTime: audioContext.currentTime,
+			mediaSec: target,
+		};
+		drive = driveExternalMedia(media, {
+			...line,
+			rangeStartSec: o.rangeStartSec,
+			endSec: o.endSec,
+			now: () => audioContext.currentTime,
+			alreadyRolling: true,
+		});
+		return rolled;
+	};
+
 	const start = (o: BackingStartOptions): void => {
 		if (!loaded) return;
 		stopSources();
@@ -620,47 +837,10 @@ export const createBackingAudio = (
 			source = src;
 			return;
 		}
-		if (loaded.mode === "element" && element) {
-			const el = element;
-			el.volume = gainValue();
-			stopExternal = driveExternalMedia(
-				{
-					seek: (sec) => {
-						el.currentTime = sec;
-					},
-					play: () => {
-						void el.play().catch((err) => {
-							options.onError?.(
-								`音源を再生できませんでした: ${err instanceof Error ? err.message : String(err)}`,
-							);
-						});
-					},
-					pause: () => el.pause(),
-					currentTime: () => el.currentTime,
-					canNudgeRate: true,
-					setRate: (rate) => {
-						el.playbackRate = rate;
-					},
-				},
-				{ ...o, now },
-			);
-			return;
-		}
-		if (loaded.mode === "youtube" && ytPlayer) {
-			const player = ytPlayer;
-			stopExternal = driveExternalMedia(
-				{
-					seek: (sec) => player.seekTo(sec, true),
-					play: () => player.playVideo(),
-					pause: () => player.pauseVideo(),
-					currentTime: () => player.getCurrentTime(),
-					// YouTubeの再生速度は離散値（0.25/0.5/1/1.25…）しか受け付けないので、
-					// 微調整はできない。ズレたら seek で直す。
-					canNudgeRate: false,
-					setRate: () => {},
-				},
-				{ ...o, now },
-			);
+		const media = externalMediaOf();
+		if (media) {
+			if (element) element.volume = gainValue();
+			drive = driveExternalMedia(media, { ...o, now });
 		}
 	};
 
@@ -675,6 +855,8 @@ export const createBackingAudio = (
 		clear,
 		arm,
 		start,
+		startRolling,
+		rebase: (line, opts) => drive?.rebase(line, opts),
 		stop,
 		setVolume: (v: number) => {
 			volume = Math.max(0, Math.min(100, v));

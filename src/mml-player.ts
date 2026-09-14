@@ -14,7 +14,11 @@ import {
 	detectProgression,
 	type TimedNote,
 } from "@onjmin/chord-parser";
-import { backingMediaSec, backingPreRollSec } from "./backing-audio";
+import {
+	backingMediaSec,
+	backingPreRollFromRoll,
+	backingPreRollSec,
+} from "./backing-audio";
 import {
 	type AnyDrumPattern,
 	DRUM_PATTERNS,
@@ -40,7 +44,11 @@ import {
 import { MML_INFO_HTML } from "./mml-info";
 import { parseMML } from "./mml-parser";
 import { createSafetyLimiter } from "./safety-limiter";
-import { createSequencer, type SequencerTrack } from "./sequencer";
+import {
+	createSequencer,
+	SEQUENCER_START_DELAY,
+	type SequencerTrack,
+} from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import { createSynth, type Synth } from "./synth";
@@ -1226,10 +1234,11 @@ export const mountMmlPlayer = (
 	// 伴奏音源がYouTubeのときだけ使う枠（音声ファイルなら出番はない）。
 	// 探し方をエディタと同じ `data-dtm` に揃えてあるので、利用側は同じ1つの
 	// セレクタで両方の枠を解決できる。
+	// 置き場所はプレイヤーの最後（再生位置→歌詞→利用規約→埋め込み）。
+	// 曲そのものの情報（歌詞・規約）より先に動画が居座ると、読む順番が崩れるため。
 	const backingYoutube = doc.createElement("div");
 	backingYoutube.className = "dtm-audio-yt dtm-hidden";
 	backingYoutube.dataset.dtm = "audio-youtube";
-	body.appendChild(backingYoutube);
 	/** 伴奏音源の読み込み（1回だけ走らせ、再生開始時に待ち合わせる）。 */
 	let backingReady: Promise<void> | null = null;
 	const ensureBackingLoaded = (): Promise<void> => {
@@ -1388,6 +1397,9 @@ export const mountMmlPlayer = (
 		}
 		root.appendChild(termsDiv);
 	}
+
+	// 埋め込み（YouTube）は最後に置く。
+	root.appendChild(backingYoutube);
 
 	target.appendChild(root);
 
@@ -1701,15 +1713,42 @@ export const mountMmlPlayer = (
 		const preRollSec = backingAudio?.isLoaded()
 			? backingPreRollSec({ fromStep, offsetSec: backingOffsetSec })
 			: 0;
-		seq.start(fromStep, preRollSec);
-		// 伴奏音源を、楽器・歌声と同じアンカーへ合わせる（先行ぶんだけ手前から鳴らす）。
-		if (backingAudio?.isLoaded()) {
-			backingAudio.start({
-				atTime: seq.getStartTime() - preRollSec,
-				mediaSec: backingMediaSecAt(fromStep) - preRollSec,
+		const mediaAtSongStart = backingMediaSecAt(fromStep);
+		// 曲が始まる時点で音源が既に鳴っているなら、**先に音源を鳴らして実測してから**
+		// 曲を始める。再生要求から音が出るまでの遅れは事前に読めないため
+		// （YouTubeのバッファ等）、音源を後から引きずるより頭が揃う。
+		let rolled: { atTime: number; mediaSec: number } | null = null;
+		if (backingAudio?.isLoaded() && mediaAtSongStart >= backingRangeStartSec) {
+			rolled = await backingAudio.startRolling({
+				mediaSec: mediaAtSongStart - preRollSec,
 				rangeStartSec: backingRangeStartSec,
 				endSec: backingEndSec || undefined,
 			});
+			if (!playing || activePlayer !== instance) return;
+		}
+		const effectivePreRoll = backingPreRollFromRoll({
+			rolled,
+			mediaAtSongStart,
+			now: getAudioTime(),
+			startDelaySec: SEQUENCER_START_DELAY,
+			fallbackPreRollSec: preRollSec,
+		});
+		seq.start(fromStep, effectivePreRoll);
+		// 伴奏音源を、楽器・歌声と同じアンカーへ合わせる（先行ぶんだけ手前から鳴らす）。
+		if (backingAudio?.isLoaded()) {
+			if (rolled) {
+				backingAudio.rebase(
+					{ atTime: seq.getStartTime(), mediaSec: mediaAtSongStart },
+					{ snap: true },
+				);
+			} else {
+				backingAudio.start({
+					atTime: seq.getStartTime() - preRollSec,
+					mediaSec: mediaAtSongStart - preRollSec,
+					rangeStartSec: backingRangeStartSec,
+					endSec: backingEndSec || undefined,
+				});
+			}
 		}
 		if (streaming && !skipSinging) {
 			const v = ensureVoices();
