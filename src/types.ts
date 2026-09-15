@@ -669,6 +669,30 @@ export type DawOptions = {
 	/** 利用規約への同意画面の表示をスキップするかどうか */
 	skipConsent?: boolean;
 	/**
+	 * ツールバーにヘルプ（「?」）ボタンを出すか（既定 true）。
+	 * 使い方モーダルとガイドツアーの入口で、画面内に散らばる ⓘ 解説への案内も兼ねる。
+	 */
+	showHelp?: boolean;
+	/**
+	 * ガイドツアー（スポットライト型ウォークスルー）の設定。
+	 *
+	 * **自動再生は既定でオフ**。埋め込み先の第一印象を勝手に上書きしないための既定値で、
+	 * 初回に流したいアプリ（デモページ等）だけが `autoStart: true` を渡す。
+	 * 自動再生を切っていても、ヘルプボタンからはいつでも開始できる。
+	 */
+	tour?: {
+		/** 初回訪問時（`storageKey` が未記録のとき）に自動で開始する。既定 false。 */
+		autoStart?: boolean;
+		/** 既定ステップ（{@link import("./tour").DAW_TOUR_STEPS}）を丸ごと差し替える。 */
+		steps?: import("./tour").TourStep[];
+		/** 既定ステップの後ろに足すステップ（埋め込み側のUIを案内したいとき）。 */
+		extraSteps?: import("./tour").TourStep[];
+		/** 「もう見た」フラグの保存キー（既定 `"dtm-tour-seen"`）。`null` で記録しない。 */
+		storageKey?: string | null;
+		/** 吹き出しの文言の差し替え（日本語以外へ差し替えるとき）。 */
+		labels?: Partial<import("./tour").TourLabels>;
+	};
+	/**
 	 * シンプルモードでトラック数超過コンテンツを読み込もうとしたとき、上級者モードへの切替を要求するコールバック。
 	 * `mountModeSwitch` が自動的に接続する。未接続なら確認モーダルは表示しない。
 	 * - MML読み込み時: `pendingMml` にMML文字列が渡され、`applyMidi` は undefined。
@@ -798,6 +822,11 @@ export type DawInstance = {
 		ustTracks: import("./ust-io").UstTrackData[],
 		startIndex?: number,
 	) => void;
+	/**
+	 * ガイドツアーを開始する（自動再生の設定に関わらず、いつでも呼べる）。
+	 * ヘルプボタンの「ガイドツアーを見る」と同じ入口。
+	 */
+	startTour: () => void;
 	destroy: () => void;
 };
 

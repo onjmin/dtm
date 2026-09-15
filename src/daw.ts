@@ -113,6 +113,12 @@ import {
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import {
+	DAW_TOUR_STEPS,
+	hasSeenTour,
+	startTour,
+	TOUR_STORAGE_KEY,
+} from "./tour";
+import {
 	readTrack1Settings,
 	type Track1Settings,
 	writeTrack1Settings,
@@ -742,6 +748,63 @@ const KOE_INFO_HTML = `
   <p style="margin-top:4px;color:var(--dtm-warn);"><small>※UTAU音源を <code>.koe</code> に変換してネット上に置く行為は、音源データの再加工・再配布にあたります。これが配布元の利用規約に反していないかは必ずご自身で確認し、その責任を負ってください。</small></p>
 </div>
 `;
+
+/**
+ * ヘルプ（「?」ボタン）の中身。個別の解説（ⓘ）は画面のあちこちに散っていて
+ * 折りたたまれたパネルの中にもあるため、ここを「解説のハブ」にして一覧から辿れるようにする。
+ * 各ボタンの `data-dtm-help` は HELP_TOPICS のキーで、同じモーダルの中身を差し替える。
+ */
+const HELP_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <p>ブラウザだけで曲が作れる、ピアノロール式のDAWです。はじめてなら<strong>ガイドツアー</strong>がおすすめです。</p>
+  <p style="margin:8px 0;">
+    <button class="dtm-btn dtm-btn--primary" data-dtm="help-start-tour">▶ ガイドツアーを見る（約30秒）</button>
+  </p>
+
+  <h4>基本の流れ</h4>
+  <ul>
+    <li><strong>①</strong> 上のタブでトラック（メロディ・ベースなど）を選ぶ</li>
+    <li><strong>②</strong> ピアノロールをタップして音符を置く（横=時間 / 縦=音の高さ）</li>
+    <li><strong>③</strong> 再生ボタンで聴く。BPMで速さを変える</li>
+    <li><strong>④</strong> 「マクロ」の<strong>作曲</strong>で丸ごと自動生成することもできます</li>
+    <li><strong>⑤</strong> 「MIDI / UST / MML 出力」から書き出し・共有</li>
+  </ul>
+
+  <h4>もっと詳しく</h4>
+  <p>知りたい項目を選んでください。同じ解説は、画面の各項目にある <strong>ⓘ</strong> ボタンからも開けます。</p>
+  <div class="dtm-help-topics">
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="compose">自動作曲</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="autoMaster">おまかせマスタリング</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="lyric">歌詞の書き方</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="koe">カスタム音声(.koe)</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="chord">コード進行</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="mml">MMLの書き方</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="midi">MIDIの読み込み</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="ust">UST(UTAU)</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="audio">オーディオ同時再生</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="loop">ループ再生</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="edo">音律(31平均律)</button>
+  </div>
+</div>
+`;
+
+/** ヘルプのハブから開ける個別解説。キーは HELP_INFO_HTML の `data-dtm-help` と対応する。 */
+const HELP_TOPICS: Record<string, { title: string; html: string }> = {
+	compose: { title: "作曲の解説", html: COMPOSE_INFO_HTML },
+	autoMaster: {
+		title: "おまかせマスタリング解説",
+		html: AUTO_MASTER_INFO_HTML,
+	},
+	lyric: { title: "歌詞の書き方", html: LYRIC_INPUT_INFO_HTML },
+	koe: { title: "カスタム音声(.koe)の使い方", html: KOE_INFO_HTML },
+	chord: { title: "コード進行の自動入力解説", html: CHORD_INFO_HTML },
+	mml: { title: "MMLの書き方解説", html: MML_INFO_HTML },
+	midi: { title: "MIDIの読み込み解説", html: MIDI_INFO_HTML },
+	ust: { title: "USTの読み込み解説", html: UST_INFO_HTML },
+	audio: { title: "オーディオ同時再生の解説", html: AUDIO_INFO_HTML },
+	loop: { title: "ループ再生の解説", html: LOOP_INFO_HTML },
+	edo: { title: "音律の解説", html: EDO_INFO_HTML },
+};
 
 const BASE_STEP_WIDTH = 0.5;
 const BASE_KEY_HEIGHT = 15;
@@ -1392,6 +1455,7 @@ export const mountDAW = (
 		// 「作曲」は simple では役割固定の4トラックへ、advanced では15トラックへ
 		// 編曲を展開する（{@link buildAdvancedLayers}）。どちらでも出す。
 		showCompose: true,
+		showHelp: options.showHelp !== false,
 	});
 	refs.masterVolume.value = String(options.masterVolume ?? 50);
 	refs.masterVolumeLabel.textContent = `${options.masterVolume ?? 50}%`;
@@ -7152,14 +7216,17 @@ export const mountDAW = (
 			const ustTracks = pendingUsts.slice();
 			overlayDuring(() => {
 				const { applied, dropped } = applyUstTracks(ustTracks);
-				const unknown = ustTracks
-					.slice(0, applied)
-					.reduce((sum, u) => sum + u.unknownLyricCount, 0);
+				const loaded = ustTracks.slice(0, applied);
+				const unknown = loaded.reduce((sum, u) => sum + u.unknownLyricCount, 0);
 				setUstNote(
 					[
 						`${applied}ファイルを読み込みました`,
 						dropped > 0
 							? `（${ustDropReason()}${dropped}ファイルは未読込）`
+							: "",
+						// ピンイン判定は歌詞全体からの推測なので、そう読んだことを伝える。
+						loaded.some((u) => u.pinyin)
+							? "／中国語（ピンイン）としてかなに直しました"
 							: "",
 						unknown > 0
 							? `／読み取れない歌詞${unknown}音は継続記号にしました`

@@ -18,6 +18,7 @@ export type DawUIRefs = {
 	nextBarBtn: HTMLButtonElement;
 	soloCheckbox: HTMLInputElement;
 	clipBadge: HTMLButtonElement;
+	helpBtn: HTMLButtonElement;
 	// tools
 	toolPen: HTMLButtonElement;
 	toolSelect: HTMLButtonElement;
@@ -178,6 +179,8 @@ export type BuildUIOptions = {
 	showMidiSearch: boolean;
 	/** 「作曲」ボタンを出すか。役割が固定の4トラック（シンプルモード）でしか成立しない。 */
 	showCompose: boolean;
+	/** ヘルプ（「?」）ボタンを出すか。押すと使い方モーダル／ガイドツアーの入口になる。 */
+	showHelp: boolean;
 };
 
 /**
@@ -195,6 +198,7 @@ export const buildUI = (
 		showMidiSearch,
 		showCompose,
 		showAudio,
+		showHelp,
 	} = options;
 
 	const drumOptions = [`<option value="none">なし</option>`]
@@ -217,6 +221,7 @@ export const buildUI = (
       <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
       <button class="dtm-clip-badge dtm-hidden" data-dtm="clip-badge" title="音割れ検知（クリックで消す）">CLIP</button>
       <span class="dtm-grow"></span>
+      <button class="dtm-iconbtn${showHelp ? "" : " dtm-hidden"}" data-dtm="help" title="使い方・ガイドツアー" aria-label="使い方・ガイドツアー">${icon("help")}</button>
       <span class="dtm-label">BPM</span>
       <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
     </div>
@@ -734,6 +739,7 @@ export const buildUI = (
 		nextBarBtn: sel("next-bar"),
 		soloCheckbox: sel("solo"),
 		clipBadge: sel("clip-badge"),
+		helpBtn: sel("help"),
 		toolPen: sel("tool-pen"),
 		toolSelect: sel("tool-select"),
 		toolEraser: sel("tool-eraser"),

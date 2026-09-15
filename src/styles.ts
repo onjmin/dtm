@@ -27,14 +27,15 @@ export const DAW_CSS = `
    mountModeSwitch のUIは .dtm-daw の兄弟として置かれるため、ここで配らないと
    var(--dtm-*) が解決できず無装飾（白地・既定フォント）になってしまう。
    再生専用ビューのモーダル／利用規約カバー、歌声モデル名の吹き出し(.dtm-player-balloon)
-   は document.body 直下へ重ねるため、.dtm-daw の外に出る。これらも同様にトークンを
-   供給しないと無装飾（枠線なし・文字色不明の白い箱）になる。 */
+   ガイドツアーの暗幕(.dtm-tour)は document.body 直下へ重ねるため、.dtm-daw の外に出る。
+   これらも同様にトークンを供給しないと無装飾（枠線なし・文字色不明の白い箱）になる。 */
 .dtm-daw,
 .dtm-controlbar,
 .dtm-modal-overlay,
 .dtm-consent-overlay,
 .dtm-chord-player,
-.dtm-player-balloon {
+.dtm-player-balloon,
+.dtm-tour {
   /* PICO-8 16色パレットより */
   --c-black:   #000000;
   --c-navy:    #1d2b53;
@@ -1032,6 +1033,115 @@ export const DAW_CSS = `
 .dtm-modal-sample-player-container .dtm-player-body {
   max-height: 100px;
   overflow-y: auto;
+}
+
+/* ─── ガイドツアー（スポットライト型ウォークスルー） ─── */
+/* 暗幕は .dtm-tour-spot の巨大な box-shadow で描く。box-shadow は当たり判定を
+   持たないので、素通りを防ぐ遮蔽は .dtm-tour（全画面）側が担当する。 */
+.dtm-tour {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  color: var(--dtm-text);
+  font-family: var(--dtm-font);
+  font-size: 13px;
+  line-height: 1.6;
+  letter-spacing: .04em;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  -webkit-tap-highlight-color: transparent;
+}
+.dtm-tour * { box-sizing: border-box; max-width: 100%; }
+.dtm-tour-spot {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  border: 2px solid var(--dtm-gold);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.74);
+  transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease;
+}
+.dtm-tour-bubble {
+  position: fixed;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--dtm-surface);
+  border: 2px solid var(--c-black);
+  box-shadow:
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-primary),
+    4px 4px 0 var(--c-black);
+  transition: left .18s ease, top .18s ease;
+}
+.dtm-tour-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--dtm-deep);
+  padding: 4px 8px;
+  border-bottom: 2px solid var(--c-black);
+}
+.dtm-tour-progress {
+  font-size: 11px;
+  color: var(--dtm-muted);
+}
+.dtm-tour-close {
+  background: transparent;
+  border: none;
+  color: var(--dtm-text);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.dtm-tour-close:hover { color: var(--dtm-danger); }
+.dtm-tour-title {
+  padding: 8px 10px 0;
+  color: var(--dtm-gold);
+  font-size: 14px;
+  font-weight: bold;
+}
+.dtm-tour-body {
+  padding: 6px 10px 8px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.dtm-tour-body p { margin: 0 0 6px; }
+.dtm-tour-body p:last-child { margin-bottom: 0; }
+.dtm-tour-body ul { margin: 0 0 6px; padding-left: 16px; }
+.dtm-tour-body li { margin-bottom: 3px; }
+.dtm-tour-body b { color: var(--dtm-primary); }
+.dtm-tour-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 2px solid var(--c-black);
+  background: var(--dtm-deep);
+}
+.dtm-tour-spacer { flex: 1; }
+.dtm-tour-btn {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 2px solid var(--dtm-border2);
+  background: var(--dtm-surface);
+  color: var(--dtm-text);
+  font-family: var(--dtm-font);
+  font-size: 12px;
+  letter-spacing: .04em;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--c-black);
+}
+.dtm-tour-btn:active { transform: translate(2px, 2px); box-shadow: none; }
+.dtm-tour-btn--ghost { background: transparent; }
+.dtm-tour-btn--primary {
+  border-color: var(--dtm-primary);
+  background: var(--dtm-primary);
+  color: var(--dtm-pfg);
 }
 
 .dtm-hidden { display: none !important; }

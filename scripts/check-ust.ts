@@ -11,9 +11,15 @@
  * 表現できないため、和音を出力したときに1本へ潰れることも併せて見る。
  */
 
+import { pinyinToMoras } from "../src/pinyin";
 import { pitchV1ToUnits } from "../src/tuning";
 import type { Note } from "../src/types";
-import { buildUst, decodeUstText, parseUst } from "../src/ust-io";
+import {
+	buildUst,
+	decodeUstText,
+	looksLikePinyin,
+	parseUst,
+} from "../src/ust-io";
 
 let failed = 0;
 const check = (label: string, got: unknown, expect: unknown): void => {
@@ -111,6 +117,178 @@ console.log("■ 先頭の継続記号");
 	);
 	check("先頭の継続記号は休符記号になる", parsed.lyrics, "_あ");
 	check("ノートは2つとも残る", parsed.notes.length, 2);
+}
+
+console.log("■ ブレス（息継ぎ）");
+{
+	// UST側ではブレス用のノートが時間を占めるが、このアプリの `、` はノートを
+	// 消費しない記号なので、ノートは作らず直前の音節へ畳む。
+	const parsed = parseUst(
+		ust([
+			{ length: 480, lyric: "あ", noteNum: 60 },
+			{ length: 240, lyric: "息R", noteNum: 60 }, // 吐く息
+			{ length: 480, lyric: "い", noteNum: 62 },
+			{ length: 240, lyric: "R吸", noteNum: 60 }, // 吸う息
+			{ length: 480, lyric: "e 息R", noteNum: 64 }, // 連続音の前置き付き
+			{ length: 240, lyric: "@br1", noteNum: 60 }, // OpenUtauのエイリアス
+			{ length: 480, lyric: "う", noteNum: 65 },
+		]),
+	);
+	check(
+		"ブレスは直前の音節へ畳む（連続したぶんは1つ）",
+		parsed.lyrics,
+		"あ、い、う",
+	);
+	check("ブレス表記は読めなかった歌詞に数えない", parsed.unknownLyricCount, 0);
+	check(
+		"ブレスはノートにならず、その時間は隙間として残る",
+		parsed.notes.map((n) => [n.startStep, n.durationSteps, n.pitch]),
+		[
+			[0, 48, 60],
+			[72, 48, 62],
+			[216, 48, 65],
+		],
+	);
+	// 畳む相手が無いブレス（先頭・休符の直後）は息継ぎにならないので捨てる。
+	const head = parseUst(
+		ust([
+			{ length: 240, lyric: "@br1", noteNum: 60 },
+			{ length: 480, lyric: "あ", noteNum: 60 },
+		]),
+	);
+	check("行き場の無い先頭のブレスは捨てる", head.lyrics, "あ");
+	check("捨てても位置は進む", head.notes[0]?.startStep, 24);
+	// ブレスの直後の継続記号は引き継ぐ母音を失う（normalizeLyrics に捨てられ、
+	// 以降が1つずれる）。パート先頭と同じく休符記号へ倒して1:1を守る。
+	const after = parseUst(
+		ust([
+			{ length: 480, lyric: "あ", noteNum: 60 },
+			{ length: 240, lyric: "息R", noteNum: 60 },
+			{ length: 480, lyric: "+", noteNum: 62 },
+			{ length: 480, lyric: "+", noteNum: 64 },
+			{ length: 480, lyric: "い", noteNum: 65 },
+		]),
+	);
+	check("ブレス直後の継続記号は休符記号になる", after.lyrics, "あ、__い");
+	check("ノートは4つとも残る", after.notes.length, 4);
+}
+
+console.log("■ 中国語ピンイン（かなへの転写）");
+{
+	// 声母×韻母の組み立てと、慣用のカタカナ表記へ倒している箇所を代表で見る。
+	const moras = (token: string): string =>
+		pinyinToMoras(token)?.join("+") ?? "";
+	check("基本（声母＋韻母）", moras("ni"), "に");
+	check("撥音の韻尾は別モーラ", moras("xing"), "し+ん");
+	check("-ng も撥音へ倒す", moras("kan"), "か+ん");
+	check("二重母音の後半も別モーラ", moras("tou"), "と+う");
+	check("介音iは拗音へ畳む", moras("xiao"), "しゃ+お");
+	check("介音uは畳まず並べる", moras("guo"), "ぐ+お");
+	check("そり舌音はジャ行・チャ行・シャ行", moras("zhong"), "じょ+ん");
+	check("e[ɤ]はア段（慣用）", moras("she"), "しゃ");
+	check(
+		"-en -ei はエ段（慣用）",
+		`${moras("hen")}/${moras("mei")}`,
+		"へ+ん/め+い",
+	);
+	check(
+		"舌尖母音のi",
+		`${moras("zi")}/${moras("ci")}/${moras("si")}`,
+		"ず/つ/す",
+	);
+	check(
+		"üはユ段（j/q/xの後ろのuもü）",
+		`${moras("qu")}/${moras("lv")}`,
+		"ちゅ/りゅ",
+	);
+	check("省略綴り（iu=iou, ui=uei, un=uen）", moras("liu"), "りゅ");
+	check(
+		"零声母（y/w）",
+		`${moras("yi")}/${moras("wo")}/${moras("yue")}`,
+		"い/う+お/ゆぇ",
+	);
+	check("erは巻き舌", moras("er"), "あ+る");
+	check("声調番号は無視する", moras("xing1"), "し+ん");
+	check("ピンインでない綴りは読まない", `${moras("tsu")}|${moras("xyz")}`, "|");
+}
+
+console.log("■ 中国語ピンイン（取り込み）");
+{
+	// 1音節が複数モーラになるぶんは、元のノートを割って割り当てる。
+	const parsed = parseUst(
+		ust([
+			{ length: 480, lyric: "xing", noteNum: 68 },
+			{ length: 480, lyric: "xing", noteNum: 68 },
+			{ length: 240, lyric: "ti", noteNum: 66 },
+			{ length: 240, lyric: "tou", noteNum: 66 },
+			{ length: 480, lyric: "she", noteNum: 68 },
+		]),
+	);
+	check("ピンインをかなへ写す", parsed.lyrics, "しんしんてぃとうしゃ");
+	check("読めなかった歌詞は無い", parsed.unknownLyricCount, 0);
+	check(
+		"尻のモーラは短く、頭が大半を持つ",
+		parsed.notes.map((n) => [n.startStep, n.durationSteps, n.pitch]),
+		[
+			[0, 36, 68],
+			[36, 12, 68],
+			[48, 36, 68],
+			[84, 12, 68],
+			[96, 24, 66],
+			[120, 18, 66],
+			[138, 6, 66],
+			[144, 48, 68],
+		],
+	);
+	// 長いノートで撥音だけが伸び続けないよう、尻には上限がある。
+	const long = parseUst(
+		ust([
+			{ length: 1920, lyric: "xing", noteNum: 60 },
+			{ length: 480, lyric: "xing", noteNum: 60 },
+			{ length: 480, lyric: "xing", noteNum: 60 },
+		]),
+	);
+	check(
+		"尻のモーラの長さには上限がある",
+		long.notes.map((n) => n.durationSteps),
+		[180, 12, 36, 12, 36, 12],
+	);
+}
+
+console.log("■ 中国語ピンイン（判定）");
+{
+	// `wo` は日本語ローマ字なら「を」、ピンインなら「ウオ」。トークン単体では
+	// 決められないので、ピンインでしか成立しない綴りが過半を占めるかで決める。
+	const japanese = parseUst(
+		ust([
+			{ length: 480, lyric: "wo", noteNum: 60 },
+			{ length: 480, lyric: "ka", noteNum: 60 },
+			{ length: 480, lyric: "ki", noteNum: 60 },
+			{ length: 480, lyric: "ku", noteNum: 60 },
+		]),
+	);
+	check("日本語ローマ字のUSTはそのまま読む", japanese.lyrics, "をかきく");
+	check("ノートも割らない", japanese.notes.length, 4);
+	// 日本語音源の拡張かな（`she` `fa`）はピンインとしても読めるので、
+	// 数個の一致でピンインへ倒れないことを見る。
+	const extended = parseUst(
+		ust([
+			{ length: 480, lyric: "she", noteNum: 60 },
+			{ length: 480, lyric: "fa", noteNum: 60 },
+			{ length: 480, lyric: "ka", noteNum: 60 },
+			{ length: 480, lyric: "ki", noteNum: 60 },
+			{ length: 480, lyric: "ku", noteNum: 60 },
+			{ length: 480, lyric: "ke", noteNum: 60 },
+			{ length: 480, lyric: "ko", noteNum: 60 },
+			{ length: 480, lyric: "sa", noteNum: 60 },
+		]),
+	);
+	check("拡張かなの原音名では倒れない", extended.notes.length, 8);
+	check(
+		"ピンイン判定は歌詞全体で決める",
+		looksLikePinyin(["xing", "tou", "she"]),
+		true,
+	);
 }
 
 console.log("■ [#PREV] / [#NEXT] は取り込まない");
@@ -219,6 +397,29 @@ console.log("■ 書き出し（和音は単旋律へ潰す）");
 		],
 	);
 	check("捨てたノートの音節も捨てる", back.lyrics, "あえ");
+}
+
+console.log("■ 書き出し（ノートを消費しない記号は落とす）");
+{
+	const note = (startStep: number, pitch: number): Note => ({
+		id: 0,
+		startStep,
+		durationSteps: 48,
+		pitchUnits: pitchV1ToUnits(pitch),
+		velocity: 100,
+	});
+	// ブレス `、` とフェード `↓` `↑` はUSTに書ける表現が無い。音節の後ろに
+	// 付いたまま `Lyric=` へ流すと原音名として壊れるので、落として書く。
+	const text = buildUst({
+		notes: [note(0, 60), note(48, 62), note(96, 64)],
+		syllables: ["あ、", "ー↓", "_、"],
+		bpm: 120,
+	});
+	check(
+		"装飾記号を落として原音名だけを書く",
+		[...text.matchAll(/^Lyric=(.*)$/gm)].map((m) => m[1]),
+		["あ", "+", "R"],
+	);
 }
 
 if (failed > 0) {

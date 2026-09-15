@@ -133,6 +133,8 @@ export type { MmlPlayerInstance, MmlPlayerOptions } from "./mml-player";
 // 再生専用ビュー（mountDAW と対）
 export { decodeMml, encodeMml, mountMmlPlayer } from "./mml-player";
 export * from "./piano-roll";
+// 中国語ピンイン → かな の転写（中国語USTの取り込みに使う）
+export * from "./pinyin";
 export * from "./renderer";
 export * from "./sequencer";
 // ============================================================
