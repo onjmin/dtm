@@ -1717,7 +1717,7 @@ export const mountMmlPlayer = (
 		// 曲が始まる時点で音源が既に鳴っているなら、**先に音源を鳴らして実測してから**
 		// 曲を始める。再生要求から音が出るまでの遅れは事前に読めないため
 		// （YouTubeのバッファ等）、音源を後から引きずるより頭が揃う。
-		let rolled: { atTime: number; mediaSec: number } | null = null;
+		let rolled: import("./backing-audio").BackingRoll | null = null;
 		if (backingAudio?.isLoaded() && mediaAtSongStart >= backingRangeStartSec) {
 			rolled = await backingAudio.startRolling({
 				mediaSec: mediaAtSongStart - preRollSec,

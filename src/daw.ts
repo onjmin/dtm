@@ -3348,13 +3348,15 @@ export const mountDAW = (
 		 * 音源の「鳴り始め」を実測して、曲の開始時刻をそこから決める。
 		 *
 		 * 再生要求から実際に音が出るまでの遅れは環境依存で事前に読めない
-		 * （YouTubeのバッファ、初回再生のウォームアップ等）。音源側を後から
-		 * 引きずって直すと頭が飛ぶので、**先に音源を鳴らし、実測してから打ち込みを始める**。
-		 * デコード済みの音源は予約が正確なので、この待ち合わせは起きない。
+		 * （YouTubeのバッファ等）。音源側を後から引きずって直すと頭が飛ぶので、
+		 * **先に音源を鳴らし、実測してから打ち込みを始める**。
+		 *
+		 * 待ち合わせるのはYouTubeだけ（デコード済みは予約が正確、`<audio>` は
+		 * 予約してから実測で詰めるほうが揃う）。それ以外では即 null が返る。
 		 */
-		let rolled: { atTime: number; mediaSec: number } | null = null;
+		let rolled: import("./backing-audio").BackingRoll | null = null;
 		if (audioRollsFirst && backingAudio) {
-			const waiting = backingAudio.getLoaded()?.mode !== "buffer";
+			const waiting = backingAudio.getLoaded()?.mode === "youtube";
 			if (waiting) {
 				setBackingStatus("音源が鳴り始めるのを待っています…");
 				setLoading(true);
@@ -3367,10 +3369,10 @@ export const mountDAW = (
 			if (waiting) {
 				setLoading(false);
 				setBackingStatus(
-					rolled
+					rolled?.measured
 						? ""
 						: "音源が鳴り始めませんでした（ズレる場合は再生し直してください）",
-					!rolled,
+					!rolled?.measured,
 				);
 			}
 			if (playGeneration !== generation) return; // 待っている間に停止・再再生された

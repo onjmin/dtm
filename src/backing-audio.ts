@@ -33,6 +33,22 @@ export type BackingLoaded = {
 	label: string;
 };
 
+/**
+ * {@link BackingAudio.startRolling} の結果。
+ *
+ * `measured` が false でも**音源は鳴らし始めている**（時間内に進み始めたのを
+ * 確認できなかっただけ）。呼び出し側は改めて鳴らし直してはいけない——
+ * 止めて鳴らし直すと、立ち上がりをもう一度やり直すことになって余計に遅れる。
+ */
+export type BackingRoll = {
+	/** 実測（または推定）した時刻。 */
+	atTime: number;
+	/** その時刻に音源がいた位置（秒）。 */
+	mediaSec: number;
+	/** 本当に進み始めたのを確認できたか。 */
+	measured: boolean;
+};
+
 /** 再生開始の指定。 */
 export type BackingStartOptions = {
 	/** 打ち込み側の再生開始時刻（`getAudioTime()` と同じ時計の絶対秒）。 */
@@ -67,7 +83,11 @@ export type BackingAudio = {
 	 * （YouTubeのバッファ、`<audio>` のデコード、初回再生のウォームアップ等）。
 	 * 呼び出し側はこの実測値を見て、**打ち込み側の開始時刻を決められる**。
 	 *
-	 * - デコード済み（`buffer`）… 予約がサンプル単位で正確なので待つ必要がなく `null`。
+	 * 待ち合わせるのは**待たないと直しようがない音源だけ**（YouTube）。
+	 * - デコード済み（`buffer`）… 予約がサンプル単位で正確。`null`。
+	 * - `<audio>` 直再生 … 予約してから実測で詰めるほうが精度が出る（実測で数ms）。
+	 *   待ち合わせると、待った時点で音源が先行してしまい、戻す手段が
+	 *   seek（＝毎回100ms前後の立ち上がりを伴う）しか無くなる。`null`。
 	 * - 時間内に鳴り始めなかった … `null`（呼び出し側は従来どおり予約で始める）。
 	 */
 	startRolling: (options: {
@@ -76,7 +96,7 @@ export type BackingAudio = {
 		endSec?: number;
 		/** 鳴り始めを待つ上限（秒）。既定5。 */
 		timeoutSec?: number;
-	}) => Promise<{ atTime: number; mediaSec: number } | null>;
+	}) => Promise<BackingRoll | null>;
 	/**
 	 * 鳴らしたまま、合わせる先（時刻と音源位置の対応）だけ差し替える。
 	 * {@link startRolling} の実測で打ち込み側の開始時刻がずれたときに、
@@ -159,8 +179,8 @@ export const backingPreRollSec = (o: {
  * 実測で詰め直すこと（{@link BackingAudio.rebase} の `snap`）。
  */
 export const backingPreRollFromRoll = (o: {
-	/** 実測値。取れなかった（デコード済み・時間切れ）なら null。 */
-	rolled: { atTime: number; mediaSec: number } | null;
+	/** 実測値。取れなかった（デコード済み・時間切れ）なら null か `measured: false`。 */
+	rolled: { atTime: number; mediaSec: number; measured?: boolean } | null;
 	/** 曲の開始時点で音源がいるべき位置（秒）。 */
 	mediaAtSongStart: number;
 	/** いまの時刻（`getAudioTime` と同じ時計）。 */
@@ -170,7 +190,7 @@ export const backingPreRollFromRoll = (o: {
 	/** 実測が取れなかったときに使う待ち時間（秒）。 */
 	fallbackPreRollSec: number;
 }): number =>
-	o.rolled
+	o.rolled && o.rolled.measured !== false
 		? Math.max(
 				0,
 				o.rolled.atTime +
@@ -358,8 +378,26 @@ const SNAP_MAX_PASSES = 3;
 const HARD_SEEK_SEC = 0.3;
 /** この範囲は許容して何もしない（秒）。詰めすぎると速度が揺れて気持ち悪い。 */
 const DRIFT_DEAD_ZONE_SEC = 0.02;
-/** 速度の微調整の上限（±2%。`preservesPitch` が効くので音程は動かず、速さだけが変わる）。 */
-const MAX_RATE_NUDGE = 0.02;
+/**
+ * 速度の微調整の上限（±5%。`preservesPitch` が効くので音程は動かず、速さだけが変わる）。
+ * seek と違って音が途切れないので、多少強くても耳につきにくい。
+ */
+const MAX_RATE_NUDGE = 0.05;
+/** ズレ1秒あたりの速度の変え方。大きいほど速く寄るが、行き過ぎやすい。 */
+const RATE_GAIN = 1.5;
+/** 速度を変えられない音源（YouTube）で、seek してでも直すズレ（秒）。 */
+const SEEK_ONLY_THRESHOLD_SEC = 0.06;
+/** 補正 seek の「鳴り直すまでの遅れ」の初期見積り（秒）。実測で学習して置き換わる。 */
+const DEFAULT_SEEK_LAG_SEC = 0.07;
+/** 学習する見越し量の上限（秒）。 */
+const MAX_SEEK_LAG_SEC = 0.6;
+/** 補正 seek のあと、着地を測るまでに置く時間（秒）。 */
+const SEEK_SETTLE_SEC = 0.6;
+/**
+ * seek し直す価値があるズレ（秒）。seek 自体が100ms前後の立ち上がりを伴うので、
+ * これより小さいズレを seek で詰めようとすると、詰めた量より大きく遅れ直す。
+ */
+const SEEK_WORTH_SEC = 0.15;
 
 /**
  * グラフ外の音源を、打ち込みの時計に合わせて鳴らし続ける。
@@ -385,6 +423,23 @@ const driveExternalMedia = (
 	let stopped = false;
 	/** 合わせる先の直線。時刻 `atTime` に音源が `mediaSec` にいる、という1点で決まる。 */
 	let line = { atTime: o.atTime, mediaSec: o.mediaSec };
+	/**
+	 * 補正の seek をしてから実際に鳴り直すまでの遅れ（秒）。
+	 *
+	 * seek は「その位置へ飛ぶ」だけでなく、飛んだ先を読み直すぶん必ず遅れて鳴り出す。
+	 * 見越さずに撃つと、撃つたびにその遅れぶん後ろへ着地してしまう
+	 * （YouTubeで実測 約70ms。速度で寄せられないので、そこで固定されてしまう）。
+	 * 1回撃つごとに残差から学習し、次からはそのぶん先を狙う。
+	 */
+	let seekLagSec = DEFAULT_SEEK_LAG_SEC;
+	/** 直近の補正 seek の時刻（落ち着いたころに残差を測って学習する）。 */
+	let correctedAt: number | null = null;
+
+	/** 補正の seek。見越したぶん先を狙い、あとで残差から見越し量を学習する。 */
+	const correctTo = (position: number): void => {
+		media.seek(position + seekLagSec);
+		correctedAt = o.now();
+	};
 
 	/** `line` を起点に、いま鳴っているべき音源内の位置。 */
 	const expectedAt = (now: number): number =>
@@ -437,11 +492,17 @@ const driveExternalMedia = (
 				return;
 			}
 			const lag = expectedAt(o.now()) - media.currentTime();
-			if (Math.abs(lag) <= 0.015) return; // 十分揃っている
-			// 遅れているぶんを足した先へ撃つ（seek 自体の立ち上がりを見越す）。
-			// 進みすぎているときは足すぶんが無いので、seek の立ち上がりぶんだけ
-			// 今度は遅れる——そのぶんをもう1回だけ測って詰める。
-			media.seek(expectedAt(o.now()) + Math.max(0, lag));
+			// **遅れているときだけ** seek で詰める。進みすぎを seek で戻すと、
+			// seek 自体の立ち上がり（`<audio>` で実測 約100ms）ぶん今度は遅れ、
+			// それをまた seek で…と振動する。戻す側は再生速度に任せる。
+			//
+			// 2回目以降は「seek の立ち上がりより大きく遅れている」ときだけ撃つ。
+			// 残りが立ち上がりより小さいのに撃つと、詰めた量より大きく遅れ直して
+			// かえって悪化する（1回目で大抵は入る）。
+			if (lag <= (pass === 1 ? 0.015 : SEEK_WORTH_SEC)) return;
+			// 測った遅れを足した先へ撃つ（seek の立ち上がりを見越す）。
+			media.seek(expectedAt(o.now()) + lag);
+			// 1回で詰め切れないことがあるので、残りをもう一度だけ測って詰める。
 			if (pass < SNAP_MAX_PASSES) {
 				snapToLine(Number.NEGATIVE_INFINITY, pass + 1);
 			}
@@ -461,19 +522,40 @@ const driveExternalMedia = (
 				return;
 			}
 			const drift = media.currentTime() - expected;
-			if (Math.abs(drift) > HARD_SEEK_SEC) {
-				media.setRate(1);
-				media.seek(expected);
+			const distance = Math.abs(drift);
+			// 補正の seek が落ち着いたら、残差から「見越し量」を学習する。
+			// 狙いどおり着地していれば残差0、遅れて着地していればその分だけ足りない。
+			if (correctedAt !== null && now - correctedAt >= SEEK_SETTLE_SEC) {
+				correctedAt = null;
+				seekLagSec = Math.max(
+					0,
+					Math.min(MAX_SEEK_LAG_SEC, seekLagSec - drift),
+				);
+			}
+			if (!media.canNudgeRate) {
+				// 速度を変えられない音源（YouTube）は seek で直すしかない。
+				// 読み取りが粗い（数百ms刻み）ので小さなズレは触らず、はっきり
+				// ズレたときだけ飛ばす（毎回飛ばすと音が途切れて耳につく）。
+				// 補正待ちの間は測っても seek の途中なので触らない。
+				if (correctedAt === null && distance > SEEK_ONLY_THRESHOLD_SEC) {
+					correctTo(expected);
+				}
 				return;
 			}
-			if (!media.canNudgeRate || Math.abs(drift) <= DRIFT_DEAD_ZONE_SEC) {
+			if (distance > HARD_SEEK_SEC) {
+				media.setRate(1);
+				correctTo(expected);
+				return;
+			}
+			if (distance <= DRIFT_DEAD_ZONE_SEC) {
 				media.setRate(1);
 				return;
 			}
 			// 進みすぎ（drift>0）なら遅く、遅れているなら速く。
+			// seek と違って音が途切れないぶん、強めに寄せても気付かれにくい。
 			const nudge = Math.max(
 				-MAX_RATE_NUDGE,
-				Math.min(MAX_RATE_NUDGE, -drift * 0.5),
+				Math.min(MAX_RATE_NUDGE, -drift * RATE_GAIN),
 			);
 			media.setRate(1 + nudge);
 		}, DRIFT_CHECK_MS);
@@ -797,10 +879,13 @@ export const createBackingAudio = (
 		rangeStartSec?: number;
 		endSec?: number;
 		timeoutSec?: number;
-	}): Promise<{ atTime: number; mediaSec: number } | null> => {
+	}): Promise<BackingRoll | null> => {
 		if (!loaded) return null;
+		// 速度を微調整できる音源（`<audio>`）とデコード済みは、予約してから
+		// 実測で詰めたほうが揃う。待ち合わせるのはYouTubeだけ。
+		if (loaded.mode !== "youtube") return null;
 		const media = externalMediaOf();
-		if (!media) return null; // デコード済みは予約が正確なので待つ必要がない
+		if (!media) return null;
 		stopSources();
 		const target = Math.max(0, o.rangeStartSec ?? 0, o.mediaSec);
 		const rolled = await rollNow(media, target, o.timeoutSec ?? 5);
@@ -816,7 +901,10 @@ export const createBackingAudio = (
 			now: () => audioContext.currentTime,
 			alreadyRolling: true,
 		});
-		return rolled;
+		// 測れなくても「鳴らし始めた」ことは呼び出し側へ返す。ここで null を返すと
+		// 呼び出し側が改めて `start()` を呼び、止めて鳴らし直す＝立ち上がりを
+		// 二重に食らって余計に遅れる。
+		return { ...line, measured: rolled !== null };
 	};
 
 	const start = (o: BackingStartOptions): void => {
