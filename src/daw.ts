@@ -2951,13 +2951,22 @@ export const mountDAW = (
 			const threshold =
 				currentOffsetX / renderConfig.stepWidth + visibleSteps - 4;
 			if (currentPlayStep > threshold) {
-				const visibleBars = Math.round(visibleSteps / renderConfig.stepsPerBar);
-				currentOffsetX = clamp(
-					currentOffsetX +
-						visibleBars * renderConfig.stepsPerBar * renderConfig.stepWidth,
-					0,
-					getMaxOffsetX(),
+				const visibleBars = Math.max(
+					1,
+					Math.round(visibleSteps / renderConfig.stepsPerBar),
 				);
+				let nextOffsetX =
+					currentOffsetX +
+					visibleBars * renderConfig.stepsPerBar * renderConfig.stepWidth;
+
+				// Jitter prevention: if the jump puts the playhead offscreen to the left,
+				// fall back to snapping the left edge just behind the playhead.
+				const maxOffsetX = Math.floor(currentPlayStep) * renderConfig.stepWidth;
+				if (nextOffsetX > maxOffsetX) {
+					nextOffsetX = maxOffsetX;
+				}
+
+				currentOffsetX = clamp(nextOffsetX, 0, getMaxOffsetX());
 				renderer.setDrawOffset(currentOffsetX, currentOffsetY);
 			} else if (currentPlayStep < currentOffsetX / renderConfig.stepWidth) {
 				const visibleBars = Math.max(
