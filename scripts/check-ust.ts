@@ -137,6 +137,26 @@ console.log("■ Mode2のピッチ線");
 		[72, 71, 70, 69, 68, 67],
 	);
 	check("音節はポルタメント記号で繋ぐ", parsed.lyrics, "あ〜〜〜〜〜");
+	// ピッチ線のノートは MML が1音で書ける音価に乗っていないといけない。
+	// 乗っていないと書き出しで手前を切られ、余りの休符がポルタメントの直前へ
+	// 入って結合が切れる＝滑らかな1音のはずが短い音の連打になる。
+	const MML_STEPS = [6, 8, 12, 16, 18, 24, 36, 48, 72, 96, 144, 192];
+	check(
+		"繋ぎの手前はMMLで書ける音価（書き出しで休符が挟まらない）",
+		parsed.notes
+			.slice(0, -1)
+			.map((n) => n.durationSteps)
+			.filter((d) => !MML_STEPS.includes(d)),
+		[],
+	);
+	// 合成側は60ms未満のノートを60msへ引き伸ばすため、それより短く刻むと
+	// 次の音と実際に重なってしまう。
+	const msPerStep = 60000 / 150 / 48;
+	check(
+		"どの区間も60ms以上",
+		parsed.notes.every((n) => n.durationSteps * msPerStep >= 60),
+		true,
+	);
 	check(
 		"隙間なく並ぶ（1音へ結合できる形）",
 		parsed.notes.every(

@@ -512,11 +512,29 @@ const BEND_MIN_CENTS = 100;
  * ステップ数ではなく実時間で決める。速い曲ほど1ステップが短くなるので、
  * ステップで切ると同じ「一瞬の綾」が曲によって残ったり消えたりする。
  */
-const BEND_MIN_MS = 30;
+const BEND_MIN_MS = 60;
 /** 1つのノートのピッチ線を読む回数。細かく描かれていても、この粗さまでしか写さない。 */
 const BEND_SAMPLES = 8;
 /** 1つのノートから起こすピッチ変化の上限。描き込みの細かいUSTでも増えすぎないように。 */
 const BEND_MAX_POINTS = 8;
+
+/**
+ * MMLが**1音で書ける音価**（ステップ。1小節192ステップ基準）。
+ *
+ * MMLの音長は `4` `8.` `12` … という決まった刻みしか持たない。ここに無い長さの
+ * ノートは書き出しのときに手前を切られ、余りが休符になる。その休符が
+ * ポルタメントの直前に入ると「隙間がある＝別の息」と見なされて結合が切れ、
+ * 滑らかな1音のはずが短い音の連なりとして言い直されてしまう
+ * （`lyrics.ts` の `buildStreamVoiceNotes`）。
+ *
+ * ピッチ線から起こすノートはこの表に乗る長さだけを使い、MMLを経由しても
+ * 繋ぎが切れないようにする。
+ */
+const MML_STEPS = [6, 8, 12, 16, 18, 24, 36, 48, 72, 96, 144, 192];
+
+/** `want` 以上で最小のMML音価。無ければ最大値。 */
+const mmlStepsAtLeast = (want: number): number =>
+	MML_STEPS.find((s) => s >= want) ?? MML_STEPS[MML_STEPS.length - 1];
 
 /** ピッチ線の高さ（セント）→ 基準からの半音オフセット。半音未満は0へ倒す。 */
 const bendSemitones = (cents: number): number =>
@@ -534,6 +552,11 @@ const bendSemitones = (cents: number): number =>
  * 「1msだけ下げて戻す」ようなこの格子では表せない綾が入っていて、折れ点を
  * 追うと戻りのほうが間隔の下限に弾かれ、下げたまま終わる音が出るため。
  *
+ * 区切りの位置は {@link MML_STEPS} に合わせる。ここを外すとMMLへ書き出した
+ * ときに休符が挟まり、結合が切れて**言い直しの連打**になる（＝濁って聞こえる）。
+ * 最短が {@link BEND_MIN_MS} なのも同じ理由で、これより短いノートは合成側が
+ * 60msまで引き伸ばすため、次の音と実際に重なってしまう。
+ *
  * 先頭は必ず基準（オフセット0）のまま置く。UTAUのピアノロール上でもノートは
  * `NoteNum` の位置にあり、入りのしゃくりは装飾なので、見た目を動かさない。
  *
@@ -547,7 +570,7 @@ const bendSlots = (
 ): { startStep: number; durationSteps: number; semitones: number }[] => {
 	if (points.length < 2) return [];
 	const total = endStep - startStep;
-	const minSteps = Math.max(1, Math.round(BEND_MIN_MS / msPerStep));
+	const minSteps = mmlStepsAtLeast(Math.round(BEND_MIN_MS / msPerStep));
 	if (total < minSteps * 2) return [];
 	// 入りのポルタメント（前のノートの高さから基準へ滑り込む区間）は読み飛ばす。
 	// UTAUは高さの違う音の繋ぎ目に既定でこれを書くが、ピアノロールでは
@@ -558,11 +581,19 @@ const bendSlots = (
 	const from = Math.max(minSteps, Math.ceil(settleMs / msPerStep));
 	const out: { startStep: number; durationSteps: number; semitones: number }[] =
 		[];
+	/** 直前に置いた区切り（親ノート頭からのステップ）と、そこでの半音オフセット。 */
+	let at = 0;
 	let prev = 0;
 	for (let step = from; step <= total - minSteps; step += grid) {
 		const semitones = bendSemitones(bendCentsAt(points, step * msPerStep));
 		if (semitones === prev) continue;
-		out.push({ startStep: startStep + step, durationSteps: 0, semitones });
+		// 直前の区切りからの長さをMMLの音価へ合わせる（切り上げ＝入りの滑り込みへ
+		// 食い込まない側へ倒す）。最後の区間だけは余りを受けるので表に乗らなくてよい
+		// ——その後ろに続くのは別の音節で、隙間が空いても繋ぎは切れない。
+		const next = at + mmlStepsAtLeast(step - at);
+		if (next > total - minSteps) break;
+		out.push({ startStep: startStep + next, durationSteps: 0, semitones });
+		at = next;
 		prev = semitones;
 		if (out.length >= BEND_MAX_POINTS) break;
 	}
