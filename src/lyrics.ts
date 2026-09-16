@@ -822,6 +822,13 @@ export type VoiceModel = {
 		fadeIn?: boolean,
 		/** 記号を複数書いたときの声量の中継点列（{@link buildFadeCurve}）。 */
 		fadeCurve?: FadeStop[],
+		/**
+		 * この音が占める長さ（秒。`t0` から数える）。
+		 * 合成した素片は音価より長いことがある（短すぎるノートは合成の都合で
+		 * 引き伸ばして作られる）ので、渡すと**その長さで切って**鳴らす。
+		 * 省略すると素片の長さのまま鳴らす（従来どおり）。
+		 */
+		durationSec?: number,
 	) => void;
 	/** スケジュール済みの発音をすべて即停止する（停止・一時停止・シーク時）。 */
 	stopAll?: () => void;
@@ -1752,6 +1759,16 @@ export const createKoeVoice = async (
 	const LEADCAP_S = 0.09;
 
 	/**
+	 * 素片を合成する最短の長さ（ms）。これより短い音価でもこの長さで作る
+	 * （短すぎると子音が立ち上がりきらず、合成そのものが破綻するため）。
+	 *
+	 * **作る長さであって鳴らす長さではない。** 実際の発音は音価で切る
+	 * （{@link schedule} の `durationSec`）。ここを鳴らす長さにしてしまうと、
+	 * 速い曲の短い音が軒並み自分の枠をはみ出して次の音と重なる。
+	 */
+	const MIN_RENDER_MS = 60;
+
+	/**
 	 * 継続ノート（結合できなかった `ー` / `〜`）を直前ノートへ被せる長さ（秒）。
 	 * この分だけ前倒しで鳴らし始め、同じ長さを掛けて立ち上げることで、
 	 * 直前ノートの減衰と等パワーに近い形で交差させる（＝言い直しに聞こえない）。
@@ -1770,6 +1787,12 @@ export const createKoeVoice = async (
 		fadeOut = false,
 		fadeIn = false,
 		fadeCurve?: FadeStop[],
+		/**
+		 * この音が占める長さ（秒。`t0` から数える）。
+		 * 素片は {@link RenderedNote} の長さぶん用意されているが、それは
+		 * 合成の都合で決まる長さで、音価そのものではない。渡されたらここで切る。
+		 */
+		durationSec?: number,
 	): void => {
 		// トラック単位チャンネルストリップの入口が指定されていればそちらへ。
 		const dest = destOverride ?? destination;
@@ -1813,12 +1836,21 @@ export const createKoeVoice = async (
 		// 先行母音を丸ごと捨てる継続ノートで、素片が先行分しか無い場合に長さが
 		// 0以下にならないようにする（stop < start は例外になる）。
 		const playDurSec = Math.max(0.01, r.audio.duration / r.rate - skipS);
-		const endAt = startAt + playDurSec;
+		// 素片の長さではなく**音価**で切る。合成側は短すぎるノートを
+		// {@link MIN_RENDER_MS} まで引き伸ばして作るので、素片の終わりを
+		// そのまま終端にすると自分の枠をはみ出し、次の音と本当に重なってしまう
+		// （速い曲ほど効く。BPM188の32分音符は40msで、20msぶん食い込む）。
+		const endAt =
+			durationSec === undefined
+				? startAt + playDurSec
+				: Math.min(startAt + playDurSec, t0 + Math.max(0.02, durationSec));
 
 		// クリック防止のフェードと声量エンベロープ。継続ノートは立ち上がりを
 		// 被せ幅いっぱいまで伸ばし、アタック感（発音のたちあがり）を消す。
 		const attack = continuation ? TIE_XFADE_S : 0.01;
-		const release = 0.04;
+		// 離鍵のフェードは、短い音では音価そのものを食い潰さない長さまで縮める
+		// （40msの音に40msのフェードを掛けると、全部が減衰になってしまう）。
+		const release = Math.min(0.04, Math.max(0.005, (endAt - t0) / 2));
 		const env = ctx.createGain();
 		const fadeStart = Math.max(startAt + attack, endAt - release);
 		// 素片は最後まで鳴らしたまま声量だけを動かすので、途中で音が切れない。
@@ -1863,7 +1895,7 @@ export const createKoeVoice = async (
 		const t0 = ctx.currentTime + e.when;
 		const peak = Math.max(0.0001, e.volume);
 		const pan = e.pan ?? 0;
-		const durationMs = Math.max(60, e.duration * 1000);
+		const durationMs = Math.max(MIN_RENDER_MS, e.duration * 1000);
 		void renderInto(
 			alias,
 			e.pitchUnits,
@@ -1882,6 +1914,10 @@ export const createKoeVoice = async (
 					e.delaySend,
 					e.destination,
 					syllable.kind === "tie",
+					false,
+					false,
+					undefined,
+					e.duration,
 				);
 		});
 	};
@@ -1907,7 +1943,7 @@ export const createKoeVoice = async (
 			unitsToMidiFloat(pitch),
 		);
 		if (!alias) return null;
-		const dMs = Math.max(60, durationMs);
+		const dMs = Math.max(MIN_RENDER_MS, durationMs);
 		// 短いノートは1周期も揺れきらず不自然になるため、ここで最終的な適用可否を決める。
 		const vib = !!vibrato && dMs / 1000 >= VIBRATO_MIN_SEC;
 		const r = await renderInto(alias, pitch, dMs, vib, expr, pitchSegments);
@@ -1926,6 +1962,7 @@ export const createKoeVoice = async (
 		fadeOut,
 		fadeIn,
 		fadeCurve,
+		durationSec,
 	) => {
 		const r = renderCache.get(key);
 		if (r)
@@ -1941,6 +1978,7 @@ export const createKoeVoice = async (
 				fadeOut,
 				fadeIn,
 				fadeCurve,
+				durationSec,
 			);
 	};
 
@@ -2786,6 +2824,7 @@ export const createSingingVoices = (
 											note.fadeOut,
 											note.fadeIn,
 											note.fadeCurve,
+											note.durationSec,
 										);
 										opts?.onScheduled?.(track, note, t0);
 									} else {
