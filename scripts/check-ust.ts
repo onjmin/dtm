@@ -36,7 +36,13 @@ const check = (label: string, got: unknown, expect: unknown): void => {
 
 /** テスト用のUSTを組み立てる（`[#nnnn]` の連番はここで振る）。 */
 const ust = (
-	notes: { length: number; lyric: string; noteNum: number }[],
+	notes: {
+		length: number;
+		lyric: string;
+		noteNum: number;
+		/** Mode2 のピッチ線（`PBS=…`）。書いた行がそのままノートへ入る。 */
+		mode2?: string[];
+	}[],
 	tempo = 150,
 ): string =>
 	[
@@ -51,6 +57,7 @@ const ust = (
 			`Lyric=${n.lyric}`,
 			`NoteNum=${n.noteNum}`,
 			"PreUtterance=",
+			...(n.mode2 ?? []),
 		]),
 		"[#TRACKEND]",
 	].join("\r\n");
@@ -103,6 +110,75 @@ console.log("■ 原音名の揺れ");
 		"かきくきゃしつー",
 	);
 	check("読めなかった歌詞の数を数える", parsed.unknownLyricCount, 1);
+}
+
+console.log("■ Mode2のピッチ線");
+{
+	// BPM150 → 1ステップ 8.33ms。全音符(1920tick=192step)を、頭から順に5半音
+	// 下げる線を描く。NoteNum は動かさず、ポルタメント記号のノートで写す。
+	const parsed = parseUst(
+		ust([
+			{
+				length: 1920,
+				lyric: "あ",
+				noteNum: 72,
+				mode2: ["PBS=0;0.0", "PBW=400,400,400", "PBY=-20.0,-40.0,-50.0"],
+			},
+		]),
+	);
+	check(
+		"先頭は NoteNum のまま（ピアノロールの位置を動かさない）",
+		[parsed.notes[0].startStep, parsed.notes[0].pitch],
+		[0, 72],
+	);
+	check(
+		"描かれた高さがノートになる",
+		parsed.notes.map((n) => n.pitch),
+		[72, 71, 70, 69, 68, 67],
+	);
+	check("音節はポルタメント記号で繋ぐ", parsed.lyrics, "あ〜〜〜〜〜");
+	check(
+		"隙間なく並ぶ（1音へ結合できる形）",
+		parsed.notes.every(
+			(n, i) =>
+				i === 0 ||
+				n.startStep ===
+					parsed.notes[i - 1].startStep + parsed.notes[i - 1].durationSteps,
+		),
+		true,
+	);
+}
+
+console.log("■ Mode2のピッチ線（写さないもの）");
+{
+	// 前のノートの高さから滑り込む入りのポルタメント（UTAUが繋ぎ目に既定で書く）。
+	// ピアノロールでは隣のノートへ移ることがそのまま繋ぎなので、階段にしない。
+	const glide = parseUst(
+		ust([
+			{ length: 480, lyric: "あ", noteNum: 72 },
+			{
+				length: 480,
+				lyric: "い",
+				noteNum: 67,
+				mode2: ["PBS=-50;50.0", "PBW=100", "PBY=0.0"],
+			},
+		]),
+	);
+	check("入りのポルタメントはノートにしない", glide.notes.length, 2);
+	check("歌詞もそのまま", glide.lyrics, "あい");
+
+	// 半音に満たない揺れは、写しても同じ高さへ丸まるだけなのでノートを増やさない。
+	const tiny = parseUst(
+		ust([
+			{
+				length: 1920,
+				lyric: "あ",
+				noteNum: 72,
+				mode2: ["PBS=0;0.0", "PBW=400,400", "PBY=-4.0,0.0"],
+			},
+		]),
+	);
+	check("半音未満の揺れはノートにしない", tiny.notes.length, 1);
 }
 
 console.log("■ 接尾辞付きの休符");

@@ -37,6 +37,8 @@ const UST_CONTINUE_LYRICS = ["+", "+~", "+-", "+*", "*", "ー", "-"];
 
 /** 継続記号（`lyrics.ts` の TIE_MARK と同じ文字）。 */
 const TIE = "ー";
+/** ポルタメント＝時間を掛けて隣の高さへ滑る（`lyrics.ts` の PORTAMENTO_MARK と同じ文字）。 */
+const PORTAMENTO = "〜";
 /** 明示的な休符＝ノートを消費するが歌わない（`lyrics.ts` の REST_MARK と同じ文字）。 */
 const REST = "_";
 /** ブレス＝ノートを消費せず、直前の音の尻へ息継ぎを差し込む（`lyrics.ts` の BREATH_MARK と同じ文字）。 */
@@ -339,6 +341,10 @@ type UstNoteFields = {
 	lyric?: string;
 	noteNum?: string;
 	intensity?: string;
+	/** Mode2 ピッチ線（{@link bendPoints}）。 */
+	pbs?: string;
+	pbw?: string;
+	pby?: string;
 };
 
 /**
@@ -393,6 +399,9 @@ const scanUst = (
 		else if (key === "lyric") current.lyric = value;
 		else if (key === "notenum") current.noteNum = value;
 		else if (key === "intensity") current.intensity = value;
+		else if (key === "pbs") current.pbs = value;
+		else if (key === "pbw") current.pbw = value;
+		else if (key === "pby") current.pby = value;
 	}
 	if (current) sections.push(current);
 	return { bpm, sections };
@@ -431,6 +440,139 @@ const splitNoteSteps = (
 	return slots;
 };
 
+// ============================================================
+// Mode2 ピッチ線（PBS / PBW / PBY）
+// ============================================================
+
+/**
+ * 「ピッチを描く」流儀のUSTでは、`NoteNum` は**基準の高さでしかない**。
+ * 実際に歌う高さは Mode2 のピッチ線を足したもので、音価の大半を使って
+ * 数半音落ちる・上がる書き方も珍しくない。線を捨てると別の旋律になる。
+ *
+ * - `PBS=x;y` … 開始点。x はノート頭からの相対ms（前のノートへ食い込む負値が普通）、
+ *   y は**セントの1/10**。区切りは `;` のことも `,` のこともある。
+ * - `PBW=w1,w2,…` … 各区間の長さ（ms）。
+ * - `PBY=y1,y2,…` … 各区間の終点の高さ（セントの1/10）。書かれていない分は0（＝基準へ戻る）。
+ * - `PBM` … 区間ごとの曲線種別。このアプリのグライドは常に滑らかに繋ぐので使わない。
+ */
+type BendPoint = { ms: number; cents: number };
+
+/** カンマ区切りの数値列。空欄は0として読む（`PBY=-27.9,,10,` のような書き方がある）。 */
+const bendNumbers = (value: string | undefined): number[] =>
+	(value ?? "")
+		.split(",")
+		.map((x) => Number.parseFloat(x))
+		.map((x) => (Number.isFinite(x) ? x : 0));
+
+/** `PBS` / `PBW` / `PBY` から制御点列を組み立てる（ピッチ線が無ければ空）。 */
+const bendPoints = (fields: UstNoteFields): BendPoint[] => {
+	if (fields.pbw === undefined && fields.pbs === undefined) return [];
+	const [rawMs, rawCents] = (fields.pbs ?? "0").split(/[;,]/);
+	let ms = Number.parseFloat(rawMs);
+	if (!Number.isFinite(ms)) ms = 0;
+	const head = Number.parseFloat(rawCents ?? "");
+	const points: BendPoint[] = [
+		{ ms, cents: (Number.isFinite(head) ? head : 0) * 10 },
+	];
+	const widths = bendNumbers(fields.pbw);
+	const heights = bendNumbers(fields.pby);
+	widths.forEach((w, i) => {
+		ms += w;
+		points.push({ ms, cents: (heights[i] ?? 0) * 10 });
+	});
+	return points;
+};
+
+/** 制御点の間を直線で読む（範囲外は端の値のまま）。 */
+const bendCentsAt = (points: BendPoint[], ms: number): number => {
+	if (ms <= points[0].ms) return points[0].cents;
+	for (let i = 1; i < points.length; i++) {
+		const a = points[i - 1];
+		const b = points[i];
+		if (ms > b.ms) continue;
+		const span = b.ms - a.ms;
+		return span <= 0
+			? b.cents
+			: a.cents + ((b.cents - a.cents) * (ms - a.ms)) / span;
+	}
+	return points[points.length - 1].cents;
+};
+
+/**
+ * ピッチ線を採る下限（セント）。
+ *
+ * このアプリのピアノロールは半音格子なので、半音に満たない揺れは書き写しても
+ * 同じ高さへ丸まるだけでノートが増える。しゃくり・ビブラート程度の綾は捨てて、
+ * 「旋律が変わる」大きさの曲がりだけを写す。
+ */
+const BEND_MIN_CENTS = 100;
+/**
+ * ピッチ線から起こすノートの最短長（ms）。
+ *
+ * ステップ数ではなく実時間で決める。速い曲ほど1ステップが短くなるので、
+ * ステップで切ると同じ「一瞬の綾」が曲によって残ったり消えたりする。
+ */
+const BEND_MIN_MS = 30;
+/** 1つのノートのピッチ線を読む回数。細かく描かれていても、この粗さまでしか写さない。 */
+const BEND_SAMPLES = 8;
+/** 1つのノートから起こすピッチ変化の上限。描き込みの細かいUSTでも増えすぎないように。 */
+const BEND_MAX_POINTS = 8;
+
+/** ピッチ線の高さ（セント）→ 基準からの半音オフセット。半音未満は0へ倒す。 */
+const bendSemitones = (cents: number): number =>
+	Math.abs(cents) < BEND_MIN_CENTS ? 0 : Math.round(cents / 100);
+
+/**
+ * ノート1つぶんのピッチ線を、**ポルタメントで繋ぐノートの並び**へ写す。
+ *
+ * このアプリは1ノート＝1つの高さしか持てないが、歌詞のポルタメント記号 `〜` で
+ * 繋いだ隣のノートは「言い直さずに滑って移る」1つの声になる（`lyrics.ts` の
+ * `buildStreamVoiceNotes` が1音へ畳み、koe がその中をグライドで繋ぐ）。
+ * ピッチ線の折れ点をそのノート列として置けば、描かれたとおりの高さで歌える。
+ *
+ * 折れ点をそのまま追うのではなく**一定間隔で読む**。UTAUのピッチ線には
+ * 「1msだけ下げて戻す」ようなこの格子では表せない綾が入っていて、折れ点を
+ * 追うと戻りのほうが間隔の下限に弾かれ、下げたまま終わる音が出るため。
+ *
+ * 先頭は必ず基準（オフセット0）のまま置く。UTAUのピアノロール上でもノートは
+ * `NoteNum` の位置にあり、入りのしゃくりは装飾なので、見た目を動かさない。
+ *
+ * @returns 2つ目以降（＝ポルタメントで繋ぐぶん）だけ。曲がりが無ければ空。
+ */
+const bendSlots = (
+	points: BendPoint[],
+	startStep: number,
+	endStep: number,
+	msPerStep: number,
+): { startStep: number; durationSteps: number; semitones: number }[] => {
+	if (points.length < 2) return [];
+	const total = endStep - startStep;
+	const minSteps = Math.max(1, Math.round(BEND_MIN_MS / msPerStep));
+	if (total < minSteps * 2) return [];
+	// 入りのポルタメント（前のノートの高さから基準へ滑り込む区間）は読み飛ばす。
+	// UTAUは高さの違う音の繋ぎ目に既定でこれを書くが、ピアノロールでは
+	// 「隣のノートへ移る」ことがそのまま繋ぎなので、写すと階段が並ぶだけになる。
+	const settleMs = points.find((p) => bendSemitones(p.cents) === 0)?.ms;
+	if (settleMs === undefined) return []; // 最後まで基準へ戻らない＝まるごと繋ぎ
+	const grid = Math.max(minSteps, Math.ceil(total / BEND_SAMPLES));
+	const from = Math.max(minSteps, Math.ceil(settleMs / msPerStep));
+	const out: { startStep: number; durationSteps: number; semitones: number }[] =
+		[];
+	let prev = 0;
+	for (let step = from; step <= total - minSteps; step += grid) {
+		const semitones = bendSemitones(bendCentsAt(points, step * msPerStep));
+		if (semitones === prev) continue;
+		out.push({ startStep: startStep + step, durationSteps: 0, semitones });
+		prev = semitones;
+		if (out.length >= BEND_MAX_POINTS) break;
+	}
+	// 長さは次の折れ点（最後はノートの終わり）まで。
+	out.forEach((slot, i) => {
+		slot.durationSteps = (out[i + 1]?.startStep ?? endStep) - slot.startStep;
+	});
+	return out;
+};
+
 export const parseUst = (
 	source: Uint8Array | string,
 	name = "",
@@ -450,6 +592,8 @@ export const parseUst = (
 	 * 捨てられ、以降の音節とノートが1つずつずれるので、休符へ倒して1:1を守る。
 	 */
 	let hasVoiced = false;
+	/** ピッチ線の折れ点をステップへ写すための尺（BPM未記載なら120とみなす）。 */
+	const msPerStep = 60000 / (bpm ?? 120) / STEPS_PER_BEAT;
 
 	for (const fields of sections) {
 		const length = Number.parseFloat(fields.length ?? "");
@@ -497,6 +641,29 @@ export const parseUst = (
 			if (placed !== REST) hasVoiced = true;
 			syllables.push(placed);
 		});
+		// Mode2 のピッチ線を、ポルタメントで繋ぐノート列として最後の枠へ足す。
+		// 歌っていない音（休符へ倒れた継続記号）の後ろへ付けても行き場が無いので置かない。
+		const tail = slots[slots.length - 1];
+		if (!hasVoiced || !tail) continue;
+		const bends = bendSlots(
+			bendPoints(fields),
+			tail.startStep,
+			tail.startStep + tail.durationSteps,
+			msPerStep,
+		);
+		if (bends.length === 0) continue;
+		// 折れ点を置いたぶん、元のノートは最初の折れ点までに縮める。
+		tail.durationSteps = bends[0].startStep - tail.startStep;
+		notes[notes.length - 1].durationSteps = tail.durationSteps;
+		for (const bend of bends) {
+			notes.push({
+				startStep: bend.startStep,
+				durationSteps: bend.durationSteps,
+				pitch: noteNum + bend.semitones,
+				velocity,
+			});
+			syllables.push(PORTAMENTO);
+		}
 	}
 
 	return {
