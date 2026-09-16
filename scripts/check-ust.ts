@@ -181,7 +181,7 @@ console.log("■ 中国語ピンイン（かなへの転写）");
 	check("基本（声母＋韻母）", moras("ni"), "に");
 	check("撥音の韻尾は別モーラ", moras("xing"), "し+ん");
 	check("-ng も撥音へ倒す", moras("kan"), "か+ん");
-	check("二重母音の後半も別モーラ", moras("tou"), "と+う");
+	check("二重母音の後半も別モーラ", moras("tou"), "と+お");
 	check("介音iは拗音へ畳む", moras("xiao"), "しゃ+お");
 	check("介音uは畳まず並べる", moras("guo"), "ぐ+お");
 	check("そり舌音はジャ行・チャ行・シャ行", moras("zhong"), "じょ+ん");
@@ -201,11 +201,15 @@ console.log("■ 中国語ピンイン（かなへの転写）");
 		`${moras("qu")}/${moras("lv")}`,
 		"ちゅ/りゅ",
 	);
-	check("省略綴り（iu=iou, ui=uei, un=uen）", moras("liu"), "りゅ");
+	check(
+		"省略綴り（iu=iou, ui=uei, un=uen）",
+		`${moras("liu")}/${moras("dui")}/${moras("dun")}`,
+		"りょ+お/どぅ+え+い/どぅ+え+ん",
+	);
 	check(
 		"零声母（y/w）",
-		`${moras("yi")}/${moras("wo")}/${moras("yue")}`,
-		"い/う+お/ゆぇ",
+		`${moras("yi")}/${moras("wo")}/${moras("yue")}/${moras("you")}`,
+		"い/う+お/ゆぇ/よ+お",
 	);
 	check("erは巻き舌", moras("er"), "あ+る");
 	check("声調番号は無視する", moras("xing1"), "し+ん");
@@ -224,7 +228,7 @@ console.log("■ 中国語ピンイン（取り込み）");
 			{ length: 480, lyric: "she", noteNum: 68 },
 		]),
 	);
-	check("ピンインをかなへ写す", parsed.lyrics, "しんしんてぃとうしゃ");
+	check("ピンインをかなへ写す", parsed.lyrics, "しんしんてぃとおしゃ");
 	check("読めなかった歌詞は無い", parsed.unknownLyricCount, 0);
 	check(
 		"尻のモーラは短く、頭が大半を持つ",
