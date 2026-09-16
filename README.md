@@ -237,6 +237,86 @@ recorder.start();
 
 ---
 
+## ヘルプとガイドツアー
+
+編集 UI には**ヘルプ（`?`）ボタン**と**目的別のガイドツアー**が同梱されています。どちらも埋め込み先でそのまま動きます。
+
+### 何が出るか
+
+- **`?` ボタン**（ツールバー右） … 使い方モーダル。画面のあちこちに散っている `ⓘ` 解説を 1 か所から辿れるハブになっています。**既定で表示**（`showHelp: false` で消せます）。
+- **ガイドツアー** … 対象要素をくり抜いて吹き出しで説明するスポットライト型ウォークスルー。冒頭で目的を尋ね、選ばれた枝だけを歩かせます。
+
+| 枝 | 案内する内容 |
+| --- | --- |
+| カバー曲を作りたい | オーディオ同時再生へ音源を読み込む → 開始のずれで頭を合わせる → 範囲を切り出す → ミュートで聴き比べる → 重ねて打ち込む |
+| 曲を自動で作りたい | 作曲ボタン → 構成テンプレ → 雰囲気（調） → 再生 → おまかせマスタリング |
+| 自分で打ち込みたい | ピアノロール → ツール／音符の長さ → トラックタブ → 再生 → 楽器・音量 |
+
+**自動再生は既定でオフです。** 埋め込み先の第一印象を勝手に上書きしないための既定値で、初回に流したいアプリだけが明示的に有効化します。
+
+```ts
+const studio = await createDtmStudio();
+
+// 既定（自動再生なし）。? ボタンからはいつでも開始できる
+studio.mountEditor(el, { initialMML });
+
+// 初回訪問時だけ自動で流す
+studio.mountEditor(el, { tour: { autoStart: true } });
+
+// 独自の「使い方」ボタンから開始する
+myButton.onclick = () => studio.startTour();
+```
+
+### 消す・差し替える
+
+```ts
+await createDtmStudio({
+  features: { help: false },     // ? ボタンごと出さない
+});
+
+studio.mountEditor(el, {
+  tour: {
+    steps: MY_STEPS,             // 既定ステップを丸ごと差し替える
+    extraSteps: [myStep],        // 既定ステップの後ろに足す
+    storageKey: "myapp-tour",    // 「もう見た」フラグの保存キー（null で記録しない）
+    labels: { next: "Next ▶", prev: "◀ Back", skip: "Skip", done: "Start ▶",
+              progress: (i, n) => `${i} / ${n}` },
+  },
+});
+```
+
+**存在しない UI を指すステップは自動的に飛ばされます。** `features.midi: false` や伴奏音源を注入していない構成でも、そのステップだけが黙って抜けます。枝そのものも `when` で出し分けられるので、「選んだ先が全部飛んで空になる」行き止まりは起きません。
+
+### 単体で使う
+
+ツアーエンジンは `mountDAW` に依存しない素の DOM ユーティリティです。自分のアプリの UI を指すステップを書いて直接呼べます。
+
+```ts
+import { startTour, hasSeenTour, isTourTargetVisible } from "@onjmin/dtm";
+
+startTour({
+  root: myAppRoot,               // セレクタの検索基点（既定 document）
+  steps: [
+    { title: "ようこそ", body: "<p>まずは目的を選んでください。</p>", branches: [
+      { label: "A をしたい", steps: stepsA,
+        when: (root) => isTourTargetVisible(root, "#feature-a") },
+      { label: "B をしたい", steps: stepsB },
+    ] },
+    { target: "#save", title: "保存", body: "<p>ここで保存します。</p>" },
+  ],
+  onEnd: (completed) => console.log(completed ? "完走" : "中断"),
+});
+```
+
+| 項目 | 挙動 |
+| --- | --- |
+| 閉じた `<details>` の中の対象 | 自動で開いて採寸し、**ツアー終了時に閉じ直す**（パネルの開閉は localStorage に永続化されるため、勝手に開いた状態を残さない） |
+| キーボード | `←` `→` で移動、`Esc` で中断 |
+| 暗幕のクリック | **進まない**（誤タップで読む前に消えるのを防ぐ） |
+| 画面幅 | 吹き出しは画面幅に合わせて縮み、対象の上下で入る方へ回り込む |
+
+---
+
 ## モード（`simple` / `advanced`）
 
 トラック構成と MIDI の取り込み方が異なる 2 つのモードがあります。`mode` オプションで切り替え、合わせて `tracks` に対応するトラック構成（`TRACKS_SIMPLE` / `TRACKS_ADVANCED`）を渡します。

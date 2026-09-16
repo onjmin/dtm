@@ -275,7 +275,20 @@ export type DtmStudioOptions = {
 		chord?: boolean;
 		/** 編集UIに楽器プリセット選択UIを差し込む。 */
 		presetUI?: boolean;
+		/**
+		 * 編集UIのツールバーにヘルプ（「?」）ボタンを出す。
+		 * 使い方モーダルと目的別ガイドツアーの入口になる。
+		 */
+		help?: boolean;
 	};
+	/**
+	 * ガイドツアーの設定。この studio から生やす編集UI全体の既定値になる
+	 * （`mountEditor` の `tour` で個別に上書きできる）。
+	 *
+	 * **自動再生は既定でオフ**。埋め込み先の第一印象を勝手に上書きしないための既定値で、
+	 * 初回に流したいアプリだけが `{ autoStart: true }` を渡す。
+	 */
+	tour?: DawOptions["tour"];
 	/** MIDI検索クライアントの設定（未指定なら検索UI非表示）。 */
 	midiSearch?: import("./midi-search").MidiSearchConfig;
 	/** ドラムパターン辞書。 */
@@ -510,6 +523,12 @@ export type DtmStudio = {
 	setDelayAmount: (amount: number) => void;
 	/** マスタバスのグルーコンプレッサー量を 0-100 で変更する。 */
 	setMasterCompression: (amount: number) => void;
+	/**
+	 * 直近にマウントした編集UIでガイドツアーを開始する。
+	 * 自動再生（`tour.autoStart`）を切っていても、独自の「使い方」ボタンから呼べる。
+	 * 編集UIが1つも無いときは何もしない。
+	 */
+	startTour: () => void;
 	/** AudioContext を閉じ、生成物を破棄する。 */
 	dispose: () => void;
 };
@@ -525,6 +544,7 @@ export const createDtmStudio = async (
 		midi: true,
 		chord: true,
 		presetUI: true,
+		help: true,
 		...options.features,
 	};
 
@@ -1356,6 +1376,8 @@ export const createDtmStudio = async (
 			onTrackPanChange: (trackId, pan) =>
 				getChannelStrip(trackId).setPan(panToStereo(pan)),
 			clipMeter,
+			showHelp: features.help,
+			tour: options.tour,
 			...dawOverrides,
 			// dawOverrides で上書きされないよう、スプレッドの後に配置して合成する
 			onDrumChange: (name) => {
@@ -2183,6 +2205,9 @@ export const createDtmStudio = async (
 		defaultPreset,
 		mountPresetSelect,
 		mountModeSwitch,
+		startTour: () => {
+			mountedEditors[mountedEditors.length - 1]?.startTour();
+		},
 		setMasterVolume,
 		setVolume: setMasterVolume,
 		setReverbAmount,

@@ -275,6 +275,24 @@
 
         <span class="text-pico-orange text-xs font-pixel px-1" id="loading" style="display:none"></span>
 
+        <!-- はじめての方へ（ガイドツアーの入口）。
+             解説はエディタ内の ⓘ に大量にあるが、折りたたまれたパネルの中で見つからないため、
+             ページ最上部に常設の入口を置く。中身はライブラリ側（studio.startTour）に一本化。 -->
+        <div class="game-win bg-pico-navy px-4 py-3">
+            <div class="flex flex-wrap items-center gap-3">
+                <span class="text-pico-yellow text-xs uppercase tracking-widest shrink-0">► はじめての方へ</span>
+                <button id="start-tour"
+                    class="min-h-[40px] px-4 border-2 border-pico-yellow bg-pico-yellow text-pico-black
+                           text-xs uppercase tracking-widest cursor-pointer font-pixel
+                           shadow-[3px_3px_0_#000] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none">
+                    ▶ 使い方ガイド（30秒）
+                </button>
+                <span class="text-pico-lavend text-xs tracking-widest">
+                    カバー作り／自動作曲／打ち込み から選べます
+                </span>
+            </div>
+        </div>
+
         <!-- モード切替 -->
         <div class="game-win bg-pico-navy px-4 py-3">
             <div class="flex flex-wrap items-center gap-3">
@@ -480,6 +498,9 @@
                 initialMML: mml || undefined,
                 defaultBpm: 120,
                 skipConsent: true,
+                // 初回訪問時だけ自動で流す。共有リンク（#hash）で来た人は他人の曲を
+                // 開きに来ているので、ツアーで覆わない（ボタンからはいつでも開ける）。
+                tour: { autoStart: !location.hash },
                 onDrumChange: (name) => writeStored(DRUM_STORAGE_KEY, name),
                 onInstrumentChange: (name) => {
                     selectInstrumentPreset(name).catch(console.error);
@@ -591,6 +612,10 @@
 
         document.getElementById('mode-simple').addEventListener('click', () => remountDAW('simple'));
         document.getElementById('mode-advanced').addEventListener('click', () => remountDAW('advanced'));
+        // ガイドツアー。ステップ定義はライブラリ側（DAW_TOUR_STEPS）が持つので、
+        // デモ側は入口を1つ用意するだけでよい。モード切替でDAWを作り直しても
+        // studio が最新のエディタを掴んでいるため、張り直しは不要。
+        document.getElementById('start-tour').addEventListener('click', () => studio.startTour());
         // ════ 再生専用ビュー (mountMmlPlayer) ════
         // @@0 klatt … が歌詞トラック。@0 のメロディに音節を1つずつ同期して歌う。
         // モデル名を koe音源キーワード（roze / teto / tsukuyomi / rino / ruko_female / shiyo）に

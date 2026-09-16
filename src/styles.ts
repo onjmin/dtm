@@ -1144,6 +1144,71 @@ export const DAW_CSS = `
   color: var(--dtm-pfg);
 }
 
+/* 目的別の分岐（ツアー冒頭の「何をしてみたい？」）。 */
+.dtm-tour-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.dtm-tour-branch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--dtm-tap);
+  padding: 6px 10px;
+  border: 2px solid var(--dtm-primary);
+  background: var(--dtm-surface);
+  color: var(--dtm-text);
+  font-family: var(--dtm-font);
+  font-size: 13px;
+  letter-spacing: .04em;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--c-black);
+}
+.dtm-tour-branch:active { transform: translate(2px, 2px); box-shadow: none; }
+.dtm-tour-branch-label { color: var(--dtm-primary); }
+.dtm-tour-branch-hint { font-size: 11px; color: var(--dtm-muted); }
+
+/* ─── ヘルプのハブ（「?」ボタンのモーダル） ─── */
+.dtm-help-goals {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 4px;
+}
+/* 目的ボタンは見出しと補足の2段組みにする。.dtm-btn は1行前提の
+   inline-flex なので、ここだけ縦並び・左寄せ・高さ自動に上書きする。 */
+.dtm-help-goals .dtm-btn {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  height: auto;
+  padding: 6px 10px;
+  text-align: left;
+  white-space: normal;
+}
+.dtm-help-goals .dtm-btn small {
+  font-size: 11px;
+  opacity: .8;
+  font-weight: normal;
+}
+.dtm-help-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.dtm-help-topics .dtm-btn {
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
 .dtm-hidden { display: none !important; }
 /* 読込時の警告お知らせ（例: シンプルモードでのトラック合算）。 */
 .dtm-load-note {

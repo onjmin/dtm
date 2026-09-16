@@ -113,6 +113,7 @@ import {
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import {
+	DAW_TOUR_BRANCHES,
 	DAW_TOUR_STEPS,
 	hasSeenTour,
 	startTour,
@@ -750,38 +751,36 @@ const KOE_INFO_HTML = `
 `;
 
 /**
- * ヘルプ（「?」ボタン）の中身。個別の解説（ⓘ）は画面のあちこちに散っていて
+ * ヘルプ（「?」ボタン）の中身。
+ *
+ * 想定している層（音源に合わせてカバーを作りたい／とりあえず自動で曲が欲しい／
+ * 自分で打ち込みたい）ごとに入口を分ける。個別の解説（ⓘ）は画面のあちこちに散っていて
  * 折りたたまれたパネルの中にもあるため、ここを「解説のハブ」にして一覧から辿れるようにする。
- * 各ボタンの `data-dtm-help` は HELP_TOPICS のキーで、同じモーダルの中身を差し替える。
+ *
+ * `data-dtm-tour` は目的別ツアーのキー、`data-dtm-help` は HELP_TOPICS のキー。
  */
 const HELP_INFO_HTML = `
 <div class="dtm-modal-body-content">
-  <p>ブラウザだけで曲が作れる、ピアノロール式のDAWです。はじめてなら<strong>ガイドツアー</strong>がおすすめです。</p>
-  <p style="margin:8px 0;">
-    <button class="dtm-btn dtm-btn--primary" data-dtm="help-start-tour">▶ ガイドツアーを見る（約30秒）</button>
-  </p>
-
-  <h4>基本の流れ</h4>
-  <ul>
-    <li><strong>①</strong> 上のタブでトラック（メロディ・ベースなど）を選ぶ</li>
-    <li><strong>②</strong> ピアノロールをタップして音符を置く（横=時間 / 縦=音の高さ）</li>
-    <li><strong>③</strong> 再生ボタンで聴く。BPMで速さを変える</li>
-    <li><strong>④</strong> 「マクロ」の<strong>作曲</strong>で丸ごと自動生成することもできます</li>
-    <li><strong>⑤</strong> 「MIDI / UST / MML 出力」から書き出し・共有</li>
-  </ul>
+  <h4>はじめての方へ（各30秒）</h4>
+  <p>やりたいことを選ぶと、その操作だけを順番に案内します。</p>
+  <div class="dtm-help-goals">
+    <button class="dtm-btn dtm-btn--primary" data-dtm-tour="cover">🎧 カバー曲を作りたい<small>原曲・カラオケ音源に重ねて打ち込む</small></button>
+    <button class="dtm-btn dtm-btn--primary" data-dtm-tour="compose">🎲 曲を自動で作りたい<small>ボタン1つでフル構成の曲を生成</small></button>
+    <button class="dtm-btn dtm-btn--primary" data-dtm-tour="sequence">🎹 自分で打ち込みたい<small>ピアノロールの使い方をひととおり</small></button>
+  </div>
 
   <h4>もっと詳しく</h4>
   <p>知りたい項目を選んでください。同じ解説は、画面の各項目にある <strong>ⓘ</strong> ボタンからも開けます。</p>
   <div class="dtm-help-topics">
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="audio">オーディオ同時再生</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="compose">自動作曲</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="autoMaster">おまかせマスタリング</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="lyric">歌詞の書き方</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="koe">カスタム音声(.koe)</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="chord">コード進行</button>
-    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="mml">MMLの書き方</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="midi">MIDIの読み込み</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="ust">UST(UTAU)</button>
-    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="audio">オーディオ同時再生</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="mml">MMLの書き方</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="loop">ループ再生</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="edo">音律(31平均律)</button>
   </div>
@@ -790,6 +789,7 @@ const HELP_INFO_HTML = `
 
 /** ヘルプのハブから開ける個別解説。キーは HELP_INFO_HTML の `data-dtm-help` と対応する。 */
 const HELP_TOPICS: Record<string, { title: string; html: string }> = {
+	audio: { title: "オーディオ同時再生の解説", html: AUDIO_INFO_HTML },
 	compose: { title: "作曲の解説", html: COMPOSE_INFO_HTML },
 	autoMaster: {
 		title: "おまかせマスタリング解説",
@@ -798,10 +798,9 @@ const HELP_TOPICS: Record<string, { title: string; html: string }> = {
 	lyric: { title: "歌詞の書き方", html: LYRIC_INPUT_INFO_HTML },
 	koe: { title: "カスタム音声(.koe)の使い方", html: KOE_INFO_HTML },
 	chord: { title: "コード進行の自動入力解説", html: CHORD_INFO_HTML },
-	mml: { title: "MMLの書き方解説", html: MML_INFO_HTML },
 	midi: { title: "MIDIの読み込み解説", html: MIDI_INFO_HTML },
 	ust: { title: "USTの読み込み解説", html: UST_INFO_HTML },
-	audio: { title: "オーディオ同時再生の解説", html: AUDIO_INFO_HTML },
+	mml: { title: "MMLの書き方解説", html: MML_INFO_HTML },
 	loop: { title: "ループ再生の解説", html: LOOP_INFO_HTML },
 	edo: { title: "音律の解説", html: EDO_INFO_HTML },
 };
@@ -1457,6 +1456,28 @@ export const mountDAW = (
 		showCompose: true,
 		showHelp: options.showHelp !== false,
 	});
+
+	// ── ガイドツアー ──
+	// 想定している層ごとに順路が分かれるため、既定ステップは入口で目的を尋ねる
+	// （{@link DAW_TOUR_STEPS}）。branchKey を渡すとその枝だけを直接流す。
+	const tourOptions = options.tour ?? {};
+	const tourStorageKey =
+		tourOptions.storageKey === undefined
+			? TOUR_STORAGE_KEY
+			: tourOptions.storageKey;
+	const runTour = (branchKey?: keyof typeof DAW_TOUR_BRANCHES): void => {
+		// ヘルプモーダルが開いたままだと暗幕の下へ潜って読めないので閉じる。
+		refs.modalOverlay.setAttribute("hidden", "");
+		const base = branchKey
+			? DAW_TOUR_BRANCHES[branchKey].steps
+			: (tourOptions.steps ?? DAW_TOUR_STEPS);
+		startTour({
+			root: refs.root,
+			steps: [...base, ...(tourOptions.extraSteps ?? [])],
+			storageKey: tourStorageKey,
+			labels: tourOptions.labels,
+		});
+	};
 	refs.masterVolume.value = String(options.masterVolume ?? 50);
 	refs.masterVolumeLabel.textContent = `${options.masterVolume ?? 50}%`;
 	refs.masterComp.value = String(options.masterCompression ?? 0);
@@ -6976,6 +6997,38 @@ export const mountDAW = (
 			}
 		});
 
+		refs.helpBtn.addEventListener("click", () => {
+			showModal("使い方・ヘルプ", HELP_INFO_HTML);
+			// この画面に無い機能の解説は隠す。読んだ先の操作が見つからないのは、
+			// 解説が無いことより混乱する。
+			const hideTopic = (topic: string) =>
+				refs.modalBody
+					.querySelector(`[data-dtm-help="${topic}"]`)
+					?.classList.add("dtm-hidden");
+			if (!showAudio) hideTopic("audio");
+			if (!showMidi) {
+				hideTopic("midi");
+				hideTopic("ust");
+			}
+			if (!showChord) hideTopic("chord");
+		});
+		// ヘルプの中身は showModal が innerHTML で差し替えるため、個々のボタンではなく
+		// モーダル本体へ委譲で繋ぐ（差し替えのたびに張り直さなくて済む）。
+		refs.modalBody.addEventListener("click", (e) => {
+			const el = (e.target as HTMLElement | null)?.closest<HTMLElement>(
+				"[data-dtm-tour],[data-dtm-help]",
+			);
+			if (!el) return;
+			const branch = el.dataset.dtmTour;
+			if (branch && branch in DAW_TOUR_BRANCHES) {
+				runTour(branch as keyof typeof DAW_TOUR_BRANCHES);
+				return;
+			}
+			const topic = el.dataset.dtmHelp;
+			const entry = topic ? HELP_TOPICS[topic] : undefined;
+			if (entry) showModal(entry.title, entry.html);
+		});
+
 		refs.mmlInfoBtn.addEventListener("click", () => {
 			showModal("MMLの書き方解説", MML_INFO_HTML);
 		});
@@ -7880,6 +7933,16 @@ export const mountDAW = (
 		redrawAll();
 	};
 
+	// 初回だけのガイドツアー自動再生。
+	// 既定はオフ（{@link DawOptions.tour}）。埋め込み先の第一印象を勝手に上書きしないため、
+	// 明示的に有効化したアプリだけが流す。レイアウト確定後に採寸したいので1フレーム待つ。
+	if (
+		options.tour?.autoStart &&
+		!(tourStorageKey && hasSeenTour(tourStorageKey))
+	) {
+		requestAnimationFrame(() => runTour());
+	}
+
 	// ============================================================
 	// 公開API
 	// ============================================================
@@ -8101,6 +8164,7 @@ export const mountDAW = (
 			}
 			return { x, y, onScreen, side };
 		},
+		startTour: () => runTour(),
 		destroy: () => {
 			sequencer.stop();
 			// 伴奏音源はこのエディタ専用に作られて渡されるので、ここで後始末する

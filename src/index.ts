@@ -155,6 +155,23 @@ export {
 // UIユーティリティ
 export { DAW_CSS, injectStyles, showLoadingOverlay } from "./styles";
 export { createSynth, freqFromPitch, type Synth } from "./synth";
+// ガイドツアー（スポットライト型ウォークスルー）。mountDAW に依存しないので、
+// 埋め込み側が自分のUIを指すステップを書いて単体で呼ぶこともできる。
+export {
+	clearTourSeen,
+	DAW_TOUR_BRANCHES,
+	DAW_TOUR_STEPS,
+	hasSeenTour,
+	isTourTargetVisible,
+	markTourSeen,
+	startTour,
+	TOUR_STORAGE_KEY,
+	type TourBranch,
+	type TourInstance,
+	type TourLabels,
+	type TourOptions,
+	type TourStep,
+} from "./tour";
 // 音律とピッチの内部表現（units ⇄ Hz / MIDI、五度圏、協調編集のバージョン）
 export * from "./tuning";
 export type { NoteData, NoteRemove } from "./types";
