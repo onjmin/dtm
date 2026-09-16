@@ -260,6 +260,43 @@ export const parseYoutubeId = (url: string): string | null => {
 export const isYoutubeUrl = (url: string): boolean =>
 	parseYoutubeId(url) !== null;
 
+/** サムネイルの候補。大きいものから試す。 */
+const YT_THUMBNAIL_NAMES = ["maxresdefault", "hqdefault"];
+
+/**
+ * 動画IDからサムネイル画像のURLを決める（APIキーも通信の事前確認も要らない）。
+ *
+ * `maxresdefault` は**無い動画がある**（元が低解像度・古い投稿）ので、実際に
+ * 読み込んで確かめてから返す。存在しないサムネに対してYouTubeは404だけでなく
+ * 120×90のグレー画像を返すことがあるため、大きさでも弾く。
+ *
+ * 見つからなければ null。呼び出し側は「背景を出さない」を選べる。
+ */
+export const resolveYoutubeThumbnail = (
+	videoId: string,
+): Promise<string | null> => {
+	// URLへ差し込む値なので、IDの形をしていなければ何もしない。
+	if (!/^[\w-]{11}$/.test(videoId)) return Promise.resolve(null);
+	return new Promise((resolve) => {
+		const tryAt = (index: number): void => {
+			const name = YT_THUMBNAIL_NAMES[index];
+			if (!name) {
+				resolve(null);
+				return;
+			}
+			const url = `https://i.ytimg.com/vi/${videoId}/${name}.jpg`;
+			const img = new Image();
+			img.onload = () => {
+				if (img.naturalWidth > 120) resolve(url);
+				else tryAt(index + 1);
+			};
+			img.onerror = () => tryAt(index + 1);
+			img.src = url;
+		};
+		tryAt(0);
+	});
+};
+
 /** YouTube IFrame Player API の、このモジュールが使う範囲だけの型。 */
 type YtPlayer = {
 	playVideo: () => void;

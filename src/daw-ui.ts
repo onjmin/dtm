@@ -38,6 +38,7 @@ export type DawUIRefs = {
 	bgRemoveBtn: HTMLButtonElement;
 	bgOpacityInput: HTMLInputElement;
 	bgOpacityRow: HTMLElement;
+	bgYoutubeThumb: HTMLInputElement;
 	// roll
 	rollContainer: HTMLElement;
 	wrapper: HTMLElement;
@@ -284,6 +285,11 @@ export const buildUI = (
         <input type="file" accept="image/*" data-dtm="bg-file-input" class="dtm-hidden">
         <button class="dtm-btn dtm-btn--primary" data-dtm="bg-upload">アップロード</button>
         <button class="dtm-btn dtm-btn--danger dtm-hidden" data-dtm="bg-remove">削除</button>
+      </div>
+      <div class="dtm-row">
+        <label class="dtm-checkbox-label" title="YouTubeの音源を読み込んだとき、その動画のサムネイルを背景に使います（自分で設定した背景画像があればそちらが優先）">
+          <input type="checkbox" class="dtm-checkbox" data-dtm="bg-youtube-thumb"> YouTubeのサムネを背景にする
+        </label>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="bg-opacity-row">
         <span class="dtm-label">背景不透明度</span>
@@ -758,6 +764,7 @@ export const buildUI = (
 		bgRemoveBtn: sel("bg-remove"),
 		bgOpacityInput: sel("bg-opacity"),
 		bgOpacityRow: sel("bg-opacity-row"),
+		bgYoutubeThumb: sel("bg-youtube-thumb"),
 		rollContainer: sel("roll"),
 		wrapper: sel("wrapper"),
 		vScroll: sel("vscroll"),

@@ -17,6 +17,7 @@ export {
 	isYoutubeUrl,
 	parseTimeSec,
 	parseYoutubeId,
+	resolveYoutubeThumbnail,
 } from "./backing-audio";
 export * from "./chord-player";
 export * from "./chords";

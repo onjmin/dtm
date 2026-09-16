@@ -19,6 +19,8 @@ import {
 	formatTimeSec,
 	isYoutubeUrl,
 	parseTimeSec,
+	parseYoutubeId,
+	resolveYoutubeThumbnail,
 } from "./backing-audio";
 import { type ChordPlayerInstance, mountChordPlayer } from "./chord-player";
 import { buildChordPlacements, type ChordPatternType } from "./chords";
@@ -2755,6 +2757,7 @@ export const mountDAW = (
 	const BG_DB_STORE = "settings";
 	const BG_DB_KEY = "piano-roll-bg";
 	const BG_OPACITY_KEY = "dtm-piano-roll-bg-opacity";
+	const BG_YT_THUMB_KEY = "dtm-piano-roll-bg-youtube-thumb";
 	// リサイズ＋再圧縮の対象とする静止ラスター画像形式（GIF等アニメーション画像はここに含めない）
 	const COMPRESSIBLE_IMAGE_TYPES = new Set([
 		"image/jpeg",
@@ -2835,6 +2838,12 @@ export const mountDAW = (
 		});
 	};
 
+	/** 自分で設定した背景画像（IndexedDBに永続）。YouTubeサムネより優先する。 */
+	let userBgBlob: Blob | null = null;
+	/** いま読み込んでいるYouTube音源のサムネURL。トグルOFFなら取りに行かない。 */
+	let youtubeThumbUrl: string | null = null;
+	/** サムネを背景に使うか（表示アコーディオンのトグル。既定OFF）。 */
+	let useYoutubeThumb = false;
 	let currentBgObjectUrl: string | null = null;
 
 	const applyBgOpacity = (opacityVal: number): void => {
@@ -2845,25 +2854,62 @@ export const mountDAW = (
 		refs.bgOpacityInput.value = String(opacityVal);
 	};
 
-	const applyRollBackground = (blob: Blob | null): void => {
+	/** 背景画像を出しているか（＝キャンバスの塗りを半透明にするか）。 */
+	const hasRollBackground = (): boolean =>
+		!!userBgBlob || (useYoutubeThumb && !!youtubeThumbUrl);
+
+	/**
+	 * 背景を解決して反映する。優先順位は **自分で設定した画像 > YouTubeサムネ > 無し**。
+	 *
+	 * サムネはあくまで「背景を設定していない人向けの既定」なので、アップロード済みの
+	 * 画像を上書きしない。削除ボタンも自分で入れた画像にだけ出す（サムネはトグルで消す）。
+	 */
+	const refreshRollBackground = (): void => {
 		if (currentBgObjectUrl) {
 			URL.revokeObjectURL(currentBgObjectUrl);
 			currentBgObjectUrl = null;
 		}
-		if (blob) {
-			currentBgObjectUrl = URL.createObjectURL(blob);
-			refs.rollContainer.style.setProperty(
-				"--dtm-roll-bg-image",
-				`url(${currentBgObjectUrl})`,
-			);
-			refs.bgOpacityRow.classList.remove("dtm-hidden");
-		} else {
-			refs.rollContainer.style.setProperty("--dtm-roll-bg-image", "none");
-			refs.bgOpacityRow.classList.add("dtm-hidden");
+		let cssUrl: string | null = null;
+		if (userBgBlob) {
+			currentBgObjectUrl = URL.createObjectURL(userBgBlob);
+			cssUrl = currentBgObjectUrl;
+		} else if (useYoutubeThumb) {
+			// 動画IDの形を確かめたうえで組み立てたURLなので、そのままCSSへ入れてよい。
+			cssUrl = youtubeThumbUrl;
 		}
-		refs.bgRemoveBtn.classList.toggle("dtm-hidden", !blob);
-		renderer.setBackgroundActive(!!blob);
+		refs.rollContainer.style.setProperty(
+			"--dtm-roll-bg-image",
+			cssUrl ? `url(${cssUrl})` : "none",
+		);
+		refs.bgOpacityRow.classList.toggle("dtm-hidden", !cssUrl);
+		refs.bgRemoveBtn.classList.toggle("dtm-hidden", !userBgBlob);
+		// 画像が無いのに透過させると、グリッドが白茶けるだけになる。
+		renderer.setBackgroundActive(hasRollBackground());
 		redrawAll();
+	};
+
+	const applyRollBackground = (blob: Blob | null): void => {
+		userBgBlob = blob;
+		refreshRollBackground();
+	};
+
+	/**
+	 * 音源のサムネを解決して背景へ反映する（YouTube以外・トグルOFFなら外すだけ）。
+	 *
+	 * サムネURLは動画IDから算出できるので保存はしない。音源URL自体はMMLに載るため、
+	 * 曲を読み直せばここが呼ばれて同じ背景が戻る。
+	 */
+	const setYoutubeThumbnail = (videoId: string | null): void => {
+		// 前の曲のサムネを先に落とす（解決を待つ間に残っていると紛らわしい）。
+		youtubeThumbUrl = null;
+		refreshRollBackground();
+		if (!videoId || !useYoutubeThumb) return;
+		void resolveYoutubeThumbnail(videoId).then((url) => {
+			// 解決を待つ間に音源が差し替わっていたら捨てる。
+			if (parseYoutubeId(backing.url) !== videoId) return;
+			youtubeThumbUrl = url;
+			refreshRollBackground();
+		});
 	};
 
 	// ============================================================
@@ -2874,6 +2920,9 @@ export const mountDAW = (
 		const h = refs.rollContainer.clientHeight || 450;
 		renderer?.destroy();
 		renderer = createRenderer(refs.wrapper, w, h, renderConfig);
+		// 作り直したレンダラは背景の透過設定を持っていない。入れ直さないと、
+		// リサイズしただけで背景画像が不透明なグリッドの裏に隠れてしまう。
+		renderer.setBackgroundActive(hasRollBackground());
 
 		const gridCanvas = renderer.getGridCanvas();
 		gridCanvas.addEventListener("pointerdown", onGridPointerDown);
@@ -3271,9 +3320,14 @@ export const mountDAW = (
 				"dtm-hidden",
 				info.mode !== "youtube",
 			);
+			// `backing.url` はファイル読み込みなら空文字なので、URLのときだけIDが出る。
+			setYoutubeThumbnail(
+				info.mode === "youtube" ? parseYoutubeId(backing.url) : null,
+			);
 			setBackingStatus(describeBacking(info, fromFile));
 		} catch (e) {
 			backing.url = "";
+			setYoutubeThumbnail(null);
 			refs.audioYoutubeRow.classList.add("dtm-hidden");
 			setBackingStatus(
 				`読み込めませんでした: ${e instanceof Error ? e.message : String(e)}`,
@@ -3286,6 +3340,7 @@ export const mountDAW = (
 	const clearBacking = (): void => {
 		backingAudio?.clear();
 		backing.url = "";
+		setYoutubeThumbnail(null);
 		refs.audioFileInput.value = "";
 		refs.audioUrlInput.value = "";
 		refs.audioYoutube.innerHTML = "";
@@ -5756,6 +5811,15 @@ export const mountDAW = (
 				.catch(() => {})
 				.finally(() => applyRollBackground(null));
 		});
+		refs.bgYoutubeThumb.addEventListener("change", () => {
+			useYoutubeThumb = refs.bgYoutubeThumb.checked;
+			try {
+				localStorage.setItem(BG_YT_THUMB_KEY, useYoutubeThumb ? "1" : "0");
+			} catch (_) {}
+			// OFFの間はサムネを取りに行っていないので、ONにした時点で解決する。
+			if (useYoutubeThumb) setYoutubeThumbnail(parseYoutubeId(backing.url));
+			else refreshRollBackground();
+		});
 		refs.bgOpacityInput.addEventListener("input", () => {
 			const opacityVal = Number.parseInt(refs.bgOpacityInput.value, 10);
 			applyBgOpacity(opacityVal);
@@ -7869,6 +7933,12 @@ export const mountDAW = (
 		}
 	} catch (_) {}
 	applyBgOpacity(initialOpacity);
+
+	// サムネ背景のトグル。未設定なら false＝既定OFF。
+	try {
+		useYoutubeThumb = localStorage.getItem(BG_YT_THUMB_KEY) === "1";
+	} catch (_) {}
+	refs.bgYoutubeThumb.checked = useYoutubeThumb;
 
 	loadBgBlob()
 		.then((blob) => {
