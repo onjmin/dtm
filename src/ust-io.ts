@@ -41,6 +41,10 @@ const TIE = "ー";
 const REST = "_";
 /** ブレス＝ノートを消費せず、直前の音の尻へ息継ぎを差し込む（`lyrics.ts` の BREATH_MARK と同じ文字）。 */
 const BREATH = "、";
+/** デクレッシェンド＝ノートを消費せず、直前の音を歌いながら小さくする（`lyrics.ts` の FADE_OUT_MARK）。 */
+const FADE_OUT = "↓";
+/** クレッシェンド（`lyrics.ts` の FADE_IN_MARK と同じ文字）。 */
+const FADE_IN = "↑";
 
 /**
  * UTAUのブレス（息継ぎ）ノートの綴り。
@@ -52,6 +56,21 @@ const BREATH = "、";
  */
 const UST_BREATH_KANJI_RE = /[息吸]/;
 const UST_BREATH_ALIAS_RE = /^@?br(?:eath)?\d*$/i;
+
+/**
+ * UTAUの休符（ノートの時間は占めるが歌わない）の綴り。
+ *
+ * 素の `R` のほかに、多音階・声色を接尾辞で切り替える音源は休符にも同じ接尾辞を
+ * 付ける（`RE` `R2` `R_D` …。連続音では `a RE` のように前置きも付く）。接尾辞ごと
+ * 休符と見たいが、`re` `ra` `ro` はローマ字命名の「れ」「ら」「ろ」なので、
+ * **大文字 `R` に小文字の母音が続く綴りだけ**は休符から外す。
+ */
+const UST_REST_RE = /^r(?:est)?$/i;
+const UST_SUFFIXED_REST_RE = /^R(?![aiueo])\S*$/;
+
+/** 原音名が休符か（接尾辞付きを含む）。 */
+const isUstRest = (token: string): boolean =>
+	UST_REST_RE.test(token) || UST_SUFFIXED_REST_RE.test(token);
 
 // ============================================================
 // ローマ字 → かな
@@ -191,6 +210,7 @@ const lyricToken = (trimmed: string): string =>
  * - サフィックス付き `かC4` `か強` … 先頭のかな列だけを採る。
  * - ローマ字命名 `ka` `kya` … {@link ROMAJI_KANA} でかなへ寄せる。
  * - ブレス `息R` `R吸` `@br1` … 歌詞ではなく息継ぎ（{@link UST_BREATH_KANJI_RE}）。
+ * - 休符 `R` `RE` `a R2` … 歌わない（{@link isUstRest}）。接尾辞付きも休符。
  * - ピンイン `xing` `tou` … 中国語音源のとき（{@link looksLikePinyin}）だけ
  *   {@link pinyinToMoras} でかなへ寄せる。日本語ローマ字と綴りが衝突する
  *   （`wo` = を / ウオ）ため、ファイル単位で決めた結果を渡してもらう。
@@ -213,7 +233,7 @@ export const lyricToSyllable = (raw: string, pinyin = false): ParsedLyric => {
 	if (UST_BREATH_KANJI_RE.test(trimmed)) return { ...none, breath: true };
 	const token = lyricToken(trimmed);
 	if (UST_BREATH_ALIAS_RE.test(token)) return { ...none, breath: true };
-	if (/^r(?:est)?$/i.test(token)) return { ...none, rest: true };
+	if (isUstRest(token)) return { ...none, rest: true };
 	const kana = token.match(KANA_HEAD_RE)?.[0];
 	if (kana) return { ...none, moras: splitMoras(toHiragana(kana)) };
 	const romaji = token.match(/^[A-Za-z]+/)?.[0] ?? "";
@@ -248,7 +268,7 @@ export const looksLikePinyin = (lyrics: Iterable<string>): boolean => {
 		const token = lyricToken(trimmed);
 		if (
 			UST_BREATH_ALIAS_RE.test(token) ||
-			/^r(?:est)?$/i.test(token) ||
+			isUstRest(token) ||
 			!/^[A-Za-z]+[0-5]?$/.test(token)
 		)
 			continue;
@@ -509,27 +529,63 @@ export type BuildUstOptions = {
 /** 歌詞が無いノートに当てる歌詞。UTAU側で必ず何か鳴らせるように「あ」にする。 */
 export const DEFAULT_UST_LYRIC = "あ";
 
+/** 書き出すノート1つ（重なりを落とし、隙間の休符も入れたあとの並び）。 */
+type UstOutNote = {
+	lengthTicks: number;
+	lyric: string;
+	midi: number;
+	intensity?: number;
+	/** 継続記号のノート＝直前の音の続き。フェードのグループ分けに使う。 */
+	tie: boolean;
+	/** この音の直後にブレスが入る（息が切れるのでグループもここで終わる）。 */
+	breathAfter: boolean;
+	fadeIn: boolean;
+	fadeOut: boolean;
+	/** `Envelope=` に書く値。フェードが掛からないノートは undefined（UTAUの既定に任せる）。 */
+	envelope?: string;
+};
+
 /** UST 1ノートぶんのセクションを組み立てる。 */
-const ustNoteSection = (
-	index: number,
-	lengthTicks: number,
-	lyric: string,
-	noteNum: number,
-	intensity?: number,
-): string[] => [
+const ustNoteSection = (index: number, note: UstOutNote): string[] => [
 	`[#${String(index).padStart(4, "0")}]`,
-	`Length=${lengthTicks}`,
-	`Lyric=${lyric}`,
-	`NoteNum=${noteNum}`,
+	`Length=${note.lengthTicks}`,
+	`Lyric=${note.lyric}`,
+	`NoteNum=${note.midi}`,
 	"PreUtterance=",
-	...(intensity === undefined ? [] : [`Intensity=${intensity}`]),
+	...(note.intensity === undefined ? [] : [`Intensity=${note.intensity}`]),
+	...(note.envelope === undefined ? [] : [`Envelope=${note.envelope}`]),
 ];
 
+/** {@link parseSyllableMarks} の結果。 */
+type SyllableMarks = {
+	/** 歌う中身（かな・継続記号・休符記号のいずれか）。 */
+	kana: string;
+	breath: boolean;
+	fadeIn: boolean;
+	fadeOut: boolean;
+};
+
 /**
- * ノートを消費しない装飾記号（ブレス `、`・フェード `↓` `↑`）。
- * どれもUSTに書ける表現が無く、音節の後ろに付くだけなので出力時に落とす。
+ * 音節1つを、歌う中身と「ノートを消費しない記号」へ割る。
+ *
+ * `displayKana` は `あ、↑↓` のように、かなの後ろへ記号を並べた形で返す。
+ * 中身はどれか1つ（かな／`ー`／`_`）なので、末尾から記号を剥がせば分けられる。
  */
-const UST_UNWRITABLE_MARKS_RE = /[、↓↑]+$/;
+const parseSyllableMarks = (raw: string | undefined): SyllableMarks => {
+	let kana = raw ?? "";
+	let breath = false;
+	let fadeIn = false;
+	let fadeOut = false;
+	while (kana.length > 1) {
+		const last = kana[kana.length - 1];
+		if (last === BREATH) breath = true;
+		else if (last === FADE_IN) fadeIn = true;
+		else if (last === FADE_OUT) fadeOut = true;
+		else break;
+		kana = kana.slice(0, -1);
+	}
+	return { kana, breath, fadeIn, fadeOut };
+};
 
 /**
  * このアプリの音節1つをUSTの `Lyric=` へ戻す。
@@ -537,12 +593,158 @@ const UST_UNWRITABLE_MARKS_RE = /[、↓↑]+$/;
  * 継続記号はUTAUの「前の歌詞を続ける」記号 `+` へ、休符（歌わないノート）は
  * `R` へ写す。歌詞が無いノートは {@link DEFAULT_UST_LYRIC}。
  */
-const ustLyricOf = (syllable: string | undefined): string => {
-	const kana = (syllable ?? "").replace(UST_UNWRITABLE_MARKS_RE, "");
+const ustLyricOf = (kana: string): string => {
 	if (kana === "") return DEFAULT_UST_LYRIC;
 	if (kana === TIE || kana === "〜") return "+";
 	if (kana === REST) return "R";
 	return kana;
+};
+
+// ------------------------------------------------------------
+// クレッシェンド / デクレッシェンド → Envelope
+// ------------------------------------------------------------
+
+/**
+ * UTAUの音量エンベロープ `Envelope=p1,p2,p3,v1,v2,v3,v4` の時間側の既定値。
+ *
+ * 形は「0msで音量0 → p1+p2 で v2 → 終端のp3手前で v3 → 終端で v4」で、点と点の
+ * 間は直線で結ばれる。立ち上がり（5ms）と切り際（35ms）はUTAUの既定のまま使い、
+ * **サステインの入口 `v2` と出口 `v3` だけ**をフェードの声量へ差し替える。
+ *
+ * 5点目（`%,p4,p5,v5`）は基準の取り方が音源・ツールで揺れるので書かない。
+ */
+const UST_ENVELOPE_ATTACK_MS = 5;
+const UST_ENVELOPE_RELEASE_MS = 35;
+
+/**
+ * 落とし切る先の声量比（`lyrics.ts` の FADE_OUT_FLOOR と同じ 2%）。
+ * 0にすると「消えた」ではなく「途中で切れた」と聞こえるので、芯を残す。
+ */
+const UST_FADE_FLOOR = 0.02;
+
+/** フェードの中継点。グループ内の位置（0-1）と、そこでの声量（ピーク比）。 */
+type UstFadeStop = { at: number; level: number };
+
+/**
+ * 記号の位置から中継点を作る（`lyrics.ts` の buildFadeCurve と同じ規則）。
+ *
+ * k個書かれていたら、i番目が付いたノートの終わりで声量が (k-i)/k 倍
+ * （上げるなら i/k 倍）。最後の1つは書いた位置に関わらずグループの終端へ置く。
+ * スウェル（`↑` と `↓` の併記）は中央で最大になる別の形なので、中継点は使わない。
+ */
+const ustFadeStops = (
+	group: UstOutNote[],
+	totalTicks: number,
+	rising: boolean,
+	falling: boolean,
+): UstFadeStop[] => {
+	if (rising && falling)
+		return [
+			{ at: 0.5, level: 1 },
+			{ at: 1, level: UST_FADE_FLOOR },
+		];
+	let acc = 0;
+	const ends = group.map((n) => {
+		acc += n.lengthTicks;
+		return acc / totalTicks;
+	});
+	const marked: number[] = [];
+	group.forEach((n, i) => {
+		if (rising ? n.fadeIn : n.fadeOut) marked.push(i);
+	});
+	const k = marked.length;
+	let prev = 0;
+	return marked.map((noteIndex, idx) => {
+		const i = idx + 1;
+		const at = i === k ? 1 : Math.min(1, Math.max(prev, ends[noteIndex]));
+		prev = at;
+		return {
+			at,
+			level: Math.max(UST_FADE_FLOOR, rising ? i / k : (k - i) / k),
+		};
+	});
+};
+
+/** 中継点の間を等比で補間する（アプリの `exponentialRamp` と同じ効き方＝dB直線）。 */
+const ustFadeLevelAt = (
+	at: number,
+	startLevel: number,
+	stops: UstFadeStop[],
+): number => {
+	let prevAt = 0;
+	let prevLevel = startLevel;
+	for (const stop of stops) {
+		if (at <= stop.at) {
+			const span = stop.at - prevAt;
+			if (span <= 0) return stop.level;
+			const t = Math.min(1, Math.max(0, (at - prevAt) / span));
+			return prevLevel * (stop.level / prevLevel) ** t;
+		}
+		prevAt = stop.at;
+		prevLevel = stop.level;
+	}
+	return prevLevel;
+};
+
+/** フェードの声量（ピーク比）を `Envelope=` の値へ。 */
+const ustEnvelopeOf = (from: number, to: number): string => {
+	const v = (level: number): number =>
+		Math.max(0, Math.min(200, Math.round(level * 100)));
+	return [
+		0,
+		UST_ENVELOPE_ATTACK_MS,
+		UST_ENVELOPE_RELEASE_MS,
+		0,
+		v(from),
+		v(to),
+		0,
+	].join(",");
+};
+
+/**
+ * 継続記号で繋がったノートの並び（＝アプリが1つの音として扱う範囲）へ、
+ * クレッシェンド／デクレッシェンドの `Envelope=` を割り当てる。
+ *
+ * アプリの `↓` `↑` は**結合後の音全体**に掛かるので、USTでも同じ範囲に掛ける。
+ * UTAUのエンベロープはノート単位なので、グループ全体の曲線をノートの境目で切り出し、
+ * 各ノートの出口と次のノートの入口を同じ値にして繋ぐ。ここを合わせずに既定のまま
+ * （終端で0）書くと、ノートごとに音が消えては戻る階段になってしまう。
+ *
+ * 曲線はアプリと同じ等比で作るが、UTAUは点の間を直線で結ぶので、書き出した音は
+ * ノート数ぶんの折れ線近似になる（1ノートに収まるフェードは直線1本）。
+ */
+const assignFadeEnvelopes = (notes: UstOutNote[]): void => {
+	for (let i = 0; i < notes.length; i++) {
+		// 休符は歌わないので、グループの頭にも続きにもならない。
+		if (notes[i].lyric === "R") continue;
+		let end = i;
+		while (
+			end + 1 < notes.length &&
+			notes[end + 1].tie &&
+			!notes[end].breathAfter
+		)
+			end++;
+		const group = notes.slice(i, end + 1);
+		i = end;
+		const rising = group.some((n) => n.fadeIn);
+		const falling = group.some((n) => n.fadeOut);
+		if (!rising && !falling) continue;
+		const totalTicks = group.reduce((sum, n) => sum + n.lengthTicks, 0);
+		if (totalTicks <= 0) continue;
+		const stops = ustFadeStops(group, totalTicks, rising, falling);
+		// クレッシェンドは小さく入る。デクレッシェンドはピークから始める。
+		const startLevel = rising ? UST_FADE_FLOOR : 1;
+		let acc = 0;
+		for (const note of group) {
+			const from = acc / totalTicks;
+			acc += note.lengthTicks;
+			const to = acc / totalTicks;
+			note.envelope = ustEnvelopeOf(
+				ustFadeLevelAt(from, startLevel, stops),
+				ustFadeLevelAt(to, startLevel, stops),
+			);
+		}
+	}
 };
 
 /**
@@ -551,6 +753,10 @@ const ustLyricOf = (syllable: string | undefined): string => {
  * USTは**単旋律しか表現できない**フォーマットなので、和音・重なりは先勝ちで
  * 1本へ潰す（同時刻なら先に置かれたノート、跨ぎは前のノートを優先）。捨てた
  * ノートに割り当たっていた音節も一緒に捨て、音節とノートの1:1を保つ。
+ *
+ * ノートを消費しない記号のうち、クレッシェンド `↑` とデクレッシェンド `↓` は
+ * `Envelope=`（音量エンベロープ）へ写す（{@link assignFadeEnvelopes}）。
+ * ブレス `、` に当たる表現はUSTに無いので落とす。
  *
  * 文字コードはUTF-8で書き、`Charset=UTF-8` を添える（UTAU本体はShift_JISが
  * 既定だが、`Charset` 行があればUTF-8のUSTも読める）。改行はUTAUに合わせてCRLF。
@@ -578,7 +784,9 @@ export const buildUst = (options: BuildUstOptions): string => {
 		"Charset=UTF-8",
 	];
 
-	let index = 0;
+	// フェードはノートを跨いで掛かるので、並びを組み立ててからエンベロープを
+	// 割り当て、最後に本文へ流す。
+	const out: UstOutNote[] = [];
 	/** 直前のノートの終端（UST tick）。ここより前から始まるノートは重なり。 */
 	let cursorTick = 0;
 	for (const { note, syllable } of sorted) {
@@ -588,26 +796,38 @@ export const buildUst = (options: BuildUstOptions): string => {
 		);
 		if (startTick < cursorTick) continue; // 和音の下側・重なりは捨てる
 		if (startTick > cursorTick) {
-			lines.push(...ustNoteSection(index++, startTick - cursorTick, "R", 60));
+			out.push({
+				lengthTicks: startTick - cursorTick,
+				lyric: "R",
+				midi: 60,
+				tie: false,
+				breathAfter: false,
+				fadeIn: false,
+				fadeOut: false,
+			});
 		}
 		const length = Math.max(1, endTick - startTick);
 		// 31平均律の微分音はUSTに書けないので最寄りの半音へ丸める（UTAUは半音格子）。
 		const { midi } = unitsToMidiDetune(note.pitchUnits);
 		const velocity = note.velocity ?? DEFAULT_VELOCITY;
-		lines.push(
-			...ustNoteSection(
-				index++,
-				length,
-				ustLyricOf(syllable),
-				midi,
-				Math.max(
-					0,
-					Math.min(200, Math.round((velocity / DEFAULT_VELOCITY) * 100)),
-				),
+		const marks = parseSyllableMarks(syllable);
+		out.push({
+			lengthTicks: length,
+			lyric: ustLyricOf(marks.kana),
+			midi,
+			intensity: Math.max(
+				0,
+				Math.min(200, Math.round((velocity / DEFAULT_VELOCITY) * 100)),
 			),
-		);
+			tie: marks.kana === TIE || marks.kana === "〜",
+			breathAfter: marks.breath,
+			fadeIn: marks.fadeIn,
+			fadeOut: marks.fadeOut,
+		});
 		cursorTick = startTick + length;
 	}
+	assignFadeEnvelopes(out);
+	out.forEach((note, index) => lines.push(...ustNoteSection(index, note)));
 	lines.push("[#TRACKEND]");
 	return `${lines.join("\r\n")}\r\n`;
 };

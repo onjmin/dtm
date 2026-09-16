@@ -105,6 +105,25 @@ console.log("■ 原音名の揺れ");
 	check("読めなかった歌詞の数を数える", parsed.unknownLyricCount, 1);
 }
 
+console.log("■ 接尾辞付きの休符");
+{
+	// 多音階・声色を接尾辞で切り替える音源は、休符にも同じ接尾辞を付ける
+	// （`RE` `R2`、連続音では `a RE`）。`re` `ra` はローマ字命名の「れ」「ら」
+	// なので、大文字Rに小文字の母音が続く綴りだけは休符にしない。
+	const parsed = parseUst(
+		ust([
+			{ length: 480, lyric: "あ", noteNum: 60 },
+			{ length: 240, lyric: "a RE", noteNum: 60 }, // 連続音＋接尾辞付き休符
+			{ length: 240, lyric: "R2", noteNum: 60 }, // 数字の接尾辞
+			{ length: 480, lyric: "い", noteNum: 62 },
+			{ length: 480, lyric: "re", noteNum: 64 }, // ローマ字の「れ」
+		]),
+	);
+	check("接尾辞付きの休符はノートにならない", parsed.notes.length, 3);
+	check("小文字のローマ字は休符と混同しない", parsed.lyrics, "あいれ");
+	check("読めなかった歌詞は無い", parsed.unknownLyricCount, 0);
+}
+
 console.log("■ 先頭の継続記号");
 {
 	// 行き場の無い継続記号は normalizeLyrics に捨てられ、以降が1つずれる。
@@ -403,7 +422,7 @@ console.log("■ 書き出し（和音は単旋律へ潰す）");
 	check("捨てたノートの音節も捨てる", back.lyrics, "あえ");
 }
 
-console.log("■ 書き出し（ノートを消費しない記号は落とす）");
+console.log("■ 書き出し（ノートを消費しない記号）");
 {
 	const note = (startStep: number, pitch: number): Note => ({
 		id: 0,
@@ -412,18 +431,74 @@ console.log("■ 書き出し（ノートを消費しない記号は落とす）
 		pitchUnits: pitchV1ToUnits(pitch),
 		velocity: 100,
 	});
-	// ブレス `、` とフェード `↓` `↑` はUSTに書ける表現が無い。音節の後ろに
-	// 付いたまま `Lyric=` へ流すと原音名として壊れるので、落として書く。
+	// ブレス `、` はUSTに書ける表現が無いので落とす。フェード `↓` `↑` は
+	// エンベロープへ写すので、`Lyric=` には残さない。
 	const text = buildUst({
 		notes: [note(0, 60), note(48, 62), note(96, 64)],
 		syllables: ["あ、", "ー↓", "_、"],
 		bpm: 120,
 	});
 	check(
-		"装飾記号を落として原音名だけを書く",
+		"記号は原音名に残さない",
 		[...text.matchAll(/^Lyric=(.*)$/gm)].map((m) => m[1]),
 		["あ", "+", "R"],
 	);
+}
+
+console.log("■ 書き出し（クレッシェンド・デクレッシェンド）");
+{
+	/** `count` 個の4分音符を隙間なく並べる。 */
+	const run = (count: number): Note[] =>
+		Array.from({ length: count }, (_, i) => ({
+			id: i,
+			startStep: i * 48,
+			durationSteps: 48,
+			pitchUnits: pitchV1ToUnits(60),
+			velocity: 100,
+		}));
+	/** 書き出したUSTから `Envelope=` の値だけを拾う。 */
+	const envelopes = (syllables: string[]): string[] => {
+		const text = buildUst({
+			notes: run(syllables.length),
+			syllables,
+			bpm: 120,
+		});
+		return [...text.matchAll(/^Envelope=(.*)$/gm)].map((m) => m[1]);
+	};
+
+	check("記号が無ければエンベロープを書かない", envelopes(["あ", "ー"]), []);
+	check("1音のデクレッシェンドはピークから下限まで", envelopes(["あ↓"]), [
+		"0,5,35,0,100,2,0",
+	]);
+	// 継続で繋がった範囲＝アプリが1つの音として扱う範囲へ、通しで掛ける。
+	// 各ノートの出口と次のノートの入口が同じ値になっていること（＝階段にならない）。
+	check(
+		"継続で繋がったノートを跨いで掛かる",
+		envelopes(["あ", "ー", "ー", "ー↓"]),
+		[
+			"0,5,35,0,100,38,0",
+			"0,5,35,0,38,14,0",
+			"0,5,35,0,14,5,0",
+			"0,5,35,0,5,2,0",
+		],
+	);
+	check("クレッシェンドは小さく入って最大で終わる", envelopes(["あ", "ー↑"]), [
+		"0,5,35,0,2,14,0",
+		"0,5,35,0,14,100,0",
+	]);
+	check("併記はスウェル（中央で最大）", envelopes(["あ↑", "ー↓"]), [
+		"0,5,35,0,2,100,0",
+		"0,5,35,0,100,2,0",
+	]);
+	// 複数書くと、書いた位置が減り方の中継点になる（`ぎ↓ー↓` = 50%→0%）。
+	check("複数書いたぶんは中継点になる", envelopes(["ぎ↓", "ー↓"]), [
+		"0,5,35,0,100,50,0",
+		"0,5,35,0,50,2,0",
+	]);
+	// ブレスを挟んだら別の息＝別のグループ。手前の音には掛からない。
+	check("ブレスでグループが切れる", envelopes(["あ", "ー、", "ー↓"]), [
+		"0,5,35,0,100,2,0",
+	]);
 }
 
 if (failed > 0) {

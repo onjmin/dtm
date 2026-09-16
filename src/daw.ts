@@ -5541,6 +5541,24 @@ export const mountDAW = (
 			t.core.setLoadMode(false);
 			t.core.addHistoryOnce();
 			t.lyrics = ust.lyrics;
+			// 中身を丸ごと差し替えるのだから、前の中身に合わせて動かしてあった歌唱の
+			// つまみも既定へ戻す（MIDI/MML取り込みと同じ扱い）。とりわけ効くのが
+			// オクターブで、「歌入り作曲」は歌いやすさのため -1（オクターブ重ねの
+			// トラックは -2）を当てる。USTの `NoteNum` は歌うべき高さそのものなので、
+			// これが残っているとピアノロールの見た目より1〜2オクターブ低く歌い、
+			// 「特定のパートだけ音色がおかしい」形で現れる。
+			t.vocalVolume = DEFAULT_VOCAL_VOLUME;
+			t.vocalGate = 100;
+			t.vocalPan = 64;
+			t.vocalOctave = 0;
+			t.vocalVibrato = false;
+			t.vocalReverb = 0;
+			t.vocalDelay = 0;
+			t.vocalGender = 50;
+			t.vocalBreathiness = 50;
+			t.vocalTension = 50;
+			t.vocalOctaveUnison = "none";
+			// 音源だけは引き継ぐ（歌い手を選び直させない）。未選択なら配る。
 			if (!t.lyricModel) t.lyricModel = voice;
 			fireLyricsChange(t);
 		});
