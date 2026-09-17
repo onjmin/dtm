@@ -63,6 +63,7 @@ import {
 	CORPUS_PROFILE_KEYS,
 	CORPUS_SIZE,
 } from "./compose-corpus";
+import { composeDrumPattern, type DrumStyle } from "./compose-drums";
 import { type ResolvedComposeKey, resolveComposeKey } from "./compose-keys";
 import {
 	type Band,
@@ -102,6 +103,8 @@ import {
 	type SectionKind,
 	sectionAt,
 } from "./compose-sections";
+import type { DrumPatternDef } from "./drum-config";
+import type { SongDrumPattern } from "./song-drum-config";
 import { UNITS_PER_SEMITONE, type Units } from "./tuning";
 
 // ============================================================
@@ -141,7 +144,22 @@ const MAX_LEAP_SEMITONES = 10;
  * 稼いでいた数字で、**曲の書法としての跳躍**は10半音で頭打ちだった。
  * 到達できない曲のうち6本がこの軸で外れる（`scripts/compare-reach.ts`）。
  */
-const LEAP_CEILINGS = [7, 8, 9, 10, 10, 12, 14, 16];
+const LEAP_CEILINGS = [5, 6, 7, 7, 8, 9, 10, 10, 12, 14, 16];
+
+/**
+ * 楽句の2小節が**同じリズム型**になる確率。
+ *
+ * 参考曲の lag1 完全一致は 17.7%（`scripts/compare-repetition.ts`）。ここを 0.72 に
+ * していた頃の生成物は 32.4% で、隣の小節を2倍近く繰り返していた。
+ */
+const PHRASE_SAME_CELL = 0.4;
+
+/**
+ * 小楽節の【答え】が【問い】と**別の**リズム型になる確率。
+ *
+ * 参考曲の lag2 完全一致は 28.1%（`scripts/compare-repetition.ts`）。
+ */
+const ANSWER_VARY = 0.4;
 /** 小節をまたぐときに許す跳躍（半音）。 */
 const MAX_BAR_LEAP_SEMITONES = 10;
 
@@ -1599,6 +1617,21 @@ export type ComposeResult = {
 	tonal: TonalPlan;
 	/** 曲に合わせて組み込みから自動選択されたドラムパターン名（DRUM_PATTERNS のキー）。 */
 	drum: string;
+	/**
+	 * **この曲のセクションに合わせて組み立てたドラム。**
+	 *
+	 * `drum`（組み込みパターン名）は人間の曲の採譜で、強弱の切り替わる小節番号が
+	 * **その曲のもの**（`ranges: [[1,31],[33,52],…]`）。生成した曲のサビがどこに
+	 * あるかとは無関係なので、どれだけ良い採譜でも「この曲のサビでドラムが開く」には
+	 * ならない。{@link SectionSpec.drumLevel} から小節ごとの強度を作って組み立て直す。
+	 *
+	 * `composeDrumPattern` はずっと前からあったが**どこからも呼ばれていなかった**
+	 * （`registerShift` と同じ）。曲の「進行している感じ」の大半はドラムが作るので、
+	 * ここが平らだと上物を何本引き直してもヒット曲の推進力は出ない。
+	 */
+	drumPattern: DrumPatternDef<SongDrumPattern>;
+	/** 組み立てたドラムの性格。 */
+	drumStyle: DrumStyle;
 	/** 曲に合わせて組み込みから自動選択された楽器プリセット名（INSTRUMENT_PRESETS のキー）。 */
 	instrument: string;
 	melody: ComposedNote[];
@@ -2012,6 +2045,13 @@ type MelodyStyle = {
 	 * 今度はファ・シが一切出なくなる**（実測でペンタ外が9%、参考曲は23%）。
 	 * 半音の動き（隣接音程の1半音）も一緒に消え、3半音（ペンタトニックの隣どうし）
 	 * ばかりの平坦な線になる。制約は曲単位で掛け、掛けない曲も混ぜる。
+	 *
+	 * **割合は 0.55 から 0.45 へ下げた。** 5音音階は隣り合う音が3半音あるので、
+	 * ペンタトニックで組んだ旋律は指標上「順次進行」ではなく「跳躍」に数えられる
+	 * （{@link STEP_SEMITONES} は2半音まで）。参考曲は `stepRatio` 0.54 /
+	 * `leapRatio` 0.35 なのに生成物は 0.49 / 0.39 で、差の主因がここだった。
+	 * **0.40 まで下げるとハンガリアン・マイナーが中核外21%の上限を超える**ので、
+	 * 音階の色を保てる範囲がこの値。
 	 */
 	pentatonicMotif: boolean;
 	runShape: RunShape;
@@ -2558,8 +2598,21 @@ const shapeBar = (
 			opts.register.low,
 			opts.register.high,
 		);
-		const limit = i === 0 ? MAX_BAR_LEAP_SEMITONES : opts.maxLeap;
-		if (!opts.allowLeap && Math.abs(semi - prev) > limit) {
+		// **小節をまたぐ跳躍もその曲の上限に従う。**
+		// ここが定数 {@link MAX_BAR_LEAP_SEMITONES}(10) のままだったので、
+		// 跳躍上限5半音の曲でも小節の頭だけ10半音跳べてしまい、**最大跳躍の下限が
+		// 10から下がらなかった**（参考コーパスは p25 が 7）。
+		const limit =
+			i === 0
+				? Math.min(MAX_BAR_LEAP_SEMITONES, opts.maxLeap + 2)
+				: opts.maxLeap;
+		// **サビの小節でも青天井にはしない。** `allowLeap` は「跳躍を許す」であって
+		// 「際限なく跳ぶ」ではない。ここが無制限だった間、`climax` の小節が
+		// 音域いっぱいの跳躍を作り、曲の最大跳躍を独りで決めていた。
+		const hardLimit = opts.allowLeap
+			? Math.max(limit, opts.maxLeap + 4)
+			: limit;
+		if (Math.abs(semi - prev) > hardLimit) {
 			semi = clampSemi(
 				walk(opts.scale, prev, Math.sign(semi - prev) * 3),
 				opts.register.low,
@@ -3030,7 +3083,10 @@ export type TonalPlan = {
 };
 
 /** 1回分の draw。点数を付けるのは呼び出し側（{@link evaluate}）の仕事。 */
-type Draw = Omit<ComposeResult, "stats" | "drum" | "instrument" | "arrange"> & {
+type Draw = Omit<
+	ComposeResult,
+	"stats" | "drum" | "drumPattern" | "drumStyle" | "instrument" | "arrange"
+> & {
 	melodyDurations: number[];
 	restSteps: number;
 	totalSteps: number;
@@ -3737,6 +3793,15 @@ const draw = (
 	 * のに毎回別の音だったら、セクションとして成立しない。
 	 * 2番・3番のセクション（restatement === true）は、1番の対応小節を正確に再現する。
 	 */
+	/**
+	 * セクション内で楽句をそのまま再現する割合。曲ごとに引く。
+	 *
+	 * 1.0 に固定されていた（＝必ず再現）。フックを繰り返す曲もあれば、
+	 * 8小節を通して書く曲もあるので、そこも曲の性格として引く。
+	 */
+	const phraseRestateRate = 0.55 + rnd() * 0.4;
+	/** 楽句ごとの判定。2小節で答えを揃えるために覚える。 */
+	const phraseRestate = new Map<number, boolean>();
 	const restatementOf = (bar: number): number | null => {
 		const curSec = sectionAt(sectionPlan, bar);
 		if (!curSec.spec.melody) return null;
@@ -3762,6 +3827,21 @@ const draw = (
 		// 1コーラス内での楽句レベルの再現
 		const u = unitOf(bar);
 		if (units[u].source === "silent") return null;
+		// **楽句レベルの再現は確率で行う。**
+		//
+		// ここが無条件だったので、8小節のセクション【問い→答え→問いの変形→答え】の
+		// 「問いの変形」が**1つ目の問いの完全な複製**になり、lag2/lag4 の完全一致が
+		// 42.6% / 59.2%（参考曲 28.1% / 37.8%）まで膨らんでいた。
+		// 2番・3番のセクション再現（上の分岐）は別扱いで、そちらは lag8 が
+		// 46.5% 対 46.3% でちょうど合っている——**繰り返しすぎているのは
+		// セクション間ではなくセクション内**。
+		//
+		// 楽句（2小節）単位で決める。小節ごとに引くと、同じ楽句の前半だけが
+		// 再現になって形が食い違う。
+		const decided = phraseRestate.get(u);
+		const restate = decided ?? rnd() < phraseRestateRate;
+		if (decided === undefined) phraseRestate.set(u, restate);
+		if (!restate) return null;
 		for (let v = 0; v < u; v++) {
 			if (units[v].source !== units[u].source) continue;
 			if (units[v].role !== units[u].role) continue;
@@ -3809,13 +3889,18 @@ const draw = (
 		arcPeriod: pick([4, 8, 8, 16], rnd),
 		arcPhase: pick([0, 1, 2], rnd),
 		arcAmp: 5 * registerSpread,
-		// オクターブ跳躍は参考曲では音程の1.0%しかない。上げすぎると音域が広がる。
-		octaveAffinity: 0.18 * registerSpread,
+		// **オクターブを一度も跳ばない曲を混ぜる。**
+		//
+		// ここが常に正だったので、どの曲にもオクターブ跳躍が入り、**最大跳躍が
+		// 必ず12半音以上**になっていた（実測 p25〜p75 が 10〜12）。参考コーパスの
+		// 最大跳躍は p25〜p75 が **7〜12・中央値9** ——半分の曲はオクターブを
+		// 一度も跳ばない。跳躍が減れば順次進行が増える（`stepRatio` も足りていない）。
+		octaveAffinity: rnd() < 0.35 ? 0 : 0.18 * registerSpread,
 		maxLeap: pick(LEAP_CEILINGS, rnd),
 		// **音階を厳しく締める曲は必ず中核音の歩数で組む。** ダイアトニックの度数で輪郭を
 		// 作ると、琉球音階なのにレやラが輪郭の中に入り込む。ファ・シを自由に使う
 		// 陽・民謡だけが、曲ごとに掛けたり掛けなかったりする（{@link ComposeScale.strict}）。
-		pentatonicMotif: rnd() < 0.55 || scale.strict,
+		pentatonicMotif: rnd() < 0.45 || scale.strict,
 		runShape: pick<RunShape>(["scale", "turn", "broken", "zigzag"], rnd),
 		stepShape: pick<StepShape>(
 			["arch", "valley", "ascend", "descend", "wave", "pivot"],
@@ -3926,7 +4011,7 @@ const draw = (
 	 */
 	const targetNotesPerBar = Math.max(
 		2.8,
-		Math.min(9.5, 7.4 - 6.0 * targetRestRatio + (rnd() * 4 - 2)),
+		Math.min(12.5, 7.4 - 6.0 * targetRestRatio + (rnd() * 7 - 2.5)),
 	);
 	/** 1小節の型が持つ音数。 */
 	const cellNotes = (c: RhythmCell): number =>
@@ -3982,6 +4067,11 @@ const draw = (
 		const near = pool.filter((c) => Math.abs(cellRest(c) - want) <= tol);
 		const from = near.length > 0 ? near : pool;
 		let best = weightedPick(from);
+		// **本数は増やさない。** 狙いへ精密に当てにいくと、どの小節も狙いぴったりに
+		// なって**小節ごとの密度の差が消える**（実測で `barDensityCv` の上限が
+		// 0.41→0.35 へ落ち、この軸で外れる曲が 9→13 本に増えた）。
+		// {@link DRAW_COUNT} と同じ罠——選抜を強めると分布が痩せる。
+		// 密度の幅はここではなく**セクションごとの狙い**（`densityMul`）で作る。
 		for (let i = 0; i < 2; i++) {
 			const c = weightedPick(from);
 			if (cellDistance(c, densityMul) < cellDistance(best, densityMul))
@@ -3990,57 +4080,83 @@ const draw = (
 		return best;
 	};
 
-	// Aメロは控えめ（density: 0.85）
-	const motifCell = pickCell(motifPool, 0.85);
+	/**
+	 * **セクション間の密度差の大きさ。曲ごとに引く。**
+	 *
+	 * 倍率は長らく 0.85 / 1.2 / 1.1 / 0.9 という**全曲共通の定数**だった。
+	 * どの曲も「Aメロはサビの0.71倍」で、密度の付け方そのものが指紋になっていた
+	 * うえ、小節ごとの密度のばらつき（{@link DensityFeatures.barDensityCv}）が
+	 * 参考コーパスの上端へ届かなかった（`compare-reach.ts` で9本がこの軸）。
+	 *
+	 * 差をほとんど付けない曲（0.5）から、Aメロを絞ってサビで一気に詰める曲（1.8）まで。
+	 */
+	const densityContrast = 0.5 + rnd() * 1.3;
+	/** セクションの役割 → 音数の倍率。1.0 が曲の狙いそのもの。 */
+	const densityOf = (deviation: number): number =>
+		1 + deviation * densityContrast;
+	/** Aメロは控えめ。 */
+	const densityA = densityOf(-0.15);
+	/** サビは詰める。 */
+	const densityB = densityOf(0.2);
+	/** Bメロはサビへの助走。 */
+	const densityA2 = densityOf(0.1);
+	/** Cメロは少し引く。 */
+	const densityC = densityOf(-0.1);
+
+	const motifCell = pickCell(motifPool, densityA);
 	/** モチーフ2小節目。 */
-	// **同じ型を2小節並べる。** 参考曲は隣り合う小節のリズムが29.8%で完全一致する。
-	// 「似ている」（{@link StructureFeatures.sim1}）ではなく「同一である」ことが
-	// フレーズの手応えの実体で、`scripts/compare-repetition.ts` がそこを測る。
+	// **同じ型を2小節並べる。** 「似ている」（{@link StructureFeatures.sim1}）ではなく
+	// 「同一である」ことがフレーズの手応えの実体で、`scripts/compare-repetition.ts`
+	// がそこを測る。
+	//
+	// **確率は 0.72 から下げた。** 測り直すと参考曲の lag1 完全一致は **17.7%** で、
+	// 生成物は 32.4%——隣の小節を2倍近く繰り返していた（lag4 も 59.2% 対 37.8%）。
+	// 1小節あたりの型の種類数も 7 対 10 で足りず、同じ原因。
 	const motifCell2 =
-		rnd() < 0.72
+		rnd() < PHRASE_SAME_CELL
 			? motifCell
 			: pickCell(
 					motifPool.filter((c) => c !== motifCell),
-					0.85,
+					densityA,
 				);
-	/** 対照的な楽句（サビ用）のモチーフ。A と別の型を引く（density: 1.2）。 */
+	/** 対照的な楽句（サビ用）のモチーフ。A と別の型を引く。 */
 	const motifB = pickCell(
 		motifPool.filter((c) => c !== motifCell && c !== motifCell2),
-		1.2,
+		densityB,
 	);
 	const motifB2 = pickCell(
 		motifPool.filter((c) => c !== motifB),
-		1.2,
+		densityB,
 	);
-	/** Bメロ（`a2`）のモチーフ。サビへの助走（density: 1.1）。 */
+	/** Bメロ（`a2`）のモチーフ。サビへの助走。 */
 	const motifA2 = pickCell(
 		motifPool.filter(
 			(c) => c !== motifCell && c !== motifCell2 && c !== motifB,
 		),
-		1.1,
+		densityA2,
 	);
 	const motifA22 =
-		rnd() < 0.72
+		rnd() < PHRASE_SAME_CELL
 			? motifA2
 			: pickCell(
 					motifPool.filter((c) => c !== motifA2),
-					1.1,
+					densityA2,
 				);
 
-	/** Cメロ（bridge）のモチーフ。A/Bとは完全に異なる（density: 0.9）。 */
+	/** Cメロ（bridge）のモチーフ。A/Bとは完全に異なる。 */
 	const motifC = pickCell(
 		motifPool.filter(
 			(c) =>
 				c !== motifCell && c !== motifCell2 && c !== motifB && c !== motifA2,
 		),
-		0.9,
+		densityC,
 	);
 	const motifC2 =
-		rnd() < 0.72
+		rnd() < PHRASE_SAME_CELL
 			? motifC
 			: pickCell(
 					motifPool.filter((c) => c !== motifC),
-					0.9,
+					densityC,
 				);
 
 	/**
@@ -4120,6 +4236,8 @@ const draw = (
 	}
 
 	const barRhythms: number[][] = [];
+	/** 通し作曲で楽句ごとに引いた型。2小節でひとまとまりにするため楽句単位で覚える。 */
+	const throughPairs = new Map<number, [RhythmCell, RhythmCell]>();
 	for (let bar = 0; bar < totalBars; bar++) {
 		const u = unitOf(bar);
 		const half = barInUnit(bar);
@@ -4146,14 +4264,45 @@ const draw = (
 		}
 
 		/** その楽句が使う2小節ぶんのリズム型（前半・後半）。 */
-		const pair = (): [RhythmCell, RhythmCell] =>
-			isB
+		const pair = (): [RhythmCell, RhythmCell] => {
+			// **通し作曲は楽句ごとに型を引き直す。**
+			//
+			// `restatementOf` は `form === "through"` で音の再現を止めていたが、
+			// リズムは4対（A/A2/B/C）を曲全体で使い回したままだった。
+			// {@link barSimilarity} は**6割がリズムの一致**なので、音だけ散らしても
+			// 自己相似は下がらない——実測で `sim8` の下限が 0.35 から動かず、
+			// 参考コーパスの反復の薄い曲10本へ届いていなかった。
+			// 通し作曲という型の中身は「素材が戻ってこないこと」そのもの。
+			if (form === "through") {
+				const memo = throughPairs.get(u);
+				if (memo) return memo;
+				const mul = isB
+					? densityB
+					: isA2
+						? densityA2
+						: isC
+							? densityC
+							: densityA;
+				const head = pickCell(motifPool, mul);
+				const tail =
+					rnd() < 0.45
+						? head
+						: pickCell(
+								motifPool.filter((c) => c !== head),
+								mul,
+							);
+				const made: [RhythmCell, RhythmCell] = [head, tail];
+				throughPairs.set(u, made);
+				return made;
+			}
+			return isB
 				? [motifB, motifB2]
 				: isA2
 					? [motifA2, motifA22]
 					: isC
 						? [motifC, motifC2]
 						: [motifCell, motifCell2];
+		};
 		let cell: RhythmCell;
 		if (units[u].source === "answer") {
 			// 答えは問いのリズムを受けて着地する。
@@ -4168,7 +4317,11 @@ const draw = (
 			// 答えの小節で、問いのリズムから適度に発展・応答するバリエーション
 			const answerVar = prevSource === "b" ? motifBVar : motifVar;
 			if (half === 0) {
-				cell = rnd() < 0.15 ? answerVar : head;
+				// **答えが問いのリズムをそのまま受ける割合。**
+				// 0.15（＝85%そのまま）だった頃は lag2 の完全一致が 44%まで膨らんでいた
+				// （参考曲 28.1%）。「問いを受ける」は着地音と輪郭の話で、
+				// リズムまで毎回同一である必要はない。
+				cell = rnd() < ANSWER_VARY ? answerVar : head;
 			} else if (isPeriodEnd) {
 				// セクションの終わり。着地してから息を継ぐ。
 				cell = breathBySection.get(units[u].section.startBar) ?? tail;
@@ -4282,10 +4435,22 @@ const draw = (
 		if (slots.length === 0) continue;
 
 		// 小節頭の着地点。曲ごとの重み下限で、ルート/5度固定になりすぎないようにする。
-		// **B部（9〜12小節）だけは3度・7度への着地を許す。** ルート・5度へ落とし続けると
-		// 和音がいくら動いても緊張が上がらず、「サビで景色が変わる」効果が出ない
-		// （実測で {@link TensionFeatures.rise} が 0.1 前後に張り付いていた）。
-		const isSectionB = bar >= 8 && bar < 12;
+		// **盛り上がる側のセクションだけは3度・7度への着地を許す。** ルート・5度へ
+		// 落とし続けると和音がいくら動いても緊張が上がらず、「サビで景色が変わる」
+		// 効果が出ない（実測で {@link TensionFeatures.rise} が 0.1 前後に張り付いていた）。
+		//
+		// **セクションを見る。** ここは長らく `bar >= 8 && bar < 12` という小節番号の
+		// 決め打ちだった。セクション長を {@link SectionSpec.barChoices} から引くように
+		// なった時点で、9〜12小節目にBメロがある保証は無くなっている——イントロが
+		// 8小節ならそこはAメロで、逆にサビには一度も掛からない。
+		// {@link tensionFeatures} も `verseBars`/`chorusBars` を実セクションから
+		// 採っているので、緊張を作る側だけが小節番号のままだった。
+		const headKind = sectionAt(sectionPlan, bar).kind;
+		const isSectionB =
+			headKind === "prechorus" ||
+			headKind === "chorus" ||
+			headKind === "drop_chorus" ||
+			headKind === "bridge";
 		const headWeight: 2 | 3 = isSectionB ? 2 : style.barHeadWeight;
 		// **大きな周期で上下させる。** 直前の音の近くへ着地させるだけだと、細かい
 		// ジグザグはあっても曲全体では同じ高さをうろつき続ける（「津軽三味線」の
@@ -5229,6 +5394,26 @@ const draw = (
 		for (const list of [melody, submelody, bass, harmony, harmony2, pad, solo])
 			for (const n of list) n.pitchUnits = (n.pitchUnits + shiftUnits) as Units;
 
+	// **ベースの平均音高を C3(48) より下に保つ。**
+	//
+	// `daw.ts` の `classifyTrackRole` はこのしきい値でベースを判定するので、外すと
+	// おまかせマスタリングで楽器が当たらない。生成空間では {@link BASS_HIGH}(45) で
+	// 抑えてあるが、**移調はその後に掛かる**（`rootShift` は最大 +6）ので、
+	// 高い調を引いた曲だけが 48 を越えうる。実測の最大は 46.4 で、条件が変われば
+	// いつでも越える薄さだった——不変条件なら無条件にする。
+	//
+	// オクターブ下げるのは線そのものを動かさない唯一の直し方。綴りは変わらない。
+	if (bass.length > 0) {
+		const octaveUnits = semitonesToUnits(12, edo);
+		const meanSemi = (): number =>
+			bass.reduce((a, n) => a + n.pitchUnits, 0) /
+			bass.length /
+			UNITS_PER_SEMITONE;
+		while (meanSemi() >= 48)
+			for (const n of bass)
+				n.pitchUnits = (n.pitchUnits - octaveUnits) as Units;
+	}
+
 	// **オクターブ重ねは主旋律の全部にはかけない。** 参考曲の重ねの層は主旋律の
 	// 29〜59%にしか乗っておらず、要所だけ厚くする使い方だった。長い音を残して
 	// 短い音から落とす。移調が済んだ後の音をそのまま写す（トラック側のオクターブ
@@ -5541,6 +5726,8 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 		// ドラム・楽器・編曲プランは勝った候補にだけ後から付ける（メロディに
 		// 依存しないので候補ごとに引いても採点は動かず、候補数ぶん無駄になる）。
 		drum: "",
+		drumPattern: { label: "", pattern: [] },
+		drumStyle: "eight",
 		instrument: "",
 		arrange: EMPTY_ARRANGE,
 		chordProgression: d.chordProgression,
@@ -5570,9 +5757,71 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	result.stats.attempts = count;
 	result.stats.rejected = rejected;
 	result.drum = pickBuiltinDrum(result, rnd);
+	// **セクションからドラムを組み立てる。** 組み込みパターン（`result.drum`）は
+	// 強弱の切り替わる小節番号が採譜元の曲のものなので、この曲のサビとは揃わない。
+	const drums = composeDrumPattern({
+		bars: result.bars,
+		stepsPerBar: options.stepsPerBar,
+		rnd,
+		style: pickDrumStyle(result, rnd),
+		levels: drumLevels(result),
+		// クラッシュはセクションの頭（1始まり）。
+		crashBars: result.sections.map((sec) => sec.startBar + 1),
+		// フィルはセクションの終わりの1つ手前。「次へ入る助走」なので最終小節には置かない。
+		fillBars: result.sections
+			.map((sec) => sec.startBar + sec.bars - 1)
+			.filter((bar) => bar > 1 && bar < result.bars),
+	});
+	result.drumPattern = drums.def;
+	result.drumStyle = drums.style;
 	result.instrument = pickBuiltinInstrument(result, rnd);
 	result.arrange = buildArrangePlan(result, rnd);
 	return result;
+};
+
+/**
+ * **小節ごとのドラムの強度を、セクションから作る。**
+ *
+ * {@link SectionSpec.drumLevel} は最初から定義されていたのに、`composeDrumPattern` の
+ * `levels` へ渡す経路がどこにも無く、全小節が既定の 1（標準）で鳴っていた。
+ * Aメロもサビも同じ強さで叩いていた、ということ。
+ */
+const drumLevels = (song: ComposeResult): (0 | 1 | 2)[] => {
+	const out: (0 | 1 | 2)[] = new Array(song.bars).fill(1);
+	for (const sec of song.sections)
+		for (
+			let b = sec.startBar;
+			b < sec.startBar + sec.bars && b < song.bars;
+			b++
+		)
+			out[b] = sec.spec.drumLevel;
+	return out;
+};
+
+/**
+ * 組み立てるドラムの性格を選ぶ。{@link pickBuiltinDrum} と同じ材料
+ * （テンポ・刻みの細かさ・跳ね）から引く。
+ */
+const pickDrumStyle = (song: ComposeResult, rnd: () => number): DrumStyle => {
+	const eighth = BASE_STEPS_PER_BAR / 8;
+	const short =
+		song.melody.filter((n) => n.durationSteps <= eighth).length /
+		Math.max(1, song.melody.length);
+	const dotted =
+		song.melody.filter(
+			(n) => n.durationSteps === Math.round((BASE_STEPS_PER_BAR * 3) / 16),
+		).length / Math.max(1, song.melody.length);
+	const pool: DrumStyle[] =
+		dotted >= 0.08
+			? ["shuffle", "shuffle", "eight"]
+			: song.bpm >= 150
+				? ["four", "sixteen", "rock"]
+				: short >= 0.85
+					? ["sixteen", "four", "rock"]
+					: song.bpm <= 115
+						? ["ballad", "eight", "shuffle"]
+						: ["eight", "eight", "sixteen", "rock"];
+	return pick(pool, rnd);
 };
 
 /**
