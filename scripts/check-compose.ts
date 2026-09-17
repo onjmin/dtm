@@ -375,6 +375,12 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	});
 	check(`${tag} 伴奏が生成できる`, chordNotes.length > 0, "0音");
 	const progBars = song.chordProgression.split("|");
+	/**
+	 * その小節の**最後の**和音。半小節で和音が動く曲（{@link HarmonicRhythm}）では
+	 * 1小節に2和音入るので、終止の判定は末尾の和音を見る。
+	 */
+	const lastChordOf = (bar: string | undefined): string =>
+		(bar ?? "").trim().split(/\s+/).at(-1) ?? "";
 	check(
 		`${tag} 進行が曲の長さと一致`,
 		progBars.length === song.bars,
@@ -415,7 +421,7 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	// 平行調へ振ったセクションは主調のドミナントを通らない（明暗の入れ替えが目的）。
 	const pre = song.sections.find((x) => x.kind === "prechorus");
 	if (pre && !song.tonal.relativeKinds.includes("prechorus")) {
-		const last = progBars[pre.startBar + pre.bars - 1];
+		const last = lastChordOf(progBars[pre.startBar + pre.bars - 1]);
 		const expG = transposeChordName("G", pre.keyShift);
 		const expG7 = transposeChordName("G7", pre.keyShift);
 		check(
@@ -428,7 +434,7 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 	for (const kind of ["chorus", "outro"]) {
 		const sec = song.sections.find((x) => x.kind === kind);
 		if (!sec || song.tonal.floating) continue;
-		const last = progBars[sec.startBar + sec.bars - 1];
+		const last = lastChordOf(progBars[sec.startBar + sec.bars - 1]);
 		const expC = transposeChordName("C", sec.keyShift);
 		const expAm = transposeChordName("Am", sec.keyShift);
 		check(
@@ -751,9 +757,18 @@ console.log("● 変化音（調の外の音）");
 			chromatic++;
 			inSong++;
 			// 許されるのは「その瞬間の和音の構成音」か「順次で入って順次で出る短い音」。
+			// **1小節に複数の和音が入る曲がある**（半小節進行）ので、小節の和音ではなく
+			// その音の位置で鳴っている和音を見る。
+			const inBar = progression[bar]?.trim().split(/\s+/) ?? ["C"];
+			const slot = Math.min(
+				inBar.length - 1,
+				Math.floor(
+					((n.startStep % STEPS_PER_BAR) / STEPS_PER_BAR) * inBar.length,
+				),
+			);
 			let tones: number[] = [];
 			try {
-				tones = parseChord(progression[bar] ?? "C").notes.map(
+				tones = parseChord(inBar[slot] ?? "C").notes.map(
 					(v) => ((v % 12) + 12) % 12,
 				);
 			} catch {}
@@ -1332,7 +1347,12 @@ console.log("● 音階");
 			// 進行が音階の主音を指しているか。**旋律だけモードにして和音が
 			// ハ長調のトニックを指していると、曲は結局ハ長調に聞こえる。**
 			if (center) {
-				const chords = song.chordProgression.split("|");
+				// 1小節に複数の和音が入る曲がある（半小節進行）。`tonicPattern` は
+				// `^` 始まりなので、小節の文字列のまま当てると2つ目の和音が
+				// 主和音でも当たらない。和音ごとにばらして当てる。
+				const chords = song.chordProgression
+					.split("|")
+					.flatMap((bar) => bar.trim().split(/\s+/));
 				if (chords.some((c) => center.tonicPattern.test(c))) tonicChordBars++;
 			}
 		}

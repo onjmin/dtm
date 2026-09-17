@@ -1298,7 +1298,96 @@ type BassStyle =
 	| "eighth"
 	| "syncopated"
 	| "walking"
-	| "octave";
+	| "octave"
+	// --- 以下、ルート始まり以外の型 ---
+	/** 5度から入る。ルートは2拍目に置く。 */
+	| "fifth-first"
+	/** 3度から入る。転回形の響き。 */
+	| "third-first"
+	/** 拍アタマを抜く。休符で入って8分裏からルートを置く。 */
+	| "offbeat"
+	/** 16分の刻み。ルート連打で推進力だけを作る。 */
+	| "driving"
+	/** 1音だけ。小節をまたいで伸ばす。 */
+	| "sustain"
+	/** 息継ぎのある型。2拍目を空ける。 */
+	| "breath";
+
+/**
+ * **ベースの骨格。** 奏法（{@link BassStyle}）の上位にある、「1小節をどう扱うか」。
+ *
+ * ## なぜ要るか
+ *
+ * 従来のベースは**7種類の1小節セルしかなく、7つ全部が拍アタマのルートで始まり、
+ * 毎小節リセット**していた。`bassStyle` は曲に1つなので、どの曲のベースも
+ * 「毎小節アタマにルート → 同じ型を曲中ずっと反復」になる。
+ *
+ * コード進行が約54通りしか無いことと合わせると、**どの曲のベースも同じ喋り方で
+ * 同じ進行を読み上げている**状態で、ベース単体を聴いただけで生成器が分かる。
+ * 奏法を増やしても、1小節・ルート始まり・毎小節リセットという骨格が同じなら
+ * 指紋は残る。骨格の側を引く。
+ */
+type BassSkeleton =
+	/** 毎小節1フレーズ。従来の唯一の骨格。 */
+	| "per-bar"
+	/** 2小節で1フレーズ。後半の小節は前半と違う形にする。 */
+	| "two-bar"
+	/** 小節の終わりで次の和音のルートへ半音・全音で入る（アプローチノート）。 */
+	| "approach"
+	/** ペダル。和音が変わってもベースは主音に留まる。 */
+	| "pedal";
+
+/** ベースの奏法の候補。よく使う型ほど多く入れてある。 */
+const BASS_STYLES: BassStyle[] = [
+	"quarter",
+	"quarter",
+	"alternate",
+	"alternate",
+	"half",
+	"eighth",
+	"eighth",
+	"syncopated",
+	"syncopated",
+	"walking",
+	"octave",
+	"fifth-first",
+	"fifth-first",
+	"third-first",
+	"offbeat",
+	"offbeat",
+	"driving",
+	"sustain",
+	"breath",
+	"breath",
+];
+
+/**
+ * **和声リズム**——1つの和音が何小節（何拍）鳴るか。
+ *
+ * - `bar`  … 1小節1和音。従来の唯一の速度。
+ * - `half` … 半小節1和音。近年のJ-POP・ボカロの標準的な速度。
+ * - `slow` … 2小節1和音。ゆったり構える曲・リフ物。
+ */
+type HarmonicRhythm = "bar" | "half" | "slow";
+
+const HARMONIC_RHYTHMS: HarmonicRhythm[] = [
+	"bar",
+	"bar",
+	"bar",
+	"half",
+	"half",
+	"slow",
+];
+
+const BASS_SKELETONS: BassSkeleton[] = [
+	"per-bar",
+	"per-bar",
+	"two-bar",
+	"two-bar",
+	"approach",
+	"approach",
+	"pedal",
+];
 /**
  * サブメロの書法。
  *
@@ -1599,11 +1688,149 @@ const nearestChordTone = (
 	return best;
 };
 
-/** メロディの音域（半音・MIDIノート番号相当）。C4〜C6あたりに収める。 */
-const MELODY_LOW = 60;
-const MELODY_HIGH = 81;
-/** メロディの音域の中心。大きなうねり（{@link MelodyStyle.arcPeriod}）の基準。 */
-const MELODY_CENTER = (MELODY_LOW + MELODY_HIGH) / 2;
+/**
+ * **歌える音域の絶対の上限・下限（半音・MIDIノート番号相当）。** C4〜A5。
+ *
+ * ここは歌声合成が出せる範囲そのものなので曲ごとに動かさない。**曲ごとに動くのは
+ * この中のどこを使うか**（{@link Register}）で、そちらが実際に聴こえる「声の高さ」。
+ */
+const MELODY_LOW = 59;
+const MELODY_HIGH = 83;
+
+/**
+ * その曲・そのセクションでメロディが使う音域。
+ *
+ * ## なぜ曲ごとに引くのか
+ *
+ * 以前はここが定数（{@link MELODY_LOW}〜{@link MELODY_HIGH} の固定窓、中心は
+ * 常に B♭4）だった。曲ごとに引いていたのは**うねりの振幅**（`arcAmp`）だけで、
+ * **中心は一度も動かなかった**——つまり全曲が同じ高さで歌っていた。
+ *
+ * 聴き手が生成器を identify するのは、曲ごとに変わる部分ではなく**変わらない部分**。
+ * 音域の中心は「声の高さ」としてそのまま耳に残るので、ここが定数である限り、
+ * 何曲聴いても同じ歌い手が歌っているように聞こえる。オルフェウスの出力が
+ * オルフェウスだと分かるのと同じ理屈で、これは指紋そのものだった。
+ *
+ * ## 窓であって固定幅ではない
+ *
+ * 幅も曲ごとに引く。狭い窓（12半音）はリフ型・語り口調の曲に、広い窓（21半音）は
+ * 歌い上げる曲になる。参考コーパスには音域5半音のリフ曲から24半音の曲まである
+ * （`scripts/compare-reach.ts` の `melodyRange` 軸）。
+ */
+type Register = {
+	low: number;
+	high: number;
+	/** 大きなうねり（{@link MelodyStyle.contour}）が振れる基準の高さ。 */
+	center: number;
+};
+
+/**
+ * 中心と幅から音域の窓を作る。**絶対の上限・下限からはみ出す分は押し戻す**——
+ * 高い窓を引いた曲がそのまま歌えない高さへ出ていくのを防ぐ。
+ */
+const makeRegister = (center: number, width: number): Register => {
+	const half = width / 2;
+	let lo = Math.round(center - half);
+	let hi = Math.round(center + half);
+	if (lo < MELODY_LOW) {
+		hi += MELODY_LOW - lo;
+		lo = MELODY_LOW;
+	}
+	if (hi > MELODY_HIGH) {
+		lo -= hi - MELODY_HIGH;
+		hi = MELODY_HIGH;
+	}
+	lo = Math.max(MELODY_LOW, lo);
+	hi = Math.min(MELODY_HIGH, hi);
+	return { low: lo, high: hi, center: (lo + hi) / 2 };
+};
+
+/**
+ * 音域の窓を平行移動する（セクションごとの {@link SectionSpec.registerShift} 用）。
+ * 幅は変えずに動かし、絶対の範囲で止める。
+ */
+const shiftRegister = (reg: Register, semitones: number): Register =>
+	semitones === 0
+		? reg
+		: makeRegister(reg.center + semitones, reg.high - reg.low);
+
+/**
+ * **曲全体を貫く音高のうねりの形。**
+ *
+ * 以前はここが `Math.sin()` の1種類しかなく、曲ごとに引いていたのは周期・位相・
+ * 振幅——つまり**同じ正弦波のパラメータ**だけだった。人間の旋律は正弦波では動かない。
+ * 台地を作って留まり、後半で一度だけ頂点を取る、というのが歌モノの普通の形で、
+ * 「上げて下げてを等間隔で繰り返す」のはこの生成器の癖として耳に残っていた。
+ *
+ * 形そのものを引く。パラメータを増やしても、写像が1本しか無い限り指紋は消えない。
+ */
+type ContourShape =
+	/** 正弦波。上げ下げを等間隔で繰り返す。従来の唯一の形。 */
+	| "sine"
+	/** 階段状の台地。数小節ごとに高さを変えて、その中では留まる。 */
+	| "terrace"
+	/** 単峰。曲の後半（6〜7割の位置）に一度だけ頂点を取る。歌モノの王道。 */
+	| "peak"
+	/** 下降の反復。高いところから降りてきて、また高いところへ戻る。 */
+	| "descend"
+	/** ほぼ動かない。リフ・オスティナート・語り口調の曲。 */
+	| "flat";
+
+const CONTOUR_SHAPES: ContourShape[] = [
+	"sine",
+	"terrace",
+	"terrace",
+	"peak",
+	"peak",
+	"descend",
+	"flat",
+];
+
+/**
+ * 輪郭の高さ（−1〜+1）。{@link MelodyStyle.arcAmp} を掛けて音域の中心からの
+ * ずれ（半音）になる。
+ *
+ * `bar` の関数にしてあるのは従来と同じだが、**セクション境界とは独立**な点に注意。
+ * セクションごとの高さは {@link SectionSpec.registerShift}（音域の窓そのものを動かす）
+ * が持ち、ここは窓の中での大きな動きを担当する。
+ */
+const contourAt = (
+	shape: ContourShape,
+	bar: number,
+	totalBars: number,
+	period: number,
+	phase: number,
+): number => {
+	switch (shape) {
+		case "sine":
+			return Math.sin(((bar + phase) / period) * Math.PI * 2);
+		case "terrace": {
+			// 台地の高さは周期ごとに切り替わる。−1 → +0.5 → 0 → +1 を巡回して、
+			// 「留まる・上がる・落ち着く・いちばん上」という段を作る。
+			const steps = [-1, 0.5, 0, 1, -0.5, 0.75];
+			return steps[Math.floor((bar + phase) / period) % steps.length];
+		}
+		case "peak": {
+			// 単峰。頂点は曲の 2/3 あたり。そこへ向かって上がり、そこから降りる。
+			const at = totalBars <= 1 ? 0 : bar / (totalBars - 1);
+			const top = 0.66;
+			return at <= top
+				? -1 + (at / top) * 2
+				: 1 - ((at - top) / Math.max(0.01, 1 - top)) * 1.4;
+		}
+		case "descend": {
+			// 周期のあたまで跳ね上がり、そこから降りる（下降フレーズの反復）。
+			const at = ((bar + phase) % period) / period;
+			return 1 - at * 2;
+		}
+		case "flat":
+			// 完全な水平にはしない。**0 で固定すると全曲が同じ高さに揃ってしまい、
+			// 指紋を1つ減らすつもりが別の指紋を作る。** 周期の長いごく浅い揺れを残す。
+			return (
+				Math.sin(((bar + phase) / Math.max(8, period * 2)) * Math.PI * 2) * 0.2
+			);
+	}
+};
 
 /**
  * ハモリの音を選ぶ。
@@ -1748,6 +1975,24 @@ type MelodyStyle = {
 	/** 曲全体の基準音価。16分を使う曲かどうかを曲単位で決める。 */
 	groove: Groove;
 	/**
+	 * **その曲が使う音域の窓**（{@link Register}）。セクションごとに
+	 * {@link SectionSpec.registerShift} で上下する前の、曲の基準の高さ。
+	 */
+	register: Register;
+	/** 大きなうねりの形（{@link ContourShape}）。 */
+	contour: ContourShape;
+	/**
+	 * 小節頭を非和声音にする確率（掛留・倚音）。
+	 *
+	 * 従来は小節頭が**必ず**和音構成音だった（`nearestChordTone`）。理論としては
+	 * 正しいが、「小節頭が和音の外」という曲が1本も出ないという意味では指紋になる。
+	 * 実際の歌モノは9th・6th・sus的な音で小節に入って、そこから解決する。
+	 *
+	 * アボイドノート（{@link toneWeight} が 0）には**しない**——そこは避けられている
+	 * から避けられているのであって、緊張ではなく事故になる。
+	 */
+	headTension: number;
+	/**
 	 * 大きなうねりの周期（小節）。上げるフレーズと下げるフレーズを交互に置くための、
 	 * 曲全体を貫く音高の波。4なら2小節上げて2小節下げる、8なら4小節ずつ。
 	 */
@@ -1786,6 +2031,10 @@ type MelodyStyle = {
 	/** 強拍で着地させる構成音の重み下限（3=ルート/5度のみ、2=3度/7度も許す）。 */
 	barHeadWeight: 2 | 3;
 	bassStyle: BassStyle;
+	/** ベースの骨格（{@link BassSkeleton}）。奏法より上位の、1小節の扱い方。 */
+	bassSkeleton: BassSkeleton;
+	/** 2小節フレーズの後半に使う奏法。骨格が `two-bar` のときだけ使う。 */
+	bassStyleAlt: BassStyle;
 	/** ベースを短く切って弾むように弾くか（スタッカート）。 */
 	bassStaccato: boolean;
 	/** 小節にゴーストノート（弦に触れて音程を殺した打点）を混ぜる確率。 */
@@ -1811,6 +2060,8 @@ const leapTarget = (
 	from: number,
 	tones: ChordTone[],
 	rnd: () => number,
+	/** その小節で使う音域（{@link Register}）。 */
+	reg: Register,
 	/** その曲で許す跳躍の上限（半音）。{@link LEAP_CEILINGS} */
 	maxLeap: number = MAX_LEAP_SEMITONES,
 ): number | null => {
@@ -1819,7 +2070,7 @@ const leapTarget = (
 		const base = pitchClass(tone.semi);
 		for (let oct = 0; oct <= 10; oct++) {
 			const semi = base + oct * 12;
-			if (semi < MELODY_LOW || semi > MELODY_HIGH) continue;
+			if (semi < reg.low || semi > reg.high) continue;
 			const gap = Math.abs(semi - from);
 			if (gap >= 3 && gap <= maxLeap) candidates.push(semi);
 		}
@@ -1876,6 +2127,8 @@ const landPitch = (
 	scale: ComposeScale,
 	pitches: number[],
 	scaleIndex: number,
+	/** その小節で使う音域（{@link Register}）。 */
+	reg: Register,
 ): void => {
 	if (pitches.length === 0) return;
 	const size = scaleSize(scale);
@@ -1887,8 +2140,8 @@ const landPitch = (
 	if (delta < -size / 2) delta += size;
 	pitches[pitches.length - 1] = clampSemi(
 		degreeToPitch(scale, degree + delta).semi,
-		MELODY_LOW,
-		MELODY_HIGH,
+		reg.low,
+		reg.high,
 	);
 };
 
@@ -1915,6 +2168,8 @@ const barDegrees = (
 	preferColor: boolean,
 	/** 4分音符のステップ数。「長い音」の判定に使う。 */
 	quarterSteps: number,
+	/** その小節で使う音域（{@link Register}）。 */
+	reg: Register,
 	rnd: () => number,
 ): number[] => {
 	const noteCount = slots.length;
@@ -2009,10 +2264,7 @@ const barDegrees = (
 
 	if (role === "cadence") {
 		// 終止。主音（C）へ着地するのは共通で、そこへ至る形を曲ごとに変える。
-		const tonic = semitoneToDegree(
-			scale,
-			clampSemi(72, MELODY_LOW, MELODY_HIGH),
-		);
+		const tonic = semitoneToDegree(scale, clampSemi(72, reg.low, reg.high));
 		for (let i = 0; i < noteCount; i++) {
 			if (style.cadenceShape === "descend") {
 				out.push(tonic + noteCount - 1 - i);
@@ -2102,7 +2354,7 @@ const barDegrees = (
 			// 跳躍のたびに調子外れに聞こえていた。
 			if (rnd() < style.leapAffinity) {
 				const from = degreeToPitch(scale, out[i - 1]).semi;
-				const target = leapTarget(from, tones, rnd, style.maxLeap);
+				const target = leapTarget(from, tones, rnd, reg, style.maxLeap);
 				if (target !== null) out[i] = semitoneToDegree(scale, target);
 			}
 			continue;
@@ -2155,6 +2407,19 @@ const fitMotif = (
 	 * 悪化しないかぎり、前と同じ移調量を使う。
 	 */
 	preferShift: number | null,
+	/** その小節で使う音域（{@link Register}）。 */
+	reg: Register,
+	/**
+	 * 小節の後半で鳴る和音（{@link HarmonicRhythm} が `half` のとき）。
+	 *
+	 * **モチーフの小節は {@link shapeBar} の和音補正を通らない**（輪郭を保つのが
+	 * 役目なので `preserveContour` で素通りする）。だから半小節で和音が動く曲では、
+	 * ここで**両方の和音に当たる移調量**を選んでおかないと、後半の音が前半の和音の
+	 * ままになって和音とぶつかる。補正が効かない経路なので、ここが最後の砦。
+	 */
+	tonesLate: ChordTone[] | null,
+	/** 後半の和音へ切り替わるステップ位置。 */
+	lateAt: number,
 	/**
 	 * 移調を何歩まで許すか。既定は3歩（ペンタトニックなら±7半音相当）。
 	 *
@@ -2184,10 +2449,13 @@ const fitMotif = (
 		for (let i = 0; i < moved.length; i++) {
 			const semi = clampSemi(
 				degreeToPitch(scale, moved[i]).semi,
-				MELODY_LOW,
-				MELODY_HIGH,
+				reg.low,
+				reg.high,
 			);
-			const w = toneWeight(semi, tones);
+			const w = toneWeight(
+				semi,
+				tonesLate && slots[i].at >= lateAt ? tonesLate : tones,
+			);
 			// 強拍と長い音は和音構成音であってほしい。弱拍の経過音は自由。
 			const important = slots[i].isStrong || slots[i].value >= quarterSteps;
 			score += important ? w * 3 : w;
@@ -2195,8 +2463,8 @@ const fitMotif = (
 		// 前の小節からのつながり。跳びすぎる置き方は避ける。
 		const head = clampSemi(
 			degreeToPitch(scale, moved[0]).semi,
-			MELODY_LOW,
-			MELODY_HIGH,
+			reg.low,
+			reg.high,
 		);
 		score -= Math.max(0, Math.abs(head - prevSemi) - MAX_BAR_LEAP_SEMITONES);
 		if (shift === preferShift) {
@@ -2232,6 +2500,15 @@ const shapeBar = (
 		maxLeap: number;
 		/** アボイドノートを半音上の和音構成音へ解決させる確率。 */
 		chromaticAffinity: number;
+		/** その小節で使う音域（{@link Register}）。 */
+		register: Register;
+		/**
+		 * 小節の後半で鳴る和音（{@link HarmonicRhythm} が `half` のとき）。
+		 * `null` なら小節を通して `tones` のまま。
+		 */
+		tonesLate?: ChordTone[] | null;
+		/** 後半の和音へ切り替わるステップ位置。 */
+		lateAt?: number;
 		rnd: () => number;
 		/**
 		 * モチーフの輪郭をそのまま鳴らす。
@@ -2257,29 +2534,36 @@ const shapeBar = (
 		const lo = Math.min(...raw);
 		const hi = Math.max(...raw);
 		let shift = 0;
-		while (lo + shift < MELODY_LOW) shift += 12;
-		while (hi + shift > MELODY_HIGH) shift -= 12;
+		while (lo + shift < opts.register.low) shift += 12;
+		while (hi + shift > opts.register.high) shift -= 12;
 		// 塊が音域より広いときだけ、はみ出した音を1つずつ折り返す。
 		for (const semi of raw)
 			out.push(
-				semi + shift >= MELODY_LOW && semi + shift <= MELODY_HIGH
+				semi + shift >= opts.register.low && semi + shift <= opts.register.high
 					? semi + shift
-					: clampSemi(semi + shift, MELODY_LOW, MELODY_HIGH),
+					: clampSemi(semi + shift, opts.register.low, opts.register.high),
 			);
 		return out;
 	}
 	for (let i = 0; i < degrees.length; i++) {
+		// 半小節で和音が動く曲では、後半の音は**後半の和音**に対して整える。
+		// ここを小節頭の和音のままにすると、2つ目の和音の上で旋律だけが
+		// 前の和音に留まる（半小節進行を入れた意味が消える）。
+		const barTones =
+			opts.tonesLate && slots[i].at >= (opts.lateAt ?? Number.POSITIVE_INFINITY)
+				? opts.tonesLate
+				: tones;
 		let semi = clampSemi(
 			degreeToPitch(opts.scale, degrees[i]).semi,
-			MELODY_LOW,
-			MELODY_HIGH,
+			opts.register.low,
+			opts.register.high,
 		);
 		const limit = i === 0 ? MAX_BAR_LEAP_SEMITONES : opts.maxLeap;
 		if (!opts.allowLeap && Math.abs(semi - prev) > limit) {
 			semi = clampSemi(
 				walk(opts.scale, prev, Math.sign(semi - prev) * 3),
-				MELODY_LOW,
-				MELODY_HIGH,
+				opts.register.low,
+				opts.register.high,
 			);
 		}
 		// gap fill: 直前が跳躍なら、この音は反行の順次進行で埋める
@@ -2291,15 +2575,15 @@ const shapeBar = (
 			const back = -Math.sign(out[i - 1] - out[i - 2]);
 			semi = clampSemi(
 				walk(opts.scale, out[i - 1], back),
-				MELODY_LOW,
-				MELODY_HIGH,
+				opts.register.low,
+				opts.register.high,
 			);
 		}
 		// アボイドノートは強拍・長い音では鳴らさない。逃がす先は上下どちらでもよいが、
 		// **直前と同じ音になる方は選ばない**——ここで同音へ潰すと、せっかく作った
 		// モチーフの輪郭が「同じ音の連打」に化ける（実測で同音反復が16%まで膨らんだ）。
 		if (
-			toneWeight(semi, tones) === 0 &&
+			toneWeight(semi, barTones) === 0 &&
 			(slots[i].isStrong || slots[i].value >= opts.quarterSteps)
 		) {
 			// **アボイドノートは半音上に和音構成音があるから避けられている。**
@@ -2310,9 +2594,9 @@ const shapeBar = (
 			// セカンダリドミナントの上でメロディだけ調に留まっていた。
 			const resolved = semi + 1;
 			const useResolved =
-				resolved <= MELODY_HIGH &&
+				resolved <= opts.register.high &&
 				!scalePcs(opts.scale).has(pitchClass(resolved)) &&
-				toneWeight(resolved, tones) >= 2 &&
+				toneWeight(resolved, barTones) >= 2 &&
 				resolved !== prev &&
 				opts.rnd() < opts.chromaticAffinity;
 			if (useResolved) {
@@ -2320,16 +2604,16 @@ const shapeBar = (
 			} else {
 				const up = clampSemi(
 					walk(opts.scale, semi, 1),
-					MELODY_LOW,
-					MELODY_HIGH,
+					opts.register.low,
+					opts.register.high,
 				);
 				const down = clampSemi(
 					walk(opts.scale, semi, -1),
-					MELODY_LOW,
-					MELODY_HIGH,
+					opts.register.low,
+					opts.register.high,
 				);
 				const score = (s: number) =>
-					toneWeight(s, tones) * 2 + (i > 0 && s === prev ? -3 : 0);
+					toneWeight(s, barTones) * 2 + (i > 0 && s === prev ? -3 : 0);
 				semi = score(down) >= score(up) ? down : up;
 			}
 		}
@@ -2343,8 +2627,9 @@ const shapeBar = (
 		prevSemi,
 		opts.quarterSteps / 2,
 		opts.scale,
+		opts.register,
 	);
-	applyOctaveJumps(out, slots, opts.octaveAffinity, opts.rnd);
+	applyOctaveJumps(out, slots, opts.octaveAffinity, opts.register, opts.rnd);
 	return out;
 };
 
@@ -2364,6 +2649,8 @@ const applyOctaveJumps = (
 	out: number[],
 	slots: Slot[],
 	affinity: number,
+	/** その小節で使う音域（{@link Register}）。 */
+	reg: Register,
 	rnd: () => number,
 ): void => {
 	// 小節の最後の音は動かさない。オクターブ移動は「直前の音の1オクターブ上下」へ
@@ -2375,8 +2662,8 @@ const applyOctaveJumps = (
 		const from = out[i - 1];
 		const up = from + 12;
 		const down = from - 12;
-		const canUp = up <= MELODY_HIGH;
-		const canDown = down >= MELODY_LOW;
+		const canUp = up <= reg.high;
+		const canDown = down >= reg.low;
 		if (!canUp && !canDown) continue;
 		out[i] = canUp && (!canDown || rnd() < 0.5) ? up : down;
 	}
@@ -2405,6 +2692,8 @@ const applyPentatonic = (
 	shortSteps: number,
 	/** 曲の音階。どの5音を柱にするかがここで決まる。 */
 	scale: ComposeScale,
+	/** その小節で使う音域（{@link Register}）。 */
+	reg: Register,
 ): void => {
 	for (let i = 0; i < out.length; i++) {
 		const semi = out[i];
@@ -2436,8 +2725,8 @@ const applyPentatonic = (
 		// 「ペンタトニックをなぞるだけ」になって、今度は別の単調さが出る。
 		if (!scale.strict && !slots[i].isStrong && slots[i].value <= shortSteps)
 			continue;
-		const up = clampSemi(walk(scale, semi, 1), MELODY_LOW, MELODY_HIGH);
-		const down = clampSemi(walk(scale, semi, -1), MELODY_LOW, MELODY_HIGH);
+		const up = clampSemi(walk(scale, semi, 1), reg.low, reg.high);
+		const down = clampSemi(walk(scale, semi, -1), reg.low, reg.high);
 		// ファの隣はミとソ、シの隣はラとド。どちらもペンタトニックの音になる。
 		const score = (s: number): number =>
 			(isOutsideCore(scale, s) ? -4 : 0) +
@@ -2491,6 +2780,55 @@ const nearestOctaveOf = (near: number, semi: number): number => {
  * は弱拍・短い音でだけ作るので、調の感じは壊れない。曲ごとに
  * {@link MelodyStyle.chromaticAffinity} を引くので、変化音を使わない曲も混ざる。
  */
+/**
+ * **小節頭を非和声音にする（掛留・倚音）。**
+ *
+ * 従来、小節頭は例外なく和音構成音だった（`nearestChordTone`）。理論としては
+ * 正しいが、「小節頭が和音の外」という曲が1本も出ないという意味ではこれも指紋で、
+ * 実際の歌モノは 9th・6th・sus的な音で小節に入ってから解決する。
+ *
+ * ## 成立する条件だけで掛ける
+ *
+ * 1. 小節頭が強拍で、次の音がある（解決先が要る）
+ * 2. 動かした先が**アボイドノートでない**（{@link toneWeight} が 0 の音は、
+ *    半音上に構成音があるから避けられている。緊張ではなく事故になる）
+ * 3. 動かした先が**和音の外**（構成音のままなら、ただ音が変わっただけ）
+ * 4. **次の音へ順次進行で解決する**（2半音以内）。掛留は解決して初めて掛留で、
+ *    跳んで逃げると「和音から外れた音」として耳に残る
+ *
+ * {@link applyChromatic} の①②と同じ考え方——通り過ぎる音は通り過ぎる形で置く。
+ */
+const applyHeadTension = (
+	pitches: number[],
+	fifths: number[],
+	slots: Slot[],
+	tones: ChordTone[],
+	scale: ComposeScale,
+	affinity: number,
+	rnd: () => number,
+): void => {
+	if (affinity <= 0) return;
+	if (pitches.length < 2) return;
+	if (!slots[0].isStrong) return;
+	if (rnd() >= affinity) return;
+	// 解決先が和音構成音でなければ、動かしても「解決」にならない。
+	if (toneWeight(pitches[1], tones) < 2) return;
+
+	const degree = semitoneToDegree(scale, pitches[0]);
+	// 上隣を先に見る（9th・11th・13th 側。掛留の定番は上から解決する）。
+	for (const dir of rnd() < 0.7 ? [1, -1] : [-1, 1]) {
+		const to = degreeToPitch(scale, degree + dir);
+		if (to.semi === pitches[0]) continue;
+		const w = toneWeight(to.semi, tones);
+		// 0＝アボイド、2以上＝和音構成音。狙いは「音階の中の非和声音」＝1。
+		if (w !== 1) continue;
+		if (Math.abs(to.semi - pitches[1]) > STEP_SEMITONES) continue;
+		pitches[0] = to.semi;
+		fifths[0] = to.fifth;
+		return;
+	}
+};
+
 const applyChromatic = (
 	/** 曲の音階。「調の外」の基準がここで決まる。 */
 	scale: ComposeScale,
@@ -2504,24 +2842,41 @@ const applyChromatic = (
 		shortSteps: number;
 		/** 最後の音を触らない（着地音が決まっている楽句の終わり）。 */
 		keepLast: boolean;
+		/** その小節で使う音域（{@link Register}）。 */
+		register: Register;
+		/**
+		 * 小節の後半で鳴る和音（{@link HarmonicRhythm} が `half` のとき）。
+		 *
+		 * ここを渡し忘れると、**後半の音が前半の和音の変化音へ引き戻される**——
+		 * ①は「和音の変化音を採る」ので、`Ab` の構成音へ寄せた音が `Am7` の上に
+		 * 残る、という形で和音とぶつかる。
+		 */
+		tonesLate?: ChordTone[] | null;
+		/** 後半の和音へ切り替わるステップ位置。 */
+		lateAt?: number;
 		rnd: () => number;
 	},
 ): void => {
 	const last = pitches.length - 1;
+	/** その音の位置で鳴っている和音。 */
+	const at = (i: number): ChordTone[] =>
+		opts.tonesLate && slots[i].at >= (opts.lateAt ?? Number.POSITIVE_INFINITY)
+			? opts.tonesLate
+			: tones;
 	// ⓪ 和音構成音と同じ高さの音は、**その構成音の綴りで書く**。
 	// `E7` の上のソ#を「ラのフラット」と綴ると、31平均律で別の音になってしまう。
 	for (let i = 0; i < pitches.length; i++) {
-		const tone = tones.find(
+		const tone = at(i).find(
 			(x) => pitchClass(x.semi) === pitchClass(pitches[i]),
 		);
 		if (tone) fifths[i] = tone.fifth;
 	}
 	// ① 和音の変化音を採る。
 	const pcs = scalePcs(scale);
-	const altered = tones.filter((t) => !pcs.has(pitchClass(t.semi)));
 	for (let i = 0; i < pitches.length; i++) {
 		if (opts.keepLast && i === last) continue;
 		if (!slots[i].isStrong && slots[i].value < opts.quarterSteps) continue;
+		const altered = at(i).filter((t) => !pcs.has(pitchClass(t.semi)));
 		for (const tone of altered) {
 			const target = nearestOctaveOf(pitches[i], tone.semi);
 			const gap = Math.abs(target - pitches[i]);
@@ -2558,7 +2913,7 @@ const applyChromatic = (
 		if (target === null) continue;
 		if (pcs.has(pitchClass(target))) continue; // 変化音になる場合だけ
 		if (target === before || target === after) continue;
-		if (target < MELODY_LOW || target > MELODY_HIGH) continue;
+		if (target < opts.register.low || target > opts.register.high) continue;
 		pitches[i] = target;
 		fifths[i] = (dir > 0 ? SHARP_FIFTHS : FLAT_FIFTHS)[pitchClass(target)];
 		lastAltered = i;
@@ -3152,8 +3507,59 @@ const draw = (
 		}
 	}
 
-	const chordProgression = progression
-		.map((chord, bar) => transposeChordName(chord, barKeyShift[bar]))
+	// --- 和声リズムを引く ---
+	//
+	// **1小節1和音しか無かった。** 進行は4小節ひとまとまりの `string[]` で、
+	// 小節と和音が1対1に固定されていたので、進行プールに何を足しても
+	// 「4小節で4つ動く」という速度だけはどの曲も同じだった。和音の**速度**は
+	// 進行の中身と同じくらい曲の印象を決める。
+	//
+	// セクションの頭から4小節ずつのまとまりで写す（セクション境界をまたがない）。
+	// **モードの曲では `slow` を引かない。** 音階の中心を立てる進行
+	// （{@link TONIC_CENTERS}）は4和音そろって初めて音階の色を決めるので、
+	// 半分を間引くと音階の主和音が進行から消える（実測で琉球・ヒジャーズが
+	// 24曲中23曲で主和音を失った）。速める側（`half`）は全部残るので通す。
+	const harmonicRhythm = pick(
+		center ? HARMONIC_RHYTHMS.filter((h) => h !== "slow") : HARMONIC_RHYTHMS,
+		rnd,
+	);
+	const barChords: string[][] = progression.map((c) => [c]);
+	if (harmonicRhythm !== "bar") {
+		for (const sec of sectionPlan) {
+			for (let i = 0; i < sec.bars; i += 4) {
+				const at = sec.startBar + i;
+				const room = Math.min(4, sec.bars - i, totalBars - at);
+				if (room < 4) continue;
+				const cell = [0, 1, 2, 3].map((k) => progression[at + k]);
+				if (harmonicRhythm === "half") {
+					// 4和音を2小節へ詰めて、それを2回回す。半小節で和音が動く。
+					const pairs = [
+						[cell[0], cell[1]],
+						[cell[2], cell[3]],
+					];
+					for (let k = 0; k < 4; k++) barChords[at + k] = pairs[k % 2];
+				} else {
+					// 2小節に1和音。1番目と3番目（進行の骨になる和音）だけを残す。
+					// **セクション最後の4小節だけは3番目ではなく4番目を残す。**
+					// 進行の締めは最後の和音が持っているので、そこを落とすと
+					// 「Bメロがドミナントで終わる」「サビが主音で終わる」が成立しない。
+					const isLastGroup = i + 4 >= sec.bars;
+					const late = isLastGroup ? cell[3] : cell[2];
+					for (let k = 0; k < 4; k++)
+						barChords[at + k] = [k < 2 ? cell[0] : late];
+				}
+			}
+		}
+		// **`progression` はその小節の主和音に揃える。** 旋律・ベース・パッドは
+		// ここを見ているので、同期していないと和音と音が食い違う。
+		for (let b = 0; b < totalBars; b++) progression[b] = barChords[b][0];
+	}
+
+	// 1小節に2和音ある小節は空白で並べる。`parseChords` は小節を均等割りする。
+	const chordProgression = barChords
+		.map((chords, bar) =>
+			chords.map((c) => transposeChordName(c, barKeyShift[bar])).join(" "),
+		)
 		.join("|");
 	// 調とテンポも曲ごとに引く。生成はハ長調で行い、最後にまとめて移調する
 	// （生成中に移調すると音域の折り返しが調ごとにずれ、輪郭が壊れる）。
@@ -3379,8 +3785,27 @@ const draw = (
 	const registerSpread =
 		form === "ostinato" ? rnd() ** 2 * 0.5 : 0.25 + rnd() * 0.75;
 
+	/**
+	 * **その曲の音域の窓を引く。**
+	 *
+	 * 幅は `registerSpread` から（狭いリフ曲〜広い歌い上げ）、中心は絶対の音域
+	 * （{@link MELODY_LOW}〜{@link MELODY_HIGH}）の中で余った幅ぶんを自由に動かす。
+	 * 中心を引かずに幅だけ引いていた頃は、全曲が B♭4 のまわりで歌っていた。
+	 */
+	const registerWidth = 15 + Math.round(registerSpread * 6);
+	const registerRoom = MELODY_HIGH - MELODY_LOW - registerWidth;
+	const registerCenter =
+		MELODY_LOW +
+		registerWidth / 2 +
+		Math.round(rnd() * Math.max(0, registerRoom));
+
 	const style: MelodyStyle = {
 		groove: pick<Groove>(["eighth", "sixteenth"], rnd),
+		register: makeRegister(registerCenter, registerWidth),
+		contour: form === "ostinato" ? "flat" : pick(CONTOUR_SHAPES, rnd),
+		// 掛留・倚音を使わない曲も混ぜる。全曲に撒くと「小節頭がいつも宙ぶらりん」
+		// という別の癖になる。
+		headTension: rnd() < 0.35 ? 0 : 0.12 + rnd() * 0.3,
 		arcPeriod: pick([4, 8, 8, 16], rnd),
 		arcPhase: pick([0, 1, 2], rnd),
 		arcAmp: 5 * registerSpread,
@@ -3415,18 +3840,11 @@ const draw = (
 		chromaticAffinity:
 			(rnd() < 0.2 ? 0 : 0.12 + rnd() * 0.33) * (scale.strict ? 0.4 : 1),
 		barHeadWeight: rnd() < 0.5 ? 3 : 2,
-		bassStyle: pick<BassStyle>(
-			[
-				"quarter",
-				"alternate",
-				"half",
-				"eighth",
-				"syncopated",
-				"walking",
-				"octave",
-			],
-			rnd,
-		),
+		bassStyle: pick<BassStyle>(BASS_STYLES, rnd),
+		bassSkeleton: pick(BASS_SKELETONS, rnd),
+		// 2小節フレーズの後半。前半と同じ型を引いたら「1小節フレーズ×2」に戻るので、
+		// **必ず別の型**にする。
+		bassStyleAlt: pick<BassStyle>(BASS_STYLES, rnd),
 		// 短く切る奏法は、刻みの細かい書法（8分・オクターブ・オルタネイト）でだけ引く。
 		// 4分打ちやウォーキングを短く切ると、支えるべき土台がスカスカになる。
 		bassStaccato: rnd() < 0.45,
@@ -3439,6 +3857,26 @@ const draw = (
 		subStyle: pick<SubStyle>(["harmony", "harmony", "counter"], rnd),
 		subInterval: pick([3, 4, 8, 9], rnd),
 	};
+
+	/**
+	 * **小節ごとの音域。** 曲の窓（{@link MelodyStyle.register}）を、セクションの
+	 * {@link SectionSpec.registerShift} だけ上下させたもの。
+	 *
+	 * この配線が無かった間、`registerShift` は宣言されて値も入っているのに
+	 * **どこからも読まれていなかった**——つまり「Aメロは低め・サビは高い」という
+	 * 設計表の一列が、まるごと実装されていなかった。ヒット曲の推進力はほとんどが
+	 * セクション間の落差なので、ここが平らだとメロディを何本引き直しても出てこない。
+	 */
+	const barRegister: Register[] = new Array(totalBars).fill(style.register);
+	for (const sec of sectionPlan) {
+		const secReg = shiftRegister(style.register, sec.spec.registerShift);
+		for (
+			let b = sec.startBar;
+			b < sec.startBar + sec.bars && b < totalBars;
+			b++
+		)
+			barRegister[b] = secReg;
+	}
 
 	// --- ②リズム型を先に設計する ---
 	//
@@ -3826,6 +4264,10 @@ const draw = (
 		const role = barRoles[bar];
 		const barStart = bar * stepsPerBar;
 		const tones = chordTones(progression[bar]);
+		// 半小節で和音が動く曲の、後半の和音（{@link HarmonicRhythm}）。
+		const lateChordName = barChords[bar][1] ?? null;
+		const tonesLate = lateChordName ? chordTones(lateChordName) : null;
+		const lateAt = Math.floor(stepsPerBar / 2);
 		if (tones.length === 0) continue;
 		const rhythm = barRhythms[bar];
 
@@ -3850,10 +4292,20 @@ const draw = (
 		// ように細かく動いているだけで、上げるフレーズ・下げるフレーズの交代が無い）。
 		// 上げるメロディと下げるメロディを交互に置く、というのが歌モノの定石なので、
 		// 小節ごとの目標の高さを曲単位の周期で振り、そこへ引き寄せる。
-		const arc = Math.sin(
-			((bar + style.arcPhase) / style.arcPeriod) * Math.PI * 2,
+		// 形そのものを曲ごとに引く（{@link ContourShape}）。正弦波1種類しか無かった
+		// 頃は、周期と位相を振っても「等間隔に上下する」癖が全曲に残っていた。
+		const arc = contourAt(
+			style.contour,
+			bar,
+			totalBars,
+			style.arcPeriod,
+			style.arcPhase,
 		);
-		const arcCenter = MELODY_CENTER + arc * style.arcAmp;
+		// **うねりの基準はその小節の音域の中心。** 定数（全曲同じ高さ）だったのを、
+		// 曲ごとの窓（{@link MelodyStyle.register}）＋セクションごとの上下
+		// （{@link SectionSpec.registerShift}）へ移した。
+		const reg = barRegister[bar];
+		const arcCenter = reg.center + arc * style.arcAmp;
 		// 楽句の2小節目（barInUnit === 1）は1小節目のフレーズの続きなので、
 		// 前小節末尾の音（prevSemi）からの順次・スムーズな接続を優先する。
 		// 1小節目（barInUnit === 0）は楽句の開始なので、arcCenter を交えて目標を定める。
@@ -3902,6 +4354,7 @@ const draw = (
 			headWeight,
 			isSectionB,
 			quarterSteps,
+			reg,
 			rnd,
 		);
 		// 再現の小節は、元の小節の音の並びをそのまま使う。和音が違っても
@@ -3941,6 +4394,9 @@ const draw = (
 				scale,
 				style.pentatonicMotif,
 				motifShiftMemo.get(shiftKey) ?? null,
+				reg,
+				tonesLate,
+				lateAt,
 				// リフ型は和音へ寄せない。同じセルを回し続けるのが役目。
 				form === "ostinato" ? 0 : 3,
 			);
@@ -3949,6 +4405,7 @@ const draw = (
 		}
 		const pitches = shapeBar(fitted, slots, tones, prevSemi, {
 			scale,
+			register: reg,
 			maxLeap: style.maxLeap,
 			allowLeap: role === "climax",
 			allowArpeggio:
@@ -3967,18 +4424,47 @@ const draw = (
 					? 0
 					: style.octaveAffinity,
 			chromaticAffinity: style.chromaticAffinity,
+			tonesLate,
+			lateAt,
 			rnd,
-			preserveContour: isMotifBar,
+			// **半小節で和音が動く小節は輪郭保持を外す。**
+			//
+			// `preserveContour` は「モチーフを曲げずに塊ごと移調する」ための素通りで、
+			// 和音補正（強拍の着地・アボイド回避）を一切通らない。1小節1和音なら
+			// {@link fitMotif} が小節ごとに塊を合わせれば済んだが、和音が2つある小節では
+			// **どちらの和音にも当たる移調量が存在しない**ことがある（5音音階＋借用和音で
+			// 実際に起きる）。結果、後半の音が前半の和音のまま取り残される。
+			//
+			// 実際の作編曲でも、和音が速く動く曲のモチーフは和音ごとに音を差し替える——
+			// 「同じ形が返ってくる」のは音単位ではなく楽句単位で成立する。
+			// 自己相似（`sim4`・`sim8`）は下がるが、生成系はもともとそこが**高すぎる**側で、
+			// 参考コーパスの反復の薄い曲へ届いていなかった（`scripts/compare-reach.ts`）。
+			preserveContour: isMotifBar && !tonesLate,
 		});
 
 		if (landing !== null && barInUnit(bar) === 1)
-			landPitch(scale, pitches, landing);
+			landPitch(scale, pitches, landing, reg);
 
 		// **最後に変化音を通す。** ここまでの音は全部ハ長調の音階の上にあり、
 		// セカンダリドミナントの上でも和音の変化音を採れていなかった
 		// （実測で非ダイアトニック音が1音も出ない＝調が固定に聞こえる原因）。
 		const fifths = pitches.map((semi) => scaleFifth(scale, semi));
+		// 小節頭の掛留・倚音。**モチーフの小節には掛けない**——モチーフは同じ形で
+		// 返ってくることに意味があるので、頭の音だけが小節ごとに変わると崩れる。
+		if (!isMotifBar && !(landing !== null && barInUnit(bar) === 1))
+			applyHeadTension(
+				pitches,
+				fifths,
+				slots,
+				tones,
+				scale,
+				style.headTension,
+				rnd,
+			);
 		applyChromatic(scale, pitches, fifths, slots, tones, {
+			register: reg,
+			tonesLate,
+			lateAt,
 			affinity: style.chromaticAffinity,
 			quarterSteps,
 			shortSteps: scaleStep(EIGHTH),
@@ -4359,23 +4845,129 @@ const draw = (
 				[F, QUARTER],
 				[O, QUARTER],
 			],
+			// **ルートを拍アタマに置かない型。** ここが無かったので、どの曲のベースも
+			// 小節のアタマで和音のルートを宣言していた。
+			"fifth-first": [
+				[F, QUARTER],
+				[R, QUARTER],
+				[R, EIGHTH],
+				[F, EIGHTH],
+				[R, QUARTER],
+			],
+			// **小節のアタマを空ける。** 休符（負の音価）で始めて、ルートを8分裏へ置く。
+			// 従来のセルは7種すべてが拍アタマのルートで始まっていたので、
+			// どの曲のベースも小節ごとに和音のルートを宣言していた。
+			offbeat: [
+				[R, -EIGHTH],
+				[R, DOT_QUARTER],
+				[F, EIGHTH],
+				[R, DOT_QUARTER],
+			],
+			driving: [
+				[R, SIXTEENTH],
+				[R, SIXTEENTH],
+				[R, EIGHTH],
+				[R, SIXTEENTH],
+				[R, SIXTEENTH],
+				[R, EIGHTH],
+				[F, EIGHTH],
+				[R, EIGHTH],
+				[R, QUARTER],
+			],
+			sustain: [[R, WHOLE]],
+			// 3度から入る。ルートは裏で補う（転回形の響き）。
+			"third-first": [
+				[T, DOT_QUARTER],
+				[R, EIGHTH],
+				[F, QUARTER],
+				[R, QUARTER],
+			],
+			// 息継ぎのある型。2拍目を空ける。
+			breath: [
+				[R, QUARTER],
+				[R, -QUARTER],
+				[F, QUARTER],
+				[R, QUARTER],
+			],
 		};
-		const bassCell: [number, number][] =
+		// **骨格（{@link BassSkeleton}）で1小節の扱い方を決める。**
+		// 奏法だけを引いていた頃は、どの曲も「毎小節アタマにルート＋同じ型の反復」
+		// という同一の骨格を持っていた。
+		//
+		// - `two-bar` … 2小節でひとまとまり。後半の小節は別の奏法で書く。
+		// - `pedal`   … 4小節のまとまりの頭の和音のルートに留まる。和音が上で動いても
+		//               ベースは動かない（ペダルポイント）。
+		// - `approach`… 小節の最後の音を、次の小節のルートへ入る経過音に差し替える。
+		//               `A`（次のルートの1つ下の音階音）はウォーキング用に既にある。
+		const isLateBar = bar % 2 === 1;
+		const activeStyle: BassStyle =
+			style.bassSkeleton === "two-bar" && isLateBar
+				? style.bassStyleAlt
+				: style.bassStyle;
+		const baseCell: [number, number][] =
 			role === "hold" || role === "cadence"
 				? [[R, WHOLE]]
 				: role === "run"
 					? BASS_CELLS[
-							style.bassStyle === "half" || style.bassStyle === "quarter"
+							activeStyle === "half" ||
+							activeStyle === "quarter" ||
+							activeStyle === "sustain"
 								? "eighth"
-								: style.bassStyle
+								: activeStyle
 						]
-					: BASS_CELLS[style.bassStyle];
+					: BASS_CELLS[activeStyle];
+		// ペダル。4小節のまとまりの頭の和音のルートへ全部差し替える。
+		const pedalSemi =
+			style.bassSkeleton === "pedal"
+				? clampSemi(
+						(chordTones(progression[bar - (bar % 4)])[0] ?? rootTone).semi,
+						BASS_LOW,
+						BASS_HIGH,
+					)
+				: null;
+		let bassCell: [number, number][] =
+			pedalSemi === null
+				? baseCell
+				: baseCell.map(([semi, value]): [number, number] => [
+						// 5度は5度のまま残す（ペダルの上で5度が動くのは普通）。
+						semi === F
+							? clampSemi(pedalSemi + 7, BASS_LOW, BASS_HIGH)
+							: pedalSemi,
+						value,
+					]);
+		// アプローチノート。**次の小節の和音が変わるときだけ**入れる。同じ和音が続く
+		// 小節で入れると、行き先の無い経過音になる。
+		if (
+			style.bassSkeleton === "approach" &&
+			bassCell.length >= 2 &&
+			role !== "hold" &&
+			role !== "cadence" &&
+			progression[(bar + 1) % totalBars] !== progression[bar]
+		) {
+			const last = bassCell.length - 1;
+			bassCell = bassCell.map((cell, i): [number, number] =>
+				i === last ? [A, cell[1]] : cell,
+			);
+		}
 		// 音の強弱・切り方・ゴーストは、この小節ぶんを組み立ててから後段でまとめて付ける。
 		const barBass: ComposedNote[] = [];
 		let bassCursor = 0;
 		for (const [semi, value] of bassCell) {
-			const len = scaleStep(value);
-			const fifth =
+			// **小節からはみ出させない。** セルの合計は1小節ぴったりのはずだが、
+			// 型を書き足したときに合計を間違えると、次の小節の音と重なった状態で
+			// 出荷される（`check-compose.ts` の「ベースが単音」が落ちる）。
+			// 音価を書き間違えても曲が壊れないように、ここで切る。
+			const room = stepsPerBar - bassCursor;
+			if (room <= 0) break;
+			// 負の音価は休符。**ベースにも息継ぎが要る。** 音価が全部正だった頃は、
+			// どの型も小節を音で埋め尽くしていた。
+			if (value < 0) {
+				bassCursor += Math.min(scaleStep(-value), room);
+				continue;
+			}
+			const len = Math.min(scaleStep(value), room);
+			let useSemi = semi;
+			let fifth =
 				semi === R || semi === O
 					? rootTone.fifth
 					: semi === F
@@ -4383,12 +4975,20 @@ const draw = (
 						: semi === T
 							? (thirdTone?.fifth ?? rootTone.fifth)
 							: scaleFifth(scale, semi);
+			// **半小節で和音が動く曲は、後半の音を後半の和音へ移す。**
+			// ベースが前半の和音に留まると、上で鳴っている和音と根音が食い違う。
+			// ペダルの曲は動かさない——留まるのがペダルの役目。
+			if (tonesLate && bassCursor >= lateAt && pedalSemi === null) {
+				const t = nearestChordTone(useSemi, tonesLate, 1);
+				useSemi = clampSemi(t.semi, BASS_LOW, BASS_HIGH);
+				fifth = t.fifth;
+			}
 			const k = barKeyShift[bar];
 			const fifthShift =
 				k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
 			barBass.push({
 				startStep: barStart + bassCursor,
-				pitchUnits: spelledToUnits(semi + k, fifth + fifthShift, edo),
+				pitchUnits: spelledToUnits(useSemi + k, fifth + fifthShift, edo),
 				durationSteps: len,
 				// 強弱は「キックが居る場所」を基準に付ける。ドラムのパターンは
 				// このモジュールの外（DAWのドラム設定）で選ぶので実物は見られないが、
@@ -4412,9 +5012,11 @@ const draw = (
 			style.bassStaccato &&
 			role !== "hold" &&
 			role !== "cadence" &&
-			(style.bassStyle === "eighth" ||
-				style.bassStyle === "octave" ||
-				style.bassStyle === "alternate")
+			(activeStyle === "eighth" ||
+				activeStyle === "octave" ||
+				activeStyle === "alternate" ||
+				activeStyle === "driving" ||
+				activeStyle === "offbeat")
 		)
 			for (const n of barBass)
 				if (n.durationSteps >= 2 && n.durationSteps < quarterSteps * 2)
