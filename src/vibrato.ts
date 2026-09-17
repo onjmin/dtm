@@ -27,19 +27,6 @@ const VIBRATO_DEPTH_CENTS = 35;
 const VIBRATO_FADE_MS = 150;
 
 /**
- * ピッチにビブラートLFOを掛けた曲線関数を返す（koeの `RenderNoteParams.pitch` へ渡す）。
- * ノート先頭 {@link VIBRATO_FADE_MS} は深さを線形フェードインし、子音・立ち上がりの
- * 音程を素直に保つ。preMs 以前（子音・先行母音の重なり区間）はビブラートを掛けない。
- *
- * @param baseHz 目標ピッチ（Hz）
- * @param preMs レンダリング先頭からの母音オンセットまでの先行秒（ms）
- */
-export const vibratoPitchCurve =
-	(baseHz: number, preMs: number) =>
-	(tMs: number): number =>
-		baseHz * vibratoRatio(tMs - preMs);
-
-/**
  * 発音（母音オンセット）からの経過時間に対するビブラートの倍率を返す。
  * オンセット前（負の経過時間）は 1（無変調）。
  *

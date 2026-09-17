@@ -828,7 +828,7 @@ ${keys.map((k) => `\t${k}: [${bands[k].join(", ")}] as Band,`).join("\n")}
 
 /**
  * 同じ分布の中央値。**帯の内側で「人間の曲の真ん中に近いか」を見る**のに使う
- * （compose-metrics.ts の centeredBand）。周辺分布の帯だけだと、全項目が帯の端に
+ * （compose-metrics.ts にあった centeredBand。**現在は削除済み**）。周辺分布の帯だけだと、全項目が帯の端に
  * 同時に寄った曲も満点になってしまう。
  */
 export const CORPUS_MEDIANS = {

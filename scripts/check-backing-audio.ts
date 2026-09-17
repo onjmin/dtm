@@ -36,10 +36,6 @@ loader._load = (request, ...rest) =>
 
 const { formatMmlMeta, parseMML, parseMmlMeta, stripMmlMeta } =
 	require("../src/mml-parser") as typeof import("../src/mml-parser");
-const { shiftNotes } =
-	require("../src/macros") as typeof import("../src/macros");
-const { pitchV1ToUnits } =
-	require("../src/tuning") as typeof import("../src/tuning");
 
 let failed = 0;
 const check = (label: string, got: unknown, expect: unknown): void => {

@@ -62,5 +62,3 @@ export const icon = (name: keyof typeof ICONS | string, size = 20): string => {
 		: 'fill="currentColor"';
 	return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" ${paint} aria-hidden="true"><path d="${def.d}"/></svg>`;
 };
-
-export type IconName = keyof typeof ICONS;

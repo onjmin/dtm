@@ -7,20 +7,23 @@
  *
  * ## セクションごとに何を変えるか
  *
- * | | メロディ | 音域 | 密度 | ドラム | 終わり方 |
- * |---|---|---|---|---|---|
- * | イントロ | 無し | — | — | 抑えめ | — |
- * | Aメロ | 有り | 低め | 控えめ | 抑えめ | 半終止 |
- * | Bメロ | 有り | 中 | 上げる | 標準 | ドミナントで宙吊り |
- * | サビ | 有り | 高い | 最大 | 最大 | 主音へ全終止 |
- * | Cメロ | 有り | 中高 | やや控えめ | 標準 | 解決しない音 |
- * | 落ちサビ | 有り | 高い | 薄い | 抑えめ | 主音へ全終止 |
- * | 間奏 | 無し | — | — | 標準 | — |
- * | アウトロ | 有り | 低め | 薄い | 薄い | 主音へ全終止 |
+ * | | メロディ | 音域 | 密度 | 終わり方 |
+ * |---|---|---|---|---|
+ * | イントロ | 無し | — | — | — |
+ * | Aメロ | 有り | 低め | 控えめ | 半終止 |
+ * | Bメロ | 有り | 中 | 上げる | ドミナントで宙吊り |
+ * | サビ | 有り | 高い | 最大 | 主音へ全終止 |
+ * | Cメロ | 有り | 中高 | やや控えめ | 解決しない音 |
+ * | 落ちサビ | 有り | 高い | 薄い | 主音へ全終止 |
+ * | 間奏 | 無し | — | — | — |
+ * | アウトロ | 有り | 低め | 薄い | 主音へ全終止 |
  *
  * メロディを書かないセクション（イントロ・間奏）でも、伴奏・ベース・ドラムは鳴る。
  * ここを「メロディが無いだけの同じ小節」にすると、結局のっぺりしたままになるので、
- * ドラムの強度と伴奏の奏法で差を付ける。
+ * 伴奏の奏法で差を付ける。
+ *
+ * **ドラムはセクションで変えない。** 自動作曲のドラムは曲を通して固定パターンを
+ * 選ぶ仕様なので（`compose.ts` の `pickBuiltinDrum`）、セクションごとの強度は持たない。
  *
  * ## テンプレートによる曲構成
  *
@@ -122,8 +125,6 @@ export type SectionSpec = {
 	 * リズム型を選ぶときの「休符を含む型」の引きやすさに効く。
 	 */
 	density: number;
-	/** ドラムの強度。0=抑えめ 1=標準 2=最大。 */
-	drumLevel: 0 | 1 | 2;
 	/**
 	 * セクションの終わりの着地音（主音からの音階度数）。
 	 * `null` はメロディが無いセクション。
@@ -142,7 +143,6 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 		melody: false,
 		registerShift: 0,
 		density: 0.6,
-		drumLevel: 0,
 		landing: null,
 		progression: "b",
 	},
@@ -152,7 +152,6 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 		melody: true,
 		registerShift: -3,
 		density: 0.85,
-		drumLevel: 0,
 		landing: 4, // 5度で止めて「まだ続く」
 		progression: "a",
 	},
@@ -163,7 +162,6 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 		melody: true,
 		registerShift: 0,
 		density: 1.1,
-		drumLevel: 1,
 		landing: 1, // 2度＝解決しない音で止める
 		progression: "a",
 	},
@@ -173,7 +171,6 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 		melody: true,
 		registerShift: 4,
 		density: 1.2,
-		drumLevel: 2,
 		landing: 0, // 主音へ全終止
 		progression: "b",
 	},
@@ -186,19 +183,17 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 		melody: true,
 		registerShift: 2,
 		density: 0.9,
-		drumLevel: 1,
 		landing: 1, // 解決しない音で止めてラスサビへ渡す
 		progression: "c",
 	},
 	// 落ちサビ。サビのメロディを伴奏控えめに歌う。J-POPの王道パターン。
-	// density と drumLevel だけ下げ、メロディはサビと同じものを使う。
+	// density だけ下げ、メロディはサビと同じものを使う。
 	drop_chorus: {
 		bars: 4,
 		barChoices: [4, 4, 8],
 		melody: true,
 		registerShift: 4, // サビと同じ高さ
 		density: 0.6, // 薄い（ここが「落ち」の実体）
-		drumLevel: 0, // ドラム控えめ
 		landing: 0, // 主音へ全終止
 		progression: "b", // サビと同じ進行
 	},
@@ -208,7 +203,6 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 		melody: false,
 		registerShift: 0,
 		density: 0.8,
-		drumLevel: 1,
 		landing: null,
 		progression: "b",
 	},
@@ -218,7 +212,6 @@ export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 		melody: true,
 		registerShift: -3,
 		density: 0.6,
-		drumLevel: 0,
 		landing: 0,
 		progression: "a",
 	},

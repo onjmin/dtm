@@ -4,17 +4,6 @@
  * script-src CSP（blob: のみ許可）と互換性を持たせている。
  */
 
-export const importAll = (arr: string[]) =>
-	Promise.all(arr.map((v) => import(v))).then((v) => Object.assign({}, ...v));
-
-export const importAllSettled = (arr: string[]) =>
-	Promise.allSettled(arr.map((v) => import(v))).then((v) =>
-		Object.assign(
-			{},
-			...v.flatMap((r) => (r.status === "fulfilled" ? r.value : {})),
-		),
-	);
-
 export const getScript = (url: string): Promise<HTMLScriptElement> =>
 	new Promise((resolve, reject) => {
 		const e = document.createElement("script");

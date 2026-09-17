@@ -498,32 +498,6 @@ export const plausibleBand = (v: number, b: Band): number => {
 	return band(v, b[0] - margin, b[0], b[3], b[3] + margin);
 };
 
-/**
- * 帯の内側で、**コーパスの中央値へ寄っているほど高い**点を返す（0.85〜1.0）。
- *
- * ## なぜ要るか
- *
- * {@link band} は p25〜p75 を一律に満点とする。ところが目標帯は指標ごとに独立して
- * 採ったもの（周辺分布）なので、**全部の帯の端に同時に居座る曲**も満点を取れる。
- * 実測がまさにそれで、参考曲と生成物の中央値を並べると
- *
- *   1小節の音数 6.3 / 5.4　　順次進行 0.50 / 0.39　　休符率 0.07 / 0.18
- *   跳躍率 0.37 / 0.51　　音域 19 / 22半音
- *
- * と、**どの項目も帯の内側なのに、揃って同じ側へ寄っていた**。「スカスカで跳ねて
- * ばかりの曲」は、周辺分布だけ見れば全項目が人間の範囲に収まる。
- *
- * 帯の外は {@link band} のまま落とし、内側にだけ 0.15 の傾斜を付ける。満点を
- * 中央値の一点に絞ると今度は全曲が中央値へ寄る（曲どうしの違いが消える）ので、
- * 傾斜は候補どうしの同点を崩す程度に留める。
- */
-export const centeredBand = (v: number, b: Band, median: number): number => {
-	const score = band(v, b[0], b[1], b[2], b[3]);
-	if (score < 1) return score;
-	const spread = Math.max(median - b[1], b[2] - median, 1e-9);
-	return 1 - 0.15 * Math.min(1, Math.abs(v - median) / spread);
-};
-
 // ============================================================
 // 曲どうしの距離（「どの曲も似ている」を潰すため）
 // ============================================================
@@ -630,10 +604,3 @@ export const nearestProfileDistance = (
 	}
 	return Number.isFinite(best) ? best : 1;
 };
-
-/**
- * 最近傍距離を 0〜1 の読みやすい尺度へ写す。半径（コーパス自身の最近傍距離の p75）で
- * 0.5、その2倍離れて 0。**測定結果を人が読むための換算**であって採点ではない。
- */
-export const typicalityOf = (nearest: number, radius: number): number =>
-	Math.max(0, Math.min(1, 1 - nearest / Math.max(radius * 2, 1e-9)));

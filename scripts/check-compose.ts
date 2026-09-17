@@ -33,12 +33,7 @@ import {
 	scaleDegrees,
 	scalePcs,
 } from "../src/compose-scales";
-import { SECTION_LABELS } from "../src/compose-sections";
-import {
-	DRUM_KEYS,
-	DRUM_PATTERNS,
-	resolveDrumPattern,
-} from "../src/drum-config";
+import { DRUM_PATTERNS, resolveDrumPattern } from "../src/drum-config";
 import { INSTRUMENT_PRESETS } from "../src/instrument-presets";
 import { UNITS_PER_SEMITONE } from "../src/tuning";
 
@@ -1094,76 +1089,6 @@ console.log("● ドラム自動選択");
 }
 
 // ============================================================
-// 2.7b セクション対応ドラム（composeDrumPattern の配線）
-//
-//   組み込みパターンは人間の曲の採譜で、強弱が切り替わる小節番号が**採譜元の曲の
-//   もの**なので、生成した曲のサビとは揃わない。セクションから組み立て直したものを
-//   `song.drumPattern` に持つ。
-//
-//   **この検算がある理由。** `composeDrumPattern` は完成していたのに長らく
-//   どこからも呼ばれておらず（`SectionSpec.drumLevel` も同様に未配線だった）、
-//   Aメロもサビも同じ強さで叩いていた。配線は黙って外れるので、ここで縛る。
-// ============================================================
-
-console.log("● セクション対応ドラム");
-{
-	const N = 40;
-	const styles = new Set<string>();
-	const varieties: number[] = [];
-	for (let seed = 1; seed <= N; seed++) {
-		const song = composeSong({
-			stepsPerBar: STEPS_PER_BAR,
-			edo: 12,
-			random: seededRandom(seed * 31),
-		});
-		const tag = `seed=${seed}`;
-		styles.add(song.drumStyle);
-		const def = song.drumPattern;
-		varieties.push(def.pattern.length);
-		check(
-			`${tag} セクション対応ドラムが組み立てられている`,
-			def.pattern.length > 1,
-			`命令 ${def.pattern.length} 個`,
-		);
-		/** その小節で鳴る形。 */
-		const atBar = (bar: number): string => {
-			const hit = def.pattern.find((ins) =>
-				ins.ranges.some(([from, to]) => bar >= from && bar <= to),
-			);
-			return JSON.stringify(hit?.pattern ?? null);
-		};
-		const verse = song.sections.find((x) => x.kind === "verse");
-		const chorus = song.sections.find((x) => x.kind === "chorus");
-		if (verse && chorus) {
-			// 強度の差が実際に音になっているか。セクションの真ん中（クラッシュと
-			// フィルを避けた位置）どうしを比べる。
-			const mid = (sec: (typeof song.sections)[number]): number =>
-				sec.startBar + 1 + Math.floor(sec.bars / 2);
-			check(
-				`${tag} サビとAメロでドラムが変わる`,
-				atBar(mid(verse)) !== atBar(mid(chorus)),
-				`同じ形: ${SECTION_LABELS[verse.kind]} と ${SECTION_LABELS[chorus.kind]}`,
-			);
-		}
-		// クラッシュはセクションの頭に置く。
-		for (const sec of song.sections) {
-			if (sec.startBar === 0) continue;
-			const head = atBar(sec.startBar + 1);
-			check(
-				`${tag} セクション頭にクラッシュ`,
-				head.includes(String(DRUM_KEYS.crashCymbal1)),
-				`${SECTION_LABELS[sec.kind]}@${sec.startBar + 1}`,
-			);
-		}
-	}
-	const avg = varieties.reduce((a, b) => a + b, 0) / varieties.length;
-	check("ドラムの性格が複数出る", styles.size >= 3, `${styles.size}種`);
-	console.log(
-		`  ${N}曲: 性格${styles.size}種（${[...styles].join(" ")}）/ 小節命令 平均${avg.toFixed(1)}個`,
-	);
-}
-
-// ============================================================
 // 2.8 楽器プリセット自動選択
 //
 //     組み込みの INSTRUMENT_PRESETS から曲調に適したものが
@@ -1283,7 +1208,6 @@ console.log("● ベース調・雰囲気（調性格論）");
 
 	// 雰囲気からの抽選（決定的な乱数で確認）
 	const mockRnd0 = () => 0; // 最初のアイテムを選択
-	const mockRnd1 = () => 0.999; // 最後のアイテムを選択
 
 	const moodHappyFirst = resolveComposeKey("mood_happy", mockRnd0);
 	check(

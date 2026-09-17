@@ -1132,7 +1132,6 @@ type AutoRoleStats = {
 	/** 同一startStepの平均同時発音数（和音の厚み。単音のみなら1）。 */
 	avgPoly: number;
 	maxPoly: number;
-	notesPerBeat: number;
 };
 
 const computeAutoRoleStats = (
@@ -1149,13 +1148,7 @@ const computeAutoRoleStats = (
 	for (const c of byStart.values()) if (c > maxPoly) maxPoly = c;
 	const avgPoly = notes.length / byStart.size;
 
-	// 単位時間あたりの音数（密度）。低いほど「動きの少ない」パート。
-	const minStart = Math.min(...notes.map((n) => n.startStep));
-	const maxEnd = Math.max(...notes.map((n) => n.startStep + n.durationSteps));
-	const spanBeats = Math.max(1, (maxEnd - minStart) / AUTO_ROLE_STEPS_PER_BEAT);
-	const notesPerBeat = notes.length / spanBeats;
-
-	return { avgPitch, avgDur, avgPoly, maxPoly, notesPerBeat };
+	return { avgPitch, avgDur, avgPoly, maxPoly };
 };
 
 /**

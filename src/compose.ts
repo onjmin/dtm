@@ -26,19 +26,21 @@
  *
  * ## 「中央値へ寄せる」のをやめた理由
  *
- * 以前は帯の内側にも中央値へ向かう傾斜を付けていた（`centeredBand`）。全項目が帯の端へ
+ * 以前は帯の内側にも中央値へ向かう傾斜を付けていた（`centeredBand`。**現在は削除済み**）。全項目が帯の端へ
  * 同時に寄った曲を弾くためだったが、**目標帯は21項目を独立に採った周辺分布**なので、
  * その中央値は「どの曲でもない平均的な一点」でしかない。コーパス91本を自分の帯で
  * 測り直すと、人間の曲は中央値で**10項目が帯の外**にあり、素点の中央値は 0.673——
  * **生成物（0.851）のほうが較正元より高い点を取っていた**。選抜を完全に切っても
  * 生成物 0.970 対 人間 0.921 で、選抜ではなく採点式そのものが中央を報酬にしていた。
  *
- * そこで周辺分布の項目は「人間の範囲に居るか」の確認だけに格下げし（`plausibleBand`）、
- * 「人間が書いた曲の形か」の判断は**項目の組み合わせ**——コーパス91本のうち
- * **いちばん近い1曲との距離**（`nearestProfileDistance`、重み `typicality`）——へ渡した。
- * 中央から離れることではなく、**人が1本も居ない場所に居ること**を罰する形にしてある。
+ * そこで周辺分布の項目は「人間の範囲に居るか」の確認だけに格下げした（`plausibleBand`）。
  * さらに、人間の曲が普通いくつの軸を外すかを実測して {@link DEVIATION_BUDGET} とし、
  * その本数だけは減点を見逃す。検算は `scripts/check-evaluator.ts`。
+ *
+ * **コーパスへの「近さ」は採点していない。** 一時期は「いちばん近い1曲との距離」
+ * （`nearestProfileDistance`、重み `typicality`）を入れていたが、罰の半径を広げた
+ * だけで同じ誤りだった——理由は {@link WEIGHTS} の直後に書いてある。
+ * `nearestProfileDistance` は今も `scripts/calibrate-corpus.ts` が**測定のために**使う。
  *
  * 指標に最適化した結果として全曲が同じ統計値へ寄るのを防ぐため、直近に作った曲との
  * 距離も加点する（{@link ComposeOptions.recent}）。
@@ -63,7 +65,6 @@ import {
 	CORPUS_PROFILE_KEYS,
 	CORPUS_SIZE,
 } from "./compose-corpus";
-import { composeDrumPattern, type DrumStyle } from "./compose-drums";
 import { type ResolvedComposeKey, resolveComposeKey } from "./compose-keys";
 import {
 	type Band,
@@ -103,8 +104,6 @@ import {
 	type SectionKind,
 	sectionAt,
 } from "./compose-sections";
-import type { DrumPatternDef } from "./drum-config";
-import type { SongDrumPattern } from "./song-drum-config";
 import { UNITS_PER_SEMITONE, type Units } from "./tuning";
 
 // ============================================================
@@ -234,7 +233,7 @@ const WEIGHTS = {
 // **コーパスへの「近さ」は採点しない。**
 //
 // 一時期ここに `typicality`（コーパス91本のうち最も近い1曲との距離）を重み2.0で
-// 置いていた。中央値へ寄せる `centeredBand` の代わりのつもりだったが、これは
+// 置いていた。中央値へ寄せる `centeredBand`（削除済み）の代わりのつもりだったが、これは
 // **罰の半径を広げただけで同じ誤り**だった。コーパスが示すのは「これらは成立する」
 // という*十分性*であって、「これら以外は成立しない」という*必要性*ではない。
 // 人間の曲が、人の居ない領域の曲より音楽的に優れていると言える根拠が無い以上、
@@ -434,7 +433,6 @@ export const transposeChordName = (chord: string, shift: number): string => {
  *
  * 音域は C を基準に組んであるので、上下に極端へ振らず -5〜+6 半音に収める。
  */
-const ROOT_SHIFTS = [0, 1, 2, 3, 4, 5, 6, -1, -2, -3, -4, -5];
 
 /**
  * テンポ（BPM）の候補。参考曲100本の実測は 中央値132・p25〜p75 が 126〜136。
@@ -1617,21 +1615,6 @@ export type ComposeResult = {
 	tonal: TonalPlan;
 	/** 曲に合わせて組み込みから自動選択されたドラムパターン名（DRUM_PATTERNS のキー）。 */
 	drum: string;
-	/**
-	 * **この曲のセクションに合わせて組み立てたドラム。**
-	 *
-	 * `drum`（組み込みパターン名）は人間の曲の採譜で、強弱の切り替わる小節番号が
-	 * **その曲のもの**（`ranges: [[1,31],[33,52],…]`）。生成した曲のサビがどこに
-	 * あるかとは無関係なので、どれだけ良い採譜でも「この曲のサビでドラムが開く」には
-	 * ならない。{@link SectionSpec.drumLevel} から小節ごとの強度を作って組み立て直す。
-	 *
-	 * `composeDrumPattern` はずっと前からあったが**どこからも呼ばれていなかった**
-	 * （`registerShift` と同じ）。曲の「進行している感じ」の大半はドラムが作るので、
-	 * ここが平らだと上物を何本引き直してもヒット曲の推進力は出ない。
-	 */
-	drumPattern: DrumPatternDef<SongDrumPattern>;
-	/** 組み立てたドラムの性格。 */
-	drumStyle: DrumStyle;
 	/** 曲に合わせて組み込みから自動選択された楽器プリセット名（INSTRUMENT_PRESETS のキー）。 */
 	instrument: string;
 	melody: ComposedNote[];
@@ -3083,10 +3066,7 @@ export type TonalPlan = {
 };
 
 /** 1回分の draw。点数を付けるのは呼び出し側（{@link evaluate}）の仕事。 */
-type Draw = Omit<
-	ComposeResult,
-	"stats" | "drum" | "drumPattern" | "drumStyle" | "instrument" | "arrange"
-> & {
+type Draw = Omit<ComposeResult, "stats" | "drum" | "instrument" | "arrange"> & {
 	melodyDurations: number[];
 	restSteps: number;
 	totalSteps: number;
@@ -5548,7 +5528,7 @@ const evaluate = (
 	 * コーパスから採った項目は**「人間の範囲に居るか」だけ**を見る
 	 * （{@link plausibleBand}）。
 	 *
-	 * ここは以前 {@link centeredBand} で中央値へ寄せていた。「全項目が帯の端へ同時に
+	 * ここは以前 `centeredBand`（削除済み）で中央値へ寄せていた。「全項目が帯の端へ同時に
 	 * 寄った曲」を弾くためだったが、周辺分布の中央値は**どの曲でもない平均的な一点**で、
 	 * そこへ寄せると人間の曲そのものが落ちる（{@link DEVIATION_BUDGET} の実測）。
 	 * p25〜p75 を満点にする {@link band} でも傾斜は残るので、そこも外した。
@@ -5726,8 +5706,6 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 		// ドラム・楽器・編曲プランは勝った候補にだけ後から付ける（メロディに
 		// 依存しないので候補ごとに引いても採点は動かず、候補数ぶん無駄になる）。
 		drum: "",
-		drumPattern: { label: "", pattern: [] },
-		drumStyle: "eight",
 		instrument: "",
 		arrange: EMPTY_ARRANGE,
 		chordProgression: d.chordProgression,
@@ -5757,71 +5735,9 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	result.stats.attempts = count;
 	result.stats.rejected = rejected;
 	result.drum = pickBuiltinDrum(result, rnd);
-	// **セクションからドラムを組み立てる。** 組み込みパターン（`result.drum`）は
-	// 強弱の切り替わる小節番号が採譜元の曲のものなので、この曲のサビとは揃わない。
-	const drums = composeDrumPattern({
-		bars: result.bars,
-		stepsPerBar: options.stepsPerBar,
-		rnd,
-		style: pickDrumStyle(result, rnd),
-		levels: drumLevels(result),
-		// クラッシュはセクションの頭（1始まり）。
-		crashBars: result.sections.map((sec) => sec.startBar + 1),
-		// フィルはセクションの終わりの1つ手前。「次へ入る助走」なので最終小節には置かない。
-		fillBars: result.sections
-			.map((sec) => sec.startBar + sec.bars - 1)
-			.filter((bar) => bar > 1 && bar < result.bars),
-	});
-	result.drumPattern = drums.def;
-	result.drumStyle = drums.style;
 	result.instrument = pickBuiltinInstrument(result, rnd);
 	result.arrange = buildArrangePlan(result, rnd);
 	return result;
-};
-
-/**
- * **小節ごとのドラムの強度を、セクションから作る。**
- *
- * {@link SectionSpec.drumLevel} は最初から定義されていたのに、`composeDrumPattern` の
- * `levels` へ渡す経路がどこにも無く、全小節が既定の 1（標準）で鳴っていた。
- * Aメロもサビも同じ強さで叩いていた、ということ。
- */
-const drumLevels = (song: ComposeResult): (0 | 1 | 2)[] => {
-	const out: (0 | 1 | 2)[] = new Array(song.bars).fill(1);
-	for (const sec of song.sections)
-		for (
-			let b = sec.startBar;
-			b < sec.startBar + sec.bars && b < song.bars;
-			b++
-		)
-			out[b] = sec.spec.drumLevel;
-	return out;
-};
-
-/**
- * 組み立てるドラムの性格を選ぶ。{@link pickBuiltinDrum} と同じ材料
- * （テンポ・刻みの細かさ・跳ね）から引く。
- */
-const pickDrumStyle = (song: ComposeResult, rnd: () => number): DrumStyle => {
-	const eighth = BASE_STEPS_PER_BAR / 8;
-	const short =
-		song.melody.filter((n) => n.durationSteps <= eighth).length /
-		Math.max(1, song.melody.length);
-	const dotted =
-		song.melody.filter(
-			(n) => n.durationSteps === Math.round((BASE_STEPS_PER_BAR * 3) / 16),
-		).length / Math.max(1, song.melody.length);
-	const pool: DrumStyle[] =
-		dotted >= 0.08
-			? ["shuffle", "shuffle", "eight"]
-			: song.bpm >= 150
-				? ["four", "sixteen", "rock"]
-				: short >= 0.85
-					? ["sixteen", "four", "rock"]
-					: song.bpm <= 115
-						? ["ballad", "eight", "shuffle"]
-						: ["eight", "eight", "sixteen", "rock"];
-	return pick(pool, rnd);
 };
 
 /**
@@ -5830,6 +5746,22 @@ const pickDrumStyle = (song: ComposeResult, rnd: () => number): DrumStyle => {
  * ドラムはメロディに依存しないので候補ごとに引く必要はないが、引き当てた曲と噛み合って
  * いないと目も当てられない（速い曲にスロードラム、など）。
  * テンポと刻みの細かさから絞ってから引く。
+ *
+ * ## **組み立てるのではなく選ぶ、というのがここの仕様。**
+ *
+ * 小節ごとにドラムを組み立てれば「サビでドラムが開く」は作れる。**それでも固定
+ * パターンから選ぶ**のは、
+ *
+ * 1. **MMLの量が増える。** 小節ごとに形が変わるぶんだけドラムの記述が膨らむ。
+ *    出力が人の読める MML であることに意味がある。
+ * 2. **情報量が多くなる。** 曲の中でドラムが占める記述量が他のトラックを圧迫する。
+ * 3. **音楽的な比重がそこまで高くない。** 得られるものに対して 1・2 が見合わない。
+ *
+ * 過去2回、セクション対応のドラム生成器（`compose-drums.ts`）を書いて配線しては
+ * 取り消している（2026-09-06 `1a00fcd6`、2026-09-17 `cbd5586d`）。2度目の取り消しで
+ * **モジュールごと削除した**——完成しているのに呼ばれていないコードが残っていたのが
+ * 再燃の原因だったため。`SectionSpec` から `drumLevel` を落としたのも同じ理由。
+ * **同じ提案をする前にここを読むこと。**
  */
 const pickBuiltinDrum = (song: ComposeResult, rnd: () => number): string => {
 	const eighth = BASE_STEPS_PER_BAR / 8;
@@ -6000,11 +5932,6 @@ export const pickBuiltinInstrument = (
 	song: ComposeResult,
 	rnd: () => number,
 ): string => {
-	const eighth = BASE_STEPS_PER_BAR / 8;
-	const short =
-		song.melody.filter((n) => n.durationSteps <= eighth).length /
-		Math.max(1, song.melody.length);
-
 	// 稀に和風やエキゾチックなどのアクセント枠を出す（約6%）
 	if (rnd() < 0.06) {
 		return pick(["japanese_wa", "arabic_exotic"], rnd);

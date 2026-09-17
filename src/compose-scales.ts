@@ -157,11 +157,6 @@ export type ComposeScale = {
 	 */
 	core: number[];
 	/**
-	 * 主和音が短三和音か。調性格（`COMPOSE_KEYS`）をどちら側から引くかに使う。
-	 * 主音が短三和音を持つ音階に長調の調性格を当てると、説明と響きが食い違う。
-	 */
-	minorish: boolean;
-	/**
 	 * **中核音の外を厳しく締めるか。**
 	 *
 	 * `true` にすると、和音の構成音であっても中核の外なら隣へ逃がし、変化音も減らし、
@@ -475,7 +470,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		label: "陽音階（長調ペンタトニック）",
 		tonic: 0,
 		core: [0, 1, 2, 4, 5], // ド レ ミ ソ ラ
-		minorish: false,
 		strict: false,
 		description: "J-POPの標準。明るく素直で歌いやすい。従来の長調と同じ",
 	},
@@ -484,7 +478,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		label: "民謡音階（短調ペンタトニック）",
 		tonic: 5,
 		core: [5, 0, 1, 2, 4], // ラ ド レ ミ ソ
-		minorish: true,
 		strict: false,
 		description:
 			"わらべ歌・民謡の音階。翳りがあるが暗すぎない。従来の短調と同じ",
@@ -494,7 +487,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		label: "律音階",
 		tonic: 1,
 		core: [1, 2, 4, 5, 6], // レ ミ ソ ラ シ
-		minorish: true,
 		strict: true,
 		center: RITSU_CENTER,
 		description: "雅楽・声明の音階。半音を含まず、平らで荘重に流れる",
@@ -504,7 +496,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		label: "都節音階（陰音階）",
 		tonic: 2,
 		core: [2, 3, 5, 6, 0], // ミ ファ ラ シ ド
-		minorish: true,
 		strict: true,
 		center: MIYAKOBUSHI_CENTER,
 		description: "『さくらさくら』の音階。主音のすぐ上が半音で、翳りが濃い",
@@ -514,7 +505,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		label: "琉球音階",
 		tonic: 0,
 		core: [0, 2, 3, 4, 6], // ド ミ ファ ソ シ
-		minorish: false,
 		strict: true,
 		center: RYUKYU_CENTER,
 		description: "沖縄音階。レとラを抜き、ファとシを柱にする。明るく跳ねる",
@@ -524,7 +514,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		label: "ドリアン",
 		tonic: 1,
 		core: [1, 3, 4, 5, 0], // レ ファ ソ ラ ド
-		minorish: true,
 		strict: false,
 		description: "短調だが6度が明るい。ケルト・ロック・シティポップ",
 	},
@@ -533,7 +522,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		label: "フリジアン",
 		tonic: 2,
 		core: [2, 3, 5, 6, 1], // ミ ファ ラ シ レ
-		minorish: true,
 		strict: false,
 		description: "主音の上が半音。スパニッシュ／メタルの緊迫した響き",
 	},
@@ -542,7 +530,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		label: "リディアン",
 		tonic: 3,
 		core: [3, 4, 6, 0, 2], // ファ ソ シ ド ミ
-		minorish: false,
 		strict: false,
 		description: "4度が高く、浮遊して広がる。映画音楽・ゲームの空の色",
 	},
@@ -551,7 +538,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		label: "ミクソリディアン",
 		tonic: 4,
 		core: [4, 5, 0, 1, 3], // ソ ラ ド レ ファ
-		minorish: false,
 		strict: false,
 		description: "長調だが7度が低い。ブルースロック・民族音楽の土くささ",
 	},
@@ -561,7 +547,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		tonic: 5,
 		parent: HARMONIC_MINOR_SCALE,
 		core: [5, 0, 1, 2, 4], // ラ ド レ ミ ソ♯
-		minorish: true,
 		strict: false,
 		center: HARMONIC_MINOR_CENTER,
 		description: "導音ソ♯を持つ短調。増2度が泣きを作る。クラシック・V系・劇伴",
@@ -572,7 +557,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		tonic: 2,
 		parent: HARMONIC_MINOR_SCALE,
 		core: [2, 3, 4, 5, 6], // ミ ファ ソ♯ ラ シ
-		minorish: false,
 		strict: false,
 		center: HIJAZ_CENTER,
 		description: "主音の上が半音、主和音は長三和音。中東・スパニッシュ・メタル",
@@ -583,7 +567,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		tonic: 5,
 		parent: HUNGARIAN_SCALE,
 		core: [5, 0, 1, 2, 4], // ラ ド レ♯ ミ ソ♯
-		minorish: true,
 		strict: false,
 		center: HUNGARIAN_CENTER,
 		description: "増2度が2か所。音階の中でいちばん跳ねた、異国めいた響き",
@@ -594,7 +577,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		tonic: 0,
 		parent: BLUES_SCALE,
 		core: [0, 1, 2, 4, 5], // ド ミ♭ ファ ソ シ♭
-		minorish: true,
 		strict: true,
 		center: BLUES_CENTER,
 		description: "ブルーノート入りの6音音階。短3度で歌い、伴奏は長3度で鳴る",
@@ -605,12 +587,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 export const COMPOSE_SCALE_IDS = Object.keys(
 	COMPOSE_SCALES,
 ) as ComposeScaleId[];
-
-/**
- * 既定（従来互換）の2音階。`scale` 未指定のときはここから調に合わせて引くので、
- * **音階を指定しない呼び出しは以前と1音も変わらない。**
- */
-export const DEFAULT_SCALE_IDS: ComposeScaleId[] = ["yo", "minyo"];
 
 /**
  * 主音の位置ごとの「和声の中心」。進行プールと終止形をここで引く。
