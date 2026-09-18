@@ -742,6 +742,8 @@ export type DawInstance = {
 	loadMML: (mml: string) => void;
 	loadMIDI: (bytes: Uint8Array) => void | Promise<void>;
 	exportMIDI: () => Blob;
+	/** 全トラックをMusicXML（楽譜）テキストのBlobで返す。 */
+	exportMusicXML: () => Blob;
 	/** 選択中のトラック1本をUST（UTAU）テキストのBlobで返す。 */
 	exportUST: () => Blob;
 	setBpm: (bpm: number) => void;
@@ -821,6 +823,11 @@ export type DawInstance = {
 	applyUstParsed?: (
 		ustTracks: import("./ust-io").UstTrackData[],
 		startIndex?: number,
+	) => void;
+	/** 解析済みMusicXMLの選択パートを適用する（上級者モード切替後の再ロード用）。 */
+	applyMusicXmlParsed?: (
+		xml: import("./musicxml-io").MusicXmlExtraction,
+		selectedIndices: number[],
 	) => void;
 	/**
 	 * ガイドツアーを開始する（自動再生の設定に関わらず、いつでも呼べる）。

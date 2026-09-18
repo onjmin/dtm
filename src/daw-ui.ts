@@ -105,6 +105,11 @@ export type DawUIRefs = {
 	midiTrackSelection: HTMLElement;
 	midiPanel: HTMLElement;
 	midiSearchOpenBtn: HTMLButtonElement;
+	musicXmlInput: HTMLInputElement;
+	musicXmlLoadBtn: HTMLButtonElement;
+	musicXmlInfoBtn: HTMLButtonElement;
+	musicXmlPartSelection: HTMLElement;
+	musicXmlLoadNote: HTMLElement;
 	ustInput: HTMLInputElement;
 	ustLoadBtn: HTMLButtonElement;
 	ustInfoBtn: HTMLButtonElement;
@@ -140,6 +145,7 @@ export type DawUIRefs = {
 	macroMono: HTMLButtonElement;
 	// output
 	exportMidiBtn: HTMLButtonElement;
+	exportMusicXmlBtn: HTMLButtonElement;
 	exportUstBtn: HTMLButtonElement;
 	exportWavBtn: HTMLButtonElement;
 	drumJsonExportBtn: HTMLButtonElement;
@@ -462,7 +468,7 @@ export const buildUI = (
   </details>
 
   <details class="dtm-panel ${showMidi ? "" : "dtm-hidden"}" data-dtm="midi-panel" data-dtm-acc="io-in">
-    <summary>MIDI / UST / MML 入力</summary>
+    <summary>MIDI / MusicXML / UST / MML 入力</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row" style="flex-wrap:nowrap">
         <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
@@ -473,6 +479,16 @@ export const buildUI = (
         <button class="dtm-btn dtm-btn--success" data-dtm="midi-load" style="flex-shrink:0">読込</button>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
+          <span class="dtm-label" style="line-height: 1;">MusicXML</span>
+          <button class="dtm-infobtn" data-dtm="musicxml-info" title="MusicXMLの読み込み解説">${icon("info", 12)}</button>
+        </div>
+        <input type="file" class="dtm-input dtm-grow" accept=".musicxml,.xml" data-dtm="musicxml-input" style="min-width:0">
+        <button class="dtm-btn dtm-btn--success" data-dtm="musicxml-load" style="flex-shrink:0">読込</button>
+      </div>
+      <div class="dtm-row dtm-hidden" data-dtm="musicxml-part-selection"></div>
+      <p class="dtm-load-note dtm-hidden" data-dtm="musicxml-load-note"></p>
       <div class="dtm-row" style="flex-wrap:nowrap">
         <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
           <span class="dtm-label" style="line-height: 1;">UST</span>
@@ -675,10 +691,11 @@ export const buildUI = (
   </details>
 
   <details class="dtm-panel" data-dtm-acc="io-out">
-    <summary>MIDI / UST / MML 出力</summary>
+    <summary>MIDI / MusicXML / UST / MML 出力</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row">
         <button class="dtm-btn dtm-btn--accent" data-dtm="export-midi">MIDI出力</button>
+        <button class="dtm-btn dtm-btn--accent" data-dtm="export-musicxml" title="全トラックをMusicXML（楽譜）形式で書き出します">MusicXML出力</button>
         <button class="dtm-btn dtm-btn--accent" data-dtm="export-ust" title="現在選択中のトラックだけをUSTで書き出します">UST出力</button>
         <button class="dtm-btn dtm-btn--success" data-dtm="generate-mml">MML生成</button>
         <button class="dtm-btn dtm-btn--primary dtm-hidden" data-dtm="export-wav">WAV書き出し</button>
@@ -838,6 +855,11 @@ export const buildUI = (
 		midiTrackSelection: sel("midi-track-selection"),
 		midiPanel: sel("midi-panel"),
 		midiSearchOpenBtn: sel("midi-search-open"),
+		musicXmlInput: sel("musicxml-input"),
+		musicXmlLoadBtn: sel("musicxml-load"),
+		musicXmlInfoBtn: sel("musicxml-info"),
+		musicXmlPartSelection: sel("musicxml-part-selection"),
+		musicXmlLoadNote: sel("musicxml-load-note"),
 		ustInput: sel("ust-input"),
 		ustLoadBtn: sel("ust-load"),
 		ustInfoBtn: sel("ust-info"),
@@ -869,6 +891,7 @@ export const buildUI = (
 		macroHarmonic: sel("macro-harmonic"),
 		macroMono: sel("macro-mono"),
 		exportMidiBtn: sel("export-midi"),
+		exportMusicXmlBtn: sel("export-musicxml"),
 		exportUstBtn: sel("export-ust"),
 		exportWavBtn: sel("export-wav") as HTMLButtonElement,
 		drumJsonExportBtn: sel("drum-json-export"),

@@ -97,6 +97,12 @@ import { decomposeToMonophonic, isChordHeavyTrack, MMLCore } from "./mml-core";
 import { MML_INFO_HTML } from "./mml-info";
 import { formatMmlMeta, parseMML } from "./mml-parser";
 import { mountMmlPlayer } from "./mml-player";
+import {
+	exportMusicXML as exportMusicXmlString,
+	type MusicXmlExtraction,
+	musicXmlToNotes,
+	parseMusicXML,
+} from "./musicxml-io";
 import { readPanelOpen, writePanelOpen } from "./panel-state";
 import { createRenderer, type Renderer } from "./renderer";
 import {
@@ -625,6 +631,28 @@ const MIDI_INFO_HTML = `
 </div>
 `;
 
+const MUSICXML_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>1. MusicXMLとは</h4>
+  <p>MuseScore、Finale、Sibeliusなどの楽譜作成ソフトで広く使われている楽譜フォーマットです。MIDIと違って<strong>パート構成や音符に紐づいた歌詞</strong>を保持できるため、主旋律の特定や歌声合成への受け渡しが確実に行えます。</p>
+
+  <h4>2. 読み込みのしかた</h4>
+  <ul>
+    <li>「ファイルを選択」から <code>.musicxml</code> または <code>.xml</code> ファイルを選びます。</li>
+    <li>ファイル内に含まれるパート一覧が表示されるので、読み込みたいパートを選択して「読込」を押します。</li>
+    <li>歌詞が含まれているパートは自動的に歌声合成（UTAU）トラックとして設定され、歌詞も流し込まれます。</li>
+    <li>テンポ（BPM）情報がある場合は自動的に反映されます。</li>
+    <li>「現在のトラックのみ対象とする」が有効なときは、選択した最初のパートだけが現在アクティブなトラックに読み込まれます。</li>
+  </ul>
+
+  <h4>3. 書き出し</h4>
+  <ul>
+    <li>「MIDI / MusicXML / UST / MML 出力」の「MusicXML出力」で、全トラックを <code>score-partwise</code> 形式の MusicXML ファイルとして書き出せます。</li>
+    <li>音符やトラック名に加えて、設定された歌詞もそのまま楽譜の歌詞として出力されます。</li>
+  </ul>
+</div>
+`;
+
 const UST_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>1. USTファイルとは</h4>
@@ -782,6 +810,7 @@ const HELP_INFO_HTML = `
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="koe">カスタム音声(.koe)</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="chord">コード進行</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="midi">MIDIの読み込み</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="musicxml">MusicXML</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="ust">UST(UTAU)</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="mml">MMLの書き方</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="loop">ループ再生</button>
@@ -802,6 +831,7 @@ const HELP_TOPICS: Record<string, { title: string; html: string }> = {
 	koe: { title: "カスタム音声(.koe)の使い方", html: KOE_INFO_HTML },
 	chord: { title: "コード進行の自動入力解説", html: CHORD_INFO_HTML },
 	midi: { title: "MIDIの読み込み解説", html: MIDI_INFO_HTML },
+	musicxml: { title: "MusicXMLの入出力解説", html: MUSICXML_INFO_HTML },
 	ust: { title: "USTの読み込み解説", html: UST_INFO_HTML },
 	mml: { title: "MMLの書き方解説", html: MML_INFO_HTML },
 	loop: { title: "ループ再生の解説", html: LOOP_INFO_HTML },
@@ -5591,6 +5621,128 @@ export const mountDAW = (
 	};
 
 	/**
+	 * 取り込んだMusicXMLの選択パートをトラックへ流し込む。
+	 *
+	 * 「現在のトラックのみ対象とする」が有効なら、選択パートの先頭だけを
+	 * 現在のトラックへ入れる。無効なら、選択パート数が複数ならトラック0から、
+	 * 1パートだけなら現在のアクティブトラックから順に流し込む。
+	 */
+	const applyMusicXmlSelection = (
+		xml: MusicXmlExtraction,
+		selectedIndices: number[],
+		startIndex?: number,
+	): { applied: number; dropped: number } => {
+		stop();
+		const applyActiveOnly = refs.applyActiveOnly?.checked ?? false;
+		const from = Math.max(
+			0,
+			startIndex ??
+				(applyActiveOnly
+					? activeTrackIndexOf()
+					: selectedIndices.length > 1
+						? 0
+						: activeTrackIndexOf()),
+		);
+		const maxCount = applyActiveOnly ? 1 : trackStates.length - from;
+		const targetIndices = selectedIndices.slice(0, Math.max(0, maxCount));
+		const voice = trackStates[from]?.lyricModel || pickComposeVocal();
+
+		targetIndices.forEach((partIndex, i) => {
+			const t = trackStates[from + i];
+			if (!t) return;
+			const notes = musicXmlToNotes(xml.placements, partIndex);
+			t.core.setLoadMode(true);
+			t.core.clearNotesWithoutHistory();
+			for (const n of notes) {
+				t.core.addNote(n.startStep, snapToEdoGrid(n.pitchUnits), {
+					noteLengthSteps: n.durationSteps,
+					velocity: n.velocity,
+				});
+			}
+			t.core.setLoadMode(false);
+			t.core.addHistoryOnce();
+
+			// 歌詞の取り込み
+			// startStep 昇順に並べて、歌詞がある音符はその歌詞、ない音符は継続記号「ー」を補う
+			const partPlacements = xml.placements
+				.filter((p) => p.partIndex === partIndex)
+				.sort((a, b) => a.startStep - b.startStep);
+			const hasLyrics = partPlacements.some((p) =>
+				Boolean(p.lyric && p.lyric.trim()),
+			);
+
+			if (hasLyrics) {
+				const syllables: string[] = [];
+				for (const p of partPlacements) {
+					const l = p.lyric?.trim();
+					syllables.push(l || "ー");
+				}
+				t.lyrics = syllables.join("");
+				t.vocalVolume = DEFAULT_VOCAL_VOLUME;
+				t.vocalGate = 100;
+				t.vocalPan = 64;
+				t.vocalOctave = 0;
+				t.vocalVibrato = false;
+				t.vocalReverb = 0;
+				t.vocalDelay = 0;
+				t.vocalGender = 50;
+				t.vocalBreathiness = 50;
+				t.vocalTension = 50;
+				t.vocalOctaveUnison = "none";
+				if (!t.lyricModel) t.lyricModel = voice;
+				fireLyricsChange(t);
+			} else {
+				t.lyrics = "";
+				t.lyricModel = "";
+			}
+		});
+
+		if (xml.bpm > 0) setBpm(Math.round(xml.bpm));
+
+		playStartStep = 0;
+		currentOffsetX = 0;
+		const firstPitch = getFirstDetectedPitch();
+		centerPitch(firstPitch ?? pitchV1ToUnits(60));
+		redrawAll();
+		updateTrackPanel();
+		updateUndoRedo();
+
+		return {
+			applied: targetIndices.length,
+			dropped: selectedIndices.length - targetIndices.length,
+		};
+	};
+
+	/**
+	 * 全トラックをMusicXML（楽譜）形式で書き出す。
+	 *
+	 * MIDIと異なり、トラックごとの名前・音符・歌詞（UTAU歌唱用に入力されたもの）
+	 * が1つのMusicXMLファイルとして保持される。
+	 */
+	const exportMusicXML = (): Blob => {
+		const parts = trackStates.map((t) => {
+			const notes = playableNotes(t);
+			const syllables = t.lyrics
+				? normalizeLyrics(t.lyrics).map(displayKana)
+				: undefined;
+			return {
+				name: t.config.name,
+				notes,
+				lyrics: syllables,
+			};
+		});
+		const xml = exportMusicXmlString({
+			parts,
+			bpm,
+			stepsPerBar: renderConfig.stepsPerBar,
+			title: "DTM Project",
+		});
+		return new Blob([xml], {
+			type: "application/vnd.recordare.musicxml+xml;charset=utf-8",
+		});
+	};
+
+	/**
 	 * 選択中のトラック1本だけをUSTへ書き出す。
 	 *
 	 * USTは単旋律1パートのフォーマットなので、曲全体ではなく「いま見ているパート」
@@ -6928,6 +7080,9 @@ export const mountDAW = (
 		refs.exportMidiBtn.addEventListener("click", () => {
 			download(exportMIDI(), "dtm.mid");
 		});
+		refs.exportMusicXmlBtn.addEventListener("click", () => {
+			download(exportMusicXML(), "dtm.musicxml");
+		});
 		refs.exportUstBtn.addEventListener("click", () => {
 			// USTは1パート1ファイル。どのトラックを書き出したか分かる名前にする。
 			const name = getActive().config.name.replace(/[/:*?"<>|\s]+/g, "_");
@@ -7240,6 +7395,7 @@ export const mountDAW = (
 
 		if (showMidi) {
 			wireMidi();
+			wireMusicXml();
 			wireUst();
 		}
 		if (showAudio) {
@@ -7364,6 +7520,161 @@ export const mountDAW = (
 				}
 			}
 			overlayDuring(() => applyMidiSelection(pendingMidi, selected));
+		});
+	};
+
+	/** 選択済みで、まだ「読込」を押されていないMusicXML。 */
+	let pendingMusicXml: MusicXmlExtraction | null = null;
+	/** MusicXML欄の下に出す注意書き。空文字なら隠す。 */
+	const setMusicXmlNote = (text: string): void => {
+		refs.musicXmlLoadNote.textContent = text;
+		refs.musicXmlLoadNote.classList.toggle("dtm-hidden", text === "");
+	};
+
+	const getSelectedMusicXmlPartIndices = (): number[] => {
+		if (!pendingMusicXml) return [];
+		const selected: number[] = [];
+		const btns = refs.musicXmlPartSelection.querySelectorAll("button");
+		btns.forEach((b, i) => {
+			if ((b as HTMLElement).dataset.selected === "true") {
+				selected.push(pendingMusicXml!.parts[i].index);
+			}
+		});
+		return selected;
+	};
+
+	const updateMusicXmlAssignmentNote = (): void => {
+		if (!pendingMusicXml) return;
+		const selected = getSelectedMusicXmlPartIndices();
+		if (selected.length === 0) {
+			setMusicXmlNote("読み込むパートを選択してください");
+			return;
+		}
+		const applyActiveOnly = refs.applyActiveOnly?.checked ?? false;
+		const from = applyActiveOnly
+			? activeTrackIndexOf()
+			: selected.length > 1
+				? 0
+				: activeTrackIndexOf();
+		const maxCount = applyActiveOnly ? 1 : trackStates.length - from;
+		const appliedCount = Math.min(selected.length, maxCount);
+		const selectedParts = selected
+			.map((idx) => pendingMusicXml!.parts.find((p) => p.index === idx))
+			.filter(Boolean);
+
+		const names = selectedParts
+			.slice(0, appliedCount)
+			.map(
+				(p, i) =>
+					`${trackStates[from + i]?.config.name ?? `トラック${from + i + 1}`}←${p!.name}`,
+			)
+			.join(" / ");
+		const dropped = selected.length - appliedCount;
+		const dropReason = applyActiveOnly
+			? "「現在のトラックのみ」が有効なため"
+			: "トラック不足のため";
+		setMusicXmlNote(
+			dropped > 0
+				? `${names}（${dropReason}${dropped}パートは読み込みません）`
+				: names,
+		);
+	};
+
+	const wireMusicXml = (): void => {
+		refs.musicXmlInfoBtn.addEventListener("click", () => {
+			showModal("MusicXMLの入出力解説", MUSICXML_INFO_HTML);
+		});
+		refs.musicXmlInput.addEventListener("change", async () => {
+			const file = refs.musicXmlInput.files?.[0];
+			pendingMusicXml = null;
+			refs.musicXmlPartSelection.innerHTML = "";
+			if (!file) {
+				setMusicXmlNote("");
+				refs.musicXmlPartSelection.classList.add("dtm-hidden");
+				return;
+			}
+			refs.overlay.hidden = false;
+			setLoading(true);
+			try {
+				const text = await file.text();
+				pendingMusicXml = parseMusicXML(text);
+				if (pendingMusicXml.parts.length === 0) {
+					setMusicXmlNote("パートが見つかりませんでした");
+					refs.musicXmlPartSelection.classList.add("dtm-hidden");
+					return;
+				}
+				refs.musicXmlPartSelection.innerHTML = `<span class="dtm-label">パート</span>`;
+				pendingMusicXml.parts.forEach((p) => {
+					const btn = document.createElement("button");
+					btn.className = "dtm-btn dtm-btn--primary";
+					btn.dataset.selected = "true";
+					const lyricBadge = p.hasLyrics ? " 🎤" : "";
+					btn.textContent = `${p.name} (${p.noteCount}音${lyricBadge})`;
+					btn.title = `平均音高: MIDI ${Math.round(p.avgPitch)}${p.hasLyrics ? " / 歌詞あり" : ""}`;
+					btn.addEventListener("click", () => {
+						const on = btn.dataset.selected !== "true";
+						btn.dataset.selected = String(on);
+						btn.classList.toggle("dtm-btn--primary", on);
+						btn.classList.toggle("dtm-btn--ghost", !on);
+						updateMusicXmlAssignmentNote();
+					});
+					refs.musicXmlPartSelection.appendChild(btn);
+				});
+				refs.musicXmlPartSelection.classList.remove("dtm-hidden");
+				updateMusicXmlAssignmentNote();
+			} catch (e) {
+				setMusicXmlNote("MusicXMLとして解析できませんでした");
+				refs.musicXmlPartSelection.classList.add("dtm-hidden");
+				console.error(e);
+			} finally {
+				refs.overlay.hidden = true;
+				setLoading(false);
+			}
+		});
+
+		refs.musicXmlLoadBtn.addEventListener("click", async () => {
+			if (!pendingMusicXml) return;
+			const selected = getSelectedMusicXmlPartIndices();
+			if (selected.length === 0) return;
+
+			const applyActiveOnly = refs.applyActiveOnly?.checked ?? false;
+			const from = applyActiveOnly
+				? activeTrackIndexOf()
+				: selected.length > 1
+					? 0
+					: activeTrackIndexOf();
+			const maxCount = applyActiveOnly ? 1 : trackStates.length - from;
+
+			if (
+				!isAdvanced &&
+				options.onRequestAdvancedMode &&
+				!applyActiveOnly &&
+				selected.length > maxCount
+			) {
+				const confirmed = await showConfirmModal(
+					"初心者モードではトラックが足りず、一部のパートを読み込めません。<br>上級者モードに切り替えますか？",
+				);
+				if (confirmed) {
+					const xml = pendingMusicXml;
+					const sel = selected.slice();
+					options.onRequestAdvancedMode(undefined, (newDaw) => {
+						newDaw.applyMusicXmlParsed?.(xml, sel);
+					});
+					return;
+				}
+			}
+
+			overlayDuring(() => {
+				const { applied, dropped } = applyMusicXmlSelection(
+					pendingMusicXml!,
+					selected,
+				);
+				setMusicXmlNote(
+					dropped > 0
+						? `${applied}パートを読み込みました（${dropped}パートはトラック不足のため省略）`
+						: `${applied}パートを読み込みました`,
+				);
+			});
 		});
 	};
 
@@ -8189,10 +8500,17 @@ export const mountDAW = (
 		applyMidiParsed: (midi: unknown, selectedIndices: number[]): void => {
 			overlayDuring(() => applyMidiSelection(midi, selectedIndices));
 		},
+		applyMusicXmlParsed: (
+			xml: MusicXmlExtraction,
+			selectedIndices: number[],
+		): void => {
+			overlayDuring(() => applyMusicXmlSelection(xml, selectedIndices));
+		},
 		applyUstParsed: (ustTracks: UstTrackData[], startIndex?: number): void => {
 			overlayDuring(() => applyUstTracks(ustTracks, startIndex));
 		},
 		exportMIDI,
+		exportMusicXML,
 		exportUST,
 		setBpm,
 		getLoop: () => loopEnabled,
