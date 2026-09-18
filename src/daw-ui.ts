@@ -121,6 +121,10 @@ export type DawUIRefs = {
 	transposeInfoBtn: HTMLButtonElement;
 	// macros
 	macroCompose: HTMLButtonElement;
+	/** 今の曲を1つだけ取っておくボタン。作曲を押しても消えない退避枠。 */
+	composeKeep: HTMLButtonElement;
+	/** キープした曲へ戻すボタン。 */
+	composeRecall: HTMLButtonElement;
 	composeTemplate: HTMLSelectElement | null;
 	composeSections: HTMLElement;
 	composeSectionsLen: HTMLElement;
@@ -506,6 +510,14 @@ export const buildUI = (
           <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose" title="コード進行・メロディ・サブメロ・ベース・伴奏・ドラムを自動で作ります">作曲</button>
           <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose-vocal" title="作曲したうえで、メロディに歌詞を付けて歌わせます">歌入り作曲</button>
           <button class="dtm-infobtn" data-dtm="macro-compose-info" title="作曲の解説">${icon("info", 12)}</button>
+          <!--
+            **キープ枠は1つだけ。** 自動作曲は気に入るまで引き直す使い方になるが、
+            「引き直すと今のが消える」と思うと引き直せなくなる。取っておける場所が
+            1つあれば、2つを比べて選ぶことは成立する。候補を並べるUIはスマホでは
+            成立しない（試聴時間・画面・生成コストのどれも足りない）。
+          -->
+          <button class="dtm-btn" data-dtm="compose-keep" title="今の曲を1つだけ取っておきます。作曲を押し直しても消えません">キープ</button>
+          <button class="dtm-btn" data-dtm="compose-recall" title="キープした曲に戻します" disabled>呼び出す</button>
           <span class="dtm-grow"></span>
         </div>
         <div class="dtm-row" data-dtm="compose-template-row">
@@ -841,6 +853,8 @@ export const buildUI = (
 		transposeApplyBtn: sel("transpose-apply"),
 		transposeInfoBtn: sel("transpose-info"),
 		macroCompose: sel("macro-compose"),
+		composeKeep: sel("compose-keep"),
+		composeRecall: sel("compose-recall"),
 		composeTemplate: sel("compose-template") as HTMLSelectElement | null,
 		composeSections: sel("compose-sections"),
 		composeSectionsLen: sel("compose-sections-len"),

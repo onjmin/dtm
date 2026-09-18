@@ -6450,6 +6450,26 @@ export const mountDAW = (
 			});
 		}
 
+		/**
+		 * 全トラックのノートの指紋。**編集されたかどうかだけ**が分かればよいので、
+		 * 音数と開始位置・音高の総和で足りる（1音動かせば必ず変わる）。
+		 */
+		const trackSignature = (): string =>
+			trackStates
+				.map((t) => {
+					const ns = t.core.getNotes();
+					let at = 0;
+					let pitch = 0;
+					for (const n of ns) {
+						at += n.startStep;
+						pitch += n.pitchUnits;
+					}
+					return `${ns.length}:${at}:${pitch}`;
+				})
+				.join("|");
+		/** 自動作曲が書き込んだ直後の指紋。手が入ると一致しなくなる。 */
+		let composedSignature: string | null = null;
+
 		const runCompose = (withVocal: boolean): void => {
 			stop();
 			overlayDuring(() => {
@@ -6740,10 +6760,19 @@ export const mountDAW = (
 					refs.composeKeyHint.title = `${song.keyLabel}${song.moodLabel ? `（${song.moodLabel}）` : ""}`;
 				}
 
-				playStartStep = 0;
+				// **再生位置をサビの頭に置く。**
+				//
+				// 自動作曲は「気に入るまで引き直す」使い方になる。judge するのはサビなので、
+				// 毎回イントロから聴かせると1曲1〜2分かかって引き直す気が失せる。
+				// サビの頭に置けば、再生ボタン1つで判断できる場所から鳴る。
+				// 頭から聴きたいときは再生位置をドラッグすれば戻せる。
+				const chorus = song.sections.find((x) => x.kind === "chorus");
+				playStartStep = (chorus?.startBar ?? 0) * renderConfig.stepsPerBar;
 				redrawAll();
 				updateTrackPanel(); // 和音の入力欄・歌詞欄へ生成結果を反映する
 				updateUndoRedo();
+				// 「作ったまま手を入れていない」状態を覚えておく（{@link composeWithConfirm}）。
+				composedSignature = trackSignature();
 			});
 		};
 		/**
@@ -6751,10 +6780,18 @@ export const mountDAW = (
 		 * 毎回警告を出すと、一番押してほしいボタンが押しにくくなるため。
 		 * 確認はネイティブの confirm() ではなくアプリ内のモーダルで出す
 		 * （{@link showConfirm} に理由）。
+		 *
+		 * **直前に作った曲へ一度も手を入れていないなら確認しない。** 自動作曲は
+		 * 「気に入るまで引き直す」使い方になるので、引き直すたびにダイアログが出ると
+		 * 1回の引き直しが3タップになる。守るべき作業がまだ無い状態で守っても仕方がない。
+		 * 手を入れたかどうかは、書き込んだ直後のノートと今のノートを比べて判定する
+		 * （{@link trackSignature}）。
 		 */
 		const composeWithConfirm = (withVocal: boolean): void => {
 			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
-			if (hasNotes) {
+			const untouched =
+				composedSignature !== null && composedSignature === trackSignature();
+			if (hasNotes && !untouched) {
 				showConfirm(
 					withVocal ? "歌入り作曲" : "作曲",
 					`今あるノートをすべて消して、${composeBarsLabel()}の曲を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
@@ -6768,6 +6805,48 @@ export const mountDAW = (
 		refs.macroCompose.addEventListener("click", () => {
 			composeWithConfirm(false);
 		});
+
+		// --- キープ枠 ---
+		//
+		// **自動作曲は「気に入るまで引き直す」使い方になる。** ところが引き直すと
+		// 今のものが消えるので、「これより良いのが出なかったら困る」と思った時点で
+		// 引き直せなくなる。取っておける場所が1つあれば、2つを比べて選ぶことは成立する。
+		//
+		// 候補を何件も並べるUIにはしない。1曲1〜2分の試聴が20件で30分になり、画面にも
+		// 載らず、スマホでは生成コストも持たない。枠は1つで足りる。
+		//
+		// 中身は {@link generateMML} が出すMMLそのもの。トラック・楽器・ドラム・
+		// テンポ・歌詞・エフェクトまで全部入っていて、{@link loadMML} で戻せる。
+		// 項目を手で並べると、あとから足した設定が漏れる。
+		let keptMml: string | null = null;
+		const updateKeepUI = (): void => {
+			refs.composeRecall.disabled = keptMml === null;
+			refs.composeKeep.textContent = keptMml === null ? "キープ" : "キープ済";
+		};
+		refs.composeKeep.addEventListener("click", () => {
+			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
+			if (!hasNotes) return;
+			keptMml = generateMML().full;
+			updateKeepUI();
+		});
+		refs.composeRecall.addEventListener("click", () => {
+			if (keptMml === null) return;
+			// **「選択中のトラックだけに適用」は無視する。** キープは曲まるごとの
+			// 退避なので、部分適用だと戻したつもりで戻らない。チェックは触らずに
+			// この呼び出しの間だけ外す。
+			const box = refs.applyActiveOnly;
+			const was = box?.checked ?? false;
+			if (box) box.checked = false;
+			try {
+				loadMML(keptMml);
+			} finally {
+				if (box) box.checked = was;
+			}
+			// 戻した直後は「手を入れていない」状態ではない（作曲が書いたものではない）。
+			// 次に作曲を押したときは確認を出す。
+			composedSignature = null;
+		});
+		updateKeepUI();
 		refs.macroComposeVocal.addEventListener("click", () => {
 			composeWithConfirm(true);
 		});
