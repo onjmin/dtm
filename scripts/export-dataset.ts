@@ -92,11 +92,27 @@ const main = (): void => {
 	const limit = Number(argOf("--limit") ?? 0) || Number.POSITIVE_INFINITY;
 	mkdirSync(dirname(out), { recursive: true });
 
+	// **除外リスト。** パブリックドメインの申告が誤っていたと分かったファイルを
+	// 外すための口（`docs/dataset-provenance.md` の是正手順）。外部コーパスから
+	// 素材を作る以上、あとから「あれは違った」が起きうる前提で作っておく。
+	const excludePath = argOf("--exclude") ?? "tools/melody-model/exclude.txt";
+	const excluded = new Set<string>();
+	try {
+		for (const line of readFileSync(excludePath, "utf8").split(/\r?\n/)) {
+			const t = line.trim();
+			if (t && !t.startsWith("#")) excluded.add(t);
+		}
+	} catch {
+		// 無ければ何も外さない。
+	}
+	if (excluded.size > 0) console.log(`  除外リスト ${excluded.size} 件`);
+
 	const songs: DatasetSong[] = [];
 	let skipped = 0;
 
 	for (const { path, buf } of collectWithPaths(dir)) {
 		if (songs.length >= limit) break;
+		if (excluded.has(path)) continue;
 		// 主旋律 = 条件を満たすチャンネルのうち、鳴っている時間が最長のもの。
 		let melody: ReturnType<typeof quantize> | null = null;
 		let bestCoverage = -1;
