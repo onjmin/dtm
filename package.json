@@ -68,7 +68,7 @@
 	},
 	"dependencies": {
 		"@onjmin/chord-parser": "1.1.1",
-		"@onjmin/koe": "1.0.5",
+		"@onjmin/koe": "1.0.7",
 		"midi-json-parser": "8.1.74"
 	}
 }
