@@ -266,13 +266,22 @@ export const isPlausibleMelody = (ns: MetricNote[]): boolean => {
 	const mono = toMonophonic(ns);
 	if (mono.length < 32) return false;
 	if (new Set(mono.map((n) => n.durationSteps)).size < 2) return false;
-	let maxLeap = 0;
+	// **1オクターブ+5度を超える跳躍が「何回あるか」で見る。**
+	//
+	// ここは長らく「1回でもあれば弾く」だった。狙いは和音を単旋律へ潰した
+	// チャンネルを落とすことだが、**500音の歌メロに1回そういう跳躍があるだけで
+	// 本物の主旋律が落ちる**。落ちた曲は代わりにハモリや対旋律が主旋律として
+	// 採られ、より狭く・低い線の統計が目標帯に入る。
+	//
+	// 実測: コーパス91本のうち **28本(31%)** で、選ばれた旋律より長く鳴る単音の
+	// 候補がこの1行だけで落ちていた（`嵌り合う体は` は 533音・87小節・音域56-80 の
+	// ch0 が落ち、448音・71小節・音域56-71 の ch1 が主旋律になっていた）。
+	//
+	// 和音の潰れなら**そういう跳躍が何度も出る**ので、比率で見れば区別できる。
+	let wideLeaps = 0;
 	for (let i = 1; i < mono.length; i++)
-		maxLeap = Math.max(
-			maxLeap,
-			Math.abs(mono[i].pitchSemi - mono[i - 1].pitchSemi),
-		);
-	if (maxLeap > 19) return false; // 1オクターブ+5度超の跳躍が出る＝和音の潰れ
+		if (Math.abs(mono[i].pitchSemi - mono[i - 1].pitchSemi) > 19) wideLeaps++;
+	if (wideLeaps / mono.length > 0.02) return false;
 
 	// **2声を交互に書いたチャンネルを弾く。**
 	//
