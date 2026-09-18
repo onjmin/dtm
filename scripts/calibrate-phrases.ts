@@ -57,7 +57,10 @@ const MAJOR_PC_TO_DEGREE = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6];
 const MINOR_PC_TO_DEGREE = [0, 0, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6];
 
 /** 主音からの半音差を度数へ写す（オクターブは7度）。 */
-const toDegree = (semitonesFromTonic: number, minor: boolean): number => {
+export const toDegree = (
+	semitonesFromTonic: number,
+	minor: boolean,
+): number => {
 	const table = minor ? MINOR_PC_TO_DEGREE : MAJOR_PC_TO_DEGREE;
 	const oct = Math.floor(semitonesFromTonic / 12);
 	const pc = ((semitonesFromTonic % 12) + 12) % 12;
@@ -241,4 +244,7 @@ export const CORPUS_PHRASES: CorpusPhrase[] = [
 	);
 };
 
-main();
+// 直接実行されたときだけ走らせる（`toDegree` などを import したいだけの
+// スクリプトが、副作用でフレーズバンクを書き換えてしまわないように）。
+// `calibrate-corpus.ts` と同じ形。
+if (process.argv[1]?.includes("calibrate-phrases")) main();

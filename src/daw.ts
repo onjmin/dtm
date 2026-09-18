@@ -4711,14 +4711,26 @@ export const mountDAW = (
 	// ============================================================
 	// MML / MIDI / コード / マクロ
 	// ============================================================
-	const generateMML = (): {
+	const generateMML = (opts?: {
+		/**
+		 * 小節数の上限を無視する。
+		 *
+		 * 上限は**共有リンクや保存の都合**（文字数）で付いているもので、
+		 * アプリ内に退避するだけの用途（{@link 「キープ」}）では意味が無い。
+		 * 48小節の曲を作って上限が32だと、キープして呼び出した時点で
+		 * 16小節失われる——退避としては壊れている。
+		 */
+		ignoreBarLimit?: boolean;
+	}): {
 		full: string;
 		minified: string;
 		ignoredCount: number;
 		trackCount: number;
 		barLimit: number;
 	} => {
-		const barLimitBars = Number(refs.barLimitSelect.value);
+		const barLimitBars = opts?.ignoreBarLimit
+			? 0
+			: Number(refs.barLimitSelect.value);
 		const limitSteps =
 			barLimitBars > 0 ? barLimitBars * renderConfig.stepsPerBar : Infinity;
 		const clipNotes = (notes: ReturnType<MMLCore["getNotes"]>) =>
@@ -6826,7 +6838,9 @@ export const mountDAW = (
 		refs.composeKeep.addEventListener("click", () => {
 			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
 			if (!hasNotes) return;
-			keptMml = generateMML().full;
+			// 小節数の上限は共有リンクの文字数のためのもので、アプリ内の退避には
+			// 効かせない（効かせると長い曲がキープした時点で切れる）。
+			keptMml = generateMML({ ignoreBarLimit: true }).full;
 			updateKeepUI();
 		});
 		refs.composeRecall.addEventListener("click", () => {
