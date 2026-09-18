@@ -11,7 +11,7 @@
 
 だからこのスクリプトは**2段階**で使う。
 
-1. `--data` に大きなコーパス（Lakh MIDI など）を与えて事前学習する
+1. `--data` に大きなコーパス（PDMX）を与えて事前学習する
 2. `--init <事前学習の .pt>` を付けて、界隈曲91本で微調整する
 
 91本だけで回すこともできるが、それは**配線の検算**のためであって、品質のためではない。
@@ -93,8 +93,8 @@ def make_stream(data: str) -> np.ndarray:
     if cache.exists() and cache.stat().st_mtime >= Path(data).stat().st_mtime:
         print(f"キャッシュから読む: {cache}")
         return np.load(cache)
-    songs = tk.load_songs(data)
-    parts = [np.asarray(tk.encode(s), dtype=np.int16) for s in songs]
+    # **1曲ずつ読んでトークン化する。** 全曲を持つと JSONL の何倍にも膨らむ。
+    parts = [np.asarray(tk.encode(s), dtype=np.int16) for s in tk.iter_songs(data)]
     stream = np.concatenate(parts) if parts else np.zeros(0, dtype=np.int16)
     np.save(cache, stream)
     print(f"トークン化して保存: {cache}")
@@ -111,6 +111,9 @@ def main() -> None:
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--seed", type=int, default=0)
+    # **微調整では細かく測る。** 91本への微調整は250ステップ以内に最良点を過ぎる。
+    # 事前学習（6万ステップ）で毎回測ると遅いので、既定は粗いまま。
+    ap.add_argument("--eval-every", type=int, default=250)
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -166,7 +169,7 @@ def main() -> None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         sched.step()
-        if step % 250 == 0 or step == args.steps:
+        if step % args.eval_every == 0 or step == args.steps:
             v = val_loss()
             flag = ""
             if v < best:

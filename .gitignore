@@ -3,6 +3,10 @@ tmp
 scratch
 .claude
 
+# Python（tools/ の学習パイプライン）
+__pycache__/
+*.pt
+
 # Logs
 logs
 *.log

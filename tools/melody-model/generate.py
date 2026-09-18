@@ -23,6 +23,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import random
 from collections import Counter
 from pathlib import Path
 
@@ -108,6 +110,27 @@ def to_phrases(notes: list[dict]) -> list[tuple[list[int], list[int]]]:
     return out
 
 
+Phrase = tuple[tuple[tuple[int, ...], tuple[int, ...]], int]
+
+
+def pick_bank(phrases: list[Phrase], keep: int, seed: int) -> list[Phrase]:
+    """候補から同梱するぶんだけ選ぶ。**`weight` に比例させた抽出**。
+
+    **上位から切ると休符が落ちる。** 実測で、休符を含むフレーズの割合は
+    人間のバンク 78% / 候補全体 62% に対し、**weight 上位801種では 42%** まで下がった。
+    モデルが何度も出す形＝切れ目なく続く形なので、山の頂だけ残すと休みが消える。
+    比例抽出なら 55% で、モデルが持っている分布の形のまま小さくできる。
+
+    重み付きの非復元抽出（Efraimidis-Spirakis）。`random()**(1/w)` の大きい順に取ると
+    weight に比例した標本になる。seed を渡せば同じ選抜を再現できる。
+    """
+    if keep >= len(phrases):
+        return phrases
+    rng = random.Random(seed)
+    keyed = sorted(phrases, key=lambda kv: -(rng.random() ** (1.0 / kv[1])))
+    return sorted(keyed[:keep], key=lambda kv: -kv[1])
+
+
 HEADER = """/**
  * **自動生成ファイル。手で編集しないこと。**
  *
@@ -125,7 +148,8 @@ HEADER = """/**
  * （17指標も隣接音程のヒストグラムもそれを分けないことが実測で分かっている）。
  * 最終的な選別は耳で行う。
  *
- * 生成元: __MODEL__ / 引いた本数 __TRIES__ / 採用 __KEPT__ 種
+ * 生成元: __MODEL__ / 引いた本数 __TRIES__ / 同梱 __KEPT__ 種（候補 __FOUND__ 種から
+ * `weight` に比例させて抽出。上位から切ると休符が落ちるため——`pick_bank` に実測値）
  */
 
 import type { CorpusPhrase } from "./compose-phrases";
@@ -143,6 +167,13 @@ def main() -> None:
     ap.add_argument("--temp", type=float, default=1.0)
     ap.add_argument("--top-k", type=int, default=24)
     ap.add_argument("--seed", type=int, default=0)
+    # **同梱する本数。** バンクはブラウザ向けの本体に入るので、行数がそのまま配布物の
+    # 大きさになる（2000本引くと2万種・2.7MBで、人間側のバンクの24倍）。0 で全部。
+    ap.add_argument("--keep", type=int, default=0)
+    # **切らずに出す口。** 2小節へ刻んだ素材では人間の実在フレーズと区別がつかない
+    # ことが A/B で分かった（`README.md` の手順4）。刻む前の旋律そのものを比べるには、
+    # 引いた音符列をそのまま渡せる必要がある。JSONL で1行1本。
+    ap.add_argument("--dump", default=None, help="旋律を刻まずに JSONL へ出す")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -150,6 +181,19 @@ def main() -> None:
     model = MelodyGPT(len(tk.VOCAB), 512).to(dev)
     model.load_state_dict(torch.load(args.model, map_location=dev))
     model.eval()
+
+    if args.dump:
+        dump = Path(args.dump)
+        dump.parent.mkdir(parents=True, exist_ok=True)
+        with dump.open("w", encoding="utf-8") as f:
+            for i in range(args.n):
+                ids = sample(model, dev, args.length, args.temp, args.top_k)
+                notes = tk.decode(ids)
+                bars = max((n["at"] for n in notes), default=0) // tk.STEPS_PER_BAR + 1
+                print(json.dumps({"notes": notes, "bars": bars}), file=f)
+                print(f"  {i + 1}/{args.n} 本 … {len(notes)}音 / {bars}小節")
+        print(f"● 刻まずに書き出した: {dump}")
+        return
 
     found: Counter[tuple[tuple[int, ...], tuple[int, ...]]] = Counter()
     notes_seen = 0
@@ -163,6 +207,9 @@ def main() -> None:
             print(f"  {i + 1}/{args.n} 本 … 採用 {len(found)} 種")
 
     phrases = sorted(found.items(), key=lambda kv: -kv[1])
+    found_total = len(phrases)
+    if args.keep > 0:
+        phrases = pick_bank(phrases, args.keep, args.seed)
     body = "\n".join(
         f"\t{{ rhythm: [{', '.join(map(str, r))}], degrees: [{', '.join(map(str, d))}], weight: {w} }},"
         for (r, d), w in phrases
@@ -173,12 +220,16 @@ def main() -> None:
         HEADER.replace("__MODEL__", args.model)
         .replace("__TRIES__", str(args.n))
         .replace("__KEPT__", str(len(phrases)))
+        .replace("__FOUND__", str(found_total))
         + body
         + "\n];\n",
         encoding="utf-8",
     )
     print(f"● 書き出した: {out}")
-    print(f"  {args.n}本から 音 {notes_seen} / フレーズ {len(phrases)} 種")
+    print(
+        f"  {args.n}本から 音 {notes_seen} / フレーズ {found_total} 種"
+        + (f" → {len(phrases)} 種を同梱" if args.keep > 0 else "")
+    )
 
 
 if __name__ == "__main__":

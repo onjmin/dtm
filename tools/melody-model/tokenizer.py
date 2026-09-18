@@ -24,6 +24,7 @@ REMI 風。1音を3トークン（位置・音高・音価）で表す。
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,16 +62,21 @@ class Song:
     notes: list[dict]
 
 
-def load_songs(path: str | Path) -> list[Song]:
-    songs: list[Song] = []
+def iter_songs(path: str | Path) -> Iterator[Song]:
+    """1行ずつ読んで1曲ずつ返す。
+
+    **全曲をメモリに載せない。** 事前学習のコーパス（PDMX 約20万曲）は JSONL で
+    2GB近くあり、`list` に持つと音1つが dict のぶんだけ膨らんで数十GBになる。
+    使う側（`train.py`）は1曲ごとにトークン化して捨てられるので、貯める理由がない。
+    """
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
             d = json.loads(line)
-            songs.append(Song(d["source"], d["tonic"], d["minor"], d["notes"]))
-    return songs
+            yield Song(d["source"], d["tonic"], d["minor"], d["notes"])
+
 
 
 def octave_offset(song: Song) -> int:
@@ -160,14 +166,17 @@ if __name__ == "__main__":
     import sys
 
     src = sys.argv[1] if len(sys.argv) > 1 else "tmp/dataset.jsonl"
-    songs = load_songs(src)
+    # 大きいコーパスでも検算できるよう、1曲ずつ読んで数えるだけにする。
+    n_songs = 0
     total = 0
     kept = 0
-    for s in songs:
+    tokens = 0
+    for s in iter_songs(src):
         ids = encode(s)
-        back = decode(ids)
+        n_songs += 1
         total += len(s.notes)
-        kept += len(back)
+        kept += len(decode(ids))
+        tokens += len(ids)
     print(f"語彙 {len(VOCAB)} 種")
-    print(f"{len(songs)}曲 / 音 {total} → 往復後 {kept} ({kept / total:.1%})")
-    print(f"トークン総数 {sum(len(encode(s)) for s in songs)}")
+    print(f"{n_songs}曲 / 音 {total} → 往復後 {kept} ({kept / total:.1%})")
+    print(f"トークン総数 {tokens}")

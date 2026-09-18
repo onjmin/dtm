@@ -29,7 +29,14 @@
  * どの曲から来たかを辿れないデータは捨てるしかなくなる。
  */
 
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	closeSync,
+	mkdirSync,
+	openSync,
+	readdirSync,
+	readFileSync,
+	writeSync,
+} from "node:fs";
 import { dirname, join, relative } from "node:path";
 import {
 	channelNotes,
@@ -107,12 +114,22 @@ const main = (): void => {
 	}
 	if (excluded.size > 0) console.log(`  除外リスト ${excluded.size} 件`);
 
-	const songs: DatasetSong[] = [];
+	// **1曲ずつ書き出す。** 配列に貯めて最後にまとめて書いていた頃は、25万曲の
+	// コーパスで書く前にヒープが尽きた（1曲が数百音・音1つが小さなオブジェクト）。
+	// 残すのは統計に要る数値だけにする。
+	const fd = openSync(out, "w");
+	const noteCounts: number[] = [];
+	let minorCount = 0;
+	let songCount = 0;
 	let skipped = 0;
+	let scanned = 0;
 
 	for (const { path, buf } of collectWithPaths(dir)) {
-		if (songs.length >= limit) break;
+		if (songCount >= limit) break;
 		if (excluded.has(path)) continue;
+		// 25万曲は数時間かかる。進みが見えないと止まっているのか判らない。
+		if (++scanned % 10000 === 0)
+			console.log(`  …${scanned}件 走査 / ${songCount}曲 採用`);
 		// 主旋律 = 条件を満たすチャンネルのうち、鳴っている時間が最長のもの。
 		let melody: ReturnType<typeof quantize> | null = null;
 		let bestCoverage = -1;
@@ -144,35 +161,32 @@ const main = (): void => {
 			deg: toDegree(Math.round(n.pitchSemi) - tonic, minor),
 		}));
 		const end = Math.max(...notes.map((n) => n.at + n.dur));
-		songs.push({
+		const song: DatasetSong = {
 			source: path,
 			tonic,
 			minor,
 			bars: Math.ceil(end / STEPS_PER_BAR),
 			notes,
-		});
+		};
+		writeSync(fd, `${JSON.stringify(song)}\n`);
+		songCount++;
+		noteCounts.push(notes.length);
+		if (minor) minorCount++;
 	}
 
-	writeFileSync(
-		out,
-		`${songs.map((s) => JSON.stringify(s)).join("\n")}\n`,
-		"utf8",
-	);
+	closeSync(fd);
 
-	const noteCounts = songs.map((s) => s.notes.length);
 	const total = noteCounts.reduce((a, b) => a + b, 0);
 	const q = (t: number): number => {
 		const a = [...noteCounts].sort((x, y) => x - y);
 		return a[Math.min(a.length - 1, Math.floor(a.length * t))];
 	};
 	console.log(`● 学習用データセットを書き出した: ${out}`);
-	console.log(`  ${songs.length}曲 / 読めなかったもの ${skipped}件`);
+	console.log(`  ${songCount}曲 / 読めなかったもの ${skipped}件`);
 	console.log(
 		`  音数 合計 ${total} / 1曲あたり p25=${q(0.25)} p50=${q(0.5)} p75=${q(0.75)}`,
 	);
-	console.log(
-		`  短調 ${songs.filter((s) => s.minor).length}曲 / 長調 ${songs.filter((s) => !s.minor).length}曲`,
-	);
+	console.log(`  短調 ${minorCount}曲 / 長調 ${songCount - minorCount}曲`);
 };
 
 main();
