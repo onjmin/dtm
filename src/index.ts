@@ -133,6 +133,17 @@ export * from "./mml-parser";
 export type { MmlPlayerInstance, MmlPlayerOptions } from "./mml-player";
 // 再生専用ビュー（mountDAW と対）
 export { decodeMml, encodeMml, mountMmlPlayer } from "./mml-player";
+// MusicXML 入出力 — 楽譜としての読み書き。MIDI と違ってパートと歌詞が明示される
+export {
+	type ExportMusicXmlOptions,
+	type ExportMusicXmlPart,
+	exportMusicXML,
+	type MusicXmlExtraction,
+	type MusicXmlNotePlacement,
+	type MusicXmlPart,
+	musicXmlToNotes,
+	parseMusicXML,
+} from "./musicxml-io";
 export * from "./piano-roll";
 // 中国語ピンイン → かな の転写（中国語USTの取り込みに使う）
 export * from "./pinyin";
@@ -179,5 +190,7 @@ export type { NoteData, NoteRemove } from "./types";
 export * from "./types";
 // UST（UTAU）入出力 — 歌詞付きで読み込み、選択中のトラックを書き出す
 export * from "./ust-io";
+// ライブラリのバージョン。書き出したMML/MIDI/MusicXMLに埋まる値
+export { DTM_VERSION } from "./version";
 export { VOICE_IMAGES } from "./voice-images";
 export { concatFloat32, encodeWavPCM16 } from "./wav-export";
