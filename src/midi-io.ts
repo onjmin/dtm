@@ -13,6 +13,7 @@ import { DRUM_KEYS, type DrumPattern } from "./drum-config";
 import { unitsToMidiDetune } from "./tuning";
 import type { Note } from "./types";
 import { DEFAULT_VELOCITY } from "./types";
+import { DTM_VERSION } from "./version";
 
 const STEPS_PER_BEAT = 48;
 
@@ -681,6 +682,12 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 	headerChunks(arr, midiTracks.length + 1, div);
 	trackChunks(arr, (a) => {
 		a.push(0, 0xff, 0x51, 0x03, ...to3byte(Math.round(6e7 / bpm)));
+		// **どのバージョンが書き出したかを埋める。** 自動作曲の素材は外部コーパスから
+		// 作るので、権利の申告が誤っていた場合に「どこまでが影響範囲か」を後から
+		// 言えないと是正できない。テキストメタ（0xff 0x01）はどの再生環境でも
+		// 無視されるので、鳴りには影響しない。台帳は `docs/dataset-provenance.md`。
+		const stamp = Array.from(new TextEncoder().encode(`dtm ${DTM_VERSION}`));
+		a.push(0, 0xff, 0x01, ...deltaTime(stamp.length), ...stamp);
 		// ベンドの初期設定は曲頭に一度だけ置けばよいのでテンポトラックへまとめる
 		for (const ev of bendSetup) a.push(0, ...ev.m);
 	});

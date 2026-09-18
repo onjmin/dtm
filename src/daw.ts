@@ -161,6 +161,7 @@ import {
 	unitsPerRow,
 } from "./types";
 import { buildUst, parseUst, type UstTrackData } from "./ust-io";
+import { DTM_VERSION } from "./version";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "./voice-images";
 
 const CHORD_INFO_HTML = `
@@ -4794,6 +4795,10 @@ export const mountDAW = (
 		// トラックとは1対1でなく曲全体に効く。既定/未設定（楽器=空, ドラム="none"）の項目は出力しない。
 		const metaLineFull = formatMmlMeta(
 			{
+				// **書き出したバージョンを残す。** 自動作曲の素材は外部コーパスから
+				// 作るので、権利の申告が誤っていた場合に影響範囲を後から言えないと
+				// 是正できない。台帳は `docs/dataset-provenance.md`。
+				version: DTM_VERSION,
 				instrument: currentInstrument || undefined,
 				drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
 				drumFont: currentDrumFont,
@@ -4830,6 +4835,9 @@ export const mountDAW = (
 		);
 		const metaLineMini = formatMmlMeta(
 			{
+				// 共有リンクは字数を切り詰める側だが、ここは削らない——**由来を
+				// 辿れないファイルを作らない**ほうが、12文字より重い。
+				version: DTM_VERSION,
 				instrument: currentInstrument || undefined,
 				drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
 				drumFont: currentDrumFont,

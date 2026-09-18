@@ -40,6 +40,16 @@ const clamp = (value: number, lo: number, hi: number): number =>
  * 他のMMLプレイヤーには無害（解析時に除去される）。
  */
 export type MmlMeta = {
+	/**
+	 * 書き出したライブラリのバージョン（`#ver=`）。
+	 *
+	 * 自動作曲の素材は外部コーパスから作るので、**どのバージョンまでが
+	 * どの素材で作られたか**を後から辿れる必要がある（権利の申告が誤っていた
+	 * 場合の是正範囲を言うため）。台帳は `docs/dataset-provenance.md`。
+	 *
+	 * 読み込み側は使わない——**記録のためだけ**に持つ。
+	 */
+	version?: string;
 	/** 楽器プリセット名（INSTRUMENT_PRESETS のキー等。利用側が音源解決に使う） */
 	instrument?: string;
 	/** ドラムパターン名（DRUM_PATTERNS のキー） */
@@ -201,7 +211,8 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 	const meta: MmlMeta = {};
 	for (const m of mml.matchAll(META_DIRECTIVE)) {
 		const key = m[1].toLowerCase();
-		if (key === "inst") meta.instrument = m[2];
+		if (key === "ver") meta.version = m[2];
+		else if (key === "inst") meta.instrument = m[2];
 		else if (key === "drum") meta.drum = m[2];
 		else if (key === "drumfont") meta.drumFont = m[2];
 		else if (key === "volume") {
@@ -364,6 +375,7 @@ const round3 = (sec: number): string => String(Math.round(sec * 1000) / 1000);
 /** メタ情報を `#inst=… #drum=… #volume=… #mode=…` のMML宣言文字列へ直列化する（空なら空文字） */
 export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	const parts: string[] = [];
+	if (meta.version) parts.push(`#ver=${meta.version}`);
 	if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
 	if (meta.drum) parts.push(`#drum=${meta.drum}`);
 	if (meta.drumFont) parts.push(`#drumfont=${meta.drumFont}`);

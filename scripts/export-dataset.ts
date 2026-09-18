@@ -47,22 +47,24 @@ const STEPS_PER_BAR = 192;
  * .mid を再帰的に集める。`collectFromDir` と違って**パスも返す**——学習物の出自を
  * 追えないデータは、由来が問題になった時点で捨てるしかなくなる。
  */
-const collectWithPaths = (
+function* collectWithPaths(
 	root: string,
 	dir = root,
-): { path: string; buf: Buffer }[] => {
-	const out: { path: string; buf: Buffer }[] = [];
+): Generator<{ path: string; buf: Buffer }> {
+	// **ジェネレータにする。** 配列に貯めて `push(...再帰結果)` で繋いでいた頃は、
+	// 25万件のコーパスで `Maximum call stack size exceeded` になった（spread は
+	// 要素を引数として展開するので、引数の数の上限に当たる）。
+	// 1件ずつ返せば、`--limit` で打ち切ったぶんはファイルを読みにも行かない。
 	for (const entry of readdirSync(dir, { withFileTypes: true })) {
 		const full = join(dir, entry.name);
-		if (entry.isDirectory()) out.push(...collectWithPaths(root, full));
+		if (entry.isDirectory()) yield* collectWithPaths(root, full);
 		else if (entry.name.toLowerCase().endsWith(".mid"))
-			out.push({
+			yield {
 				path: relative(root, full).split("\\").join("/"),
 				buf: readFileSync(full),
-			});
+			};
 	}
-	return out;
-};
+}
 
 const argv = process.argv.slice(2);
 const argOf = (name: string): string | undefined => {
@@ -85,12 +87,16 @@ const main = (): void => {
 		process.exit(1);
 	}
 	const out = argOf("--out") ?? "tmp/dataset.jsonl";
+	// **標本数の上限。** 25万曲のコーパスを丸ごと通すと数時間かかる。作風を
+	// 比べたいだけのときは一部で足りるので、先頭から打ち切れるようにしておく。
+	const limit = Number(argOf("--limit") ?? 0) || Number.POSITIVE_INFINITY;
 	mkdirSync(dirname(out), { recursive: true });
 
 	const songs: DatasetSong[] = [];
 	let skipped = 0;
 
 	for (const { path, buf } of collectWithPaths(dir)) {
+		if (songs.length >= limit) break;
 		// 主旋律 = 条件を満たすチャンネルのうち、鳴っている時間が最長のもの。
 		let melody: ReturnType<typeof quantize> | null = null;
 		let bestCoverage = -1;

@@ -24,6 +24,7 @@ import math
 import random
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -78,12 +79,25 @@ class MelodyGPT(nn.Module):
         return self.head(self.ln(x))
 
 
-def make_stream(data: str) -> list[int]:
-    """全曲を1本の列に繋ぐ。曲の境目は BOS/EOS が持っている。"""
+def make_stream(data: str) -> np.ndarray:
+    """全曲を1本の列に繋ぐ。曲の境目は BOS/EOS が持っている。
+
+    **numpy と結果のキャッシュを使う。** 事前学習のコーパスは1600万曲規模の
+    トークン列になり、Python の list で持つと要素ごとにオブジェクトが要って
+    メモリを食う。学習を何度か回すあいだ毎回トークン化し直すのも無駄なので、
+    隣に `.tokens.npy` を置いて2回目以降はそれを読む。
+
+    データを差し替えたら .npy を消すこと（元ファイルより新しければ使い回す）。
+    """
+    cache = Path(data).with_suffix(".tokens.npy")
+    if cache.exists() and cache.stat().st_mtime >= Path(data).stat().st_mtime:
+        print(f"キャッシュから読む: {cache}")
+        return np.load(cache)
     songs = tk.load_songs(data)
-    stream: list[int] = []
-    for s in songs:
-        stream.extend(tk.encode(s))
+    parts = [np.asarray(tk.encode(s), dtype=np.int16) for s in songs]
+    stream = np.concatenate(parts) if parts else np.zeros(0, dtype=np.int16)
+    np.save(cache, stream)
+    print(f"トークン化して保存: {cache}")
     return stream
 
 
@@ -122,11 +136,14 @@ def main() -> None:
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.steps)
 
-    def batch(src: list[int]) -> tuple[torch.Tensor, torch.Tensor]:
-        ix = [random.randrange(len(src) - args.ctx - 1) for _ in range(args.batch)]
-        x = torch.tensor([src[i : i + args.ctx] for i in ix], device=dev)
-        y = torch.tensor([src[i + 1 : i + 1 + args.ctx] for i in ix], device=dev)
-        return x, y
+    def batch(src: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
+        ix = np.random.randint(0, len(src) - args.ctx - 1, size=args.batch)
+        x = np.stack([src[i : i + args.ctx] for i in ix])
+        y = np.stack([src[i + 1 : i + 1 + args.ctx] for i in ix])
+        return (
+            torch.from_numpy(x).long().to(dev),
+            torch.from_numpy(y).long().to(dev),
+        )
 
     @torch.no_grad()
     def val_loss() -> float:
