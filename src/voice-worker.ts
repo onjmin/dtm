@@ -9,7 +9,12 @@
  * エイリアス解決・キャッシュ・Web Audio スケジュールはメイン（lyrics.ts）が担う。
  */
 
-import { leadInFromEntry, VoiceBank, Worldline } from "@onjmin/koe";
+import {
+	leadInFromEntry,
+	UtauTTSAdapter,
+	VoiceBank,
+	Worldline,
+} from "@onjmin/koe";
 import type { PitchSegment } from "./pitch-curve";
 import { pitchCurveFor } from "./pitch-curve";
 import type {
@@ -34,6 +39,14 @@ const wself = globalThis as unknown as {
 
 let bank: VoiceBank | null = null;
 let worldline: Worldline | null = null;
+/**
+ * 語り（`「…」`）の合成器。UtauTTS の計画（メイン側で作る）を受け取り、worldline で
+ * チャンクごとに合成する。計画に Wasm は要らないので、この Worker には Go ランタイムを
+ * 読み込まない（`renderChunks` は音素 PCM と worldline だけで動く）。
+ */
+let speechAdapter: UtauTTSAdapter | null = null;
+/** 進行中の語り合成（id → 打ち切り用）。 */
+const speechAborts = new Map<number, AbortController>();
 
 // 音素PCMのフェッチ結果をキャッシュ（同一音素の再フェッチを避ける）。
 const pcmCache = new Map<string, Promise<Float64Array | null>>();
@@ -196,6 +209,7 @@ wself.onmessage = async (ev) => {
 			wself.postMessage({
 				type: "ready",
 				aliases: Object.keys(bank.manifest.phonemes),
+				phonemes: bank.manifest.phonemes,
 			});
 		} catch (err) {
 			wself.postMessage({
@@ -244,6 +258,54 @@ wself.onmessage = async (ev) => {
 			}
 		} catch {
 			wself.postMessage({ type: "rendered", id, pcm: null });
+		}
+		return;
+	}
+	if (msg.type === "speak-abort") {
+		speechAborts.get(msg.id)?.abort();
+		return;
+	}
+	if (msg.type === "speak") {
+		const { id, plan, gender, breathiness, tension } = msg;
+		// 語りは WORLD 再合成必須（素片フォールバックでは文にならない）。
+		if (!bank || !worldline) {
+			wself.postMessage({
+				type: "speech-end",
+				id,
+				error: "speech needs worldline (not available in lightweight mode)",
+			});
+			return;
+		}
+		const abort = new AbortController();
+		speechAborts.set(id, abort);
+		try {
+			speechAdapter ??= new UtauTTSAdapter(worldline);
+			for await (const chunk of speechAdapter.renderChunks(bank, plan, {
+				signal: abort.signal,
+				gender,
+				breathiness,
+				tension,
+			})) {
+				wself.postMessage(
+					{
+						type: "speech-chunk",
+						id,
+						pcm: chunk.pcm,
+						startMs: chunk.startMs,
+						index: chunk.index,
+					},
+					[chunk.pcm.buffer],
+				);
+			}
+			wself.postMessage({ type: "speech-end", id });
+		} catch (err) {
+			wself.postMessage({
+				type: "speech-end",
+				id,
+				error: String((err as Error)?.message ?? err),
+			});
+		} finally {
+			speechAborts.delete(id);
 		}
 	}
 };

@@ -149,6 +149,8 @@ export * from "./piano-roll";
 export * from "./pinyin";
 export * from "./renderer";
 export * from "./sequencer";
+// 語り（歌詞の「…」）— UtauTTS の計画器とプレビュー用ヘルパ
+export * from "./speech";
 // ============================================================
 // Layer 3: 全部入りスタジオ（CDN SoundFont + 歌声 + 録音 を内包）
 // ============================================================

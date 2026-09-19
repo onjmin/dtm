@@ -1798,6 +1798,8 @@ export const DAW_CSS = `
 /* 促音（っ）・休符（_）は歌わないノート。さらに落として無音であることを示す */
 .dtm-tk--lyric-stop,
 .dtm-tk--lyric-rest { color: var(--dtm-border2); }
+/* 語り（「…」）は歌わずに読み上げる 1 ノート。歌詞と区別できるよう強調色にする */
+.dtm-tk--lyric-speak { color: var(--dtm-primary); letter-spacing: 0; }
 .dtm-tk--break { color: var(--dtm-muted); opacity: 0.7; margin: 0 2px; }
 .dtm-tk--meta { color: var(--dtm-border2); margin-right: 4px; }
 .dtm-tk.is-active {

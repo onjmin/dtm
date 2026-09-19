@@ -16,7 +16,14 @@
  * オプトインのフォルマント合成ヘルパ（createKlattVoice / createVoiceRegistry）を分離して提供する。
  */
 
-import { leadInFromEntry, VoiceBank, Worldline } from "@onjmin/koe";
+import {
+	leadInFromEntry,
+	type PhonemeEntry,
+	UtauTTSAdapter,
+	type UtauTTSPlan,
+	VoiceBank,
+	Worldline,
+} from "@onjmin/koe";
 import type { PitchSegment } from "./pitch-curve";
 import {
 	glideMsForSegments,
@@ -24,6 +31,15 @@ import {
 	segmentsCacheKey,
 	transposeSegments,
 } from "./pitch-curve";
+import {
+	getSpeechPlanner,
+	medianRecordedPitchHz,
+	prepareSpeechPlan,
+	type SpeechBank,
+	type SpeechPlanner,
+	speechPlanDurationSec,
+	speechPlanLeadingSec,
+} from "./speech";
 import { type Units, units } from "./tuning";
 import type {
 	CustomVocalDef,
@@ -40,6 +56,8 @@ import type {
 	VoiceWorkerOutbound,
 	VoiceWorkerRendered,
 	VoiceWorkerRenderReq,
+	VoiceWorkerSpeakAbort,
+	VoiceWorkerSpeakReq,
 } from "./voice-worker-types";
 import { packCompositeAlias, unpackCompositeAlias } from "./voice-worker-types";
 
@@ -172,6 +190,63 @@ export const FADE_OUT_MARK = "↓";
  * 歌いながら声量を上げていく。{@link FADE_OUT_MARK} と併用するとスウェルになる。
  */
 export const FADE_IN_MARK = "↑";
+/**
+ * 語り（読み上げ）の開き括弧。`「こんにちは」` のように囲んだ部分は歌わずに
+ * UtauTTS で読み上げる。括弧ひとかたまりでノートを1つ消費し、そのノートの位置から
+ * 話し始める。中身は漢字・数字・句読点を含んでよい（読みは jpreprocess が決める）。
+ * 閉じ括弧が無ければ行末までを語りとみなす。
+ */
+export const SPEAK_OPEN = "「";
+/** 語りの閉じ括弧（{@link SPEAK_OPEN} の対）。対応する開き括弧が無ければ無視する。 */
+export const SPEAK_CLOSE = "」";
+
+/** 歌詞テキストを「歌う部分」と「語る部分（`「…」` の中身）」へ切り分けた1片。 */
+type LyricPiece = { sung: string } | { speak: string };
+
+/**
+ * 歌詞テキストを `「…」` で歌う部分と語る部分へ切り分ける。
+ *
+ * 半角の `｢` `｣` も同じ括弧として扱う。最初の `「` から最初の `」` までを1つの語りに
+ * する（入れ子は解釈しない）。閉じ括弧が無ければ行末までを語りとし、対応する開き括弧の
+ * 無い `」` はそのまま歌う側へ流す（{@link sanitizeText} がかな以外を捨てるので消える）。
+ */
+const splitSpeech = (text: string): LyricPiece[] => {
+	const pieces: LyricPiece[] = [];
+	let sung = "";
+	let i = 0;
+	while (i < text.length) {
+		const ch = text[i];
+		if (ch === SPEAK_OPEN || ch === "｢") {
+			let end = -1;
+			for (let j = i + 1; j < text.length; j++) {
+				if (text[j] === SPEAK_CLOSE || text[j] === "｣") {
+					end = j;
+					break;
+				}
+			}
+			if (sung) pieces.push({ sung });
+			sung = "";
+			const body = end < 0 ? text.slice(i + 1) : text.slice(i + 1, end);
+			pieces.push({ speak: body });
+			i = end < 0 ? text.length : end + 1;
+			continue;
+		}
+		sung += ch;
+		i++;
+	}
+	if (sung) pieces.push({ sung });
+	return pieces;
+};
+
+/**
+ * 語りの本文を正規化する。前後の空白を落とし、改行は読点相当の区切りとして
+ * 空白へ潰す（MMLでは `;` と改行が区切り文字なので、本文に含められない）。
+ */
+const sanitizeSpeech = (text: string): string =>
+	text
+		.replace(/[\r\n;]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
 
 /**
  * カタカナをひらがなへ寄せ、かなと制御記号以外を破棄する。
@@ -284,44 +359,62 @@ const analyzeSyllable = (syllable: string): LyricSyllable => {
  * - 促音（`っ`）は母音の文脈を切らない（語中の詰まりなので直前母音を保つ）。
  * - 休符（`_`）は歌わず、ブレス（`、`）ともども母音の文脈を切る。次の音節は語頭として歌われる。
  * - 引き継ぐ母音が無い継続（行頭・ブレス直後）は意味を持たないので捨てる。
+ * - `「…」` は語り（{@link SPEAK_OPEN}）。ひとかたまりで `kind: "speak"` の1音節になり、
+ *   中身は {@link LyricSyllable.text} に生のまま残る（かな以外も捨てない）。
+ *   語りのあとは母音の文脈が切れる。
  */
 export const normalizeLyrics = (text: string): LyricSyllable[] => {
 	const result: LyricSyllable[] = [];
 	let prevVowel = "";
-	for (const mark of splitSyllables(sanitizeText(text))) {
-		if (mark === BREATH_MARK) {
-			const last = result[result.length - 1];
-			if (last) last.breathAfter = true;
+	for (const piece of splitSpeech(text)) {
+		if ("speak" in piece) {
+			const body = sanitizeSpeech(piece.speak);
+			// 空の `「」` は「ノートを1つ使って何も言わない」＝休符と同じ。
+			result.push(
+				body
+					? { kana: body, consonant: "", vowel: "", kind: "speak", text: body }
+					: { kana: REST_MARK, consonant: "", vowel: "", kind: "rest" },
+			);
+			// 語りの後は息が切れる。次の音節は語頭として歌う（`_` と同じ）。
 			prevVowel = "";
 			continue;
 		}
-		// デクレッシェンドもノートを消費しない。直前の音（＝結合後の1音）へ畳む。
-		// 母音の文脈は切らない——音は続いたまま小さくなるだけなので、
-		// 後ろに継続記号が来たら引き続き伸ばせる（`あー↓ー` が成立する）。
-		if (mark === FADE_OUT_MARK) {
-			const last = result[result.length - 1];
-			if (last) last.fadeOut = true;
-			continue;
+		for (const mark of splitSyllables(sanitizeText(piece.sung))) {
+			if (mark === BREATH_MARK) {
+				const last = result[result.length - 1];
+				if (last) last.breathAfter = true;
+				prevVowel = "";
+				continue;
+			}
+			// デクレッシェンドもノートを消費しない。直前の音（＝結合後の1音）へ畳む。
+			// 母音の文脈は切らない——音は続いたまま小さくなるだけなので、
+			// 後ろに継続記号が来たら引き続き伸ばせる（`あー↓ー` が成立する）。
+			if (mark === FADE_OUT_MARK) {
+				const last = result[result.length - 1];
+				if (last) last.fadeOut = true;
+				continue;
+			}
+			if (mark === FADE_IN_MARK) {
+				const last = result[result.length - 1];
+				if (last) last.fadeIn = true;
+				continue;
+			}
+			const syl = analyzeSyllable(mark);
+			if (syl.kind === "tie") {
+				// 引き継ぐ母音が無い継続（行頭・ブレス直後・語りの直後）は意味を持たないので捨てる。
+				if (!prevVowel) continue;
+				result.push({
+					...syl,
+					kana: prevVowel === "N" ? "ん" : (VOWEL_KANA[prevVowel] ?? syl.kana),
+					consonant: "",
+					vowel: prevVowel,
+				});
+				continue;
+			}
+			if (syl.kind === "rest") prevVowel = "";
+			else if (syl.vowel) prevVowel = syl.vowel; // 撥音(N)も継続の引き継ぎ元になる
+			result.push(syl);
 		}
-		if (mark === FADE_IN_MARK) {
-			const last = result[result.length - 1];
-			if (last) last.fadeIn = true;
-			continue;
-		}
-		const syl = analyzeSyllable(mark);
-		if (syl.kind === "tie") {
-			if (!prevVowel) continue;
-			result.push({
-				...syl,
-				kana: prevVowel === "N" ? "ん" : (VOWEL_KANA[prevVowel] ?? syl.kana),
-				consonant: "",
-				vowel: prevVowel,
-			});
-			continue;
-		}
-		if (syl.kind === "rest") prevVowel = "";
-		else if (syl.vowel) prevVowel = syl.vowel; // 撥音(N)も継続の引き継ぎ元になる
-		result.push(syl);
 	}
 	return result;
 };
@@ -342,7 +435,9 @@ export const displayKana = (syl: LyricSyllable): string => {
 				: TIE_MARK
 			: syl.kind === "rest"
 				? REST_MARK
-				: syl.kana;
+				: syl.kind === "speak"
+					? `${SPEAK_OPEN}${syl.text ?? syl.kana}${SPEAK_CLOSE}`
+					: syl.kana;
 	let out = syl.breathAfter ? head + BREATH_MARK : head;
 	// 併記の順は ↑↓ に正規化する（スウェルは書いた順を問わないため）。
 	if (syl.fadeIn) out += FADE_IN_MARK;
@@ -832,6 +927,48 @@ export type VoiceModel = {
 	) => void;
 	/** スケジュール済みの発音をすべて即停止する（停止・一時停止・シーク時）。 */
 	stopAll?: () => void;
+	/**
+	 * 語り（`「…」`）を合成してキャッシュへ積み、再生に使うキャッシュキーを返す。
+	 * 計画（読み・韻律・ユニット選択）が出来た時点で返り、合成はチャンクごとに裏で続く
+	 * （{@link scheduleSpeech} は届いたチャンクから順に置く）。`awaitRender` を立てると
+	 * 全チャンクの合成完了まで待つ（頭出しの貯金用）。
+	 * `pitch` は話す基準ピッチ（units）。計画不能（読みが取れない・アセット取得失敗）なら null。
+	 * koe 音源専用。klatt 等は未実装でよい（その場合は語りは鳴らない）。
+	 */
+	speakToCache?: (
+		text: string,
+		pitch: number,
+		expr?: VoiceExpression,
+		awaitRender?: boolean,
+	) => Promise<string | null>;
+	/**
+	 * {@link speakToCache} 済みの語りを絶対時刻 t0（AudioContext クロック秒）へスケジュールする。
+	 * まだ合成中のチャンクは届き次第、同じ t0 基準で置く。t0 を過ぎてから届いた分は
+	 * 途中から（遅れたぶんを飛ばして）鳴らし、後続との同期を保つ。
+	 */
+	scheduleSpeech?: (
+		key: string,
+		t0: number,
+		peak: number,
+		pan: number,
+		reverbSend?: number,
+		delaySend?: number,
+		destination?: AudioNode,
+	) => void;
+	/** {@link speakToCache} 済みの語りが占める長さ（秒）。未計画なら undefined。 */
+	speechDurationSec?: (key: string) => number | undefined;
+	/**
+	 * 語りの計画だけを行い、占める長さ（秒）を返す（ピアノロールの帯表示用）。
+	 * 長さは基準ピッチに依らないので本文だけで引ける。アセット未取得なら取得から始める。
+	 */
+	planSpeech?: (text: string) => Promise<number | null>;
+	/** 計画済みの語りの長さ（秒）を同期で引く（描画ループ用。未計画なら undefined）。 */
+	peekSpeechDurationSec?: (text: string) => number | undefined;
+	/**
+	 * 語りの基準ピッチ（units）。この行にノートを置くと音源の素の声の高さで話す。
+	 * 音源の収録ピッチの中央値（多音階音源では収録セットの中央値）。
+	 */
+	speechReferenceUnits?: () => number | undefined;
 };
 
 /**
@@ -1248,6 +1385,66 @@ export const collectPitchTokens = (aliases: Iterable<string>): PitchToken[] => {
 	return [...seen].map(([token, midi]) => ({ token, midi }));
 };
 
+/** 目標ノート（MIDI番号）に最も近いピッチトークン。トークンが無ければ null。 */
+const nearestPitchToken = (
+	pitchTokens: PitchToken[],
+	noteNum: number,
+): PitchToken | null => {
+	let best: PitchToken | null = null;
+	for (const t of pitchTokens) {
+		if (!best || Math.abs(t.midi - noteNum) < Math.abs(best.midi - noteNum))
+			best = t;
+	}
+	return best;
+};
+
+/**
+ * 語り（UtauTTS）の計画に渡す「音源の見え方」。
+ *
+ * UtauTTS のユニット選択は prefix.map 前提で、音名接尾辞つきのエイリアス
+ * （`- あ_G4`）を素の名前では引けない。多音階音源では**収録セットを1つ選び**、
+ * その接尾辞を剥がした音素表を計画に見せ、出来た計画のエイリアスを {@link toReal} で
+ * 実在の名前へ戻す。接尾辞の無いエイリアスはそのまま残す（接尾辞つきと重複したら
+ * 接尾辞つき＝選んだセットを優先）。単独音・連続音バンク（`token` null）は素通し。
+ */
+export type SpeechToneView = {
+	view: SpeechBank;
+	/** 計画上のエイリアス → 音源に実在するエイリアス。 */
+	toReal: (alias: string) => string;
+	/** この見え方での収録ピッチの中央値（Hz）。基準ピッチのガイドに使う。 */
+	referenceHz: number | undefined;
+};
+
+export const createSpeechToneView = (
+	phonemes: Record<string, PhonemeEntry>,
+	token: string | null,
+): SpeechToneView => {
+	if (!token) {
+		return {
+			view: { manifest: { phonemes } },
+			toReal: (a) => a,
+			referenceHz: medianRecordedPitchHz(phonemes),
+		};
+	}
+	const suffix = `_${token}`;
+	const stripped: Record<string, PhonemeEntry> = {};
+	const real = new Map<string, string>();
+	for (const [alias, entry] of Object.entries(phonemes)) {
+		if (alias.endsWith(suffix)) {
+			const bare = alias.slice(0, -suffix.length);
+			stripped[bare] = entry;
+			real.set(bare, alias);
+		} else if (!PITCH_SUFFIX.test(alias) && !(alias in stripped)) {
+			stripped[alias] = entry;
+		}
+	}
+	return {
+		view: { manifest: { phonemes: stripped } },
+		toReal: (a) => real.get(a) ?? a,
+		referenceHz: medianRecordedPitchHz(stripped),
+	};
+};
+
 /**
  * 音節（子音・母音・かな）と直前母音から、音源マニフェストに実在する音素エイリアスを解決する。
  * 単独音（"か"）・連続音（"a か" / "- か"）・ローマ字命名（"ka"）など幅広い命名を順に試す。
@@ -1399,6 +1596,12 @@ export type KoeVoiceOptions = {
 	 * ドライ経路とは別にこのノードへ送る。未指定ならディレイ送りは常にスキップされる。
 	 */
 	delayBus?: AudioNode;
+	/**
+	 * 語り（`「…」`）用の TTS アセットのベース URL（{@link file://./speech.ts}）。
+	 * 省略時は koe のデモと同じ GitHub Pages のホストを使う。アセットはページにつき
+	 * 一度だけ読み込まれ、最初の語りを合成するときに取得が始まる。
+	 */
+	ttsBaseUrl?: string;
 };
 
 type RenderedNote = {
@@ -1432,9 +1635,25 @@ type RenderBackend = {
 		/** 継続記号で結合されたノート内のピッチ推移（2区間目以降）。 */
 		pitchSegments?: PitchSegment[],
 	) => Promise<BackendRender>;
+	/** 音源マニフェストの音素表（語りの計画に使う）。 */
+	phonemes: Record<string, PhonemeEntry>;
+	/**
+	 * 語りの計画（エイリアスは実在名へ写し済み）を worldline でチャンクごとに合成する。
+	 * チャンクは出来た順に `onChunk` へ渡し、全部終わったら解決する（打ち切り・失敗でも
+	 * 例外にはせず解決する。WORLD 不可＝軽量モードでは何も渡さない）。
+	 */
+	renderSpeech: (
+		plan: UtauTTSPlan,
+		expr: VoiceExpression | undefined,
+		onChunk: (chunk: SpeechChunk) => void,
+		signal?: AbortSignal,
+	) => Promise<void>;
 	/** 破棄（Worker終了など）。 */
 	dispose: () => void;
 };
+
+/** バックエンドが返す語りの 1 片（Float32 @48kHz、startMs は計画のタイムライン 0 から）。 */
+type SpeechChunk = { pcm: Float32Array; startMs: number; index: number };
 
 /** メインスレッドで合成する従来バックエンド（voiceWorkerUrl 未指定時）。 */
 const createLocalBackend = async (
@@ -1550,10 +1769,36 @@ const createLocalBackend = async (
 		};
 	};
 
+	// 語り: 計画（メイン側で作成済み）を worldline でチャンク合成する。
+	let speechAdapter: UtauTTSAdapter | null = null;
+	const renderSpeech: RenderBackend["renderSpeech"] = async (
+		plan,
+		expr,
+		onChunk,
+		signal,
+	) => {
+		if (!worldline) return; // 軽量モードでは語りは鳴らせない
+		speechAdapter ??= new UtauTTSAdapter(worldline);
+		try {
+			for await (const chunk of speechAdapter.renderChunks(bank, plan, {
+				signal,
+				gender: expr?.gender,
+				breathiness: expr?.breathiness,
+				tension: expr?.tension,
+			})) {
+				onChunk({ pcm: chunk.pcm, startMs: chunk.startMs, index: chunk.index });
+			}
+		} catch (err) {
+			console.warn("[dtm] speech synthesis failed", err);
+		}
+	};
+
 	return {
 		hasAlias: (a) => bank.has(a),
 		pitchTokens: collectPitchTokens(Object.keys(bank.manifest.phonemes)),
 		renderAlias,
+		phonemes: bank.manifest.phonemes,
+		renderSpeech,
 		dispose: () => {},
 	};
 };
@@ -1576,7 +1821,13 @@ const createWorkerBackend = async (
 ): Promise<RenderBackend> => {
 	const worker = await spawnVoiceWorker(workerUrl);
 	const aliasSet = new Set<string>();
+	let phonemes: Record<string, PhonemeEntry> = {};
 	const pending = new Map<number, (m: VoiceWorkerRendered) => void>();
+	/** 進行中の語り合成（id → チャンク受け取りと完了）。 */
+	const speechPending = new Map<
+		number,
+		{ onChunk: (c: SpeechChunk) => void; done: () => void }
+	>();
 	let reqId = 0;
 	let onReady: (() => void) | null = null;
 	let onFail: ((e: Error) => void) | null = null;
@@ -1585,6 +1836,7 @@ const createWorkerBackend = async (
 		const m = ev.data;
 		if (m.type === "ready") {
 			for (const a of m.aliases) aliasSet.add(a);
+			phonemes = m.phonemes ?? {};
 			onReady?.();
 		} else if (m.type === "error") {
 			onFail?.(new Error(m.message));
@@ -1593,6 +1845,17 @@ const createWorkerBackend = async (
 			if (cb) {
 				pending.delete(m.id);
 				cb(m);
+			}
+		} else if (m.type === "speech-chunk") {
+			speechPending
+				.get(m.id)
+				?.onChunk({ pcm: m.pcm, startMs: m.startMs, index: m.index });
+		} else if (m.type === "speech-end") {
+			const s = speechPending.get(m.id);
+			if (s) {
+				speechPending.delete(m.id);
+				if (m.error) console.warn("[dtm] speech synthesis failed", m.error);
+				s.done();
 			}
 		}
 	};
@@ -1646,10 +1909,39 @@ const createWorkerBackend = async (
 			} satisfies VoiceWorkerRenderReq);
 		});
 
+	const renderSpeech: RenderBackend["renderSpeech"] = (
+		plan,
+		expr,
+		onChunk,
+		signal,
+	) =>
+		new Promise<void>((resolve) => {
+			const id = ++reqId;
+			speechPending.set(id, { onChunk, done: resolve });
+			signal?.addEventListener("abort", () => {
+				worker.postMessage({
+					type: "speak-abort",
+					id,
+				} satisfies VoiceWorkerSpeakAbort);
+			});
+			worker.postMessage({
+				type: "speak",
+				id,
+				plan,
+				gender: expr?.gender,
+				breathiness: expr?.breathiness,
+				tension: expr?.tension,
+			} satisfies VoiceWorkerSpeakReq);
+		});
+
 	return {
 		hasAlias: (a) => aliasSet.has(a),
 		pitchTokens: collectPitchTokens(aliasSet),
 		renderAlias,
+		get phonemes() {
+			return phonemes;
+		},
+		renderSpeech,
 		dispose: () => worker.terminate(),
 	};
 };
@@ -1982,6 +2274,291 @@ export const createKoeVoice = async (
 			);
 	};
 
+	// ── 語り（`「…」`）────────────────────────────────────────────
+	// 計画（読み・韻律・ユニット選択）はメイン側の SpeechPlanner、合成は backend。
+	// 計画は本文と収録セット（多音階のトークン）ごとに、合成結果は基準ピッチと
+	// 表情（g/h/t）まで含めてキャッシュする。
+
+	/** ページ共有の計画器。最初の語りで初めてアセット取得が走る。 */
+	const planner: SpeechPlanner = getSpeechPlanner({
+		baseUrl: options.ttsBaseUrl,
+	});
+
+	/** 収録セットごとの音源の見え方（多音階でなければ "" の1件だけ）。 */
+	const toneViews = new Map<string, SpeechToneView>();
+	const toneViewFor = (token: string | null): SpeechToneView => {
+		const k = token ?? "";
+		let v = toneViews.get(k);
+		if (!v) {
+			v = createSpeechToneView(backend.phonemes, token);
+			toneViews.set(k, v);
+		}
+		return v;
+	};
+	/** 目標ピッチに最も近い収録セット（多音階でなければ null）。 */
+	const toneFor = (pitch: number): string | null =>
+		nearestPitchToken(backend.pitchTokens, unitsToMidiFloat(pitch))?.token ??
+		null;
+
+	/** 本文 × 収録セット → 計画（失敗は null で覚えて再試行しない）。 */
+	const plans = new Map<string, Promise<UtauTTSPlan | null>>();
+	const planFor = (
+		text: string,
+		token: string | null,
+	): Promise<UtauTTSPlan | null> => {
+		const k = `${token ?? ""}|${text}`;
+		let p = plans.get(k);
+		if (!p) {
+			p = (async () => {
+				try {
+					await planner.ready();
+					return planner.plan(toneViewFor(token).view, text, {
+						tone: token ?? "C4",
+					});
+				} catch (err) {
+					console.warn(`[dtm] speech plan failed for "${text}"`, err);
+					return null;
+				}
+			})();
+			plans.set(k, p);
+		}
+		return p;
+	};
+
+	type SpeechRendered = { audio: AudioBuffer; startSec: number };
+	type SpeechEntry = {
+		/** 計画が出来た（合成が始まった）時点で解決。null は失敗。 */
+		planned: Promise<number | null>;
+		/** 全チャンクの合成完了で解決。 */
+		rendered: Promise<void>;
+		durationSec: number;
+		chunks: SpeechRendered[];
+		done: boolean;
+		/** 合成中に届いたチャンクを受け取る（scheduleSpeech が登録）。 */
+		listeners: Set<(c: SpeechRendered) => void>;
+		abort: AbortController;
+	};
+	const speechCache = new Map<string, SpeechEntry>();
+	const speechKeyOf = (
+		text: string,
+		pitch: number,
+		expr?: VoiceExpression,
+	): string =>
+		`speak|${text}|${Math.round(pitch)}${
+			expr?.gender !== undefined ? `|g${Math.round(expr.gender * 100)}` : ""
+		}${
+			expr?.breathiness !== undefined
+				? `|h${Math.round(expr.breathiness * 100)}`
+				: ""
+		}${expr?.tension !== undefined ? `|t${Math.round(expr.tension * 100)}` : ""}`;
+
+	/** 基準ピッチからの平行移動の上限（±2オクターブ。それ以上は声にならない）。 */
+	const SPEECH_PITCH_RATIO_MAX = 4;
+
+	const speechEntryFor = (
+		text: string,
+		pitch: number,
+		expr?: VoiceExpression,
+	): SpeechEntry => {
+		const key = speechKeyOf(text, pitch, expr);
+		let entry = speechCache.get(key);
+		if (entry) return entry;
+		const abort = new AbortController();
+		let resolvePlanned!: (d: number | null) => void;
+		const planned = new Promise<number | null>((r) => {
+			resolvePlanned = r;
+		});
+		const e: SpeechEntry = {
+			planned,
+			rendered: Promise.resolve(),
+			durationSec: 0,
+			chunks: [],
+			done: false,
+			listeners: new Set(),
+			abort,
+		};
+		e.rendered = (async () => {
+			const token = toneFor(pitch);
+			const plan = await planFor(text, token);
+			if (!plan) {
+				e.done = true;
+				resolvePlanned(null);
+				return;
+			}
+			const view = toneViewFor(token);
+			// ノートの音高 ÷ 計画の基準ピッチ（選ばれたユニットの収録ピッチの中央値）。
+			// 基準の行にノートを置けば比 1 ＝ 音源の素の声になる。
+			const reference = plan.timeline.reference_hz || view.referenceHz || 0;
+			const ratio =
+				reference > 0
+					? Math.min(
+							SPEECH_PITCH_RATIO_MAX,
+							Math.max(
+								1 / SPEECH_PITCH_RATIO_MAX,
+								unitsToFreq(pitch) / reference,
+							),
+						)
+					: 1;
+			const prepared = prepareSpeechPlan(plan, ratio, view.toReal);
+			e.durationSec = speechPlanDurationSec(prepared);
+			// ノートの位置には最初のモーラを合わせる。タイムラインの先頭余白（先行発声ぶん）は
+			// ノートより前へはみ出して鳴る（歌唱の preSec と同じ扱い）。
+			const leadingSec = speechPlanLeadingSec(prepared);
+			resolvePlanned(e.durationSec);
+			await backend.renderSpeech(
+				prepared,
+				expr,
+				(chunk) => {
+					const buf = ctx.createBuffer(1, chunk.pcm.length, KOE_SAMPLE_RATE);
+					buf.copyToChannel(chunk.pcm, 0);
+					const r: SpeechRendered = {
+						audio: buf,
+						startSec: chunk.startMs / 1000 - leadingSec,
+					};
+					e.chunks.push(r);
+					for (const l of e.listeners) l(r);
+				},
+				abort.signal,
+			);
+			e.done = true;
+			e.listeners.clear();
+		})();
+		entry = e;
+		speechCache.set(key, entry);
+		return entry;
+	};
+
+	/** 語りの 1 チャンクを t0 基準で置く。遅れて届いた分は途中から鳴らして同期を保つ。 */
+	const placeSpeechChunk = (
+		r: SpeechRendered,
+		t0: number,
+		peak: number,
+		pan: number,
+		reverbSend = 0,
+		delaySend = 0,
+		destOverride?: AudioNode,
+	): void => {
+		const dest = destOverride ?? destination;
+		let startAt = t0 + r.startSec;
+		let offset = 0;
+		const earliest = ctx.currentTime + 0.01;
+		if (startAt < earliest) {
+			offset = earliest - startAt;
+			startAt = earliest;
+		}
+		if (offset >= r.audio.duration - 0.005) return; // 丸ごと過ぎている
+
+		let out: AudioNode = dest;
+		let panner: StereoPannerNode | null = null;
+		if (typeof ctx.createStereoPanner === "function") {
+			panner = ctx.createStereoPanner();
+			panner.pan.value = Math.max(-1, Math.min(1, pan));
+			panner.connect(dest);
+			out = panner;
+		}
+		let reverbSendGain: GainNode | null = null;
+		if (options.reverbBus && reverbSend > 0 && panner) {
+			reverbSendGain = ctx.createGain();
+			reverbSendGain.gain.value = Math.max(0, Math.min(1, reverbSend));
+			panner.connect(reverbSendGain).connect(options.reverbBus);
+		}
+		let delaySendGain: GainNode | null = null;
+		if (options.delayBus && delaySend > 0 && panner) {
+			delaySendGain = ctx.createGain();
+			delaySendGain.gain.value = Math.max(0, Math.min(1, delaySend));
+			panner.connect(delaySendGain).connect(options.delayBus);
+		}
+		const env = ctx.createGain();
+		// 途中から鳴らすときだけ、切り口のクリックを短い立ち上がりで消す。
+		if (offset > 0) {
+			env.gain.setValueAtTime(0.0001, startAt);
+			env.gain.exponentialRampToValueAtTime(peak, startAt + 0.005);
+		} else {
+			env.gain.setValueAtTime(peak, startAt);
+		}
+		const src = ctx.createBufferSource();
+		src.buffer = r.audio;
+		src.connect(env).connect(out);
+		src.start(startAt, offset);
+		active.add(src);
+		src.onended = () => {
+			active.delete(src);
+			src.disconnect();
+			env.disconnect();
+			panner?.disconnect();
+			reverbSendGain?.disconnect();
+			delaySendGain?.disconnect();
+		};
+	};
+
+	/** scheduleSpeech が登録した「合成中チャンクの受け取り」。stopAll で全部外す。 */
+	const speechListeners = new Set<{
+		entry: SpeechEntry;
+		listener: (c: SpeechRendered) => void;
+	}>();
+
+	model.speakToCache = async (text, pitch, expr, awaitRender) => {
+		const entry = speechEntryFor(text, pitch, expr);
+		const duration = await entry.planned;
+		if (duration === null) return null;
+		if (awaitRender) await entry.rendered;
+		return speechKeyOf(text, pitch, expr);
+	};
+
+	model.scheduleSpeech = (key, t0, peak, pan, reverbSend, delaySend, dest) => {
+		const entry = speechCache.get(key);
+		if (!entry) return;
+		const place = (r: SpeechRendered) =>
+			placeSpeechChunk(r, t0, peak, pan, reverbSend, delaySend, dest);
+		for (const r of entry.chunks) place(r);
+		if (!entry.done) {
+			entry.listeners.add(place);
+			const reg = { entry, listener: place };
+			speechListeners.add(reg);
+			void entry.rendered.then(() => speechListeners.delete(reg));
+		}
+	};
+
+	model.speechDurationSec = (key) => {
+		const entry = speechCache.get(key);
+		return entry && entry.durationSec > 0 ? entry.durationSec : undefined;
+	};
+
+	// 帯表示用: 長さはピッチに依らないので、基準ピッチ（比 1）の計画で引く。
+	const previewDurations = new Map<string, number>();
+	model.planSpeech = async (text) => {
+		const cached = previewDurations.get(text);
+		if (cached !== undefined) return cached;
+		const token =
+			backend.pitchTokens.length > 0
+				? (nearestPitchToken(
+						backend.pitchTokens,
+						unitsToMidiFloat(model.speechReferenceUnits?.() ?? 0),
+					)?.token ?? null)
+				: null;
+		const plan = await planFor(text, token);
+		if (!plan) return null;
+		const d = speechPlanDurationSec(plan);
+		previewDurations.set(text, d);
+		return d;
+	};
+	model.peekSpeechDurationSec = (text) => previewDurations.get(text);
+
+	model.speechReferenceUnits = () => {
+		// 多音階音源は中央付近の収録セット、それ以外は全音素の中央値。
+		const tokens = backend.pitchTokens;
+		let hz: number | undefined;
+		if (tokens.length > 0) {
+			const sorted = tokens.slice().sort((a, b) => a.midi - b.midi);
+			hz = toneViewFor(sorted[sorted.length >> 1].token).referenceHz;
+		} else {
+			hz = toneViewFor(null).referenceHz;
+		}
+		if (!hz || hz <= 0) return undefined;
+		// Hz → units（A4 = 2139 units = 440Hz、1オクターブ = 372 units）
+		return Math.round(2139 + 372 * Math.log2(hz / 440));
+	};
+
 	model.stopAll = () => {
 		for (const src of active) {
 			try {
@@ -1990,6 +2567,10 @@ export const createKoeVoice = async (
 			src.disconnect();
 		}
 		active.clear();
+		// 合成中の語りが、止めたあとに届いて鳴り出さないよう受け取りを外す。
+		for (const { entry, listener } of speechListeners)
+			entry.listeners.delete(listener);
+		speechListeners.clear();
 	};
 
 	model.reset = () => {
@@ -2378,6 +2959,19 @@ export type SingingVoices = {
 	 * 常時ライブ反映できるようにする。
 	 */
 	setVolume: (gain: number) => void;
+	/**
+	 * 語り（`「…」`）の計画だけを行い、占める長さ（秒）を返す（ピアノロールの帯表示用）。
+	 * 音源が未ロードならロードし、TTS アセットが未取得なら取得から始める（初回は重い）。
+	 * klatt 等の語りに対応しないモデルや、計画できない本文では null。省略可能。
+	 */
+	planSpeech?: (model: string, text: string) => Promise<number | null>;
+	/** 計画済みの語りの長さ（秒）を同期で引く（描画ループ用。未計画なら undefined）。 */
+	peekSpeechDurationSec?: (model: string, text: string) => number | undefined;
+	/**
+	 * 語りの基準ピッチ（units）。この行にノートを置くと音源の素の声の高さで話す。
+	 * 音源がロード済みのときだけ返る（ロード前・klatt は undefined）。
+	 */
+	getSpeechReferenceUnits?: (model: string) => number | undefined;
 };
 
 /** {@link SingingVoices.warm} の既定先合成数（各トラック先頭からの音数）。 */
@@ -2453,6 +3047,11 @@ export type SingingVoicesOptions = {
 	 * 未指定または戻り値が undefined のトラックは共有の `destination` へそのまま流れる。
 	 */
 	getTrackDestination?: (trackId: string) => AudioNode | undefined;
+	/**
+	 * 語り（`「…」`）用の TTS アセットのベース URL（{@link createKoeVoice} に渡す）。
+	 * 省略時は koe のデモと同じ GitHub Pages のホスト（{@link DEFAULT_TTS_BASE_URL}）。
+	 */
+	ttsBaseUrl?: string;
 };
 
 /** 内蔵フォルマント合成のモデル名（koe音源が見つからないときのフォールバック先） */
@@ -2577,6 +3176,7 @@ export const createSingingVoices = (
 				voiceWorkerUrl: options.voiceWorkerUrl,
 				reverbBus: options.reverbBus,
 				delayBus: options.delayBus,
+				ttsBaseUrl: options.ttsBaseUrl,
 			}))()
 			.then((v) => {
 				loaded.set(m, v);
@@ -2625,6 +3225,12 @@ export const createSingingVoices = (
 				prevVowel = "";
 				continue;
 			}
+			// 語り(「…」)は歌唱とは別経路で鳴らす。息が切れるので次は語頭になる。
+			if (syl.kind === "speak") {
+				fn(note, "");
+				prevVowel = "";
+				continue;
+			}
 			// 促音(っ)・無声は歌わない（合成対象外）。ただし直前母音は維持する
 			if (syl.consonant === "Q" || syl.vowel === "") continue;
 			fn(note, prevVowel);
@@ -2647,6 +3253,8 @@ export const createSingingVoices = (
 			vibrato?: boolean;
 			expr?: VoiceExpression;
 			pitchSegments?: PitchSegment[];
+			/** 語りの本文（語りのタスクだけ）。 */
+			speak?: string;
 		}[] = [];
 
 		for (const track of tracks) {
@@ -2661,6 +3269,19 @@ export const createSingingVoices = (
 			forEachSungNote(track, (note, prevVowel) => {
 				if (n >= count && note.startSec >= STREAM_LOOKAHEAD_SEC) return;
 				n++;
+				if (note.syllable.kind === "speak") {
+					// 語りは計画（初回は TTS アセット取得を含む）まで全部ここで済ませる。
+					// 先頭付近のものは合成完了まで待ち、頭出しで音が抜けないようにする。
+					tasks.push({
+						model: m,
+						note,
+						prevVowel: "",
+						pitch: note.pitch,
+						expr,
+						speak: note.syllable.text ?? "",
+					});
+					return;
+				}
 				tasks.push({
 					model: m,
 					note,
@@ -2696,15 +3317,24 @@ export const createSingingVoices = (
 		onProgress?.(done, total);
 
 		const promises = tasks.map(async (task) => {
-			await (task.model.renderToCache?.(
-				task.note.syllable,
-				task.prevVowel,
-				task.pitch,
-				task.note.durationSec * 1000,
-				task.vibrato,
-				task.expr,
-				task.pitchSegments,
-			) ?? Promise.resolve(null));
+			if (task.speak !== undefined) {
+				await (task.model.speakToCache?.(
+					task.speak,
+					task.pitch,
+					task.expr,
+					true,
+				) ?? Promise.resolve(null));
+			} else {
+				await (task.model.renderToCache?.(
+					task.note.syllable,
+					task.prevVowel,
+					task.pitch,
+					task.note.durationSec * 1000,
+					task.vibrato,
+					task.expr,
+					task.pitchSegments,
+				) ?? Promise.resolve(null));
+			}
 			done++;
 			onProgress?.(done, total);
 		});
@@ -2767,6 +3397,54 @@ export const createSingingVoices = (
 					// ソロ/ミュートをライブ判定。地平到達時点で対象外なら合成もスケジュールもしない。
 					if (opts?.isAudible && !opts.isAudible(track)) continue;
 					const t0 = anchorTime + startSec;
+
+					// 語り（「…」）: 計画が出来しだい置き、チャンクは届いた順に同じ t0 基準で並ぶ。
+					// オクターブユニゾンは重ねない（話し声を重ねても厚みにならない）。
+					if (note.syllable.kind === "speak") {
+						const text = note.syllable.text ?? "";
+						if (text && model.speakToCache && model.scheduleSpeech) {
+							const speakToCache = model.speakToCache;
+							const scheduleSpeech = model.scheduleSpeech;
+							const dest = options.getTrackDestination?.(track.id ?? "");
+							const effPeak = dest ? peak * masterVolumeScalar : peak;
+							void (async () => {
+								const key = await speakToCache(text, note.pitch, {
+									gender: track.gender,
+									breathiness: track.breathiness,
+									tension: track.tension,
+								});
+								if (session !== streamSession || !key) return;
+								// 語りは途中からでも追いつけるので、1文まるごと落とす閾値は歌より緩い。
+								const delay = ctx.currentTime - t0;
+								if (delay < 1) {
+									scheduleSpeech(
+										key,
+										t0,
+										effPeak,
+										track.pan,
+										track.reverbSend,
+										track.delaySend,
+										dest,
+									);
+									opts?.onScheduled?.(
+										track,
+										{
+											...note,
+											durationSec:
+												model.speechDurationSec?.(key) ?? note.durationSec,
+										},
+										t0,
+									);
+								} else {
+									console.warn(
+										`[dtm] Speech late skip: 「${text}」 at ${startSec}s (delayed by ${delay.toFixed(3)}s)`,
+									);
+									opts?.onLateSkip?.(note, delay);
+								}
+							})();
+						}
+						continue;
+					}
 
 					// 1音を指定ピッチ・音量係数で合成→スケジュールする。オクターブユニゾン有効時は
 					// 同じ音節をもう1声（±12半音・控えめな音量）重ねるため、通常発声とは
@@ -2928,6 +3606,21 @@ export const createSingingVoices = (
 		masterVolumeScalar = g;
 	};
 
+	const planSpeech: NonNullable<SingingVoices["planSpeech"]> = async (
+		model,
+		text,
+	) => {
+		const v = await load(model);
+		return v?.planSpeech ? v.planSpeech(text) : null;
+	};
+	const peekSpeechDurationSec: NonNullable<
+		SingingVoices["peekSpeechDurationSec"]
+	> = (model, text) =>
+		loaded.get(model.toLowerCase())?.peekSpeechDurationSec?.(text);
+	const getSpeechReferenceUnits: NonNullable<
+		SingingVoices["getSpeechReferenceUnits"]
+	> = (model) => loaded.get(model.toLowerCase())?.speechReferenceUnits?.();
+
 	return {
 		loadModels,
 		registerVoicebanks,
@@ -2936,6 +3629,9 @@ export const createSingingVoices = (
 		stopStream,
 		reset,
 		setVolume,
+		planSpeech,
+		peekSpeechDurationSec,
+		getSpeechReferenceUnits,
 	};
 };
 

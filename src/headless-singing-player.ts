@@ -57,6 +57,11 @@ export type PlaySingingMmlOptions = PlayMmlOptions & {
 	 */
 	voiceWorkerUrl?: string;
 	/**
+	 * 語り（歌詞の `「…」`）用の TTS アセットのベース URL。省略時は koe のデモと同じ
+	 * GitHub Pages のホスト。`singingVoices` を注入した場合は無視される。
+	 */
+	ttsBaseUrl?: string;
+	/**
 	 * 既存の歌唱合成ヘルパを注入する（createDtmStudio と同様の配線を流用したい場合）。
 	 * 指定時は voiceWorkerUrl より優先し、内部で createSingingVoices しない。
 	 */
@@ -291,6 +296,7 @@ export const playSingingMML = async (
 			if (!voices) {
 				voices = createSingingVoices(ctx, destination, {
 					voiceWorkerUrl: options.voiceWorkerUrl,
+					ttsBaseUrl: options.ttsBaseUrl,
 				});
 			}
 

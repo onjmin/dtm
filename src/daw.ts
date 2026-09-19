@@ -149,6 +149,7 @@ import type {
 	DawMode,
 	DawOptions,
 	DawViewState,
+	LyricSyllable,
 	LyricTrack,
 	Note,
 	OctaveUnisonMode,
@@ -222,8 +223,22 @@ c  d  e  f   g    ← 音符5つ</pre>
     <li><code>、</code> <strong>ブレス</strong>（読点）… <strong>音符は消費せず</strong>、直前の音を少し短くして息継ぎを入れます。</li>
     <li><code>↓</code> <strong>だんだん小さく</strong>（下向き矢印）… <strong>音符は消費せず</strong>、その音を歌ったまま声量を落とします。複数書くと減り方を刻めます。</li>
     <li><code>↑</code> <strong>だんだん大きく</strong>（上向き矢印）… <code>↓</code> の対。小さく入って声量を上げていきます。</li>
+    <li><code>「…」</code> <strong>語り</strong>（かぎ括弧）… 囲んだ部分を歌わずに<strong>読み上げ</strong>ます。括弧ひとかたまりで音符を1つ消費し、その音符の位置から話し始めます。</li>
   </ul>
-  <p><small>全角チルダ <code>～</code> は <code>〜</code>、半角カンマ <code>,</code> は <code>、</code>、<code>⇩</code> <code>⬇</code> は <code>↓</code>、<code>⇧</code> <code>⬆</code> は <code>↑</code> として扱われます。これら以外の記号（英数字・スペース・句読点など）は無視されます。</small></p>
+  <p><small>全角チルダ <code>～</code> は <code>〜</code>、半角カンマ <code>,</code> は <code>、</code>、<code>⇩</code> <code>⬇</code> は <code>↓</code>、<code>⇧</code> <code>⬆</code> は <code>↑</code> として扱われます。これら以外の記号（英数字・スペース・句読点など）は無視されます（<code>「…」</code> の中だけは例外で、そのまま読み上げに渡されます）。</small></p>
+
+  <h4>歌の中で語る（<code>「…」</code>）</h4>
+  <p>歌詞の途中に <code>「…」</code> を書くと、その部分だけを<strong>話し声で読み上げ</strong>ます（UTAU音源のみ。klatt では鳴りません）。中身は漢字・数字・句読点を含んでかまいません——読みとアクセントは辞書が決めます。<code>？</code> で終わると語尾が上がります。</p>
+  <pre>ふつうにうたう「かたるばしょ」ふつうにうたう
+どんぐりころころ「みなさん、こんにちは！」どんぐりこ
+「セリフだけのトラックも作れます。」</pre>
+  <ul>
+    <li><strong>音符の位置</strong>が話し始めです。<strong>長さは読み上げが決める</strong>ので、音符の長さは使いません。ピアノロールには実際に喋る長さが破線の帯で出るので、次の歌い出しと重ならないか確かめられます。</li>
+    <li><strong>音符の高さ</strong>は話す声の高さです。黄色い「語りの基準」の行に置くと音源の素の声、上に置くほど高い声になります（目安は±7半音まで）。</li>
+    <li>空の <code>「」</code> は <code>_</code> と同じ（音符を1つ消費して無音）。閉じ括弧が無ければ行末までが語りになります。</li>
+    <li>中身に <code>;</code> と改行は書けません（MMLの区切り文字のため）。</li>
+    <li>初めて語りを鳴らすときは辞書と音声モデル（約45MB）を取得するので、再生開始まで少し待ちます。2回目以降は保存済みのものを使います。</li>
+  </ul>
 
   <h4>強弱をつける（<code>↓</code> <code>↑</code>）</h4>
   <p>伸ばした音に付けると、<strong>言い直さずに伸ばしたまま</strong>声量だけが動きます。曲の終わりの余韻や、サビへの盛り上げに使います。</p>
@@ -2052,18 +2067,82 @@ export const mountDAW = (
 	// 同じ歌詞文字列に対して normalizeLyrics を繰り返さないようにする。
 	let lyricKanaCacheText = "";
 	let lyricKanaCache: string[] = [];
+	let lyricSyllableCache: LyricSyllable[] = [];
 
-	/** アクティブトラックの歌詞をノート表示用のかな列にする（歌わない設定なら空） */
-	const getActiveLyricKana = (): string[] => {
+	/** アクティブトラックの歌詞を正規化済み音節列にする（歌わない設定なら空）。 */
+	const getActiveLyricSyllables = (): LyricSyllable[] => {
 		const t = getActive();
 		if (!t?.lyricModel.trim()) return []; // モデル「なし」＝歌わないので表示もしない
 		const text = t.lyrics.trim();
 		if (!text) return [];
 		if (text !== lyricKanaCacheText) {
 			lyricKanaCacheText = text;
-			lyricKanaCache = normalizeLyrics(text).map(displayKana);
+			lyricSyllableCache = normalizeLyrics(text);
+			lyricKanaCache = lyricSyllableCache.map(displayKana);
 		}
+		return lyricSyllableCache;
+	};
+
+	/** アクティブトラックの歌詞をノート表示用のかな列にする（歌わない設定なら空） */
+	const getActiveLyricKana = (): string[] => {
+		getActiveLyricSyllables();
 		return lyricKanaCache;
+	};
+
+	// 語り（「…」）のプレビュー: 読み上げが実際に占める長さをロール上の帯にする。
+	// 長さは計画（読み・韻律）を作らないと分からないので、歌詞に語りが現れたら
+	// 裏で計画だけ先に走らせ、出来しだい描き直す。同じ本文は一度しか頼まない。
+	const speechPreviewRequested = new Set<string>();
+	const requestSpeechPreview = (model: string, text: string): void => {
+		const voices = options.singingVoices;
+		if (!voices?.planSpeech) return;
+		const key = `${model}|${text}`;
+		if (speechPreviewRequested.has(key)) return;
+		speechPreviewRequested.add(key);
+		void voices
+			.planSpeech(model, text)
+			.then((d) => {
+				if (d !== null) redrawAll();
+			})
+			.catch(() => {});
+	};
+
+	/**
+	 * 語りの帯と基準ピッチのガイドを描く。`notes` はアクティブトラックのノート。
+	 * 音節の割り当ては歌詞表示・発音側と同じ（startStep 昇順の index で 1:1）。
+	 */
+	const drawSpeechPreview = (notes: Note[]): void => {
+		const voices = options.singingVoices;
+		if (!voices) return;
+		const syllables = getActiveLyricSyllables();
+		if (!syllables.some((s) => s.kind === "speak")) return;
+		const model = getActive().lyricModel.trim().toLowerCase();
+		const sorted = [...notes].sort((a, b) => a.startStep - b.startStep);
+		const count = Math.min(sorted.length, syllables.length);
+		const secondsPerStep = 60 / bpm / 48;
+		const spans: { note: Note; durationSteps: number }[] = [];
+		for (let i = 0; i < count; i++) {
+			const syl = syllables[i];
+			if (syl.kind !== "speak" || !syl.text) continue;
+			const d = voices.peekSpeechDurationSec?.(model, syl.text);
+			if (d === undefined) {
+				requestSpeechPreview(model, syl.text);
+				continue;
+			}
+			spans.push({ note: sorted[i], durationSteps: d / secondsPerStep });
+		}
+		renderer.drawSpeechSpans(spans, getActive().config.color);
+	};
+
+	/** 語りの基準ピッチのガイド（音源ロード済みで、歌詞に語りがあるときだけ）。 */
+	const drawSpeechPitchGuide = (): void => {
+		const voices = options.singingVoices;
+		if (!voices?.getSpeechReferenceUnits) return;
+		if (!getActiveLyricSyllables().some((s) => s.kind === "speak")) return;
+		const ref = voices.getSpeechReferenceUnits(
+			getActive().lyricModel.trim().toLowerCase(),
+		);
+		if (ref !== undefined) renderer.drawPitchGuide(ref, "語りの基準");
 	};
 
 	let showModal: (title: string, bodyHTML: string) => void;
@@ -2196,6 +2275,8 @@ export const mountDAW = (
 
 	const redrawAll = (): void => {
 		renderer.drawGrid(gridLineSteps);
+		// 語りの基準ピッチのガイドはノートの下に敷く（行の薄い塗り）。
+		drawSpeechPitchGuide();
 		// 歌詞を重ねる対象（描画されたアクティブトラックのノート）。選択ハイライトに
 		// 塗り潰されないよう、文字は全ノートを描き終えてから最後に載せる。
 		let lyricTargetNotes: Note[] | null = null;
@@ -2251,8 +2332,10 @@ export const mountDAW = (
 			]);
 		}
 		// 歌詞はアクティブトラックのノートにだけ重ねる（全部出すと文字で埋もれる）
-		if (lyricTargetNotes)
+		if (lyricTargetNotes) {
+			drawSpeechPreview(lyricTargetNotes);
 			renderer.drawNoteLyrics(lyricTargetNotes, getActiveLyricKana());
+		}
 		drawStartLine();
 		if (playbackState === "playing") drawPlayhead();
 		updateScrollbars();
@@ -4239,9 +4322,9 @@ export const mountDAW = (
         </details>
         <div class="dtm-row">
           <span class="dtm-label dtm-grow">歌詞</span>
-          <button class="dtm-infobtn" data-dtm="lyric-input-info" title="歌詞の書き方（ー・〜・っ・_・、の意味）">${icon("info", 12)}</button>
+          <button class="dtm-infobtn" data-dtm="lyric-input-info" title="歌詞の書き方（ー・〜・っ・_・、・「」の意味）">${icon("info", 12)}</button>
         </div>
-        <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）&#10;ー=伸ばす 〜=しゃくり っ=詰まる _=歌わない 、=ブレス"></textarea>
+        <textarea class="dtm-textarea" data-dtm="lyric-input" rows="2" placeholder="ひらがな・カタカナで歌詞（例: どれみふぁそらしど）&#10;ー=伸ばす 〜=しゃくり っ=詰まる _=歌わない 、=ブレス 「…」=語り（読み上げ）"></textarea>
       </div>`;
 			refs.trackBody.appendChild(lyricDiv);
 			(
@@ -4466,8 +4549,13 @@ export const mountDAW = (
 			lyricVibrato.checked = active.vocalVibrato;
 			lyricOctaveUnison.value = active.vocalOctaveUnison;
 			const updateLyricCount = (): void => {
-				const n = normalizeLyrics(lyricInput.value).length;
-				lyricCount.textContent = active.lyricModel && n > 0 ? `${n}音節` : "";
+				const syllables = normalizeLyrics(lyricInput.value);
+				const n = syllables.length;
+				const speak = syllables.filter((s) => s.kind === "speak").length;
+				lyricCount.textContent =
+					active.lyricModel && n > 0
+						? `${n}音節${speak > 0 ? `（語り${speak}）` : ""}`
+						: "";
 			};
 			const syncLyricTerms = (): void => {
 				// カスタムボーカルには利用規約情報がないため非表示
@@ -4970,7 +5058,11 @@ export const mountDAW = (
 			.map((t, i) => ({
 				i,
 				notes: clipNotes(t.core.getNotes()),
-				text: t.lyrics.replace(/[\r\n]+/g, " ").trim(),
+				// `;` は MML の区切り文字なので、語り（「…」）の本文に紛れていても全角へ逃がす。
+				text: t.lyrics
+					.replace(/[\r\n]+/g, " ")
+					.replace(/;/g, "；")
+					.trim(),
 				model: t.lyricModel.trim(),
 				vol: t.vocalVolume,
 				gate: t.vocalGate,

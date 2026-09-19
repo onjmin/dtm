@@ -267,6 +267,13 @@ export type DtmStudioOptions = {
 	 * を渡すと worker 内の importScripts も同オリジン経由になり CSP を通過できる。
 	 */
 	worldlineScriptUrl?: string;
+	/**
+	 * 語り（歌詞の `「…」`）用の TTS アセット（UtauTTS の Wasm・jpreprocess 辞書・
+	 * HTS 音声モデル、合計約 45MB）のベース URL。省略時は koe のデモと同じ
+	 * `https://onjmin.github.io/koe/demo/utautts/`。最初の語りを鳴らすときに取得し、
+	 * Cache API に保存する。CSP 制限下では同オリジンのプロキシを渡す。
+	 */
+	ttsBaseUrl?: string;
 	/** 有効化する機能。既定はすべて true。 */
 	features?: {
 		/** MIDIファイル読み込み。 */
@@ -891,6 +898,7 @@ export const createDtmStudio = async (
 		voiceWorkerUrl,
 		voicebanks,
 		worldlineScriptUrl: options.worldlineScriptUrl,
+		ttsBaseUrl: options.ttsBaseUrl,
 		// ボーカルトラック個別のリバーブセンド（`r`トークン）先。マスタリバーブの
 		// Convolver 入力へ直接センドする（PreDelayは経由しない。チャンネルストリップの
 		// reverbSend とは別経路の、音節単位でより細かく制御できるセンド）。

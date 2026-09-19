@@ -77,6 +77,20 @@ export type Renderer = {
 	drawGrid: (noteLengthSteps?: number) => void;
 	drawNotes: (notes: Note[], color?: number[], isActive?: boolean) => void;
 	drawNoteLyrics: (notes: Note[], syllables: string[]) => void;
+	/**
+	 * 語り（`「…」`）が実際に占める長さを、ノートの行に薄い帯で重ねる（プレビュー）。
+	 * 語りの長さは読み上げが決めるのでノートの音価とは一致しない。帯を見れば
+	 * 次の歌い出しと重なるかが分かる。
+	 */
+	drawSpeechSpans: (
+		spans: { note: Note; durationSteps: number }[],
+		color?: number[],
+	) => void;
+	/**
+	 * 語りの基準ピッチの行にガイドを引く。この行にノートを置くと音源の素の声の高さで話す。
+	 * ラベルは行の左端に出す。
+	 */
+	drawPitchGuide: (pitchUnits: number, label: string) => void;
 	drawSelectionRect: (
 		rect: { x: number; y: number; width: number; height: number } | null,
 	) => void;
@@ -577,6 +591,85 @@ export const createRenderer = (
 	 *
 	 * 文字はノート矩形でクリップするため、隣のノートへはみ出しません。
 	 */
+	const drawSpeechSpans = (
+		spans: { note: Note; durationSteps: number }[],
+		color: number[] = [255, 241, 232],
+	): void => {
+		if (spans.length === 0) return;
+		const {
+			keyHeight,
+			stepWidth,
+			keyCount,
+			pitchRangeStart,
+			unitsPerRow: upr = UNITS_PER_SEMITONE,
+		} = g_config;
+		const [r, g, b] = color;
+		g_grid_ctx.save();
+		for (const { note, durationSteps } of spans) {
+			if (durationSteps <= 0) continue;
+			const x = note.startStep * stepWidth - g_draw_offset_x;
+			const y =
+				(keyCount - 1 - (note.pitchUnits - pitchRangeStart) / upr) * keyHeight -
+				g_draw_offset_y;
+			const w = durationSteps * stepWidth;
+			if (x + w < 0 || x > g_grid_canvas.width) continue;
+			if (y + keyHeight < 0 || y > g_grid_canvas.height) continue;
+			// ノート矩形の下半分に沿う帯。ノート自体より長いぶんがはみ出して見える。
+			const h = Math.max(2, Math.floor(keyHeight * 0.35));
+			const top = y + keyHeight - h - 1;
+			g_grid_ctx.fillStyle = `rgba(${r},${g},${b},0.28)`;
+			g_grid_ctx.fillRect(x + 1, top, w - 2, h);
+			g_grid_ctx.strokeStyle = `rgba(${r},${g},${b},0.75)`;
+			g_grid_ctx.lineWidth = 1;
+			g_grid_ctx.setLineDash([3, 2]);
+			g_grid_ctx.strokeRect(x + 1.5, top + 0.5, w - 3, h - 1);
+			// 終端の目印（ここまで喋る）
+			g_grid_ctx.setLineDash([]);
+			g_grid_ctx.beginPath();
+			g_grid_ctx.moveTo(x + w - 1.5, y + 1);
+			g_grid_ctx.lineTo(x + w - 1.5, y + keyHeight - 1);
+			g_grid_ctx.stroke();
+		}
+		g_grid_ctx.restore();
+	};
+
+	const drawPitchGuide = (pitchUnits: number, label: string): void => {
+		const {
+			keyHeight,
+			keyCount,
+			pitchRangeStart,
+			unitsPerRow: upr = UNITS_PER_SEMITONE,
+		} = g_config;
+		const row = Math.round((pitchUnits - pitchRangeStart) / upr);
+		if (row < 0 || row >= keyCount) return;
+		const y = (keyCount - 1 - row) * keyHeight - g_draw_offset_y;
+		if (y + keyHeight < 0 || y > g_grid_canvas.height) return;
+		g_grid_ctx.save();
+		g_grid_ctx.fillStyle = "rgba(255,236,39,0.10)";
+		g_grid_ctx.fillRect(0, y, g_grid_canvas.width, keyHeight);
+		g_grid_ctx.strokeStyle = "rgba(255,236,39,0.55)";
+		g_grid_ctx.lineWidth = 1;
+		g_grid_ctx.setLineDash([6, 4]);
+		g_grid_ctx.beginPath();
+		g_grid_ctx.moveTo(0, y + keyHeight / 2 + 0.5);
+		g_grid_ctx.lineTo(g_grid_canvas.width, y + keyHeight / 2 + 0.5);
+		g_grid_ctx.stroke();
+		if (keyHeight >= 7) {
+			const fontSize = Math.min(11, Math.floor(keyHeight * 0.85));
+			g_grid_ctx.setLineDash([]);
+			g_grid_ctx.font = `${fontSize}px 'k8x12',sans-serif`;
+			g_grid_ctx.textAlign = "left";
+			g_grid_ctx.textBaseline = "middle";
+			g_grid_ctx.lineWidth = 3;
+			g_grid_ctx.lineJoin = "round";
+			g_grid_ctx.strokeStyle = "rgba(0,0,0,0.85)";
+			g_grid_ctx.strokeText(label, 4, y + keyHeight / 2);
+			g_grid_ctx.fillStyle = "#ffec27";
+			g_grid_ctx.fillText(label, 4, y + keyHeight / 2);
+		}
+		g_grid_ctx.restore();
+	};
+
 	const drawNoteLyrics = (notes: Note[], syllables: string[]): void => {
 		if (syllables.length === 0) return;
 
@@ -799,6 +892,8 @@ export const createRenderer = (
 		drawGrid,
 		drawNotes,
 		drawNoteLyrics,
+		drawSpeechSpans,
+		drawPitchGuide,
 		drawSelectionRect,
 		drawSelectedNotes,
 		getXY,

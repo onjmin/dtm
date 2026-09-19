@@ -790,11 +790,13 @@ const parseSyllableMarks = (raw: string | undefined): SyllableMarks => {
  *
  * 継続記号はUTAUの「前の歌詞を続ける」記号 `+` へ、休符（歌わないノート）は
  * `R` へ写す。歌詞が無いノートは {@link DEFAULT_UST_LYRIC}。
+ * 語り（`「…」`）は UTAU では歌えないので、そのノートは休符 `R` にする。
  */
 const ustLyricOf = (kana: string): string => {
 	if (kana === "") return DEFAULT_UST_LYRIC;
 	if (kana === TIE || kana === "〜") return "+";
 	if (kana === REST) return "R";
+	if (kana.startsWith("「")) return "R";
 	return kana;
 };
 

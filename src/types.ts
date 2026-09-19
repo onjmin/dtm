@@ -257,8 +257,13 @@ export type PlayNoteEvent = {
  * - `"rest"` : 明示的な休符（`_`）。ノートを消費するが歌わない（そのノートは無音）。
  *   歌詞トラックは楽器音も鳴らさないので、`_` はそのまま「歌の休み」になる。
  *   直前母音の文脈もここで切れる（次の音節は語頭として扱われる）。
+ * - `"speak"`: 語り（`「…」`）。括弧ひとかたまりでノートを1つ消費し、そのノートの
+ *   位置から中身のテキストを読み上げる（UtauTTS）。長さは読み上げが決めるので
+ *   ノートの音価は使わない。音高は話す基準ピッチになる。中身は漢字混じりでよく、
+ *   読みとアクセントは jpreprocess（OpenJTalk 互換）が決める。
+ *   直前母音の文脈は切れる（次の音節は語頭として歌われる）。
  */
-export type LyricSyllableKind = "tie" | "stop" | "rest";
+export type LyricSyllableKind = "tie" | "stop" | "rest" | "speak";
 
 // 解析済みの1音節。子音・母音はフォルマント合成のパラメータ選択に使う
 export type LyricSyllable = {
@@ -266,8 +271,13 @@ export type LyricSyllable = {
 	kana: string;
 	/** ローマ字子音（"k" "sh" 等。母音始まり・撥音は ""／"N"、促音は "Q"） */
 	consonant: string;
-	/** 母音 "a"|"i"|"u"|"e"|"o"、撥音 "N"、促音 "" */
+	/** 母音 "a"|"i"|"u"|"e"|"o"、撥音 "N"、促音・語り "" */
 	vowel: string;
+	/**
+	 * `kind === "speak"` のとき、読み上げる本文（`「…」` の中身、漢字混じり可）。
+	 * 歌唱の音節では付かない。
+	 */
+	text?: string;
 	/**
 	 * 音節の種別。省略時は通常のかな音節。
 	 * 発音・表示・MMLへの書き戻しの分岐に使う（{@link LyricSyllableKind}）。
