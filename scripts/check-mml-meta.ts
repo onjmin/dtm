@@ -43,7 +43,8 @@ console.log("■ MML 宣言の除去");
 // 書き出しが実際に出す形（自動作曲→キープ）そのままの先頭。本文は4小節休んでから始まる。
 const HEADER =
 	"#ver=2.1.13 #inst=retro_game #drum=4beat #drumfont=FluidR3_GM_sf2_file:0 #volume=50 #drumvolume=80 #reverb=23 #reverbdecay=17 #reverbpredelay=20 #mastercomp=25 #fadeout=15 #mode=simple #t0inst=Lead 1 (square) #t1inst=Lead 2 (sawtooth) #t0comp=35 #t0width=115 #t0rev=12 #t0eqlo=-2 #t0eqhi=2 #t1pan=82 #t0dly=15;";
-const BODY = "\n@0 t134 v100 r1 r1 r1 r1 o5c+4. d+8;\n@1 t134 v92 o4d+4.;\n#end;";
+const BODY =
+	"\n@0 t134 v100 r1 r1 r1 r1 o5c+4. d+8;\n@1 t134 v92 o4d+4.;\n#end;";
 
 {
 	const stripped = stripMmlMeta(HEADER + BODY);
@@ -55,7 +56,11 @@ const BODY = "\n@0 t134 v100 r1 r1 r1 r1 o5c+4. d+8;\n@1 t134 v92 o4d+4.;\n#end;
 	);
 	const meta = parseMmlMeta(HEADER + BODY);
 	check("バージョンが読める（記録用）", meta.version, "2.1.13");
-	check("バージョンを書き戻せる", formatMmlMeta(meta, " ").startsWith("#ver=2.1.13 "), true);
+	check(
+		"バージョンを書き戻せる",
+		formatMmlMeta(meta, " ").startsWith("#ver=2.1.13 "),
+		true,
+	);
 }
 
 {
@@ -71,8 +76,20 @@ const BODY = "\n@0 t134 v100 r1 r1 r1 r1 o5c+4. d+8;\n@1 t134 v92 o4d+4.;\n#end;
 {
 	// 宣言リストの網羅: 書き出し側が出しうる宣言を全部並べて、剥がした後に `#` が残らないこと。
 	const all =
-		"#ver=9.9.9 #inst=piano #drum=8beat #drumfont=X_sf2:1 #volume=1 #drumvolume=2 #reverb=3 #reverbdecay=4 #reverbpredelay=5 #delay=6 #delaydiv=8d #mastercomp=7 #fadein=8 #fadeout=9 #mode=advanced #edo=31 #loop=on #audio=https://example.com/a.mp3 #audiostart=1.5 #audioend=2 #audiooffset=-0.25 #audioat=3 #audiovol=50 #t0inst=Lead 1 (square) #t0comp=1 #t0width=2 #t0rev=3 #t0eqlo=-4 #t0eqmid=5 #t0eqhi=-6 #t0pan=7 #t0dly=8;";
+		"#ver=9.9.9 #seed=4022250974 #compose=jpop_standard:any:auto:intro-verse-chorus #inst=piano #drum=8beat #drumfont=X_sf2:1 #volume=1 #drumvolume=2 #reverb=3 #reverbdecay=4 #reverbpredelay=5 #delay=6 #delaydiv=8d #mastercomp=7 #fadein=8 #fadeout=9 #mode=advanced #edo=31 #loop=on #audio=https://example.com/a.mp3 #audiostart=1.5 #audioend=2 #audiooffset=-0.25 #audioat=3 #audiovol=50 #t0inst=Lead 1 (square) #t0comp=1 #t0width=2 #t0rev=3 #t0eqlo=-4 #t0eqmid=5 #t0eqhi=-6 #t0pan=7 #t0dly=8;";
 	check("全宣言を剥がして # が残らない", /#/.test(stripMmlMeta(all)), false);
+	const meta = parseMmlMeta(all);
+	check("乱数種が読める", meta.seed, 4022250974);
+	check(
+		"作曲設定が読める",
+		meta.compose,
+		"jpop_standard:any:auto:intro-verse-chorus",
+	);
+	check(
+		"乱数種と設定を書き戻せる",
+		formatMmlMeta({ seed: 7, compose: "custom:key_Am:yo:verse-chorus" }, " "),
+		"#seed=7 #compose=custom:key_Am:yo:verse-chorus",
+	);
 }
 
 if (failed > 0) {

@@ -1595,6 +1595,25 @@ export type ComposeResult = {
 const pick = <T>(items: T[], rnd: () => number): T =>
 	items[Math.floor(rnd() * items.length)];
 
+/**
+ * 32bit の種から決定的な乱数列を作る（mulberry32）。{@link ComposeOptions.random} へ渡す。
+ *
+ * **同じ種なら同じ曲が出る。** 書き出す MML に種を埋めておけば（`#seed=`）、
+ * 貼られた「気に入った曲」を後から生成器の側で再現でき、設定を変えた版と
+ * 比べられる。統計では分からなかった「何が当たりか」を、当たった抽選そのものを
+ * 手元に置いて調べるための配線。
+ */
+export const seededRandom = (seed: number): (() => number) => {
+	let a = seed >>> 0;
+	return () => {
+		a = (a + 0x6d2b79f5) >>> 0;
+		let t = a;
+		t = Math.imul(t ^ (t >>> 15), t | 1);
+		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+};
+
 /** 音価のシャノンエントロピー（bit）。全部同じ音価なら 0 になる。 */
 export const durationEntropy = (durations: number[]): number => {
 	if (durations.length === 0) return 0;

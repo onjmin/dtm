@@ -137,6 +137,17 @@ export type MmlMeta = {
 	 */
 	loop?: boolean;
 	/**
+	 * 自動作曲の乱数種（`#seed=`）。同じ種・同じ設定（{@link MmlMeta.compose}）で
+	 * `composeSong` を呼ぶと**同じ曲が出る**。読み込み側は使わない——気に入った曲が
+	 * 貼られたとき、どの抽選から出たかを後から再現・分析するための記録。
+	 */
+	seed?: number;
+	/**
+	 * 自動作曲の設定（`#compose=`）。`テンプレート:調:音階:セクション` を `:` 区切りで
+	 * 持つ（セクションは `-` 区切り）。{@link MmlMeta.seed} と組で曲を再現する。
+	 */
+	compose?: string;
+	/**
 	 * 同時再生する伴奏音源のURL（mp3 / wav / YouTube）。`#audio=` で埋め込む。
 	 *
 	 * URLだけを持ち、**アップロードされたファイルは持たない**（受け取った相手が
@@ -175,7 +186,7 @@ export type MmlMeta = {
  * 値の文字集合に `.` があるのはバージョン番号のため。
  */
 const META_DIRECTIVE =
-	/#(ver|inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|mastercomp|fadein|fadeout|mode|edo|loop)=([\w:.-]+)/gi;
+	/#(ver|seed|compose|inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|mastercomp|fadein|fadeout|mode|edo|loop)=([\w:.-]+)/gi;
 
 /**
  * `#audio=<URL>` にマッチする（伴奏音源のURL。値は空白・`;`・`#`以外）。
@@ -221,6 +232,10 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 	for (const m of mml.matchAll(META_DIRECTIVE)) {
 		const key = m[1].toLowerCase();
 		if (key === "ver") meta.version = m[2];
+		else if (key === "seed") {
+			const n = Number.parseInt(m[2], 10);
+			if (Number.isFinite(n) && n >= 0) meta.seed = n;
+		} else if (key === "compose") meta.compose = m[2];
 		else if (key === "inst") meta.instrument = m[2];
 		else if (key === "drum") meta.drum = m[2];
 		else if (key === "drumfont") meta.drumFont = m[2];
@@ -410,6 +425,10 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	if (meta.mode) parts.push(`#mode=${meta.mode}`);
 	if (meta.edo !== undefined && meta.edo !== 12) parts.push(`#edo=${meta.edo}`);
 	if (meta.loop) parts.push("#loop=on");
+	// 自動作曲の由来。共有リンク側でも削らない——貼られた曲を後から再現できることが、
+	// 数十文字より重い（{@link MmlMeta.seed}）。
+	if (meta.seed !== undefined) parts.push(`#seed=${meta.seed}`);
+	if (meta.compose) parts.push(`#compose=${meta.compose}`);
 	// 伴奏音源。URLが無いとき（未設定・アップロードされたファイル）は関連宣言ごと出さない。
 	if (meta.audio) {
 		parts.push(`#audio=${meta.audio}`);

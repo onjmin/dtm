@@ -31,6 +31,7 @@ import {
 	type ComposeResult,
 	composeLyrics,
 	composeSong,
+	seededRandom,
 } from "./compose";
 import { getComposeKeyDescription } from "./compose-keys";
 import { getComposeScaleDescription } from "./compose-scales";
@@ -1726,6 +1727,14 @@ export const mountDAW = (
 	 * または "auto" / 未設定なら、次の作曲で曲調に合わせて引き直す。
 	 */
 	let autoComposeInstrument: string | null = null;
+	/**
+	 * 直近の自動作曲の乱数種と設定。MML の `#seed=` `#compose=` に埋める。
+	 * 気に入った曲が外へ貼られたとき、**どの抽選から出たかを再現する**ための記録で、
+	 * 読み込んだ MML に宣言があればそれを引き継ぐ（{@link MmlMeta.seed}）。
+	 * 手で編集した後も残るが、それは「元になった抽選」として正しい。
+	 */
+	let composeSeed: number | null = null;
+	let composeSetting: string | null = null;
 	let activeTrackId = options.initialActiveTrack ?? trackConfigs[0].id;
 	// トラック切り替えでパネルを再構築しても開閉状態を維持するための「詳細設定」開閉フラグ
 	// 「詳細設定」も畳み状態を覚える（トラック切替で作り直されるので変数経由で保持し、
@@ -4848,6 +4857,8 @@ export const mountDAW = (
 				mode: mode,
 				edo: renderConfig.edo,
 				loop: loopEnabled ? true : undefined,
+				seed: composeSeed ?? undefined,
+				compose: composeSetting ?? undefined,
 				// アップロードされたファイルは url が空＝音源関連の宣言ごと出力されない
 				audio: backing.url || undefined,
 				audioStart: backing.rangeStartSec || undefined,
@@ -4887,6 +4898,8 @@ export const mountDAW = (
 				mode: mode,
 				edo: renderConfig.edo,
 				loop: loopEnabled ? true : undefined,
+				seed: composeSeed ?? undefined,
+				compose: composeSetting ?? undefined,
 				// アップロードされたファイルは url が空＝音源関連の宣言ごと出力されない
 				audio: backing.url || undefined,
 				audioStart: backing.rangeStartSec || undefined,
@@ -5132,6 +5145,9 @@ export const mountDAW = (
 		});
 		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量）を復元する
 		if (!applyActiveOnly) {
+			// 自動作曲の由来。宣言が無い MML（手打ち・古い書き出し）なら消す。
+			composeSeed = meta.seed ?? null;
+			composeSetting = meta.compose ?? null;
 			if (meta.instrument && INSTRUMENT_PRESETS[meta.instrument]) {
 				currentInstrument = meta.instrument;
 				options.onInstrumentChange?.(meta.instrument);
@@ -6649,19 +6665,33 @@ export const mountDAW = (
 			stop();
 			overlayDuring(() => {
 				const tmpl = selectedComposeTemplate();
+				const sections = selectedComposeSections();
+				const baseKey = refs.composeKey?.value ?? "any";
+				const scale = refs.composeScale?.value ?? "auto";
+				// **種を引いてから作る。** 種と設定を MML に埋めておくと、気に入った曲が
+				// 外へ貼られたときに同じ抽選を手元で再現できる（{@link MmlMeta.seed}）。
+				const seed = (Math.random() * 0x100000000) >>> 0;
 				const song = composeSong({
 					stepsPerBar: renderConfig.stepsPerBar,
 					edo: renderConfig.edo,
-					sections: selectedComposeSections(),
+					sections,
 					template: tmpl,
-					baseKey: refs.composeKey?.value ?? "any",
-					scale: refs.composeScale?.value ?? "auto",
+					baseKey,
+					scale,
+					random: seededRandom(seed),
 					// 直近に作った曲の特徴を渡すと、それらから離れた候補に加点される。
 					// 「作曲」を続けて押したときに似た曲が並ぶのを防ぐ。
 					recent: recentComposeFingerprints,
 				});
 				// 直近5曲ぶんだけ覚える。これ以上遡ると「どの曲とも違うこと」の制約が
 				// 強くなりすぎて、まともな曲が候補から外れる。
+				composeSeed = seed;
+				composeSetting = [
+					tmpl ?? "custom",
+					baseKey,
+					scale,
+					sections.join("-"),
+				].join(":");
 				recentComposeFingerprints.push(song.stats.fingerprint);
 				if (recentComposeFingerprints.length > 5)
 					recentComposeFingerprints.shift();

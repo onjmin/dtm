@@ -4,6 +4,11 @@
  *   npx tsx scripts/export-samples.ts [--out tmp/samples] [--count 6] [--seed 1]
  *                                     [--template jpop_standard] [--bars 24]
  *
+ * **アプリで作った曲を再現する:** 書き出した MML の先頭にある `#seed=` と `#compose=` を
+ * そのまま渡す。同じ曲が1本出る（アプリと同じ乱数列 `seededRandom` を使う）。
+ *
+ *   npx tsx scripts/export-samples.ts --app-seed 4022250974 --compose jpop_standard:any:auto:intro-verse-chorus
+ *
  * `compare-*.ts` はどれも代理指標で、全部が参考コーパスの帯へ収まっても
  * 「良い曲」である保証は無い。書き出した .mid を DAW なり再生ソフトなりへ
  * 放り込んで聴くところまでが検算の一部。
@@ -15,7 +20,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { programOfInstrumentName } from "../src/audio-config";
 import { buildChordPlacements } from "../src/chords";
-import { composeSong } from "../src/compose";
+import { seededRandom as appSeededRandom, composeSong } from "../src/compose";
 import { DRUM_PATTERNS, resolveDrumPattern } from "../src/drum-config";
 import { INSTRUMENT_PRESETS } from "../src/instrument-presets";
 import { exportMIDI } from "../src/midi-io";
@@ -61,16 +66,55 @@ const baseSeed = Number.parseInt(argOf("--seed") ?? "1", 10);
 const template = argOf("--template");
 mkdirSync(outDir, { recursive: true });
 
+/**
+ * アプリの `#seed=` `#compose=` から作曲の引数を組み立てる。
+ * `#compose=` は `テンプレート:調:音階:セクション(-区切り)`（daw.ts の runCompose と同じ並び）。
+ */
+const appSeedArg = argOf("--app-seed");
+const appCompose = argOf("--compose");
+const appOptions = (() => {
+	if (appSeedArg === undefined) return null;
+	const seed = Number.parseInt(appSeedArg, 10);
+	if (!Number.isFinite(seed)) throw new Error("--app-seed は整数");
+	const [tmpl = "custom", baseKey = "any", scale = "auto", sections = ""] = (
+		appCompose ?? ""
+	).split(":");
+	return {
+		seed,
+		template: tmpl === "custom" ? undefined : tmpl,
+		sections:
+			tmpl === "custom" && sections
+				? (sections.split("-") as Parameters<typeof composeSong>[0]["sections"])
+				: undefined,
+		baseKey,
+		scale,
+	};
+})();
+
 const recent: number[][] = [];
 const main = async (): Promise<void> => {
-	for (let i = 0; i < count; i++) {
-		const seed = baseSeed + i;
-		const song = composeSong({
-			stepsPerBar: STEPS_PER_BAR,
-			random: seededRandom(seed * 104729),
-			recent: recent.slice(-3),
-			template,
-		});
+	for (let i = 0; i < (appOptions ? 1 : count); i++) {
+		const seed = appOptions ? appOptions.seed : baseSeed + i;
+		// アプリの種はアプリと同じ乱数列で、`recent`（直近の曲から離す加点）は渡さない
+		// ——アプリも作曲時点の直近を渡しているので厳密には一致しないが、
+		// 候補の選抜順位が僅かに動く程度で、種が同じなら同じ素材から同じ曲が出る。
+		const song = composeSong(
+			appOptions
+				? {
+						stepsPerBar: STEPS_PER_BAR,
+						random: appSeededRandom(seed),
+						template: appOptions.template,
+						sections: appOptions.sections,
+						baseKey: appOptions.baseKey,
+						scale: appOptions.scale,
+					}
+				: {
+						stepsPerBar: STEPS_PER_BAR,
+						random: seededRandom(seed * 104729),
+						recent: recent.slice(-3),
+						template,
+					},
+		);
 		recent.push(song.stats.fingerprint);
 
 		// 伴奏（コード）トラックはコード進行の文字列から組み立てる。

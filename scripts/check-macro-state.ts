@@ -74,13 +74,12 @@ assert.deepEqual(
 
 // 不正な JSON または不正な型のテスト
 mockStorage.setItem(MACRO_STORAGE_KEYS.sections, "invalid-json");
-assert.equal(
-	readMacroSections(),
-	null,
-	"不正な JSON の場合は null を返すこと",
-);
+assert.equal(readMacroSections(), null, "不正な JSON の場合は null を返すこと");
 
-mockStorage.setItem(MACRO_STORAGE_KEYS.sections, JSON.stringify({ not: "an array" }));
+mockStorage.setItem(
+	MACRO_STORAGE_KEYS.sections,
+	JSON.stringify({ not: "an array" }),
+);
 assert.equal(
 	readMacroSections(),
 	null,
@@ -122,7 +121,11 @@ assert.doesNotThrow(() => {
 
 // 5. localStorage が未定義の環境
 (globalThis as any).localStorage = undefined;
-assert.equal(readMacroSetting("template"), null, "localStorage 未定義でも null");
+assert.equal(
+	readMacroSetting("template"),
+	null,
+	"localStorage 未定義でも null",
+);
 assert.equal(readMacroSections(), null, "localStorage 未定義でも null");
 assert.doesNotThrow(() => {
 	writeMacroSetting("template", "custom");
