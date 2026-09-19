@@ -6416,7 +6416,7 @@ export const mountDAW = (
 			refs.drumVolumeLabel.textContent = `${drumVolume}%`;
 		});
 
-		// マクロ
+		// 自動作曲
 		refs.macroComposeInfo.addEventListener("click", () => {
 			showModal("作曲の解説", COMPOSE_INFO_HTML);
 		});
@@ -6461,7 +6461,7 @@ export const mountDAW = (
 		const updateComposeSectionsLen = (): void => {
 			refs.composeSectionsLen.textContent = composeBarsLabel();
 		};
-		// マクロパネルの選択値を localStorage から復元
+		// 自動作曲パネルの選択値を localStorage から復元
 		const savedTemplate = readMacroSetting("template");
 		if (savedTemplate && refs.composeTemplate) {
 			const hasOption = Array.from(refs.composeTemplate.options).some(
@@ -8377,6 +8377,23 @@ export const mountDAW = (
 	});
 	resizeObserver.observe(refs.rollContainer);
 
+	// 2カラム切り替え。ビューポート幅ではなくエディタ自身の幅で判定する。
+	// ライブラリとして任意の幅の器に埋め込まれるので、メディアクエリだと
+	// 「画面は広いが器は狭い」ときに横へ割ってロールを痩せさせてしまう。
+	// コンテナクエリでも同じ判定はできるが、container-type を .dtm-daw に
+	// 置くと position:fixed の子（解説モーダルの暗幕）の基準が .dtm-daw に
+	// なって全画面に広がらなくなる。避けるにはラッパーを足すことになるので、
+	// DOMを増やさずに済むこちらを採っている。
+	const WIDE_LAYOUT_MIN_WIDTH = 1000;
+	const applyWideLayout = (width: number): void => {
+		refs.root.classList.toggle("dtm-daw--wide", width >= WIDE_LAYOUT_MIN_WIDTH);
+	};
+	const layoutObserver = new ResizeObserver((entries) => {
+		for (const entry of entries) applyWideLayout(entry.contentRect.width);
+	});
+	layoutObserver.observe(refs.root);
+	applyWideLayout(refs.root.getBoundingClientRect().width);
+
 	// document レベルのリスナ（pointermove/up）
 	document.addEventListener("pointermove", onPointerMove);
 	document.addEventListener("pointerup", onPointerUp);
@@ -8674,6 +8691,7 @@ export const mountDAW = (
 			unsubscribeClip?.();
 			stopPeakSampling();
 			resizeObserver.disconnect();
+			layoutObserver.disconnect();
 			document.removeEventListener("pointermove", onPointerMove);
 			document.removeEventListener("pointerup", onPointerUp);
 			document.removeEventListener("keydown", onKeyDown);

@@ -1,8 +1,9 @@
 /**
- * マクロアコーディオン内で選択された設定値の localStorage 永続化
+ * 自動作曲・一括編集アコーディオン内で選択された設定値の localStorage 永続化
  *
- * 構成プリセット、作る部分（セクション）、ベース調、音階、全体シフト、移調の
- * 選択状態を保持し、次回ロード時に復元できるようにする。
+ * 構成プリセット、作る部分（セクション）、ベース調、音階（自動作曲パネル）と、
+ * 全体シフト、移調（一括編集パネル）の選択状態を保持し、次回ロード時に復元できる
+ * ようにする。キーの `dtm-macro:` 接頭辞は、両パネルが1枚だった頃の名残。
  */
 
 export const MACRO_STORAGE_KEYS = {
@@ -18,7 +19,7 @@ export const MACRO_STORAGE_KEYS = {
 export type MacroStorageKey = keyof typeof MACRO_STORAGE_KEYS;
 
 /**
- * マクロアコーディオンの単一項目を localStorage から取得する。
+ * 単一項目を localStorage から取得する。
  * 未設定または localStorage にアクセスできない場合は null を返す。
  */
 export const readMacroSetting = (key: MacroStorageKey): string | null => {
@@ -31,7 +32,7 @@ export const readMacroSetting = (key: MacroStorageKey): string | null => {
 };
 
 /**
- * マクロアコーディオンの単一項目を localStorage に保存する。
+ * 単一項目を localStorage に保存する。
  * localStorage にアクセスできない環境や容量制限等は無視する。
  */
 export const writeMacroSetting = (

@@ -271,7 +271,7 @@
     <!-- ════ コントロールバー ════ -->
     <!-- 楽器選択は内蔵のプリセット選択UI（DAW内「全体トラック設定」パネル）に一本化したため、
          このデモ独自の #preset は廃止した。 -->
-    <div class="max-w-4xl mx-auto px-3 pt-4 flex flex-col gap-2">
+    <div class="max-w-screen-xl mx-auto px-3 pt-4 flex flex-col gap-2">
 
         <span class="text-pico-orange text-xs font-pixel px-1" id="loading" style="display:none"></span>
 
@@ -323,7 +323,10 @@
     </div>
 
     <!-- ════ DAW マウント ════ -->
-    <div id="app" class="max-w-4xl mx-auto px-3 pb-8 pt-3">
+    <!-- 幅は px 固定の max-w-screen-xl（1280px）で揃える。rem 基準の max-w-7xl だと
+         このページのルート font-size が 14px なので 1120px にしかならず、エディタが
+         2カラム（ピアノロール＋設定パネル）に切り替わる幅を確保しきれない。 -->
+    <div id="app" class="max-w-screen-xl mx-auto px-3 pb-8 pt-3">
         <div id="app-loading" class="flex flex-col items-center justify-center gap-3 py-16 text-pico-lavend font-pixel">
             <div class="text-pico-cyan text-lg" style="animation:dtm-blink 1s step-start infinite">▶ エディタを準備中...</div>
             <div class="text-xs text-pico-gray">音源・UIを読み込んでいます。しばらくお待ちください</div>
@@ -344,7 +347,7 @@
     </div>
 
     <!-- ════ 共有リンク (Share Link) ════ -->
-    <div class="max-w-4xl mx-auto px-3 pb-8 flex flex-col gap-2">
+    <div class="max-w-screen-xl mx-auto px-3 pb-8 flex flex-col gap-2">
         <div class="game-win bg-pico-navy px-4 py-3">
             <div class="flex flex-wrap items-center gap-3">
                 <span class="text-pico-pink text-xs uppercase tracking-widest shrink-0">► 共有</span>
@@ -367,7 +370,7 @@
     </div>
 
     <!-- ════ 再生専用ビュー (mountMmlPlayer) ════ -->
-    <div class="max-w-4xl mx-auto px-3 pb-8 flex flex-col gap-2">
+    <div class="max-w-screen-xl mx-auto px-3 pb-8 flex flex-col gap-2">
         <div class="game-win bg-pico-navy px-4 py-3">
             <div class="flex flex-wrap items-center gap-3">
                 <span class="text-pico-green text-xs uppercase tracking-widest shrink-0">► 再生プレイヤー</span>
@@ -391,7 +394,7 @@
 
 
     <!-- ════ フッター ════ -->
-    <footer class="max-w-4xl mx-auto px-3 pb-4 text-pico-gray text-xs uppercase tracking-widest">
+    <footer class="max-w-screen-xl mx-auto px-3 pb-4 text-pico-gray text-xs uppercase tracking-widest">
         <div class="flex gap-4 flex-wrap">
             <span>© 2025 <span class="text-pico-cyan">@onjmin</span></span>
             <span>|</span>

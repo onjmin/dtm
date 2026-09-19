@@ -97,6 +97,78 @@ export const DAW_CSS = `
 .dtm-daw *::before,
 .dtm-daw *::after { box-sizing: border-box; }
 
+/* ─── レイアウト（編集ヘッドの貼り付け） ───────────────────────────
+   パネルは縦に積むしかないので、開くほどピアノロールが画面外へ流れていく。
+   ヘッド（トランスポート・ツール・ロール）を sticky で画面上部に留めれば、
+   何枚開いてもロールとの距離は0のままになる。
+
+   ただし1カラムのあいだ、貼ったヘッドはその高さぶん画面を占有し続ける。
+   ヘッドの高さは「固定部およそ194px ＋ ロール32vh」なので、画面が低いほど
+   占有率が上がる（844pxで55%、667pxで64%）。占有率が6割を切る縦760px以上で
+   だけ貼り、それ未満は従来どおりトランスポートだけを貼る。
+   （横に割って縦の取り合いを無くす2カラム案は、デモの #app が max-w-4xl の
+   ため今のままだとロールが細くなるので見送っている。） */
+.dtm-daw-panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dtm-gap);
+  min-width: 0;
+}
+/* 貼らない画面では箱ごと畳む。display:contents なら中身が .dtm-daw の直接の
+   子に戻るので、余白もトランスポートの sticky 基準も従来のまま変わらない。 */
+.dtm-daw-head { display: contents; }
+.dtm-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+@media (min-height: 760px) {
+  .dtm-daw-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dtm-gap);
+    min-width: 0;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    /* 下をくぐるパネルを透かさないための不透明な下敷き。
+       .dtm-daw の gap ぶんを padding で埋め、隙間から中身を見せない。 */
+    background: var(--dtm-bg);
+    padding-bottom: var(--dtm-gap);
+  }
+}
+
+/* エディタ自身が十分に広いときは、ヘッドとパネルを左右に並べて、縦の
+   積み上がりを横へ逃がす。こうなるとヘッドはパネルから縦を奪わないので、
+   画面の高さに関係なく貼れるし、ロールも広く使える
+   （.dtm-daw--wide は daw.ts の ResizeObserver が付ける）。 */
+.dtm-daw--wide {
+  flex-direction: row;
+  align-items: flex-start;
+}
+.dtm-daw--wide .dtm-daw-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dtm-gap);
+  min-width: 0;
+  flex: 1 1 auto;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--dtm-bg);
+  padding-bottom: 0;
+}
+.dtm-daw--wide .dtm-daw-panels {
+  flex: 0 0 360px;
+}
+/* 768px 時点の height:420px は max-height:32vh に頭打ちにされていた。
+   2カラムでは縦を取り合わないので、その意図どおりの高さを解禁する
+   （低い画面では 45vh で頭打ちにして画面を食い潰さないようにする）。 */
+.dtm-daw--wide .dtm-roll {
+  height: min(420px, 45vh);
+  max-height: none;
+}
+
 /* ─── ゲームウィンドウ共通枠 ─── */
 /* 外枠(黒2px) → 色付き2px border → 内枠(黒inset2px) の3重構造 */
 .dtm-win {
@@ -159,9 +231,6 @@ export const DAW_CSS = `
 
 /* ─── トランスポートバー（HUDスタイル） ─── */
 .dtm-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -606,19 +675,17 @@ export const DAW_CSS = `
 .dtm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .dtm-track-body { display: flex; flex-direction: column; gap: 10px; }
 
-/* ─── 自動作曲コンテナ（マクロパネル内の専用カード風グループ枠） ─── */
-.dtm-compose-container {
-  background: var(--dtm-deep);
-  border: 2px solid var(--c-black);
+/* ─── 自動作曲パネル（看板機能なので枠と見出しを success 色で差別化する） ─── */
+.dtm-panel--compose {
   box-shadow:
-    inset 0 0 0 1px var(--dtm-border2),
-    0 0 0 1px var(--dtm-success),
-    3px 3px 0 var(--c-black);
-  padding: 10px 12px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 6px;
+    inset 0 0 0 2px var(--c-black),
+    0 0 0 2px var(--dtm-success),
+    4px 4px 0 var(--c-black);
+}
+.dtm-panel--compose > summary { color: var(--dtm-success); }
+.dtm-panel--compose > summary::before,
+.dtm-panel--compose[open] > summary::before {
+  background: var(--dtm-success);
 }
 
 /* ─── アクティブトラック色（個別トラック設定パネルの左端ライン） ─── */
