@@ -31,12 +31,44 @@ import {
 	loadNaistJdic,
 	openjtalkAnalyze,
 	type PhonemeEntry,
+	resolveSpeakingStyle,
+	type SpeakingStyleInput,
 	shapeProsody,
+	styleAlignOptions,
+	styleRenderOptions,
+	styleShapeOptions,
 	UtauTTSAdapter,
 	type UtauTTSPlan,
+	type UtauTTSRenderOptions,
 	type VoiceBank,
 	type Worldline,
 } from "@onjmin/koe";
+
+/**
+ * HTS 音声モデルの感情。tohoku-f01（CC BY 4.0）は 4 種を同梱し、音素長と F0 の
+ * 「起伏そのもの」が変わる（話し方プリセット {@link SpeakingStyleInput} は
+ * その上に掛かる話速・抑揚幅・ポーズなどの係数）。各約 2MB、初めて使うときに取得する。
+ */
+export type SpeechEmotion = "neutral" | "happy" | "sad" | "angry";
+export const SPEECH_EMOTIONS: readonly SpeechEmotion[] = [
+	"neutral",
+	"happy",
+	"sad",
+	"angry",
+];
+
+/** 感情 → HTS 音声モデルのアセットパス（ベース URL 相対）。 */
+const htsVoicePath = (emotion: SpeechEmotion): string =>
+	`hts/tohoku-f01-${emotion}.htsvoice`;
+
+/**
+ * 話し方プリセットから、合成段（`renderChunks`）に渡すオプションを引く。
+ * 計画（{@link SpeechPlanner.plan}）と合成は別スレッドになり得るので、
+ * 合成側はこれを計画とは別に受け取る。
+ */
+export const speechRenderOptions = (
+	style?: SpeakingStyleInput,
+): UtauTTSRenderOptions => styleRenderOptions(resolveSpeakingStyle(style));
 
 /**
  * TTS アセットの既定の配信元（koe のデモと同じ配置）。`createDtmStudio` の
@@ -53,8 +85,19 @@ export type SpeechBank = {
 export type SpeechPlanOptions = {
 	/** prefix.map 用の音名（多音階音源の収録セット名。省略時 "C4"）。 */
 	tone?: string;
-	/** イントネーションの強さ 0..4（既定 1）。 */
+	/** イントネーションの強さ 0..4。省略時は `style` の抑揚（neutral で 1）。 */
 	intonationStrength?: number;
+	/**
+	 * 話し方プリセット（"neutral" / "calm" / "lively"、またはプリセット＋上書き）。
+	 * 話速・抑揚幅・基準ピッチ・ポーズ倍率・モーラ長コントラストに効く。既定 neutral。
+	 */
+	style?: SpeakingStyleInput;
+	/**
+	 * 感情（HTS 音声モデルの差し替え）。既定 neutral。未取得の感情を指定したときは
+	 * {@link SpeechPlanner.prepareEmotion} を先に済ませておくこと（済んでいなければ
+	 * 直前まで使っていた音声モデルのまま計画する）。
+	 */
+	emotion?: SpeechEmotion;
 };
 
 /** ダウンロード進捗（全アセット合算のバイト数）。 */
@@ -83,6 +126,11 @@ export type SpeechPlanner = {
 	 * それまでの合算値が直後に 1 回通知される（途中参加でも表示が空にならない）。
 	 */
 	onProgress: (listener: SpeechProgressListener) => () => void;
+	/**
+	 * 感情の HTS 音声モデルを取得しておく（初回のみダウンロード、以降は即解決）。
+	 * {@link ready} を含む。`plan` は同期なので、感情を使う計画の前に必ず呼ぶ。
+	 */
+	prepareEmotion: (emotion: SpeechEmotion) => Promise<void>;
 	/**
 	 * 本文の合成計画を作る。{@link ready} 完了後に呼ぶこと。
 	 * 読みが取れない本文（記号だけ等）は例外を投げる。
@@ -178,6 +226,11 @@ export const createSpeechPlanner = (
 	let adapter: UtauTTSAdapter | null = null;
 	let readyPromise: Promise<void> | null = null;
 	let isReady = false;
+	/** 取得済みの HTS 音声モデル（感情 → バイト列）。差し替えは init_voice の呼び直し。 */
+	const voices = new Map<SpeechEmotion, Uint8Array>();
+	const voiceLoading = new Map<SpeechEmotion, Promise<void>>();
+	/** いま jpreprocess に入っている音声モデル（init_voice 未呼び出しなら null）。 */
+	let loadedVoice: SpeechEmotion | null = null;
 	const listeners = new Set<SpeechProgressListener>();
 	if (options.onProgress) listeners.add(options.onProgress);
 	// 進捗は URL ごとの (loaded, total) を合算する（koe のデモと同じ）。
@@ -242,7 +295,7 @@ export const createSpeechPlanner = (
 			);
 		})();
 		const htsVoiceReady = fetchAssetBytes(
-			joinUrl(baseUrl, "hts/tohoku-f01-neutral.htsvoice"),
+			joinUrl(baseUrl, htsVoicePath("neutral")),
 			{ onProgress },
 		);
 		const [glue, , htsVoice] = await Promise.all([
@@ -250,7 +303,11 @@ export const createSpeechPlanner = (
 			utauttsReady,
 			htsVoiceReady,
 		]);
-		if (!glue.is_voice_ready()) glue.init_voice(htsVoice);
+		voices.set("neutral", htsVoice);
+		if (!glue.is_voice_ready()) {
+			glue.init_voice(htsVoice);
+			loadedVoice = "neutral";
+		}
 		jp = glue;
 		// 計画だけに使うので worldline は要らない（renderChunks は呼ばない）。
 		adapter = new UtauTTSAdapter(null as unknown as Worldline);
@@ -267,11 +324,48 @@ export const createSpeechPlanner = (
 		return readyPromise;
 	};
 
+	const prepareEmotion: SpeechPlanner["prepareEmotion"] = async (emotion) => {
+		await ready();
+		if (voices.has(emotion)) return;
+		let p = voiceLoading.get(emotion);
+		if (!p) {
+			p = fetchAssetBytes(joinUrl(baseUrl, htsVoicePath(emotion)), {
+				onProgress: (q) => {
+					if (listeners.size === 0) return;
+					progress.set(q.url, q);
+					const [loaded, total] = sumProgress();
+					for (const l of listeners) l(loaded, total);
+				},
+			})
+				.then((bytes) => {
+					voices.set(emotion, bytes);
+				})
+				.finally(() => voiceLoading.delete(emotion));
+			voiceLoading.set(emotion, p);
+		}
+		await p;
+	};
+
+	/** 指定した感情の音声モデルへ切り替える（未取得なら今のまま）。 */
+	const useVoice = (emotion: SpeechEmotion): void => {
+		if (!jp || loadedVoice === emotion) return;
+		const bytes = voices.get(emotion);
+		if (!bytes) {
+			console.warn(
+				`[dtm] HTS voice "${emotion}" is not prepared; keeping "${loadedVoice ?? "neutral"}"`,
+			);
+			return;
+		}
+		jp.init_voice(bytes);
+		loadedVoice = emotion;
+	};
+
 	const plan: SpeechPlanner["plan"] = (bank, text, o = {}) => {
 		if (!jp || !adapter) {
 			throw new Error("speech planner is not ready; await ready() first");
 		}
-		const intonationStrength = o.intonationStrength ?? 1;
+		const style = resolveSpeakingStyle(o.style);
+		const intonationStrength = o.intonationStrength ?? style.intonation;
 		const nodes = JSON.parse(jp.analyze_text(text));
 		const { features } = openjtalkAnalyze(nodes);
 		if (features.length === 0) {
@@ -281,10 +375,15 @@ export const createSpeechPlanner = (
 		// モーラに整列できない文だけ UtauTTS の TCN モデルに任せる。
 		let prosody: HtsProsody | null = null;
 		if (jp.is_voice_ready()) {
-			const frames = JSON.parse(jp.analyze_prosody(text, 1.0));
-			prosody = alignHtsProsody(frames, features, { intonationStrength });
+			useVoice(o.emotion ?? "neutral");
+			const frames = JSON.parse(jp.analyze_prosody(text, style.speed));
+			prosody = alignHtsProsody(frames, features, {
+				...styleAlignOptions(style),
+				intonationStrength,
+			});
 			if (prosody) {
 				prosody = shapeProsody(prosody, features, {
+					...styleShapeOptions(style),
 					question: isQuestion(text),
 				});
 			}
@@ -296,7 +395,13 @@ export const createSpeechPlanner = (
 		});
 	};
 
-	return { ready, isReady: () => isReady, onProgress: subscribe, plan };
+	return {
+		ready,
+		isReady: () => isReady,
+		onProgress: subscribe,
+		prepareEmotion,
+		plan,
+	};
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -354,6 +459,58 @@ export const speechPlanDurationSec = (plan: UtauTTSPlan): number => {
 	if (endMs <= 0) endMs = timeline.duration_ms;
 	return Math.max(0, endMs / 1000 - speechPlanLeadingSec(plan));
 };
+
+/**
+ * 計画に出てくるユニットの PCM を、合成に先立って（合成と重ねて）取りに行く。
+ *
+ * URL 配信の音源は 1 ユニット = 1 回の Range 取得で、`renderChunks` はユニットを
+ * 逐次 await するため、何もしないとチャンクごとに「取得 → 合成」が交互に走り、
+ * 往復時間がまるごと合成時間に乗る（つくよみちゃん × r2.dev で 1 往復 約 115ms、
+ * 1 チャンク 6 ユニット ≈ 0.7 秒。WORLD 合成 約 0.4 秒と足すと 0.9 秒の音に 1.1 秒掛かり
+ * 実時間を割る）。先に取得を走らせておけば取得と合成が重なり、実時間を上回る。
+ * koe のデモは音源が手元の Blob なのでこの問題が無い。
+ *
+ * `getPcm` は呼び出し側のキャッシュ付きのもの（同じ関数を `renderChunks` にも
+ * 見せること）。取得は計画の順（先頭チャンクのぶんが先に揃う）。失敗は握りつぶす
+ * （合成側が改めて同じ取得を待ち、そこで扱う）。
+ */
+export const prefetchSpeechPcm = (
+	plan: UtauTTSPlan,
+	getPcm: (alias: string) => Promise<unknown>,
+	concurrency = 6,
+): void => {
+	const aliases = [
+		...new Set(
+			plan.timeline.units.filter((u) => u.length_ms > 0).map((u) => u.alias),
+		),
+	];
+	let next = 0;
+	const run = async (): Promise<void> => {
+		while (next < aliases.length) {
+			const alias = aliases[next++];
+			try {
+				await getPcm(alias);
+			} catch {
+				// 合成側で改めて扱う
+			}
+		}
+	};
+	for (let i = 0; i < Math.min(concurrency, aliases.length); i++) void run();
+};
+
+/**
+ * `renderChunks` に見せる音源の見え方。PCM を引く口だけをキャッシュ付き `getPcm` へ
+ * 向ける（`renderChunks` が音源に求めるのは `getPcm` だけ）。{@link prefetchSpeechPcm}
+ * と同じ関数を渡すと、先取りした PCM がそのまま合成に使われる。
+ */
+export const speechBankView = (
+	bank: VoiceBank,
+	getPcm: (alias: string) => Promise<Float64Array | null>,
+): VoiceBank =>
+	new Proxy(bank, {
+		get: (target, prop, receiver) =>
+			prop === "getPcm" ? getPcm : Reflect.get(target, prop, receiver),
+	});
 
 /** 音素表の収録ピッチ（Hz）の中央値。0（未検出）は無視する。無ければ undefined。 */
 export const medianRecordedPitchHz = (

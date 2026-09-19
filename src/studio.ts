@@ -59,6 +59,7 @@ import {
 	type SingingVoices,
 	type SpeakOptions,
 	type SpeechHandle,
+	type SpeechPrepareOptions,
 } from "./lyrics";
 import { type MmlMeta, parseMML, parseMmlMeta } from "./mml-parser";
 import {
@@ -458,9 +459,7 @@ export type DtmStudio = {
 	 */
 	prepareSpeech: (
 		models?: Iterable<string>,
-		options?: {
-			onProgress?: (loadedBytes: number, totalBytes: number) => void;
-		},
+		options?: SpeechPrepareOptions,
 	) => Promise<void>;
 	/** 編集UI（mountDAW）を音・歌声込みでマウントする。 */
 	mountEditor: (

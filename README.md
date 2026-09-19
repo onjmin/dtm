@@ -713,6 +713,7 @@ const studio = await createDtmStudio();
 
 // ロード画面などで先に取っておく（TTS アセット約 45MB ＋ 音源マニフェスト。2 回目以降は一瞬）
 await studio.prepareSpeech(["tsukuyomi"], {
+  emotions: ["happy", "sad"],   // 使う感情モデル（各約 2MB）も一緒に
   onProgress: (loaded, total) => console.log(`${loaded}/${total}`),
 });
 
@@ -720,6 +721,8 @@ await studio.prepareSpeech(["tsukuyomi"], {
 const handle = await studio.speak("こんにちは。ここは はじまりの村です。", {
   model: "tsukuyomi",   // 省略時 DEFAULT_SPEECH_MODEL
   pitchOffset: 3,       // 素の声からの半音オフセット（±24）
+  emotion: "happy",     // 感情（省略時 neutral）
+  style: "lively",      // 話し方プリセット（省略時 neutral）
   volume: 0.9,
 });
 if (handle) {
@@ -732,6 +735,8 @@ if (handle) {
 | --- | --- |
 | `model` | 内蔵音源キーワード（上の一覧）。klatt では鳴らない |
 | `pitchOffset` | 素の声（音源の収録ピッチ）からの半音オフセット。既定 0 |
+| `emotion` | 感情 `"neutral"` / `"happy"` / `"sad"` / `"angry"`（HTS 音声モデル tohoku-f01 の差し替え。音素長と F0 の起伏そのものが変わる）。既定 neutral。初めて使う感情は約 2MB を取得してから鳴る |
+| `style` | 話し方プリセット `"neutral"` / `"calm"`（朗読調）/ `"lively"`、またはプリセット＋上書き `{ preset: "calm", speed: 0.95 }`（koe の `SpeakingStyleInput`）。話速・抑揚幅・基準ピッチ・ポーズ倍率・音量曲線の係数 |
 | `expr` | 声色 `{ gender, breathiness, tension }` |
 | `volume` / `pan` | ピーク音量（0〜1）と定位（-1〜1） |
 | `at` | 鳴らし始める AudioContext クロック秒（省略時は計画が出来しだい） |

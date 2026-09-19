@@ -19,8 +19,10 @@
 import {
 	leadInFromEntry,
 	type PhonemeEntry,
+	type SpeakingStyleInput,
 	UtauTTSAdapter,
 	type UtauTTSPlan,
+	type UtauTTSRenderOptions,
 	VoiceBank,
 	Worldline,
 } from "@onjmin/koe";
@@ -34,11 +36,15 @@ import {
 import {
 	getSpeechPlanner,
 	medianRecordedPitchHz,
+	prefetchSpeechPcm,
 	prepareSpeechPlan,
 	type SpeechBank,
+	type SpeechEmotion,
 	type SpeechPlanner,
+	speechBankView,
 	speechPlanDurationSec,
 	speechPlanLeadingSec,
+	speechRenderOptions,
 } from "./speech";
 import { UNITS_PER_SEMITONE, type Units, units } from "./tuning";
 import type {
@@ -930,8 +936,9 @@ export type VoiceModel = {
 	/**
 	 * 語り（`「…」`）を合成してキャッシュへ積み、再生に使うキャッシュキーを返す。
 	 * 計画（読み・韻律・ユニット選択）が出来た時点で返り、合成はチャンクごとに裏で続く
-	 * （{@link scheduleSpeech} は届いたチャンクから順に置く）。`awaitRender` を立てると
-	 * 全チャンクの合成完了まで待つ（頭出しの貯金用）。
+	 * （{@link scheduleSpeech} は届いたチャンクから順に置く）。`awaitRender` は
+	 * `"first-chunk"` で最初のチャンクが出るまで（頭出しの貯金用。長文でも再生開始を
+	 * 塞がない）、`true` で全チャンクの合成完了まで待つ（書き出し用）。
 	 * `pitch` は話す基準ピッチ（units）。計画不能（読みが取れない・アセット取得失敗）なら null。
 	 * koe 音源専用。klatt 等は未実装でよい（その場合は語りは鳴らない）。
 	 */
@@ -939,7 +946,7 @@ export type VoiceModel = {
 		text: string,
 		pitch: number,
 		expr?: VoiceExpression,
-		awaitRender?: boolean,
+		awaitRender?: boolean | "first-chunk",
 	) => Promise<string | null>;
 	/**
 	 * {@link speakToCache} 済みの語りを絶対時刻 t0（AudioContext クロック秒）へスケジュールする。
@@ -985,6 +992,17 @@ export type VoiceModel = {
 export type SpeakVoiceOptions = {
 	/** 声色（ジェンダー/息/張り）。 */
 	expr?: VoiceExpression;
+	/**
+	 * 話し方プリセット（"neutral" / "calm" / "lively"、またはプリセット＋上書き）。
+	 * 話速・抑揚幅・基準ピッチ・ポーズ倍率・音量曲線に効く。既定 neutral。
+	 */
+	style?: SpeakingStyleInput;
+	/**
+	 * 感情（HTS 音声モデル neutral / happy / sad / angry の差し替え）。既定 neutral。
+	 * 初めて使う感情は約 2MB を取得してから鳴る（{@link SingingVoices.prepareSpeech} の
+	 * `emotions` で先取りできる）。
+	 */
+	emotion?: SpeechEmotion;
 	/** 音量（ピーク、0〜1。既定 1）。 */
 	volume?: number;
 	/** 定位（-1〜1。既定 0）。 */
@@ -1713,6 +1731,8 @@ type RenderBackend = {
 		expr: VoiceExpression | undefined,
 		onChunk: (chunk: SpeechChunk) => void,
 		signal?: AbortSignal,
+		/** 話し方プリセット由来の合成オプション（{@link speechRenderOptions}）。 */
+		render?: UtauTTSRenderOptions,
 	) => Promise<void>;
 	/** 破棄（Worker終了など）。 */
 	dispose: () => void;
@@ -1842,11 +1862,16 @@ const createLocalBackend = async (
 		expr,
 		onChunk,
 		signal,
+		render,
 	) => {
 		if (!worldline) return; // 軽量モードでは語りは鳴らせない
 		speechAdapter ??= new UtauTTSAdapter(worldline);
 		try {
-			for await (const chunk of speechAdapter.renderChunks(bank, plan, {
+			// ユニット PCM の取得（URL 音源は 1 ユニット 1 往復）を合成と重ねる（speech.ts 参照）。
+			prefetchSpeechPcm(plan, getPcm);
+			const view = speechBankView(bank, getPcm);
+			for await (const chunk of speechAdapter.renderChunks(view, plan, {
+				...render,
 				signal,
 				gender: expr?.gender,
 				breathiness: expr?.breathiness,
@@ -1980,6 +2005,7 @@ const createWorkerBackend = async (
 		expr,
 		onChunk,
 		signal,
+		render,
 	) =>
 		new Promise<void>((resolve) => {
 			const id = ++reqId;
@@ -1997,6 +2023,7 @@ const createWorkerBackend = async (
 				gender: expr?.gender,
 				breathiness: expr?.breathiness,
 				tension: expr?.tension,
+				energyDbPerSemitone: render?.energyDbPerSemitone,
 			} satisfies VoiceWorkerSpeakReq);
 		});
 
@@ -2371,15 +2398,22 @@ export const createKoeVoice = async (
 	const planFor = (
 		text: string,
 		token: string | null,
+		style?: SpeakingStyleInput,
+		emotion?: SpeechEmotion,
 	): Promise<UtauTTSPlan | null> => {
-		const k = `${token ?? ""}|${text}`;
+		const k = `${token ?? ""}|${styleKey(style)}|${emotion ?? ""}|${text}`;
 		let p = plans.get(k);
 		if (!p) {
 			p = (async () => {
 				try {
 					await planner.ready();
+					if (emotion && emotion !== "neutral") {
+						await planner.prepareEmotion(emotion);
+					}
 					return planner.plan(toneViewFor(token).view, text, {
 						tone: token ?? "C4",
+						style,
+						emotion,
 					});
 				} catch (err) {
 					console.warn(`[dtm] speech plan failed for "${text}"`, err);
@@ -2397,6 +2431,11 @@ export const createKoeVoice = async (
 		planned: Promise<number | null>;
 		/** 全チャンクの合成完了で解決。 */
 		rendered: Promise<void>;
+		/**
+		 * 最初のチャンクが届いた時点で解決（失敗・チャンク無しでも合成終了時に解決）。
+		 * 頭出しの貯金はこれで足りる。残りは再生中に届いた順で置かれる。
+		 */
+		firstChunk: Promise<void>;
 		durationSec: number;
 		chunks: SpeechRendered[];
 		done: boolean;
@@ -2405,10 +2444,19 @@ export const createKoeVoice = async (
 		abort: AbortController;
 	};
 	const speechCache = new Map<string, SpeechEntry>();
+	/** 話し方プリセットのキャッシュキー（プリセット名、または上書き込みの JSON）。 */
+	const styleKey = (style?: SpeakingStyleInput): string =>
+		style === undefined
+			? ""
+			: typeof style === "string"
+				? style
+				: JSON.stringify(style);
 	const speechKeyOf = (
 		text: string,
 		pitch: number,
 		expr?: VoiceExpression,
+		style?: SpeakingStyleInput,
+		emotion?: SpeechEmotion,
 	): string =>
 		`speak|${text}|${Math.round(pitch)}${
 			expr?.gender !== undefined ? `|g${Math.round(expr.gender * 100)}` : ""
@@ -2416,7 +2464,9 @@ export const createKoeVoice = async (
 			expr?.breathiness !== undefined
 				? `|h${Math.round(expr.breathiness * 100)}`
 				: ""
-		}${expr?.tension !== undefined ? `|t${Math.round(expr.tension * 100)}` : ""}`;
+		}${expr?.tension !== undefined ? `|t${Math.round(expr.tension * 100)}` : ""}${
+			style !== undefined ? `|s${styleKey(style)}` : ""
+		}${emotion ? `|e${emotion}` : ""}`;
 
 	/** 基準ピッチからの平行移動の上限（±2オクターブ。それ以上は声にならない）。 */
 	const SPEECH_PITCH_RATIO_MAX = 4;
@@ -2425,8 +2475,10 @@ export const createKoeVoice = async (
 		text: string,
 		pitch: number,
 		expr?: VoiceExpression,
+		style?: SpeakingStyleInput,
+		emotion?: SpeechEmotion,
 	): SpeechEntry => {
-		const key = speechKeyOf(text, pitch, expr);
+		const key = speechKeyOf(text, pitch, expr, style, emotion);
 		let entry = speechCache.get(key);
 		if (entry) return entry;
 		const abort = new AbortController();
@@ -2434,9 +2486,14 @@ export const createKoeVoice = async (
 		const planned = new Promise<number | null>((r) => {
 			resolvePlanned = r;
 		});
+		let resolveFirstChunk!: () => void;
+		const firstChunk = new Promise<void>((r) => {
+			resolveFirstChunk = r;
+		});
 		const e: SpeechEntry = {
 			planned,
 			rendered: Promise.resolve(),
+			firstChunk,
 			durationSec: 0,
 			chunks: [],
 			done: false,
@@ -2445,10 +2502,11 @@ export const createKoeVoice = async (
 		};
 		e.rendered = (async () => {
 			const token = toneFor(pitch);
-			const plan = await planFor(text, token);
+			const plan = await planFor(text, token, style, emotion);
 			if (!plan) {
 				e.done = true;
 				resolvePlanned(null);
+				resolveFirstChunk();
 				return;
 			}
 			const view = toneViewFor(token);
@@ -2482,12 +2540,15 @@ export const createKoeVoice = async (
 						startSec: chunk.startMs / 1000 - leadingSec,
 					};
 					e.chunks.push(r);
+					resolveFirstChunk();
 					for (const l of e.listeners) l(r);
 				},
 				abort.signal,
+				speechRenderOptions(style),
 			);
 			e.done = true;
 			e.listeners.clear();
+			resolveFirstChunk(); // チャンクが 1 つも出なかった（失敗・中断）場合の取りこぼし防止
 		})();
 		entry = e;
 		speechCache.set(key, entry);
@@ -2570,7 +2631,8 @@ export const createKoeVoice = async (
 		const entry = speechEntryFor(text, pitch, expr);
 		const duration = await entry.planned;
 		if (duration === null) return null;
-		if (awaitRender) await entry.rendered;
+		if (awaitRender === "first-chunk") await entry.firstChunk;
+		else if (awaitRender) await entry.rendered;
 		return speechKeyOf(text, pitch, expr);
 	};
 
@@ -2594,7 +2656,7 @@ export const createKoeVoice = async (
 	};
 
 	model.speak = async (text, pitch, o = {}) => {
-		const entry = speechEntryFor(text, pitch, o.expr);
+		const entry = speechEntryFor(text, pitch, o.expr, o.style, o.emotion);
 		const duration = await entry.planned;
 		if (duration === null || o.signal?.aborted) return null;
 		if (o.awaitRender) await entry.rendered;
@@ -3108,9 +3170,7 @@ export type SingingVoices = {
 	 */
 	prepareSpeech?: (
 		models: Iterable<string>,
-		options?: {
-			onProgress?: (loadedBytes: number, totalBytes: number) => void;
-		},
+		options?: SpeechPrepareOptions,
 	) => Promise<void>;
 	/**
 	 * 本文を指定した音源で読み上げる（MML を介さない単発の語り。セリフ・ナレーション用）。
@@ -3123,6 +3183,14 @@ export type SingingVoices = {
 		text: string,
 		options?: SpeakOptions,
 	) => Promise<SpeechHandle | null>;
+};
+
+/** {@link SingingVoices.prepareSpeech} のオプション。 */
+export type SpeechPrepareOptions = {
+	/** ダウンロード進捗（TTS アセット＋感情モデルの合算バイト数）。 */
+	onProgress?: (loadedBytes: number, totalBytes: number) => void;
+	/** 先取りしておく感情モデル（neutral は常に含まれるので書かなくてよい）。 */
+	emotions?: Iterable<SpeechEmotion>;
 };
 
 /** {@link SingingVoices.speak} のオプション。 */
@@ -3430,8 +3498,9 @@ export const createSingingVoices = (
 				if (n >= count && note.startSec >= STREAM_LOOKAHEAD_SEC) return;
 				n++;
 				if (note.syllable.kind === "speak") {
-					// 語りは計画（初回は TTS アセット取得を含む）まで全部ここで済ませる。
-					// 先頭付近のものは合成完了まで待ち、頭出しで音が抜けないようにする。
+					// 語りは計画（初回は TTS アセット取得を含む）と最初のチャンクまでをここで
+					// 済ませる。全チャンクを待つと長文 1 つで再生開始が文まるごと遅れる
+					// （koe のデモと同じく、残りは再生しながら届いた順に置く）。
 					tasks.push({
 						model: m,
 						note,
@@ -3482,7 +3551,7 @@ export const createSingingVoices = (
 					task.speak,
 					task.pitch,
 					task.expr,
-					true,
+					"first-chunk",
 				) ?? Promise.resolve(null));
 			} else {
 				await (task.model.renderToCache?.(
@@ -3790,7 +3859,13 @@ export const createSingingVoices = (
 			baseUrl: options.ttsBaseUrl,
 			onProgress: o.onProgress,
 		});
-		await Promise.all([planner.ready(), loadModels(models)]);
+		const emotions = new Set<SpeechEmotion>(o.emotions ?? []);
+		emotions.delete("neutral");
+		await Promise.all([
+			planner.ready(),
+			loadModels(models),
+			...[...emotions].map((e) => planner.prepareEmotion(e)),
+		]);
 	};
 
 	/** 素の声からの半音オフセットの上限（{@link SpeakOptions.pitchOffset}）。 */

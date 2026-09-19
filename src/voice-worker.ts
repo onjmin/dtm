@@ -17,6 +17,7 @@ import {
 } from "@onjmin/koe";
 import type { PitchSegment } from "./pitch-curve";
 import { pitchCurveFor } from "./pitch-curve";
+import { prefetchSpeechPcm, speechBankView } from "./speech";
 import type {
 	VoiceWorkerInbound,
 	VoiceWorkerOutbound,
@@ -266,7 +267,7 @@ wself.onmessage = async (ev) => {
 		return;
 	}
 	if (msg.type === "speak") {
-		const { id, plan, gender, breathiness, tension } = msg;
+		const { id, plan, gender, breathiness, tension, energyDbPerSemitone } = msg;
 		// 語りは WORLD 再合成必須（素片フォールバックでは文にならない）。
 		if (!bank || !worldline) {
 			wself.postMessage({
@@ -280,11 +281,16 @@ wself.onmessage = async (ev) => {
 		speechAborts.set(id, abort);
 		try {
 			speechAdapter ??= new UtauTTSAdapter(worldline);
-			for await (const chunk of speechAdapter.renderChunks(bank, plan, {
+			// ユニット PCM の取得（URL 音源は 1 ユニット 1 往復）を合成と重ねる。
+			// 逐次だと往復時間が合成時間に丸ごと乗って実時間を割る（speech.ts 参照）。
+			prefetchSpeechPcm(plan, getPcm);
+			const view = speechBankView(bank, getPcm);
+			for await (const chunk of speechAdapter.renderChunks(view, plan, {
 				signal: abort.signal,
 				gender,
 				breathiness,
 				tension,
+				energyDbPerSemitone,
 			})) {
 				wself.postMessage(
 					{
