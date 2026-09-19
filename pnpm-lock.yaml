@@ -12,8 +12,8 @@ importers:
         specifier: 1.1.1
         version: 1.1.1
       '@onjmin/koe':
-        specifier: 1.0.10
-        version: 1.0.10
+        specifier: 1.0.11
+        version: 1.0.11
       midi-json-parser:
         specifier: 8.1.74
         version: 8.1.74
@@ -616,8 +616,8 @@ packages:
   '@onjmin/chord-parser@1.1.1':
     resolution: {integrity: sha512-nKp+oXxWGSajNOH+H7LRwcLL24GkiBTzk/V3mXkCfXZWvuRMjJuWdrowSNjGXJTXeIeLQIMO1PUE9+lx7wxOhg==}
 
-  '@onjmin/koe@1.0.10':
-    resolution: {integrity: sha512-q+Gf+pVgV9A5H9trymEw7J3flXS9DlhSBnztUPO5JEf8ri9M5NaFx9UNAXrabW7NpML/EC9f+uMDDu8kkbI9LA==}
+  '@onjmin/koe@1.0.11':
+    resolution: {integrity: sha512-JGcW2Y5w8HZSlepiewgx7JHakEEboKpOUGcF76dfJUXrawTWDEx/8IoOxGfZaD5THArBUIYijU4bHx17jAjmsQ==}
     hasBin: true
 
   '@rollup/rollup-android-arm-eabi@4.62.2':
@@ -1521,7 +1521,7 @@ snapshots:
 
   '@onjmin/chord-parser@1.1.1': {}
 
-  '@onjmin/koe@1.0.10':
+  '@onjmin/koe@1.0.11':
     dependencies:
       fflate: 0.8.3
 
