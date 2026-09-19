@@ -16,6 +16,7 @@
 | `compare-vocabulary.ts` | リズム型の語彙の被覆率・集中度・モデル規模を参考コーパスと突き合わせるスクリプト | `npx tsx scripts/compare-vocabulary.ts --dir "<path>"` |
 | `compare-pitch.ts` | 音程の分布・輪郭の集中度・使う材料を参考コーパスと比べるスクリプト | `npx tsx scripts/compare-pitch.ts --dir "<path>"` |
 | `compare-repetition.ts` | 小節のリズム・音高の輪郭が完全一致で反復する割合を参考コーパスと比べるスクリプト | `npx tsx scripts/compare-repetition.ts --dir "<path>"` |
+| `ab-listen.ts` | **目隠し A/B/C の作成器（耳で方式の採否を決める）。** `--release` で A＝main の出荷版そのまま／B＝同じ旋律を和声付け直し／C＝人間の旋律（PDMX、所有者が知らない曲）を同じ付け直し、の3本を同じ曲から出す。旋律はよそのコード進行に載らないので、比較は必ず両方を同じ手続きで付け直す | `npx tsx scripts/ab-listen.ts --pdmx tmp/pdmx.jsonl --release --out tmp/abc-release` |
 | `export-samples.ts` | 生成した曲を .mid で書き出すスクリプト（指標ではなく耳で確かめるため） | `npx tsx scripts/export-samples.ts --out tmp/samples --count 6` |
 | `scratch-analyze.ts` | 生成曲の特徴量（音数、跳躍率、反復率、休符率等）をサンプリング測定するスクリプト | `npx tsx scripts/scratch-analyze.ts` |
 | `test-chord.ts` | MMLからの和音・コード解析およびカバレッジ測定を行うスクリプト | `npx tsx scripts/test-chord.ts` |
