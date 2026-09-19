@@ -702,6 +702,50 @@ const cp = mountChordPlayer(document.getElementById("chord-app"), "| C | G | Am 
 
 重い WORLD 再合成は専用 Web Worker で実行してメインスレッド（楽器・UI）を塞がず、複数ボーカルは音源ごとに並列合成されます。
 
+### MML を介さない読み上げ（`studio.speak`）
+
+セリフやナレーションのように、曲の外で本文をそのまま読み上げたいときは `studio.speak` を使います。
+歌詞の `「…」` 語りと同じ計画・合成経路（UtauTTS + worldline、voice worker）で、ノートの代わりに
+「今」を起点に鳴らします。
+
+```ts
+const studio = await createDtmStudio();
+
+// ロード画面などで先に取っておく（TTS アセット約 45MB ＋ 音源マニフェスト。2 回目以降は一瞬）
+await studio.prepareSpeech(["tsukuyomi"], {
+  onProgress: (loaded, total) => console.log(`${loaded}/${total}`),
+});
+
+// ユーザー操作のコールスタック内から
+const handle = await studio.speak("こんにちは。ここは はじまりの村です。", {
+  model: "tsukuyomi",   // 省略時 DEFAULT_SPEECH_MODEL
+  pitchOffset: 3,       // 素の声からの半音オフセット（±24）
+  volume: 0.9,
+});
+if (handle) {
+  console.log(handle.durationSec); // 音を占める長さ（秒）
+  await handle.ended;              // 鳴り終わり（stop() で途中終了もできる）
+}
+```
+
+| オプション | 意味 |
+| --- | --- |
+| `model` | 内蔵音源キーワード（上の一覧）。klatt では鳴らない |
+| `pitchOffset` | 素の声（音源の収録ピッチ）からの半音オフセット。既定 0 |
+| `expr` | 声色 `{ gender, breathiness, tension }` |
+| `volume` / `pan` | ピーク音量（0〜1）と定位（-1〜1） |
+| `at` | 鳴らし始める AudioContext クロック秒（省略時は計画が出来しだい） |
+| `awaitRender` | 全チャンクの合成完了を待ってから鳴らす（既定は届いた順） |
+| `signal` | `AbortSignal`。計画中なら null を返し、再生中なら止める |
+
+戻り値の `SpeechHandle` は `durationSec` / `startTime` / `stop()` / `ended` を持ち、`stop()` は
+その発話だけを止めます（同時に鳴っている歌や他の語りには触れません）。読みが取れない本文
+（記号だけ等）や未知のモデルでは `null` です。
+
+低レベル API では `createSingingVoices(...).speak(model, text, options)` /
+`.prepareSpeech(models, { onProgress })` が同じものです。音源選択 UI のラベルには
+`KOE_VOICEBANK_NAMES`（キーワード → 音源名）が使えます。
+
 ---
 
 ## UST（UTAU）の読み込み・書き出し

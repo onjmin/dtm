@@ -57,11 +57,20 @@ export type SpeechPlanOptions = {
 	intonationStrength?: number;
 };
 
+/** ダウンロード進捗（全アセット合算のバイト数）。 */
+export type SpeechProgressListener = (
+	loadedBytes: number,
+	totalBytes: number,
+) => void;
+
 export type SpeechPlannerOptions = {
 	/** アセットのベース URL（末尾 `/` は無くてもよい）。既定 {@link DEFAULT_TTS_BASE_URL}。 */
 	baseUrl?: string;
-	/** ダウンロード進捗（全アセット合算のバイト数）。 */
-	onProgress?: (loadedBytes: number, totalBytes: number) => void;
+	/**
+	 * ダウンロード進捗（全アセット合算のバイト数）。{@link getSpeechPlanner} に渡した場合、
+	 * 計画器が既に存在していても購読として追加される（{@link SpeechPlanner.onProgress}）。
+	 */
+	onProgress?: SpeechProgressListener;
 };
 
 export type SpeechPlanner = {
@@ -69,6 +78,11 @@ export type SpeechPlanner = {
 	ready: () => Promise<void>;
 	/** {@link ready} が完了しているか。 */
 	isReady: () => boolean;
+	/**
+	 * ダウンロード進捗の購読を追加する。戻り値で解除する。読み込み中に追加すると、
+	 * それまでの合算値が直後に 1 回通知される（途中参加でも表示が空にならない）。
+	 */
+	onProgress: (listener: SpeechProgressListener) => () => void;
 	/**
 	 * 本文の合成計画を作る。{@link ready} 完了後に呼ぶこと。
 	 * 読みが取れない本文（記号だけ等）は例外を投げる。
@@ -142,6 +156,9 @@ export const getSpeechPlanner = (
 				`[dtm] TTS assets are already loaded from ${shared.baseUrl}; ignoring ${baseUrl}`,
 			);
 		}
+		// 2 度目以降の呼び出しでも進捗は受け取れるようにする（利用側が purpose ごとに
+		// 進捗表示を持つため。最初の onProgress だけが有効だと後から来た画面が沈黙する）。
+		if (options.onProgress) shared.planner.onProgress(options.onProgress);
 		return shared.planner;
 	}
 	const planner = createSpeechPlanner({ ...options, baseUrl });
@@ -161,20 +178,37 @@ export const createSpeechPlanner = (
 	let adapter: UtauTTSAdapter | null = null;
 	let readyPromise: Promise<void> | null = null;
 	let isReady = false;
+	const listeners = new Set<SpeechProgressListener>();
+	if (options.onProgress) listeners.add(options.onProgress);
+	// 進捗は URL ごとの (loaded, total) を合算する（koe のデモと同じ）。
+	const progress = new Map<string, { loaded: number; total: number }>();
+	const sumProgress = (): [number, number] => {
+		let loaded = 0;
+		let total = 0;
+		for (const item of progress.values()) {
+			loaded += item.loaded;
+			total += item.total;
+		}
+		return [loaded, total];
+	};
+	const subscribe: SpeechPlanner["onProgress"] = (listener) => {
+		listeners.add(listener);
+		if (readyPromise && !isReady) {
+			const [loaded, total] = sumProgress();
+			if (total > 0) listener(loaded, total);
+		}
+		return () => {
+			listeners.delete(listener);
+		};
+	};
 
 	const load = async (): Promise<void> => {
-		// 進捗は URL ごとの (loaded, total) を合算する（koe のデモと同じ）。
-		const progress = new Map<string, { loaded: number; total: number }>();
+		progress.clear();
 		const onProgress = (p: { url: string; loaded: number; total: number }) => {
-			if (!options.onProgress) return;
+			if (listeners.size === 0) return;
 			progress.set(p.url, p);
-			let loaded = 0;
-			let total = 0;
-			for (const item of progress.values()) {
-				loaded += item.loaded;
-				total += item.total;
-			}
-			options.onProgress(loaded, total);
+			const [loaded, total] = sumProgress();
+			for (const l of listeners) l(loaded, total);
 		};
 		const fetchWithProgress = (url: string) => fetchAsset(url, { onProgress });
 
@@ -262,7 +296,7 @@ export const createSpeechPlanner = (
 		});
 	};
 
-	return { ready, isReady: () => isReady, plan };
+	return { ready, isReady: () => isReady, onProgress: subscribe, plan };
 };
 
 // ─────────────────────────────────────────────────────────────

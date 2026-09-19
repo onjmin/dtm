@@ -57,6 +57,8 @@ import {
 	koeUrl,
 	panToStereo,
 	type SingingVoices,
+	type SpeakOptions,
+	type SpeechHandle,
 } from "./lyrics";
 import { type MmlMeta, parseMML, parseMmlMeta } from "./mml-parser";
 import {
@@ -406,6 +408,12 @@ export type ModeSwitchInstance = {
 	destroy: () => void;
 };
 
+/**
+ * {@link DtmStudio.speak} で `model` を省略したときの音源。つくよみちゃんは
+ * 読み上げ用途を含む利用規約が緩く、内蔵音源の中で最初に入れた基準の声。
+ */
+export const DEFAULT_SPEECH_MODEL = "tsukuyomi";
+
 export type DtmStudio = {
 	/** 内部で使用している AudioContext。 */
 	audioContext: AudioContext;
@@ -432,6 +440,28 @@ export type DtmStudio = {
 	stopWavRecording: () => Promise<Blob>;
 	/** 歌声合成ヘルパ（klatt + koe音源）。 */
 	singingVoices: SingingVoices;
+	/**
+	 * 本文を koe 音源で読み上げる（MML を介さない単発の語り。セリフ・ナレーション用）。
+	 * `model` 省略時は {@link DEFAULT_SPEECH_MODEL}。ブラウザの自動再生ポリシーのため、
+	 * 最初の呼び出しはユーザー操作のコールスタック内から行うこと。
+	 * 音量はマスタ（{@link setMasterVolume}）に従う。
+	 * 初回は TTS アセット約 45MB を取得する（{@link prepareSpeech} で先に済ませられる）。
+	 * 読み上げできない（未知のモデル・読みが取れない本文）ときは null。
+	 */
+	speak: (
+		text: string,
+		options?: SpeakOptions & { model?: string },
+	) => Promise<SpeechHandle | null>;
+	/**
+	 * 読み上げに必要なもの（TTS アセットと音源マニフェスト）を先に取得する。
+	 * `models` 省略時は {@link DEFAULT_SPEECH_MODEL} だけ。
+	 */
+	prepareSpeech: (
+		models?: Iterable<string>,
+		options?: {
+			onProgress?: (loadedBytes: number, totalBytes: number) => void;
+		},
+	) => Promise<void>;
 	/** 編集UI（mountDAW）を音・歌声込みでマウントする。 */
 	mountEditor: (
 		target: HTMLElement,
@@ -2200,6 +2230,17 @@ export const createDtmStudio = async (
 		startWavRecording,
 		stopWavRecording,
 		singingVoices,
+		speak: (text, o = {}) => {
+			const { model, ...rest } = o;
+			// singingVoices.speak は省略可能な口だが、createSingingVoices の実装は常に持つ。
+			const fn = singingVoices.speak;
+			return fn
+				? fn(model ?? DEFAULT_SPEECH_MODEL, text, rest)
+				: Promise.resolve(null);
+		},
+		prepareSpeech: (models, o) =>
+			singingVoices.prepareSpeech?.(models ?? [DEFAULT_SPEECH_MODEL], o) ??
+			Promise.resolve(),
 		mountEditor,
 		mountPlayer,
 		mountChordPlayer: mountChordPlayerInstance,

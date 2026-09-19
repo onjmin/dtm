@@ -156,6 +156,7 @@ export * from "./speech";
 // ============================================================
 export {
 	createDtmStudio,
+	DEFAULT_SPEECH_MODEL,
 	type DtmStudio,
 	type DtmStudioEngines,
 	type DtmStudioOptions,

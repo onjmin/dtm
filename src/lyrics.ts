@@ -40,7 +40,7 @@ import {
 	speechPlanDurationSec,
 	speechPlanLeadingSec,
 } from "./speech";
-import { type Units, units } from "./tuning";
+import { UNITS_PER_SEMITONE, type Units, units } from "./tuning";
 import type {
 	CustomVocalDef,
 	FadeStop,
@@ -969,6 +969,52 @@ export type VoiceModel = {
 	 * 音源の収録ピッチの中央値（多音階音源では収録セットの中央値）。
 	 */
 	speechReferenceUnits?: () => number | undefined;
+	/**
+	 * 本文をこの音源で読み上げる（MML を介さない単発の語り）。{@link speakToCache} と
+	 * {@link scheduleSpeech} をまとめ、発話ごとに止められるハンドルを返す。
+	 * 計画不能（読みが取れない・アセット取得失敗）なら null。koe 音源専用。
+	 */
+	speak?: (
+		text: string,
+		pitch: number,
+		options?: SpeakVoiceOptions,
+	) => Promise<SpeechHandle | null>;
+};
+
+/** {@link VoiceModel.speak} のオプション（ピッチは引数で受けるので含まない）。 */
+export type SpeakVoiceOptions = {
+	/** 声色（ジェンダー/息/張り）。 */
+	expr?: VoiceExpression;
+	/** 音量（ピーク、0〜1。既定 1）。 */
+	volume?: number;
+	/** 定位（-1〜1。既定 0）。 */
+	pan?: number;
+	/**
+	 * 鳴らし始める AudioContext クロック秒。省略時は「今」（計画が出来しだい）。
+	 * 過去を渡しても今に丸める。
+	 */
+	at?: number;
+	/**
+	 * 全チャンクの合成完了を待ってから鳴らす。既定 false（届いた順に置く＝数モーラ分で
+	 * 鳴り出す）。長文をぴったり揃えて出したいときだけ立てる。
+	 */
+	awaitRender?: boolean;
+	/** 出力先ノード（既定は音源共有の出力＝ singingVoices のマスタ）。 */
+	destination?: AudioNode;
+	/** 中断用。abort されると計画中なら null を返し、再生中なら止める。 */
+	signal?: AbortSignal;
+};
+
+/** 単発の語り 1 回ぶんのハンドル。 */
+export type SpeechHandle = {
+	/** 語りが音を占める長さ（秒）。 */
+	durationSec: number;
+	/** 最初のモーラが鳴る AudioContext クロック秒。 */
+	startTime: number;
+	/** この発話だけを即停止する（他の語り・歌には触らない）。 */
+	stop: () => void;
+	/** 鳴り終わった（または止められた）ときに解決する。 */
+	ended: Promise<void>;
 };
 
 /**
@@ -1259,6 +1305,26 @@ export const KOE_VOICEBANKS: Record<string, string> = {
 	motroid: "MOTRoid完全版V2.koe",
 	nynroid: "NYNRoidver1.4.koe",
 	uc: "蓄音キリコ （beta1.1）.koe",
+};
+
+/**
+ * 内蔵koe音源の表示名（キーワード → 音源名）。音源選択 UI のラベル用。
+ * {@link KOE_VOICEBANKS} のファイル名から版数を落としたもの。
+ */
+export const KOE_VOICEBANK_NAMES: Record<string, string> = {
+	tsukuyomi: "つくよみちゃん",
+	rino: "春音リノ",
+	rino121: "春音リノ (1.1)",
+	roze: "束音ロゼ",
+	ruko_male: "欲音ルコ♂",
+	ruko_female: "欲音ルコ♀",
+	teto: "重音テト",
+	shiyo: "革命シヨ",
+	rei: "足立レイ",
+	mgroid: "MGRoid",
+	motroid: "MOTRoid",
+	nynroid: "NYNRoid",
+	uc: "蓄音キリコ",
 };
 
 /**
@@ -2437,6 +2503,7 @@ export const createKoeVoice = async (
 		reverbSend = 0,
 		delaySend = 0,
 		destOverride?: AudioNode,
+		own?: Set<AudioBufferSourceNode>,
 	): void => {
 		const dest = destOverride ?? destination;
 		let startAt = t0 + r.startSec;
@@ -2481,8 +2548,10 @@ export const createKoeVoice = async (
 		src.connect(env).connect(out);
 		src.start(startAt, offset);
 		active.add(src);
+		own?.add(src);
 		src.onended = () => {
 			active.delete(src);
+			own?.delete(src);
 			src.disconnect();
 			env.disconnect();
 			panner?.disconnect();
@@ -2522,6 +2591,65 @@ export const createKoeVoice = async (
 	model.speechDurationSec = (key) => {
 		const entry = speechCache.get(key);
 		return entry && entry.durationSec > 0 ? entry.durationSec : undefined;
+	};
+
+	model.speak = async (text, pitch, o = {}) => {
+		const entry = speechEntryFor(text, pitch, o.expr);
+		const duration = await entry.planned;
+		if (duration === null || o.signal?.aborted) return null;
+		if (o.awaitRender) await entry.rendered;
+		if (o.signal?.aborted) return null;
+		// 最初のチャンクを置くまでの猶予（メインスレッド 1 周ぶん）。
+		const t0 = Math.max(ctx.currentTime + 0.05, o.at ?? 0);
+		const own = new Set<AudioBufferSourceNode>();
+		const place = (r: SpeechRendered) =>
+			placeSpeechChunk(
+				r,
+				t0,
+				Math.max(0, o.volume ?? 1),
+				o.pan ?? 0,
+				0,
+				0,
+				o.destination,
+				own,
+			);
+		for (const r of entry.chunks) place(r);
+		const reg = { entry, listener: place };
+		if (!entry.done) {
+			entry.listeners.add(place);
+			speechListeners.add(reg);
+			void entry.rendered.then(() => speechListeners.delete(reg));
+		}
+		let finished = false;
+		let resolveEnded!: () => void;
+		const ended = new Promise<void>((r) => {
+			resolveEnded = r;
+		});
+		const finish = () => {
+			if (finished) return;
+			finished = true;
+			clearTimeout(timer);
+			o.signal?.removeEventListener("abort", finish);
+			entry.listeners.delete(place);
+			speechListeners.delete(reg);
+			for (const src of own) {
+				try {
+					src.stop();
+				} catch {}
+				src.disconnect();
+				active.delete(src);
+			}
+			own.clear();
+			resolveEnded();
+		};
+		// 終了はオーディオクロックで測る（合成中のチャンクはまだノードが無いので
+		// onended では数えられない）。少し余裕を足して末尾のリリースを切らない。
+		const timer = setTimeout(
+			finish,
+			Math.max(0, t0 + duration - ctx.currentTime) * 1000 + 150,
+		);
+		o.signal?.addEventListener("abort", finish, { once: true });
+		return { durationSec: duration, startTime: t0, stop: finish, ended };
 	};
 
 	// 帯表示用: 長さはピッチに依らないので、基準ピッチ（比 1）の計画で引く。
@@ -2972,6 +3100,38 @@ export type SingingVoices = {
 	 * 音源がロード済みのときだけ返る（ロード前・klatt は undefined）。
 	 */
 	getSpeechReferenceUnits?: (model: string) => number | undefined;
+	/**
+	 * 読み上げに必要なもの（TTS アセット約 45MB と、指定した音源のマニフェスト）を
+	 * 先に取得する。ゲームのロード画面など、最初の一言で待たせたくない場面で呼ぶ。
+	 * 進捗は TTS アセットの合算バイト数（Cache API 済みなら一瞬で total に達する）。
+	 * 何度呼んでも二重取得はしない。
+	 */
+	prepareSpeech?: (
+		models: Iterable<string>,
+		options?: {
+			onProgress?: (loadedBytes: number, totalBytes: number) => void;
+		},
+	) => Promise<void>;
+	/**
+	 * 本文を指定した音源で読み上げる（MML を介さない単発の語り。セリフ・ナレーション用）。
+	 * 音源が未ロードならロードし、TTS アセットが未取得なら取得から始める（初回は重い。
+	 * {@link prepareSpeech} で先に済ませられる）。
+	 * klatt 等の語りに対応しないモデル、未知のモデル、計画できない本文では null。
+	 */
+	speak?: (
+		model: string,
+		text: string,
+		options?: SpeakOptions,
+	) => Promise<SpeechHandle | null>;
+};
+
+/** {@link SingingVoices.speak} のオプション。 */
+export type SpeakOptions = SpeakVoiceOptions & {
+	/**
+	 * 話す高さ。音源の素の声（収録ピッチ）からの半音オフセット。既定 0。
+	 * ±24 を超えると声にならないので、その範囲で丸める。
+	 */
+	pitchOffset?: number;
 };
 
 /** {@link SingingVoices.warm} の既定先合成数（各トラック先頭からの音数）。 */
@@ -3621,6 +3781,39 @@ export const createSingingVoices = (
 		SingingVoices["getSpeechReferenceUnits"]
 	> = (model) => loaded.get(model.toLowerCase())?.speechReferenceUnits?.();
 
+	const prepareSpeech: NonNullable<SingingVoices["prepareSpeech"]> = async (
+		models,
+		o = {},
+	) => {
+		// 計画器はページ共有。onProgress は 2 回目以降でも購読として足される。
+		const planner = getSpeechPlanner({
+			baseUrl: options.ttsBaseUrl,
+			onProgress: o.onProgress,
+		});
+		await Promise.all([planner.ready(), loadModels(models)]);
+	};
+
+	/** 素の声からの半音オフセットの上限（{@link SpeakOptions.pitchOffset}）。 */
+	const SPEAK_PITCH_OFFSET_MAX = 24;
+
+	const speak: NonNullable<SingingVoices["speak"]> = async (
+		model,
+		text,
+		o = {},
+	) => {
+		const v = await load(model);
+		if (!v?.speak || o.signal?.aborted) return null;
+		// 基準ピッチは音源ロード後でないと取れない（マニフェストの収録ピッチ）。
+		// 取れなければ A3 相当（2139 - 372 = 1767 units）で話す。
+		const reference = v.speechReferenceUnits?.() ?? 1767;
+		const offset = Math.max(
+			-SPEAK_PITCH_OFFSET_MAX,
+			Math.min(SPEAK_PITCH_OFFSET_MAX, o.pitchOffset ?? 0),
+		);
+		const { pitchOffset: _omit, ...rest } = o;
+		return v.speak(text, reference + offset * UNITS_PER_SEMITONE, rest);
+	};
+
 	return {
 		loadModels,
 		registerVoicebanks,
@@ -3632,6 +3825,8 @@ export const createSingingVoices = (
 		planSpeech,
 		peekSpeechDurationSec,
 		getSpeechReferenceUnits,
+		prepareSpeech,
+		speak,
 	};
 };
 
