@@ -67,3 +67,70 @@ export const readMacroSections = (): string[] | null => {
 export const writeMacroSections = (sections: string[]): void => {
 	writeMacroSetting("sections", JSON.stringify(sections));
 };
+
+// ============================================================
+// キープ枠
+// ============================================================
+
+/**
+ * 自動作曲の「キープ」に取っておいた曲。
+ *
+ * 中身は `generateMML` が出す MML そのもの（トラック・楽器・ドラム・テンポ・歌詞・
+ * エフェクトまで全部入り）と、キープした時点の再生開始位置。再生位置も一緒に
+ * 持つのは、キープした曲を呼び出したときに**同じ場所（サビの頭）から**聴き比べたい
+ * ため——MML には曲の設計図（どこがサビか）が残らないので、位置だけ別に控える。
+ */
+export type KeptSong = {
+	mml: string;
+	/** キープした時点の再生開始位置（ステップ）。 */
+	startStep: number;
+};
+
+const KEPT_STORAGE_KEY = "dtm-macro:kept";
+
+/**
+ * キープ枠を localStorage から読む。無い・壊れている・読めない場合は null。
+ *
+ * **リロードをまたいで残す**のは、スマホでは「別アプリを見て戻ったらタブが
+ * 再読み込みされていた」が日常的に起きるため。メモリだけに持つと、取っておいた
+ * つもりの曲がそこで消える。
+ */
+export const readKeptSong = (): KeptSong | null => {
+	try {
+		if (typeof localStorage === "undefined" || !localStorage) return null;
+		const raw = localStorage.getItem(KEPT_STORAGE_KEY);
+		if (!raw) return null;
+		const parsed = JSON.parse(raw);
+		if (
+			parsed &&
+			typeof parsed === "object" &&
+			typeof parsed.mml === "string" &&
+			parsed.mml.length > 0
+		) {
+			const startStep =
+				typeof parsed.startStep === "number" &&
+				Number.isFinite(parsed.startStep) &&
+				parsed.startStep >= 0
+					? Math.floor(parsed.startStep)
+					: 0;
+			return { mml: parsed.mml, startStep };
+		}
+	} catch (_) {}
+	return null;
+};
+
+/**
+ * キープ枠を localStorage へ書く。null で枠を空にする。
+ * 容量超過や private モードなど、書けない環境では黙って諦める
+ * （その場合もメモリ上の枠は生きているので、リロードまでは使える）。
+ */
+export const writeKeptSong = (kept: KeptSong | null): void => {
+	try {
+		if (typeof localStorage === "undefined" || !localStorage) return;
+		if (kept === null) {
+			localStorage.removeItem(KEPT_STORAGE_KEY);
+			return;
+		}
+		localStorage.setItem(KEPT_STORAGE_KEY, JSON.stringify(kept));
+	} catch (_) {}
+};

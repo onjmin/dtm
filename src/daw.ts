@@ -71,8 +71,11 @@ import {
 	vocalVolumeToGain,
 } from "./lyrics";
 import {
+	type KeptSong,
+	readKeptSong,
 	readMacroSections,
 	readMacroSetting,
+	writeKeptSong,
 	writeMacroSections,
 	writeMacroSetting,
 } from "./macro-state";
@@ -6945,6 +6948,11 @@ export const mountDAW = (
 				updateUndoRedo();
 				// 「作ったまま手を入れていない」状態を覚えておく（{@link composeWithConfirm}）。
 				composedSignature = trackSignature();
+				// **そのまま鳴らす。** 再生位置をサビの頭に置いてあるのに再生ボタンを
+				// 待つと、引き直し1回が「作曲→再生」の2タップになる。作曲ボタンを押した
+				// 人が次にすることは聴くことしかないので、ここで始めてしまう。
+				// 作曲ボタンの押下がユーザー操作なので AudioContext の resume も通る。
+				void play();
 			});
 		};
 		/**
@@ -6990,21 +6998,32 @@ export const mountDAW = (
 		// 中身は {@link generateMML} が出すMMLそのもの。トラック・楽器・ドラム・
 		// テンポ・歌詞・エフェクトまで全部入っていて、{@link loadMML} で戻せる。
 		// 項目を手で並べると、あとから足した設定が漏れる。
-		let keptMml: string | null = null;
+		// **リロードをまたいで残す。** スマホでは別アプリを見て戻るとタブが再読み込み
+		// されることが日常的にあり、メモリだけに持つとそこで消える（{@link readKeptSong}）。
+		let kept: KeptSong | null = readKeptSong();
 		const updateKeepUI = (): void => {
-			refs.composeRecall.disabled = keptMml === null;
-			refs.composeKeep.textContent = keptMml === null ? "キープ" : "キープ済";
+			refs.composeRecall.disabled = kept === null;
+			refs.composeKeep.textContent = kept === null ? "キープ" : "キープ済";
 		};
+		/** 今の画面の曲をキープ枠の形にする。 */
+		const snapshotKept = (): KeptSong => ({
+			// 小節数の上限は共有リンクの文字数のためのもので、アプリ内の退避には
+			// 効かせない（効かせると長い曲がキープした時点で切れる）。
+			mml: generateMML({ ignoreBarLimit: true }).full,
+			startStep: playStartStep,
+		});
 		refs.composeKeep.addEventListener("click", () => {
 			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
 			if (!hasNotes) return;
-			// 小節数の上限は共有リンクの文字数のためのもので、アプリ内の退避には
-			// 効かせない（効かせると長い曲がキープした時点で切れる）。
-			keptMml = generateMML({ ignoreBarLimit: true }).full;
+			kept = snapshotKept();
+			writeKeptSong(kept);
 			updateKeepUI();
 		});
-		refs.composeRecall.addEventListener("click", () => {
-			if (keptMml === null) return;
+		/**
+		 * キープ枠の曲を画面へ戻す。再生位置はキープした時点のもの（作曲直後なら
+		 * サビの頭）に置き直し、そのまま鳴らす——聴き比べる場所を毎回探させない。
+		 */
+		const loadKept = (song: KeptSong): void => {
 			// **「選択中のトラックだけに適用」は無視する。** キープは曲まるごとの
 			// 退避なので、部分適用だと戻したつもりで戻らない。チェックは触らずに
 			// この呼び出しの間だけ外す。
@@ -7012,13 +7031,32 @@ export const mountDAW = (
 			const was = box?.checked ?? false;
 			if (box) box.checked = false;
 			try {
-				loadMML(keptMml);
+				loadMML(song.mml);
 			} finally {
 				if (box) box.checked = was;
 			}
+			playStartStep = Math.min(song.startStep, getMaxNoteStep());
 			// 戻した直後は「手を入れていない」状態ではない（作曲が書いたものではない）。
 			// 次に作曲を押したときは確認を出す。
 			composedSignature = null;
+			void play();
+		};
+		// --- 入れ替え ---
+		//
+		// 「呼び出す」だと今の曲が消えるので、A と B を行き来して聴き比べることが
+		// できない（B を聴きたければ A を捨てるしかない）。**今の曲をキープ枠へ入れて
+		// からキープを取り出す**＝入れ替えなら、もう一度押せば元に戻る。枠は1つのまま
+		// で2曲の比較が成立する。今の画面に音が無ければ、ただ取り出すだけ。
+		refs.composeRecall.addEventListener("click", () => {
+			if (kept === null) return;
+			const previous = kept;
+			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
+			if (hasNotes) {
+				kept = snapshotKept();
+				writeKeptSong(kept);
+			}
+			loadKept(previous);
+			updateKeepUI();
 		});
 		updateKeepUI();
 		refs.macroComposeVocal.addEventListener("click", () => {

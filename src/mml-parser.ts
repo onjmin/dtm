@@ -164,9 +164,18 @@ export type MmlMeta = {
 	audioVolume?: number;
 };
 
-/** `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...` `#loop=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア・コロン） */
+/**
+ * `#ver=...` `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...`
+ * `#loop=...` 宣言にマッチする（値は英数・ハイフン・アンダースコア・コロン・ドット）。
+ *
+ * **書き出し側が宣言を1つ足したら、ここにも足す。** `ver` が抜けていたとき、
+ * `#ver=2.1.13` が本文に残って `v` `e` `r` … が音符として読まれ、読み戻した曲の
+ * track 0 の先頭に無いはずの音（E の16分）が1つ生えていた（2.1.11〜2.1.13）。
+ * `scripts/check-mml-meta.ts` が「宣言から音が生えない」ことを検算する。
+ * 値の文字集合に `.` があるのはバージョン番号のため。
+ */
 const META_DIRECTIVE =
-	/#(inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|mastercomp|fadein|fadeout|mode|edo|loop)=([\w:-]+)/gi;
+	/#(ver|inst|drum|drumfont|volume|drumvolume|reverb|reverbdecay|reverbpredelay|delay|delaydiv|mastercomp|fadein|fadeout|mode|edo|loop)=([\w:.-]+)/gi;
 
 /**
  * `#audio=<URL>` にマッチする（伴奏音源のURL。値は空白・`;`・`#`以外）。

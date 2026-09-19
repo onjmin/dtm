@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import {
 	MACRO_STORAGE_KEYS,
+	readKeptSong,
 	readMacroSections,
 	readMacroSetting,
+	writeKeptSong,
 	writeMacroSections,
 	writeMacroSetting,
 } from "../src/macro-state";
@@ -128,3 +130,43 @@ assert.doesNotThrow(() => {
 }, "localStorage 未定義でも書き込みでクラッシュしないこと");
 
 console.log("✓ すべてのテストに合格しました！");
+
+// キープ枠（自動作曲の退避）
+{
+	// 直前の節が例外を投げる localStorage に差し替えているので、モックへ戻す。
+	(globalThis as any).localStorage = mockStorage;
+	mockStorage.clear();
+	assert.equal(readKeptSong(), null, "キープ枠の初期値は null");
+
+	writeKeptSong({ mml: "t120 o4 cdef", startStep: 768 });
+	assert.deepEqual(
+		readKeptSong(),
+		{ mml: "t120 o4 cdef", startStep: 768 },
+		"MML と再生開始位置が往復すること",
+	);
+
+	writeKeptSong(null);
+	assert.equal(readKeptSong(), null, "null で枠が空になること");
+
+	// 壊れた保存値は無視する（古い形式・手で書き換えられた値など）
+	mockStorage.setItem("dtm-macro:kept", "{not json");
+	assert.equal(readKeptSong(), null, "JSON でなければ null");
+	mockStorage.setItem("dtm-macro:kept", JSON.stringify({ mml: "" }));
+	assert.equal(readKeptSong(), null, "MML が空なら null");
+	mockStorage.setItem(
+		"dtm-macro:kept",
+		JSON.stringify({ mml: "cde", startStep: -5 }),
+	);
+	assert.deepEqual(
+		readKeptSong(),
+		{ mml: "cde", startStep: 0 },
+		"不正な再生位置は 0 へ倒す",
+	);
+	mockStorage.setItem("dtm-macro:kept", JSON.stringify({ mml: "cde" }));
+	assert.deepEqual(
+		readKeptSong(),
+		{ mml: "cde", startStep: 0 },
+		"再生位置が無ければ 0",
+	);
+	console.log("  ✓ キープ枠の読み書き");
+}

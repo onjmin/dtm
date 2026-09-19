@@ -1025,7 +1025,9 @@ export const buildUst = (options: BuildUstOptions): string => {
 		cursorTick = startTick + length;
 	}
 	assignFadeEnvelopes(out);
-	out.forEach((note, index) => lines.push(...ustNoteSection(index, note)));
+	for (const [index, note] of out.entries()) {
+		lines.push(...ustNoteSection(index, note));
+	}
 	lines.push("[#TRACKEND]");
 	return `${lines.join("\r\n")}\r\n`;
 };

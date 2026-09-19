@@ -538,9 +538,11 @@ export const buildUI = (
           「引き直すと今のが消える」と思うと引き直せなくなる。取っておける場所が
           1つあれば、2つを比べて選ぶことは成立する。候補を並べるUIはスマホでは
           成立しない（試聴時間・画面・生成コストのどれも足りない）。
+          「入れ替え」は今の曲とキープを交換する。呼び出すだけだと今の曲が消えて
+          2曲を行き来できないため。枠はリロードをまたいで残る（localStorage）。
         -->
-        <button class="dtm-btn" data-dtm="compose-keep" title="今の曲を1つだけ取っておきます。作曲を押し直しても消えません">キープ</button>
-        <button class="dtm-btn" data-dtm="compose-recall" title="キープした曲に戻します" disabled>呼び出す</button>
+        <button class="dtm-btn" data-dtm="compose-keep" title="今の曲を1つだけ取っておきます。作曲を押し直しても、ページを開き直しても消えません">キープ</button>
+        <button class="dtm-btn" data-dtm="compose-recall" title="キープした曲と今の曲を入れ替えて、キープしていた曲を鳴らします。もう一度押すと戻ります" disabled>入れ替え</button>
         <span class="dtm-grow"></span>
       </div>
       <div class="dtm-row" data-dtm="compose-template-row">
