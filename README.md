@@ -747,6 +747,15 @@ if (handle) {
 その発話だけを止めます（同時に鳴っている歌や他の語りには触れません）。読みが取れない本文
 （記号だけ等）や未知のモデルでは `null` です。
 
+鳴らさずに長さだけ知りたいとき（台本の各行の長さから時間軸を組む等）は `studio.planSpeech` を使います。
+長さに加えて**モーラ列**（口パク・字幕送り用。最初のモーラが鳴る時点を 0 とする秒と母音）も返り、
+`studio.speak` の戻り値 `SpeechHandle.morae` にも同じものが入ります。
+
+```ts
+const info = await studio.planSpeech("こんにちは。", { model: "tsukuyomi", emotion: "happy" });
+// info: { durationSec: 1.2, morae: [{ startSec: 0, endSec: 0.11, mora: "こ", vowel: "o" }, …] } | null
+```
+
 低レベル API では `createSingingVoices(...).speak(model, text, options)` /
 `.prepareSpeech(models, { onProgress })` が同じものです。音源選択 UI のラベルには
 `KOE_VOICEBANK_NAMES`（キーワード → 音源名）が使えます。

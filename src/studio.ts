@@ -59,6 +59,8 @@ import {
 	type SingingVoices,
 	type SpeakOptions,
 	type SpeechHandle,
+	type SpeechPlanDetailOptions,
+	type SpeechPlanInfo,
 	type SpeechPrepareOptions,
 } from "./lyrics";
 import { type MmlMeta, parseMML, parseMmlMeta } from "./mml-parser";
@@ -461,6 +463,15 @@ export type DtmStudio = {
 		models?: Iterable<string>,
 		options?: SpeechPrepareOptions,
 	) => Promise<void>;
+	/**
+	 * 読み上げの計画だけを行い、長さ（秒）とモーラ列を返す（鳴らさない）。台本の各行の
+	 * 長さを先に知って時間軸を組む用途。`model` 省略時は {@link DEFAULT_SPEECH_MODEL}。
+	 * 未知のモデル・読みが取れない本文では null。
+	 */
+	planSpeech: (
+		text: string,
+		options?: SpeechPlanDetailOptions & { model?: string },
+	) => Promise<SpeechPlanInfo | null>;
 	/** 編集UI（mountDAW）を音・歌声込みでマウントする。 */
 	mountEditor: (
 		target: HTMLElement,
@@ -2240,6 +2251,16 @@ export const createDtmStudio = async (
 		prepareSpeech: (models, o) =>
 			singingVoices.prepareSpeech?.(models ?? [DEFAULT_SPEECH_MODEL], o) ??
 			Promise.resolve(),
+		planSpeech: (text, o = {}) => {
+			const { model, ...rest } = o;
+			return (
+				singingVoices.planSpeechDetail?.(
+					model ?? DEFAULT_SPEECH_MODEL,
+					text,
+					rest,
+				) ?? Promise.resolve(null)
+			);
+		},
 		mountEditor,
 		mountPlayer,
 		mountChordPlayer: mountChordPlayerInstance,

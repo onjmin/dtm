@@ -61,6 +61,44 @@ export const SPEECH_EMOTIONS: readonly SpeechEmotion[] = [
 const htsVoicePath = (emotion: SpeechEmotion): string =>
 	`hts/tohoku-f01-${emotion}.htsvoice`;
 
+/** 語りの 1 モーラの時刻（口パク・字幕送り用）。時刻は最初のモーラが鳴る時点を 0 とする秒。 */
+export type SpeechMora = {
+	startSec: number;
+	endSec: number;
+	/** かな 1 モーラ（「きょ」「ー」など）。 */
+	mora: string;
+	/** 母音。撥音は "n"。 */
+	vowel: "a" | "i" | "u" | "e" | "o" | "n";
+};
+
+const MORA_VOWELS = new Set(["a", "i", "u", "e", "o", "n"]);
+
+/**
+ * 計画からモーラ列を引く。timeline の各ユニットの配置（先行発声込みの先頭余白を除く）を
+ * 秒に直し、母音は計画の `morae` から取る。ポーズ・促音・無音ユニットは含めない。
+ */
+export const speechPlanMorae = (plan: UtauTTSPlan): SpeechMora[] => {
+	const leadingSec = speechPlanLeadingSec(plan);
+	const out: SpeechMora[] = [];
+	for (const u of plan.timeline.units) {
+		if (u.length_ms <= 0) continue;
+		const vowel = plan.morae[u.position]?.Vowel ?? "";
+		if (!MORA_VOWELS.has(vowel)) continue;
+		const startSec = Math.max(0, u.position_ms / 1000 - leadingSec);
+		const endSec = Math.max(
+			startSec,
+			(u.position_ms + u.length_ms) / 1000 - leadingSec,
+		);
+		out.push({
+			startSec,
+			endSec,
+			mora: u.mora || plan.morae[u.position]?.Text || "",
+			vowel: vowel as SpeechMora["vowel"],
+		});
+	}
+	return out;
+};
+
 /**
  * 話し方プリセットから、合成段（`renderChunks`）に渡すオプションを引く。
  * 計画（{@link SpeechPlanner.plan}）と合成は別スレッドになり得るので、

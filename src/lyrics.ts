@@ -40,10 +40,12 @@ import {
 	prepareSpeechPlan,
 	type SpeechBank,
 	type SpeechEmotion,
+	type SpeechMora,
 	type SpeechPlanner,
 	speechBankView,
 	speechPlanDurationSec,
 	speechPlanLeadingSec,
+	speechPlanMorae,
 	speechRenderOptions,
 } from "./speech";
 import { UNITS_PER_SEMITONE, type Units, units } from "./tuning";
@@ -967,8 +969,17 @@ export type VoiceModel = {
 	/**
 	 * 語りの計画だけを行い、占める長さ（秒）を返す（ピアノロールの帯表示用）。
 	 * 長さは基準ピッチに依らないので本文だけで引ける。アセット未取得なら取得から始める。
+	 * `options` の感情・話し方で長さは変わる（省略時 neutral）。
 	 */
-	planSpeech?: (text: string) => Promise<number | null>;
+	planSpeech?: (
+		text: string,
+		options?: SpeechPlanDetailOptions,
+	) => Promise<number | null>;
+	/** {@link planSpeech} と同じ計画から、長さに加えてモーラ列も返す。 */
+	planSpeechDetail?: (
+		text: string,
+		options?: SpeechPlanDetailOptions,
+	) => Promise<SpeechPlanInfo | null>;
 	/** 計画済みの語りの長さ（秒）を同期で引く（描画ループ用。未計画なら undefined）。 */
 	peekSpeechDurationSec?: (text: string) => number | undefined;
 	/**
@@ -1023,12 +1034,28 @@ export type SpeakVoiceOptions = {
 	signal?: AbortSignal;
 };
 
+/** 計画だけの結果（{@link VoiceModel.planSpeechDetail} / {@link SingingVoices.planSpeechDetail}）。 */
+export type SpeechPlanInfo = {
+	/** 語りが音を占める長さ（秒）。 */
+	durationSec: number;
+	/** モーラ列。時刻は最初のモーラが鳴る時点を 0 とする秒。 */
+	morae: SpeechMora[];
+};
+
+/** 計画だけを行うときのオプション（感情・話し方。ピッチは長さに効かないので無い）。 */
+export type SpeechPlanDetailOptions = {
+	style?: SpeakingStyleInput;
+	emotion?: SpeechEmotion;
+};
+
 /** 単発の語り 1 回ぶんのハンドル。 */
 export type SpeechHandle = {
 	/** 語りが音を占める長さ（秒）。 */
 	durationSec: number;
 	/** 最初のモーラが鳴る AudioContext クロック秒。 */
 	startTime: number;
+	/** モーラ列（口パク・字幕送り用）。時刻は `startTime` 基準の秒。 */
+	morae: SpeechMora[];
 	/** この発話だけを即停止する（他の語り・歌には触らない）。 */
 	stop: () => void;
 	/** 鳴り終わった（または止められた）ときに解決する。 */
@@ -2437,6 +2464,8 @@ export const createKoeVoice = async (
 		 */
 		firstChunk: Promise<void>;
 		durationSec: number;
+		/** モーラ列（計画が出来た時点で埋まる）。 */
+		morae: SpeechMora[];
 		chunks: SpeechRendered[];
 		done: boolean;
 		/** 合成中に届いたチャンクを受け取る（scheduleSpeech が登録）。 */
@@ -2495,6 +2524,7 @@ export const createKoeVoice = async (
 			rendered: Promise.resolve(),
 			firstChunk,
 			durationSec: 0,
+			morae: [],
 			chunks: [],
 			done: false,
 			listeners: new Set(),
@@ -2525,6 +2555,7 @@ export const createKoeVoice = async (
 					: 1;
 			const prepared = prepareSpeechPlan(plan, ratio, view.toReal);
 			e.durationSec = speechPlanDurationSec(prepared);
+			e.morae = speechPlanMorae(prepared);
 			// ノートの位置には最初のモーラを合わせる。タイムラインの先頭余白（先行発声ぶん）は
 			// ノートより前へはみ出して鳴る（歌唱の preSec と同じ扱い）。
 			const leadingSec = speechPlanLeadingSec(prepared);
@@ -2711,14 +2742,22 @@ export const createKoeVoice = async (
 			Math.max(0, t0 + duration - ctx.currentTime) * 1000 + 150,
 		);
 		o.signal?.addEventListener("abort", finish, { once: true });
-		return { durationSec: duration, startTime: t0, stop: finish, ended };
+		return {
+			durationSec: duration,
+			startTime: t0,
+			morae: entry.morae,
+			stop: finish,
+			ended,
+		};
 	};
 
 	// 帯表示用: 長さはピッチに依らないので、基準ピッチ（比 1）の計画で引く。
 	const previewDurations = new Map<string, number>();
-	model.planSpeech = async (text) => {
-		const cached = previewDurations.get(text);
-		if (cached !== undefined) return cached;
+	const previewInfos = new Map<string, SpeechPlanInfo>();
+	model.planSpeechDetail = async (text, o = {}) => {
+		const key = `${styleKey(o.style)}|${o.emotion ?? ""}|${text}`;
+		const cached = previewInfos.get(key);
+		if (cached) return cached;
 		const token =
 			backend.pitchTokens.length > 0
 				? (nearestPitchToken(
@@ -2726,11 +2765,24 @@ export const createKoeVoice = async (
 						unitsToMidiFloat(model.speechReferenceUnits?.() ?? 0),
 					)?.token ?? null)
 				: null;
-		const plan = await planFor(text, token);
+		const plan = await planFor(text, token, o.style, o.emotion);
 		if (!plan) return null;
-		const d = speechPlanDurationSec(plan);
-		previewDurations.set(text, d);
-		return d;
+		const info: SpeechPlanInfo = {
+			durationSec: speechPlanDurationSec(plan),
+			morae: speechPlanMorae(plan),
+		};
+		previewInfos.set(key, info);
+		// 帯表示の同期参照（peekSpeechDurationSec）は本文だけのキーで引く。
+		if (!o.style && !o.emotion) previewDurations.set(text, info.durationSec);
+		return info;
+	};
+	model.planSpeech = async (text, o) => {
+		if (!o?.style && !o?.emotion) {
+			const cached = previewDurations.get(text);
+			if (cached !== undefined) return cached;
+		}
+		const info = await model.planSpeechDetail?.(text, o);
+		return info ? info.durationSec : null;
 	};
 	model.peekSpeechDurationSec = (text) => previewDurations.get(text);
 
@@ -3154,7 +3206,20 @@ export type SingingVoices = {
 	 * 音源が未ロードならロードし、TTS アセットが未取得なら取得から始める（初回は重い）。
 	 * klatt 等の語りに対応しないモデルや、計画できない本文では null。省略可能。
 	 */
-	planSpeech?: (model: string, text: string) => Promise<number | null>;
+	planSpeech?: (
+		model: string,
+		text: string,
+		options?: SpeechPlanDetailOptions,
+	) => Promise<number | null>;
+	/**
+	 * 語りの計画だけを行い、長さとモーラ列（口パク・字幕送り用）を返す。
+	 * {@link planSpeech} と同じ条件で null。省略可能。
+	 */
+	planSpeechDetail?: (
+		model: string,
+		text: string,
+		options?: SpeechPlanDetailOptions,
+	) => Promise<SpeechPlanInfo | null>;
 	/** 計画済みの語りの長さ（秒）を同期で引く（描画ループ用。未計画なら undefined）。 */
 	peekSpeechDurationSec?: (model: string, text: string) => number | undefined;
 	/**
@@ -3838,9 +3903,16 @@ export const createSingingVoices = (
 	const planSpeech: NonNullable<SingingVoices["planSpeech"]> = async (
 		model,
 		text,
+		o,
 	) => {
 		const v = await load(model);
-		return v?.planSpeech ? v.planSpeech(text) : null;
+		return v?.planSpeech ? v.planSpeech(text, o) : null;
+	};
+	const planSpeechDetail: NonNullable<
+		SingingVoices["planSpeechDetail"]
+	> = async (model, text, o) => {
+		const v = await load(model);
+		return v?.planSpeechDetail ? v.planSpeechDetail(text, o) : null;
 	};
 	const peekSpeechDurationSec: NonNullable<
 		SingingVoices["peekSpeechDurationSec"]
@@ -3898,6 +3970,7 @@ export const createSingingVoices = (
 		reset,
 		setVolume,
 		planSpeech,
+		planSpeechDetail,
 		peekSpeechDurationSec,
 		getSpeechReferenceUnits,
 		prepareSpeech,
