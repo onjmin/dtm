@@ -19,6 +19,7 @@ import { composeSong } from "../src/compose";
 import { DRUM_PATTERNS, resolveDrumPattern } from "../src/drum-config";
 import { INSTRUMENT_PRESETS } from "../src/instrument-presets";
 import { exportMIDI } from "../src/midi-io";
+import { UNITS_PER_SEMITONE } from "../src/tuning";
 import type { Note } from "../src/types";
 
 const STEPS_PER_BAR = 192;
@@ -93,7 +94,19 @@ const main = async (): Promise<void> => {
 				{ notes: toNotes(song.submelody), volume: 70, program: subProg },
 				{ notes: toNotes(song.harmony), volume: 60, program: melProg },
 				{ notes: toNotes(song.harmony2), volume: 52, program: melProg },
-				{ notes: toNotes(song.octave), volume: 44, program: melProg },
+				// オクターブ重ねは音高が主旋律のままで、アプリではトラック側で
+				// 1オクターブ下げる（advanced-layers.ts の octave: -1）。同じ音高で
+				// 書き出すと主旋律を重ねただけになるので、ここでも下げる。
+				{
+					notes: toNotes(
+						song.octave.map((n) => ({
+							...n,
+							pitchUnits: n.pitchUnits - 12 * UNITS_PER_SEMITONE,
+						})),
+					),
+					volume: 44,
+					program: melProg,
+				},
 				{ notes: toNotes(song.bass), volume: 85, program: bassProg },
 				{ notes: toNotes(song.pad), volume: 50, program: chordProg },
 				{ notes: toNotes(chords), volume: 65, program: chordProg },

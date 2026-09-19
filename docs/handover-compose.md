@@ -396,6 +396,23 @@ npx tsx scripts/ab-listen.ts --variant broken --seed 20260921 --out tmp/ab-broke
 `scripts/ab-listen.ts` は残す（陽性対照・感度検査・和声付け直しの道具として再利用できる）。
 `tmp/ab-*` `tmp/abc-*` は消えてよい。
 
+### 次: 曲まるごとの聞き取り（採点ではなく仕様の聞き取り）
+
+```
+npx tsx scripts/export-samples.ts --out tmp/interview --count 3 --seed 20260922
+```
+
+出荷版そのまま（`export-samples.ts`。オクターブ重ねをアプリと同じく1オクターブ下げるよう
+直した）を3曲、まるごと。1曲ずつ聴いて `tmp/interview/_questions.md` の3問に答える。
+
+1. **出発点として使うか**（この曲を土台に手を入れるか、捨ててゼロから書くか）
+2. **最初に直す場所**（どのセクションの、どのトラックの、何）
+3. **直す理由を一言**（つまらない／おかしい／足りない／多い、など）
+
+判定は「ゼロから書くより速いか」（`compose-goal-is-editing-starting-point`）。ここで挙がる
+「最初に直す場所」が、3曲で同じトラック・同じ種類に集中するなら、それが次に手を入れる
+場所。散るなら、生成側ではなく引き直し・編集の側（UX）に価値があるという読みになる。
+
 旋律の外側。目標は「人が手を入れる出発点」（`compose-goal-is-editing-starting-point`）
 なので、価値は引き直しと編集の側にある。
 
