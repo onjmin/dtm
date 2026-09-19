@@ -17,4 +17,4 @@
  * ブラウザ向けのバンドルに `package.json` を読ませたくないので定数で持つ。
  * ずれると埋め込む値が嘘になるので、`scripts/check-version.ts` が一致を検算する。
  */
-export const DTM_VERSION = "2.1.15";
+export const DTM_VERSION = "2.1.16";
