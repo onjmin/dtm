@@ -13,9 +13,9 @@
 
 | 形式 | 埋まる場所 |
 |---|---|
-| MML | `#ver=2.1.13`（full / 共有リンク用の mini の両方） |
-| MIDI | テンポトラックのテキストメタ `dtm 2.1.13` |
-| MusicXML | `<identification><encoding><software>dtm 2.1.13` |
+| MML | `#ver=2.1.14`（full / 共有リンク用の mini の両方） |
+| MIDI | テンポトラックのテキストメタ `dtm 2.1.14` |
+| MusicXML | `<identification><encoding><software>dtm 2.1.14` |
 
 手元のファイルを見れば、この表を引いて素材の由来が分かる。
 
@@ -32,7 +32,7 @@
 
 | ライブラリ | 素材ファイル | 元データ | ライセンス | 取得日 |
 |---|---|---|---|---|
-| 〜 2.1.13 | `src/compose-corpus.ts`<br>`src/compose-phrases.ts` | `Music/_own/自作/界隈曲` 91本（**プロジェクト所有者の自作**） | 所有者に帰属 | — |
+| 〜 2.1.14 | `src/compose-corpus.ts`<br>`src/compose-phrases.ts` | `Music/_own/自作/界隈曲` 91本（**プロジェクト所有者の自作**） | 所有者に帰属 | — |
 
 現時点で**外部コーパス由来の素材は同梱していない**。
 
