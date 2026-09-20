@@ -1,6 +1,7 @@
 // 内蔵キャラクター画像。assets/*.png をビルド時に base64 data URI 化して同梱する
 // （tsup の dataurl ローダー）。外部URL依存・CORS・バージョンドリフトを回避するため。
 import fallback from "../assets/404Chip.png";
+import hibika_aru from "../assets/hibika_aru.png";
 import MGRoid from "../assets/MGRoid.png";
 import MOTRoid from "../assets/MOTRoid.png";
 import NYNRoid from "../assets/NYNRoid.png";
@@ -27,6 +28,7 @@ export const VOICE_IMAGES: Record<string, string> = {
 	MOTRoid,
 	NYNRoid,
 	uc,
+	hibika_aru,
 };
 
 /**

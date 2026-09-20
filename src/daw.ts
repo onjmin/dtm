@@ -1086,7 +1086,7 @@ const LYRIC_MODEL_CATEGORIES = [
 	},
 	{
 		label: "おんJ",
-		models: ["roze", "shiyo", "rino", "rino121", "uc"],
+		models: ["roze", "shiyo", "rino", "rino121", "uc", "hibika_aru"],
 	},
 	{
 		label: "一般",
