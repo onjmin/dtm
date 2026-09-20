@@ -27,6 +27,21 @@
  * ほぼ流通していないので見ない。和音（`<chord>`）・タイ・声部・複数パートは扱う。
  * 繰り返し記号（`<repeat>`）は**展開しない**——展開すると小節番号がずれて、
  * 取り込んだ後の編集で位置を見失う。
+ *
+ * ## 歌詞の記号と楽譜の要素
+ *
+ * 歌詞の制御記号（{@link file://./lyrics.ts}）は、楽譜ソフトが同じ意味で読み書きする
+ * 標準の要素へ写す。記号を `<text>` に文字として書くと、楽譜ソフトでは歌詞の
+ * ゴミになり、他の楽譜からは読めない。
+ *
+ * | 歌詞 | MusicXML | 備考 |
+ * |---|---|---|
+ * | `ー`（伸ばす） | 歌詞なしの音符。直前の歌詞に `<extend/>`（メリスマ線） | 読みは「歌詞の無い音符 = ー」 |
+ * | `〜`（しゃくり） | `<notations><slide type="start"/>` … `<slide type="stop"/>` | ポルタメント記号。`<glissando>` も読む |
+ * | `、`（ブレス） | `<notations><articulations><breath-mark/>` | 楽譜のブレス記号（コンマ形） |
+ * | `↓` `↑` | `<direction><direction-type><wedge type="diminuendo"/"crescendo"/>` | 音符の前に開始、伸ばした音の後に `stop` |
+ * | `っ` `_` `「…」` | `<text>` にそのまま | 楽譜側に対応物が無い |
+ * | 鼻濁音 `ガ` | `<text>` にカタカナのまま | 読み直すと同じ意味になる |
  */
 
 import { UNITS_PER_SEMITONE, type Units } from "./tuning";
@@ -44,7 +59,11 @@ export type MusicXmlNotePlacement = {
 	/** MIDIノート番号。 */
 	pitch: number;
 	durationSteps: number;
-	/** 音符に紐づいた歌詞（`<lyric><text>`）。無ければ空。 */
+	/**
+	 * 音符に紐づいた歌詞。`<lyric><text>` の文字に、楽譜の要素から起こした記号
+	 * （ブレス `、`・強弱 `↑` `↓`）を後ろへ付けた形（`displayKana` と同じ並び）。
+	 * 歌詞が無くポルタメントの着地なら `〜`、記号だけなら `ー` + 記号。無ければ空。
+	 */
 	lyric: string;
 };
 
@@ -68,6 +87,93 @@ export type MusicXmlExtraction = {
 // ============================================================
 // 読み込み
 // ============================================================
+
+/** 歌詞の制御記号（{@link file://./lyrics.ts} と同じ文字。あちらを読み込まずに済ませる）。 */
+const TIE = "ー";
+const PORTAMENTO = "〜";
+const BREATH = "、";
+const FADE_IN = "↑";
+const FADE_OUT = "↓";
+
+/** 1音の歌詞に付く、ノートを消費しない記号と、継続の種別。 */
+type LyricMarks = {
+	breath: boolean;
+	fadeIn: boolean;
+	fadeOut: boolean;
+	/** ポルタメントの着地（`<slide type="stop">`）。歌詞が無ければ `〜` になる。 */
+	slideStop: boolean;
+};
+
+/** `<note>` の記譜要素から記号を起こす。松葉は音符の前の `<direction>` で拾って渡す。 */
+const noteMarksOf = (
+	note: Element,
+	fadeIn: boolean,
+	fadeOut: boolean,
+): LyricMarks => {
+	const has = (tag: string, type?: string): boolean =>
+		Array.from(note.getElementsByTagName(tag)).some(
+			(el) => !type || el.getAttribute("type") === type,
+		);
+	return {
+		breath: has("breath-mark"),
+		fadeIn,
+		fadeOut,
+		slideStop: has("slide", "stop") || has("glissando", "stop"),
+	};
+};
+
+/** 歌詞の文字と記号を `displayKana` と同じ並び（文字 + 、 + ↑ + ↓）へ組む。 */
+const lyricWithMarks = (text: string, m: LyricMarks): string => {
+	const suffix =
+		(m.breath ? BREATH : "") +
+		(m.fadeIn ? FADE_IN : "") +
+		(m.fadeOut ? FADE_OUT : "");
+	// 歌詞の無い音符は「伸ばす」。ポルタメントの着地なら「しゃくり」。
+	// 記号だけが付いていても、記号は音符を消費しないので頭に継続記号が要る。
+	const head = text || (m.slideStop ? PORTAMENTO : suffix ? TIE : "");
+	return head + suffix;
+};
+
+/** 既にある歌詞へ記号を足す（同じ記号は重ねない）。タイで伸ばした音に使う。 */
+const appendMarks = (lyric: string, m: LyricMarks): string => {
+	let out = lyric;
+	for (const [on, mark] of [
+		[m.breath, BREATH],
+		[m.fadeIn, FADE_IN],
+		[m.fadeOut, FADE_OUT],
+	] as const) {
+		if (on && !out.includes(mark)) out += mark;
+	}
+	return out;
+};
+
+/** `displayKana` の形（文字 + 記号）を、文字と記号へ割る（書き出し用）。 */
+type LyricSyllable = {
+	text: string;
+	tie: boolean;
+	portamento: boolean;
+	breath: boolean;
+	fadeIn: boolean;
+	fadeOut: boolean;
+};
+const splitLyric = (raw: string): LyricSyllable => {
+	let text = raw;
+	const m = { breath: false, fadeIn: false, fadeOut: false };
+	while (text.length > 1) {
+		const last = text[text.length - 1];
+		if (last === BREATH) m.breath = true;
+		else if (last === FADE_IN) m.fadeIn = true;
+		else if (last === FADE_OUT) m.fadeOut = true;
+		else break;
+		text = text.slice(0, -1);
+	}
+	return {
+		text,
+		tie: text === TIE,
+		portamento: text === PORTAMENTO,
+		...m,
+	};
+};
 
 const PITCH_CLASS: Record<string, number> = {
 	C: 0,
@@ -149,6 +255,9 @@ export const parseMusicXML = (xml: string): MusicXmlExtraction => {
 		let count = 0;
 		let pitchSum = 0;
 		let lyricSeen = false;
+		/** 音符の前に置かれた松葉（`<wedge>`）。次に置く音へ `↑` / `↓` として付ける。 */
+		let pendingFadeIn = false;
+		let pendingFadeOut = false;
 
 		for (const measure of Array.from(partEl.getElementsByTagName("measure"))) {
 			measureStart += cursor;
@@ -167,6 +276,12 @@ export const parseMusicXML = (xml: string): MusicXmlExtraction => {
 					const sound = child.getElementsByTagName("sound")[0];
 					const t = Number.parseFloat(sound?.getAttribute("tempo") ?? "");
 					if (!bpm && Number.isFinite(t) && t > 0) bpm = t;
+					// 松葉の開始は次の音へ掛ける。`stop` は音符側の記号に含まれるので見ない。
+					for (const w of Array.from(child.getElementsByTagName("wedge"))) {
+						const type = w.getAttribute("type");
+						if (type === "crescendo") pendingFadeIn = true;
+						else if (type === "diminuendo") pendingFadeOut = true;
+					}
 					continue;
 				}
 				if (tag === "backup" || tag === "forward") {
@@ -189,11 +304,17 @@ export const parseMusicXML = (xml: string): MusicXmlExtraction => {
 				if (!isRest) {
 					const pitch = pitchOf(child);
 					if (pitch !== null) {
-						const lyric = textOf(
-							child.getElementsByTagName("lyric")[0],
-							"text",
-						);
-						if (lyric) lyricSeen = true;
+						// 歌詞。エリジオン（`<text>` が複数）は繋げて1音節にする。
+						const lyricEl = child.getElementsByTagName("lyric")[0];
+						const text = lyricEl
+							? Array.from(lyricEl.getElementsByTagName("text"))
+									.map((t) => t.textContent?.trim() ?? "")
+									.join("")
+							: "";
+						if (text) lyricSeen = true;
+						const marks = noteMarksOf(child, pendingFadeIn, pendingFadeOut);
+						pendingFadeIn = false;
+						pendingFadeOut = false;
 
 						// タイ。`type="stop"` は直前の同じ高さの音を伸ばす。
 						const ties = Array.from(child.getElementsByTagName("tie"));
@@ -202,6 +323,8 @@ export const parseMusicXML = (xml: string): MusicXmlExtraction => {
 						const held = tied.get(pitch);
 						if (stops && held) {
 							held.durationSteps += durSteps;
+							// 伸ばした先に付いたブレスや松葉は、伸ばした音そのものに付ける。
+							held.lyric = appendMarks(held.lyric, marks);
 							if (!starts) tied.delete(pitch);
 						} else {
 							const placed: MusicXmlNotePlacement = {
@@ -209,7 +332,7 @@ export const parseMusicXML = (xml: string): MusicXmlExtraction => {
 								startStep: Math.max(0, Math.round(start)),
 								pitch,
 								durationSteps: Math.max(1, durSteps),
-								lyric,
+								lyric: lyricWithMarks(text, marks),
 							};
 							placements.push(placed);
 							count++;
@@ -250,7 +373,11 @@ export type ExportMusicXmlPart = {
 	/** パート名。楽譜ソフトの左端に出る。 */
 	name: string;
 	notes: Note[];
-	/** 音符に付ける歌詞。`notes` と同じ並び順で対応させる。短ければ足りないぶんは付かない。 */
+	/**
+	 * 音符に付ける歌詞（`displayKana` の形: 文字 + `、` `↑` `↓`、継続は `ー` `〜`）。
+	 * `notes` と同じ並び順で対応させる。短ければ足りないぶんは付かない。
+	 * 記号は楽譜の要素（ブレス記号・松葉・メリスマ線・スライド）へ写す。
+	 */
 	lyrics?: string[];
 };
 
@@ -340,6 +467,16 @@ export const exportMusicXML = (options: ExportMusicXmlOptions): string => {
 			const bars = Math.max(1, Math.ceil(end / stepsPerBar));
 			const lines: string[] = [`  <part id="P${pi + 1}">`];
 
+			const syl = (part.lyrics ?? []).map(splitLyric);
+			/** 松葉の終わり（伸ばした音の後ろ）を待っている開始。 */
+			const openWedges: { endLi: number; number: number }[] = [];
+			/** 歌詞 `li` から続く継続（ー / 〜）の末尾の index。 */
+			const lastOfGroup = (from: number): number => {
+				let end = from;
+				while (syl[end + 1]?.tie || syl[end + 1]?.portamento) end++;
+				return end;
+			};
+
 			let li = 0;
 			for (let bar = 0; bar < bars; bar++) {
 				const from = bar * stepsPerBar;
@@ -389,22 +526,56 @@ export const exportMusicXML = (options: ExportMusicXmlOptions): string => {
 						1,
 						Math.min(Math.max(...group.map((n) => n.durationSteps)), room),
 					);
+					// この音の歌詞と、そこから起こす記譜要素。和音は先頭の音にだけ付ける。
+					const s = syl[li];
+					const next = syl[li + 1];
+					if (s?.fadeIn) {
+						openWedges.push({ endLi: lastOfGroup(li), number: 1 });
+						lines.push(
+							`      <direction placement="below"><direction-type><wedge type="crescendo" number="1"/></direction-type></direction>`,
+						);
+					}
+					if (s?.fadeOut) {
+						openWedges.push({ endLi: lastOfGroup(li), number: 2 });
+						lines.push(
+							`      <direction placement="below"><direction-type><wedge type="diminuendo" number="2"/></direction-type></direction>`,
+						);
+					}
+					const notations: string[] = [];
+					if (s?.portamento) notations.push(`<slide type="stop" number="1"/>`);
+					if (next?.portamento)
+						notations.push(`<slide type="start" number="1"/>`);
+					if (s?.breath)
+						notations.push(`<articulations><breath-mark/></articulations>`);
+					const notationsXml = notations.length
+						? `<notations>${notations.join("")}</notations>`
+						: "";
+					// 継続（ー / 〜）は歌詞の無い音符。直前の歌詞にメリスマ線を付けて繋ぐ。
+					const lyricXml =
+						s && !s.tie && !s.portamento && s.text
+							? `<lyric><syllabic>single</syllabic><text>${esc(s.text)}</text>${next?.tie || next?.portamento ? "<extend/>" : ""}</lyric>`
+							: "";
 					group.forEach((n, ni) => {
 						const semi = Math.round(n.pitchUnits / UNITS_PER_SEMITONE);
 						const [step, alter] = SHARP_SPELLING[((semi % 12) + 12) % 12];
 						const octave = Math.floor(semi / 12) - 1;
 						const { type, dots } = typeOf(dur);
-						const lyric = part.lyrics?.[li];
 						lines.push(
 							`      <note>${ni > 0 ? "<chord/>" : ""}<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ""}<octave>${octave}</octave></pitch>` +
 								`<duration>${dur}</duration><type>${type}</type>${"<dot/>".repeat(dots)}` +
-								(ni === 0 && lyric
-									? `<lyric><syllabic>single</syllabic><text>${esc(lyric)}</text></lyric>`
-									: "") +
+								(ni === 0 ? notationsXml + lyricXml : "") +
 								`</note>`,
 						);
-						if (ni === 0) li++;
 					});
+					// 松葉の終わり: 伸ばした音（継続で繋いだ最後）の後ろに置く。
+					for (let wi = openWedges.length - 1; wi >= 0; wi--) {
+						if (openWedges[wi].endLi !== li) continue;
+						lines.push(
+							`      <direction placement="below"><direction-type><wedge type="stop" number="${openWedges[wi].number}"/></direction-type></direction>`,
+						);
+						openWedges.splice(wi, 1);
+					}
+					li++;
 					cursor = at + dur;
 				}
 				if (cursor < to) {

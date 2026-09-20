@@ -116,6 +116,81 @@ console.log("● MusicXML 往復");
 }
 
 {
+	// --- 歌詞の記号が楽譜の要素として往復するか ---
+	// ブレス → <breath-mark/>、伸ばす → 歌詞なし + <extend/>、しゃくり → <slide>、
+	// 強弱 → <wedge>。っ / _ / 「…」 / 鼻濁音のカタカナは文字のまま。
+	const lyrics = [
+		"あ、",
+		"ー",
+		"〜",
+		"い↓",
+		"ー",
+		"う↑",
+		"っ",
+		"_",
+		"ガ",
+		"「はい」",
+	];
+	const notes = lyrics.map((_, i) => note(i * 48, 60 + (i % 5), 48));
+	const xml = exportMusicXML({
+		parts: [{ name: "Vocal", notes, lyrics }],
+		bpm: 120,
+		stepsPerBar: STEPS_PER_BAR,
+	});
+	check("ブレス記号が出る", xml.includes("<breath-mark/>"));
+	check("メリスマ線が出る", xml.includes("<extend/>"));
+	check(
+		"スライドが対で出る",
+		xml.includes('<slide type="start"') && xml.includes('<slide type="stop"'),
+	);
+	check(
+		"松葉が対で出る",
+		xml.includes('<wedge type="diminuendo"') &&
+			xml.includes('<wedge type="crescendo"') &&
+			(xml.match(/<wedge type="stop"/g) ?? []).length === 2,
+	);
+	check(
+		"記号は歌詞の文字に混ざらない",
+		!/<text>[^<]*[、↑↓ー〜][^<]*<\/text>/.test(xml),
+	);
+	check(
+		"継続の音符には歌詞が無い",
+		(xml.match(/<lyric>/g) ?? []).length === 7,
+		String((xml.match(/<lyric>/g) ?? []).length),
+	);
+	const back = parseMusicXML(xml);
+	const got = back.placements
+		.sort((a, b) => a.startStep - b.startStep)
+		.map((p) => p.lyric || "ー");
+	check("記号つきで戻る", got.join("") === lyrics.join(""), got.join(""));
+}
+
+{
+	// --- 楽譜ソフトが書く形を読む ---
+	// MuseScore 等の書き方: extend に type、breath-mark は articulations の中、
+	// 松葉は number 無し、タイの続きの音にブレス。
+	const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>V</part-name></score-part></part-list>
+<part id="P1"><measure number="1"><attributes><divisions>2</divisions></attributes>
+<direction><direction-type><wedge type="diminuendo"/></direction-type></direction>
+<note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>あ</text><extend type="start"/></lyric></note>
+<note><pitch><step>D</step><octave>4</octave></pitch><duration>2</duration><type>quarter</type><lyric number="1"><extend type="stop"/></lyric></note>
+<direction><direction-type><wedge type="stop"/></direction-type></direction>
+<note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><type>quarter</type><tie type="start"/><lyric><text>い</text></lyric></note>
+<note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><type>quarter</type><tie type="stop"/><notations><articulations><breath-mark/></articulations></notations></note>
+</measure></part></score-partwise>`;
+	const back = parseMusicXML(xml);
+	const got = back.placements
+		.sort((a, b) => a.startStep - b.startStep)
+		.map((p) => `${p.lyric || "ー"}:${p.durationSteps}`);
+	check(
+		"楽譜ソフトの書き方が読める",
+		got.join(" ") === "あ↓:48 ー:48 い、:96",
+		got.join(" "),
+	);
+}
+
+{
 	// --- 複数パート ---
 	const xml = exportMusicXML({
 		parts: [
@@ -188,4 +263,4 @@ if (failed > 0) {
 	console.error(`\n${failed} 件失敗`);
 	process.exit(1);
 }
-console.log("  往復・歌詞・複数パート・自動作曲の出力、すべて一致");
+console.log("  往復・歌詞・記号・複数パート・自動作曲の出力、すべて一致");

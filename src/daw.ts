@@ -672,6 +672,16 @@ const MUSICXML_INFO_HTML = `
     <li>「MIDI / MusicXML / UST / MML 出力」の「MusicXML出力」で、全トラックを <code>score-partwise</code> 形式の MusicXML ファイルとして書き出せます。</li>
     <li>音符やトラック名に加えて、設定された歌詞もそのまま楽譜の歌詞として出力されます。</li>
   </ul>
+
+  <h4>4. 歌詞の記号と楽譜の記号</h4>
+  <p>歌詞の制御記号は楽譜ソフトが同じ意味で読み書きする要素へ写します（読み込みも同じ対応で戻します）。</p>
+  <ul>
+    <li><code>ー</code> <strong>伸ばす</strong> … 歌詞の無い音符 + メリスマ線（<code>extend</code>）</li>
+    <li><code>〜</code> <strong>しゃくり</strong> … スライド記号（<code>slide</code>。<code>glissando</code> も読めます）</li>
+    <li><code>、</code> <strong>ブレス</strong> … ブレス記号（<code>breath-mark</code>、コンマ形）</li>
+    <li><code>↓</code> <code>↑</code> <strong>強弱</strong> … 松葉（<code>wedge</code> の diminuendo / crescendo）</li>
+    <li><code>っ</code> <code>_</code> <code>「…」</code> 鼻濁音の <code>ガ</code> … 楽譜側に対応物が無いので歌詞の文字のまま</li>
+  </ul>
 </div>
 `;
 
