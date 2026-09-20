@@ -4,9 +4,6 @@
  * - 入力: 注入された parseMidi（midi-parser-js 互換）の戻り値を解析し、
  *   チャンネルを melody/submelody/bass/chord へ自動分類してノート配置を返す。
  * - 出力: トラック群とドラムパターンから .mid バイナリ(Blob)を生成する。
- *
- * 旧 demo/index.html の analyzeMidiTracks / getBPM / parseMidiWithSelection /
- * exportMIDI を移植・整理したもの。
  */
 
 import { DRUM_KEYS, type DrumPattern } from "./drum-config";

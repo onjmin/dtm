@@ -24,15 +24,12 @@
 /**
  * ピッチの単位を型で区別するためのブランド。
  *
- * `Units` と `MidiNote` はどちらも実体は number だが、互いに代入できない。
- * これは「半音の数値を units のつもりで使う」「units を SoundFont の
- * MIDIノート番号として渡す」といった取り違えを**コンパイラに検出させる**ため。
- * 単位の取り違えは型が同じ number である限り一切検出できず、実際に
- * 「楽器音が無音」「オクターブユニゾンが0.4半音ずれる」「多音階音源のサンプル
- * 選択が常に最高音になる」といった不具合を作り込んだ。
+ * `Units` と `MidiNote` はどちらも実体は number だが、互いに代入できない。「半音の数値を
+ * units のつもりで使う」「units を SoundFont の MIDIノート番号として渡す」といった取り違えを
+ * **コンパイラに検出させる**ため——単位の取り違えは型が同じ number である限り一切検出できない。
  *
- * 生の number から作るときは {@link units} / {@link midiNote} を通す。
- * 変換は {@link midiToUnits} / {@link unitsToMidi} など、この module の関数に集約する。
+ * 生の number から作るときは {@link units} / {@link midiNote} を通す。変換は
+ * {@link midiToUnits} / {@link unitsToMidi} など、この module の関数に集約する。
  */
 declare const UNITS_BRAND: unique symbol;
 declare const MIDI_BRAND: unique symbol;

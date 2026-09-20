@@ -2,8 +2,6 @@
  * 再生シーケンサ。タイムライン計算と先読みスケジューリングを担い、
  * 実際の発音は注入されたフック（onPlayNote / onPlayDrum）へ委譲する。
  * 描画（プレイヘッド・オートスクロール）は onTick 経由で呼び出し側へ。
- *
- * 旧 demo/index.html の startPlayback / updatePlayback / stopPlayback を移植・整理。
  */
 
 import type { DrumPattern } from "./drum-config";
@@ -289,11 +287,9 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		// ドラム（小節ループ）。実際の音量スケールは onPlayDrum 側で適用する。
 		//
 		// メロディックノートと同様に「どこまで予約したか」をカーソルで持ち、
-		// (drumCursor, drumScanTo] の半開区間だけを1回ずつ予約する。
-		// 以前は毎ティック「現在位置から4step先まで」の窓を丸ごと走査していたため、
-		// 窓幅(4step)がティック間隔(20ms)より広い通常のテンポでは同じ一打が2〜6回
-		// 重複して予約され、同じ時刻に音が重なって不自然に大きく鳴っていた
-		// （逆に極端な高速テンポでは窓がティック間隔より狭くなり打ち漏らしていた）。
+		// (drumCursor, drumScanTo] の半開区間だけを1回ずつ予約する。固定幅の窓を毎ティック走査すると、
+		// 窓幅がティック間隔より広い通常のテンポでは同じ一打を重複予約して音が重なり、逆に極端な
+		// 高速テンポでは窓が狭くなって打ち漏らす。
 		const { stepsPerBar } = options;
 		const currentStep = getWrappedPlayStep(time, sps);
 		// ループで先頭へ巻き戻ったらカーソルもループ先頭へ戻す

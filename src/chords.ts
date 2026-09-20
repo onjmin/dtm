@@ -1,9 +1,8 @@
 /**
  * コード進行文字列を伴奏トラックのノート配置へ展開する。
  *
- * parseChord / parseChords は外部実装を注入する想定。
- * 旧 demo/index.html の applyChordProgression を移植・整理し、
- * 実際のノート追加を行わず配置（placement）の配列を返す純関数にした。
+ * parseChord / parseChords は外部実装を注入する想定。実際のノート追加は行わず、配置
+ * （placement）の配列を返す純関数。
  */
 
 import { parseChord, parseChords } from "@onjmin/chord-parser";
@@ -42,21 +41,12 @@ export type ApplyChordOptions = {
 const C3 = 48;
 
 /**
- * コード進行 → 伴奏ノート配置。
- */
-/**
  * 12平均律の半音 → 31平均律（ミーントーン）の度数。移調量の変換に使う。
  * 三全音(6半音)だけは増4度(15)と減5度(16)に分かれるが、移調では和音の質が
  * 分からないので狭い側（減5度）を採る。
  */
 const MEANTONE_STEP_BY_SEMITONE = [0, 3, 5, 8, 10, 13, 16, 18, 21, 23, 26, 28];
 
-/**
- * 伴奏の基準音（C3）に移調量を足した位置を units で返す。
- *
- * 移調（`rootShift`）は12平均律の半音で指定されるので、31平均律ではミーントーンの
- * 度数（{@link MEANTONE_STEP_BY_SEMITONE}）へ写してから足す。
- */
 /**
  * 12平均律の半音で表した移調量を、その音律の units へ写す。
  *

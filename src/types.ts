@@ -707,14 +707,15 @@ export type DawOptions = {
 		/** 吹き出しの文言の差し替え（日本語以外へ差し替えるとき）。 */
 		labels?: Partial<import("./tour").TourLabels>;
 	};
+	/** MIDI検索クライアントの設定（未指定なら検索UI非表示）。 */
+	midiSearch?: MidiSearchConfig;
 	/**
-	 * シンプルモードでトラック数超過コンテンツを読み込もうとしたとき、上級者モードへの切替を要求するコールバック。
-	 * `mountModeSwitch` が自動的に接続する。未接続なら確認モーダルは表示しない。
+	 * シンプルモードでトラック数超過コンテンツを読み込もうとしたとき、上級者モードへの切替を
+	 * 要求するコールバック。`mountModeSwitch` が自動的に接続する。未接続なら確認モーダルは
+	 * 表示しない。
 	 * - MML読み込み時: `pendingMml` にMML文字列が渡され、`applyMidi` は undefined。
 	 * - MIDI読み込み時: `pendingMml` は undefined、`applyMidi` に新DAWへ適用する関数が渡される。
 	 */
-	/** MIDI検索クライアントの設定（未指定なら検索UI非表示）。 */
-	midiSearch?: MidiSearchConfig;
 	onRequestAdvancedMode?: (
 		pendingMml?: string,
 		applyMidi?: (daw: DawInstance) => void,

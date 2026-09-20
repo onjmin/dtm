@@ -441,11 +441,9 @@ export const mountMmlPlayer = (
 	};
 	const drumPatternName = meta.drum ?? "none";
 
-	// `#volume=`（meta.volume）は「曲全体の音量」なので、エディタ（daw.ts）と同じく
-	// masterVolume 側へ入れる。以前はこれを trackVolume 側へ入れており、masterVolume は
-	// 既定の50のまま据え置かれていた。その結果 `#volume=` を持つMMLでは
-	// トラック音量(meta.volume) × マスタ音量(50) と二段掛けになり、同じMMLでも
-	// 再生専用プレイヤーだけエディタのちょうど半分の音量で鳴っていた。
+	// `#volume=`（meta.volume）は「曲全体の音量」なので、エディタ（daw.ts）と同じく masterVolume
+	// 側へ入れる。trackVolume 側へ入れると masterVolume が既定のまま据え置かれ、二段掛けになって
+	// 再生専用プレイヤーだけエディタのちょうど半分の音量で鳴る。
 	const trackVolume = options.volume ?? 100;
 	let masterVolume = meta.volume ?? options.masterVolume ?? 50;
 	const drumVolume = meta.drumVolume ?? 80;

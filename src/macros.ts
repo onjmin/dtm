@@ -1,3 +1,4 @@
+import type { MMLCore } from "./mml-core";
 import {
 	UNITS_PER_OCTAVE,
 	UNITS_PER_SEMITONE,
@@ -5,14 +6,6 @@ import {
 	units,
 } from "./tuning";
 import { PITCH_RANGE_END, PITCH_RANGE_START } from "./types";
-/**
- * 打ち込み補助マクロ群。MMLCore を直接操作する。
- *
- * 旧 demo/index.html の generateRandomPattern / applyHarmonicFilterMacro /
- * applyMonophonicMacro / shiftAllNotes を移植・整理したもの。
- */
-
-import type { MMLCore } from "./mml-core";
 
 const SCALES = [
 	[0, 2, 4, 5, 7, 9, 11], // Major
@@ -20,9 +13,6 @@ const SCALES = [
 	[0, 2, 4, 7, 9], // Pentatonic Major
 ];
 
-/**
- * アクティブトラックにスケールに沿ったランダムなノートを8小節分配置する。
- */
 /**
  * 12平均律の半音 → 31平均律（ミーントーン）の度数。
  * 三全音(6半音)だけは増4度(15)と減5度(16)に分かれるが、ここでは音階生成用なので
