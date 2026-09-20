@@ -266,6 +266,21 @@ wself.onmessage = async (ev) => {
 		speechAborts.get(msg.id)?.abort();
 		return;
 	}
+	if (msg.type === "pcm") {
+		const { id, alias } = msg;
+		try {
+			const raw = bank ? await getPcm(alias) : null;
+			if (raw) {
+				const pcm = Float32Array.from(raw);
+				wself.postMessage({ type: "pcm", id, pcm }, [pcm.buffer]);
+			} else {
+				wself.postMessage({ type: "pcm", id, pcm: null });
+			}
+		} catch {
+			wself.postMessage({ type: "pcm", id, pcm: null });
+		}
+		return;
+	}
 	if (msg.type === "speak") {
 		const { id, plan, gender, breathiness, tension, energyDbPerSemitone } = msg;
 		// 語りは WORLD 再合成必須（素片フォールバックでは文にならない）。

@@ -220,10 +220,13 @@ c  d  e  f   g    ← 音符5つ</pre>
     <li><code>〜</code> <strong>しゃくり</strong>（波ダッシュ）… <code>ー</code> と同じですが、<strong>時間を掛けて</strong>滑らせます（ポルタメント／スラー）。</li>
     <li><code>っ</code> <strong>詰まる</strong>（小さい「つ」）… 音符を1つ消費して無音にします（促音）。</li>
     <li><code>_</code> <strong>歌わない</strong>（アンダースコア）… 音符を1つ消費しますが何も鳴りません（歌だけ休む）。</li>
-    <li><code>、</code> <strong>ブレス</strong>（読点）… <strong>音符は消費せず</strong>、直前の音を少し短くして息継ぎを入れます。</li>
+    <li><code>、</code> <strong>ブレス</strong>（読点）… <strong>音符は消費せず</strong>、直前の音を少し短くして息継ぎを入れます。音源が息継ぎの素片（<code>息</code> <code>息短</code> <code>b1</code> など）を持っていればその声で、無ければ吸う息の形をしたノイズで鳴ります。</li>
     <li><code>↓</code> <strong>だんだん小さく</strong>（下向き矢印）… <strong>音符は消費せず</strong>、その音を歌ったまま声量を落とします。複数書くと減り方を刻めます。</li>
     <li><code>↑</code> <strong>だんだん大きく</strong>（上向き矢印）… <code>↓</code> の対。小さく入って声量を上げていきます。</li>
     <li><code>「…」</code> <strong>語り</strong>（かぎ括弧）… 囲んだ部分を歌わずに<strong>読み上げ</strong>ます。括弧ひとかたまりで音符を1つ消費し、その音符の位置から話し始めます。</li>
+    <li><code>ガ</code> <strong>鼻濁音</strong>（カタカナのガ行、または <code>が゜</code>）… 音源が鼻濁音の素片を持っていればそれで歌います（重音テト・欲音ルコ♀）。無ければふつうのガ行です。</li>
+    <li><code>ヴァ</code> <strong>ヴ</strong>… 音源にヴの素片があればそれで、無ければバ行で歌います。</li>
+    <li>旋律の<strong>休符のあと</strong>は語頭として歌い直し、フレーズの終わり（休符・ブレス・行末の前）は音源に語尾の素片（<code>a R</code>）があればそれで抜きます。</li>
   </ul>
   <p><small>全角チルダ <code>～</code> は <code>〜</code>、半角カンマ <code>,</code> は <code>、</code>、<code>⇩</code> <code>⬇</code> は <code>↓</code>、<code>⇧</code> <code>⬆</code> は <code>↑</code> として扱われます。これら以外の記号（英数字・スペース・句読点など）は無視されます（<code>「…」</code> の中だけは例外で、そのまま読み上げに渡されます）。</small></p>
 

@@ -62,6 +62,8 @@ import { VIBRATO_MIN_SEC } from "./vibrato";
 import type {
 	VoiceWorkerInit,
 	VoiceWorkerOutbound,
+	VoiceWorkerPcm,
+	VoiceWorkerPcmReq,
 	VoiceWorkerRendered,
 	VoiceWorkerRenderReq,
 	VoiceWorkerSpeakAbort,
@@ -150,14 +152,47 @@ const kanaTable: Record<string, [string, string]> = {
 	ぷ: ["p", "u"],
 	ぺ: ["p", "e"],
 	ぽ: ["p", "o"],
+	ゔ: ["v", "u"],
 	ん: ["N", "N"],
 };
+
+/**
+ * 同じ発音で別の綴りのかな。音源に綴りが無いとき（つくよみちゃん・ロゼ・リノ0.3 に
+ * ぢ・づが無い）に、同じ音の素片で歌うための対応。
+ */
+const SAME_SOUND_KANA: Record<string, string> = {
+	ぢ: "じ",
+	づ: "ず",
+	ぢゃ: "じゃ",
+	ぢゅ: "じゅ",
+	ぢょ: "じょ",
+};
+
+/** ヴ系の代用（音源にヴが無いとき）。日本語の慣習どおりバ行で近似する。 */
+const V_TO_B_KANA: Record<string, string> = {
+	a: "ば",
+	i: "び",
+	u: "ぶ",
+	e: "べ",
+	o: "ぼ",
+};
+
+/** ひらがなをカタカナへ（音源のカタカナ別名を引くため）。 */
+const toKatakana = (kana: string): string =>
+	kana.replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60));
 
 /**
  * 直前のかなと結合して1音節を成す「小さいかな」（拗音・小さい母音）。
  * 促音「っ」は sanitizeText の時点で除去済みのためここには現れない。
  */
 const SMALL_KANA = "ぁぃぅぇぉゃゅょ";
+
+/**
+ * 鼻濁音の印（半濁点 `゜`）。`が゜` / `か゚` は鼻濁音の標準的な書き方で、
+ * カタカナのガ行（`ガ`）も同じ意味に畳む（UTAU音源の慣習に合わせる）。
+ * 直前のかなへ付いて1音節になる。
+ */
+const NASAL_MARK = "゜";
 
 /** 母音文字（あ・い・う・え・お）。長音記号の置換先に使う */
 const VOWEL_KANA: Record<string, string> = {
@@ -270,6 +305,13 @@ const sanitizeSpeech = (text: string): string =>
 const sanitizeText = (text: string): string =>
 	text
 		.normalize("NFKC")
+		// 結合半濁点（NFKC で `゜` もこれに分解される）→ 鼻濁音の印
+		.replace(/\u309a/g, NASAL_MARK)
+		// カタカナのガ行は鼻濁音（音源の慣習）。ひらがな + 印へ畳んでから一般の畳み込みへ
+		.replace(
+			/[ガギグゲゴ]/g,
+			(c) => String.fromCharCode(c.charCodeAt(0) - 0x60) + NASAL_MARK,
+		)
 		// カタカナ(ァ-ヶ)→ひらがなへ寄せる
 		.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
 		// 記号の異体字を正規形へ寄せる
@@ -278,8 +320,8 @@ const sanitizeText = (text: string): string =>
 		// 上下矢印の異体字を正規形へ寄せる（↡ ⇩ ⬇ / ↟ ⇧ ⬆ など）
 		.replace(/[↡⇩⬇🡇]/gu, FADE_OUT_MARK)
 		.replace(/[↟⇧⬆🡅]/gu, FADE_IN_MARK)
-		// ひらがな(ぁ-ゖ)と制御記号以外を破棄
-		.replace(/[^ぁ-ゖー〜_、↓↑]/g, "");
+		// ひらがな(ぁ-ゖ)と制御記号・鼻濁音の印以外を破棄
+		.replace(/[^ぁ-ゖー〜_、↓↑゜]/g, "");
 
 /**
  * 文字列を音節単位へ分解する。
@@ -291,12 +333,14 @@ const splitSyllables = (text: string): string[] => {
 	const result: string[] = [];
 	for (const ch of text) {
 		const prev = result[result.length - 1];
-		if (
-			prev !== undefined &&
-			SMALL_KANA.includes(ch) &&
-			!MARKS.includes(prev[prev.length - 1])
-		) {
+		const attachable =
+			prev !== undefined && !MARKS.includes(prev[prev.length - 1]);
+		if (attachable && SMALL_KANA.includes(ch)) {
 			result[result.length - 1] += ch;
+		} else if (ch === NASAL_MARK) {
+			// 鼻濁音の印は直前のかなへ付く。付く相手が無ければ捨てる（音節にはしない）。
+			if (attachable && !prev.includes(NASAL_MARK))
+				result[result.length - 1] += ch;
 		} else {
 			result.push(ch);
 		}
@@ -340,6 +384,10 @@ const analyzeSyllable = (syllable: string): LyricSyllable => {
 	if (syllable === REST_MARK)
 		return { kana: syllable, consonant: "", vowel: "", kind: "rest" };
 
+	// 鼻濁音の印は綴りから外し、フラグとして持つ（"ぎ゜ゃ" → "ぎゃ" + nasal）。
+	const nasal = syllable.includes(NASAL_MARK);
+	if (nasal) syllable = syllable.replace(NASAL_MARK, "");
+
 	const head = syllable[0];
 	const row = kanaTable[head];
 	const consonant = row ? row[0] : "";
@@ -351,7 +399,9 @@ const analyzeSyllable = (syllable: string): LyricSyllable => {
 		const v = kanaToVowel(syllable[1]);
 		if (v) vowel = v;
 	}
-	return { kana: syllable, consonant, vowel };
+	return nasal
+		? { kana: syllable, consonant, vowel, nasal: true }
+		: { kana: syllable, consonant, vowel };
 };
 
 /**
@@ -445,7 +495,9 @@ export const displayKana = (syl: LyricSyllable): string => {
 				? REST_MARK
 				: syl.kind === "speak"
 					? `${SPEAK_OPEN}${syl.text ?? syl.kana}${SPEAK_CLOSE}`
-					: syl.kana;
+					: syl.nasal
+						? toKatakana(syl.kana) // 鼻濁音はカタカナで書き戻す（読み直せば同じ印になる）
+						: syl.kana;
 	let out = syl.breathAfter ? head + BREATH_MARK : head;
 	// 併記の順は ↑↓ に正規化する（スウェルは書いた順を問わないため）。
 	if (syl.fadeIn) out += FADE_IN_MARK;
@@ -935,6 +987,24 @@ export type VoiceModel = {
 	) => void;
 	/** スケジュール済みの発音をすべて即停止する（停止・一時停止・シーク時）。 */
 	stopAll?: () => void;
+	/**
+	 * 語尾の素片（連続音バンクの `a R` `n R` 等: 母音が自然に抜けていく収録）を
+	 * 目標ピッチで合成してキャッシュへ積み、キーを返す。音源に無ければ null
+	 * （呼び出し側はゲインのフェードだけで終える従来どおりになる）。
+	 * 長さは素片の固定範囲（抜けの部分）から決めるので、呼び出し側は指定しない。
+	 */
+	renderEndingToCache?: (
+		vowel: string,
+		pitch: Units,
+		expr?: VoiceExpression,
+	) => Promise<string | null>;
+	/**
+	 * 音源が持つ息継ぎ素片（`息` `息短` `b1` など）を、`targetSec` の隙間に
+	 * いちばん合う長さのものから選んで AudioBuffer で返す。素片は最大振幅1へ正規化済み。
+	 * 音源に息継ぎ素片が無ければ null（呼び出し側はノイズ合成へ落とす）。
+	 * 選択は音素表の長さだけで決めるので、同じ素片は1度しか取得しない。
+	 */
+	breathSample?: (targetSec: number) => Promise<AudioBuffer | null>;
 	/**
 	 * 語り（`「…」`）を合成してキャッシュへ積み、再生に使うキャッシュキーを返す。
 	 * 計画（読み・韻律・ユニット選択）が出来た時点で返り、合成はチャンクごとに裏で続く
@@ -1571,42 +1641,91 @@ export const createSpeechToneView = (
  *
  * 見つからなければ母音単独へフォールバックし、それも無ければ null。
  */
-const resolveKoeAlias = (
-	hasAlias: (alias: string) => boolean,
-	pitchTokens: PitchToken[],
+/**
+ * 音節と直前母音から、音源へ問い合わせるエイリアス候補を優先順で作る（純粋関数）。
+ *
+ * 命名の幅（単独音 "か" / 連続音 "a か" "- か" / ローマ字 "ka"）に加えて、
+ * 音源に「本来あるのに引けていなかった」素片を拾う:
+ *  - 鼻濁音（{@link LyricSyllable.nasal}）: カタカナ別名（"ガ" / "a ガ"）を最優先。
+ *  - ヴ系: 音源の綴りは "ヴぁ"（ヴ+小書きひらがな）か "ヴァ"（全角カタカナ）。
+ *    どちらも無ければバ行で近似する。
+ *  - ぢ・づ: 同じ音の じ・ず（{@link SAME_SOUND_KANA}）。母音だけに落とす前に試す。
+ *  - 語中の柔らかい立ち上がり "* あ"（重音テト単独音）: 語頭でないときに素の "あ" より優先。
+ * 最後は母音単体、撥音は "ん" "n" "N" へ落とす。
+ */
+export const koeAliasCandidates = (
 	syl: LyricSyllable,
 	prevVowel: string,
-	noteNum: number,
-): string | null => {
+): string[] => {
 	const kana = syl.kana;
 	const cons = syl.consonant === "N" ? "n" : syl.consonant;
 	const vow = syl.vowel === "N" ? "" : syl.vowel;
 	const romaji = `${cons}${vow}` || vow;
 	const pv = prevVowel || "-"; // 直前母音が無ければ語頭扱い
+	const raw: string[] = [];
+	const push = (...cs: string[]): void => {
+		for (const c of cs) if (c && !raw.includes(c)) raw.push(c);
+	};
+
+	// 鼻濁音: カタカナ別名を最優先（無ければ通常のガ行へ落ちる）
+	if (syl.nasal) {
+		const kata = toKatakana(kana);
+		push(`${pv} ${kata}`, kata);
+	}
+	// ヴ系: 綴りの流儀が2つある
+	if (cons === "v") {
+		const small = kana.slice(1);
+		const forms = small ? [`ヴ${small}`, toKatakana(`ゔ${small}`)] : ["ヴ"];
+		for (const f of forms) push(`${pv} ${f}`, f);
+	}
+	const alt = SAME_SOUND_KANA[kana];
 
 	// 継続（ー / 〜）は「言い直さない」音なので、子音つきの候補を一切引かない。
-	// 同母音の連続音（"a あ"）→ 母音単体（"あ" / "a"）の順で、当たりの柔らかい素片を選ぶ。
-	const raw: string[] =
-		syl.kind === "tie"
-			? [
-					`${syl.vowel === "N" ? "n" : syl.vowel} ${kana}`,
-					`${pv} ${kana}`,
-					kana,
-				]
-			: [
-					// 連続音（VCV）: 直前母音つき
-					`${pv} ${kana}`,
-					`${pv} ${romaji}`,
-					// 単独音 / CVVC
-					kana,
-					romaji,
-				];
+	// 同母音の連続音（"a あ"）→ 柔らかい "* あ" → 母音単体（"あ" / "a"）の順で、
+	// 当たりの柔らかい素片を選ぶ。
+	if (syl.kind === "tie") {
+		push(
+			`${syl.vowel === "N" ? "n" : syl.vowel} ${kana}`,
+			`${pv} ${kana}`,
+			`* ${kana}`,
+			kana,
+		);
+	} else {
+		// 連続音（VCV）: 直前母音つき
+		push(`${pv} ${kana}`);
+		if (alt) push(`${pv} ${alt}`);
+		push(`${pv} ${romaji}`);
+		// 語中の柔らかい立ち上がり（語頭には使わない）
+		if (pv !== "-") push(`* ${kana}`);
+		// 単独音 / CVVC
+		push(kana);
+		if (alt) push(alt);
+		push(romaji);
+	}
+	// ヴが無い音源はバ行で近似
+	if (cons === "v" && vow) {
+		const b = V_TO_B_KANA[vow];
+		push(`${pv} ${b}`, b, `b${vow}`);
+	}
 	// 母音フォールバック
 	const vk = VOWEL_KANA[syl.vowel];
-	if (vk) raw.push(`${pv} ${vk}`, vk, syl.vowel);
+	if (vk) push(`${pv} ${vk}`, vk, syl.vowel);
 	// 撥音(ん)
-	if (syl.vowel === "N") raw.push("ん", "n", "N", `${pv} ん`);
+	if (syl.vowel === "N") push("ん", "n", "N", `${pv} ん`);
+	return raw;
+};
 
+/**
+ * 候補列を音源に突き合わせて、最初に実在するエイリアスを返す。
+ * 多音階バンクは目標ノートに近いピッチ順で接尾辞を付けて試し（pitch優先・base副次）、
+ * その後で素のキーを試す。区切りの異体（全角空白・無し）も {@link expandSeparators} で吸収する。
+ */
+const matchAliases = (
+	hasAlias: (alias: string) => boolean,
+	pitchTokens: PitchToken[],
+	raw: readonly string[],
+	noteNum: number,
+): string | null => {
 	const seen = new Set<string>();
 	const tryAlias = (candidate: string): string | null => {
 		for (const v of expandSeparators(candidate)) {
@@ -1616,8 +1735,6 @@ const resolveKoeAlias = (
 		}
 		return null;
 	};
-
-	// 多音階: 目標ノートに近いピッチ順で base に接尾辞を付けて試す（pitch優先・base副次）。
 	if (pitchTokens.length) {
 		const nearest = pitchTokens
 			.slice()
@@ -1629,19 +1746,44 @@ const resolveKoeAlias = (
 			}
 		}
 	}
-
-	// bare エイリアス（接尾辞なしバンク or 多音階で素のキーも持つバンク）
 	for (const base of raw) {
 		const hit = tryAlias(base);
 		if (hit) return hit;
 	}
+	return null;
+};
+
+const resolveKoeAlias = (
+	hasAlias: (alias: string) => boolean,
+	pitchTokens: PitchToken[],
+	syl: LyricSyllable,
+	prevVowel: string,
+	noteNum: number,
+): string | null => {
+	const hit = matchAliases(
+		hasAlias,
+		pitchTokens,
+		koeAliasCandidates(syl, prevVowel),
+		noteNum,
+	);
+	if (hit) return hit;
 
 	// 子音単体＋母音単体エイリアスの合成フォールバック（例: 音源に "ka" が無くても
 	// "k" と "a" の単体データがあれば繋ぎ合わせて代用する）。多音階バンク（ピッチ接尾辞
 	// 付き）は組み合わせ爆発を避けるため非対応、bareエイリアスのみで試す。
+	const cons = syl.consonant === "N" ? "n" : syl.consonant;
+	const vow = syl.vowel === "N" ? "" : syl.vowel;
+	const pv = prevVowel || "-";
 	if (cons && vow) {
-		const vowelAlias = tryAlias(vow) ?? tryAlias(`${pv} ${vow}`);
-		const consAlias = vowelAlias ? tryAlias(cons) : null;
+		const vowelAlias = matchAliases(
+			hasAlias,
+			[],
+			[vow, `${pv} ${vow}`],
+			noteNum,
+		);
+		const consAlias = vowelAlias
+			? matchAliases(hasAlias, [], [cons], noteNum)
+			: null;
 		if (vowelAlias && consAlias)
 			return packCompositeAlias(consAlias, vowelAlias);
 	}
@@ -1753,6 +1895,8 @@ type RenderBackend = {
 	) => Promise<BackendRender>;
 	/** 音源マニフェストの音素表（語りの計画に使う）。 */
 	phonemes: Record<string, PhonemeEntry>;
+	/** エイリアスの素片PCM（Float32 @48kHz、oto の範囲で切り出し済み）を加工せず返す。 */
+	getPcm: (alias: string) => Promise<Float32Array | null>;
 	/**
 	 * 語りの計画（エイリアスは実在名へ写し済み）を worldline でチャンクごとに合成する。
 	 * チャンクは出来た順に `onChunk` へ渡し、全部終わったら解決する（打ち切り・失敗でも
@@ -1921,6 +2065,7 @@ const createLocalBackend = async (
 		pitchTokens: collectPitchTokens(Object.keys(bank.manifest.phonemes)),
 		renderAlias,
 		phonemes: bank.manifest.phonemes,
+		getPcm: (a) => getPcm(a).then((p) => (p ? Float32Array.from(p) : null)),
 		renderSpeech,
 		dispose: () => {},
 	};
@@ -1946,6 +2091,7 @@ const createWorkerBackend = async (
 	const aliasSet = new Set<string>();
 	let phonemes: Record<string, PhonemeEntry> = {};
 	const pending = new Map<number, (m: VoiceWorkerRendered) => void>();
+	const pcmPending = new Map<number, (m: VoiceWorkerPcm) => void>();
 	/** 進行中の語り合成（id → チャンク受け取りと完了）。 */
 	const speechPending = new Map<
 		number,
@@ -1967,6 +2113,12 @@ const createWorkerBackend = async (
 			const cb = pending.get(m.id);
 			if (cb) {
 				pending.delete(m.id);
+				cb(m);
+			}
+		} else if (m.type === "pcm") {
+			const cb = pcmPending.get(m.id);
+			if (cb) {
+				pcmPending.delete(m.id);
 				cb(m);
 			}
 		} else if (m.type === "speech-chunk") {
@@ -2059,6 +2211,17 @@ const createWorkerBackend = async (
 			} satisfies VoiceWorkerSpeakReq);
 		});
 
+	const getPcm = (alias: string): Promise<Float32Array | null> =>
+		new Promise((resolve) => {
+			const id = ++reqId;
+			pcmPending.set(id, (m) => resolve(m.pcm));
+			worker.postMessage({
+				type: "pcm",
+				id,
+				alias,
+			} satisfies VoiceWorkerPcmReq);
+		});
+
 	return {
 		hasAlias: (a) => aliasSet.has(a),
 		pitchTokens: collectPitchTokens(aliasSet),
@@ -2066,6 +2229,7 @@ const createWorkerBackend = async (
 		get phonemes() {
 			return phonemes;
 		},
+		getPcm,
 		renderSpeech,
 		dispose: () => worker.terminate(),
 	};
@@ -2824,7 +2988,117 @@ export const createKoeVoice = async (
 		prevVowel = "";
 	};
 
+	// 語尾素片（"a R" 等）。母音の抜けを音源の収録で終える。
+	model.renderEndingToCache = async (vowel, pitch, expr) => {
+		if (!vowel) return null;
+		const bases = vowel === "N" ? ["n R", "N R"] : [`${vowel} R`];
+		const alias = matchAliases(
+			backend.hasAlias,
+			backend.pitchTokens,
+			bases,
+			unitsToMidiFloat(pitch),
+		);
+		if (!alias) return null;
+		// 固定範囲（抜けそのもの）は伸縮させず、その後ろに短い余白を足すだけにする。
+		const entry = backend.phonemes[alias];
+		const fixedMs = entry
+			? Math.max(0, ((entry.consonant - entry.pre) / KOE_SAMPLE_RATE) * 1000)
+			: 0;
+		const dMs = Math.min(
+			ENDING_MAX_MS,
+			Math.max(ENDING_MIN_MS, fixedMs + ENDING_TAIL_MS),
+		);
+		const r = await renderInto(alias, pitch, dMs, false, expr);
+		return r ? keyOf(alias, pitch, dMs, false, expr) : null;
+	};
+
+	// 息継ぎ素片。エイリアス選定は音素表の長さだけで済ませ、PCM は素片ごとに1度だけ引く。
+	const breathBuffers = new Map<string, Promise<AudioBuffer | null>>();
+	model.breathSample = (targetSec) => {
+		const alias = pickBreathAlias(backend.phonemes, targetSec);
+		if (!alias) return Promise.resolve(null);
+		let p = breathBuffers.get(alias);
+		if (!p) {
+			p = backend.getPcm(alias).then((pcm) => {
+				if (!pcm || pcm.length === 0) return null;
+				let peak = 0;
+				for (let i = 0; i < pcm.length; i++) {
+					const v = Math.abs(pcm[i]);
+					if (v > peak) peak = v;
+				}
+				if (peak <= 0) return null;
+				const buf = ctx.createBuffer(1, pcm.length, KOE_SAMPLE_RATE);
+				const ch = buf.getChannelData(0);
+				const scale = 1 / peak;
+				for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] * scale;
+				return buf;
+			});
+			breathBuffers.set(alias, p);
+		}
+		return p;
+	};
+
 	return model;
+};
+
+/**
+ * 音源の息継ぎ素片のエイリアスかどうか。
+ *
+ * 手元の UTAU 音源を洗った命名（oto.ini のエイリアス側）:
+ *   - 重音テト（エクストラ）: `息1` `息2` `息3` と、その別名 `b1` `b2` `b3`
+ *   - 蓄音キリコ: `息`
+ *   - 束音ロゼ: `息短` `息短2` `息中` `息深` `息深2`（拡張音声は `息（短）拡` 等）
+ *   - 欲音ルコ♀: `息1`〜`息3`、吐く息 `息吐1` `息吐2`
+ *   - 英語圏の慣習: `br` `br1` `breath`
+ * 除くもの: `息吐`（吐く息＝語尾の抜け）、`a息 R`（母音の後の吐息。テトの `_あb.wav`）、
+ * `巻`（巻き舌）。ブレス記号 `、` は吸気なので、吸う素片だけを拾う。
+ */
+export const isBreathAlias = (alias: string): boolean => {
+	const a = alias.trim();
+	if (/吐/.test(a)) return false;
+	if (/^_?息/.test(a)) return true;
+	return /^_?(br|breath)\d*$/i.test(a) || /^b\d$/i.test(a);
+};
+
+/**
+ * 隙間 `targetSec` にいちばん合う息継ぎ素片を音素表から選ぶ。
+ *
+ * 吸気は終わり際（発声直前）が山なので、隙間より長い素片は尻を揃えて頭を切れば
+ * 自然に収まる。逆に短すぎる素片は伸ばせない。そこで「隙間以上でいちばん短いもの」を
+ * 第一候補にし、無ければ「いちばん長いもの」を選ぶ。ただし極端に長い素片
+ * （深い息）は頭を切っても質感が違うので、上限を超えるものは後回しにする。
+ */
+export const pickBreathAlias = (
+	phonemes: Record<string, PhonemeEntry>,
+	targetSec: number,
+): string | null => {
+	const want = Math.max(0.05, targetSec) * KOE_SAMPLE_RATE;
+	const maxLen = BREATH_SAMPLE_MAX_SEC * KOE_SAMPLE_RATE;
+	// 第1候補: 隙間以上・上限以下でいちばん短い。第2候補: 隙間以上でいちばん短い
+	// （深い息しか無いなら、頭を切る量が少ないほう）。第3候補: いちばん長い。
+	let fit: string | null = null;
+	let fitLen = 0;
+	let over: string | null = null;
+	let overLen = 0;
+	let longest: string | null = null;
+	let longestLen = 0;
+	for (const [alias, entry] of Object.entries(phonemes)) {
+		if (!isBreathAlias(alias)) continue;
+		const len = entry.length;
+		if (len >= want && len <= maxLen && (!fit || len < fitLen)) {
+			fit = alias;
+			fitLen = len;
+		}
+		if (len >= want && (!over || len < overLen)) {
+			over = alias;
+			overLen = len;
+		}
+		if (!longest || len > longestLen) {
+			longest = alias;
+			longestLen = len;
+		}
+	}
+	return fit ?? over ?? longest;
 };
 
 /** ストリーミング再生する歌唱ノート1つ（絶対時刻ベース）。 */
@@ -2857,6 +3131,22 @@ export type StreamVoiceNote = {
 	 */
 	breath?: boolean;
 	/**
+	 * ブレスのために `durationSec` から実際に削った長さ（秒）。息はこの隙間を
+	 * 埋めるように鳴る（短い音符では {@link BREATH_MAX_RATIO} で隙間も短くなる）。
+	 */
+	breathGapSec?: number;
+	/**
+	 * 直前のノートとの間に {@link PHRASE_GAP_SEC} 以上の休符がある（旋律側の休符）。
+	 * 歌詞に `_` が無くても声は一度止まっているので、語頭（"- か"）として歌う。
+	 */
+	phraseStart?: boolean;
+	/**
+	 * このノートでフレーズが終わる（次が休符・語り・ブレス・行末、または旋律側の
+	 * {@link PHRASE_GAP_SEC} 以上の隙間）。音源に語尾の素片があればそれで抜く。
+	 * 促音（っ）の前は閉鎖であって抜けではないので立てない。`↓` で消える音にも立てない。
+	 */
+	phraseEnd?: boolean;
+	/**
 	 * このノートを歌いながら声量0へ落とす（`↓`）。継続記号で結合されたグループの
 	 * どこに `↓` が付いていても、**結合後の1音全体**に掛かる。
 	 */
@@ -2880,14 +3170,50 @@ export type StreamVoiceNote = {
  */
 export const TIE_MERGE_MAX_SEC = 4;
 
-/** ブレス（`、`）で直前ノートから削る長さ（秒）。息そのものの長さも兼ねる。 */
-const BREATH_SEC = 0.16;
+/**
+ * ブレス（`、`）で直前ノートから削る長さ（秒）。吸気1回ぶんの隙間。
+ * 0.16 では息というより子音の破裂（「ツ」）に聞こえたので、吸う時間を確保する。
+ */
+const BREATH_SEC = 0.24;
 
-/** ブレス音の音量（歌唱のピークに対する比）。歌を邪魔しない程度に控えめ。 */
-const BREATH_PEAK_SCALE = 0.16;
+/**
+ * 息が次の音の頭へ食い込む長さ（秒）。実際の歌唱でも吸気は発声の直前まで続き、
+ * 声が出た瞬間に隠れる。隙間の中だけで完結させると「間が空いてから歌う」に聞こえる。
+ */
+const BREATH_TAIL_SEC = 0.05;
+
+/** 息の最短長（秒）。速い曲で隙間が小さくても、これより短くすると子音に戻る。 */
+const BREATH_MIN_SEC = 0.14;
+
+/** ブレス音の音量（歌唱のピークに対する比）。帯域が広いぶん、旧値より少し上げても目立たない。 */
+const BREATH_PEAK_SCALE = 0.18;
+
+/**
+ * 音源の息継ぎ素片で鳴らすときの最大振幅（トラック音量に対する比）。素片は最大振幅1へ
+ * 正規化してあるので、歌のピーク（素片の生の振幅×音量）よりおよそ 10dB 下になる。
+ */
+const BREATH_SAMPLE_PEAK = 0.3;
+
+/** 息継ぎ素片としてそのまま使う長さの上限（秒）。これより長い深い息は他に無いときだけ使う。 */
+const BREATH_SAMPLE_MAX_SEC = 0.9;
+
+/** 息継ぎ素片の頭に掛けるフェード（秒）。頭を切って使うときのクリック防止と、吸気の膨らみ。 */
+const BREATH_SAMPLE_FADE_IN_SEC = 0.06;
 
 /** ブレスで削ってよい直前ノートの割合の上限（短い音符を消してしまわないため）。 */
 const BREATH_MAX_RATIO = 0.4;
+
+/**
+ * 旋律の休符をフレーズの切れ目とみなす最短の隙間（秒）。これ以上空いていれば
+ * 歌い手は一度声を止めているので、前は語尾の素片で抜き、次は語頭（"- か"）で入る。
+ * これより短い隙間はスタッカート扱いで、声の文脈（直前母音）は繋いだままにする。
+ */
+export const PHRASE_GAP_SEC = 0.15;
+
+/** 語尾素片の合成長（ms）の下限・上限と、固定範囲の後ろへ足す余白。 */
+const ENDING_MIN_MS = 150;
+const ENDING_MAX_MS = 500;
+const ENDING_TAIL_MS = 80;
 
 /**
  * `↓` / `↑` を1音へ複数書いたときの、声量の中継点列を作る。
@@ -2981,12 +3307,20 @@ export const buildStreamVoiceNotes = (
 	const pitchOf = (n: TieSourceNote): Units =>
 		units(n.pitchUnits + octaveShiftUnits);
 
+	/** 2つのノートの間の隙間（秒）。重なっていれば負。 */
+	const gapSec = (a: TieSourceNote, b: TieSourceNote): number =>
+		(b.startStep - (a.startStep + a.durationSteps)) * secondsPerStep;
+
 	let i = 0;
 	while (i < count) {
+		const headIdx = i;
 		const head = sorted[i];
 		const syl = syllables[i];
 		i++;
 		if (head.startStep < fromStep) continue; // シークで切り落とされたノート
+		// 旋律側の休符明け（歌詞に `_` が無くても声は止まっている）
+		const phraseStart =
+			headIdx > 0 && gapSec(sorted[headIdx - 1], head) >= PHRASE_GAP_SEC;
 
 		// 先頭が継続記号 = 結合相手を失った継続（シークで頭が切られた等）。
 		// 言い直さないことだけは守り、ここから新しい結合グループを始める。
@@ -3032,14 +3366,30 @@ export const buildStreamVoiceNotes = (
 		const fadeOut = fadeOutParts.length > 0;
 		const fadeIn = fadeInParts.length > 0;
 
+		// フレーズの終わり: 次が無い・休符・語り・ブレス、または旋律側の隙間。
+		// 促音の前は閉鎖（抜けではない）、`↓` で消える音は抜く声が無い。
+		const next = i < count ? syllables[i] : null;
+		const phraseEnd =
+			sungHead &&
+			syl.vowel !== "" &&
+			!fadeOut &&
+			(breath ||
+				next === null ||
+				next.kind === "rest" ||
+				next.kind === "speak" ||
+				(next.kind !== "stop" && gapSec(last, sorted[i]) >= PHRASE_GAP_SEC));
+
 		// 結合後の全長 = 先頭の開始から最終区間の（ゲート適用済み）終端まで。
 		let durationSec =
 			(last.startStep - head.startStep) * secondsPerStep + gatedSec(last);
+		let breathGapSec = 0;
 		if (breath) {
-			durationSec = Math.max(
+			const cut = Math.max(
 				durationSec * (1 - BREATH_MAX_RATIO),
 				durationSec - BREATH_SEC,
 			);
+			breathGapSec = durationSec - cut;
+			durationSec = cut;
 		}
 
 		// 中継点は「同じ向きの記号が2つ以上」のときだけ。スウェル（`↑` と `↓` の
@@ -3060,7 +3410,9 @@ export const buildStreamVoiceNotes = (
 			durationSec,
 			...(segments.length ? { pitchSegments: segments } : {}),
 			...(continuation ? { continuation: true } : {}),
-			...(breath ? { breath: true } : {}),
+			...(breath ? { breath: true, breathGapSec } : {}),
+			...(phraseStart ? { phraseStart: true } : {}),
+			...(phraseEnd ? { phraseEnd: true } : {}),
 			...(fadeOut ? { fadeOut: true } : {}),
 			...(fadeIn ? { fadeIn: true } : {}),
 			...(fadeCurve ? { fadeCurve } : {}),
@@ -3389,41 +3741,41 @@ export const createSingingVoices = (
 	const activeBreaths = new Set<AudioBufferSourceNode>();
 
 	/**
-	 * ブレス（`、`）を鳴らす。音源の素片には頼らず、帯域を絞ったノイズで作る。
-	 *
-	 * UTAU音源の息継ぎ素片（`息` `br` 等）は存在するバンクとしないバンクがあり、
-	 * エイリアス名も揃っていない。ブレスは「どの音源でも同じように効く表現」で
-	 * あってほしいので、音源非依存のノイズで統一する。
+	 * 音源の息継ぎ素片でブレスを鳴らす。素片の**尻**を次の音の頭（隙間の終わり +
+	 * {@link BREATH_TAIL_SEC}）へ揃える。吸気は発声の直前が山なので、隙間より長い素片は
+	 * 頭を切り、短い素片は隙間の途中から始める。
 	 */
-	const scheduleBreath = (
+	const scheduleBreathSample = (
+		buffer: AudioBuffer,
 		t0: number,
+		gapSec: number,
 		peak: number,
 		pan: number,
 		destOverride?: AudioNode,
 	): void => {
-		const dur = BREATH_SEC;
-		const startAt = Math.max(ctx.currentTime + 0.001, t0);
-		const length = Math.max(1, Math.floor(ctx.sampleRate * dur));
-		const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
-		const data = buffer.getChannelData(0);
-		for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+		const endAt = t0 + Math.max(BREATH_MIN_SEC, gapSec) + BREATH_TAIL_SEC;
+		const slot = endAt - t0;
+		const len = buffer.duration;
+		// 素片の尻を endAt に揃える。隙間より長い素片は頭を切る。
+		let playFrom = Math.max(0, len - slot);
+		let startAt = endAt - (len - playFrom);
+		const now = ctx.currentTime + 0.001;
+		if (startAt < now) {
+			playFrom += now - startAt;
+			startAt = now;
+		}
+		if (endAt - startAt < 0.03) return; // もう間に合わない
+		const top = Math.max(0.0001, peak * BREATH_SAMPLE_PEAK);
+		const fadeIn = Math.min(BREATH_SAMPLE_FADE_IN_SEC, (endAt - startAt) / 2);
+		const fadeOut = Math.min(BREATH_TAIL_SEC, (endAt - startAt) / 2);
 
 		const src = ctx.createBufferSource();
 		src.buffer = buffer;
-		// 息の帯域（子音のノイズより低く、広め）。ささやきに近い質感になる。
-		const bp = ctx.createBiquadFilter();
-		bp.type = "bandpass";
-		bp.frequency.value = 1400;
-		bp.Q.value = 0.7;
-
 		const env = ctx.createGain();
-		// 吸う息は「すっ」と立ち上がって緩やかに引く。前半で山を作る。
 		env.gain.setValueAtTime(0.0001, startAt);
-		env.gain.exponentialRampToValueAtTime(
-			Math.max(0.0001, peak * BREATH_PEAK_SCALE),
-			startAt + dur * 0.35,
-		);
-		env.gain.exponentialRampToValueAtTime(0.0001, startAt + dur);
+		env.gain.exponentialRampToValueAtTime(top, startAt + fadeIn);
+		env.gain.setValueAtTime(top, endAt - fadeOut);
+		env.gain.exponentialRampToValueAtTime(0.0001, endAt);
 
 		let out: AudioNode = destOverride ?? masterGain;
 		let panner: StereoPannerNode | null = null;
@@ -3433,14 +3785,109 @@ export const createSingingVoices = (
 			panner.connect(out);
 			out = panner;
 		}
-		src.connect(bp).connect(env).connect(out);
+		src.connect(env).connect(out);
+		src.start(startAt, playFrom);
+		src.stop(endAt + 0.02);
+		activeBreaths.add(src);
+		src.onended = () => {
+			activeBreaths.delete(src);
+			src.disconnect();
+			env.disconnect();
+			panner?.disconnect();
+		};
+	};
+
+	/**
+	 * ブレス（`、`）をノイズで作る（音源に息継ぎ素片が無いときの経路）。
+	 *
+	 * UTAU音源の息継ぎ素片は存在するバンクとしないバンクがあり、内蔵カタログでは
+	 * ロゼとルコ♀だけが持つ（テト単独音の .koe はエクストラ音声を含めずに変換されている）。
+	 * 素片があればそちら（{@link scheduleBreathSample}）を使い、無いバンクではこの
+	 * ノイズで「どの音源でも同じように効く表現」を保つ。
+	 *
+	 * 「息」に聞こえるかどうかは形で決まる。子音（「ツ」「ス」）は短く・速く立ち上がり・
+	 * 帯域が狭い。吸気は逆で、ゆっくり膨らんで発声の直前で止まり、口が開くにつれて
+	 * 高い成分が増える広帯域の「はっ」になる。ここではその3点を作る。
+	 *
+	 * - 長さ: 直前ノートから削った隙間 + 次の音の頭へ少し食い込むぶん（{@link BREATH_TAIL_SEC}）。
+	 * - 包絡: 6割の位置が山。立ち上がりは2乗で遅く、山のあとは滑らかに0へ。
+	 * - 帯域: 350Hz以上をローパスで上限し、上限を吸気中に 1.6k→3.4kHz へ開く。
+	 *   1.1kHz を軽く持ち上げて声道の色を付ける。
+	 */
+	const scheduleBreath = (
+		t0: number,
+		gapSec: number,
+		peak: number,
+		pan: number,
+		destOverride?: AudioNode,
+	): void => {
+		const dur = Math.max(BREATH_MIN_SEC, gapSec) + BREATH_TAIL_SEC;
+		const startAt = Math.max(ctx.currentTime + 0.001, t0);
+		const length = Math.max(1, Math.floor(ctx.sampleRate * dur));
+		const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+		const data = buffer.getChannelData(0);
+		for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+
+		const src = ctx.createBufferSource();
+		src.buffer = buffer;
+		// 低域は喉鳴りに聞こえるので落とす。
+		const hp = ctx.createBiquadFilter();
+		hp.type = "highpass";
+		hp.frequency.value = 350;
+		hp.Q.value = 0;
+		// 上限を吸気中に開いていく（口が開く）。狭いバンドパスは摩擦子音になるので使わない。
+		const lp = ctx.createBiquadFilter();
+		lp.type = "lowpass";
+		lp.Q.value = 0;
+		lp.frequency.setValueAtTime(1600, startAt);
+		lp.frequency.exponentialRampToValueAtTime(3400, startAt + dur * 0.7);
+		// 声道の色。中域を軽く持ち上げるだけで、山は作らない。
+		const color = ctx.createBiquadFilter();
+		color.type = "peaking";
+		color.frequency.value = 1100;
+		color.Q.value = 0.8;
+		color.gain.value = 5;
+
+		// 包絡は曲線をそのまま置く（指数ランプは立ち上がりが速すぎて子音になる）。
+		const env = ctx.createGain();
+		const points = 96;
+		const curve = new Float32Array(points);
+		const crest = 0.6;
+		const top = Math.max(0.0001, peak * BREATH_PEAK_SCALE);
+		for (let i = 0; i < points; i++) {
+			const x = i / (points - 1);
+			let g: number;
+			if (x < crest) {
+				const s = x / crest;
+				g = s * s * (3 - 2 * s);
+				g *= g; // 2乗して立ち上がりをさらに遅く
+			} else {
+				const s = (x - crest) / (1 - crest);
+				g = 1 - s * s * (3 - 2 * s);
+			}
+			curve[i] = top * g;
+		}
+		env.gain.setValueAtTime(0, startAt);
+		env.gain.setValueCurveAtTime(curve, startAt, dur);
+
+		let out: AudioNode = destOverride ?? masterGain;
+		let panner: StereoPannerNode | null = null;
+		if (typeof ctx.createStereoPanner === "function") {
+			panner = ctx.createStereoPanner();
+			panner.pan.value = Math.max(-1, Math.min(1, pan));
+			panner.connect(out);
+			out = panner;
+		}
+		src.connect(hp).connect(lp).connect(color).connect(env).connect(out);
 		src.start(startAt);
 		src.stop(startAt + dur + 0.02);
 		activeBreaths.add(src);
 		src.onended = () => {
 			activeBreaths.delete(src);
 			src.disconnect();
-			bp.disconnect();
+			hp.disconnect();
+			lp.disconnect();
+			color.disconnect();
 			env.disconnect();
 			panner?.disconnect();
 		};
@@ -3518,6 +3965,8 @@ export const createSingingVoices = (
 		let prevVowel = "";
 		for (const note of track.notes) {
 			const syl = note.syllable;
+			// 旋律側の休符明けも語頭（歌詞の `_` と同じ扱い）
+			if (note.phraseStart) prevVowel = "";
 			// 休符(_)は歌わないうえ、母音の文脈もここで切る（次は語頭 "- か" として歌う）
 			if (syl.kind === "rest") {
 				prevVowel = "";
@@ -3558,6 +4007,10 @@ export const createSingingVoices = (
 		for (const track of tracks) {
 			const m = loaded.get(track.model.toLowerCase());
 			if (!m?.renderToCache) continue; // klatt等（軽量）は先合成不要
+			// 息継ぎ素片は音源ごとに1度引けば足りる。最初のブレスがノイズへ落ちないよう先に取る。
+			if (m.breathSample && track.notes.some((n) => n.breath)) {
+				void m.breathSample(BREATH_SEC).catch(() => null);
+			}
 			let n = 0;
 			const expr: VoiceExpression = {
 				gender: track.gender,
@@ -3854,15 +4307,68 @@ export const createSingingVoices = (
 					for (const offset of octaveUnisonOffsets(track.octaveUnison)) {
 						dispatchNote(offset, OCTAVE_UNISON_PEAK_SCALE);
 					}
-					// ブレス（、）は音源に依存しないノイズで作る。歌の直後へ差し込む。
+					// フレーズの終わりは音源の語尾素片（"a R"）で抜く。無い音源は従来どおり
+					// ゲインのフェードで終わる。主声だけに付ける（ユニゾンの副声には付けない）。
+					if (
+						note.phraseEnd &&
+						model.renderEndingToCache &&
+						model.scheduleCached
+					) {
+						const renderEnding = model.renderEndingToCache;
+						const scheduleCached = model.scheduleCached;
+						// 継続で結合された音は最後の区間のピッチで抜く
+						const endPitch = note.pitchSegments?.length
+							? units(note.pitchSegments[note.pitchSegments.length - 1].pitch)
+							: note.pitch;
+						const tEnd = t0 + note.durationSec;
+						void (async () => {
+							const key = await renderEnding(note.syllable.vowel, endPitch, {
+								gender: track.gender,
+								breathiness: track.breathiness,
+								tension: track.tension,
+							});
+							if (session !== streamSession || !key) return;
+							if (ctx.currentTime > tEnd - 0.05) return; // 間に合わなければ付けない
+							const dest = options.getTrackDestination?.(track.id ?? "");
+							scheduleCached(
+								key,
+								tEnd,
+								dest ? peak * masterVolumeScalar : peak,
+								track.pan,
+								track.reverbSend,
+								track.delaySend,
+								dest,
+							);
+						})();
+					}
+					// ブレス（、）。音源に息継ぎ素片があればそれを、無ければノイズを歌の直後へ差し込む。
+					// 素片の取得は待たない（先読みの余裕内に届かなければノイズへ落とす）。
 					if (note.breath) {
 						const breathDest = options.getTrackDestination?.(track.id ?? "");
-						scheduleBreath(
-							t0 + note.durationSec,
-							breathDest ? peak * masterVolumeScalar : peak,
-							track.pan,
-							breathDest,
-						);
+						const breathAt = t0 + note.durationSec;
+						const gap = note.breathGapSec ?? BREATH_SEC;
+						const breathPeak = breathDest ? peak * masterVolumeScalar : peak;
+						const placeNoise = () =>
+							scheduleBreath(breathAt, gap, breathPeak, track.pan, breathDest);
+						const sample = model.breathSample?.(gap);
+						if (!sample) placeNoise();
+						else {
+							sample
+								.then((buf) => {
+									if (session !== streamSession) return;
+									if (buf && ctx.currentTime < breathAt - 0.01) {
+										scheduleBreathSample(
+											buf,
+											breathAt,
+											gap,
+											breathPeak,
+											track.pan,
+											breathDest,
+										);
+									} else placeNoise();
+								})
+								.catch(placeNoise);
+						}
 					}
 					// klatt等（軽量・状態なし）はawaitが無く同期で回るため、UI応答性のため1音ごとに制御を返す。
 					if (!(model.renderToCache && model.scheduleCached)) {
