@@ -1466,6 +1466,59 @@ export const KOE_VOICEBANK_LABELS: Record<string, string> = {
 };
 
 /**
+ * 音源プルダウンの大分類（optgroup）。歌唱モデルの選択 UI（mountDAW）と、
+ * 読み上げ（{@link DtmStudio.speak}）を使う側の音源選択 UI で共通に使う。
+ *
+ * 分類に載せ忘れたキーが選べなくなると音源が増やせないので、実際の並びは
+ * {@link groupVoiceModels} が作り、ここに無いキーは「その他」へ落とす。
+ */
+export const VOICE_MODEL_CATEGORIES: ReadonlyArray<{
+	label: string;
+	models: readonly string[];
+}> = [
+	{ label: "kusaプリセット", models: ["klatt", "tsukuyomi"] },
+	{
+		label: "おんJ",
+		models: ["roze", "shiyo", "rino", "rino121", "uc", "hibika_aru"],
+	},
+	{ label: "一般", models: ["teto", "rei", "ruko_male", "ruko_female"] },
+	{ label: "クッキー☆", models: ["mgroid", "motroid", "nynroid"] },
+];
+
+/** {@link groupVoiceModels} が返す 1 グループ（`<optgroup>` 1 つぶん）。 */
+export type VoiceModelGroup = {
+	label: string;
+	models: { value: string; label: string }[];
+};
+
+/**
+ * 音源一覧（キーワード → 表示名）を {@link VOICE_MODEL_CATEGORIES} の大分類へ分ける。
+ * 渡された `names` に載っているキーだけを返すので、歌唱用（klatt 込み＝
+ * {@link KOE_VOICEBANK_LABELS} + klatt）でも読み上げ用（klatt は語れないので
+ * {@link KOE_VOICEBANK_NAMES} だけ）でも同じ関数で組める。
+ * 分類に無いキーは末尾の「その他」にまとめる（音源を足した日に選べなくならないように）。
+ */
+export const groupVoiceModels = (
+	names: Record<string, string>,
+): VoiceModelGroup[] => {
+	const rest = new Set(Object.keys(names));
+	const groups: VoiceModelGroup[] = [];
+	for (const cat of VOICE_MODEL_CATEGORIES) {
+		const models = cat.models
+			.filter((m) => rest.delete(m))
+			.map((m) => ({ value: m, label: names[m] ?? m }));
+		if (models.length > 0) groups.push({ label: cat.label, models });
+	}
+	if (rest.size > 0) {
+		groups.push({
+			label: "その他",
+			models: [...rest].map((m) => ({ value: m, label: names[m] ?? m })),
+		});
+	}
+	return groups;
+};
+
+/**
  * モデルキーワード → 内蔵キャラクター画像キー（voice-images.ts の VOICE_IMAGES キー）。
  * klatt合成は "puyuyu"、koe音源は音源名に対応する画像キーを返す。
  */

@@ -58,6 +58,7 @@ import {
 import {
 	buildStreamVoiceNotes,
 	displayKana,
+	groupVoiceModels,
 	isValidHttpUrl,
 	KOE_VOICEBANK_LABELS,
 	KOE_VOICEBANK_TERMS,
@@ -1090,26 +1091,6 @@ const pickComposeVocal = (exclude?: string | null): string => {
  * 常設にする理由は無い。伴奏の層は**奏法そのもの**を変え、主旋律の重ねはユニゾンも引き、
  * ベースの重ねは既定で出さない（{@link ArrangePlan}）。
  */
-
-/** 内蔵モデルのカテゴリ定義（プルダウンの optgroup 表示用） */
-const LYRIC_MODEL_CATEGORIES = [
-	{
-		label: "kusaプリセット",
-		models: ["klatt", "tsukuyomi"],
-	},
-	{
-		label: "おんJ",
-		models: ["roze", "shiyo", "rino", "rino121", "uc", "hibika_aru"],
-	},
-	{
-		label: "一般",
-		models: ["teto", "rei", "ruko_male", "ruko_female"],
-	},
-	{
-		label: "クッキー☆",
-		models: ["mgroid", "motroid", "nynroid"],
-	},
-];
 
 /** 内蔵モデルキーワード → プルダウン表示名 */
 const BASE_LYRIC_MODEL_LABELS: Record<string, string> = {
@@ -4506,12 +4487,13 @@ export const mountDAW = (
 			};
 			addOpt(lyricModelSel, "", "ボーカルなし");
 
-			// カテゴリごとに optgroup を作成して追加
-			for (const cat of LYRIC_MODEL_CATEGORIES) {
+			// カテゴリごとに optgroup を作成して追加。分類は lyrics.ts が持ち、
+			// そこに載っていない内蔵モデルは「その他」に出る（増やした日に消えないように）
+			for (const cat of groupVoiceModels(BASE_LYRIC_MODEL_LABELS)) {
 				const group = document.createElement("optgroup");
 				group.label = cat.label;
 				for (const m of cat.models) {
-					addOpt(group, m, lyricModelLabel(m, customVocalsMap));
+					addOpt(group, m.value, lyricModelLabel(m.value, customVocalsMap));
 				}
 				lyricModelSel.appendChild(group);
 			}

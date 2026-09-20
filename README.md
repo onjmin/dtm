@@ -764,6 +764,17 @@ const info = await studio.planSpeech("こんにちは。", { model: "tsukuyomi",
 `.prepareSpeech(models, { onProgress })` が同じものです。音源選択 UI のラベルには
 `KOE_VOICEBANK_NAMES`（キーワード → 音源名）が使えます。
 
+音源のプルダウンを作るときは、`groupVoiceModels(names)` で大分類（`<optgroup>`）に分けられます。
+mountDAW の歌唱モデル選択と同じ分類（`VOICE_MODEL_CATEGORIES`）で、**渡した一覧に載っているキーだけ**を
+返すので、読み上げ用なら `KOE_VOICEBANK_NAMES`（語れない `klatt` は最初から入らない）、歌唱用なら
+`klatt` を足した一覧を渡します。分類に無いキーは末尾の「その他」に入るので、音源を足した日に
+選択肢から消えることはありません。
+
+```ts
+const groups = groupVoiceModels(KOE_VOICEBANK_NAMES);
+// [{ label: "kusaプリセット", models: [{ value: "tsukuyomi", label: "つくよみちゃん" }] }, …]
+```
+
 ---
 
 ## UST（UTAU）の読み込み・書き出し
