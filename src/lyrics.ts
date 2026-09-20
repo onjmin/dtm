@@ -1413,7 +1413,7 @@ export const KOE_VOICEBANKS: Record<string, string> = {
 	roze: "束音ロゼver0.５1(多音階).koe",
 	ruko_male: "欲音ルコ♂連続音Ver.1.03.koe",
 	ruko_female: "欲音ルコ♀歌連続音普1.00.koe",
-	teto: "重音テト単独音.koe",
+	teto: "TETO-tandoku-100619.koe",
 	shiyo: "革命シヨ.koe",
 	rei: "足立レイver3.5.0.koe",
 	mgroid: "MGRoid_原音設定済み.koe",
