@@ -999,10 +999,10 @@ export type VoiceModel = {
 		expr?: VoiceExpression,
 	) => Promise<string | null>;
 	/**
-	 * 音源が持つ息継ぎ素片（`息` `息短` `b1` など）を、`targetSec` の隙間に
-	 * いちばん合う長さのものから選んで AudioBuffer で返す。素片は最大振幅1へ正規化済み。
-	 * 音源に息継ぎ素片が無ければ null（呼び出し側はノイズ合成へ落とす）。
-	 * 選択は音素表の長さだけで決めるので、同じ素片は1度しか取得しない。
+	 * 音源が持つ息継ぎ素片（`息` `息短` `b1` など）から、吸う形（包絡の山が後ろ寄り）で
+	 * `targetSec` の隙間にいちばん合う長さのものを選んで AudioBuffer で返す。
+	 * 素片は最大振幅1へ正規化済み。音源に息継ぎ素片が無ければ null
+	 * （呼び出し側はノイズ合成へ落とす）。候補の PCM は音源ごとに1度だけまとめて引く。
 	 */
 	breathSample?: (targetSec: number) => Promise<AudioBuffer | null>;
 	/**
@@ -3012,31 +3012,53 @@ export const createKoeVoice = async (
 		return r ? keyOf(alias, pitch, dMs, false, expr) : null;
 	};
 
-	// 息継ぎ素片。エイリアス選定は音素表の長さだけで済ませ、PCM は素片ごとに1度だけ引く。
-	const breathBuffers = new Map<string, Promise<AudioBuffer | null>>();
-	model.breathSample = (targetSec) => {
-		const alias = pickBreathAlias(backend.phonemes, targetSec);
-		if (!alias) return Promise.resolve(null);
-		let p = breathBuffers.get(alias);
-		if (!p) {
-			p = backend.getPcm(alias).then((pcm) => {
-				if (!pcm || pcm.length === 0) return null;
-				let peak = 0;
-				for (let i = 0; i < pcm.length; i++) {
-					const v = Math.abs(pcm[i]);
-					if (v > peak) peak = v;
-				}
-				if (peak <= 0) return null;
-				const buf = ctx.createBuffer(1, pcm.length, KOE_SAMPLE_RATE);
-				const ch = buf.getChannelData(0);
-				const scale = 1 / peak;
-				for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] * scale;
-				return buf;
-			});
-			breathBuffers.set(alias, p);
-		}
-		return p;
+	// 息継ぎ素片。候補は音素表で決め、PCM は音源ごとに1度だけまとめて引く。
+	// 吸う息か吐く息かは名前では分からない（テトの 息3 は山が頭にある＝吐く形）ので、
+	// 包絡の山の位置（{@link breathPeakPosition}）で見分け、吸う形を優先して選ぶ。
+	let breathCatalog: Promise<BreathSample[]> | null = null;
+	const loadBreathCatalog = (): Promise<BreathSample[]> => {
+		breathCatalog ??= (async () => {
+			const seen = new Set<string>();
+			const picks: string[] = [];
+			for (const [alias, entry] of Object.entries(backend.phonemes)) {
+				if (!isBreathAlias(alias)) continue;
+				// 同じ収録の別名（テトの b1 = 息1）は1つでよい。.koe は別名ごとに PCM を
+				// 複製して詰めるので offset では見分けられず、oto 由来の値の組で見る。
+				const key = `${entry.length}:${entry.pre}:${entry.consonant}:${entry.pitch}`;
+				if (seen.has(key)) continue;
+				seen.add(key);
+				picks.push(alias);
+				if (picks.length >= BREATH_CATALOG_MAX) break;
+			}
+			const out: BreathSample[] = [];
+			await Promise.all(
+				picks.map(async (alias) => {
+					const pcm = await backend.getPcm(alias).catch(() => null);
+					if (!pcm || pcm.length === 0) return;
+					let peak = 0;
+					for (let i = 0; i < pcm.length; i++) {
+						const v = Math.abs(pcm[i]);
+						if (v > peak) peak = v;
+					}
+					if (peak <= 0) return;
+					const buffer = ctx.createBuffer(1, pcm.length, KOE_SAMPLE_RATE);
+					const ch = buffer.getChannelData(0);
+					const scale = 1 / peak;
+					for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] * scale;
+					out.push({
+						alias,
+						buffer,
+						sec: pcm.length / KOE_SAMPLE_RATE,
+						peakAt: breathPeakPosition(pcm, KOE_SAMPLE_RATE),
+					});
+				}),
+			);
+			return out;
+		})();
+		return breathCatalog;
 	};
+	model.breathSample = async (targetSec) =>
+		pickBreathSample(await loadBreathCatalog(), targetSec)?.buffer ?? null;
 
 	return model;
 };
@@ -3071,34 +3093,102 @@ export const isBreathAlias = (alias: string): boolean => {
 export const pickBreathAlias = (
 	phonemes: Record<string, PhonemeEntry>,
 	targetSec: number,
-): string | null => {
-	const want = Math.max(0.05, targetSec) * KOE_SAMPLE_RATE;
-	const maxLen = BREATH_SAMPLE_MAX_SEC * KOE_SAMPLE_RATE;
-	// 第1候補: 隙間以上・上限以下でいちばん短い。第2候補: 隙間以上でいちばん短い
-	// （深い息しか無いなら、頭を切る量が少ないほう）。第3候補: いちばん長い。
-	let fit: string | null = null;
-	let fitLen = 0;
-	let over: string | null = null;
-	let overLen = 0;
-	let longest: string | null = null;
-	let longestLen = 0;
-	for (const [alias, entry] of Object.entries(phonemes)) {
-		if (!isBreathAlias(alias)) continue;
-		const len = entry.length;
-		if (len >= want && len <= maxLen && (!fit || len < fitLen)) {
-			fit = alias;
-			fitLen = len;
-		}
-		if (len >= want && (!over || len < overLen)) {
-			over = alias;
-			overLen = len;
-		}
-		if (!longest || len > longestLen) {
-			longest = alias;
-			longestLen = len;
-		}
+): string | null =>
+	pickByLength(
+		Object.entries(phonemes)
+			.filter(([alias]) => isBreathAlias(alias))
+			.map(([alias, entry]) => ({
+				alias,
+				sec: entry.length / KOE_SAMPLE_RATE,
+			})),
+		targetSec,
+	)?.alias ?? null;
+
+/**
+ * 長さで息素片を選ぶ。第1候補: 隙間以上・上限以下でいちばん短い。第2候補: 隙間以上で
+ * いちばん短い（深い息しか無いなら、頭を切る量が少ないほう）。第3候補: いちばん長い。
+ */
+const pickByLength = <T extends { sec: number }>(
+	samples: readonly T[],
+	targetSec: number,
+): T | null => {
+	const want = Math.max(0.05, targetSec);
+	let fit: T | null = null;
+	let over: T | null = null;
+	let longest: T | null = null;
+	for (const s of samples) {
+		if (
+			s.sec >= want &&
+			s.sec <= BREATH_SAMPLE_MAX_SEC &&
+			(!fit || s.sec < fit.sec)
+		)
+			fit = s;
+		if (s.sec >= want && (!over || s.sec < over.sec)) over = s;
+		if (!longest || s.sec > longest.sec) longest = s;
 	}
 	return fit ?? over ?? longest;
+};
+
+/** 取得済みの息素片（{@link VoiceModel.breathSample} の候補）。 */
+export type BreathSample = {
+	alias: string;
+	buffer: AudioBuffer;
+	/** 長さ（秒）。 */
+	sec: number;
+	/** 包絡の山の位置 0〜1（{@link breathPeakPosition}）。 */
+	peakAt: number;
+};
+
+/**
+ * 息素片の包絡の山の位置（0=頭、1=尻）。10ms の実効値を取り、最大から -30dB 以上の
+ * 区間を有効区間として、その中で最大が何割の位置にあるかを返す。
+ * 吸う息は発声の直前が山なので後ろ寄り、吐く息は頭で出て減るので前寄りになる。
+ */
+export const breathPeakPosition = (
+	pcm: ArrayLike<number>,
+	sampleRate: number,
+): number => {
+	const hop = Math.max(1, Math.floor(sampleRate * 0.01));
+	const env: number[] = [];
+	for (let i = 0; i + hop <= pcm.length; i += hop) {
+		let e = 0;
+		for (let j = i; j < i + hop; j++) e += pcm[j] * pcm[j];
+		env.push(Math.sqrt(e / hop));
+	}
+	if (env.length < 2) return 0.5;
+	let peak = 0;
+	let peakIdx = 0;
+	for (let i = 0; i < env.length; i++) {
+		if (env[i] > peak) {
+			peak = env[i];
+			peakIdx = i;
+		}
+	}
+	if (peak <= 0) return 0.5;
+	const thr = peak * 10 ** (-30 / 20);
+	let a = 0;
+	while (a < env.length && env[a] < thr) a++;
+	let b = env.length - 1;
+	while (b > a && env[b] < thr) b--;
+	return b > a ? (peakIdx - a) / (b - a) : 0.5;
+};
+
+/** 山がこの位置より後ろにある息素片を「吸う形」とみなす。 */
+const BREATH_INHALE_PEAK_MIN = 0.35;
+
+/** 1音源から取得する息素片の上限（同じ収録の別名は数えない）。 */
+const BREATH_CATALOG_MAX = 6;
+
+/**
+ * 隙間 `targetSec` に使う息素片を選ぶ。吸う形（{@link BREATH_INHALE_PEAK_MIN}）のものが
+ * あればその中から、無ければ全部の中から、{@link pickByLength} で長さの合うものを取る。
+ */
+export const pickBreathSample = <T extends { sec: number; peakAt: number }>(
+	samples: readonly T[],
+	targetSec: number,
+): T | null => {
+	const inhale = samples.filter((s) => s.peakAt >= BREATH_INHALE_PEAK_MIN);
+	return pickByLength(inhale.length ? inhale : samples, targetSec);
 };
 
 /** ストリーミング再生する歌唱ノート1つ（絶対時刻ベース）。 */
@@ -3185,8 +3275,80 @@ const BREATH_TAIL_SEC = 0.05;
 /** 息の最短長（秒）。速い曲で隙間が小さくても、これより短くすると子音に戻る。 */
 const BREATH_MIN_SEC = 0.14;
 
-/** ブレス音の音量（歌唱のピークに対する比）。帯域が広いぶん、旧値より少し上げても目立たない。 */
+/** ブレス音の音量（歌唱のピークに対する比）。 */
 const BREATH_PEAK_SCALE = 0.18;
+
+/**
+ * ノイズのブレスに掛けるスペクトル形（dB、最大 0）。100Hz〜12kHz を対数周波数で
+ * 48 点に刻んだもので、束音ロゼの息継ぎ素片 3 本（息短2・息短・息中）の有効区間を
+ * 1024 点 FFT で平均して測った（scratch/_breath-synth.mjs）。
+ *
+ * 白色雑音を帯域フィルタで削っただけの音は「風」に聞こえる。息は声道を通っているので
+ * 1.6k / 2.5k / 4k に山があり 5k から急に落ちる。この山谷をそのまま FIR にして掛ける。
+ * 表は「形」だけで、収録そのものは含まない。
+ */
+const BREATH_EQ_DB = [
+	-13, -13, -24.6, -24.6, -24.6, -16.3, -16.3, -16.3, -9, -9, -5, -3, -3, -4.6,
+	-10.8, -11.6, -12, -11.2, -7, -6.1, -6.5, -13.9, -14.8, -8.8, -15.6, -12.4,
+	-2.9, 0, -5.1, -10.5, -9.5, -4.2, -10.2, -13, -12.6, -4, -4.9, -8.6, -15,
+	-15.4, -19.8, -24.5, -27.3, -34.2, -33, -35.3, -38.5, -44.2,
+];
+const BREATH_EQ_F0 = 100;
+const BREATH_EQ_F1 = 12000;
+/** {@link BREATH_EQ_DB} を FIR にするときの片側長（タップ数 = 2L+1）と FFT 点数。 */
+const BREATH_IR_HALF = 256;
+const BREATH_IR_N = 1024;
+
+/**
+ * ノイズのブレスの包絡（実測の平均、最大 1）。ロゼ 息短2・息短とルコ♀ 息1 の
+ * 10ms RMS を有効区間で 0〜1 に伸ばして平均した。山が 2 つあるのは実物の「二段で吸う」形。
+ */
+const BREATH_ENV = [
+	0.19, 0.26, 0.32, 0.35, 0.52, 0.58, 0.79, 0.94, 0.87, 0.82, 0.9, 0.86, 1, 1,
+	0.87, 0.71, 0.47, 0.43, 0.63, 0.66, 0.65, 0.53, 0.35, 0.18,
+];
+
+/**
+ * {@link BREATH_EQ_DB} から零位相 FIR を作る（Hann 窓、実行時に 1 回だけ）。
+ * 表の外側は 24dB/oct で落とす。出力の実効値が白色雑音入力の約 0.3 倍になるよう
+ * 正規化し、旧実装（帯域フィルタ）と同じ音量感で {@link BREATH_PEAK_SCALE} が効くようにする。
+ */
+const buildBreathImpulse = (sampleRate: number): Float32Array => {
+	const N = BREATH_IR_N;
+	const L = BREATH_IR_HALF;
+	const pts = BREATH_EQ_DB.length;
+	const mag = new Float64Array(N / 2 + 1);
+	for (let k = 0; k <= N / 2; k++) {
+		const f = (k * sampleRate) / N;
+		let db: number;
+		if (f <= BREATH_EQ_F0) {
+			db = BREATH_EQ_DB[0] - ((BREATH_EQ_F0 - f) / BREATH_EQ_F0) * 24;
+		} else if (f >= BREATH_EQ_F1) {
+			db = BREATH_EQ_DB[pts - 1] - ((f - BREATH_EQ_F1) / BREATH_EQ_F1) * 24;
+		} else {
+			const x =
+				(Math.log(f / BREATH_EQ_F0) / Math.log(BREATH_EQ_F1 / BREATH_EQ_F0)) *
+				(pts - 1);
+			const i = Math.min(pts - 2, Math.floor(x));
+			db = BREATH_EQ_DB[i] + (BREATH_EQ_DB[i + 1] - BREATH_EQ_DB[i]) * (x - i);
+		}
+		mag[k] = 10 ** (db / 20);
+	}
+	const h = new Float32Array(2 * L + 1);
+	let energy = 0;
+	for (let n = -L; n <= L; n++) {
+		let v = mag[0];
+		for (let k = 1; k < N / 2; k++)
+			v += 2 * mag[k] * Math.cos((2 * Math.PI * k * n) / N);
+		v += mag[N / 2] * Math.cos(Math.PI * n);
+		const w = 0.5 + 0.5 * Math.cos((Math.PI * n) / (L + 1));
+		h[n + L] = (v / N) * w;
+		energy += h[n + L] * h[n + L];
+	}
+	const scale = 0.3 / Math.sqrt(energy);
+	for (let i = 0; i < h.length; i++) h[i] *= scale;
+	return h;
+};
 
 /**
  * 音源の息継ぎ素片で鳴らすときの最大振幅（トラック音量に対する比）。素片は最大振幅1へ
@@ -3805,15 +3967,12 @@ export const createSingingVoices = (
 	 * 素片があればそちら（{@link scheduleBreathSample}）を使い、無いバンクではこの
 	 * ノイズで「どの音源でも同じように効く表現」を保つ。
 	 *
-	 * 「息」に聞こえるかどうかは形で決まる。子音（「ツ」「ス」）は短く・速く立ち上がり・
-	 * 帯域が狭い。吸気は逆で、ゆっくり膨らんで発声の直前で止まり、口が開くにつれて
-	 * 高い成分が増える広帯域の「はっ」になる。ここではその3点を作る。
-	 *
-	 * - 長さ: 直前ノートから削った隙間 + 次の音の頭へ少し食い込むぶん（{@link BREATH_TAIL_SEC}）。
-	 * - 包絡: 6割の位置が山。立ち上がりは2乗で遅く、山のあとは滑らかに0へ。
-	 * - 帯域: 350Hz以上をローパスで上限し、上限を吸気中に 1.6k→3.4kHz へ開く。
-	 *   1.1kHz を軽く持ち上げて声道の色を付ける。
+	 * 帯域フィルタで削った白色雑音は「風」に聞こえた。ここでは実物の息素片から測った
+	 * スペクトル形（{@link BREATH_EQ_DB}: 声道の山谷）を FIR で掛け、包絡も実測の
+	 * 二段の形（{@link BREATH_ENV}）にし、20〜45Hz の振幅の揺らぎ（吸気のザラつき）を
+	 * 雑音側に焼き込む。実物との差は 1/3 オクターブ帯域の実効値で 5dB 程度（旧 6.6dB）。
 	 */
+	let breathImpulse: AudioBuffer | null = null;
 	const scheduleBreath = (
 		t0: number,
 		gapSec: number,
@@ -3826,46 +3985,40 @@ export const createSingingVoices = (
 		const length = Math.max(1, Math.floor(ctx.sampleRate * dur));
 		const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
 		const data = buffer.getChannelData(0);
-		for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+		// 白色雑音 × 揺らぎ（20〜45Hz でランダムに 0.7〜1.3 倍）
+		let flutter = 1;
+		let nextAt = 0;
+		for (let i = 0; i < length; i++) {
+			if (i >= nextAt) {
+				flutter = 0.7 + Math.random() * 0.6;
+				nextAt = i + Math.floor(ctx.sampleRate / (20 + Math.random() * 25));
+			}
+			data[i] = (Math.random() * 2 - 1) * flutter;
+		}
 
+		if (!breathImpulse) {
+			const h = buildBreathImpulse(ctx.sampleRate);
+			breathImpulse = ctx.createBuffer(1, h.length, ctx.sampleRate);
+			breathImpulse.copyToChannel(h, 0);
+		}
 		const src = ctx.createBufferSource();
 		src.buffer = buffer;
-		// 低域は喉鳴りに聞こえるので落とす。
-		const hp = ctx.createBiquadFilter();
-		hp.type = "highpass";
-		hp.frequency.value = 350;
-		hp.Q.value = 0;
-		// 上限を吸気中に開いていく（口が開く）。狭いバンドパスは摩擦子音になるので使わない。
-		const lp = ctx.createBiquadFilter();
-		lp.type = "lowpass";
-		lp.Q.value = 0;
-		lp.frequency.setValueAtTime(1600, startAt);
-		lp.frequency.exponentialRampToValueAtTime(3400, startAt + dur * 0.7);
-		// 声道の色。中域を軽く持ち上げるだけで、山は作らない。
-		const color = ctx.createBiquadFilter();
-		color.type = "peaking";
-		color.frequency.value = 1100;
-		color.Q.value = 0.8;
-		color.gain.value = 5;
+		const shape = ctx.createConvolver();
+		shape.normalize = false;
+		shape.buffer = breathImpulse;
 
-		// 包絡は曲線をそのまま置く（指数ランプは立ち上がりが速すぎて子音になる）。
+		// 包絡: 実測の形を隙間の長さへ伸ばし、頭と尻だけ短くフェードして 0 へ。
 		const env = ctx.createGain();
 		const points = 96;
 		const curve = new Float32Array(points);
-		const crest = 0.6;
 		const top = Math.max(0.0001, peak * BREATH_PEAK_SCALE);
+		const last = BREATH_ENV.length - 1;
 		for (let i = 0; i < points; i++) {
 			const x = i / (points - 1);
-			let g: number;
-			if (x < crest) {
-				const s = x / crest;
-				g = s * s * (3 - 2 * s);
-				g *= g; // 2乗して立ち上がりをさらに遅く
-			} else {
-				const s = (x - crest) / (1 - crest);
-				g = 1 - s * s * (3 - 2 * s);
-			}
-			curve[i] = top * g;
+			const xx = x * last;
+			const j = Math.min(last - 1, Math.floor(xx));
+			const e = BREATH_ENV[j] + (BREATH_ENV[j + 1] - BREATH_ENV[j]) * (xx - j);
+			curve[i] = top * e * Math.min(1, x / 0.06, (1 - x) / 0.08);
 		}
 		env.gain.setValueAtTime(0, startAt);
 		env.gain.setValueCurveAtTime(curve, startAt, dur);
@@ -3878,16 +4031,15 @@ export const createSingingVoices = (
 			panner.connect(out);
 			out = panner;
 		}
-		src.connect(hp).connect(lp).connect(color).connect(env).connect(out);
+		src.connect(shape).connect(env).connect(out);
 		src.start(startAt);
+		// FIR の尾（2L+1 タップ）ぶんだけ長く鳴らして切れ目を作らない
 		src.stop(startAt + dur + 0.02);
 		activeBreaths.add(src);
 		src.onended = () => {
 			activeBreaths.delete(src);
 			src.disconnect();
-			hp.disconnect();
-			lp.disconnect();
-			color.disconnect();
+			shape.disconnect();
 			env.disconnect();
 			panner?.disconnect();
 		};

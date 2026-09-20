@@ -28,6 +28,8 @@ const {
 	normalizeLyrics,
 	isBreathAlias,
 	pickBreathAlias,
+	pickBreathSample,
+	breathPeakPosition,
 } = require("../src/lyrics") as typeof import("../src/lyrics");
 const { units } = require("../src/tuning") as typeof import("../src/tuning");
 type TieSourceNote = import("../src/lyrics").TieSourceNote;
@@ -137,6 +139,65 @@ check(
 	"テト単独音（配信中の .koe）/ 隙間0.2s",
 	"吸気の素片が無い音源は null → ノイズのブレスへ落ちる",
 	String(pickBreathAlias(TETO, 0.2)),
+);
+
+// ── 2b. 吸う形と吐く形の見分けと、取得済み素片の選択 ───────────────
+console.log("\n● 包絡の山の位置（吸う形 / 吐く形）");
+const SR = 48000;
+/** 包絡 f(t) (0..1) を持つノイズを作る。 */
+const shaped = (sec: number, f: (t: number) => number): Float64Array => {
+	const n = Math.round(sec * SR);
+	const out = new Float64Array(n);
+	for (let i = 0; i < n; i++) out[i] = (Math.random() * 2 - 1) * f(i / n);
+	return out;
+};
+const rising = breathPeakPosition(
+	shaped(0.3, (t) => 0.05 + 0.95 * t ** 2),
+	SR,
+);
+const falling = breathPeakPosition(
+	shaped(0.3, (t) => Math.exp(-6 * t)),
+	SR,
+);
+check(
+	rising > 0.9,
+	"尻へ向かって膨らむ（吸う形）",
+	"山が 0.9 より後ろ",
+	rising.toFixed(2),
+);
+check(
+	falling < 0.1,
+	"頭で出て減る（吐く形）",
+	"山が 0.1 より前",
+	falling.toFixed(2),
+);
+// テトの実測: 息1 0.17s 山0.67 / 息2 0.36s 山0.40 / 息3 0.35s 山0.21（吐く形）
+const TETO_SAMPLES = [
+	{ alias: "息1", sec: 0.17, peakAt: 0.67 },
+	{ alias: "息2", sec: 0.36, peakAt: 0.4 },
+	{ alias: "息3", sec: 0.35, peakAt: 0.21 },
+];
+check(
+	pickBreathSample(TETO_SAMPLES, 0.24)?.alias === "息2",
+	"テト / 隙間0.24s",
+	"長さだけなら 息3（0.35s）だが、吐く形なので除いて 息2 を選ぶ",
+	pickBreathSample(TETO_SAMPLES, 0.24)?.alias ?? "null",
+);
+check(
+	pickBreathSample(TETO_SAMPLES, 0.1)?.alias === "息1",
+	"テト / 隙間0.10s",
+	"短い隙間には短い吸う形（息1）",
+	pickBreathSample(TETO_SAMPLES, 0.1)?.alias ?? "null",
+);
+const ALL_EXHALE = [
+	{ alias: "x1", sec: 0.2, peakAt: 0.1 },
+	{ alias: "x2", sec: 0.4, peakAt: 0.2 },
+];
+check(
+	pickBreathSample(ALL_EXHALE, 0.24)?.alias === "x2",
+	"吸う形が1つも無い音源",
+	"全部の中から長さで選ぶ（無音にはしない）",
+	pickBreathSample(ALL_EXHALE, 0.24)?.alias ?? "null",
 );
 
 // ── 3. 結合後ノートの隙間 ─────────────────────────────────────────
