@@ -21,6 +21,12 @@
 | `scratch-analyze.ts` | 生成曲の特徴量（音数、跳躍率、反復率、休符率等）をサンプリング測定するスクリプト | `npx tsx scripts/scratch-analyze.ts` |
 | `test-chord.ts` | MMLからの和音・コード解析およびカバレッジ測定を行うスクリプト | `npx tsx scripts/test-chord.ts` |
 | `downscale-assets.py` | アセット画像の縮小処理ユーティリティ | `python scripts/downscale-assets.py` |
+| `compose-audition.ts` | **作曲オーディション（これが入口）。** 大量に引く→一次選抜→覆面の譜面シート→審査エージェントへの指示文、までを1コマンドで出す。`--hand` で手書きの曲を同じ土俵に混ぜられる | `npx tsx scripts/compose-audition.ts --count 200 --top 6` |
+| `screen-compose.ts` | **自動作曲の一次選抜。** 大量に引いて「聴かなくても分かる欠点」（歌の入りが遅い・主音に解決しない・サビ固有のフックが無い／他セクションへ漏れる・Aメロとサビの対比が無い・歌えない跳躍）を数えて落とす。欠点の出現数も出るので、どこを直すべきかが分かる | `npx tsx scripts/screen-compose.ts 200 5000 8` |
+| `compose-lab.ts` | 種を指定して `composeSong` を回し、**エディタにそのまま取り込める MML** と、人／エージェントが読める**譜面シート**を出す | `npx tsx scripts/compose-lab.ts 24 2001 tmp/compose` |
+| `hand-compile.ts` | **手書き譜面（JSON）→ MML。** 自動作曲を使わずに書いた曲を同じ土俵へ載せる。記法は [docs/handscore.md](../docs/handscore.md)（`compose-lab.ts` の譜面シートと同じ記法なので、生成物を読んでそのまま書き直せる） | `npx tsx scripts/hand-compile.ts tmp/handscore/a.json tmp/handscore/a.mml` |
+| `screen-handscore.ts` | 手書き譜面を `screen-compose.ts` と**同じ減点表**に掛ける（自動作曲と手書きを同じ物差しで比べる） | `npx tsx scripts/screen-handscore.ts tmp/handscore/a.json` |
+| `blind-sheet.ts` | **覆面審査用の譜面シート。** 自動作曲の曲も手書きの曲も、出自が分からない同じ書式で出す（種・機械採点・調名の表記ゆれを消す）。`ab-listen.ts` の耳版に対する、譜面版 | `npx tsx scripts/blind-sheet.ts auto 5138 A tmp/blind/A.md` |
 
 ---
 
