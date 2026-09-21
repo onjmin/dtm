@@ -26,6 +26,7 @@ import {
 	normalizeDrumPatterns,
 	resolveDrumPattern,
 } from "./drum-config";
+import { computeFadeParams, createFadeBus, type FadeBus } from "./fade";
 import { icon } from "./icons";
 import {
 	buildStreamVoiceNotes,
@@ -53,7 +54,12 @@ import { SONG_DRUM_PATTERNS } from "./song-drum-config";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import { createSynth, type Synth } from "./synth";
 import { UNITS_PER_OCTAVE, unitsToPitchV1 } from "./tuning";
-import type { Note, PlayDrumEvent, PlayNoteEvent } from "./types";
+import type {
+	FadeScheduleParams,
+	Note,
+	PlayDrumEvent,
+	PlayNoteEvent,
+} from "./types";
 import {
 	DEFAULT_BPM,
 	DEFAULT_GATE,
@@ -98,6 +104,13 @@ export type MmlPlayerOptions = {
 	getAudioTime?: () => number;
 	/** 初回再生時に呼ばれる（AudioContext.resume 等に使う） */
 	onResumeAudio?: () => void | Promise<void>;
+	/**
+	 * 曲頭/曲尾のフェード（`#fadein=` / `#fadeout=`）の予約要求。null で解除。
+	 * 内蔵synthを使わず外のマスタバスへ鳴らしている場合（studio 経由など）に、
+	 * そのバス最終段のゲインへ掛けてもらうためのフック。
+	 * 時刻は `getAudioTime` と同じクロックで渡すので、両者は同じ AudioContext のものにすること。
+	 */
+	onScheduleFade?: (params: FadeScheduleParams | null) => void;
 	/** 内蔵の簡易square-wave synthを使うか。既定は onPlayNote 未指定なら true */
 	synth?: boolean;
 	/** マスタ音量 0-100。既定50（DAW編集画面の全体音量スライダーの既定値に合わせている）。 */
@@ -447,6 +460,9 @@ export const mountMmlPlayer = (
 	const trackVolume = options.volume ?? 100;
 	let masterVolume = meta.volume ?? options.masterVolume ?? 50;
 	const drumVolume = meta.drumVolume ?? 80;
+	// 曲頭/曲尾のフェード（`#fadein=` / `#fadeout=`）。MMLには 0.1 秒単位の整数で載る。
+	const fadeInSec = (meta.fadeIn ?? 0) / 10;
+	const fadeOutSec = (meta.fadeOut ?? 0) / 10;
 	const colors = options.trackColors ?? DEFAULT_TRACK_COLORS;
 	const useSynth = options.synth ?? !options.onPlayNote;
 	// 伴奏音源（`#audio=`）。MMLに載るのはURLだけなので、ここで鳴るのも常にURLの音源。
@@ -575,9 +591,17 @@ export const mountMmlPlayer = (
 	// ±1.0 を超えるとデバイス側でハードクリップしてプチノイズになるため、
 	// 内蔵synthも歌声もここを通してから destination へ出す（エディタ経路と同じ保険）。
 	let limiterNode: AudioNode | null = null;
+	/**
+	 * 内蔵synth経路の曲頭/曲尾フェード（最終段）。studio 等から `onScheduleFade` を
+	 * 受け取っている場合は向こう側のマスタバスに同じものがあるので、こちらは作らない。
+	 */
+	let fadeBus: FadeBus | null = null;
 	const ensureOutput = (): AudioNode => {
 		const ctx = ensureCtx();
-		if (!limiterNode) limiterNode = createSafetyLimiter(ctx, ctx.destination);
+		if (!limiterNode) {
+			fadeBus = createFadeBus(ctx, ctx.destination);
+			limiterNode = createSafetyLimiter(ctx, fadeBus.node);
+		}
 		return limiterNode;
 	};
 	// 発音器は ctx と同様に遅延生成（synth.ts に切り出した共有ロジック）
@@ -608,6 +632,36 @@ export const mountMmlPlayer = (
 	const getAudioTime = (): number => {
 		if (useSynth) return ensureCtx().currentTime;
 		return options.getAudioTime?.() ?? performance.now() / 1000;
+	};
+
+	/**
+	 * 曲頭/曲尾のフェード（`#fadein=` / `#fadeout=`。値は 0.1 秒単位）を予約する。
+	 * null で解除。内蔵synth経路と、外から渡されたマスタバス（studio）の両方へ流す。
+	 */
+	const scheduleFade = (params: FadeScheduleParams | null): void => {
+		options.onScheduleFade?.(params);
+		// 内蔵synth経路の最終段は遅延生成。予約はいつも最初の発音より先に来るので、
+		// ここで作っておかないと fadeBus が未生成のまま取りこぼす（＝フェードが効かない）。
+		// 解除（null）では作らない — destroy 直前に AudioContext を復活させないため。
+		if (params && useSynth) ensureOutput();
+		fadeBus?.schedule(params);
+	};
+
+	/**
+	 * シーケンサを起動し、同じアンカー（開始時刻）と同じ終端でフェードを予約する。
+	 * 終端は seq.getEndSec() — ドラムの鳴り終わりや伴奏音源の残りを含む「曲の終わり」。
+	 */
+	const startSequencer = (fromStep: number, preRollSec = 0): void => {
+		seq.start(fromStep, preRollSec);
+		scheduleFade(
+			computeFadeParams({
+				anchor: seq.getStartTime(),
+				fadeInSec,
+				fadeOutSec,
+				atSongStart: fromStep === 0,
+				durationSec: seq.getEndSec(),
+			}),
+		);
 	};
 
 	// ── DOM構築 ──
@@ -1590,7 +1644,12 @@ export const mountMmlPlayer = (
 		onTick: (step) => {
 			renderPlayhead(step);
 		},
-		onEnd: (_interrupted) => finish(),
+		// フェードアウト直後に解除すると、リバーブ/リリースの残響が突然フル音量で鳴り出す。
+		// 自然終了ではフェード側が2秒後の自動復帰を予約済みなので、ここでは解除しない。
+		onEnd: (interrupted) => {
+			if (interrupted) scheduleFade(null);
+			finish();
+		},
 		stepsPerBar: STEPS_PER_BAR,
 	});
 
@@ -1671,7 +1730,7 @@ export const mountMmlPlayer = (
 					if (!playing || activePlayer !== instance) return;
 					skipSinging = true;
 					overlay.remove();
-					seq.start(fromStep);
+					startSequencer(fromStep);
 				},
 			});
 			try {
@@ -1731,7 +1790,7 @@ export const mountMmlPlayer = (
 			startDelaySec: SEQUENCER_START_DELAY,
 			fallbackPreRollSec: preRollSec,
 		});
-		seq.start(fromStep, effectivePreRoll);
+		startSequencer(fromStep, effectivePreRoll);
 		// 伴奏音源を、楽器・歌声と同じアンカーへ合わせる（先行ぶんだけ手前から鳴らす）。
 		if (backingAudio?.isLoaded()) {
 			if (rolled) {
@@ -1810,6 +1869,7 @@ export const mountMmlPlayer = (
 	const stop = (): void => {
 		if (!playing) return;
 		seq.stop();
+		scheduleFade(null);
 		backingAudio?.stop();
 		peekVoices()?.stopStream();
 		finish();
@@ -1820,6 +1880,7 @@ export const mountMmlPlayer = (
 	const pause = (): void => {
 		if (!playing) return;
 		seq.stop();
+		scheduleFade(null);
 		backingAudio?.stop();
 		peekVoices()?.stopStream();
 		clearJumpTimers();
@@ -1838,6 +1899,9 @@ export const mountMmlPlayer = (
 		renderPlayhead(clamped);
 		if (playing) {
 			seq.stop();
+			// 掛かっている途中のフェードを一旦解除する。play() は歌声のロード待ちを挟むので、
+			// 残したままだとシーク直後の再生が音量0のまま始まることがある。
+			scheduleFade(null);
 			peekVoices()?.stopStream();
 			clearJumpTimers();
 			setPlayingUI(false);
@@ -1898,6 +1962,7 @@ export const mountMmlPlayer = (
 	const destroy = (): void => {
 		doc.removeEventListener("click", handleOutsideClick);
 		seq.stop();
+		scheduleFade(null);
 		// YouTubeのiframeはDOMを消すだけでは音が止まらないことがあるので明示的に片付ける
 		backingAudio?.destroy();
 		peekVoices()?.stopStream();

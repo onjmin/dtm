@@ -28,6 +28,7 @@ import {
 	normalizeDrumPatterns,
 	resolveDrumPattern,
 } from "./drum-config";
+import { computeFadeParams, createFadeBus } from "./fade";
 import { parseMML } from "./mml-parser";
 import {
 	createReverbImpulse,
@@ -123,6 +124,10 @@ export type PlayPlacementsOptions = PlayMmlOptions & {
 	metaReverbDecay?: number;
 	/** マスタリバーブのPre Delay（ms）。省略時0。 */
 	metaReverbPreDelay?: number;
+	/** 曲頭のフェードイン長を10倍した整数（`#fadein=`）。省略時0（フェードなし）。 */
+	metaFadeIn?: number;
+	/** 曲尾のフェードアウト長を10倍した整数（`#fadeout=`）。省略時0（フェードなし）。 */
+	metaFadeOut?: number;
 	/** トラック（trackIndex）ごとのコンプレッサー量 0-100。 */
 	trackCompression?: Record<number, number>;
 	/** トラック（trackIndex）ごとのステレオ幅 0-200。 */
@@ -213,10 +218,16 @@ export const playPlacements = (
 	reverbConvolver.connect(reverbWetGain);
 	reverbWetGain.connect(finalMix);
 
+	// 曲頭/曲尾のフェード（`#fadein=` / `#fadeout=`）。安全リミッターの後段（最後）に置き、
+	// 他のどの処理よりも優先して音量0まで落とせるようにする。
+	const fadeBus = createFadeBus(ctx, rawDestination);
+	const fadeInSec = (options.metaFadeIn ?? 0) / 10;
+	const fadeOutSec = (options.metaFadeOut ?? 0) / 10;
+
 	// 出力直前の安全リミッター。各トラックはチャンネルストリップのコンプを通るが、
 	// その「和」は誰も抑えていないので、同時発音が増えると合計が ±1.0 を超えて
 	// デバイス側でハードクリップし、プチノイズになる（エディタ経路には元からある）。
-	finalMix.connect(createSafetyLimiter(ctx, rawDestination));
+	finalMix.connect(createSafetyLimiter(ctx, fadeBus.node));
 
 	// トラック単位チャンネルストリップ（コンプレッサー＋EQ＋ステレオワイド＋リバーブ送り）。
 	// trackIndex ごとに1本ずつ遅延生成してキャッシュする。
@@ -289,7 +300,12 @@ export const playPlacements = (
 		onTick: (step) => {
 			options.onTick?.(step);
 		},
-		onEnd: (_interrupted) => finish(),
+		// フェードアウト直後に解除すると残響がフル音量で鳴り出す。自然終了では
+		// フェード側が復帰を予約済みなので、割り込み停止のときだけ解除する。
+		onEnd: (interrupted) => {
+			if (interrupted) fadeBus.schedule(null);
+			finish();
+		},
 		stepsPerBar: STEPS_PER_BAR,
 	});
 
@@ -321,12 +337,24 @@ export const playPlacements = (
 		if (ctx.state === "suspended") resumes.push(ctx.resume());
 		if (resumes.length > 0) await Promise.all(resumes);
 		if (!playing) return; // 待機中に stop されていたら起動しない
-		seq.start(options.startStep ?? 0);
+		const startStep = options.startStep ?? 0;
+		seq.start(startStep);
+		// フェードの着地点はシーケンサが曲を終える時刻（ドラムの鳴り終わりを含む）に合わせる。
+		fadeBus.schedule(
+			computeFadeParams({
+				anchor: seq.getStartTime(),
+				fadeInSec,
+				fadeOutSec,
+				atSongStart: startStep === 0,
+				durationSec: seq.getEndSec(),
+			}),
+		);
 	})();
 
 	const stop = (): void => {
 		if (!playing) return;
 		seq.stop();
+		fadeBus.schedule(null);
 		finish();
 	};
 
@@ -377,6 +405,8 @@ export const playMML = (
 		metaReverb: meta.reverb,
 		metaReverbDecay: meta.reverbDecay,
 		metaReverbPreDelay: meta.reverbPreDelay,
+		metaFadeIn: meta.fadeIn,
+		metaFadeOut: meta.fadeOut,
 		trackCompression: meta.trackCompression,
 		trackWidth: meta.trackWidth,
 		trackReverbSend: meta.trackReverbSend,

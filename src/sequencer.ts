@@ -83,6 +83,13 @@ export type Sequencer = {
 	 * 歌声ストリーミング等を同じアンカーで揃えるのに使う。start前は0。
 	 */
 	getStartTime: () => number;
+	/**
+	 * 曲が終わる時刻（再生開始からの相対秒）。音符の終端と {@link SequencerOptions.getMinEndSec}
+	 * の大きいほうで、ドラムの予約打ち切りと終了判定に使っているものと同じ値。
+	 * フェードアウトの着地点もこれに合わせること（音符の終端で代用すると、
+	 * ドラムや伴奏音源がフェードの外に出てフル音量で鳴り残る）。start前・ループ中は0。
+	 */
+	getEndSec: () => number;
 };
 
 type TimelineEvent = {
@@ -148,6 +155,14 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 	let maxTimelineEndSec = 0;
 
 	const secondsPerStep = (): number => 60 / options.getBpm() / STEPS_PER_BEAT;
+
+	/**
+	 * 曲が終わる時刻（再生開始からの相対秒）。音符の終端と、伴奏音源のように外から
+	 * 伸ばされるぶん（getMinEndSec）の大きいほう。終了判定・ドラムの予約打ち切り・
+	 * フェードアウトの着地点は、すべてこの1つの値を見る。
+	 */
+	const currentEndSec = (): number =>
+		Math.max(maxTimelineEndSec, options.getMinEndSec?.() ?? 0);
 
 	const getWrappedPlayStep = (time: number, sps: number): number => {
 		if (!isLooping || loopDurationSec <= 0 || time < loopEndSec) {
@@ -307,6 +322,12 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 		let drumScanTo = currentStep + PLAN_TIME / sps;
 		if (isLooping && loopDurationSec > 0) {
 			drumScanTo = Math.min(drumScanTo, loopEndStep - STEP_EPSILON);
+		} else {
+			// 曲の終わりより後ろは予約しない。先読みぶん（PLAN_TIME秒）をそのまま延ばすと、
+			// 曲が終わった後もドラムだけ最大0.5秒鳴り残り、フェードアウトの着地点より後ろ＝
+			// フェードの外で叩く。終端ちょうどの一打（締めのクラッシュ）は残したいので、
+			// ループ側と違って終端を含める。
+			drumScanTo = Math.min(drumScanTo, fromStepValue + currentEndSec() / sps);
 		}
 		if (drumScanTo > drumCursor) {
 			const firstBar = Math.floor(Math.max(0, drumCursor) / stepsPerBar);
@@ -361,7 +382,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 
 		// 終了判定（ループ時は曲末で止めない）
 		if (!isLooping) {
-			const endSec = Math.max(maxTimelineEndSec, options.getMinEndSec?.() ?? 0);
+			const endSec = currentEndSec();
 			if (nowIndex >= timeline.length && time > endSec + 0.1) {
 				stop();
 				options.onEnd(false);
@@ -436,6 +457,7 @@ export const createSequencer = (options: SequencerOptions): Sequencer => {
 	};
 
 	return {
+		getEndSec: () => (active && !isLooping ? currentEndSec() : 0),
 		start,
 		stop,
 		isActive: () => active,

@@ -47,6 +47,7 @@ import {
 	normalizeDrumPatterns,
 	resolveDrumPattern,
 } from "./drum-config";
+import { computeFadeParams } from "./fade";
 import { icon } from "./icons";
 import {
 	fitInstrumentOctave,
@@ -3587,38 +3588,17 @@ export const mountDAW = (
 		}
 
 		// フェードイン/アウトのスケジュール。フェードインは曲頭（fromStep===0）から
-		// 再生したときだけ、フェードアウトは現在のノート終端に向けて掛ける。
-		{
-			const anchor = sequencer.getStartTime();
-			const secondsPerStepFade = 60 / bpm / 48;
-			const params: import("./types").FadeScheduleParams = {};
-			if (fadeInSec > 0 && fromStep === 0) {
-				params.fadeInStartAt = anchor;
-				params.fadeInEndAt = anchor + fadeInSec;
-			}
-			if (fadeOutSec > 0) {
-				const endStep = getSongEndStepExact();
-				// 再生開始位置がすでに曲終端以降の場合はフェードアウトしない
-				if (endStep > fromStep) {
-					const totalDurationSec = (endStep - fromStep) * secondsPerStepFade;
-					// 残り再生時間がフェードアウト秒数より十分ある場合、終端に向かってフェードアウトする
-					if (totalDurationSec > 0.1) {
-						const fadeOutEndAt = anchor + totalDurationSec;
-						const earliestStart = params.fadeInEndAt ?? anchor;
-						const fadeOutStartAt = Math.max(
-							fadeOutEndAt - fadeOutSec,
-							earliestStart,
-						);
-						// 開始時刻が終了時刻より前の場合のみスケジュール
-						if (fadeOutStartAt < fadeOutEndAt) {
-							params.fadeOutStartAt = fadeOutStartAt;
-							params.fadeOutEndAt = fadeOutEndAt;
-						}
-					}
-				}
-			}
-			options.onScheduleFade?.(params);
-		}
+		// 再生したときだけ。フェードアウトの着地点はシーケンサが曲を終える時刻に合わせる
+		// （音符の終端で代用すると、そこから後ろのドラムや伴奏音源がフェードの外に出る）。
+		options.onScheduleFade?.(
+			computeFadeParams({
+				anchor: sequencer.getStartTime(),
+				fadeInSec,
+				fadeOutSec,
+				atSongStart: fromStep === 0,
+				durationSec: sequencer.getEndSec(),
+			}),
+		);
 
 		// 楽器と同じアンカー（開始時刻）で歌声の先読みストリーミングを開始する。
 		// ソロはライブ判定（楽器側＝シーケンサの getSoloTrackId と同じ基準）で渡す。
@@ -7224,6 +7204,7 @@ export const mountDAW = (
 									}
 								},
 								onPlayDrum: options.onPlayDrum,
+								onScheduleFade: options.onScheduleFade,
 								onResumeAudio: options.onResumeAudio,
 								getAudioTime: options.getAudioTime,
 								singingVoices: options.singingVoices,
@@ -7976,6 +7957,7 @@ export const mountDAW = (
 											const player = mountMmlPlayer(playerContainer, mml, {
 												onPlayNote: options.onPlayNote,
 												onPlayDrum: options.onPlayDrum,
+												onScheduleFade: options.onScheduleFade,
 												onResumeAudio: options.onResumeAudio,
 												getAudioTime: options.getAudioTime,
 												singingVoices: options.singingVoices,
@@ -8012,6 +7994,7 @@ export const mountDAW = (
 										const player = mountMmlPlayer(playerContainer, mml, {
 											onPlayNote: options.onPlayNote,
 											onPlayDrum: options.onPlayDrum,
+											onScheduleFade: options.onScheduleFade,
 											onResumeAudio: options.onResumeAudio,
 											getAudioTime: options.getAudioTime,
 											singingVoices: options.singingVoices,
