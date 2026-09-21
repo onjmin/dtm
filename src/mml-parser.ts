@@ -670,6 +670,8 @@ export const parseMML = (
 			start: number,
 			dur: number,
 			from: number,
+			/** 文字範囲の終端。連符のように、読み終えてから中身を1つずつ出す場合に渡す。 */
+			to?: number,
 		): void => {
 			if (!collectTokens) return;
 			let arr = tokenTracks.get(trackIndex);
@@ -678,7 +680,7 @@ export const parseMML = (
 				tokenTracks.set(trackIndex, arr);
 			}
 			arr.push({
-				text: body.slice(from, j),
+				text: body.slice(from, to ?? j),
 				startStep: start,
 				durationSteps: dur,
 				type,
@@ -785,12 +787,18 @@ export const parseMML = (
 				// 発音位置には影響しないが、再生専用UIがグレーアウト表示できるよう
 				// トークンとして残す（durationSteps 0 でハイライト対象外）。
 				pushTok("ctrl", currentStep, 0, tokStart);
-			} else if (ch === "[") {
-				// 和音
+			} else if (
+				ch === "[" ||
+				((ch === "'" || ch === '"') && body.indexOf(ch, j + 1) !== -1)
+			) {
+				// 和音。囲み記号は環境で違う（FlMML・本アプリ: [ceg]4 / サクラ: 'ceg'4）。
+				// クォートは開きと閉じが同じ文字なので、閉じが無いときは和音として扱わない
+				// （対を欠いた ' ひとつで、以降のトラック全部が1つの和音に潰れるのを防ぐ）。
+				const close = ch === "[" ? "]" : ch;
 				j++;
 				const chordNotes: Units[] = [];
 				const savedOctave = octave;
-				while (j < body.length && body[j] !== "]") {
+				while (j < body.length && body[j] !== close) {
 					const c = body[j];
 					if (isNatural(c)) {
 						let pitchSteps = naturals[c];
@@ -818,7 +826,7 @@ export const parseMML = (
 						j++;
 					}
 				}
-				if (j < body.length && body[j] === "]") j++;
+				if (j < body.length && body[j] === close) j++;
 				const steps = parseLength();
 				if (chordNotes.length > 0) recordContributor();
 				for (const p of chordNotes) {
@@ -833,6 +841,94 @@ export const parseMML = (
 				pushTok("chord", currentStep, Math.max(1, steps), tokStart);
 				currentStep += steps;
 				octave = savedOctave;
+			} else if (ch === "{" && body.indexOf("}", j + 1) !== -1) {
+				// 連符（FlMML系の `{音程データ群}音長`）。囲みの後ろの音長が**合計**になるよう、
+				// 中の音符へ配分する。中の音符に音長が書かれていればその比で（`{g2e4e4}2` は
+				// 2:1:1）、書かれていなければ均等に割れる（`{ceg}4` は12分音符×3）。
+				//
+				// 和音（`[ceg]4` `'ceg'4`）とは別物で、音は**順に**鳴る。閉じ `}` が無いときは
+				// 連符とみなさない（マクロ等の貼り付けでトラック全部を飲み込まないため）。
+				j++;
+				/** 連符の構成要素。pitch が null なら休符。weight は配分前の音価。 */
+				const items: {
+					pitch: Units | null;
+					weight: number;
+					from: number;
+					to: number;
+				}[] = [];
+				while (j < body.length && body[j] !== "}") {
+					const c = body[j];
+					const itemStart = j;
+					if (isNatural(c)) {
+						let pitchSteps = naturals[c];
+						j++;
+						pitchSteps += readAccidentals();
+						const pitch = units((octave + 1) * 372 + pitchSteps * unitsPerStep);
+						items.push({
+							pitch,
+							weight: parseLength(),
+							from: itemStart,
+							to: j,
+						});
+					} else if (c === "r") {
+						j++;
+						items.push({
+							pitch: null,
+							weight: parseLength(),
+							from: itemStart,
+							to: j,
+						});
+					} else if (c === ">") {
+						octave = Math.min(8, octave + 1);
+						j++;
+					} else if (c === "<") {
+						octave = Math.max(0, octave - 1);
+						j++;
+					} else if (c === "o") {
+						j++;
+						let numStr = "";
+						while (j < body.length && /\d/.test(body[j])) {
+							numStr += body[j];
+							j++;
+						}
+						// o0 を o4 に化けさせない（"0" は falsy なので || は使わない）
+						octave = numStr ? clamp(Number.parseInt(numStr, 10), 0, 8) : 4;
+					} else {
+						j++;
+					}
+				}
+				if (j < body.length && body[j] === "}") j++;
+				const total = parseLength();
+				const weightSum = items.reduce((sum, it) => sum + it.weight, 0);
+				// 割り切れない連符（5連符など）の端数。各音の**終端**を丸めて前の終端との差を
+				// 音価にすることで、端数が全体へ散り、合計は total からずれない。
+				let prevEnd = 0;
+				let cumWeight = 0;
+				for (const it of items) {
+					cumWeight += it.weight;
+					const end =
+						weightSum > 0 ? Math.round((total * cumWeight) / weightSum) : 0;
+					const dur = Math.max(1, end - prevEnd);
+					if (it.pitch !== null) {
+						recordContributor();
+						placements.push({
+							trackIndex,
+							startStep: currentStep + prevEnd,
+							pitchUnits: it.pitch,
+							durationSteps: dur,
+							velocity,
+						});
+					}
+					pushTok(
+						it.pitch !== null ? "note" : "rest",
+						currentStep + prevEnd,
+						dur,
+						it.from,
+						it.to,
+					);
+					prevEnd = end;
+				}
+				currentStep += total;
 			} else if (isNatural(ch)) {
 				// 単音
 				let pitchSteps = naturals[ch];

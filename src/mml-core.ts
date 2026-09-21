@@ -8,6 +8,17 @@ import type {
 } from "./types";
 import { DEFAULT_VELOCITY } from "./types";
 
+/**
+ * 和音を書き出すときの囲み記号。
+ *
+ * 読み込みは `[ceg]4`（FlMML）・`'ceg'4`（サクラ）・`"ceg"4` の3通りを受けるが、
+ * **書き出しはシングルクォート**に統一する。`[ ]` はサクラ系では繰り返しの記号なので、
+ * 大カッコで書き出すと、あちらへ貼ったときに和音ではなくループとして読まれる。
+ * 書き出しを変えるときはこの2つだけを触れば足りる（{@link MMLCore.generateMML}）。
+ */
+const CHORD_OPEN = "'";
+const CHORD_CLOSE = "'";
+
 export const PITCH_MAP = [
 	"c",
 	"c+",
@@ -504,7 +515,9 @@ export class MMLCore {
 					const { octave: oct, name } = this.spell(n.pitchUnits);
 					return `o${oct}${name}`;
 				});
-				segments.push(`[${noteStrs.join("")}]${durStr}`);
+				segments.push(
+					`${CHORD_OPEN}${noteStrs.join("")}${CHORD_CLOSE}${durStr}`,
+				);
 			} else {
 				const { text, currentOctave } = this.getNoteWithOctave(
 					notes[0].pitchUnits,

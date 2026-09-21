@@ -38,8 +38,18 @@ export const MML_INFO_HTML = `
   </ul>
 
   <h4>5. 和音</h4>
-  <p>音符を <code>[</code> と <code>]</code> で囲むと同時に発音します。</p>
-  <pre>例: [ceg]4 （ド・ミ・ソを4分音符で同時に発音）</pre>
+  <p>音符を <code>'</code> で囲むと同時に発音します（書き出しもこの形です）。</p>
+  <pre>例: 'ceg'4 （ド・ミ・ソを4分音符で同時に発音）</pre>
+  <p>他のMML環境からの貼り付け用に、<code>[ceg]4</code>（FlMMLの大カッコ）と <code>"ceg"4</code> も同じ和音として読みます。</p>
+  <p>囲みの中でオクターブを変えると、離れた高さの音を重ねられます。</p>
+  <pre>例: 'o4b o5e a o6c'4 （シ・ミ・ラ・ドを別オクターブで同時に発音）</pre>
+  <p style="margin-top:4px;"><small>（囲みの中の <code>o5</code> は次の音にも引き継がれ、囲みを抜けると元のオクターブに戻ります）</small></p>
+
+  <h4>5.5 連符（3連符・5連符）</h4>
+  <p>音符を <code>{</code> と <code>}</code> で囲み、後ろに音長を書くと、その長さを中の音符で分け合います（和音と違い、音は順に鳴ります）。</p>
+  <pre>例: {ceg}4 （4分音符の長さをド・ミ・ソで3等分＝3連符）
+例: {cdefg}4 （4分音符を5等分＝5連符）</pre>
+  <p style="margin-top:4px;"><small>（中の音符に音長を書くとその比で分けます。<code>{g2e4e4}2</code> は 2:1:1）</small></p>
 
   <h4>6. トラックの区切り</h4>
   <p><code>;</code> または <code>@0</code>〜<code>@3</code> でトラックを切り替えます。</p>
@@ -88,15 +98,15 @@ export const MML_INFO_HTML = `
   <div class="dtm-modal-sample-box">
     <div class="dtm-modal-sample-header">
       <span class="dtm-modal-sample-tag">2. 複数トラックと和音</span>
-      <button class="dtm-btn dtm-btn--ghost dtm-btn--xs dtm-modal-sample-copy-btn" data-mml="@0 t120 o5 c e g2 ; @3 o4 [ceg]2 [ceg]2">📋 コピー</button>
+      <button class="dtm-btn dtm-btn--ghost dtm-btn--xs dtm-modal-sample-copy-btn" data-mml="@0 t120 o5 c e g2 ; @3 o4 'ceg'2 'ceg'2">📋 コピー</button>
     </div>
     <pre style="margin: 0; padding: 6px;">@0 t120 o5 c e g2 ;
-@3 o4 [ceg]2 [ceg]2</pre>
+@3 o4 'ceg'2 'ceg'2</pre>
     <div class="dtm-modal-sample-desc">
-      ; でトラック（上＝メロディ／下＝伴奏）を分け、[ceg] で和音を鳴らします。
+      ; でトラック（上＝メロディ／下＝伴奏）を分け、'ceg' で和音を鳴らします。
     </div>
     <div style="margin-top: 8px;">
-      <button class="dtm-btn dtm-btn--primary dtm-btn--xs dtm-modal-sample-play-btn" data-mml="@0 t120 o5 c e g2 ; @3 o4 [ceg]2 [ceg]2">▶ 試聴</button>
+      <button class="dtm-btn dtm-btn--primary dtm-btn--xs dtm-modal-sample-play-btn" data-mml="@0 t120 o5 c e g2 ; @3 o4 'ceg'2 'ceg'2">▶ 試聴</button>
     </div>
     <div class="dtm-modal-sample-player-container"></div>
   </div>
