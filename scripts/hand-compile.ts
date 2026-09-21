@@ -185,11 +185,14 @@ export const compileScore = (score: HandScore): string => {
 	);
 
 	const core = newCore(100);
-	const meta = [
-		`#inst=${score.instrument ?? "piano"}`,
-		`#drum=${score.drum ?? "rock"}`,
-		"#volume=80",
-	].join("");
+	// **ドラム無しは `#drum=` ごと省く。** `#drum=none` と書くと、再生側（`mml-player.ts` の
+	// `meta.drum ?? "none"`）では同じ無音になるが、DAW の読み込みは
+	// `if (meta.drum && drumPatterns[meta.drum])` なので `none` が辞書に無く分岐を素通りし、
+	// **その編集画面に前から入っていたドラムが残る**。再編集した人が気づかないまま鳴る。
+	const drum = score.drum && score.drum !== "none" ? `#drum=${score.drum}` : "";
+	const meta = [`#inst=${score.instrument ?? "piano"}`, drum, "#volume=80"]
+		.filter((s) => s.length > 0)
+		.join("");
 	const lines = tracks
 		.map((t, i) =>
 			t.notes.length

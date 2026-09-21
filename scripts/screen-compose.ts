@@ -55,6 +55,8 @@ export type Screened = {
 	contrast: number;
 	maxLeap: number;
 	resolves: boolean;
+	/** メロ＋サブ＋ベースの発音数を秒で割ったもの。鳴りの厚み。 */
+	density: number;
 	machineScore: number;
 };
 
@@ -184,6 +186,22 @@ export const screen = (seed: number): Screened => {
 		s -= 0.15;
 	}
 
+	// --- 鳴りの厚み（観測のみ。減点しない） ---
+	//
+	// 秒あたりの発音数。伴奏（コード）トラックは進行から機械的に展開されて曲ごとの差が
+	// 出ないので数えない。
+	//
+	// **これを減点にしてはいけない。** 一度 4/7 発音/秒を下限として減点に入れたが、根拠は
+	// 所有者が気に入った曲1本（12.9）と却下した曲3本（2.4〜2.5）だけだった。
+	// `docs/handover-compose.md` に、同じ轍を踏まないための実測と戒めがある——所有者が当たり
+	// として選んだ13本は確かに速く厚い側（テンポ中央値150・ドラムは dance/16beat/disco のみ）
+	// だが、それは**選ばれた側の特徴**であって「そこへ寄せれば良い曲」ではない。全曲を寄せれば
+	// 全曲が同じ顔になる。厚みは系統（ゲーム音楽風かどうか）の選択で決めるものであって、
+	// すべての曲に課す合否条件ではない。数字は残す——どの領域の曲かを見分けるのに要る。
+	const perSec =
+		(song.melody.length + song.submelody.length + song.bass.length) /
+		(song.bars * (60 / song.bpm) * 4);
+
 	return {
 		seed,
 		score: Math.max(0, s),
@@ -194,6 +212,7 @@ export const screen = (seed: number): Screened => {
 		contrast: Number(contrast.toFixed(2)),
 		maxLeap,
 		resolves,
+		density: Number(perSec.toFixed(1)),
 		machineScore: Number(song.stats.score.toFixed(3)),
 	};
 };
@@ -207,7 +226,7 @@ if (process.argv[1]?.includes("screen-compose")) {
 	rows.sort((a, b) => b.score - a.score || b.machineScore - a.machineScore);
 	const lines = rows.map(
 		(r) =>
-			`seed=${r.seed} 選抜点=${r.score.toFixed(2)} 機械採点=${r.machineScore} 歌入り=${r.vocalInSec}s フック再現=${r.hookRepeats} 漏れ=${r.hookLeaks} 対比=${r.contrast} 最大跳躍=${r.maxLeap} 主音終止=${r.resolves ? "○" : "×"}${r.faults.length ? `\n    ${r.faults.join(" / ")}` : ""}`,
+			`seed=${r.seed} 選抜点=${r.score.toFixed(2)} 機械採点=${r.machineScore} 歌入り=${r.vocalInSec}s フック再現=${r.hookRepeats} 漏れ=${r.hookLeaks} 対比=${r.contrast} 最大跳躍=${r.maxLeap} 主音終止=${r.resolves ? "○" : "×"} 厚み=${r.density}${r.faults.length ? `\n    ${r.faults.join(" / ")}` : ""}`,
 	);
 	mkdirSync("tmp", { recursive: true });
 	writeFileSync("tmp/screen-result.txt", lines.join("\n"), "utf8");

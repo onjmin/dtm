@@ -181,7 +181,31 @@ for (const path of process.argv.slice(2)) {
 		s -= 0.15;
 	}
 
+	// --- 鳴りの厚み（観測のみ。減点しない） ---
+	//
+	// **これを減点にしてはいけない。** 一度 4/7 発音/秒を下限として減点に入れたが、根拠は
+	// 所有者が気に入った曲1本（12.9）と却下した曲3本（2.4〜2.5）だけだった。
+	// `docs/handover-compose.md` に、同じ轍を踏まないための実測と戒めがある——所有者が当たり
+	// として選んだ13本は確かに速く厚い側（テンポ中央値150・ドラムは dance/16beat/disco のみ）
+	// だが、それは**選ばれた側の特徴**であって「そこへ寄せれば良い曲」ではない。全曲を寄せれば
+	// 全曲が同じ顔になる。厚みは系統（ゲーム音楽風かどうか）の選択で決めるものであって、
+	// すべての曲に課す合否条件ではない。数字は残す——どの領域の曲かを見分けるのに要る。
+	const onsets = (lines: string[] | undefined): number =>
+		(lines ?? []).reduce(
+			(n, l) =>
+				n +
+				(l ?? "")
+					.trim()
+					.split(/\s+/)
+					.filter((t) => t && !/^(?:休|r)\d+$/.test(t)).length,
+			0,
+		);
+	const perSec =
+		(onsets(sc.melody) + onsets(sc.submelody) + onsets(sc.bass)) /
+		(bars * (60 / sc.bpm) * 4);
+	const noDrum = !sc.drum || sc.drum === "none";
+
 	console.log(
-		`${path}\n  選抜点=${Math.max(0, s).toFixed(2)} 歌入り=${sec.toFixed(1)}s フック再現=${rep} 漏れ=${leak} 対比=${contrast.toFixed(2)} 最大跳躍=${maxLeap} 主音終止=${lastDeg === 0 ? "○" : "×"}${faults.length ? `\n  減点: ${faults.join(" / ")}` : "\n  減点: なし"}`,
+		`${path}\n  選抜点=${Math.max(0, s).toFixed(2)} 歌入り=${sec.toFixed(1)}s フック再現=${rep} 漏れ=${leak} 対比=${contrast.toFixed(2)} 最大跳躍=${maxLeap} 主音終止=${lastDeg === 0 ? "○" : "×"} 厚み=${perSec.toFixed(1)}発音/秒${noDrum ? "(打楽器なし)" : ""}${faults.length ? `\n  減点: ${faults.join(" / ")}` : "\n  減点: なし"}`,
 	);
 }

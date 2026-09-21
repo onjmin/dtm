@@ -97,15 +97,25 @@ export type SectionSpec = {
 	 *
 	 * **4の倍数にする。** 参考コーパスの主旋律のブロック長は7割が4の倍数で、8/16/24/32小節に山が
 	 * 立つ。コード進行も4小節単位のまとまりで組んでいるので、4の倍数から外れた長さは締めの4小節が
-	 * 途中で切れる。
+	 * 途中で切れる。**メロディの無いイントロだけは例外**（{@link SECTION_SPECS} の `intro`）。
 	 *
-	 * イントロだけは実測がはっきりしていて、**8小節が4小節の約2倍**。曲の長さとの相関は無い
-	 * （＝曲長の関数にしてはいけない）。0小節はここでは引かない——「イントロを作るか」は UI の
+	 * イントロは長さを秒で決めるので（{@link SectionSpec.seconds}）、ここの候補はテンポで
+	 * 絞られる前の母集団になる。0小節はここでは引かない——「イントロを作るか」は UI の
 	 * チェックで表明されているので、チェックが付いているのに消すのは筋が違う。
 	 *
 	 * 省略時は {@link SectionSpec.bars} 固定（外から独自の spec を渡す場合のため）。
 	 */
 	barChoices?: number[];
+	/**
+	 * そのセクションが占めてよい秒数の帯。{@link buildSectionPlan} に BPM を渡したときだけ効き、
+	 * 帯から外れる小節数は {@link SectionSpec.barChoices} から落とす。
+	 *
+	 * **小節数は時間ではない。** 同じ8小節でも BPM 112 なら 17秒、185 なら 10秒で、聴き手が
+	 * 感じる長さは3倍近くぶれる。曲の中ほどならそれでよい（拍で数えて聴いているので）が、
+	 * **歌が始まる前だけは違う**——まだ曲が始まっていない聴き手は拍ではなく時計で待っている
+	 * ので、ここが長い曲は歌に辿り着く前に閉じられる。
+	 */
+	seconds?: { min: number; max: number };
 	/** メロディを書くか。イントロと間奏は伴奏だけ。 */
 	melody: boolean;
 	/**
@@ -129,10 +139,13 @@ export type SectionSpec = {
 
 export const SECTION_SPECS: Record<SectionKind, SectionSpec> = {
 	// イントロは曲の顔を先に見せる場所なので、和音はサビのものを使う。
-	// 長さは実測（8小節が4小節の約2倍）に合わせて引く。
+	// 長さは秒で決める（{@link SectionSpec.seconds}）。2小節・6小節を候補に足してあるのは、
+	// 4の倍数だけでは遅い曲も速い曲も4小節一択になり、テンポごとの幅が出ないため。
+	// イントロにはメロディが無いので、4小節の楽句が途中で切れる心配もこの区間だけは無い。
 	intro: {
 		bars: 4,
-		barChoices: [4, 4, 8, 8, 8],
+		barChoices: [2, 4, 4, 6, 6, 8, 8],
+		seconds: { min: 4, max: 8 },
 		melody: false,
 		registerShift: 0,
 		density: 0.6,
@@ -366,6 +379,7 @@ export const buildSectionPlan = (
 	kinds: SectionKind[],
 	templateName?: string,
 	rnd?: () => number,
+	bpm?: number,
 ): PlacedSection[] => {
 	const ordered = orderedKinds(kinds, templateName);
 
@@ -375,13 +389,24 @@ export const buildSectionPlan = (
 		if (barsOf.has(kind)) continue;
 		const spec = SECTION_SPECS[kind];
 		const choices = spec.barChoices ?? [];
+		if (!rnd || choices.length === 0) {
+			barsOf.set(kind, spec.bars);
+			continue;
+		}
+		let pool = choices;
+		const band = spec.seconds;
+		if (bpm && band) {
+			const sec = (bars: number): number => (bars * 4 * 60) / bpm;
+			const fit = choices.filter(
+				(b) => sec(b) >= band.min && sec(b) <= band.max,
+			);
+			// **帯に入る長さが無いテンポでは短いほうへ倒す。** 上限を割るのは
+			// 「待たされる」という実害だが、下限を割るのは「あっさり始まる」だけ。
+			pool = fit.length > 0 ? fit : [Math.min(...choices)];
+		}
 		barsOf.set(
 			kind,
-			rnd && choices.length > 0
-				? choices[
-						Math.min(choices.length - 1, Math.floor(rnd() * choices.length))
-					]
-				: spec.bars,
+			pool[Math.min(pool.length - 1, Math.floor(rnd() * pool.length))],
 		);
 	}
 

@@ -55,6 +55,7 @@
 - `chordPattern` … `block`（白玉） / `arpeggio`（分散） / `arpeggio-fast` / `offbeat`（裏打ち） / `yatsume`（八分刻み） / `alternating` のいずれか。迷うなら `arpeggio`。
 - `instrument` … `piano` `acoustic` `jazz_night` `synth_pop` `cyber_punk` `rock` `orchestra` `japanese_wa` `arabic_exotic` `fantasy_rpg` `ambient_cloud` `retro_game` のいずれか。迷うなら `piano`。
 - `drum` … `4beat` `8beat` `16beat` `shuffle` `dance` `bossa` `disco` のいずれか。迷うなら `8beat`。
+  ドラムを入れたくないときは `"none"`（宣言ごと省かれる。オーケストラ編成や静かな曲では必ずこれ）。
 - `melody` `submelody` `bass` は**同じ長さの配列**（＝小節数）にする。`submelody` `bass` は省略可だが、
   ベースは入れたほうが曲になる。
 

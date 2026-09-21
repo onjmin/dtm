@@ -84,6 +84,22 @@ const MAX_LEAP_SEMITONES = 10;
 /** 曲ごとの跳躍上限の候補。固定値にすると跳躍で歌う曲が作れない。 */
 const LEAP_CEILINGS = [5, 6, 7, 7, 8, 9, 10, 10, 12, 14, 16];
 
+/**
+ * 「歌える限界を超えた跳躍」とみなす音程（半音）。長7度より広い動きは、音程を取る手がかりが
+ * 和音以外に無くなる。
+ */
+const WIDE_LEAP_SEMITONES = 9;
+/**
+ * その跳躍を1曲に何回まで置いてよいか。
+ *
+ * **上限（{@link LEAP_CEILINGS}）と回数は別の話。** 上限は「どこまで跳んでよいか」しか
+ * 決めないので、広い上限を引いた曲では10半音超えが7箇所出て、旋律ではなく分散和音になる。
+ * かといって上限を下げると跳んで歌う曲そのものが作れない。上限は残したまま、回数だけ絞る。
+ * 予算を使い切った跳躍はオクターブ折り返しで音域の中へ戻す——音名が変わらないので、
+ * 和音との関係は壊れない。
+ */
+const WIDE_LEAP_BUDGET = 2;
+
 /** 小楽節の【答え】が【問い】と別のリズム型になる確率。 */
 const ANSWER_VARY = 0.4;
 /** 小節をまたぐときに許す跳躍（半音）。 */
@@ -2710,10 +2726,15 @@ const draw = (
 	// どこがイントロで、どこがサビなのかを持つ（{@link file://./compose-sections.ts}）。
 	// **セクション長も seed ごとに引く**——定数のままだと BPM も調もメロディ型も引き直して
 	// いるのに骨格だけが全 seed で同一になる（{@link SectionSpec.barChoices}）。
+	//
+	// **テンポは設計図より先に引く。** イントロの長さは小節数ではなく秒で決める
+	// （{@link SectionSpec.seconds}）ので、BPM が分からないうちには小節数を選べない。
+	const bpm = pick(BPM_CHOICES, rnd);
 	const sectionPlan = buildSectionPlan(
 		options.sections ?? DEFAULT_SECTIONS,
 		options.template,
 		rnd,
+		bpm,
 	);
 	const totalBars = sectionPlan.reduce((sum, s) => sum + s.bars, 0);
 
@@ -2941,7 +2962,13 @@ const draw = (
 		rnd,
 	);
 	// サビはAメロと質感を変えるのが役目なので、同じ進行を引いたら引き直す。
-	const progBPool = (center ? center.b : SECTION_B_PROGRESSIONS).filter(
+	//
+	// **並び全体ではなく1和音目で弾く。** 和声リズムが `slow`（2小節に1和音）の曲では
+	// 4和音のうち2つしか鳴らないので、途中の和音だけが違う進行はAメロとサビで
+	// 同じ和音列へ潰れる。1和音目は `slow` でも必ず鳴り、しかもセクションの半分を占める。
+	const progBAll = center ? center.b : SECTION_B_PROGRESSIONS;
+	const progBHead = progBAll.filter((p) => p[0] !== progA[0]);
+	const progBPool = (progBHead.length > 0 ? progBHead : progBAll).filter(
 		(p) => p.join("|") !== progA.join("|"),
 	);
 	const progB = pick(
@@ -3157,10 +3184,10 @@ const draw = (
 			chords.map((c) => transposeChordName(c, barKeyShift[bar])).join(" "),
 		)
 		.join("|");
-	// 調とテンポも曲ごとに引く。生成はハ長調で行い、最後にまとめて移調する
+	// 調も曲ごとに引く。生成はハ長調で行い、最後にまとめて移調する
 	// （生成中に移調すると音域の折り返しが調ごとにずれ、輪郭が壊れる）。
+	// テンポ（`bpm`）はセクションの設計図より前で引いてある。
 	const rootShift = resolvedKey.rootShift;
-	const bpm = pick(BPM_CHOICES, rnd);
 	const chordPattern = pick(chordPatternPool(bpm), rnd);
 
 	// --- 曲の骨格と書法を引く（ここが曲どうしの違いの出どころ） ---
@@ -3572,9 +3599,15 @@ const draw = (
 	const pickPhrase = (
 		densityMul: number,
 		exclude: CorpusPhrase[],
+		/** このリズムを持つフレーズは引かない（サビのフックを他所へ漏らさないため）。 */
+		banRhythm?: string,
 	): CorpusPhrase => {
 		const want = targetNotesPerBar * densityMul * 2;
-		const pool = CORPUS_PHRASES.filter((x) => !exclude.includes(x));
+		const pool = CORPUS_PHRASES.filter(
+			(x) =>
+				!exclude.includes(x) &&
+				(banRhythm === undefined || x.rhythm.join(",") !== banRhythm),
+		);
 		let total = 0;
 		const weights = pool.map((x) => {
 			const notes = x.rhythm.filter((v) => v > 0).length;
@@ -3616,27 +3649,32 @@ const draw = (
 	// アップの型は合成の語彙から引く——フレーズは「顔」を作る場所で、つなぎまで借りると曲が
 	// コーパスの継ぎ接ぎになる。
 	const drawnPhrases: CorpusPhrase[] = [];
-	const drawPhrase = (mul: number): CorpusPhrase => {
-		const got = pickPhrase(mul, drawnPhrases);
+	const drawPhrase = (mul: number, banRhythm?: string): CorpusPhrase => {
+		const got = pickPhrase(mul, drawnPhrases, banRhythm);
 		drawnPhrases.push(got);
 		return got;
 	};
-	const phraseA = drawPhrase(densityA);
-	const phraseA2 = drawPhrase(densityA2);
+	// **サビのフレーズを最初に引く。** サビ冒頭2小節はこの曲のフック
+	// （{@link hookUnits}）で、「サビでしか鳴らない型」であることがフックの条件そのもの。
+	// 後から引く側を避けさせるには、避ける対象が先に決まっていなければならない。
 	const phraseB = drawPhrase(densityB);
-	const phraseC = drawPhrase(densityC);
+	/** フックのリズム。サビ以外のセクションの素材はこれを引かない。 */
+	const hookRhythm = phraseB.rhythm.join(",");
+	const phraseA = drawPhrase(densityA, hookRhythm);
+	const phraseA2 = drawPhrase(densityA2, hookRhythm);
+	const phraseC = drawPhrase(densityC, hookRhythm);
 	// **答えにも別のフレーズを引く。** 1セクションに1フレーズだと問いも答えも同じ素材を使い回す
 	// ことになり、参考曲より反復が過剰になる（聴くと「同じフレーズの繰り返しで精度が悪い」と
 	// 受け取られる）。**反復は多いほど良いわけではない**——フックが記憶に残るのは同じ形が
 	// **変化を伴って**返るからで、無変化の反復は機械が作ったことの目印になる。
-	const phraseAnsA = drawPhrase(densityA);
+	const phraseAnsA = drawPhrase(densityA, hookRhythm);
 	const phraseAnsB = drawPhrase(densityB);
 	/**
 	 * 2周目の問いに使う素材。8小節のセクションは【問い→答え→問いの変形→答え】で、3つ目の楽句は
 	 * 1つ目と同じ `source` を持つ。素材が1つしか無いと「変形」が複製になるので、2周目には
 	 * 別の素材を当てる（同じ側の性格＝密度は保ったまま形だけ変える）。
 	 */
-	const phraseA2nd = drawPhrase(densityA);
+	const phraseA2nd = drawPhrase(densityA, hookRhythm);
 	const phraseB2nd = drawPhrase(densityB);
 	/**
 	 * 素材をどれだけ使い回すか。曲ごとに引く。0に近いほど1つの素材を回し続け（リフ物）、
@@ -3797,17 +3835,83 @@ const draw = (
 		phraseEndBars.add(section.startBar + section.bars - 1);
 	}
 
+	// --- サビのフック ---
+	//
+	// **フックは「サビの冒頭2小節」ではなく「サビの中で返ってくる2小節」。** 冒頭に何かを
+	// 置けばフックになるわけではなく、同じサビの中でもう一度返ってきて初めて覚えられる。
+	// 逆に、その型がAメロやBメロでも鳴っていたら、サビに入ったことが分からない
+	// （リズム型が同じなら、音域が上がっただけの同じ景色に聞こえる）。
+	//
+	// 曲ごとの反復量（{@link phraseVariety}）に任せていた間は、サビ内での再現も他セクションへの
+	// 漏れも運任せだった。素材の側で漏らさないようにし（{@link hookRhythm}）、返す場所は
+	// ここで確保する。
+	const hookUnits = new Set<number>();
+	for (const section of sectionPlan) {
+		if (section.kind !== "chorus") continue;
+		const base = unitOf(section.startBar);
+		hookUnits.add(base);
+		// 2つ目は4小節あと（【問い→答え→問いの変形→答え】の3つ目の楽句）。
+		// 8小節に満たないサビには返す場所が無いので置かない。
+		if (section.bars >= 8) hookUnits.add(base + 2);
+	}
+	/** フックの小節。後段の食い・分割で形を崩させない。 */
+	const hookBars = new Set<number>();
+	for (const u of hookUnits) {
+		hookBars.add(u * 2);
+		hookBars.add(u * 2 + 1);
+	}
+
+	// **返ってくるフックのうち1回は上で歌う。** 同じ高さで2回繰り返すだけでは「もう一度
+	// 鳴った」で終わり、そこが曲の頂点にならない。最後のサビの2回目のフックを音域の上端へ
+	// 寄せて（＝フックを移調して）、曲の最高音をサビの中に置く。
+	{
+		let last: PlacedSection | null = null;
+		for (const section of sectionPlan)
+			if (section.kind === "chorus" && section.bars >= 8) last = section;
+		if (last) {
+			const u = unitOf(last.startBar) + 2;
+			const reg = barRegister[u * 2];
+			// 上端から1オクターブぶん。これより狭めるとフレーズが窓に収まらず、
+			// 輪郭を保ったまま置けなくなる（{@link shapeBar} の `preserveContour`）。
+			const top: Register = {
+				low: Math.max(reg.low, reg.high - 12),
+				high: reg.high,
+				center: reg.high - 6,
+			};
+			barRegister[u * 2] = top;
+			barRegister[u * 2 + 1] = top;
+		}
+	}
+
 	const barRhythms: number[][] = [];
+	/**
+	 * その小節がどの小節を歌い直しているか（{@link restatementOf} の結論）。音高の側も
+	 * 同じ答えを使う——リズムだけ別の型に差し替えると、写す音の数が合わなくなる。
+	 */
+	const restateBar: (number | null)[] = [];
 	/** 通し作曲で楽句ごとに引いた型。2小節でひとまとまりにするため楽句単位で覚える。 */
 	const throughPairs = new Map<number, [RhythmCell, RhythmCell]>();
 	for (let bar = 0; bar < totalBars; bar++) {
 		const u = unitOf(bar);
 		const half = barInUnit(bar);
-		const source = restatementOf(bar);
+		const found = restatementOf(bar);
+		// フックの小節が歌い直せるのはフックの小節だけ。別の楽句を写すと、
+		// この小節に置いたフックの型と音の数が食い違う。
+		const source =
+			found !== null && (!hookUnits.has(u) || hookBars.has(found))
+				? found
+				: null;
+		restateBar.push(source);
 		if (source !== null) {
 			// 同じ素材の楽句は、リズムもそのまま歌い直す。
 			barRhythms.push(barRhythms[source]);
 			if (breathBars.has(source)) breathBars.add(bar);
+			continue;
+		}
+		// フックはサビのフレーズそのものを置く。曲の性格（{@link phraseVariety}）で
+		// 2周目の素材へ移る枝も、答えのリズムで受ける枝も、ここだけは通さない。
+		if (hookUnits.has(u)) {
+			barRhythms.push(scaleCell((half === 0 ? motifB : motifB2).value));
 			continue;
 		}
 		// ソロ（間奏）はサビと同じ素材で書く。{@link sourceOf} が interlude を "b" に
@@ -3932,6 +4036,13 @@ const draw = (
 	let sungBars = 0;
 	// 開始音を曲ごとに変える。初版はここが 72 固定で、60%の曲が同じ音から始まっていた。
 	let prevSemi = pick([60, 64, 65, 67, 69, 72, 74, 76], rnd);
+	/**
+	 * 直前に**歌った**音。跳躍は歌い手が声で辿る距離なので、間奏のソロや曲頭の仮の音
+	 * （`prevSemi` の初期値）を起点に数えても意味が無い。
+	 */
+	let lastSungSemi: number | null = null;
+	/** 大跳躍の残り回数（{@link WIDE_LEAP_BUDGET}）。 */
+	let wideLeapsLeft = WIDE_LEAP_BUDGET;
 
 	/** 隙間の長さに収まる言い回しを1つ引く。収まるものが無ければ置かない。 */
 	const pickFigure = (
@@ -4059,7 +4170,7 @@ const draw = (
 		// 再現の小節は、元の小節の音の並びをそのまま使う。和音が違っても
 		// **音を曲げず、塊ごと移調して**合わせる（{@link fitMotif}）ので、
 		// 同じフレーズが返ってきたと耳で分かる。
-		const source = restatementOf(bar);
+		const source = restateBar[bar];
 		if (source !== null && plannedDegrees[source])
 			degrees.splice(
 				0,
@@ -4143,6 +4254,52 @@ const draw = (
 		if (landing !== null && barInUnit(bar) === 1)
 			landPitch(scale, pitches, landing, reg);
 
+		// **イントロと間奏は歌メロを書かない。** 置くとどのセクションも同じ顔になり「ずっと歌って
+		// いる曲」になる。伴奏・ベース・ドラム（とサブメロ）は鳴るので無音にはならない。
+		// 間奏だけは同じ音の並びを `melody` ではなく `solo` へ書く——歌が休む場所を器楽が引き取る
+		// 形で、別トラック・別楽器で鳴らせば「間奏はギターソロ」になる。
+		const unitSource = units[unitOf(bar)].source;
+		const isSolo = unitSource === "solo";
+		const silent = unitSource === "silent" || isSolo;
+
+		// **大跳躍は回数で絞る**（{@link WIDE_LEAP_BUDGET}）。予算を使い切った跳躍は、
+		// 跳んだ先をオクターブ折り返して音域の中へ戻す。
+		//
+		// 収まったかどうかは**歌える音域の全体**（{@link MELODY_LOW}〜{@link MELODY_HIGH}）で
+		// 見る。その小節の窓で見ると、10半音の跳躍を折り返した先が窓の外へ2〜3半音はみ出す
+		// ——つまり**直したい跳躍ほど直せない**——ことになる。窓はセクションの高さを作るための
+		// 目安であって、歌える／歌えないの境目ではない。
+		//
+		// **変化音を通すより前に畳む。** 経過音の変化音は順次で入って順次で出るから通り過ぎる音に
+		// なるので（{@link applyChromatic} の②）、置いた後でその隣をオクターブ動かすと、行き場の
+		// 無い音として耳に残る。
+		if (!silent && lastSungSemi !== null) {
+			let ref = lastSungSemi;
+			for (let i = 0; i < pitches.length; i++) {
+				const gap = pitches[i] - ref;
+				if (Math.abs(gap) > WIDE_LEAP_SEMITONES) {
+					const by = -Math.sign(gap) * 12;
+					const sings = (p: number): boolean =>
+						p + by >= MELODY_LOW && p + by <= MELODY_HIGH;
+					// **小節の頭で跳んでいるなら、まず小節ごと折り返す。** その1音だけ動かすと
+					// 借りてきたフレーズの形がその小節でだけ崩れ、「同じ形が返ってきた」が
+					// 消える（4小節の自己相似が落ちる）。塊ごと動かせば形は保たれる。
+					// 塊では音域からはみ出す小節だけ、1音ずつの折り返しに落とす。
+					const whole = i === 0 && pitches.every(sings);
+					if (
+						wideLeapsLeft <= 0 &&
+						Math.abs(pitches[i] + by - ref) < Math.abs(gap) &&
+						(whole || sings(pitches[i]))
+					) {
+						if (whole)
+							for (let j = 0; j < pitches.length; j++) pitches[j] += by;
+						else pitches[i] += by;
+					} else wideLeapsLeft = Math.max(0, wideLeapsLeft - 1);
+				}
+				ref = pitches[i];
+			}
+		}
+
 		// **最後に変化音を通す。** ここまでの音は全部ハ長調の音階の上にあり、
 		// セカンダリドミナントの上でも和音の変化音を採れていなかった
 		// （実測で非ダイアトニック音が1音も出ない＝調が固定に聞こえる原因）。
@@ -4169,14 +4326,6 @@ const draw = (
 			keepLast: landing !== null && barInUnit(bar) === 1,
 			rnd,
 		});
-
-		// **イントロと間奏は歌メロを書かない。** 置くとどのセクションも同じ顔になり「ずっと歌って
-		// いる曲」になる。伴奏・ベース・ドラム（とサブメロ）は鳴るので無音にはならない。
-		// 間奏だけは同じ音の並びを `melody` ではなく `solo` へ書く——歌が休む場所を器楽が引き取る
-		// 形で、別トラック・別楽器で鳴らせば「間奏はギターソロ」になる。
-		const unitSource = units[unitOf(bar)].source;
-		const isSolo = unitSource === "solo";
-		const silent = unitSource === "silent" || isSolo;
 
 		// メロディ
 		const barHead = pitches[0];
@@ -4241,6 +4390,7 @@ const draw = (
 			});
 			melodyDurations.push(slot.value);
 			prevSemi = semi;
+			lastSungSemi = semi;
 		}
 		barTension[bar] = tensionSteps === 0 ? 0 : tensionSum / tensionSteps;
 		// **休符率はメロディを書く小節だけで測る。** イントロ・間奏はそもそも
@@ -4771,6 +4921,11 @@ const draw = (
 		// メロディが1音も無い小節が生まれる（セクション内なので上のガードは効かない）。
 		if (breathBars.has(barIdx)) continue;
 
+		// **フックの小節は食いで崩さない。** 頭の音を吸収されると同じ型に聞こえないし、
+		// 食うかどうかは前の小節の末尾（サビの入り口か、サビの途中か）で条件が変わるので、
+		// 1回目と2回目で判定が食い違って「返ってきた」が成立しなくなる。
+		if (hookBars.has(barIdx) || hookBars.has(barIdx - 1)) continue;
+
 		// 界隈曲らしさ：変化音（クロマチックテンション）であっても小節を跨ぐタイを許容し、強烈な食いを演出する。
 		const curSemi = Math.round(cur.pitchUnits / UNITS_PER_SEMITONE);
 		const nxtSemi = Math.round(nxt.pitchUnits / UNITS_PER_SEMITONE);
@@ -4855,6 +5010,9 @@ const draw = (
 		if (barIdx >= totalBars) continue;
 		// セクションの最終小節は息継ぎ（ロングトーン＋休符）を作り込んであるので割らない。
 		if (phraseEndBars.has(barIdx)) continue;
+		// フックも割らない。揺らぎは「同じ型を毎回同じに置かない」ための仕掛けだが、
+		// フックは毎回同じに置くことが役目。
+		if (hookBars.has(barIdx)) continue;
 		const role = barRoles[barIdx];
 
 		// 文脈（BarRole）に合わせたリズム分割の制御
