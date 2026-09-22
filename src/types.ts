@@ -681,7 +681,11 @@ export type DawOptions = {
 	initialLoop?: boolean;
 	/** ループ再生のON/OFFが変化したときに呼ばれる */
 	onLoopChange?: (loop: boolean) => void;
-	/** 利用規約への同意画面の表示をスキップするかどうか */
+	/**
+	 * @deprecated 同意画面は既定で出なくなったので、この指定は何もしない（後方互換のため残置）。
+	 * DAW は元からこの値を読んでいない。聴く人に同意を求めない理由は
+	 * `MmlPlayerOptions.requireConsent` の説明を参照。
+	 */
 	skipConsent?: boolean;
 	/**
 	 * ツールバーにヘルプ（「?」）ボタンを出すか（既定 true）。

@@ -133,7 +133,20 @@ export type MmlPlayerOptions = {
 	onStop?: () => void;
 	/** 埋め込みプレイヤーのベースURL（例: "https://onjmin.github.io/dtm/demo/embed.html"） */
 	embedUrl?: string;
-	/** 利用規約への同意画面の表示をスキップするかどうか */
+	/**
+	 * 再生の前に音源の利用規約への同意画面を出すか（既定 false ＝ 出さない）。
+	 *
+	 * **聴く人は同意する立場ではない。** UTAU 音源の規約が縛るのは音源を使って作品を作り
+	 * 公開する側で、出来た曲を再生する人ではないので、再生を同意で塞がない。聴く人には
+	 * クレジット（「この曲には◯◯の音源を使用しています」＋規約へのリンク）を常に出していて、
+	 * 作る人向けの義務の告知は DAW の歌声モデル欄が受け持つ。
+	 * 作る画面の一部としてプレイヤーを置いていて、そこで同意を取りたいときだけ true にする。
+	 */
+	requireConsent?: boolean;
+	/**
+	 * @deprecated 同意画面は既定で出なくなったので、この指定は何もしない（後方互換のため残置）。
+	 * 同意画面が要る画面では {@link MmlPlayerOptions.requireConsent} を使う。
+	 */
 	skipConsent?: boolean;
 	/**
 	 * @internal モーダル（MMLを表示/MML書式とは/埋め込む）のメニュー項目を省略する。
@@ -957,8 +970,6 @@ export const mountMmlPlayer = (
 					// 解説モーダル内の試聴サンプルも親と同じマスタ音量で鳴らす
 					// （サンプル側のMMLに `#volume=` があればそちらが優先される）。
 					masterVolume,
-					// 解説モーダル内の試聴サンプルは規約同意を要求しない。
-					skipConsent: true,
 					// 再帰的なモーダル生成を防ぐ。
 					_skipInfoModals: true,
 					onStop: () => {
@@ -1404,7 +1415,12 @@ export const mountMmlPlayer = (
 		laneViews.push({ lane, tokens: laneTokens });
 	}
 
-	// ── 利用規約の表示（下部） ──
+	// ── 音源のクレジット表示（下部） ──
+	//
+	// ここは**聴く人**が見る場所なので、「この曲には◯◯の音源を使用しています」＝出典として書く
+	// （聴く人は規約に縛られる立場ではない）。作る人向けの「使用時には◯◯の利用規約に従って
+	// ください」＝義務の告知は DAW（歌声モデルのプルダウンの下）と同意ダイアログが受け持つ。
+	// 音源名そのものが配布元の利用規約へのリンクになっている。
 	const termsModels = [
 		...new Set([...lyricTracks.values()].map((lt) => lt.model)),
 	].filter((model) => KOE_VOICEBANK_TERMS[model]);
@@ -1415,38 +1431,38 @@ export const mountMmlPlayer = (
 		termsDiv.style.fontSize = "10px";
 		termsDiv.style.color = "var(--dtm-warn)";
 		termsDiv.style.display = "flex";
-		termsDiv.style.flexDirection = "column";
+		termsDiv.style.alignItems = "center";
 		termsDiv.style.gap = "4px";
+		termsDiv.style.flexWrap = "wrap";
 		termsDiv.style.marginTop = "4px";
 		termsDiv.style.padding = "0 4px";
 
-		for (const model of termsModels) {
-			const termsRow = doc.createElement("div");
-			termsRow.style.display = "flex";
-			termsRow.style.alignItems = "center";
-			termsRow.style.gap = "4px";
-			termsRow.style.flexWrap = "wrap";
+		const head = doc.createElement("span");
+		head.textContent = "この曲には";
+		termsDiv.appendChild(head);
 
+		termsModels.forEach((model, i) => {
+			if (i > 0) {
+				const sep = doc.createElement("span");
+				sep.textContent = "・";
+				termsDiv.appendChild(sep);
+			}
 			const label = KOE_VOICEBANK_LABELS[model] ?? model;
-			const url = KOE_VOICEBANK_TERMS[model];
-
-			const span1 = doc.createElement("span");
-			span1.textContent = "使用時には";
-
 			const a = doc.createElement("a");
-			a.textContent = `${label}UTAU音源`;
-			a.href = url;
+			a.textContent = label;
+			a.href = KOE_VOICEBANK_TERMS[model];
 			a.target = "_blank";
 			a.rel = "noopener";
+			a.title = `${label}の利用規約`;
 			a.style.color = "var(--dtm-primary)";
 			a.style.textDecoration = "underline";
+			termsDiv.appendChild(a);
+		});
 
-			const span2 = doc.createElement("span");
-			span2.textContent = "の利用規約に従ってください";
+		const tail = doc.createElement("span");
+		tail.textContent = "の音源を使用しています（音源名から利用規約へ）";
+		termsDiv.appendChild(tail);
 
-			termsRow.append(span1, a, span2);
-			termsDiv.appendChild(termsRow);
-		}
 		root.appendChild(termsDiv);
 	}
 
@@ -1458,7 +1474,7 @@ export const mountMmlPlayer = (
 	let consentOverlayEl: HTMLElement | null = null;
 	const checkConsentAndShow = (onAgree?: () => void): boolean => {
 		try {
-			if (options.skipConsent) return false;
+			if (!options.requireConsent) return false;
 			const unagreed = termsModels.filter((model) => {
 				if (agreedModelsInSession.has(model)) return false;
 				try {
