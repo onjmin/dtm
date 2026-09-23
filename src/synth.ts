@@ -1,5 +1,5 @@
 /**
- * 内蔵の簡易square-wave synth + ノイズ系ドラム音。
+ * 内蔵の簡易square-wave synth + 合成ドラム音（synth-drums.ts）。
  *
  * もともと mml-player.ts の中にインラインで持っていたものを、DOM非依存の発音器として
  * 切り出したもの。これにより mountMmlPlayer（DOMビュー）と playMML（ヘッドレス）の双方が
@@ -9,6 +9,12 @@
  * ミキサーへルーティングしたり、SE と AudioContext を共有したりできるようにするため。
  */
 
+import {
+	createDrumKit,
+	MIN_ATTACK_SEC,
+	MIN_RELEASE_SEC,
+	TAIL_RATIO,
+} from "./synth-drums";
 import { type Units, unitsToHz } from "./tuning";
 import type { PlayDrumEvent, PlayNoteEvent } from "./types";
 
@@ -18,18 +24,6 @@ import type { PlayDrumEvent, PlayNoteEvent } from "./types";
  */
 export const freqFromPitch = (pitchUnits: Units): number =>
 	unitsToHz(pitchUnits);
-
-// ── クリック（プチノイズ）対策の共通定数 ──
-// 波形が1サンプルで飛ぶ（不連続になる）と、理論上あらゆる周波数を含むインパルスになり
-// 「プチ」として聞こえる。無音→ピークの飛び／振幅を残したままの停止がその発生源なので、
-// 立ち上がりと消え際に最低限の傾きを必ず入れる。
-
-/** 立ち上がりに最低限確保する時間（秒）。1.5ms は聴感上ほぼ即時だが段差は消える。 */
-const MIN_ATTACK_SEC = 0.0015;
-/** 消え際に最低限確保する時間（秒）。ここで 0 まで落とし切ってから停止する。 */
-const MIN_RELEASE_SEC = 0.004;
-/** 指数減衰の到達点（ピークに対する比）。ここから直線で 0 へ繋ぐ。 */
-const TAIL_RATIO = 0.001;
 
 export type Synth = {
 	/** メロディックノートを発音する（PlayNoteEvent.when は ctx.currentTime からの相対秒） */
@@ -130,65 +124,7 @@ export const createSynth = (
 		};
 	};
 
-	// 簡易ドラム音。SoundFontを持たないため、キック/スネア/ハイハットを
-	// オシレータ＋ノイズで近似する。pitch は General MIDI 準拠のドラムキー番号。
-	const playDrum = (e: PlayDrumEvent): void => {
-		const t0 = ctx.currentTime + e.when;
-		const vol = Math.max(0.0001, Math.min(1, e.velocity));
-		const isKick = e.pitch === 35 || e.pitch === 36;
-		const isSnareLike = e.pitch === 38 || e.pitch === 39 || e.pitch === 40;
-		if (isKick) {
-			// キック: 低音サインのピッチダウン
-			const osc = ctx.createOscillator();
-			const g = ctx.createGain();
-			const kickPeak = vol * 0.135;
-			const kickDecayEnd = t0 + 0.18;
-			const kickEnd = kickDecayEnd + MIN_RELEASE_SEC;
-			osc.frequency.setValueAtTime(150, t0);
-			osc.frequency.exponentialRampToValueAtTime(50, t0 + 0.12);
-			g.gain.setValueAtTime(kickPeak, t0);
-			g.gain.exponentialRampToValueAtTime(kickPeak * TAIL_RATIO, kickDecayEnd);
-			// 旧実装は減衰後の振幅を保ったまま20ms鳴らして停止していた（＝停止点が段差）。
-			g.gain.linearRampToValueAtTime(0, kickEnd);
-			osc.connect(g).connect(compressor);
-			osc.start(t0);
-			osc.stop(kickEnd);
-			osc.onended = () => {
-				osc.disconnect();
-				g.disconnect();
-			};
-			return;
-		}
-		// スネア/ハイハット/その他: ノイズバースト（スネアは帯域広め＋胴鳴り）
-		const dur = isSnareLike ? 0.18 : 0.05;
-		const length = Math.max(1, Math.floor(ctx.sampleRate * dur));
-		const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
-		const data = buffer.getChannelData(0);
-		for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
-		const src = ctx.createBufferSource();
-		src.buffer = buffer;
-		const filter = ctx.createBiquadFilter();
-		filter.type = isSnareLike ? "bandpass" : "highpass";
-		filter.frequency.value = isSnareLike ? 2000 : 8000;
-		const g = ctx.createGain();
-		const noisePeak = vol * (isSnareLike ? 0.105 : 0.06);
-		// ノイズは最後のサンプルが乱数（=非ゼロ）なので、バッファの終わりまでに 0 へ
-		// 落とし切らないと打ち切りの段差が残る。
-		g.gain.setValueAtTime(noisePeak, t0);
-		g.gain.exponentialRampToValueAtTime(
-			noisePeak * TAIL_RATIO,
-			t0 + dur - MIN_RELEASE_SEC,
-		);
-		g.gain.linearRampToValueAtTime(0, t0 + dur);
-		src.connect(filter).connect(g).connect(compressor);
-		src.start(t0);
-		src.stop(t0 + dur);
-		src.onended = () => {
-			src.disconnect();
-			filter.disconnect();
-			g.disconnect();
-		};
-	};
+	const { playDrum } = createDrumKit(ctx, compressor);
 
 	return { playNote, playDrum };
 };
