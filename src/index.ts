@@ -151,6 +151,8 @@ export * from "./renderer";
 export * from "./sequencer";
 // 語り（歌詞の「…」）— UtauTTS の計画器とプレビュー用ヘルパ
 export * from "./speech";
+// 単発の語り（speak）で遅れて届いたチャンクの扱い（SpeakVoiceOptions.lateChunks）
+export type { SpeechLateChunks } from "./speech-schedule";
 // ============================================================
 // Layer 3: 全部入りスタジオ（CDN SoundFont + 歌声 + 録音 を内包）
 // ============================================================
