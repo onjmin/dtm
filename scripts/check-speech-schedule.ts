@@ -19,6 +19,8 @@
  * - shift: 遅れたチャンクは途中から鳴らさず（offset 0）、後続も同じだけずれ、
  *   終わりの見込み（ended のタイマー）も延びる。
  * - skip: 従来どおり時刻は動かさず、過ぎたぶんを飛ばす（MML の語り・従来の既定）。
+ *   ただし揃っている最初のチャンクは、最初の子音（先頭余白）から欠かさず鳴る。
+ * - minBufferSec: 最初のチャンクに加えて、決めた秒数まで合成が進むのを待つ。
  * - position(): 合成待ちの間は進まず、単調に増え、ずれた後続のモーラは実際に鳴る時刻に届く。
  */
 import {
@@ -26,8 +28,11 @@ import {
 	resolveLateChunks,
 	SPEECH_MIN_LEAD_SEC,
 	SPEECH_SHIFT_LEAD_SEC,
+	SPEECH_START_LEAD_SEC,
 	type SpeechLateChunks,
 	skipPlacement,
+	speechBufferReached,
+	speechStartTime,
 } from "../src/speech-schedule";
 
 let failed = 0;
@@ -56,12 +61,14 @@ const CHUNKS = [
 const DURATION = 2.1;
 
 /** speak を呼んだ時刻 `now` から t0 を決める（lyrics.ts の model.speak と同じ式）。 */
-const scheduler = (now: number, lateChunks: SpeechLateChunks, at = 0) =>
+const scheduler = (now: number, lateChunks: SpeechLateChunks, at?: number) =>
 	createSpeechScheduler({
-		t0: Math.max(now + 0.05, at),
+		t0: speechStartTime({ now, leadingSec: LEADING, lateChunks, at }),
 		durationSec: DURATION,
 		lateChunks,
 	});
+/** skip で speak を now=10.0 に呼んだときの t0（先頭余白ぶん後ろ）。 */
+const SKIP_T0 = 10.0 + SPEECH_START_LEAD_SEC + LEADING;
 
 console.log("● 既定の lateChunks");
 {
@@ -165,6 +172,67 @@ console.log('● "first-chunk" + shift: 2 つ目のチャンクが遅れる');
 	);
 }
 
+console.log("● skip: 揃っている最初のチャンクは最初の子音から鳴る");
+{
+	// awaitRender: true / "first-chunk" + skip: speak の時点で最初のチャンクがある。
+	const s = scheduler(10.0, "skip");
+	const p0 = s.place(CHUNKS[0].startSec, CHUNKS[0].durationSec, 10.0);
+	check(
+		p0 !== null && p0.offset === 0,
+		"先頭余白（0.08）が猶予（0.05）より長くても、頭の子音を飛ばさない",
+		`offset=${f(p0?.offset ?? Number.NaN)}`,
+	);
+	check(
+		p0 !== null && near(p0.at, 10.0 + SPEECH_START_LEAD_SEC),
+		"最初のチャンクは今＋猶予から鳴る",
+	);
+	check(
+		near(s.startTime, SKIP_T0),
+		"startTime（最初のモーラ）は先頭余白ぶん後ろ",
+		`startTime=${f(s.startTime)}`,
+	);
+	// 以前の式（今＋猶予に最初のモーラ）では、はみ出した 0.04 秒ぶん頭の子音が欠けていた。
+	const old = skipPlacement(
+		10.0 + SPEECH_START_LEAD_SEC + CHUNKS[0].startSec,
+		CHUNKS[0].durationSec,
+		10.0,
+	);
+	check(
+		old !== null &&
+			near(old.offset, LEADING - SPEECH_START_LEAD_SEC + SPEECH_MIN_LEAD_SEC),
+		"（比較）先頭余白を足さないと頭が欠ける",
+		`offset=${f(old?.offset ?? Number.NaN)}`,
+	);
+	check(
+		near(
+			speechStartTime({ now: 10.0, leadingSec: LEADING, lateChunks: "shift" }),
+			10.0 + SPEECH_START_LEAD_SEC,
+		),
+		"shift では足さない（スケジューラが最初のチャンクでずらす）",
+	);
+	check(
+		near(
+			speechStartTime({
+				now: 10.0,
+				leadingSec: LEADING,
+				lateChunks: "skip",
+				at: 11.0,
+			}),
+			11.0,
+		) &&
+			near(
+				speechStartTime({
+					now: 10.0,
+					leadingSec: LEADING,
+					lateChunks: "skip",
+					at: 10.06,
+				}),
+				SKIP_T0,
+			),
+		"at に余裕があればそのまま、近すぎれば先頭余白が収まる時刻へ丸める",
+	);
+}
+
 console.log("● skip（従来の既定・MML の語り）: 遅れたぶんを飛ばす");
 {
 	// 計画が出来た時点（now=10.0）で時刻を決め、最初のチャンクは 10.3 に届いた。
@@ -172,15 +240,15 @@ console.log("● skip（従来の既定・MML の語り）: 遅れたぶんを�
 	const p0 = s.place(CHUNKS[0].startSec, CHUNKS[0].durationSec, 10.3);
 	check(
 		p0 !== null &&
-			near(p0.offset, 10.3 + SPEECH_MIN_LEAD_SEC - (10.05 - LEADING)),
+			near(p0.offset, 10.3 + SPEECH_MIN_LEAD_SEC - (SKIP_T0 - LEADING)),
 		"最初のチャンクは過ぎたぶんを飛ばして途中から（頭が欠ける＝従来の挙動）",
 		`offset=${f(p0?.offset ?? Number.NaN)}`,
 	);
-	check(near(s.startTime, 10.05), "startTime は動かない");
+	check(near(s.startTime, SKIP_T0), "startTime は動かない");
 	const p1 = s.place(CHUNKS[1].startSec, CHUNKS[1].durationSec, 10.7);
 	check(p1 !== null && p1.offset > 0, "遅れた後続も途中から");
 	check(
-		near(s.shiftSec, 0) && near(s.endTime, 10.05 + DURATION),
+		near(s.shiftSec, 0) && near(s.endTime, SKIP_T0 + DURATION),
 		"ずれず、終わりも動かない",
 	);
 	check(
@@ -259,10 +327,10 @@ console.log("● position(): 字幕送り・口パク用の再生位置");
 	const k = scheduler(10.0, "skip");
 	k.place(CHUNKS[0].startSec, CHUNKS[0].durationSec, 10.0);
 	const before = k.position(10.6, false);
-	k.place(CHUNKS[1].startSec, CHUNKS[1].durationSec, 10.7); // 0.5 の位置は 10.55 に過ぎている
+	k.place(CHUNKS[1].startSec, CHUNKS[1].durationSec, 10.7); // 0.5 の位置は 10.63 に過ぎている
 	const after = k.position(10.72, false);
 	check(
-		after >= before && near(after, 10.72 - 10.05),
+		after >= before && near(after, 10.72 - SKIP_T0),
 		"skip では飛ばした先の位置へ跳ぶ",
 	);
 
@@ -272,6 +340,33 @@ console.log("● position(): 字幕送り・口パク用の再生位置");
 		w.position(10.5, false) < 0,
 		"何も届いていなければ最初のモーラへ進まない",
 	);
+}
+
+console.log("● minBufferSec: 最初のチャンクに加えて貯める");
+{
+	const reached = (
+		renderedUntilSec: number | null,
+		minBufferSec: number,
+		done = false,
+	) =>
+		speechBufferReached({
+			renderedUntilSec,
+			minBufferSec,
+			durationSec: DURATION,
+			done,
+		});
+	check(!reached(null, 0), "最初のチャンクが無ければ待つ");
+	check(reached(0.52, 0), "既定（0）は最初のチャンクだけ");
+	check(
+		!reached(0.52, 1.0) && reached(1.4, 1.0),
+		"決めた秒数（最初のモーラから）まで埋まるのを待つ",
+	);
+	check(
+		!reached(1.4, 5) && reached(2.2, 5),
+		"語りより長く指定したら語りの終わりまで",
+	);
+	check(reached(null, 1.0, true), "合成が終わったら（失敗も）それ以上待たない");
+	check(reached(0.52, -1), "負の値は 0 と同じ");
 }
 
 if (failed > 0) {

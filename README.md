@@ -744,8 +744,9 @@ if (handle) {
 | `style` | 話し方プリセット `"neutral"` / `"calm"`（朗読調）/ `"lively"`、またはプリセット＋上書き `{ preset: "calm", speed: 0.95 }`（koe の `SpeakingStyleInput`）。話速・抑揚幅・基準ピッチ・ポーズ倍率・音量曲線の係数 |
 | `expr` | 声色 `{ gender, breathiness, tension }` |
 | `volume` / `pan` | ピーク音量（0〜1）と定位（-1〜1） |
-| `at` | 最初のモーラを鳴らす AudioContext クロック秒（省略時は `awaitRender` で待つものが揃いしだい）。`lateChunks: "shift"` では頭を切らないために遅れることがある |
-| `awaitRender` | 鳴らし始める前にどこまで合成を待つか。`false`（既定。計画が出来しだい）/ `"first-chunk"`（最初のチャンクまで。セリフ向け）/ `true`（全チャンク） |
+| `at` | 最初のモーラを鳴らす AudioContext クロック秒（省略時は `awaitRender` で待つものが揃いしだい）。近すぎる・過去の値は今に丸める（`"skip"` では最初の子音の先行発声がはみ出さない時刻まで）。`lateChunks: "shift"` では頭を切らないために遅れることがある |
+| `awaitRender` | 鳴らし始める前にどこまで合成を待つか。`false`（既定。計画が出来しだい。**頭が欠けることがある**＝下記）/ `"first-chunk"`（最初のチャンクまで。セリフ向け）/ `true`（全チャンク） |
+| `minBufferSec` | `awaitRender: "first-chunk"` のとき、鳴らし始める前に合成しておく秒数（最初のモーラから。既定 0＝最初のチャンクだけ）。合成の遅い音源で行の途中に間が空くなら 0.3〜0.5 |
 | `lateChunks` | 置き場所を過ぎてから届いたチャンクの扱い。`"shift"`（飛ばさず時間軸ごと後ろへずらす）/ `"skip"`（過ぎたぶんを飛ばして途中から）。既定は `awaitRender: "first-chunk"` なら `"shift"`、それ以外は `"skip"` |
 | `signal` | `AbortSignal`。計画中なら null を返し、再生中なら止める |
 
@@ -783,12 +784,18 @@ const groups = groupVoiceModels(KOE_VOICEBANK_NAMES);
 
 - **既定（`awaitRender: false`）** は計画が出来た時点で時刻を決めるので、最初のチャンクの合成が
   間に合わないと**頭が欠けます**（過ぎたぶんを飛ばして途中から鳴らす＝`lateChunks: "skip"`）。
+  珍しいことではなく、実測では速い音源（uc）でも行の頭が 0〜450ms、合成の遅い音源（roze）では
+  3.3 秒の行のうち 2.3 秒、7.3 秒の行のうち 1.4 秒が欠けました（`"first-chunk"` ではどれも 0ms）。
+  既定は互換のため変えていませんが、**セリフには使わないでください**。
 - **`true`** は全チャンクを待つので欠けませんが、長文ほど鳴り出しが遅れます（文字送りを先に始めると、
   文字が出終わってから声が出ることになります）。
 - **`"first-chunk"`** は最初のチャンクが出来た時点で解決し、そこから頭を欠かさずに鳴らします。
   合成が再生に追いつかず後続のチャンクが遅れたときは、飛ばさずに**時間軸ごと後ろへずらします**
   （`lateChunks: "shift"`。koe のデモと同じ考え方）。間が少し空くことはあっても言葉は欠けません。
   `ended` と自動停止もずれたぶん延びます。
+  最初のチャンクは数モーラしかないので、合成の遅い音源（URL 配信でユニットの音を 1 つずつ取りに行く
+  初回など）では 2 つ目が間に合わず、行の途中に 0.2〜1 秒ほどの間が空くことがあります。気になるなら
+  `minBufferSec: 0.4` のように、鳴らし始める前に少し貯めておくと減ります（鳴り出しはそのぶん遅れます）。
 
 `startTime` は最初のモーラが実際に鳴る時刻です（先頭の子音の先行発声がはみ出す分も含めて後ろへ
 ずらしたあとの値）。`morae` の時刻は `startTime` 基準の計画どおりの秒で、`"shift"` でずれた後の
@@ -812,8 +819,10 @@ if (handle) {
 }
 ```
 
-> **`awaitRender: "first-chunk"` と `lateChunks`、`SpeechHandle.shiftSec` / `position()` を追加しました。**
+> **`awaitRender: "first-chunk"` と `minBufferSec`・`lateChunks`、`SpeechHandle.shiftSec` / `position()` を追加しました。**
 > `awaitRender` を省略したとき・`true` のときの挙動は従来どおりです（`lateChunks` の既定は `"skip"`）。
+> ただし `"skip"` の開始時刻は、最初の子音の先行発声が今より前にはみ出さないところまで丸めるようにしました
+> （`awaitRender: true` でも最初の子音の頭が 10〜25ms ほど欠けていたため。そのぶん鳴り出しが最大で数十 ms 遅れます）。
 > `startTime` は `awaitRender: false` かつ `lateChunks: "shift"` のときだけ、最初のチャンクが届くまで
 > 見込みの値になります（読むたびに今の値を返す getter）。
 

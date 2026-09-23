@@ -51,10 +51,11 @@ import {
 import {
 	createSpeechScheduler,
 	resolveLateChunks,
-	SPEECH_START_LEAD_SEC,
 	type SpeechLateChunks,
 	type SpeechPlacement,
 	skipPlacement,
+	speechBufferReached,
+	speechStartTime,
 } from "./speech-schedule";
 import { UNITS_PER_SEMITONE, type Units, units } from "./tuning";
 import type {
@@ -1100,7 +1101,8 @@ export type SpeakVoiceOptions = {
 	pan?: number;
 	/**
 	 * 最初のモーラを鳴らす AudioContext クロック秒。省略時は「今」（`awaitRender` で
-	 * 待つものが揃いしだい）。過去を渡しても今に丸める。`lateChunks: "shift"` では、
+	 * 待つものが揃いしだい）。過去を渡しても今に丸める（`lateChunks: "skip"` では、最初の子音の
+	 * 先行発声が今より前にはみ出さない時刻まで丸める）。`lateChunks: "shift"` では、
 	 * 先頭余白（最初の子音の先行発声）が今より前にはみ出すときも頭を切らずに後ろへずらすので、
 	 * これより遅れることがある（実際の時刻は {@link SpeechHandle.startTime}）。
 	 */
@@ -1109,13 +1111,26 @@ export type SpeakVoiceOptions = {
 	 * 鳴らし始める前に合成をどこまで待つか。
 	 *
 	 * - `false`（既定）… 計画が出来たらすぐ時刻を決め、チャンクは届いた順に置く。
-	 *   最初のチャンクが間に合わないと頭が欠ける（`lateChunks` 既定 `"skip"`）。
+	 *   **最初のチャンクの合成が間に合わないと、そのぶん頭が欠ける**（`lateChunks` 既定
+	 *   `"skip"`）。実測では速い音源でも 0〜450ms、遅い音源では 3.3 秒の行の 2.3 秒が欠けた。
+	 *   既定を変えると呼び出し側の待ちが変わるので従来どおりにしてあるが、セリフには使わないこと。
 	 * - `"first-chunk"` … 最初のチャンクが出来てから時刻を決める。長文でも待ちは
 	 *   最初の数モーラぶんだけで、頭から鳴る。後続が間に合わなければ時間軸ごと後ろへ
 	 *   ずらす（`lateChunks` 既定 `"shift"`）。セリフの読み上げはこれを勧める。
+	 *   待ちを増やして途中の間を減らすなら {@link SpeakVoiceOptions.minBufferSec}。
 	 * - `true` … 全チャンクの合成完了を待つ。長文をぴったり揃えて出したいとき用。
 	 */
 	awaitRender?: boolean | "first-chunk";
+	/**
+	 * `awaitRender: "first-chunk"` のとき、鳴らし始める前に合成しておく語りの長さ（秒。
+	 * 最初のモーラから数える）。既定 0（最初のチャンクだけ）。語りがこれより短ければ全部を待つ。
+	 *
+	 * 最初のチャンクは数モーラしかないので、合成が遅い音源（URL 配信でユニットの取得が
+	 * 1 つずつ往復する初回など）では 2 つ目が最初の音の終わりに間に合わず、`"shift"` で
+	 * 行の途中に間が空く。0.3〜0.5 秒ほど貯めてから鳴らすと、鳴り出しが少し遅れる代わりに
+	 * 間が減る。`awaitRender` が `true` / `false` のときは使わない。
+	 */
+	minBufferSec?: number;
 	/**
 	 * 置き場所を過ぎてから届いたチャンク（合成が再生に追いつかなかった分）の扱い。
 	 *
@@ -2724,6 +2739,11 @@ export const createKoeVoice = async (
 		 */
 		firstChunk: Promise<void>;
 		durationSec: number;
+		/**
+		 * タイムラインの先頭余白（秒。最初の子音の先行発声）。最初のチャンクは最初のモーラより
+		 * これだけ前から鳴る。計画が出来た時点で埋まる。
+		 */
+		leadingSec: number;
 		/** モーラ列（計画が出来た時点で埋まる）。 */
 		morae: SpeechMora[];
 		chunks: SpeechRendered[];
@@ -2784,6 +2804,7 @@ export const createKoeVoice = async (
 			rendered: Promise.resolve(),
 			firstChunk,
 			durationSec: 0,
+			leadingSec: 0,
 			morae: [],
 			chunks: [],
 			done: false,
@@ -2819,6 +2840,7 @@ export const createKoeVoice = async (
 			// ノートの位置には最初のモーラを合わせる。タイムラインの先頭余白（先行発声ぶん）は
 			// ノートより前へはみ出して鳴る（歌唱の preSec と同じ扱い）。
 			const leadingSec = speechPlanLeadingSec(prepared);
+			e.leadingSec = leadingSec;
 			resolvePlanned(e.durationSec);
 			await backend.renderSpeech(
 				prepared,
@@ -2950,17 +2972,55 @@ export const createKoeVoice = async (
 		return entry && entry.durationSec > 0 ? entry.durationSec : undefined;
 	};
 
+	/**
+	 * 最初のチャンクが届き、さらに最初のモーラから `minBufferSec` 秒ぶんの音が揃う
+	 * （または合成が終わる）まで待つ（`awaitRender: "first-chunk"` の待ち）。
+	 */
+	const speechBuffered = async (
+		e: SpeechEntry,
+		minBufferSec: number,
+	): Promise<void> => {
+		await e.firstChunk;
+		const reached = () => {
+			const last = e.chunks[e.chunks.length - 1];
+			return speechBufferReached({
+				renderedUntilSec: last ? last.startSec + last.audio.duration : null,
+				minBufferSec,
+				durationSec: e.durationSec,
+				done: e.done,
+			});
+		};
+		if (reached()) return;
+		await new Promise<void>((resolve) => {
+			const settle = () => {
+				e.listeners.delete(onChunk);
+				resolve();
+			};
+			const onChunk = () => {
+				if (reached()) settle();
+			};
+			e.listeners.add(onChunk);
+			void e.rendered.then(settle, settle);
+		});
+	};
+
 	model.speak = async (text, pitch, o = {}) => {
 		const entry = speechEntryFor(text, pitch, o.expr, o.style, o.emotion);
 		const duration = await entry.planned;
 		if (duration === null || o.signal?.aborted) return null;
-		if (o.awaitRender === "first-chunk") await entry.firstChunk;
+		if (o.awaitRender === "first-chunk")
+			await speechBuffered(entry, o.minBufferSec ?? 0);
 		else if (o.awaitRender) await entry.rendered;
 		if (o.signal?.aborted) return null;
 		const lateChunks = resolveLateChunks(o.awaitRender, o.lateChunks);
-		// 最初のチャンクを置くまでの猶予（メインスレッド 1 周ぶん）。
+		// 最初のチャンクを置くまでの猶予（メインスレッド 1 周ぶん。skip では先頭余白も足す）。
 		const sched = createSpeechScheduler({
-			t0: Math.max(ctx.currentTime + SPEECH_START_LEAD_SEC, o.at ?? 0),
+			t0: speechStartTime({
+				now: ctx.currentTime,
+				leadingSec: entry.leadingSec,
+				lateChunks,
+				at: o.at,
+			}),
 			durationSec: duration,
 			lateChunks,
 		});

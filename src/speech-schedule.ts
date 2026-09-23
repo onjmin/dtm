@@ -9,6 +9,8 @@
  * - `"skip"` … 過ぎたぶんを飛ばして途中から鳴らす。anchor は動かないので、曲の伴奏など
  *   外の時間軸との同期は保たれるが、遅れたぶんの言葉が欠ける（先頭が遅れれば頭が欠ける）。
  *   MML の `「…」` 語りと、`speak` の従来の既定（`awaitRender` が `false` / `true`）。
+ *   `speak` では開始時刻に先頭余白を足しておき（{@link speechStartTime}）、揃っている最初の
+ *   チャンクの子音までは欠かさない。
  * - `"shift"` … anchor（と、まだ置いていない後続すべて）を後ろへずらして頭から鳴らす。
  *   言葉は欠けない代わりに、遅れたぶんだけ間が空き、後ろのモーラが遅れて鳴る。
  *   koe のデモ（最初のチャンクで時間軸を決め、遅れたら残りをずらす）と同じ考え方。
@@ -34,6 +36,46 @@ export const resolveLateChunks = (
 
 /** `speak` の開始猶予（秒）。最初のチャンクを置くまでのメインスレッド 1 周ぶん。 */
 export const SPEECH_START_LEAD_SEC = 0.05;
+
+/**
+ * `speak` のタイムライン 0（最初のモーラ）を置く時刻。`at`（省略可）が近すぎれば、
+ * 今＋{@link SPEECH_START_LEAD_SEC} に丸める。
+ *
+ * 最初のチャンクは先頭余白（最初の子音の先行発声。`leadingSec`）のぶん、この時刻より前から
+ * 鳴り始める。`"skip"` では今より前へはみ出したぶんを飛ばすので、そのままだと**最初の子音の
+ * 頭が欠ける**（先頭余白が猶予より長いとき）。そこで `"skip"` では丸め先に先頭余白を足す。
+ * `"shift"` はスケジューラが最初のチャンクで時間軸ごと後ろへずらすので足さない。
+ */
+export const speechStartTime = (o: {
+	now: number;
+	leadingSec: number;
+	lateChunks: SpeechLateChunks;
+	at?: number;
+}): number =>
+	Math.max(
+		o.now +
+			SPEECH_START_LEAD_SEC +
+			(o.lateChunks === "skip" ? Math.max(0, o.leadingSec) : 0),
+		o.at ?? 0,
+	);
+
+/**
+ * `awaitRender: "first-chunk"` の待ちが済んだか（`SpeakVoiceOptions.minBufferSec`）。
+ * `renderedUntilSec` は届いたチャンクがタイムラインのどこまで埋めたか（最初のモーラ 0 からの秒。
+ * 何も届いていなければ null）。最初のチャンクが届き、かつ `minBufferSec`（語りより長ければ
+ * 語りの長さ）まで埋まれば済み。合成が終わっていれば（`done`）それ以上待たない。
+ */
+export const speechBufferReached = (o: {
+	renderedUntilSec: number | null;
+	minBufferSec: number;
+	durationSec: number;
+	done: boolean;
+}): boolean => {
+	if (o.done) return true;
+	if (o.renderedUntilSec === null) return false;
+	const need = Math.min(Math.max(0, o.minBufferSec), o.durationSec);
+	return o.renderedUntilSec >= need;
+};
 /** これより近い（今から秒）置き場所は「過ぎた」とみなす。 */
 export const SPEECH_MIN_LEAD_SEC = 0.01;
 /** `"shift"` で後ろへずらすときの置き先（今から秒）。閾値との差がずらし直しの連発を防ぐ。 */
