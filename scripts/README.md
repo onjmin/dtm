@@ -8,6 +8,7 @@
 | :--- | :--- | :--- |
 | `check-compose.ts` | 自動作曲パイプラインの品質・回帰テスト（`pnpm test` から呼び出し） | `pnpm test` または `npx tsx scripts/check-compose.ts` |
 | `check-tracks.ts` | 上級者モード15トラックの検算（声部の分割で音が消えていないか・トラックが遊んでいないか・同じ楽器で同じ音を重ねていないか。`pnpm test` から呼び出し） | `pnpm test` または `npx tsx scripts/check-tracks.ts` |
+| `check-speech-schedule.ts` | 単発の読み上げ（`speak`）のチャンク配置の検算（`awaitRender: "first-chunk"` で頭から鳴るか・`lateChunks: "shift"` で遅れたチャンクを飛ばさず時間軸ごとずらすか・`position()` が音と揃うか。チャンクの到着時刻を偽って、音を出さずに確かめる。`pnpm test` から呼び出し） | `pnpm test` または `npx tsx scripts/check-speech-schedule.ts` |
 | `calibrate-corpus.ts` | 参考MIDIコーパス群から目標帯（`src/compose-corpus.ts`）を算出し校正するスクリプト | `npx tsx scripts/calibrate-corpus.ts --dir "<path>" --out src/compose-corpus.ts` |
 | `check-evaluator.ts` | **評価機そのものの検算。** 人間の曲が生成物と同等以上の点を取るかを見る（取らないなら基準の側が壊れている） | `npx tsx scripts/check-evaluator.ts --dir "<path>"` |
 | `compare-reach.ts` | **生成系の到達範囲**を測る。採点を切って引き、コーパスのどの曲へ届かないか・どの軸が原因かを出す | `npx tsx scripts/compare-reach.ts --dir "<path>" --songs 1500` |

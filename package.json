@@ -28,7 +28,7 @@
 		"build": "rimraf dist && tsup && biome format src --write",
 		"check": "biome check src --write",
 		"version": "tsx scripts/sync-version.ts && git add src/version.ts docs/dataset-provenance.md",
-		"test": "tsx scripts/check-version.ts && tsx scripts/check-compose.ts && tsx scripts/check-registers.ts && tsx scripts/check-tracks.ts && tsx scripts/check-lyrics-fade.ts && tsx scripts/check-breath.ts && tsx scripts/check-phrase.ts && tsx scripts/check-speech-lyrics.ts && tsx scripts/check-pitch-glide.ts && tsx scripts/check-ust.ts && tsx scripts/check-musicxml.ts && tsx scripts/check-backing-audio.ts && tsx scripts/check-mml-meta.ts && tsx scripts/check-mml-chord.ts && tsx scripts/check-macro-state.ts",
+		"test": "tsx scripts/check-version.ts && tsx scripts/check-compose.ts && tsx scripts/check-registers.ts && tsx scripts/check-tracks.ts && tsx scripts/check-lyrics-fade.ts && tsx scripts/check-breath.ts && tsx scripts/check-phrase.ts && tsx scripts/check-speech-lyrics.ts && tsx scripts/check-speech-schedule.ts && tsx scripts/check-pitch-glide.ts && tsx scripts/check-ust.ts && tsx scripts/check-musicxml.ts && tsx scripts/check-backing-audio.ts && tsx scripts/check-mml-meta.ts && tsx scripts/check-mml-chord.ts && tsx scripts/check-macro-state.ts",
 		"prepublishOnly": "pnpm run build",
 		"patch": "pnpm version patch",
 		"minor": "pnpm version minor",

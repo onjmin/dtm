@@ -450,6 +450,12 @@ export type DtmStudio = {
 	 * 音量はマスタ（{@link setMasterVolume}）に従う。
 	 * 初回は TTS アセット約 45MB を取得する（{@link prepareSpeech} で先に済ませられる）。
 	 * 読み上げできない（未知のモデル・読みが取れない本文）ときは null。
+	 *
+	 * セリフには `awaitRender: "first-chunk"` を勧める。最初のチャンクが出来た時点で解決し、
+	 * 頭を欠かさずに鳴り出す（合成が追いつかなければ後続を後ろへずらす＝`lateChunks: "shift"`）。
+	 * 文字送りを声と揃えるなら、戻り値の `startTime`（最初のモーラの時刻）から始め、
+	 * `position()` と `morae` を比べて進める。既定（`awaitRender` 省略）は計画が出来しだい
+	 * 時刻を決めるので速いが、最初のチャンクが間に合わないと頭が欠ける。
 	 */
 	speak: (
 		text: string,
