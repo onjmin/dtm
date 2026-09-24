@@ -62,6 +62,7 @@ import {
 	DEFAULT_SECTIONS,
 	type PlacedSection,
 	type SectionKind,
+	STRUCTURE_TEMPLATES,
 	sectionAt,
 } from "./compose-sections";
 import { UNITS_PER_SEMITONE, type Units } from "./tuning";
@@ -1306,7 +1307,7 @@ export type ComposeOptions = {
 	 */
 	sections?: SectionKind[];
 	/**
-	 * 曲構成テンプレート名（"1chorus" | "jpop_standard" | "jpop_drop" | "vocaloid" | "verse_chorus"）。
+	 * 曲構成テンプレート名（"1chorus" | "jpop_standard" | "jpop_drop" | "vocaloid" | "verse_chorus" | "game_loop"）。
 	 * 指定時は sections より優先され、2コーラスやCメロ、落ちサビなどの王道構成を展開する。
 	 */
 	template?: string;
@@ -2729,7 +2730,10 @@ const draw = (
 	//
 	// **テンポは設計図より先に引く。** イントロの長さは小節数ではなく秒で決める
 	// （{@link SectionSpec.seconds}）ので、BPM が分からないうちには小節数を選べない。
-	const bpm = pick(BPM_CHOICES, rnd);
+	const template = STRUCTURE_TEMPLATES.find(
+		(tm) => tm.name === options.template,
+	);
+	const bpm = pick(template?.bpmChoices ?? BPM_CHOICES, rnd);
 	const sectionPlan = buildSectionPlan(
 		options.sections ?? DEFAULT_SECTIONS,
 		options.template,
@@ -3245,7 +3249,10 @@ const draw = (
 
 	// **展開の仕方は小節の役割を決める前に引く。** `style` は下で引いているが、
 	// 役割の割り当てはそれより前なので、ここで独立に持つ。
-	const form = resolveMelodyForm(options.form, rnd);
+	const form = resolveMelodyForm(
+		options.form && options.form !== "auto" ? options.form : template?.form,
+		rnd,
+	);
 
 	const units: Unit[] = [];
 	for (const section of sectionPlan) {

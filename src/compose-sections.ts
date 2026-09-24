@@ -255,6 +255,10 @@ export type StructureTemplate = {
 	name: string;
 	label: string;
 	plan: SectionKind[];
+	/** テンポの候補。省略時は compose 側の既定の候補から引く。 */
+	bpmChoices?: number[];
+	/** 展開の仕方（`ComposeOptions.form`）。呼び出し側の明示指定が優先。 */
+	form?: string;
 };
 
 export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
@@ -338,6 +342,16 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 			"chorus",
 			"outro",
 		],
+	},
+
+	// ゲームBGM（ループ）。テーマ（サビ）を頭から出し、対比→テーマ→緊張→テーマで一周。
+	// アウトロを持たないのは、最後のテーマから最初のテーマへ戻して鳴らし続ける前提のため。
+	{
+		name: "game_loop",
+		label: "ゲームBGM（ループ）",
+		plan: ["intro", "chorus", "verse", "chorus", "bridge", "chorus"],
+		bpmChoices: [155, 160, 168, 172, 175, 180, 185],
+		form: "ostinato",
 	},
 ];
 

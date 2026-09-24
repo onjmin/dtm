@@ -554,6 +554,7 @@ export const buildUI = (
           <option value="jpop_drop">落ちサビ入り（JPOP王道 + ラスサビ前落ちサビ）</option>
           <option value="vocaloid">ボカロ王道（疾走・2番/Cメロ/ラスサビ）</option>
           <option value="verse_chorus">Verse-Chorus（Bメロなし・洋楽風）</option>
+          <option value="game_loop">ゲームBGM（ループ・高速リフ）</option>
         </select>
       </div>
       <div class="dtm-row" data-dtm="compose-sections-row">
