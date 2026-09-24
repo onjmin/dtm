@@ -115,6 +115,22 @@ export const BLUES_SCALE: ScaleDegree[] = [
 	{ semi: 10, fifth: -2 }, // Bb
 ];
 
+/**
+ * マイナー・ブルース音階（イ短調から見て A C D E♭ E G）。{@link BLUES_SCALE} を
+ * 短調の主音へ移した形。
+ *
+ * ブルース音階との違いは伴奏で、こちらは短三和音を鳴らす。旋律の♭5（ミ♭）が
+ * 短調の上を半音で掠めるのが顔（OFF の Pepper Steak 型）。
+ */
+export const MINOR_BLUES_SCALE: ScaleDegree[] = [
+	{ semi: 0, fifth: 0 }, // C
+	{ semi: 2, fifth: 2 }, // D
+	{ semi: 3, fifth: -3 }, // Eb（ブルーノート）
+	{ semi: 4, fifth: 4 }, // E
+	{ semi: 7, fifth: 1 }, // G
+	{ semi: 9, fifth: 3 }, // A
+];
+
 /** 音階の識別子。 */
 export type ComposeScaleId =
 	| "yo"
@@ -129,7 +145,8 @@ export type ComposeScaleId =
 	| "harmonic_minor"
 	| "hijaz"
 	| "hungarian"
-	| "blues";
+	| "blues"
+	| "minor_blues";
 
 /**
  * 主音のダイアトニック度数。0=ド, 1=レ, ..., 6=シ。
@@ -463,6 +480,36 @@ const BLUES_CENTER: TonicCenter = {
 	],
 };
 
+/**
+ * マイナー・ブルース（主音ラ）の進行。**主和音に居座る**のが基本で、リフを
+ * 回すための台になる。動くのはセクションの締めとCメロだけ。
+ */
+const MINOR_BLUES_CENTER: TonicCenter = {
+	tonic: "Am",
+	half: "Em7",
+	deceptive: "F",
+	tonicPattern: /^Am/,
+	a: [
+		["Am", "Am", "Am", "Am"],
+		["Am7", "Am7", "Am7", "Am7"],
+		["Am", "Am", "Dm7", "Am"],
+		["Am", "Am", "G", "Am"],
+		["Am7", "Am7", "Dm7", "Dm7"],
+	],
+	b: [
+		["Am", "G", "Am", "Am"],
+		["Dm7", "Dm7", "Am", "Am"],
+		["Am", "Am", "F", "G"],
+		["F", "G", "Am", "Am"],
+		["Am", "Am", "Dm7", "Em7"],
+	],
+	c: [
+		["Dm7", "Dm7", "Em7", "Em7"],
+		["F", "F", "G", "G"],
+		["Dm7", "Em7", "F", "G"],
+	],
+};
+
 /** 音階のマスターデータ。 */
 export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 	yo: {
@@ -581,12 +628,23 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		center: BLUES_CENTER,
 		description: "ブルーノート入りの6音音階。短3度で歌い、伴奏は長3度で鳴る",
 	},
+	minor_blues: {
+		id: "minor_blues",
+		label: "マイナー・ブルース",
+		tonic: 5,
+		parent: MINOR_BLUES_SCALE,
+		core: [5, 0, 1, 3, 4], // ラ ド レ ミ ソ
+		strict: true,
+		center: MINOR_BLUES_CENTER,
+		description:
+			"短調の上を♭5が半音で掠める。一つの和音でリフを回すゲーム・ロック",
+	},
 };
 
 /** 全音階の識別子。 */
-export const COMPOSE_SCALE_IDS = Object.keys(
-	COMPOSE_SCALES,
-) as ComposeScaleId[];
+export const COMPOSE_SCALE_IDS = (
+	Object.keys(COMPOSE_SCALES) as ComposeScaleId[]
+).filter((id) => id !== "minor_blues");
 
 /**
  * 主音の位置ごとの「和声の中心」。進行プールと終止形をここで引く。

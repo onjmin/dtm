@@ -554,7 +554,7 @@ export const buildUI = (
           <option value="jpop_drop">落ちサビ入り（JPOP王道 + ラスサビ前落ちサビ）</option>
           <option value="vocaloid">ボカロ王道（疾走・2番/Cメロ/ラスサビ）</option>
           <option value="verse_chorus">Verse-Chorus（Bメロなし・洋楽風）</option>
-          <option value="game_loop">ゲームBGM（ループ・高速リフ）</option>
+          <option value="game_loop">ゲームBGM（ループ・16分リフ）</option>
         </select>
       </div>
       <div class="dtm-row" data-dtm="compose-sections-row">
@@ -645,6 +645,7 @@ export const buildUI = (
             <option value="hijaz" title="主音の上が半音、主和音は長三和音。中東・スパニッシュ・メタル">ヒジャーズ（フリジアン・ドミナント）</option>
             <option value="hungarian" title="増2度が2か所。音階の中でいちばん跳ねた、異国めいた響き">ハンガリアン・マイナー（ジプシー）</option>
             <option value="blues" title="ブルーノート入りの6音音階。短3度で歌い、伴奏は長3度で鳴る">ブルース音階</option>
+            <option value="minor_blues" title="短調の上を♭5が半音で掠める。一つの和音でリフを回すゲーム・ロック">マイナー・ブルース</option>
           </optgroup>
         </select>
         <span class="dtm-grow"></span>

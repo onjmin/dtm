@@ -1148,7 +1148,12 @@ type BassStyle =
 	/** 1音だけ。小節をまたいで伸ばす。 */
 	| "sustain"
 	/** 息継ぎのある型。2拍目を空ける。 */
-	| "breath";
+	| "breath"
+	// --- 以下、テンプレートが指名したときだけ使う（{@link BASS_STYLES} に入れない） ---
+	/** ルートから半音ずつ4つ下がる。減七の上で鳴らす Ghost Fight 型。 */
+	| "chromatic-descent"
+	/** ルートと5度を16分のシンコペーションで刻む一発リフ。Pepper Steak 型。 */
+	| "power-riff";
 
 /**
  * ベースの骨格。奏法（{@link BassStyle}）の上位にある、「1小節をどう扱うか」。
@@ -2681,6 +2686,68 @@ type Draw = Omit<ComposeResult, "stats" | "drum" | "instrument" | "arrange"> & {
 	stepsPerBar: number;
 };
 
+/**
+ * リフの1音。`step` は主音から数えた中核音の歩数（ペンタトニック上の位置）、
+ * `chrom` は半音下の刺繍音、`len` は16分を1とした長さ（負は休符）。
+ */
+type RiffNote = { step: number; chrom: boolean; len: number };
+
+/**
+ * リフの部品。どれも半小節（16分8つ）で、`a` は起点の歩数。手本2曲の上声は
+ * この3種の組み合わせだった——刺繍音で回る・隣の中核音と往復する・同じ音を刻む。
+ * 分散和音（和音の構成音を上下する）は手本に無く、入れると伴奏に聞こえる。
+ */
+const RIFF_FIGURES: ((a: number, rnd: () => number) => RiffNote[])[] = [
+	// 回る: a, 半音下, a, 上へ抜けて、隣と往復
+	(a) => [
+		{ step: a, chrom: false, len: 1 },
+		{ step: a, chrom: true, len: 1 },
+		{ step: a, chrom: false, len: 1 },
+		{ step: a + 1, chrom: false, len: 1 },
+		{ step: a - 1, chrom: false, len: 1 },
+		{ step: a - 2, chrom: false, len: 1 },
+		{ step: a - 1, chrom: false, len: 1 },
+		{ step: a - 2, chrom: false, len: 1 },
+	],
+	// 往復: 隣の中核音と16分で行き来し、最後を伸ばす
+	(a, rnd) => {
+		const d = rnd() < 0.5 ? -1 : 1;
+		return [
+			{ step: a, chrom: false, len: 1 },
+			{ step: a + d, chrom: false, len: 1 },
+			{ step: a, chrom: false, len: 1 },
+			{ step: a + d, chrom: false, len: 1 },
+			{ step: a, chrom: false, len: 1 },
+			{ step: a + d * 2, chrom: false, len: 1 },
+			{ step: a, chrom: false, len: 2 },
+		];
+	},
+	// 刻む: 同じ音を付点で刻み、裏で半音下を掠める
+	(a) => [
+		{ step: a, chrom: false, len: 2 },
+		{ step: a, chrom: false, len: 1 },
+		{ step: a, chrom: true, len: 1 },
+		{ step: a, chrom: false, len: 2 },
+		{ step: a - 1, chrom: false, len: 2 },
+	],
+	// 下降して戻る: 2つ下りて半音下から戻る
+	(a) => [
+		{ step: a, chrom: false, len: 1 },
+		{ step: a - 1, chrom: false, len: 1 },
+		{ step: a - 2, chrom: false, len: 2 },
+		{ step: a - 1, chrom: true, len: 1 },
+		{ step: a - 1, chrom: false, len: 1 },
+		{ step: a, chrom: false, len: 2 },
+	],
+];
+
+/**
+ * リフ1小節（前半・後半）。起点は主音の周り（主音から -1〜+3 歩）から引き、後半は前半より
+ * 低い所から始める。手本はどちらも「上で回って、下で往復する」形だった。
+ */
+const makeRiffHalf = (rnd: () => number, lo: number, hi: number): RiffNote[] =>
+	pick(RIFF_FIGURES, rnd)(lo + Math.floor(rnd() * (hi - lo + 1)), rnd);
+
 const draw = (
 	options: ComposeOptions,
 	resolvedKey: ResolvedComposeKey,
@@ -2734,6 +2801,9 @@ const draw = (
 		(tm) => tm.name === options.template,
 	);
 	const bpm = pick(template?.bpmChoices ?? BPM_CHOICES, rnd);
+	const bassOverride = template?.bassByScale?.[scale.id] as
+		| BassStyle
+		| undefined;
 	const sectionPlan = buildSectionPlan(
 		options.sections ?? DEFAULT_SECTIONS,
 		options.template,
@@ -3457,11 +3527,12 @@ const draw = (
 		chromaticAffinity:
 			(rnd() < 0.2 ? 0 : 0.12 + rnd() * 0.33) * (scale.strict ? 0.4 : 1),
 		barHeadWeight: rnd() < 0.5 ? 3 : 2,
-		bassStyle: pick<BassStyle>(BASS_STYLES, rnd),
-		bassSkeleton: pick(BASS_SKELETONS, rnd),
+		bassStyle: bassOverride ?? pick<BassStyle>(BASS_STYLES, rnd),
+		// 指名された奏法は線そのものが作風なので、ペダルや経過音の差し替えで崩さない。
+		bassSkeleton: bassOverride ? "per-bar" : pick(BASS_SKELETONS, rnd),
 		// 2小節フレーズの後半。前半と同じ型を引いたら「1小節フレーズ×2」に戻るので、
 		// **必ず別の型**にする。
-		bassStyleAlt: pick<BassStyle>(BASS_STYLES, rnd),
+		bassStyleAlt: bassOverride ?? pick<BassStyle>(BASS_STYLES, rnd),
 		// 短く切る奏法は、刻みの細かい書法（8分・オクターブ・オルタネイト）でだけ引く。
 		// 4分打ちやウォーキングを短く切ると、支えるべき土台がスカスカになる。
 		bassStaccato: rnd() < 0.45,
@@ -4649,7 +4720,11 @@ const draw = (
 			BASS_LOW,
 			BASS_HIGH,
 		);
-		const BASS_CELLS: Record<BassStyle, [number, number][]> = {
+		// 半音で下がる線の頂点。4つ下がると音域の底を割るルートでは、オクターブ上から下ろす。
+		const descTop = R - 4 >= BASS_LOW ? R : R + 12;
+		/** 頂点から n 半音下の音の綴り（短2度・長2度・短3度・長3度の下行）。 */
+		const descFifth = [0, 5, -2, 3, -4].map((d) => rootTone.fifth + d);
+		const BASS_CELLS: Record<BassStyle, [number, number, number?][]> = {
 			quarter: [
 				[R, QUARTER],
 				[R, QUARTER],
@@ -4737,6 +4812,33 @@ const draw = (
 				[F, QUARTER],
 				[R, QUARTER],
 			],
+			"chromatic-descent": [
+				[descTop, SIXTEENTH, descFifth[0]],
+				[descTop, SIXTEENTH, descFifth[0]],
+				[descTop - 1, EIGHTH, descFifth[1]],
+				[descTop - 2, EIGHTH, descFifth[2]],
+				[descTop - 3, EIGHTH, descFifth[3]],
+				[descTop - 4, EIGHTH, descFifth[4]],
+				[F, EIGHTH],
+				[R, EIGHTH],
+				[A, EIGHTH],
+			],
+			"power-riff": [
+				[R, EIGHTH],
+				[R, SIXTEENTH],
+				[R, -SIXTEENTH],
+				[F, SIXTEENTH],
+				[R, -SIXTEENTH],
+				// ♭5。5度から半音下へ掠める、この型の顔。
+				[F - 1, SIXTEENTH, (fifthTone?.fifth ?? rootTone.fifth + 1) - 7],
+				[R, -SIXTEENTH],
+				[R, EIGHTH],
+				[R, SIXTEENTH],
+				[R, -SIXTEENTH],
+				[F, SIXTEENTH],
+				[R, -SIXTEENTH],
+				[T, EIGHTH],
+			],
 		};
 		// **骨格（{@link BassSkeleton}）で1小節の扱い方を決める。** 奏法だけを引くと、どの曲も
 		// 「毎小節アタマにルート＋同じ型の反復」という同一の骨格になる。
@@ -4749,7 +4851,7 @@ const draw = (
 			style.bassSkeleton === "two-bar" && isLateBar
 				? style.bassStyleAlt
 				: style.bassStyle;
-		const baseCell: [number, number][] =
+		const baseCell: [number, number, number?][] =
 			role === "hold" || role === "cadence"
 				? [[R, WHOLE]]
 				: role === "run"
@@ -4770,7 +4872,7 @@ const draw = (
 						BASS_HIGH,
 					)
 				: null;
-		let bassCell: [number, number][] =
+		let bassCell: [number, number, number?][] =
 			pedalSemi === null
 				? baseCell
 				: baseCell.map(([semi, value]): [number, number] => [
@@ -4790,14 +4892,14 @@ const draw = (
 			progression[(bar + 1) % totalBars] !== progression[bar]
 		) {
 			const last = bassCell.length - 1;
-			bassCell = bassCell.map((cell, i): [number, number] =>
+			bassCell = bassCell.map((cell, i): [number, number, number?] =>
 				i === last ? [A, cell[1]] : cell,
 			);
 		}
 		// 音の強弱・切り方・ゴーストは、この小節ぶんを組み立ててから後段でまとめて付ける。
 		const barBass: ComposedNote[] = [];
 		let bassCursor = 0;
-		for (const [semi, value] of bassCell) {
+		for (const [semi, value, spelled] of bassCell) {
 			// **小節からはみ出させない。** セルの合計は1小節ぴったりのはずだが、
 			// 型を書き足したときに合計を間違えると、次の小節の音と重なった状態で
 			// 出荷される（`check-compose.ts` の「ベースが単音」が落ちる）。
@@ -4813,17 +4915,24 @@ const draw = (
 			const len = Math.min(scaleStep(value), room);
 			let useSemi = semi;
 			let fifth =
-				semi === R || semi === O
-					? rootTone.fifth
-					: semi === F
-						? (fifthTone?.fifth ?? rootTone.fifth)
-						: semi === T
-							? (thirdTone?.fifth ?? rootTone.fifth)
-							: scaleFifth(scale, semi);
+				spelled !== undefined
+					? spelled
+					: semi === R || semi === O
+						? rootTone.fifth
+						: semi === F
+							? (fifthTone?.fifth ?? rootTone.fifth)
+							: semi === T
+								? (thirdTone?.fifth ?? rootTone.fifth)
+								: scaleFifth(scale, semi);
 			// **半小節で和音が動く曲は、後半の音を後半の和音へ移す。**
 			// ベースが前半の和音に留まると、上で鳴っている和音と根音が食い違う。
 			// ペダルの曲は動かさない——留まるのがペダルの役目。
-			if (tonesLate && bassCursor >= lateAt && pedalSemi === null) {
+			if (
+				tonesLate &&
+				bassCursor >= lateAt &&
+				pedalSemi === null &&
+				spelled === undefined
+			) {
 				const t = nearestChordTone(useSemi, tonesLate, 1);
 				useSemi = clampSemi(t.semi, BASS_LOW, BASS_HIGH);
 				fifth = t.fifth;
@@ -5067,6 +5176,93 @@ const draw = (
 		const us = notes.map((n) => n.pitchUnits);
 		return (Math.max(...us) - Math.min(...us)) / UNITS_PER_SEMITONE;
 	};
+
+	// --- 楽器リフの主旋律（{@link StructureTemplate.lead}） ---
+	// 歌メロを捨てて、2小節周期の16分リフで置き換える。**リフは和音に付いて動かない。**
+	// 手本2曲とも上声の型は固定で、下でベースが動く（Pepper Steak は A#→C#→G#、
+	// Ghost Fight は半音下降）。和音ごとに移すと分散和音になり、リフに聞こえない。
+	// サブメロは中核音で1つ下を重ねた2音（Ghost Fight の平行3度）。ハモリ・パッドは外す。
+	if (template?.lead === "riff") {
+		melody.length = 0;
+		submelody.length = 0;
+		harmony.length = 0;
+		harmony2.length = 0;
+		pad.length = 0;
+		const first = makeRiffHalf(rnd, 1, 3);
+		const cellA = [...first, ...makeRiffHalf(rnd, -1, 1)];
+		const cellB = [...first, ...makeRiffHalf(rnd, -1, 1)];
+		// 対比のセクション（Aメロ）は8分へ間引く。ずっと同じ密度だとループの一周が区切れない。
+		const thin = (cell: RiffNote[]): RiffNote[] => {
+			const out: RiffNote[] = [];
+			let acc = 0;
+			for (const n of cell) {
+				if (acc % 2 === 0) out.push({ ...n, chrom: false });
+				else if (out.length > 0) out[out.length - 1].len += n.len;
+				acc += n.len;
+			}
+			return out;
+		};
+		const sixteenth = scaleStep(SIXTEENTH);
+		const tonicStep = degreeToCore(scale, scale.tonic);
+		/** 移調後に主音が C4〜B4 へ来る高さ（移調はこの後で掛かる）。 */
+		const tonicSemi = degreeToPitch(scale, scale.tonic).semi;
+		const octave = Math.ceil((60 - rootShift - tonicSemi) / 12) * 12;
+		const pitchOf = (step: number): ScaleDegree => {
+			const d = degreeToPitch(scale, coreToDegree(scale, tonicStep + step));
+			return { semi: d.semi + octave, fifth: d.fifth };
+		};
+		for (let bar = 0; bar < totalBars; bar++) {
+			const sec = sectionAt(sectionPlan, bar);
+			if (!sec?.spec.melody) continue;
+			const barStart = bar * stepsPerBar;
+			const inSec = bar - sec.startBar;
+			let cell = inSec % 2 === 0 ? cellA : cellB;
+			if (sec.kind === "verse") cell = thin(cell);
+			// Cメロは型ごと1歩上げて、同じリフの別の顔にする。
+			const lift = sec.kind === "bridge" ? 1 : 0;
+			if (bar === totalBars - 1)
+				cell = [
+					{ step: 0, chrom: false, len: 8 },
+					{ step: 0, chrom: false, len: -8 },
+				];
+			const k = barKeyShift[bar];
+			const fifthShift =
+				k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
+			let at = 0;
+			for (const n of cell) {
+				if (n.len < 0) {
+					at -= n.len;
+					continue;
+				}
+				const base = pitchOf(n.step + lift);
+				const semi = base.semi - (n.chrom ? 1 : 0);
+				const fifth = base.fifth + (n.chrom ? 5 : 0);
+				const start = barStart + at * sixteenth;
+				const dur = n.len * sixteenth;
+				const accent = at % 4 === 0;
+				melody.push({
+					startStep: start,
+					pitchUnits: spelledToUnits(semi + k, fifth + fifthShift, edo),
+					durationSteps: dur,
+					velocity: accent ? 100 : 82,
+				});
+				if (!n.chrom) {
+					const under = pitchOf(n.step + lift - 1);
+					submelody.push({
+						startStep: start,
+						pitchUnits: spelledToUnits(
+							under.semi + k,
+							under.fifth + fifthShift,
+							edo,
+						),
+						durationSteps: dur,
+						velocity: accent ? 88 : 72,
+					});
+				}
+				at += n.len;
+			}
+		}
+	}
 
 	// 曲全体を同じ量だけずらす。units は絶対音高なので、綴りの関係は保たれたまま動く。
 	const shiftUnits = semitonesToUnits(rootShift, edo);
@@ -5333,8 +5529,14 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	const recent = options.recent ?? [];
 	const count = Math.max(1, options.drawCount ?? DRAW_COUNT);
 	const resolvedKey = resolveComposeKey(options.baseKey, rnd);
+	const templateScales = STRUCTURE_TEMPLATES.find(
+		(tm) => tm.name === options.template,
+	)?.scales;
+	const scaleChoice = options.scale?.trim() || "auto";
 	const scale = resolveComposeScale(
-		options.scale,
+		scaleChoice === "auto" && templateScales
+			? pick(templateScales, rnd)
+			: options.scale,
 		resolvedKey.mode === "minor",
 		rnd,
 	);
