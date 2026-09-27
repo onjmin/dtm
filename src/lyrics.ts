@@ -1619,8 +1619,8 @@ export const KOE_VOICEBANK_TERMS: Record<string, string> = {
 	mgroid: "https://x.com/nisusansu/status/1048825378188353536",
 	motroid: "https://www.nicovideo.jp/watch/sm40031282",
 	nynroid: "https://www.bilibili.com/video/BV1V24y1a7qs",
-	uc: "https://chi9nekiriko.wixsite.com/home/%E5%88%A9%E7%94%A8%E8%A6%8F%E7%B4%84",
-	// hibika_aru: "",
+	uc: "https://suzuhete.wixsite.com/home/%E5%88%A9%E7%94%A8%E8%A6%8F%E7%B4%84",
+	hibika_aru: "https://hibikaaru.wixsite.com/aruofficial/%E5%88%A9%E7%94%A8%E8%A6%8F%E7%B4%84",
 };
 
 /** ファイル名（日本語可）を encodeURIComponent して .koe のフルURLにする */
