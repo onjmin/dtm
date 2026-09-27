@@ -120,6 +120,60 @@ const EQ_MID_Q = 1.0;
 /** EQゲインの許容範囲（dB）。±12dBを超える極端な設定はミックスを破綻させやすいため制限する。 */
 const EQ_MAX_DB = 12;
 
+/**
+ * ストリップの既定値（何も掛けない素の状態）。生成時の既定と、MMLに書かれていない
+ * 項目を再生のたびに戻す値（studio の createTrackStripApplier）の両方で使う。
+ * pan は -1〜+1 の定位（0＝中央）。
+ */
+export const STRIP_DEFAULTS = {
+	compression: 0,
+	width: 100,
+	eq: 0,
+	send: 0,
+	pan: 0,
+} as const;
+
+/** 曲（MMLメタ）で指定されたストリップ設定。pan は -1〜+1。 */
+export type StripSettings = {
+	compression?: number;
+	width?: number;
+	eqLow?: number;
+	eqMid?: number;
+	eqHigh?: number;
+	reverbSend?: number;
+	delaySend?: number;
+	pan?: number;
+};
+
+/**
+ * 曲の設定をストリップへ適用する。指定の無い項目は {@link STRIP_DEFAULTS} へ戻す
+ * （使い回しているストリップに、前の曲の設定を残さないため）。
+ */
+export const applyStripSettings = (
+	strip: Pick<
+		ChannelStrip,
+		| "setCompression"
+		| "setWidth"
+		| "setEqLow"
+		| "setEqMid"
+		| "setEqHigh"
+		| "setReverbSend"
+		| "setDelaySend"
+		| "setPan"
+	>,
+	s: StripSettings,
+): void => {
+	const d = STRIP_DEFAULTS;
+	strip.setCompression(s.compression ?? d.compression);
+	strip.setWidth(s.width ?? d.width);
+	strip.setEqLow(s.eqLow ?? d.eq);
+	strip.setEqMid(s.eqMid ?? d.eq);
+	strip.setEqHigh(s.eqHigh ?? d.eq);
+	strip.setReverbSend(s.reverbSend ?? d.send);
+	strip.setDelaySend(s.delaySend ?? d.send);
+	strip.setPan(s.pan ?? d.pan);
+};
+
 export const createChannelStrip = (
 	ctx: AudioContext,
 	destination: AudioNode,
@@ -158,16 +212,28 @@ export const createChannelStrip = (
 	const eqLow = ctx.createBiquadFilter();
 	eqLow.type = "lowshelf";
 	eqLow.frequency.value = EQ_LOW_FREQ;
-	eqLow.gain.value = clamp(options.eqLow ?? 0, -EQ_MAX_DB, EQ_MAX_DB);
+	eqLow.gain.value = clamp(
+		options.eqLow ?? STRIP_DEFAULTS.eq,
+		-EQ_MAX_DB,
+		EQ_MAX_DB,
+	);
 	const eqMid = ctx.createBiquadFilter();
 	eqMid.type = "peaking";
 	eqMid.frequency.value = EQ_MID_FREQ;
 	eqMid.Q.value = EQ_MID_Q;
-	eqMid.gain.value = clamp(options.eqMid ?? 0, -EQ_MAX_DB, EQ_MAX_DB);
+	eqMid.gain.value = clamp(
+		options.eqMid ?? STRIP_DEFAULTS.eq,
+		-EQ_MAX_DB,
+		EQ_MAX_DB,
+	);
 	const eqHigh = ctx.createBiquadFilter();
 	eqHigh.type = "highshelf";
 	eqHigh.frequency.value = EQ_HIGH_FREQ;
-	eqHigh.gain.value = clamp(options.eqHigh ?? 0, -EQ_MAX_DB, EQ_MAX_DB);
+	eqHigh.gain.value = clamp(
+		options.eqHigh ?? STRIP_DEFAULTS.eq,
+		-EQ_MAX_DB,
+		EQ_MAX_DB,
+	);
 	toneOut.connect(eqLow);
 	eqLow.connect(eqMid);
 	eqMid.connect(eqHigh);
@@ -183,7 +249,7 @@ export const createChannelStrip = (
 		compressor.attack.setValueAtTime(p.attack, now);
 		compressor.release.setValueAtTime(p.release, now);
 	};
-	applyCompression(options.compression ?? 0);
+	applyCompression(options.compression ?? STRIP_DEFAULTS.compression);
 
 	// ── ステレオワイド（Mid-Side処理）──
 	// mid = 0.5*(L+R) は単一GainNodeへL/R両方を接続するだけで実現できる
@@ -231,7 +297,7 @@ export const createChannelStrip = (
 			0.02,
 		);
 	};
-	setWidth(options.width ?? 100);
+	setWidth(options.width ?? STRIP_DEFAULTS.width);
 
 	// ── パン（左右定位）──
 	// M/Sワイドの後段、destination/リバーブセンドの直前に掛ける。ここに置くことで
@@ -242,7 +308,8 @@ export const createChannelStrip = (
 		typeof ctx.createStereoPanner === "function"
 			? ctx.createStereoPanner()
 			: null;
-	if (panner) panner.pan.value = clamp(options.pan ?? 0, -1, 1);
+	if (panner)
+		panner.pan.value = clamp(options.pan ?? STRIP_DEFAULTS.pan, -1, 1);
 	const panOut: AudioNode = panner ?? merger;
 
 	// ── サイドチェイン用ダッキング ──
@@ -292,12 +359,14 @@ export const createChannelStrip = (
 	panOut.connect(destination);
 
 	const reverbSendGain = ctx.createGain();
-	reverbSendGain.gain.value = clamp(options.reverbSend ?? 0, 0, 100) / 100;
+	reverbSendGain.gain.value =
+		clamp(options.reverbSend ?? STRIP_DEFAULTS.send, 0, 100) / 100;
 	panOut.connect(reverbSendGain);
 	if (options.reverbBus) reverbSendGain.connect(options.reverbBus);
 
 	const delaySendGain = ctx.createGain();
-	delaySendGain.gain.value = clamp(options.delaySend ?? 0, 0, 100) / 100;
+	delaySendGain.gain.value =
+		clamp(options.delaySend ?? STRIP_DEFAULTS.send, 0, 100) / 100;
 	panOut.connect(delaySendGain);
 	if (options.delayBus) delaySendGain.connect(options.delayBus);
 

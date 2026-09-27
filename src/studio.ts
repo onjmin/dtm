@@ -18,7 +18,11 @@ import { parseArrayBuffer } from "midi-json-parser";
 import type { InstrumentTone } from "./amp-sim";
 import { buildNameToKeyMapping } from "./audio-config";
 import { createBackingAudio } from "./backing-audio";
-import { type ChannelStrip, createChannelStrip } from "./channel-strip";
+import {
+	applyStripSettings,
+	type ChannelStrip,
+	createChannelStrip,
+} from "./channel-strip";
 import {
 	type ChordPlayerInstance,
 	type MountChordPlayerOptions,
@@ -822,6 +826,11 @@ export const createDtmStudio = async (
 	 * trackId をキーに遅延生成する設計で、しかも trackId の表記が経路ごとに違う
 	 * （エディタは "melody"、再生専用ビューは数値文字列）ため、事前に一括適用しようと
 	 * すると実際に発音で使われるストリップとキーがずれて空振りするため。
+	 *
+	 * MMLに書かれていない項目は既定値（{@link STRIP_DEFAULTS}）へ戻す。ストリップは
+	 * studio の寿命の間ずっと使い回されるので、書かれていない項目を触らずにおくと
+	 * 前に再生した曲の設定（`#t0comp=30` 等）が次の曲へ持ち越され、同じMMLでも
+	 * 直前に何を鳴らしたかで音量が変わってしまう（コンプの持ち越しで約 +3 dB）。
 	 */
 	const createTrackStripApplier = (
 		meta: MmlMeta,
@@ -830,23 +839,17 @@ export const createDtmStudio = async (
 		return (stripId, trackIdx) => {
 			if (applied.has(stripId)) return;
 			applied.add(stripId);
-			const strip = getChannelStrip(stripId);
-			const comp = meta.trackCompression?.[trackIdx];
-			if (comp !== undefined) strip.setCompression(comp);
-			const width = meta.trackWidth?.[trackIdx];
-			if (width !== undefined) strip.setWidth(width);
-			const eqLow = meta.trackEqLow?.[trackIdx];
-			if (eqLow !== undefined) strip.setEqLow(eqLow);
-			const eqMid = meta.trackEqMid?.[trackIdx];
-			if (eqMid !== undefined) strip.setEqMid(eqMid);
-			const eqHigh = meta.trackEqHigh?.[trackIdx];
-			if (eqHigh !== undefined) strip.setEqHigh(eqHigh);
-			const reverbSend = meta.trackReverbSend?.[trackIdx];
-			if (reverbSend !== undefined) strip.setReverbSend(reverbSend);
-			const delaySend = meta.trackDelaySend?.[trackIdx];
-			if (delaySend !== undefined) strip.setDelaySend(delaySend);
 			const pan = meta.trackPan?.[trackIdx];
-			if (pan !== undefined) strip.setPan(panToStereo(pan));
+			applyStripSettings(getChannelStrip(stripId), {
+				compression: meta.trackCompression?.[trackIdx],
+				width: meta.trackWidth?.[trackIdx],
+				eqLow: meta.trackEqLow?.[trackIdx],
+				eqMid: meta.trackEqMid?.[trackIdx],
+				eqHigh: meta.trackEqHigh?.[trackIdx],
+				reverbSend: meta.trackReverbSend?.[trackIdx],
+				delaySend: meta.trackDelaySend?.[trackIdx],
+				pan: pan === undefined ? undefined : panToStereo(pan),
+			});
 		};
 	};
 
