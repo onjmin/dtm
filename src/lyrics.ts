@@ -1484,6 +1484,7 @@ export const KOE_VOICEBANKS: Record<string, string> = {
 	nynroid: "NYNRoidver1.4.koe",
 	uc: "蓄音キリコ （beta1.1）.koe",
 	hibika_aru: "響化アル.koe",
+	uta: "uta.koe"
 };
 
 /**
@@ -1505,6 +1506,7 @@ export const KOE_VOICEBANK_NAMES: Record<string, string> = {
 	nynroid: "NYNRoid",
 	uc: "蓄音キリコ",
 	hibika_aru: "響化アル",
+	uta: "デフォ子",
 };
 
 /**
@@ -1526,6 +1528,7 @@ export const KOE_VOICEBANK_LABELS: Record<string, string> = {
 	nynroid: "NYNRoid",
 	uc: "蓄音キリコ",
 	hibika_aru: "響化アル",
+	uta: "デフォ子",
 };
 
 /**
@@ -1544,7 +1547,7 @@ export const VOICE_MODEL_CATEGORIES: ReadonlyArray<{
 		label: "おんJ",
 		models: ["roze", "shiyo", "rino", "rino121", "uc", "hibika_aru"],
 	},
-	{ label: "一般", models: ["teto", "rei", "ruko_male", "ruko_female"] },
+	{ label: "一般", models: ["uta", "teto", "rei", "ruko_male", "ruko_female"] },
 	{ label: "クッキー☆", models: ["mgroid", "motroid", "nynroid"] },
 ];
 
@@ -1601,6 +1604,7 @@ export const VOICE_IMAGE_KEY: Record<string, string> = {
 	nynroid: "NYNRoid",
 	uc: "uc",
 	hibika_aru: "hibika_aru",
+	uta: "uta",
 };
 
 /**
@@ -1622,6 +1626,7 @@ export const KOE_VOICEBANK_TERMS: Record<string, string> = {
 	uc: "https://suzuhete.wixsite.com/home/%E5%88%A9%E7%94%A8%E8%A6%8F%E7%B4%84",
 	hibika_aru:
 		"https://hibikaaru.wixsite.com/aruofficial/%E5%88%A9%E7%94%A8%E8%A6%8F%E7%B4%84",
+	uta: "https://utaneuta.utau-synth.com/please.html",
 };
 
 /** ファイル名（日本語可）を encodeURIComponent して .koe のフルURLにする */

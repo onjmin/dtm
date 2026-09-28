@@ -14,6 +14,7 @@ import shiyo from "../assets/shiyo.png";
 import teto from "../assets/teto.png";
 import tsukuyomi from "../assets/tsukuyomi.png";
 import uc from "../assets/uc.png";
+import uta from "../assets/uta.png";
 
 export const VOICE_IMAGES: Record<string, string> = {
 	puyuyu,
@@ -29,6 +30,7 @@ export const VOICE_IMAGES: Record<string, string> = {
 	NYNRoid,
 	uc,
 	hibika_aru,
+	uta,
 };
 
 /**
