@@ -1,0 +1,73 @@
+// backing — ホ長調 / 112BPM / 16小節ループ（旋律は @0 に後から差し込む）
+// 進行: 1:Eadd9 | 2:AM7 | 3:G#m7 C#m7 | 4:F#m7 B | 5:EM7 | 6:C#m7 | 7:AM7 G#m7 | 8:F#m7 Bsus4 | 9:C#m7 | 10:G#m7 | 11:AM7 B | 12:C#m7 | 13:CM7 | 14:Dadd9 | 15:GM7 Am7 | 16:Bsus4 B
+// @1 分散 Lead 1 (square) / @2 低音 Synth Bass 1 / @3 和音 Electric Piano 2（拍頭に短く）
+#inst=retro_game
+#volume=80
+#loop=on
+#t1inst=Lead 1 (square)
+#t1eqhi=-9
+#t1pan=50
+#t2inst=Synth Bass 1
+#t2eqhi=-6
+#t3inst=Electric Piano 2
+#t3eqhi=-3
+#t3pan=80
+
+@0 t112 v0 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1;
+
+@1
+v68o4e8 v58b16 v52g#16 v64b8 v58g#8 v68e8 v58o5f#16 v52o4b16 v64o5f#8 v58o4b8 // 1 Eadd9
+v70e8 v60o5c#16 v54o4a16 v66o5c#8 v60o4a8 v70e8 v60o5e16 v54o4a16 v66o5e8 v60o4g#8 // 2 AM7
+v72d#8 v62b16 v56g#16 v68b8 v62g#8 v72c#8 v62g#16 v56e16 v68g#8 v62b8 // 3 G#m7 C#m7
+v70c#8 v60a16 v54f#16 v66a8 v60f#8 v70o3b8 v60o4f#16 v54d#16 v66f#8 v60b8 // 4 F#m7 B
+v72e8. v56o5e16 v68o4b8 v62o5e16 v56o4b16 v72e8. v56o5d#16 v68o4b8 v62o5d#16 v56o4b16 // 5 EM7
+v74c#8. v58o5c#16 v70o4g#8 v64o5c#16 v58o4g#16 v74c#8. v58b16 v70g#8 v64b16 v58g#16 // 6 C#m7
+v76e8. v60o5e16 v72c#8 v66e16 v60c#16 v76o4d#8. v60o5d#16 v72o4b8 v66o5d#16 v60o4b16 // 7 AM7 G#m7
+v74c#8. v58o5c#16 v70o4a8 v64o5c#16 v58o4a16 v74o3b8. v58o4b16 v70e8 v64b16 v58f#16 // 8 F#m7 Bsus4
+v76g#8 v66o5e16 v60c#16 v72e8 v66c#16 v60e16 v76o4c#8 v66g#8 v72o5c#8 v66o4g#8 // 9 C#m7
+v78f#8 v68o5d#16 v62o4b16 v74o5d#8 v68o4b16 v62o5d#16 v78o3b8 v68o4f#8 v74b8 v68f#8 // 10 G#m7
+v80g#8 v70o5e16 v64c#16 v76e8 v70c#16 v64e16 v80o3b8 v70o4b8 v76o5f#8 v70o4b8 // 11 AM7 B
+v78g#8 v68o5e16 v62c#16 v74e8 v68c#16 v62e16 v78o4c#8 v68g#8 v74o5c#8 v68o4g#8 // 12 C#m7
+v74c8 v64g8 v70o5c8 v64o4g16 v58o5c16 v74o4c8 v64b8 v70o5e8 v64o4b16 v58o5e16 // 13 CM7
+v78o4d8 v68a8 v74o5d8 v68o4a16 v62o5d16 v78o4d8 v68a8 v74o5e8 v68o4a16 v62o5e16 // 14 Dadd9
+v82o4d8 v72b8 v78o5f#8 v72o4b16 v66o5f#16 v82o3a8 v72o4e8 v78o5c8 v72e16 v66c16 // 15 GM7 Am7
+v72o3b8 v62o4f#8 v68b8 v62o5e16 v56o4b16 v72o3b8 v62o4f#8 v68b8 v62o5d#16 v56o4b16 // 16 Bsus4 B
+;
+
+@2
+v90o2e4. v82b8 v90o3e4 v86o2b8 v82e8 // 1 Eadd9
+v90o1a4. v82o2e8 v90a4 v86e8 v82o1a8 // 2 AM7
+v92g#4 v88o2d#8 v84g#8 v92c#4 v88g#8 v84c#8 // 3 G#m7 C#m7
+v92f#4 v88o3c#8 v84o2f#8 v92o1b4 v88o2f#8 v84d#8 // 4 F#m7 B
+v92e4. v84b8 v92o3e4 v88d#8 v84o2b8 // 5 EM7
+v92c#4. v84g#8 v92o3c#4 v88o2g#8 v84o1b8 // 6 C#m7
+v94a4 v90o2e8 v86a8 v94o1g#4 v90o2d#8 v86g#8 // 7 AM7 G#m7
+v94f#4 v90o3c#8 v86o2f#8 v94o1b4 v90o2f#8 v86b8 // 8 F#m7 Bsus4
+v94c#4. v86g#8 v94o3c#4 v90o2g#8 v86c#8 // 9 C#m7
+v94o1g#4. v86o2d#8 v94g#4 v90d#8 v86o1g#8 // 10 G#m7
+v96a4 v92o2e8 v88a8 v96o1b4 v92o2f#8 v88b8 // 11 AM7 B
+v96c#4. v88g#8 v96o3c#4 v92o2g#8 v88c#8 // 12 C#m7
+v94c4. v86g8 v94o3c4 v90o2g8 v86c#8 // 13 CM7
+v96d4. v88a8 v96o3d4 v92o2a8 v88f#8 // 14 Dadd9
+v98o1g4 v94o2d8 v90g8 v98o1a4 v94o2e8 v90a8 // 15 GM7 Am7
+v94o1b4 v90o2f#8 v86b8 v94o1b4 v90o2f#8 v86d#8 // 16 Bsus4 B
+;
+
+@3
+v44[o3g#bo4f#]8 r4. v39[o3g#bo4f#]8 r4. // 1 Eadd9
+v42[o3g#o4c#e]8 r4. v37[o3g#o4c#e]8 r4. // 2 AM7
+v44[o3f#bo4d#]8 r4. v39[o3g#bo4e]8 r4. // 3 G#m7 C#m7
+v44[o3ao4c#e]8 r4. v39[o3f#bo4d#]8 r4. // 4 F#m7 B
+v46[o3g#bo4d#]8 r4. v41[o3g#bo4d#]8 r4. // 5 EM7
+v44[o3g#bo4e]8 r4. v39[o3g#bo4e]8 r4. // 6 C#m7
+v46[o3g#o4c#e]8 r4. v41[o3f#bo4d#]8 r4. // 7 AM7 G#m7
+v46[o3ao4c#e]8 r4. v41[o3f#bo4e]8 r4. // 8 F#m7 Bsus4
+v48[o3g#bo4e]8 r4. v43[o3g#bo4e]8 r4. // 9 C#m7
+v48[o3f#bo4d#]8 r4. v43[o3f#bo4d#]8 r4. // 10 G#m7
+v50[o3g#o4c#e]8 r4. v45[o3f#bo4d#]8 r4. // 11 AM7 B
+v48[o3g#bo4e]8 r4. v43[o3g#bo4e]8 r4. // 12 C#m7
+v54[o3gbo4e]4 r4 v49[o3gbo4e]8 r4. // 13 CM7
+v52[o3f#ao4e]4 r4 v47[o3f#ao4e]8 r4. // 14 Dadd9
+v54[o3f#bo4d]4 r4 v49[o3go4ce]4 r4 // 15 GM7 Am7
+v50[o3f#bo4e]8 r4. v45[o3f#bo4d#]4. r8 // 16 Bsus4 B
+;

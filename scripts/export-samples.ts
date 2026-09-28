@@ -9,6 +9,17 @@
  *
  *   npx tsx scripts/export-samples.ts --app-seed 4022250974 --compose jpop_standard:any:auto:intro-verse-chorus
  *
+ * **伴奏主体モード**（`#compose=style:<スタイル id>.v<版>:<baseKey>:<候補番号>`、
+ * `docs/accomp-style-engine.md` §2.5）は `composeAccomp` と `accompToMml` へ振り分け、.mid ではなく
+ * .mml（強弱・ミックス込み。DAW に貼って聴ける）を書く。31平均律で作った曲は `--edo 31` を足す
+ * （`#compose` は音律を持たない）。段階 S0 より前の書式 `accomp:<baseKey>:<候補番号>` は
+ * `style:fb.v1:…` として読む。
+ *
+ *   npx tsx scripts/export-samples.ts --app-seed 3842857959 --compose style:fb.v1:any:0
+ *
+ * 知らないテンプレート名（`--template`・`--compose` の1項目め）はエラーにする（黙って既定構成の
+ * 歌もの曲を出さない）。
+ *
  * `compare-*.ts` はどれも代理指標で、全部が参考コーパスの帯へ収まっても
  * 「良い曲」である保証は無い。書き出した .mid を DAW なり再生ソフトなりへ
  * 放り込んで聴くところまでが検算の一部。
@@ -17,10 +28,12 @@
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
+import Module from "node:module";
 import { join } from "node:path";
 import { programOfInstrumentName } from "../src/audio-config";
 import { buildChordPlacements } from "../src/chords";
 import { seededRandom as appSeededRandom, composeSong } from "../src/compose";
+import { STRUCTURE_TEMPLATES } from "../src/compose-sections";
 import { DRUM_PATTERNS, resolveDrumPattern } from "../src/drum-config";
 import { INSTRUMENT_PRESETS } from "../src/instrument-presets";
 import { exportMIDI } from "../src/midi-io";
@@ -63,7 +76,21 @@ const toNotes = (
 const outDir = argOf("--out") ?? "tmp/samples";
 const count = Number.parseInt(argOf("--count") ?? "6", 10);
 const baseSeed = Number.parseInt(argOf("--seed") ?? "1", 10);
+
+/**
+ * 構成テンプレートの名前（`compose-sections.ts` の `STRUCTURE_TEMPLATES`）。`composeSong` は知らない
+ * 名前を黙って既定構成にする（`orderedKinds`）ので、打ち間違えると別物の曲が出て気づけない。ここで弾く。
+ */
+const TEMPLATE_NAMES = STRUCTURE_TEMPLATES.map((t) => t.name);
+const assertTemplate = (name: string | undefined, flag: string): void => {
+	if (name === undefined || TEMPLATE_NAMES.includes(name)) return;
+	const extra = flag === "--compose" ? " / custom / accomp" : "";
+	throw new Error(
+		`${flag}: 知らないテンプレート "${name}"（${TEMPLATE_NAMES.join(" / ")}${extra}）`,
+	);
+};
 const template = argOf("--template");
+assertTemplate(template, "--template");
 mkdirSync(outDir, { recursive: true });
 
 /**
@@ -72,13 +99,22 @@ mkdirSync(outDir, { recursive: true });
  */
 const appSeedArg = argOf("--app-seed");
 const appCompose = argOf("--compose");
+/**
+ * 伴奏主体モードの `#compose`（`style:<スタイル id>.v<版>:<baseKey>:<候補番号>`。旧書式 `accomp:…` も）。
+ * 中身は `exportAccomp` が `parseAccompCompose` で読む（ここで compose-accomp を読まないのは、
+ * 歌ものの書き出しで読み込みを増やさないため）。
+ */
+const isAccomp = /^(style|accomp):/.test(appCompose ?? "");
+if (isAccomp && appSeedArg === undefined)
+	throw new Error("--compose style:… には --app-seed が要る");
 const appOptions = (() => {
-	if (appSeedArg === undefined) return null;
+	if (appSeedArg === undefined || isAccomp) return null;
 	const seed = Number.parseInt(appSeedArg, 10);
 	if (!Number.isFinite(seed)) throw new Error("--app-seed は整数");
 	const [tmpl = "custom", baseKey = "any", scale = "auto", sections = ""] = (
 		appCompose ?? ""
 	).split(":");
+	if (tmpl !== "custom") assertTemplate(tmpl, "--compose");
 	return {
 		seed,
 		template: tmpl === "custom" ? undefined : tmpl,
@@ -91,8 +127,80 @@ const appOptions = (() => {
 	};
 })();
 
+/**
+ * 伴奏主体モードの再現（`docs/accomp-compose.md` §12.5）。アプリと同じ種・同じ候補番号で
+ * `composeAccomp` を呼び、`accompToMml` で .mml を書く。`accompToMml` は mml-parser を読み、その先で
+ * 歌唱合成エンジン @onjmin/koe（ブラウザ専用）を読むので、ここだけ空のスタブを入れてから読む。
+ */
+const exportAccomp = (seed: number, compose: string): void => {
+	const edo = argOf("--edo") === "31" ? 31 : 12;
+	type Loader = { _load: (request: string, ...rest: unknown[]) => unknown };
+	const loader = Module as unknown as Loader;
+	const load = loader._load;
+	loader._load = (request, ...rest) =>
+		request === "@onjmin/koe"
+			? { VoiceBank: class {}, Worldline: class {}, leadInFromEntry: () => 0 }
+			: load(request, ...rest);
+	const { composeAccomp, parseAccompCompose } =
+		require("../src/compose-accomp") as typeof import("../src/compose-accomp");
+	const { accompStyleById } =
+		require("../src/accomp-styles/index") as typeof import("../src/accomp-styles/index");
+	const tag = parseAccompCompose(compose);
+	if (!tag)
+		throw new Error(
+			`--compose ${compose}: style:<スタイル id>.v<版>:<baseKey>:<候補番号> ではない`,
+		);
+	const style = accompStyleById(tag.style);
+	if (!style)
+		throw new Error(`--compose ${compose}: 知らないスタイル ${tag.style}`);
+	if (tag.version !== style.version)
+		console.warn(
+			`   ${tag.style} の版 ${tag.version} は今の版 ${style.version} と違うので、同じ曲にはならない（古い版は残していない）`,
+		);
+	if (tag.legacy)
+		console.warn(
+			`   旧書式 ${compose} を style:fb.v1:${tag.baseKey}:${tag.pick} として読む`,
+		);
+	if (tag.pick === "plan")
+		throw new Error(
+			`--compose ${compose}: …:plan は計画を丸ごと与えた曲で、種からは再現できない（scripts/accomp-audition.ts --fb-plan を使う）`,
+		);
+	const { baseKey, pick } = tag;
+	const k = String(pick);
+	const { accompToMml } =
+		require("../src/compose-accomp-mml") as typeof import("../src/compose-accomp-mml");
+	const song = composeAccomp({
+		style: tag.style,
+		stepsPerBar: STEPS_PER_BAR,
+		edo,
+		random: appSeededRandom(seed),
+		baseKey,
+		pick,
+	});
+	if (song.pick !== pick)
+		console.warn(
+			`   候補 ${pick} は関門で落ちたので保険の計画（pick −1）になった: ${JSON.stringify(song.draws.rejected)}`,
+		);
+	const keyTag = song.keyName
+		.replace(/♭/g, "b")
+		.replace(/[♯#]/g, "s")
+		.replace(/[^\w]/g, "");
+	const name = `accomp_seed${seed}_${baseKey}_${k}_${keyTag}_${song.bpm}bpm.mml`;
+	const file = join(outDir, name);
+	writeFileSync(file, accompToMml(song, { seed }));
+	console.log(
+		`${file}\n   ${song.bars}小節 ${song.seconds.toFixed(0)}秒 ${song.keyLabel} ${song.bpm}BPM  ${song.compose}${song.homeFromMinor ? `  ${song.homeFromMinor}` : ""}`,
+	);
+};
+
 const recent: number[][] = [];
 const main = async (): Promise<void> => {
+	if (isAccomp && appSeedArg !== undefined && appCompose !== undefined) {
+		const seed = Number.parseInt(appSeedArg, 10);
+		if (!Number.isFinite(seed)) throw new Error("--app-seed は整数");
+		exportAccomp(seed, appCompose);
+		return;
+	}
 	for (let i = 0; i < (appOptions ? 1 : count); i++) {
 		const seed = appOptions ? appOptions.seed : baseSeed + i;
 		// アプリの種はアプリと同じ乱数列で、`recent`（直近の曲から離す加点）は渡さない

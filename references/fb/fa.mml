@@ -1,0 +1,347 @@
+// kifuku — ホ長調 / 112BPM / 80小節ループ（fb 系統・起伏に素直な版。所有者が選んだのは fb の方）
+// 構成: A → A' → B → C → D → A'' → 頭へ（A 1-16 / A' 17-32 / B 33-44 / C 45-56 / D 57-64 / A'' 65-80）
+// A は backing.mml（同じフォルダ）と同一。雰囲気は伴奏で作り、@0 は C 区間と最後の 4 小節に長い音を少しだけ。
+// @1 分散 Lead 1 (square) / @2 低音 Synth Bass 1 / @3 和音 Electric Piano 2
+#inst=retro_game#reverb=50#reverbdecay=30#reverbpredelay=25#delay=25#delaydiv=8d#t1rev=55#t1dly=15#t2rev=10#t3rev=65#t0rev=45#t0dly=30#drum=none
+#volume=80
+#loop=on
+#t1inst=Lead 1 (square)
+#t1eqhi=-9
+#t1pan=50
+#t2inst=Synth Bass 1
+#t2eqhi=-6
+#t3inst=Electric Piano 2
+#t3eqhi=-3
+#t3pan=80
+
+@0 t112
+r1 // 1 Eadd9 [A]
+r1 // 2 AM7
+r1 // 3 G#m7 C#m7
+r1 // 4 F#m7 B
+r1 // 5 EM7
+r1 // 6 C#m7
+r1 // 7 AM7 G#m7
+r1 // 8 F#m7 Bsus4
+r1 // 9 C#m7
+r1 // 10 G#m7
+r1 // 11 AM7 B
+r1 // 12 C#m7
+r1 // 13 CM7
+r1 // 14 Dadd9
+r1 // 15 GM7 Am7
+r1 // 16 Bsus4 B
+r1 // 17 Eadd9 [A']
+r1 // 18 AM7
+r1 // 19 Eadd9
+r1 // 20 AM7
+r1 // 21 G#m7
+r1 // 22 C#m7
+r1 // 23 F#m7
+r1 // 24 Bsus4 B
+r1 // 25 EM7
+r1 // 26 AM7
+r1 // 27 G#m7
+r1 // 28 C#m7
+r1 // 29 AM7
+r1 // 30 F#m7
+r1 // 31 G#m7
+r1 // 32 AM7 B
+r1 // 33 C#m7 [B]
+r1 // 34 C#m7/B
+r1 // 35 F#m7/A
+r1 // 36 G#m7
+r1 // 37 C#m7
+r1 // 38 F#m7
+r1 // 39 G#m7
+r1 // 40 C#m7
+r1 // 41 AM7
+r1 // 42 G#m7
+r1 // 43 F#m7
+r1 // 44 Bsus4 B
+r1 // 45 CM7 [C]
+v37o5d2. r4 // 46 CM7
+r1 // 47 Dadd9
+r1 // 48 Dadd9
+r1 // 49 GM7/B
+v38o4b2. r4 // 50 GM7
+v39o5e2. r4 // 51 Em7
+v40c#2. r4 // 52 C#m7
+d2. r4 // 53 CM7
+v39o4b2 v37a2 // 54 GM7
+v38g2. r4 // 55 Am7
+v36f#2. r4 // 56 Dadd9
+r1 // 57 Eadd9 [D]
+r1 // 58 AM7
+r1 // 59 Eadd9
+r1 // 60 AM7
+r1 // 61 F#m7
+r1 // 62 G#m7
+r1 // 63 AM7
+r1 // 64 Bsus4 B
+r1 // 65 Eadd9 [A'']
+r1 // 66 AM7
+r1 // 67 G#m7 C#m7
+r1 // 68 F#m7 B
+r1 // 69 EM7
+r1 // 70 C#m7
+r1 // 71 AM7 G#m7
+r1 // 72 F#m7 Bsus4
+r1 // 73 C#m7
+r1 // 74 G#m7
+r1 // 75 AM7 B
+r1 // 76 C#m7
+v38o5c#2 r2 // 77 AM7
+o4b2 v36g#2 // 78 G#m7 C#m7
+v38f#2. r4 // 79 F#m7
+e2 v36d#2 // 80 Bsus4 B
+;
+
+@1
+v68o4e8 v58b16 v52g#16 v64b8 v58g#8 v68e8 v58o5f#16 v52o4b16 v64o5f#8 v58o4b8 // 1 Eadd9 [A]
+v70e8 v60o5c#16 v54o4a16 v66o5c#8 v60o4a8 v70e8 v60o5e16 v54o4a16 v66o5e8 v60o4g#8 // 2 AM7
+v72d#8 v62b16 v56g#16 v68b8 v62g#8 v72c#8 v62g#16 v56e16 v68g#8 v62b8 // 3 G#m7 C#m7
+v70c#8 v60a16 v54f#16 v66a8 v60f#8 v70o3b8 v60o4f#16 v54d#16 v66f#8 v60b8 // 4 F#m7 B
+v72e8. v56o5e16 v68o4b8 v62o5e16 v56o4b16 v72e8. v56o5d#16 v68o4b8 v62o5d#16 v56o4b16 // 5 EM7
+v74c#8. v58o5c#16 v70o4g#8 v64o5c#16 v58o4g#16 v74c#8. v58b16 v70g#8 v64b16 v58g#16 // 6 C#m7
+v76e8. v60o5e16 v72c#8 v66e16 v60c#16 v76o4d#8. v60o5d#16 v72o4b8 v66o5d#16 v60o4b16 // 7 AM7 G#m7
+v74c#8. v58o5c#16 v70o4a8 v64o5c#16 v58o4a16 v74o3b8. v58o4b16 v70e8 v64b16 v58f#16 // 8 F#m7 Bsus4
+v76g#8 v66o5e16 v60c#16 v72e8 v66c#16 v60e16 v76o4c#8 v66g#8 v72o5c#8 v66o4g#8 // 9 C#m7
+v78f#8 v68o5d#16 v62o4b16 v74o5d#8 v68o4b16 v62o5d#16 v78o3b8 v68o4f#8 v74b8 v68f#8 // 10 G#m7
+v80g#8 v70o5e16 v64c#16 v76e8 v70c#16 v64e16 v80o3b8 v70o4b8 v76o5f#8 v70o4b8 // 11 AM7 B
+v78g#8 v68o5e16 v62c#16 v74e8 v68c#16 v62e16 v78o4c#8 v68g#8 v74o5c#8 v68o4g#8 // 12 C#m7
+v74c8 v64g8 v70o5c8 v64o4g16 v58o5c16 v74o4c8 v64b8 v70o5e8 v64o4b16 v58o5e16 // 13 CM7
+v78o4d8 v68a8 v74o5d8 v68o4a16 v62o5d16 v78o4d8 v68a8 v74o5e8 v68o4a16 v62o5e16 // 14 Dadd9
+v82o4d8 v72b8 v78o5f#8 v72o4b16 v66o5f#16 v82o3a8 v72o4e8 v78o5c8 v72e16 v66c16 // 15 GM7 Am7
+v72o3b8 v62o4f#8 v68b8 v62o5e16 v56o4b16 v72o3b8 v62o4f#8 v68b8 v62o5d#16 v56o4b16 // 16 Bsus4 B
+v72e8 v62g#8 v68o5f#16 v56o4b16 v62o5e8 v72o4e8 v62b8 v68o5f#16 v56e16 v62o4g#8 // 17 Eadd9 [A']
+v72e8 v62a8 v68o5g#16 v56c#16 v62e8 v72o4e8 v62o5c#8 v68g#16 v56e16 v62o4a8 // 18 AM7
+v74o3b8 v64o4g#8 v70o5f#16 v58o4b16 v64o5e8 v74o3b8 v64o4b8 v70o5f#16 v58e16 v64o4g#8 // 19 Eadd9
+v74c#8 v64a8 v70o5e16 v58o4e16 v64o5c#8 v74o4c#8 v64e8 v70o5e16 v58c#16 v64o4a8 // 20 AM7
+v76d#8 v66g#8 v72o5f#16 v60o4b16 v66o5d#8 v76o4d#8 v66b8 v72o5f#16 v60d#16 v66o4g#8 // 21 G#m7
+v76c#8 v66g#8 v72o5e16 v60o4b16 v66o5c#8 v76o4c#8 v66b8 v72o5e16 v60c#16 v66o4g#8 // 22 C#m7
+v74c#8 v64f#8 v70o5e16 v58o4a16 v64o5c#8 v74o4c#8 v64a8 v70o5e16 v58c#16 v64o4f#8 // 23 F#m7
+v72o3b8 v62o4f#8 v68o5f#16 v56o4b16 v62o5e8 v72o3b8 v62o4b8 v68o5f#16 v56d#16 v62o4f#8 // 24 Bsus4 B
+v78e8. v62b8. v68o5f#8 v78o4g#8 v68o5d#16 v62f#16 v74o4b8 v68o5d#16 v62f#16 // 25 EM7
+v80o4c#8. v64e8. v70o5e8 v80o4a8 v70o5c#16 v64e16 v76o4e8 v70o5c#16 v64e16 // 26 AM7
+v82o4d#8. v66b8. v72o5f#8 v82o4g#8 v72o5d#16 v66f#16 v78o4b8 v72o5d#16 v66f#16 // 27 G#m7
+v82o4c#8. v66b8. v72o5e8 v82o4g#8 v72o5c#16 v66e16 v78o4b8 v72o5c#16 v66e16 // 28 C#m7
+v84o4c#8. v68e8. v74o5e8 v84o4a8 v74o5c#16 v68e16 v80o4e8 v74o5c#16 v68e16 // 29 AM7
+v84o4c#8. v68o5c#8. v74a8 v84o4a8 v74o5e16 v68a16 v80c#8 v74e16 v68a16 // 30 F#m7
+v82o4d#8. v66b8. v72o5f#8 v82o4g#8 v72o5d#16 v66f#16 v78o4b8 v72o5d#16 v66f#16 // 31 G#m7
+v78o4e8. v62o5c#8. v68g#8 v78o4f#8 v68o5d#16 v62f#16 v74o4b8 v68o5d#16 v62f#16 // 32 AM7 B
+v66o3g#8 v56o4g#16 v50e16 v62b8 v56g#8 v66o3g#8 v56o4g#16 v50e16 v62o5c#8 v56o4g#8 // 33 C#m7 [B]
+v64o3b8 v54o4g#16 v48e16 v60o5c#8 v54o4g#8 v64o3b8 v54o4g#16 v48e16 v60o5e8 v54o4g#8 // 34 C#m7/B
+v64o3a8 v54o4f#16 v48c#16 v60a8 v54f#8 v64o3a8 v54o4f#16 v48c#16 v60o5c#8 v54o4f#8 // 35 F#m7/A
+v62o3g#8 v52o4f#16 v46d#16 v58b8 v52f#8 v62o3g#8 v52o4f#16 v46d#16 v58o5d#8 v52o4f#8 // 36 G#m7
+v60o3g#8 v50o4e16 v44c#16 v56g#8 v50e8 v60o3g#8 v50o4e16 v44c#16 v56b8 v50e8 // 37 C#m7
+v60o3f#8 v50o4e16 v44c#16 v56a8 v50e8 v60o3f#8 v50o4e16 v44c#16 v56o5c#8 v50o4e8 // 38 F#m7
+v60o3g#8 v50o4f#8 v56o5d#8 v50o4b16 v44f#16 v60d#8 v50b8 v56f#8 v50d#16 v44f#16 // 39 G#m7
+v62o3g#8 v52o4e8 v58o5c#8 v52o4g#16 v46e16 v62c#8 v52g#8 v58e8 v52c#16 v46e16 // 40 C#m7
+v64o3a8 v54o4g#8 v60o5e8 v54c#16 v48o4g#16 v64e8 v54o5c#8 v60o4g#8 v54e16 v48g#16 // 41 AM7
+v66o3b8 v56o4b8 v62o5f#8 v56d#16 v50o4b16 v66f#8 v56o5d#8 v62o4b8 v56f#16 v50b16 // 42 G#m7
+v68c#8 v58a8 v64o5e8 v58c#16 v52o4a16 v68f#8 v58o5c#8 v64o4a8 v58f#16 v52a16 // 43 F#m7
+v70o3b8 v60o4f#8 v66o5e8 v60o4b16 v54f#16 v70d#8 v60b8 v66f#8 v60d#16 v54f#16 // 44 Bsus4 B
+v72c8 v62g16 v56b16 v68o5e8 v62o4b16 v56g16 v72c8 v62g16 v56b16 v68o5e8 v62o4e8 // 45 CM7 [C]
+v72c8 v62b16 v56o5e16 v68g8 v62e16 v56o4b16 v72c8 v62b16 v56o5e16 v68g8 v62o4g8 // 46 CM7
+v74d8 v64o5e16 v58f#16 v70a8 v64f#16 v58e16 v74o4d8 v64o5e16 v58f#16 v70a8 v64o4a8 // 47 Dadd9
+v76d8 v66o5d16 v60e16 v72a8 v66e16 v60d16 v76o4d8 v66o5d16 v60e16 v72a8 v66o4a8 // 48 Dadd9
+v76d8 v66b16 v60o5d16 v72f#8 v66d16 v60o4b16 v76d8 v66b16 v60o5d16 v72f#8 v66o4g8 // 49 GM7/B
+v78o3b8 v68o5d16 v62f#16 v74a8 v68f#16 v62d16 v78o3b8 v68o5d16 v62f#16 v74a8 v68o4g8 // 50 GM7
+v78e8 v68b8 v74o5g16 v62d16 v68g8 v78o4g8 v68o5d8 v74g16 v62d16 v68o4b8 // 51 Em7
+v82c#8 v72b8 v78o5g#16 v66e16 v72g#8 v82o4g#8 v72o5e8 v78g#16 v66e16 v72o4b8 // 52 C#m7
+v82c8 v72b8 v78o5g16 v66e16 v72g8 v82o4g8 v72o5e8 v78g16 v66e16 v72o4b8 // 53 CM7
+v80d8 v70b8 v76o5f#16 v64d16 v70f#8 v80o4g8 v70o5d8 v76f#16 v64d16 v70o4b8 // 54 GM7
+v78e8 v68o5c8 v74g16 v62e16 v68g8 v78o4a8 v68o5e8 v74g16 v62e16 v68c8 // 55 Am7
+v76o4d8 v66o5e8 v72a16 v60f#16 v66a8 v76o4a8 v66o5f#8 v72a16 v60f#16 v66e8 // 56 Dadd9
+v70o4b8 v60o5g#8 v66b16 v54g#16 v60e8 v70o4b8 v60o5f#8 v66b8 v60e8 // 57 Eadd9 [D]
+v70o4a8 v60o5g#8 v66b16 v54g#16 v60e8 v70o4a8 v60o5g#8 v66b8 v60e8 // 58 AM7
+v72o4g#8 v62o5f#8 v68b16 v56f#16 v62o4b8 v72g#8 v62o5f#8 v68b8 v62o4b8 // 59 Eadd9
+v72o5c#8 v62g#8 v68b16 v56g#16 v62e8 v72c#8 v62g#8 v68b8 v62e8 // 60 AM7
+v70o4a8 v60o5e8 v66a16 v54e16 v60c#8 v70o4a8 v60o5e8 v66a8 v60c#8 // 61 F#m7
+v72o4b8 v62o5f#8 v68b16 v56f#16 v62d#8 v72o4b8 v62o5f#8 v68b8 v62d#8 // 62 G#m7
+v74o4g#8 v64o5e8 v70a16 v58e16 v64c#8 v74o4g#8 v64o5e8 v70a8 v64c#8 // 63 AM7
+v70o4b8 v60o5f#8 v66b16 v54f#16 v60e8 v70o4f#8 v60o5d#8 v66f#8 v60o4b8 // 64 Bsus4 B
+v76e8 v66o5b16 v60g#16 v72b8 v66g#8 v76o4e8 v66o5b16 v60f#16 v72b8 v66f#8 // 65 Eadd9 [A'']
+v78o4e8 v68o6c#16 v62o5a16 v74o6c#8 v68o5a8 v78o4e8 v68o5g#16 v62e16 v74g#8 v68e8 // 66 AM7
+v80o4d#8 v70o5b16 v64g#16 v76b8 v70g#8 v80o4c#8 v70o5g#16 v64e16 v76g#8 v70e8 // 67 G#m7 C#m7
+v78o4c#8 v68o5a16 v62f#16 v74a8 v68f#8 v78o3b8 v68o5f#16 v62d#16 v74f#8 v68d#8 // 68 F#m7 B
+v80o4e8 v70o5b16 v64g#16 v76b8 v70g#8 v80o4e8 v70o5g#16 v64d#16 v76g#8 v70d#8 // 69 EM7
+v82o4c#8 v72o6c#16 v66o5g#16 v78o6c#8 v72o5g#8 v82o4c#8 v72o5b16 v66e16 v78b8 v72e8 // 70 C#m7
+v84o4e8 v74o6c#16 v68o5a16 v80o6c#8 v74o5a8 v84o4d#8 v74o5b16 v68f#16 v80b8 v74f#8 // 71 AM7 G#m7
+v80o4c#8 v70o5a16 v64e16 v76a8 v70e8 v80o3b8 v70o5b16 v64f#16 v76b8 v70f#8 // 72 F#m7 Bsus4
+v82o4c#8. v66o6c#16 v78o5g#8 v72o6c#16 v66o5g#16 v82o4c#8. v66o5b16 v78g#8 v72b16 v66g#16 // 73 C#m7
+v84o4d#8. v68o5b16 v80f#8 v74b16 v68f#16 v84o3b8. v68o5g#16 v80d#8 v74g#16 v68d#16 // 74 G#m7
+v86o4e8. v70o6c#16 v82o5g#8 v76o6c#16 v70o5g#16 v86o3b8. v70o5b16 v82f#8 v76b16 v70f#16 // 75 AM7 B
+v82o4g#8. v66o6c#16 v78o5g#8 v72o6c#16 v66o5g#16 v82o4c#8. v66o5b16 v78e8 v72b16 v66e16 // 76 C#m7
+v78o4e8. v62o5a16 v74e8 v68a16 v62e16 v78o4e8. v62o5g#16 v74c#8 v68g#16 v62c#16 // 77 AM7
+v76o4d#8. v60o5f#16 v72d#8 v66f#16 v60d#16 v76o4c#8. v60o5e16 v72o4b8 v66o5e16 v60o4b16 // 78 G#m7 C#m7
+v74c#8. v58o5e16 v70o4a8 v64o5e16 v58o4a16 v74c#8. v58o5c#16 v70o4a8 v64o5c#16 v58o4a16 // 79 F#m7
+v72o3b8 v62o4f#8 v68b8 v62o5e16 v56o4b16 v72o3b8 v62o4f#8 v68b8 v62o5d#16 v56o4b16 // 80 Bsus4 B
+;
+
+@2
+v90o2e4. v82b8 v90o3e4 v86o2b8 v82e8 // 1 Eadd9 [A]
+v90o1a4. v82o2e8 v90a4 v86e8 v82o1a8 // 2 AM7
+v92g#4 v88o2d#8 v84g#8 v92c#4 v88g#8 v84c#8 // 3 G#m7 C#m7
+v92f#4 v88o3c#8 v84o2f#8 v92o1b4 v88o2f#8 v84d#8 // 4 F#m7 B
+v92e4. v84b8 v92o3e4 v88d#8 v84o2b8 // 5 EM7
+v92c#4. v84g#8 v92o3c#4 v88o2g#8 v84o1b8 // 6 C#m7
+v94a4 v90o2e8 v86a8 v94o1g#4 v90o2d#8 v86g#8 // 7 AM7 G#m7
+v94f#4 v90o3c#8 v86o2f#8 v94o1b4 v90o2f#8 v86b8 // 8 F#m7 Bsus4
+v94c#4. v86g#8 v94o3c#4 v90o2g#8 v86c#8 // 9 C#m7
+v94o1g#4. v86o2d#8 v94g#4 v90d#8 v86o1g#8 // 10 G#m7
+v96a4 v92o2e8 v88a8 v96o1b4 v92o2f#8 v88b8 // 11 AM7 B
+v96c#4. v88g#8 v96o3c#4 v92o2g#8 v88c#8 // 12 C#m7
+v94c4. v86g8 v94o3c4 v90o2g8 v86c#8 // 13 CM7
+v96d4. v88a8 v96o3d4 v92o2a8 v88f#8 // 14 Dadd9
+v98o1g4 v94o2d8 v90g8 v98o1a4 v94o2e8 v90a8 // 15 GM7 Am7
+v94o1b4 v90o2f#8 v86b8 v94o1b4 v90o2f#8 v86d#8 // 16 Bsus4 B
+v92e4. v84b8 v92o3e8 v84o2b8 v88e4 // 17 Eadd9 [A']
+v92o1a4. v84o2e8 v92a8 v84e8 v88c#4 // 18 AM7
+v92e4. v84b8 v92o3e8 v84o2b8 v88g#4 // 19 Eadd9
+v92o1a4. v84o2e8 v92a8 v84e8 v88o1a4 // 20 AM7
+v94g#4. v86o2d#8 v94g#8 v86d#8 v90o1g#4 // 21 G#m7
+v94o2c#4. v86g#8 v94o3c#8 v86o2g#8 v90c#4 // 22 C#m7
+v94f#4. v86o3c#8 v94o2f#8 v86e8 v90c#4 // 23 F#m7
+v92o1b4 v88o2f#8 v84b8 v92o1b4 v88o2f#8 v84d#8 // 24 Bsus4 B
+v96e4. v88b8 v96o3e8 v88d#8 v92o2b4 // 25 EM7
+v98o1a4. v90o2e8 v98a8 v90g#8 v94e4 // 26 AM7
+v98o1g#4. v90o2d#8 v98g#8 v90f#8 v94d#4 // 27 G#m7
+v98c#4. v90g#8 v98o3c#8 v90o2b8 v94g#4 // 28 C#m7
+v98o1a4. v90o2e8 v98a8 v90e8 v94o1a4 // 29 AM7
+v98o2f#4. v90c#8 v98f#8 v90a8 v94o3c#4 // 30 F#m7
+v98o1g#4. v90o2d#8 v98g#8 v90d#8 v94o1g#4 // 31 G#m7
+a4 v90o2e8 v86a8 v94o1b4 v90o2f#8 v86b8 // 32 AM7 B
+v84c#2. v80g#4 // 33 C#m7 [B]
+v84o1b2. v80o2e4 // 34 C#m7/B
+v84o1a2. v80o2e4 // 35 F#m7/A
+v82o1g#2 o2d#4 v78o1g#4 // 36 G#m7
+v82o2c#2. v78g#4 // 37 C#m7
+v82f#2. v78c#4 // 38 F#m7
+v84o1g#2. v80o2d#4 // 39 G#m7
+v84c#2 o1g#4 v80o2c#4 // 40 C#m7
+v86o1a2. v82o2e4 // 41 AM7
+v86o1g#2. v82o2d#4 // 42 G#m7
+v88f#2 c#4 v84o1a4 // 43 F#m7
+v88b2 b4 v84o2f#4 // 44 Bsus4 B
+v94c4. v86g8 v94o3c4 v90o2g8 v86c8 // 45 CM7 [C]
+v94c4. v86g8 v94o3c4 v90o2b8 v86g8 // 46 CM7
+v96d4. v88a8 v96o3d4 v92o2a8 v88d8 // 47 Dadd9
+v96d4. v88a8 v96o3d4 v92o2a8 v88f#8 // 48 Dadd9
+v90o1b4. v82o2d8 v90g4 v86d8 v82o1b8 // 49 GM7/B
+v94g4. v86o2d8 v94g4 v90f#8 v86d8 // 50 GM7
+v96e4. v88b8 v96o3e4 v92o2b8 v88e8 // 51 Em7
+v98c#4. v90g#8 v98o3c#4 v94o2g#8 v90c#8 // 52 C#m7
+v98c4. v90g8 v98o3c4 v94o2g8 v90c8 // 53 CM7
+v94o1g4. v86o2d8 v94g4 v90d8 v86o1b8 // 54 GM7
+v96a4. v88o2e8 v96a4 v92g8 v88e8 // 55 Am7
+v96d4. v88a8 v96o3d4 v92o2a8 v88d8 // 56 Dadd9
+v76e2 r2 // 57 Eadd9 [D]
+r1 // 58 AM7
+r1 // 59 Eadd9
+o1a2 r2 // 60 AM7
+r1 // 61 F#m7
+r1 // 62 G#m7
+a2 r2 // 63 AM7
+r2 v80b2 // 64 Bsus4 B
+v94o2e4. v86b8 v94o3e4 v90o2b8 v86e8 // 65 Eadd9 [A'']
+v94o1a4. v86o2e8 v94a4 v90e8 v86o1a8 // 66 AM7
+v96g#4 v92o2d#8 v88g#8 v96c#4 v92g#8 v88c#8 // 67 G#m7 C#m7
+v96f#4 v92o3c#8 v88o2f#8 v96o1b4 v92o2f#8 v88d#8 // 68 F#m7 B
+v96e4. v88b8 v96o3e4 v92d#8 v88o2b8 // 69 EM7
+v98c#4. v90g#8 v98o3c#4 v94o2g#8 v90o1b8 // 70 C#m7
+v98a4 v94o2e8 v90a8 v98o1g#4 v94o2d#8 v90g#8 // 71 AM7 G#m7
+v98f#4 v94o3c#8 v90o2f#8 v98o1b4 v94o2f#8 v90b8 // 72 F#m7 Bsus4
+v98c#4. v90g#8 v98o3c#4 v94o2g#8 v90c#8 // 73 C#m7
+v100o1g#4. v92o2d#8 v100g#4 v96d#8 v92o1g#8 // 74 G#m7
+v100a4 v96o2e8 v92a8 v100o1b4 v96o2f#8 v92b8 // 75 AM7 B
+v98c#4. v90g#8 v98o3c#4 v94o2g#8 v90c#8 // 76 C#m7
+v96o1a4. v88o2e8 v96a4 v92e8 v88o1a8 // 77 AM7
+v94g#4 v90o2d#8 v86g#8 v94c#4 v90g#8 v86c#8 // 78 G#m7 C#m7
+v94f#4. v86o3c#8 v94o2f#4 v90c#8 v86e8 // 79 F#m7
+v94o1b4 v90o2f#8 v86b8 v94o1b4 v90o2f#8 v86d#8 // 80 Bsus4 B
+;
+
+@3
+v44[o3g#bo4f#]8 r4. v39[o3g#bo4f#]8 r4. // 1 Eadd9 [A]
+v42[o3g#o4c#e]8 r4. v37[o3g#o4c#e]8 r4. // 2 AM7
+v44[o3f#bo4d#]8 r4. v39[o3g#bo4e]8 r4. // 3 G#m7 C#m7
+v44[o3ao4c#e]8 r4. v39[o3f#bo4d#]8 r4. // 4 F#m7 B
+v46[o3g#bo4d#]8 r4. v41[o3g#bo4d#]8 r4. // 5 EM7
+v44[o3g#bo4e]8 r4. v39[o3g#bo4e]8 r4. // 6 C#m7
+v46[o3g#o4c#e]8 r4. v41[o3f#bo4d#]8 r4. // 7 AM7 G#m7
+v46[o3ao4c#e]8 r4. v41[o3f#bo4e]8 r4. // 8 F#m7 Bsus4
+v48[o3g#bo4e]8 r4. v43[o3g#bo4e]8 r4. // 9 C#m7
+v48[o3f#bo4d#]8 r4. v43[o3f#bo4d#]8 r4. // 10 G#m7
+v50[o3g#o4c#e]8 r4. v45[o3f#bo4d#]8 r4. // 11 AM7 B
+v48[o3g#bo4e]8 r4. v43[o3g#bo4e]8 r4. // 12 C#m7
+v54[o3gbo4e]4 r4 v49[o3gbo4e]8 r4. // 13 CM7
+v52[o3f#ao4e]4 r4 v47[o3f#ao4e]8 r4. // 14 Dadd9
+v54[o3f#bo4d]4 r4 v49[o3go4ce]4 r4 // 15 GM7 Am7
+v50[o3f#bo4e]8 r4. v45[o3f#bo4d#]4. r8 // 16 Bsus4 B
+r4 v44[o3g#bo4f#]8 r8 r4 v39[o3g#bo4f#]8 r8 // 17 Eadd9 [A']
+r4 v44[o3g#o4c#e]8 r8 r4 v39[o3g#o4c#e]8 r8 // 18 AM7
+r4 v46[o3g#bo4f#]8 r8 r4 v41[o3g#bo4f#]8 r8 // 19 Eadd9
+r4 v46[o3g#o4c#e]8 r8 r4 v41[o3g#o4c#e]8 r8 // 20 AM7
+r4 v46[o3f#bo4d#]8 r8 r4 v41[o3f#bo4d#]8 r8 // 21 G#m7
+r4 v46[o3g#bo4e]8 r8 r4 v41[o3g#bo4e]8 r8 // 22 C#m7
+r4 v48[o3ao4c#e]8 r8 r4 v43[o3ao4c#e]8 r8 // 23 F#m7
+r4 v46[o3f#bo4e]8 r8 r4 v41[o3f#bo4d#]8 r8 // 24 Bsus4 B
+r4 v46[o3g#bo4d#]8 r8 r4 v41[o3g#bo4d#]8 r8 // 25 EM7
+r4 v48[o3g#o4c#e]8 r8 r4 v43[o3g#o4c#e]8 r8 // 26 AM7
+r4 v48[o3f#bo4d#]8 r8 r4 v43[o3f#bo4d#]8 r8 // 27 G#m7
+r4 v48[o3g#bo4e]8 r8 r4 v43[o3g#bo4e]8 r8 // 28 C#m7
+r4 v46[o3g#o4c#e]8 r8 r4 v41[o3g#o4c#e]8 r8 // 29 AM7
+r4 v46[o3ao4c#e]8 r8 r4 v41[o3ao4c#e]8 r8 // 30 F#m7
+r4 v48[o3f#bo4d#]8 r8 r4 v43[o3f#bo4d#]8 r8 // 31 G#m7
+r4 v46[o3g#o4c#e]8 r8 r4 v41[o3f#bo4d#]8 r8 // 32 AM7 B
+v40[o3eg#b]8 r4. r2 // 33 C#m7 [B]
+v38[o3eg#b]8 r4. r2 // 34 C#m7/B
+[o3eao4c#]8 r4. r2 // 35 F#m7/A
+[o3d#f#b]8 r4. r2 // 36 G#m7
+[o3eg#b]8 r4. r2 // 37 C#m7
+[o3eao4c#]8 r4. r2 // 38 F#m7
+[o3d#f#b]8 r4. r2 // 39 G#m7
+v40[o3eg#b]8 r4. r2 // 40 C#m7
+[o3eg#o4c#]8 r4. r2 // 41 AM7
+[o3d#f#b]8 r4. r2 // 42 G#m7
+v42[o3eao4c#]8 r4. r2 // 43 F#m7
+[o3ef#b]8 r4. v37[o3d#f#b]8 r4. // 44 Bsus4 B
+v50[o3egbo4e]2. r4 // 45 CM7 [C]
+v48[o3egbo4e]4 r4 v43[o3egbo4e]4 r4 // 46 CM7
+v52[o3f#ao4de]2. r4 // 47 Dadd9
+v50[o3f#ao4de]4 r4 v45[o3f#ao4de]4 r4 // 48 Dadd9
+v50[o3f#bo4dg]2. r4 // 49 GM7/B
+v52[o3f#bo4dg]4 r4 v47[o3f#bo4dg]4 r4 // 50 GM7
+v54[o3gbo4df#]2. r4 // 51 Em7
+v50[o3g#bo4e]8 r4. v45[o3g#bo4e]8 r4. // 52 C#m7
+v56[o3egbo4e]2 r4 v51[o3egbo4e]8 r8 // 53 CM7
+v52[o3f#bo4dg]2 r4 v47[o3f#bo4dg]8 r8 // 54 GM7
+v54[o3go4cea]2 r4 v49[o3go4cea]8 r8 // 55 Am7
+v50[o3f#ao4de]2 r4 v45[o3f#ao4de]8 r8 // 56 Dadd9
+r2 v33[o3g#bo4f#]8 r4. // 57 Eadd9 [D]
+r2 v31[o3g#o4c#e]8 r4. // 58 AM7
+r2 v33[o3g#bo4f#]8 r4. // 59 Eadd9
+r2 v31[o3g#o4c#e]8 r4. // 60 AM7
+r2 v33[o3ao4c#e]8 r4. // 61 F#m7
+r2 [o3f#bo4d#]8 r4. // 62 G#m7
+r2 v35[o3g#o4c#e]8 r4. // 63 AM7
+r2 v33[o3f#bo4d#]8 r4. // 64 Bsus4 B
+v46[o3g#bo4f#]8 r4. v41[o3g#bo4f#]8 r4. // 65 Eadd9 [A'']
+v46[o3g#o4c#e]8 r4. v41[o3g#o4c#e]8 r4. // 66 AM7
+v48[o3f#bo4d#]8 r4. v43[o3g#bo4e]8 r4. // 67 G#m7 C#m7
+v48[o3ao4c#e]8 r4. v43[o3f#bo4d#]8 r4. // 68 F#m7 B
+v48[o3g#bo4d#]8 r4. v43[o3g#bo4d#]8 r4. // 69 EM7
+v48[o3g#bo4e]8 r4. v43[o3g#bo4e]8 r4. // 70 C#m7
+v50[o3g#o4c#e]8 r4. v45[o3f#bo4d#]8 r4. // 71 AM7 G#m7
+v48[o3ao4c#e]8 r4. v43[o3f#bo4e]8 r4. // 72 F#m7 Bsus4
+v50[o3g#bo4e]8 r4. v45[o3g#bo4e]8 r4. // 73 C#m7
+v50[o3f#bo4d#]8 r4. v45[o3f#bo4d#]8 r4. // 74 G#m7
+v52[o3g#o4c#e]8 r4. v47[o3f#bo4d#]8 r4. // 75 AM7 B
+v50[o3g#bo4e]8 r4. v45[o3g#bo4e]8 r4. // 76 C#m7
+v48[o3g#o4c#e]8 r4. v43[o3g#o4c#e]8 r4. // 77 AM7
+v46[o3f#bo4d#]8 r4. v41[o3g#bo4e]8 r4. // 78 G#m7 C#m7
+v46[o3ao4c#e]8 r4. v41[o3ao4c#e]8 r4. // 79 F#m7
+v50[o3f#bo4e]8 r4. v45[o3f#bo4d#]4. r8 // 80 Bsus4 B
+;

@@ -1,0 +1,86 @@
+{
+	"style": "fb",
+	"about": "所有者が聴いた（型, 行）の組（docs/accomp-style-engine.md §4.1 の対策2・§4.5「聴いていない組」）。試聴のたびに追記する。行は、聴いた曲の計画に出た分散のセル（arp:）・低音型（bass:）・和音の基本の打ち方（comp:）・借用の組（pair:）。和声の句の行 id は計画に残らないので、まだ記録していない。行は下の sessions の曲を今のコードで作り直して集めた（作り直した MML は、試聴に使ったファイルと #ver と #compose の書式のほかは1バイトも違わないことを確かめた）。",
+	"heard": {
+		"fb": [
+			"arp:asc_walk",
+			"arp:desc_a",
+			"arp:desc_b",
+			"arp:dw_a",
+			"arp:dw_walk",
+			"arp:flutter",
+			"arp:fore_up",
+			"arp:k_a1a",
+			"arp:k_a1b",
+			"arp:k_b2",
+			"arp:k_d",
+			"arp:leap_a",
+			"arp:lift_desc",
+			"arp:pendulum",
+			"arp:ret_a",
+			"arp:ret_a_lift",
+			"arp:ret_b",
+			"arp:rising",
+			"arp:roll",
+			"arp:sparse",
+			"bass:332",
+			"bass:dropout",
+			"bass:pedal",
+			"bass:pulse8",
+			"bass:sparse",
+			"bass:thinned",
+			"bass:walk",
+			"bass:walkLite",
+			"comp:alt13",
+			"comp:long",
+			"comp:short2",
+			"pair:P1",
+			"pair:P2"
+		]
+	},
+	"sessions": [
+		{
+			"day": 1,
+			"date": "2026-09-28",
+			"archetype": "fb",
+			"pieces": [
+				{
+					"what": "手書きの手本（強弱あり）",
+					"file": "references/fb/fb.mml"
+				},
+				{
+					"what": "参照計画（fb を計画として書き直し、生成器で鳴らしたもの）",
+					"compose": "style:fb.v1:any:plan",
+					"composeAtTheTime": "accomp:any:plan",
+					"seed": 20260929
+				}
+			]
+		},
+		{
+			"day": 2,
+			"date": "2026-09-28",
+			"archetype": "fb",
+			"pieces": [
+				{
+					"what": "生成曲",
+					"compose": "style:fb.v1:major:0",
+					"composeAtTheTime": "accomp:major:0",
+					"seed": 20260929
+				},
+				{
+					"what": "生成曲",
+					"compose": "style:fb.v1:major:0",
+					"composeAtTheTime": "accomp:major:0",
+					"seed": 20260930
+				},
+				{
+					"what": "生成曲",
+					"compose": "style:fb.v1:major:0",
+					"composeAtTheTime": "accomp:major:0",
+					"seed": 20260931
+				}
+			]
+		}
+	],
+	"verdict": "1・2日目について「だいたい良い」。そのうえで、生成曲同士が似ることを指摘（docs/accomp-style-engine.md の冒頭）。曲ごとの採否は記録が無い。"
+}

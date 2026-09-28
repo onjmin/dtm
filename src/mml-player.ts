@@ -44,6 +44,7 @@ import {
 } from "./lyrics";
 import { MML_INFO_HTML } from "./mml-info";
 import { parseMML } from "./mml-parser";
+import { playerTrackVelocity } from "./mml-velocity";
 import { createSafetyLimiter } from "./safety-limiter";
 import {
 	createSequencer,
@@ -64,7 +65,6 @@ import {
 	DEFAULT_BPM,
 	DEFAULT_GATE,
 	DEFAULT_PAN,
-	DEFAULT_VELOCITY,
 	DEFAULT_VOCAL_VOLUME,
 } from "./types";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "./voice-images";
@@ -89,7 +89,10 @@ const parseLoopMeta = (mml: string): boolean | null => {
 };
 
 export type MmlPlayerOptions = {
-	/** ループ再生（既定オフ）。#loop=on メタ行でも指定可 */
+	/**
+	 * ループ再生（既定オフ）。MML 側の `#loop=on`（単独の行でも、DAW の書き出しのように宣言の行の
+	 * 途中でも）でも指定可。この値を渡すと MML 側の指定より優先する。
+	 */
 	loop?: boolean;
 	/** メロディックノートの発音要求。未指定かつ synth 未指定なら内蔵synthが鳴る */
 	onPlayNote?: (e: PlayNoteEvent) => void;
@@ -499,7 +502,10 @@ export const mountMmlPlayer = (
 			rangeStartSec: backingRangeStartSec,
 			secondsPerStep,
 		});
-	let loopEnabled = options.loop ?? parseLoopMeta(mml) ?? false;
+	// ループ。単独の `#loop=on` 行（手書き・`accompToMml`）に加えて、DAW の書き出しのように宣言の行の
+	// 途中に置かれた `#loop=on` も読む（`parseMmlMeta` の `loop`。DAW の読み込みと同じ解釈）。
+	// 単独の行しか見ていなかったので、DAW でループを ON にして投稿した曲が埋め込みではループしなかった。
+	let loopEnabled = options.loop ?? parseLoopMeta(mml) ?? meta.loop ?? false;
 
 	// placements を trackIndex ごとにまとめ、ノートを持つトラックだけ採用
 	const trackIndices = [...new Set(placements.map((p) => p.trackIndex))].sort(
@@ -566,27 +572,28 @@ export const mountMmlPlayer = (
 	const seqTracks: SequencerTrack[] = trackIndices.map((index) => {
 		let id = 0;
 		const trackPlacements = placements.filter((p) => p.trackIndex === index);
-		// p が持つ velocity は各トラックの v ヘッダー（DAWの「ベロシティ」スライダー）が
-		// 全ノートへ均一にコピーされたもので、ノート個別の強弱ではない。
-		// エディタ（daw.ts）はMML読込時にこれをトラック音量側へ移し、ノートの velocity は
-		// 既定値へ戻している。ここでも同じ形へ揃える。
+		// p が持つ velocity は、音符ごとの MML の v（実効値）。エディタ（daw.ts）と同じく
+		// {トラック音量 T, 相対 velocity} に分けてから鳴らす（mml-velocity.ts）。
 		//
-		// 揃えないと、同じMMLでも PlayNoteEvent.velocity がエディタ（常に既定値）と
-		// 再生専用プレイヤー（v ヘッダー値）で食い違い、velocity を音量ではなく音色に使う
-		// 利用側（SoundFont のベロシティ→明るさ連動など）で音色だけがずれる。
-		// 音量は volume 側へ等価に移すので、最終的な発音音量は従来と変わらない
-		// （(trackVolume×v/既定velocity)/100 × 既定velocity/127 = trackVolume/100 × v/127）。
-		const headerVelocity = trackPlacements[0]?.velocity ?? DEFAULT_VELOCITY;
-		const notes: Note[] = trackPlacements.map((p) => ({
+		// 分け方を揃えないと、同じMMLでも PlayNoteEvent.velocity がエディタと再生専用
+		// プレイヤーで食い違い、velocity を音量ではなく音色に使う利用側（SoundFont の
+		// ベロシティ→明るさ連動など）で音色だけがずれる。発音音量はどちらも
+		// (trackVolume×T/100)/100 × velocity/127 ≒ trackVolume/100 × v/127 で、v が1つだけの
+		// トラック（v ≤ 100）は従来と同じ鳴り方になる。
+		const split = playerTrackVelocity(
+			trackVolume,
+			trackPlacements.map((p) => p.velocity),
+		);
+		const notes: Note[] = trackPlacements.map((p, k) => ({
 			id: id++,
 			startStep: p.startStep,
 			durationSteps: p.durationSteps,
 			pitchUnits: p.pitchUnits,
-			velocity: DEFAULT_VELOCITY,
+			velocity: split.velocities[k],
 		}));
 		return {
 			id: String(index),
-			volume: (trackVolume * headerVelocity) / DEFAULT_VELOCITY,
+			volume: split.volume,
 			notes,
 		};
 	});

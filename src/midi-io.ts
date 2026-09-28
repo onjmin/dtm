@@ -7,9 +7,9 @@
  */
 
 import { DRUM_KEYS, type DrumPattern } from "./drum-config";
+import { effectiveVelocity } from "./mml-velocity";
 import { unitsToMidiDetune } from "./tuning";
 import type { Note } from "./types";
-import { DEFAULT_VELOCITY } from "./types";
 import { DTM_VERSION } from "./version";
 
 const STEPS_PER_BEAT = 48;
@@ -568,10 +568,9 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 				const endTick = Math.round(
 					(n.startStep + (n.durationSteps || 1)) * tickPerStep,
 				);
+				// MML の v と同じ実効値（0〜127 に丸める。velocity127×音量127 が 161 にならない）。
 				// volume 0（ミュート）を 100 に化けさせないため ?? を使う（0 は有効値）
-				const vel = Math.round(
-					((n.velocity ?? DEFAULT_VELOCITY) * (track.volume ?? 100)) / 100,
-				);
+				const vel = effectiveVelocity(track.volume ?? 100, n.velocity);
 				events.push({ t: startTick, m: [0x90 | channel, note, vel] });
 				events.push({ t: endTick, m: [0x90 | channel, note, 0] });
 			}
@@ -619,10 +618,9 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 				const endTick = Math.round(
 					(n.startStep + (n.durationSteps || 1)) * tickPerStep,
 				);
+				// MML の v と同じ実効値（0〜127 に丸める。velocity127×音量127 が 161 にならない）。
 				// volume 0（ミュート）を 100 に化けさせないため ?? を使う（0 は有効値）
-				const vel = Math.round(
-					((n.velocity ?? DEFAULT_VELOCITY) * (track.volume ?? 100)) / 100,
-				);
+				const vel = effectiveVelocity(track.volume ?? 100, n.velocity);
 				events.push({ t: startTick, m: [0x90 | channel, note, vel] });
 				events.push({ t: endTick, m: [0x90 | channel, note, 0] });
 			}

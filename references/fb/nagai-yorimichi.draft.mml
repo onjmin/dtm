@@ -1,0 +1,275 @@
+// 【レビュー前の下書き】fb（fb.mml）のレビュー前の版。承認した試作ではない。監査の基準では印を付けて扱う（baseline.json の flag: "draft"）。
+// 長い寄り道 — ホ長調 / 112BPM / 76小節ループ（約163秒）
+// A 1–16 backing そのまま → B 17–36 短調側 → C1 37–44 ♭VI・♭VII → R 45–48 → C2 49–56 ♭III・iv・i → L 57–64 薄く明るい → A' 65–76 静かに戻る
+// @0 控えめな長い音 / @1 分散 Lead 1 (square) / @2 低音 Synth Bass 1 / @3 和音 Electric Piano 2
+#inst=retro_game
+#volume=80
+#loop=on
+#t1inst=Lead 1 (square)
+#t1eqhi=-9
+#t1pan=50
+#t2inst=Synth Bass 1
+#t2eqhi=-6
+#t3inst=Electric Piano 2
+#t3eqhi=-3
+#t3pan=80
+
+@0 t112 v0 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r4 v42o4b2. /* 38 */ o5e1 /* 39 */ r1 r1 r4 o4b2. /* 42 */ o5e2 f#2 /* 43 */ r1 r1 r1 r1 r1 r1 r4 v44f#2. /* 50 */ e1 /* 51 */ r1 r1 r4 d2. /* 54 */ c1 /* 55 */ r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 v38e2 d#2 /* 76 */;
+
+@1
+// ── A 家（backing そのまま）（1–16）
+v68o4e8 v58b16 v52g#16 v64b8 v58g#8 v68e8 v58o5f#16 v52o4b16 v64o5f#8 v58o4b8 // 1 Eadd9
+v70e8 v60o5c#16 v54o4a16 v66o5c#8 v60o4a8 v70e8 v60o5e16 v54o4a16 v66o5e8 v60o4g#8 // 2 AM7
+v72d#8 v62b16 v56g#16 v68b8 v62g#8 v72c#8 v62g#16 v56e16 v68g#8 v62b8 // 3 G#m7 C#m7
+v70c#8 v60a16 v54f#16 v66a8 v60f#8 v70o3b8 v60o4f#16 v54d#16 v66f#8 v60b8 // 4 F#m7 B
+v72e8. v56o5e16 v68o4b8 v62o5e16 v56o4b16 v72e8. v56o5d#16 v68o4b8 v62o5d#16 v56o4b16 // 5 EM7
+v74c#8. v58o5c#16 v70o4g#8 v64o5c#16 v58o4g#16 v74c#8. v58b16 v70g#8 v64b16 v58g#16 // 6 C#m7
+v76e8. v60o5e16 v72c#8 v66e16 v60c#16 v76o4d#8. v60o5d#16 v72o4b8 v66o5d#16 v60o4b16 // 7 AM7 G#m7
+v74c#8. v58o5c#16 v70o4a8 v64o5c#16 v58o4a16 v74o3b8. v58o4b16 v70e8 v64b16 v58f#16 // 8 F#m7 Bsus4
+v76g#8 v66o5e16 v60c#16 v72e8 v66c#16 v60e16 v76o4c#8 v66g#8 v72o5c#8 v66o4g#8 // 9 C#m7
+v78f#8 v68o5d#16 v62o4b16 v74o5d#8 v68o4b16 v62o5d#16 v78o3b8 v68o4f#8 v74b8 v68f#8 // 10 G#m7
+v80g#8 v70o5e16 v64c#16 v76e8 v70c#16 v64e16 v80o3b8 v70o4b8 v76o5f#8 v70o4b8 // 11 AM7 B
+v78g#8 v68o5e16 v62c#16 v74e8 v68c#16 v62e16 v78o4c#8 v68g#8 v74o5c#8 v68o4g#8 // 12 C#m7
+v74c8 v64g8 v70o5c8 v64o4g16 v58o5c16 v74o4c8 v64b8 v70o5e8 v64o4b16 v58o5e16 // 13 CM7
+v78o4d8 v68a8 v74o5d8 v68o4a16 v62o5d16 v78o4d8 v68a8 v74o5e8 v68o4a16 v62o5e16 // 14 Dadd9
+v82o4d8 v72b8 v78o5f#8 v72o4b16 v66o5f#16 v82o3a8 v72o4e8 v78o5c8 v72e16 v66c16 // 15 GM7 Am7
+v72o3b8 v62o4f#8 v68b8 v62o5e16 v56o4b16 v72o3b8 v62o4f#8 v68b8 v62o5d#16 v56o4b16 // 16 Bsus4 B
+// ── B 短調側に長く留まる（17–36）
+v60o3g#8 v50o4e8 v56b16 v44g#16 v50e8 v60c#8 v50e8 v56b16 v44g#16 v50e8 // 17 C#m7
+v60o3g#8 v50o4e8 v56o5c#16 v44o4g#16 v50e8 v60c#8 v50e8 v56o5d#16 v44o4b16 v50g#8 // 18 C#m7
+v62o3g#8 v52o4d#8 v58b16 v46f#16 v52d#8 v62o3b8 v52o4d#8 v58b16 v46f#16 v52d#8 // 19 G#m7
+v62o3g#8 v52o4d#8 v58o5c#16 v46o4f#16 v52d#8 v62o3b8 v52o4d#8 v58f#16 v46b16 v52f#8 // 20 G#m7
+v62o3f#8. v46o4c#16 v58e16 v46a16 v52c#8 v62o3f#8. v46o4c#16 v58e16 v46a16 v52e8 // 21 F#m7
+v64o3f#8. v48o4c#16 v60e16 v48g#16 v54c#8 v64o3a8. v48o4c#16 v60e16 v48b16 v54e8 // 22 F#m7
+v62o3g#8. v46o4c#16 v58e16 v46b16 v52e8 v62o3g#8. v46o4c#16 v58e16 v46g#16 v52e8 // 23 C#m7
+v62o3g#8. v46o4c#16 v58e16 v46b16 v52e8 v62o3g#8. v46o4d#16 v58e16 v46b16 v52g#8 // 24 C#m7
+v64o3a8 v54o4e16 v48g#16 v60o5c#8 v54o4g#8 v64e8 v54a8 v60o5c#8 v54o4g#8 // 25 AM7
+v64o3g#8 v54o4d#16 v48f#16 v60b8 v54f#8 v64d#8 v54g#8 v60b8 v54f#8 // 26 G#m7
+v66o3f#8 v56o4c#16 v50e16 v62a8 v56e8 v66c#8 v56f#8 v62a8 v56e8 // 27 F#m7
+v66o3g#8 v56o4d#16 v50f#16 v62b8 v56f#8 v66d#8 v56g#8 v62o5c#8 v56o4b8 // 28 G#m7
+v64c#8. v48g#16 v60e8 v54b8 v64o3g#8. v48o4e16 v60c#8 v54g#8 // 29 C#m7
+v66c#8. v50g#16 v62d#8 v56b8 v66o3g#8. v50o4e16 v62d#8 v56g#8 // 30 C#m(add9)
+v66o3a8. v50o4e16 v62c#8 v56g#8 v66o3a8. v50o4e16 v62c#8 v56b8 // 31 AM7
+v68o3a8. v52o4e16 v64g#8 v58o5c#8 v68o4c#8. v52g#16 v64b8 v58o5d#8 // 32 AM7(#11)
+v68o3f#8 v58o4c#8 v64a8 v58e16 v52a16 v68o3f#8 v58o4c#8 v64g#8 v58e16 v52g#16 // 33 F#m7
+v70o3g#8 v60o4d#8 v66b8 v60f#16 v54b16 v70o3g#8 v60o4d#8 v66o5c#8 v60o4f#16 v54o5c#16 // 34 G#m7
+v72o3a8 v62o4e8 v68o5c#8 v62o4g#16 v56o5c#16 v72o3a8 v62o4e8 v68b8 v62g#16 v56o5e16 // 35 AM7
+v74o3b8 v64o4e8 v70b8 v64f#16 v58o5e16 v74o3b8 v64o4d#8 v70b8 v64f#16 v58o5d#16 // 36 Bsus4 B
+// ── C1 借りた和音 1回目 ♭VI・♭VII（37–44）
+v74o4c8 v64g8 v70b8 v64o5e8 v74g8 v64e16 v58o4b16 v70g8 v64b8 // 37 CM7
+v74c8 v64g8 v70b8 v64o5e8 v74f#8 v64e16 v58o4b16 v70g8 v64o5e8 // 38 CM7(#11)
+v76o4d8 v66a8 v72o5e8 v66f#8 v76e8 v66d16 v60o4a16 v72f#8 v66a8 // 39 Dadd9
+v76d8 v66a8 v72o5d8 v66f#8 v76e8 v66f#16 v60e16 v72o4a8 v66o5d8 // 40 Dadd9
+v76o4c8 v66g8 v72o5e8 v66o4b16 v60o5e16 v76o4c8 v66g8 v72o5g8 v66o4b16 v60o5e16 // 41 CM7
+v78o4c8 v68b8 v74o5f#8 v68o4b16 v62o5e16 v78o4g8 v68b8 v74o5e8 v68o4b16 v62o5g16 // 42 CM7(#11)
+v78o4d8 v68a8 v74o5f#8 v68o4a16 v62o5e16 v78o4d8 v68a8 v74o5e8 v68o4a16 v62o5f#16 // 43 Dadd9
+v74o4d8 v64f#8 v70a8 v64o5d16 v58f#16 v74o4d8 v64a8 v70o5e8 v64o4f#16 v58b16 // 44 D
+// ── R 一度だけ家の近くへ（45–48）
+v72e8 v62b16 v56g#16 v68o5f#8 v62o4b8 v72e8 v62o5g#16 v56o4b16 v68o5f#8 v62o4b8 // 45 Eadd9
+v70e8 v60o5c#16 v54o4a16 v66o5g#8 v60o4a8 v70e8 v60o5e16 v54o4a16 v66o5c#8 v60o4g#8 // 46 AM7
+v70d#8 v60b16 v54g#16 v66o5f#8 v60o4g#8 v70c#8 v60g#16 v54e16 v66b8 v60g#8 // 47 G#m7 C#m7
+v68c#8 v58a16 v52f#16 v64o5e8 v58o4a8 v68c#8 v58a16 v52f#16 v64o5c#8 v58e8 // 48 F#m7
+// ── C2 借りた和音 2回目 ♭III・iv・i（49–56）
+v72o4d16 v56g16 v62b8 v68o5f#8 v62d8 v72o4d16 v56g16 v62b8 v68o5d8 v62f#8 // 49 GM7
+v74o4d16 v58g16 v64b8 v70o5f#8 v64d8 v74o4d16 v58g16 v64b8 v70o5g8 v64f#8 // 50 GM7
+v76o4e16 v60a16 v66o5c8 v72g8 v66e8 v76o4e16 v60a16 v66o5c8 v72e8 v66g8 // 51 Am7
+v78o4e16 v62a16 v68o5c8 v74g8 v68e8 v78o4c16 v62e16 v68a8 v74o5c8 v68o4b8 // 52 Am7
+v76o3g8 v66o4d8 v72f#16 v60b16 v66o5d8 v76o3g8 v66o4d8 v72b8 v66o5f#8 // 53 GM7
+v78o4e8 v68b8 v74o5d16 v62o4g16 v68b8 v78e8 v68b8 v74o5g8 v68d8 // 54 Em7
+v80o3a8 v70o4e8 v76g16 v64o5c16 v70e8 v80o3a8 v70o4e8 v76o5c8 v70g8 // 55 Am7
+v74o3a8 v64o4e8 v70f#16 v58o5c16 v64e8 v74o3a8 v64o4c8 v70f#8 v64o5c8 // 56 Am6
+// ── L 全パートが薄く明るい（57–64）
+v54e8 v50o4b8 v52o5g#8 v50o4b8 v54o5d#8 v50o4b8 v52o5g#8 v50o4b8 // 57 EM7
+v54o5c#8 v50o4a8 v52o5g#8 v50o4a8 v54o5e8 v50o4a8 v52o5g#8 v50o4b8 // 58 AM7
+v56o5e8 v52o4b8 v54o5g#8 v52o4b8 v56o5f#8 v52o4b8 v54o5d#8 v52o4b8 // 59 EM7/G#
+v56o5c#8 v52o4a8 v54o5g#8 v52o4a8 v56o5b8 v52o4a8 v54o5g#8 v52e8 // 60 AM7(9)
+v56e8 v52o4g#8 v54b8 v52o5g#8 v56e8 v52c#16 v49o4b16 v54g#8 v52o5e8 // 61 C#m7
+v54e8 v50o4a8 v52o5c#8 v50g#8 v54e8 v50c#16 v47o4b16 v52a8 v50o5e8 // 62 AM7
+v54e8 v50o4a8 v52o5c#8 v50f#8 v54e8 v50c#16 v47o4a16 v52g#8 v50o5c#8 // 63 F#m7
+v52e8 v48o4f#8 v50b8 v48o5f#8 v52e8 v48o4b16 v45f#16 v50b8 v48f#8 // 64 Bsus4
+// ── A' 静かに戻る（65–76）
+v62e8 v52b16 v46g#16 v58b8 v52g#8 v62e8 v52o5f#16 v46o4b16 v58o5f#8 v52o4b8 // 65 Eadd9
+v62e8 v52o5c#16 v46o4a16 v58o5c#8 v52o4a8 v62e8 v52o5e16 v46o4a16 v58o5e8 v52o4g#8 // 66 AM7
+v64d#8 v54b16 v48g#16 v60b8 v54g#8 v64c#8 v54g#16 v48e16 v60g#8 v54b8 // 67 G#m7 C#m7
+v64c#8 v54a16 v48f#16 v60a8 v54f#8 v64o3b8 v54o4f#16 v48d#16 v60f#8 v54b8 // 68 F#m7 B
+v64e8. v48o5e16 v60o4b8 v54o5e16 v48o4b16 v64e8. v48o5d#16 v60o4b8 v54o5d#16 v48o4b16 // 69 EM7
+v64c#8. v48o5c#16 v60o4g#8 v54o5c#16 v48o4g#16 v64c#8. v48b16 v60g#8 v54b16 v48g#16 // 70 C#m7
+v66e8. v50o5e16 v62c#8 v56e16 v50c#16 v66o4d#8. v50o5d#16 v62o4b8 v56o5d#16 v50o4b16 // 71 AM7 G#m7
+v66c#8. v50o5c#16 v62o4a8 v56o5c#16 v50o4a16 v66o3b8. v50o4b16 v62e8 v56b16 v50f#16 // 72 F#m7 Bsus4
+v66g#8 v56o5e16 v50c#16 v62e8 v56c#16 v50e16 v66o4c#8 v56g#8 v62o5c#8 v56o4g#8 // 73 C#m7
+v66f#8 v56o5d#16 v50o4b16 v62o5d#8 v56o4b16 v50o5d#16 v66o3b8 v56o4f#8 v62b8 v56f#8 // 74 G#m7
+v68g#8 v58o5e16 v52c#16 v64e8 v58c#16 v52e16 v68o3a8 v58o4e8 v64b8 v58e8 // 75 AM7
+v66o3b8 v56o4f#8 v62b8 v56o5e16 v50o4b16 v66o3b8 v56o4f#8 v62b8 v56o5d#16 v50o4b16 // 76 Bsus4 B
+;
+
+@2
+// ── A 家（backing そのまま）（1–16）
+v90o2e4. v82b8 v90o3e4 v86o2b8 v82e8 // 1 Eadd9
+v90o1a4. v82o2e8 v90a4 v86e8 v82o1a8 // 2 AM7
+v92g#4 v88o2d#8 v84g#8 v92c#4 v88g#8 v84c#8 // 3 G#m7 C#m7
+v92f#4 v88o3c#8 v84o2f#8 v92o1b4 v88o2f#8 v84d#8 // 4 F#m7 B
+v92e4. v84b8 v92o3e4 v88d#8 v84o2b8 // 5 EM7
+v92c#4. v84g#8 v92o3c#4 v88o2g#8 v84o1b8 // 6 C#m7
+v94a4 v90o2e8 v86a8 v94o1g#4 v90o2d#8 v86g#8 // 7 AM7 G#m7
+v94f#4 v90o3c#8 v86o2f#8 v94o1b4 v90o2f#8 v86b8 // 8 F#m7 Bsus4
+v94c#4. v86g#8 v94o3c#4 v90o2g#8 v86c#8 // 9 C#m7
+v94o1g#4. v86o2d#8 v94g#4 v90d#8 v86o1g#8 // 10 G#m7
+v96a4 v92o2e8 v88a8 v96o1b4 v92o2f#8 v88b8 // 11 AM7 B
+v96c#4. v88g#8 v96o3c#4 v92o2g#8 v88c#8 // 12 C#m7
+v94c4. v86g8 v94o3c4 v90o2g8 v86c#8 // 13 CM7
+v96d4. v88a8 v96o3d4 v92o2a8 v88f#8 // 14 Dadd9
+v98o1g4 v94o2d8 v90g8 v98o1a4 v94o2e8 v90a8 // 15 GM7 Am7
+v94o1b4 v90o2f#8 v86b8 v94o1b4 v90o2f#8 v86d#8 // 16 Bsus4 B
+// ── B 短調側に長く留まる（17–36）
+v82c#2. v78o1g#4 // 17 C#m7
+v82o2c#4. v74g#8 v82c#2 // 18 C#m7
+o1g#2. v78o2d#4 // 19 G#m7
+v82o1g#4. v74o2d#8 v82o1g#2 // 20 G#m7
+v84f#2. v80o2c#4 // 21 F#m7
+v84o1f#4. v76o2c#8 v84e2 // 22 F#m7
+v82c#2. v78o1g#4 // 23 C#m7
+v82o2c#4. v74g#8 v82o1b2 // 24 C#m7
+v84a2. v80o2e4 // 25 AM7
+v84o1g#2. v80o2d#4 // 26 G#m7
+v84o1f#2. v80o2c#4 // 27 F#m7
+v84o1g#2 o2d#4 v80o1b4 // 28 G#m7
+v84o2c#2. v80o1g#4 // 29 C#m7
+v84o2c#2 o1g#4 v80b4 // 30 C#m(add9)
+v86a2. v82o2e4 // 31 AM7
+v86o1a4. v78o2e8 v86o1a2 // 32 AM7(#11)
+v88f#4. v80o2c#8 v88f#4 v84c#4 // 33 F#m7
+v90o1g#4. v82o2d#8 v90g#4 v86d#4 // 34 G#m7
+v92o1a4. v84o2e8 v92a4 v88e4 // 35 AM7
+v94o1b4. v86o2f#8 v94b4 v90f#8 v86o1b8 // 36 Bsus4 B
+// ── C1 借りた和音 1回目 ♭VI・♭VII（37–44）
+v90o2c4. v82g8 v90o3c4 v86o2g8 v82e8 // 37 CM7
+v90c4. v82g8 v90b4 v86g8 v82c8 // 38 CM7(#11)
+v92d4. v84a8 v92o3d4 v88o2a8 v84e8 // 39 Dadd9
+v92d4. v84a8 v92o3d4 v88o2a8 v84f#8 // 40 Dadd9
+v92c4 v88g8 v84o3c8 v92o2c4 v88g8 v84e8 // 41 CM7
+v94c4 v90g8 v86o3c8 v94o2c4 v90g8 v86b8 // 42 CM7(#11)
+v94d4 v90a8 v86o3d8 v94o2d4 v90a8 v86o3e8 // 43 Dadd9
+v90o2d4 v86a8 v82o3d8 v90o2d4 v86a8 v82d#8 // 44 D
+// ── R 一度だけ家の近くへ（45–48）
+v92e4. v84b8 v92o3e4 v88o2b8 v84e8 // 45 Eadd9
+v90o1a4. v82o2e8 v90a4 v86e8 v82o1a8 // 46 AM7
+v90g#4 v86o2d#8 v82g#8 v90c#4 v86g#8 v82c#8 // 47 G#m7 C#m7
+v88f#4. v80o3c#8 v88o2f#4 v84c#8 v80o1f#8 // 48 F#m7
+// ── C2 借りた和音 2回目 ♭III・iv・i（49–56）
+v92g4. v84o2d8 v92g4 v88d8 v84o1g8 // 49 GM7
+v94g4. v86o2d8 v94g4 v90f#8 v86d8 // 50 GM7
+v94o1a4. v86o2e8 v94a4 v90e8 v86o1a8 // 51 Am7
+v96a4. v88o2e8 v96a4 v92g8 v88e8 // 52 Am7
+v94o1g4 v90o2d8 v86g8 v94o1g4 v90o2d8 v86f#8 // 53 GM7
+v96e4 v92b8 v88o3e8 v96o2e4 v92b8 v88d8 // 54 Em7
+v98o1a4 v94o2e8 v90a8 v98o1a4 v94o2e8 v90g8 // 55 Am7
+v92o1a4. v84o2e8 v92f#4 v88e8 v84o1a8 // 56 Am6
+// ── L 全パートが薄く明るい（57–64）
+v78o2e2. r4 // 57 EM7
+r1 // 58 AM7
+o1g#2. r4 // 59 EM7/G#
+r1 // 60 AM7(9)
+o2c#2. r4 // 61 C#m7
+r1 // 62 AM7
+o1f#2. r4 // 63 F#m7
+b2 r2 // 64 Bsus4
+// ── A' 静かに戻る（65–76）
+v82o2e4. v74b8 v82o3e2 // 65 Eadd9
+o1a4. v74o2e8 v82a2 // 66 AM7
+v84o1g#4 v80o2d#8 v76g#8 v84c#2 // 67 G#m7 C#m7
+f#4 v80o3c#8 v76o2f#8 v84o1b2 // 68 F#m7 B
+v86o2e4. v78b8 v86o3e4 v82d#8 v78o2b8 // 69 EM7
+v86c#4. v78g#8 v86o3c#4 v82o2g#8 v78o1b8 // 70 C#m7
+v88a4 v84o2e8 v80a8 v88o1g#4 v84o2d#8 v80g#8 // 71 AM7 G#m7
+v88f#4 v84o3c#8 v80o2f#8 v88o1b4 v84o2f#8 v80b8 // 72 F#m7 Bsus4
+v88c#4. v80g#8 v88o3c#4 v84o2g#8 v80c#8 // 73 C#m7
+v90o1g#4. v82o2d#8 v90g#4 v86d#8 v82o1g#8 // 74 G#m7
+v90a4. v82o2e8 v90a4 v86e8 v82o1a8 // 75 AM7
+v88b4 v84o2f#8 v80b8 v88o1b4 v84o2f#8 v80d#8 // 76 Bsus4 B
+;
+
+@3
+// ── A 家（backing そのまま）（1–16）
+v44[o3g#bo4f#]8 r4. v39[o3g#bo4f#]8 r4. // 1 Eadd9
+v42[o3g#o4c#e]8 r4. v37[o3g#o4c#e]8 r4. // 2 AM7
+v44[o3f#bo4d#]8 r4. v39[o3g#bo4e]8 r4. // 3 G#m7 C#m7
+v44[o3ao4c#e]8 r4. v39[o3f#bo4d#]8 r4. // 4 F#m7 B
+v46[o3g#bo4d#]8 r4. v41[o3g#bo4d#]8 r4. // 5 EM7
+v44[o3g#bo4e]8 r4. v39[o3g#bo4e]8 r4. // 6 C#m7
+v46[o3g#o4c#e]8 r4. v41[o3f#bo4d#]8 r4. // 7 AM7 G#m7
+v46[o3ao4c#e]8 r4. v41[o3f#bo4e]8 r4. // 8 F#m7 Bsus4
+v48[o3g#bo4e]8 r4. v43[o3g#bo4e]8 r4. // 9 C#m7
+v48[o3f#bo4d#]8 r4. v43[o3f#bo4d#]8 r4. // 10 G#m7
+v50[o3g#o4c#e]8 r4. v45[o3f#bo4d#]8 r4. // 11 AM7 B
+v48[o3g#bo4e]8 r4. v43[o3g#bo4e]8 r4. // 12 C#m7
+v54[o3gbo4e]4 r4 v49[o3gbo4e]8 r4. // 13 CM7
+v52[o3f#ao4e]4 r4 v47[o3f#ao4e]8 r4. // 14 Dadd9
+v54[o3f#bo4d]4 r4 v49[o3go4ce]4 r4 // 15 GM7 Am7
+v50[o3f#bo4e]8 r4. v45[o3f#bo4d#]4. r8 // 16 Bsus4 B
+// ── B 短調側に長く留まる（17–36）
+v38[o3g#bo4e]8 r4. r2 // 17 C#m7
+r2 v31[o3g#bo4e]8 r4. // 18 C#m7
+v38[o3f#bo4d#]8 r4. r2 // 19 G#m7
+r2 v31[o3f#bo4d#]8 r4. // 20 G#m7
+v38[o3ao4c#e]8 r4. r2 // 21 F#m7
+r2 v31[o3ao4c#g#]8 r4. // 22 F#m7
+v38[o3g#bo4e]8 r4. r2 // 23 C#m7
+r2 v31[o3g#bo4d#]8 r4. // 24 C#m7
+v40[o3g#o4c#e]8 r4. v35[o3g#o4c#e]8 r4. // 25 AM7
+v40[o3f#bo4d#]8 r4. v35[o3f#bo4d#]8 r4. // 26 G#m7
+v40[o3ao4c#e]8 r4. v35[o3ao4c#e]8 r4. // 27 F#m7
+v40[o3f#bo4d#]8 r4. v35[o3f#bo4d#]8 r4. // 28 G#m7
+v40[o3g#bo4e]8 r4. r2 // 29 C#m7
+r2 v33[o3g#bo4d#]8 r4. // 30 C#m(add9)
+v42[o3g#o4c#e]8 r4. r2 // 31 AM7
+r2 v35[o3g#o4c#d#]8 r4. // 32 AM7(#11)
+v42[o3ao4c#e]8 r4. v37[o3ao4c#e]8 r4. // 33 F#m7
+v42[o3f#bo4d#]8 r4. v37[o3f#bo4d#]8 r4. // 34 G#m7
+v44[o3g#o4c#e]8 r4. v39[o3g#o4c#e]8 r4. // 35 AM7
+v44[o3f#bo4e]8 r4. v39[o3f#bo4d#]8 r4. // 36 Bsus4 B
+// ── C1 借りた和音 1回目 ♭VI・♭VII（37–44）
+v48[o3gbo4e]1 // 37 CM7
+v46[o3gbo4e]2 r2 // 38 CM7(#11)
+v50[o3f#ao4e]1 // 39 Dadd9
+v48[o3f#ao4e]2 r2 // 40 Dadd9
+v50[o3gbo4e]2. r4 // 41 CM7
+v48[o3gbo4f#]2 r2 // 42 CM7(#11)
+v52[o3f#ao4e]2. r4 // 43 Dadd9
+v46[o3f#ao4d]2 r2 // 44 D
+// ── R 一度だけ家の近くへ（45–48）
+v44[o3g#bo4f#]8 r4. v39[o3g#bo4f#]8 r4. // 45 Eadd9
+v42[o3g#o4c#e]8 r4. v37[o3g#o4c#e]8 r4. // 46 AM7
+v42[o3f#bo4d#]8 r4. v37[o3g#bo4e]8 r4. // 47 G#m7 C#m7
+v40[o3ao4c#e]8 r4. v35[o3ao4c#e]8 r4. // 48 F#m7
+// ── C2 借りた和音 2回目 ♭III・iv・i（49–56）
+v50[o3f#bo4d]1 // 49 GM7
+v48[o3f#bo4d]2 r2 // 50 GM7
+v52[o3go4ce]1 // 51 Am7
+v50[o3go4ce]2 r2 // 52 Am7
+v52[o3f#bo4d]2. r4 // 53 GM7
+v50[o3gbo4d]2. r4 // 54 Em7
+v54[o3go4ce]2. r4 // 55 Am7
+v46[o3f#o4ce]2 r2 // 56 Am6
+// ── L 全パートが薄く明るい（57–64）
+v32[o3g#bo4d#]8 r4. r2 // 57 EM7
+r2 v27[o3g#o4c#e]8 r4. // 58 AM7
+v32[o3g#bo4d#]8 r4. r2 // 59 EM7/G#
+r2 v27[o3g#bo4c#]8 r4. // 60 AM7(9)
+v32[o3g#bo4e]8 r4. r2 // 61 C#m7
+r2 v27[o3g#o4c#e]8 r4. // 62 AM7
+v32[o3ao4c#e]8 r4. r2 // 63 F#m7
+r2 v25[o3f#bo4e]8 r4. // 64 Bsus4
+// ── A' 静かに戻る（65–76）
+v36[o3g#bo4f#]8 r4. v31[o3g#bo4f#]8 r4. // 65 Eadd9
+v34[o3g#o4c#e]8 r4. v29[o3g#o4c#e]8 r4. // 66 AM7
+v36[o3f#bo4d#]8 r4. v31[o3g#bo4e]8 r4. // 67 G#m7 C#m7
+v36[o3ao4c#e]8 r4. v31[o3f#bo4d#]8 r4. // 68 F#m7 B
+v38[o3g#bo4d#]8 r4. v33[o3g#bo4d#]8 r4. // 69 EM7
+v36[o3g#bo4e]8 r4. v31[o3g#bo4e]8 r4. // 70 C#m7
+v38[o3g#o4c#e]8 r4. v33[o3f#bo4d#]8 r4. // 71 AM7 G#m7
+v38[o3ao4c#e]8 r4. v33[o3f#bo4e]8 r4. // 72 F#m7 Bsus4
+v40[o3g#bo4e]8 r4. v35[o3g#bo4e]8 r4. // 73 C#m7
+v40[o3f#bo4d#]8 r4. v35[o3f#bo4d#]8 r4. // 74 G#m7
+v42[o3g#o4c#e]8 r4. v37[o3g#o4c#e]8 r4. // 75 AM7
+v40[o3f#bo4e]8 r4. v35[o3f#bo4d#]4. r8 // 76 Bsus4 B
+;

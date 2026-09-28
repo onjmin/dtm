@@ -1,4 +1,5 @@
 import { LinkedList } from "./linked-list";
+import { chordVelocity, effectiveVelocity } from "./mml-velocity";
 import { UNITS_PER_SEMITONE, type Units, units } from "./tuning";
 import type {
 	AddNoteOptions,
@@ -445,6 +446,11 @@ export class MMLCore {
 	 * 全ノートを発音順に一度で処理し、次の発音までの距離だけを上限として各音符の長さを忠実に
 	 * 出力する（次の音符がなければ曲末まで伸ばせる）。小節ウィンドウで走査すると、境界をまたぐ
 	 * 音符が切り詰められて「ぶつ切り」になり、歌詞（@@n）の音節割り当てもずれる。
+	 *
+	 * **強弱（v）**: 音符ごとに実効値 v = round(トラック音量 × velocity / 100) を求め
+	 * （`mml-velocity.ts`）、直前に出した v と違うときだけ音符の直前に `v<n>` を挟む。
+	 * 先頭の `v` は最初に書いた音符の v にする（全音符が既定の強さなら従来どおりトラック音量）。
+	 * したがって**全音符の velocity が100（未設定を含む）なら、出力は従来と1バイトも変わらない。**
 	 */
 	private generateMML = (volumeOverride?: number): string => {
 		const config = this.getConfig();
@@ -456,6 +462,12 @@ export class MMLCore {
 		let currentCursor = 0;
 
 		if (this.notes.length === 0) return header;
+
+		// 先頭の v が表す実効値。最初の音符がこれと違う v を持つときは、先頭の v をその値にする
+		// （`v100 v127 c` のように続けて2つ書かない）。既定の強さの音符ならトラック音量のまま。
+		const headerV = effectiveVelocity(vol);
+		let firstV: number | null = null;
+		let lastV = headerV;
 
 		// 末尾の余白は最後に到達する発音終端まで（最長ノートの末尾を採用）
 		const endStep = Math.max(
@@ -510,6 +522,16 @@ export class MMLCore {
 			const durStr = this.stepsToMMLDuration(idealDuration, physicsLimit);
 			const actualStepGenerated = this.getStepFromDottedMML(durStr);
 
+			// 強弱。和音は v を1つしか持てないので構成音の最大で代表させる
+			const v = effectiveVelocity(vol, chordVelocity(notes));
+			if (firstV === null) {
+				firstV = v;
+				lastV = v;
+			} else if (v !== lastV) {
+				segments.push(`v${v}`);
+				lastV = v;
+			}
+
 			if (notes.length > 1) {
 				const noteStrs = notes.map((n) => {
 					const { octave: oct, name } = this.spell(n.pitchUnits);
@@ -533,7 +555,11 @@ export class MMLCore {
 		// 末尾の余白
 		fillRests(endStep);
 
-		return `${header} ${segments.join(" ")}`;
+		const head =
+			firstV === null || firstV === headerV
+				? header
+				: `t${this.tempo} v${firstV}`;
+		return `${head} ${segments.join(" ")}`;
 	};
 
 	/**

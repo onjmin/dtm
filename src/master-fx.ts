@@ -105,3 +105,35 @@ export const applyMasterFx = (
 	target.setDelayDivision(fx.delayDivision);
 	target.setDelayBpm(bpm);
 };
+
+/**
+ * マスタのグルーコンプとフェード（`#mastercomp=` `#fadein=` `#fadeout=`）。DAW のスライダーの値で持つ
+ * （フェードは秒）。
+ */
+export type MasterDynamics = {
+	/** グルーコンプ 0-100。 */
+	masterCompression: number;
+	/** フェードイン（秒）。 */
+	fadeInSec: number;
+	/** フェードアウト（秒）。 */
+	fadeOutSec: number;
+};
+
+/**
+ * MML のメタから、DAW の全体読み込みで当てるグルーコンプとフェードを作る。**書かれていない項目は
+ * `defaults`（DAW 生成時の既定値）になる**（{@link masterFxFromMeta} と同じ規則）。
+ *
+ * 書き出し（`formatMmlMeta`）は 0 を省くので、書かれた項目だけ更新すると、前の曲や「おまかせ」の
+ * 値（グルーコンプ 25・フェードアウト 1.5 秒）が残る。伴奏主体のループ曲をキープ → 歌もので作曲 →
+ * 入れ替え、とすると、ループ曲にフェードとコンプが付いたまま鳴っていた。
+ * 単位は `#fadein=` `#fadeout=` が 0.1 秒、戻り値は秒。
+ */
+export const masterDynamicsFromMeta = (
+	meta: Pick<MmlMeta, "masterCompression" | "fadeIn" | "fadeOut">,
+	defaults: MasterDynamics,
+): MasterDynamics => ({
+	masterCompression: meta.masterCompression ?? defaults.masterCompression,
+	fadeInSec: meta.fadeIn !== undefined ? meta.fadeIn / 10 : defaults.fadeInSec,
+	fadeOutSec:
+		meta.fadeOut !== undefined ? meta.fadeOut / 10 : defaults.fadeOutSec,
+});

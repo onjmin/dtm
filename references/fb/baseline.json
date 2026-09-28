@@ -1,0 +1,73 @@
+{
+	"style": "fb",
+	"about": "監査（scripts/audit-accomp-variety.ts）の基準の組（docs/accomp-style-engine.md §4.5）。tier は H-ver（同じ曲の版違い）・H-ref（同じ参考曲を別々に手で模倣した組）・H-diff（別の参考曲の手書きどうし）・H-part（一方が他方の一部。表示だけで、しきい値には使わない）。ownerLabel は所有者が付ける same（同じ曲に聞こえる）／different（別の曲に聞こえる）で、まだ空。両方のクラスが10組以上たまるまで、監査は報告だけにする。承認していない試作と、ファイル名から参考曲が分かる試作はここに書かず、gitignore のローカル基準（既定 tmp/audit/fb.baseline.local.json）に置く。",
+	"pieces": {
+		"fb": {
+			"file": "references/fb/fb.mml",
+			"status": "approved",
+			"note": "所有者が評価した手書き編曲。型 fb の元で、1日目に聴いた手本",
+			"roles": { "0": "lead", "1": "arp", "2": "bass", "3": "comp" },
+			"regions": [
+				["home", 16],
+				["minorDwell", 20],
+				["borrowA", 8],
+				["glimpse", 4],
+				["borrowB", 8],
+				["lift", 8],
+				["return", 12]
+			]
+		},
+		"fa": {
+			"file": "references/fb/fa.mml",
+			"status": "alternative",
+			"note": "fb と並べて聴いてもらい、選ばれなかった版。表の行 ho_fa の出所",
+			"roles": { "0": "lead", "1": "arp", "2": "bass", "3": "comp" }
+		},
+		"backing": {
+			"file": "references/fb/backing.mml",
+			"status": "approved",
+			"note": "16小節の共通伴奏。fb と fa の A（1〜16小節）はこれと同じ",
+			"roles": { "1": "arp", "2": "bass", "3": "comp" }
+		},
+		"nagai": {
+			"file": "references/fb/nagai-yorimichi.draft.mml",
+			"status": "draft",
+			"note": "fb のレビュー前の下書き。承認した試作ではない",
+			"roles": { "0": "lead", "1": "arp", "2": "bass", "3": "comp" },
+			"regions": [
+				["home", 16],
+				["minorDwell", 20],
+				["borrowA", 8],
+				["glimpse", 4],
+				["borrowB", 8],
+				["lift", 8],
+				["return", 12]
+			]
+		}
+	},
+	"pairs": [
+		{ "a": "fb", "b": "fa", "tier": "H-ver", "ownerLabel": null },
+		{
+			"a": "fb",
+			"b": "nagai",
+			"tier": "H-ver",
+			"flag": "draft",
+			"ownerLabel": null,
+			"note": "下書きとの組は近すぎる（§1.1: 7指標中6つで H-ver の平均以上）。監査は除いた値も出す"
+		},
+		{
+			"a": "fb",
+			"b": "backing",
+			"tier": "H-part",
+			"ownerLabel": null,
+			"note": "backing は fb の1〜16小節そのもの。表示だけ"
+		},
+		{
+			"a": "fa",
+			"b": "backing",
+			"tier": "H-part",
+			"ownerLabel": null,
+			"note": "backing は fa の1〜16小節そのもの。表示だけ"
+		}
+	]
+}

@@ -565,9 +565,12 @@ export type ParsedMML = {
 	 */
 	mergedTrackCount: number;
 	/**
-	 * トラックごとに最後に指定された v（ベロシティ）コマンドの値。
-	 * generateMML はトラック全体で単一の v をヘッダーに出力するため、
-	 * 読込時はこの値をトラックの既定ベロシティ（GUIのスライダー）へ復元する。
+	 * トラックで最後に出た v（ベロシティ）コマンドの値。音符の無いトラックの音量の既定値。
+	 * v が1つも書かれていないトラックは入らない。
+	 *
+	 * 音符ごとの強弱は各 placement の `velocity`（そこで効いている v の実効値）が持つ。
+	 * 読み込み側はそれを `mml-velocity.ts` の `splitPlacementVelocities` で
+	 * {トラック音量, 相対 velocity} に分ける。
 	 */
 	trackVelocity: Map<number, number>;
 	/** トップレベル宣言（楽器プリセット・ドラムパターン）。常に返す（無ければ空オブジェクト） */

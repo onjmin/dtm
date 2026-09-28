@@ -35,7 +35,10 @@ const handlers: CoreEventHandlers = {
 const newCore = (volume: number) =>
 	new MMLCore(handlers, volume, () => renderConfig);
 
-/** 線形合同法。daw.ts の seededRandom と同じ式。 */
+/**
+ * 線形合同法。アプリの `seededRandom`（compose.ts の mulberry32）とは別物なので、ここで書く `#seed` は
+ * アプリでは再現できない。アプリの `#seed` の再現は `export-samples.ts --app-seed` で行う。
+ */
 const seededRandom = (seed: number): (() => number) => {
 	let state = seed >>> 0;
 	return () => {

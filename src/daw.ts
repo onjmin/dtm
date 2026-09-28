@@ -31,6 +31,14 @@ import {
 	composeSong,
 	seededRandom,
 } from "./compose";
+import { DEFAULT_ACCOMP_STYLE } from "./accomp-styles/index";
+import {
+	type AccompMix,
+	accompMeta,
+	accompMixToRelease,
+	accompPresetSlots,
+	composeAccomp,
+} from "./compose-accomp";
 import { getComposeKeyDescription } from "./compose-keys";
 import { getComposeScaleDescription } from "./compose-scales";
 import {
@@ -89,7 +97,9 @@ import {
 	transposeNotes,
 } from "./macros";
 import {
+	type MasterDynamics,
 	type MasterFxSettings,
+	masterDynamicsFromMeta,
 	masterFxFromMeta,
 	masterFxToMeta,
 } from "./master-fx";
@@ -105,8 +115,9 @@ import {
 import { MidiSearchClient } from "./midi-search";
 import { decomposeToMonophonic, isChordHeavyTrack, MMLCore } from "./mml-core";
 import { MML_INFO_HTML } from "./mml-info";
-import { formatMmlMeta, parseMML } from "./mml-parser";
+import { formatMmlMeta, type MmlMeta, parseMML } from "./mml-parser";
 import { mountMmlPlayer } from "./mml-player";
+import { bakeTrackVelocity, splitPlacementVelocities } from "./mml-velocity";
 import {
 	exportMusicXML as exportMusicXmlString,
 	type MusicXmlExtraction,
@@ -591,6 +602,14 @@ const COMPOSE_INFO_HTML = `
   <p>実物の音域に収まっていても痛くなる音色があります。グロッケンは実物の音域がG5〜C8なので、旋律の音域（〜C6）は「余裕で範囲内」ですが、金属体の倍音は人の耳がいちばん敏感な2〜4kHzに集まるため、その高さで鳴らし続けると刺さります。こういう音色には音域とは別に<strong>明るさの上限</strong>を持たせてあり、グロッケンならC5より上で鳴らないところまで下げます。<strong>候補から外すのではなく置き場所を変えます</strong>——外すと音色の幅がそのぶん減るだけで、低く鳴らしたグロッケンはポップスで普通に使われる柔らかい音です。</p>
   <p><strong>オクターブの重ねを主役にしていません。</strong>「既にあるトラックを1オクターブ動かして別トラックへ写す」層は、音楽的な価値が高くありません。人の耳はオクターブ違いを<strong>同じ音</strong>として聞くので（オクターブ等価）、写した層は新しい声部にならず、音量と音色がわずかに変わるだけです。強調としての意味はあるので使いはしますが、常設にはしません。ベースのオクターブ下の重ねは特に、30Hz前後まで落ちて輪郭が濁るので既定では出しません（出すときも上のオクターブへ、盛り上がる場所だけに置きます）。</p>
   <p>「作曲」が決めたこれらの楽器は、おまかせマスタリングの役割推定より優先されます（演奏内容だけを見ると、間奏のソロもサビの重ねも「音の少ない単旋律」で、主旋律と区別が付かないためです）。楽器を手で選び直したトラックは、以後どちらにも上書きされません。</p>
+  <h4>伴奏主体</h4>
+  <p>「伴奏主体」は、歌メロが主役の「作曲」とは別の作り方です。<strong>旋律をほとんど置かず、分散和音が主役</strong>になり、低音と短い和音が区間ごとに密度を変えます。1〜4本目のトラックへ、ごく少ない色の音・分散和音・低音・和音の順に書きます（上級者モードでも同じ4本で、5本目から先は空にします）。約2分半〜3分で、<strong>ドラムは無し、残響とディレイ付きのループ曲</strong>です。区間は「家 → 短調側に長く留まる → 借用和音 → 家の近く → 借用和音（強弱の山）→ 薄く明るく → 家へ戻る」の順に並び、最後はそのまま頭へつながります。頭から聴くものなので、再生は1小節目から始まります。</p>
+  <p>楽器・パン・EQ・送り・リバーブ・ディレイはこの作り方に合わせた値を当て、<strong>おまかせマスタリングは通しません</strong>（後から自分で押すのは自由です。押すとミックスが上書きされます）。使う設定は「ベース調」だけで、構成・作る部分・音階は使いません。</p>
+  <ul>
+    <li><strong>短調を選んだとき</strong>は、同じ調号の長調（平行長調）を家にして、選んだ短調の側に長く留まる曲にします（例: ホ短調を選ぶとト長調が家）。</li>
+    <li>シンプルモードでは、伴奏トラックの和音欄に進行が出ますが、表示だけです。<strong>伴奏トラックで「適用」を押すと、奏法1つで上書きされて</strong>、区間ごとの打ち方の違い（借用和音だけ長く伸ばす等）が消えます。</li>
+    <li>出力の「生成上限」（小節数）が曲より短いと、書き出し・共有では<strong>末尾が切れます</strong>（切れるときは、ベース調の横にその旨を出します）。</li>
+  </ul>
   <h4>そのほか</h4>
   <ul>
     <li><strong>曲の途中で転調します</strong>（およそ半分の曲）。五度圏で近い属調・下属調へは共通する和音（ピボットコード）か新しい調のドミナントで橋渡しし、ラスサビの半音上げは準備なしの直接転調にします。調号を変えずに明暗だけ入れ替える<strong>平行調</strong>（ハ長調↔イ短調）と、主音を保ったまま暗くする<strong>同主調</strong>（ハ長調→ハ短調）も引きます。1割強の曲は主和音を避けて「明るいのか暗いのか分からない」浮遊感で通します。</li>
@@ -1626,9 +1645,32 @@ export const mountDAW = (
 		refs.delayDivision.value = delayDivision;
 		options.onDelayDivisionChange?.(delayDivision);
 	};
-	let masterCompression = options.masterCompression ?? 0;
-	let fadeInSec = options.fadeInSec ?? 0;
-	let fadeOutSec = options.fadeOutSec ?? 0;
+	// マスタのグルーコンプとフェードの初期値。全体読み込みで曲に書かれていない項目もここへ戻す
+	// （{@link masterDynamicsFromMeta}。マスタリバーブ／ディレイの dawDefaultMasterFx と同じ扱い）。
+	const dawDefaultMasterDynamics: MasterDynamics = {
+		masterCompression: options.masterCompression ?? 0,
+		fadeInSec: options.fadeInSec ?? 0,
+		fadeOutSec: options.fadeOutSec ?? 0,
+	};
+	let masterCompression = dawDefaultMasterDynamics.masterCompression;
+	let fadeInSec = dawDefaultMasterDynamics.fadeInSec;
+	let fadeOutSec = dawDefaultMasterDynamics.fadeOutSec;
+	/**
+	 * マスタのグルーコンプとフェードを一式まとめて差し替え、スライダー・ラベルとコールバックへ流す。
+	 * 全項目を必ず上書きする（{@link setMasterFx} と同じ）。
+	 */
+	const applyMasterDynamics = (d: MasterDynamics): void => {
+		masterCompression = d.masterCompression;
+		refs.masterComp.value = String(masterCompression);
+		refs.masterCompLabel.textContent = `${masterCompression}%`;
+		options.onMasterCompressionChange?.(masterCompression);
+		fadeInSec = d.fadeInSec;
+		refs.fadeIn.value = String(fadeInSec);
+		refs.fadeInLabel.textContent = `${fadeInSec.toFixed(1)}s`;
+		fadeOutSec = d.fadeOutSec;
+		refs.fadeOut.value = String(fadeOutSec);
+		refs.fadeOutLabel.textContent = `${fadeOutSec.toFixed(1)}s`;
+	};
 	// 音割れ検知バッジの購読解除（wireEvents内で購読、destroyで解除するため外側で保持）
 	let unsubscribeClip: (() => void) | undefined;
 	// 実測ゲインステージング用の裏収集: 再生中だけ options.clipMeter のピークを継続サンプリング
@@ -1670,6 +1712,20 @@ export const mountDAW = (
 	 * {@link ComposeOptions.recent} へ渡し、似た曲が続けて出ないようにする。
 	 */
 	const recentComposeFingerprints: number[][] = [];
+	/**
+	 * 直近に「伴奏主体」で作った曲の planSignature（スタイル id ごとに最大5）。次の作曲で
+	 * {@link composeAccomp} の `recent` へ渡し、同じ計画の曲が続けて出ないようにする。
+	 * 歌もの用の {@link recentComposeFingerprints} とは物差しが違うので別に持つ。スタイルごとに
+	 * 分けるのは、スタイルどうしで邪魔しないため（`docs/accomp-style-engine.md` §2.4）。キーは曲の
+	 * 計画のスタイル id（`song.plan.style`）。
+	 */
+	const recentAccompSignatures = new Map<string, string[]>();
+	/**
+	 * 直前に「伴奏主体」で作った曲の `#compose` とミックス（作った時点の `song.mix`）。
+	 * {@link accompMixToRelease} が、ディレイとループがまだ伴奏主体の値のままかをこれと比べる
+	 * （`docs/accomp-style-engine.md` §2.4。スタイルの表を DAW が直接見ないため）。
+	 */
+	let composedAccompMix: { compose: string; mix: AccompMix } | null = null;
 	/**
 	 * 直前の「歌入り作曲」が自動で当てたボーカルのモデル名。ユーザーが自分で選んだ声を
 	 * 上書きしないための目印で、`lyricModel` がこの値のままなら（＝ユーザーは触っていない）
@@ -4980,8 +5036,12 @@ export const mountDAW = (
 				? trackStates.filter((t) => !isChordHeavyTrack(t.core.getNotes()))
 				: trackStates;
 			const ignoredCount = trackStates.length - targetStates.length;
+			// 分解すると元のトラックが分からなくなるので、トラック音量を音符の velocity へ焼き込んでから
+			// 分解し、音量100のトラックとして書き出す（強弱もトラックの音量差も v に残る）。
 			const allNotes = clipNotes(
-				targetStates.flatMap((t) => t.core.getNotes()),
+				targetStates.flatMap((t) =>
+					bakeTrackVelocity(t.core.getNotes(), t.volume),
+				),
 			);
 			const monoTracks = decomposeToMonophonic(allNotes);
 			const refCore = trackStates[0].core;
@@ -5165,6 +5225,95 @@ export const mountDAW = (
 		redrawAll();
 	};
 
+	/**
+	 * トラックごとの設定（楽器・音源バンク・音圧強化・ステレオ幅・リバーブ送り・EQ・パン・ディレイ送り）を
+	 * MML のメタから当てる。**書かれていない項目は既定値へ戻す**（前の曲の値を持ち越さない）。
+	 *
+	 * MML の全体読み込み（{@link loadMML}）と「伴奏主体」（`runComposeAccomp`。`accompMeta` の値）が
+	 * 共通で通る。`activeOnly` なら選択中のトラックだけに当てる（「現在のトラックのみ対象とする」）。
+	 * マスタの設定・音律・伴奏音源は触らない（それぞれ呼び出し側で当てる）。
+	 */
+	const applyTrackStripMeta = (
+		meta: Pick<
+			MmlMeta,
+			| "trackInstruments"
+			| "trackFonts"
+			| "trackCompression"
+			| "trackWidth"
+			| "trackReverbSend"
+			| "trackEqLow"
+			| "trackEqMid"
+			| "trackEqHigh"
+			| "trackPan"
+			| "trackDelaySend"
+		>,
+		opts?: { activeOnly?: boolean },
+	): void => {
+		const activeOnly = opts?.activeOnly ?? false;
+		const activeIndex = trackStates.findIndex(
+			(t) => t.config.id === activeTrackId,
+		);
+		// トラック個別楽器を復元する（URLエンコーダがスペースを除去するため正規化して復元）
+		trackStates.forEach((t, i) => {
+			if (activeOnly && i !== activeIndex) return;
+			const name = normalizeInstrumentName(meta.trackInstruments?.[i] ?? "");
+			if (t.trackInstrument !== name) {
+				t.trackInstrument = name;
+				options.onTrackInstrumentChange?.(i, name);
+			}
+			// 音源バンク（`#t<n>font=`）。書かれていなければ既定（FluidR3）へ戻す。
+			const font = trackSoundFontValue(meta.trackFonts?.[i]);
+			if (t.trackFont !== font) {
+				t.trackFont = font;
+				options.onTrackFontChange?.(i, font);
+			}
+		});
+		// トラック個別の音圧強化・ステレオ幅・送り・EQ・パンを復元する
+		trackStates.forEach((t, i) => {
+			if (activeOnly && i !== activeIndex) return;
+			const comp = meta.trackCompression?.[i] ?? 0;
+			if (t.trackCompression !== comp) {
+				t.trackCompression = comp;
+				options.onTrackCompressionChange?.(t.config.id, comp);
+			}
+			const width = meta.trackWidth?.[i] ?? 100;
+			if (t.trackWidth !== width) {
+				t.trackWidth = width;
+				options.onTrackWidthChange?.(t.config.id, width);
+			}
+			const reverbSend = meta.trackReverbSend?.[i] ?? 0;
+			if (t.trackReverbSend !== reverbSend) {
+				t.trackReverbSend = reverbSend;
+				options.onTrackReverbSendChange?.(t.config.id, reverbSend);
+			}
+			const eqLow = meta.trackEqLow?.[i] ?? 0;
+			if (t.trackEqLow !== eqLow) {
+				t.trackEqLow = eqLow;
+				options.onTrackEqLowChange?.(t.config.id, eqLow);
+			}
+			const eqMid = meta.trackEqMid?.[i] ?? 0;
+			if (t.trackEqMid !== eqMid) {
+				t.trackEqMid = eqMid;
+				options.onTrackEqMidChange?.(t.config.id, eqMid);
+			}
+			const eqHigh = meta.trackEqHigh?.[i] ?? 0;
+			if (t.trackEqHigh !== eqHigh) {
+				t.trackEqHigh = eqHigh;
+				options.onTrackEqHighChange?.(t.config.id, eqHigh);
+			}
+			const pan = meta.trackPan?.[i] ?? 64;
+			if (t.trackPan !== pan) {
+				t.trackPan = pan;
+				options.onTrackPanChange?.(t.config.id, pan);
+			}
+			const delaySend = meta.trackDelaySend?.[i] ?? 0;
+			if (t.trackDelaySend !== delaySend) {
+				t.trackDelaySend = delaySend;
+				options.onTrackDelaySendChange?.(t.config.id, delaySend);
+			}
+		});
+	};
+
 	const loadMML = (mml: string): void => {
 		if (!mml) return;
 		stop();
@@ -5207,6 +5356,9 @@ export const mountDAW = (
 			// 自動作曲の由来。宣言が無い MML（手打ち・古い書き出し）なら消す。
 			composeSeed = meta.seed ?? null;
 			composeSetting = meta.compose ?? null;
+			// 読み込んだ曲は、直前に「伴奏主体」で作った曲とは限らない（`#compose` は種を含まないので、
+			// 別の曲でも同じ文字列になる）。ミックスの解放は、その曲のスタイルのミックスと比べる
+			composedAccompMix = null;
 			if (meta.instrument && INSTRUMENT_PRESETS[meta.instrument]) {
 				currentInstrument = meta.instrument;
 				options.onInstrumentChange?.(meta.instrument);
@@ -5247,22 +5399,11 @@ export const mountDAW = (
 			// 前の曲や「おまかせ」の値が残り、書き出しの `#reverb=…` として投稿に乗る
 			// （0 は書き出しで省かれるので、リバーブ無しの曲を読み込み直しても戻らなかった）。
 			setMasterFx(masterFxFromMeta(meta, dawDefaultMasterFx));
-			if (meta.masterCompression !== undefined) {
-				masterCompression = meta.masterCompression;
-				refs.masterComp.value = String(meta.masterCompression);
-				refs.masterCompLabel.textContent = `${meta.masterCompression}%`;
-				options.onMasterCompressionChange?.(meta.masterCompression);
-			}
-			if (meta.fadeIn !== undefined) {
-				fadeInSec = meta.fadeIn / 10;
-				refs.fadeIn.value = String(fadeInSec);
-				refs.fadeInLabel.textContent = `${fadeInSec.toFixed(1)}s`;
-			}
-			if (meta.fadeOut !== undefined) {
-				fadeOutSec = meta.fadeOut / 10;
-				refs.fadeOut.value = String(fadeOutSec);
-				refs.fadeOutLabel.textContent = `${fadeOutSec.toFixed(1)}s`;
-			}
+			// グルーコンプとフェードも同じ規則。書き出しは 0 を省くので、書かれた項目だけ更新すると
+			// 前の曲（「おまかせ」のコンプ 25・フェードアウト 1.5 秒）の値が残る。
+			applyMasterDynamics(
+				masterDynamicsFromMeta(meta, dawDefaultMasterDynamics),
+			);
 			// 伴奏音源。URLを持つMMLだけが音源を連れてくる（ファイル読み込みは出力されない）。
 			// 別の曲を読み込んだのに前の曲の音源が鳴り続けるのはおかしいので、
 			// 宣言が無ければ外す。
@@ -5288,73 +5429,29 @@ export const mountDAW = (
 				}
 			}
 		}
-		// トラック個別楽器を復元する（URLエンコーダがスペースを除去するため正規化して復元）
+		// 別の曲を読み込んだのだから、前の曲で「作曲」が決めた音色スロットは捨てる。
+		// 残すと、読み込んだ曲におまかせマスタリングを掛けたときに、いま鳴っている
+		// 演奏とは関係のない割り当て（間奏のソロ等）で楽器が決まってしまう。
+		//
+		// トラックのオクターブとオクターブ重ねも既定へ戻す。**書き出し（playableNotes）はこの2つを
+		// 音符へ焼き込んでいる**ので、残すと読み込んだ音符にもう一度掛かる。上級者モードの「作曲」は層ごとに
+		// オクターブを動かすので、キープ → 作曲 → 入れ替え、とすると、戻した曲の層が1オクターブずれて
+		// 鳴り、書き出しも元の MML と一致しなかった（MML にはこの2つの宣言が無い＝曲の値は 0 と none）。
 		trackStates.forEach((t, i) => {
 			if (applyActiveOnly && i !== activeTrackIndex) return;
-			// 別の曲を読み込んだのだから、前の曲で「作曲」が決めた音色スロットは捨てる。
-			// 残すと、読み込んだ曲におまかせマスタリングを掛けたときに、いま鳴っている
-			// 演奏とは関係のない割り当て（間奏のソロ等）で楽器が決まってしまう。
 			t.composeSlot = null;
-			const name = normalizeInstrumentName(meta.trackInstruments?.[i] ?? "");
-			if (t.trackInstrument !== name) {
-				t.trackInstrument = name;
-				options.onTrackInstrumentChange?.(i, name);
-			}
-			// 音源バンク（`#t<n>font=`）。書かれていなければ既定（FluidR3）へ戻す。
-			const font = trackSoundFontValue(meta.trackFonts?.[i]);
-			if (t.trackFont !== font) {
-				t.trackFont = font;
-				options.onTrackFontChange?.(i, font);
-			}
+			t.trackOctave = 0;
+			t.trackOctaveUnison = "none";
 		});
-		// トラック個別の音圧強化・ステレオ幅を復元する
+		applyTrackStripMeta(meta, { activeOnly: applyActiveOnly });
+		// 音符ごとの v（ベロシティ）を {トラック音量 T, 相対 velocity} に分ける（mml-velocity.ts）。
+		// T は GUI のベロシティスライダーへ、相対 velocity は下で各音符へ入れる。書き出し
+		// （generateMML）は round(T×velocity/100) で同じ v に戻すので、音符ごとの強弱が往復で残る。
+		// v が1つも書かれていないトラックはスライダーを今のまま保つ（音符はすべて相対100）。
+		const velocitySplit = splitPlacementVelocities(placements, trackVelocity);
 		trackStates.forEach((t, i) => {
 			if (applyActiveOnly && i !== activeTrackIndex) return;
-			const comp = meta.trackCompression?.[i] ?? 0;
-			if (t.trackCompression !== comp) {
-				t.trackCompression = comp;
-				options.onTrackCompressionChange?.(t.config.id, comp);
-			}
-			const width = meta.trackWidth?.[i] ?? 100;
-			if (t.trackWidth !== width) {
-				t.trackWidth = width;
-				options.onTrackWidthChange?.(t.config.id, width);
-			}
-			const reverbSend = meta.trackReverbSend?.[i] ?? 0;
-			if (t.trackReverbSend !== reverbSend) {
-				t.trackReverbSend = reverbSend;
-				options.onTrackReverbSendChange?.(t.config.id, reverbSend);
-			}
-			const eqLow = meta.trackEqLow?.[i] ?? 0;
-			if (t.trackEqLow !== eqLow) {
-				t.trackEqLow = eqLow;
-				options.onTrackEqLowChange?.(t.config.id, eqLow);
-			}
-			const eqMid = meta.trackEqMid?.[i] ?? 0;
-			if (t.trackEqMid !== eqMid) {
-				t.trackEqMid = eqMid;
-				options.onTrackEqMidChange?.(t.config.id, eqMid);
-			}
-			const eqHigh = meta.trackEqHigh?.[i] ?? 0;
-			if (t.trackEqHigh !== eqHigh) {
-				t.trackEqHigh = eqHigh;
-				options.onTrackEqHighChange?.(t.config.id, eqHigh);
-			}
-			const pan = meta.trackPan?.[i] ?? 64;
-			if (t.trackPan !== pan) {
-				t.trackPan = pan;
-				options.onTrackPanChange?.(t.config.id, pan);
-			}
-			const delaySend = meta.trackDelaySend?.[i] ?? 0;
-			if (t.trackDelaySend !== delaySend) {
-				t.trackDelaySend = delaySend;
-				options.onTrackDelaySendChange?.(t.config.id, delaySend);
-			}
-		});
-		// トラックごとの v（ベロシティ）を復元する（GUIのベロシティスライダーに反映）
-		trackStates.forEach((t, i) => {
-			if (applyActiveOnly && i !== activeTrackIndex) return;
-			const v = trackVelocity.get(i);
+			const v = velocitySplit.volumes.get(i);
 			if (v !== undefined && v !== t.volume) {
 				t.volume = v;
 				t.core.setVolume(v);
@@ -5415,19 +5512,18 @@ export const mountDAW = (
 			t.vocalTension = lt.tension ?? 50;
 			t.vocalOctaveUnison = lt.octaveUnison ?? "none";
 		});
-		// 注意: generateMML はトラック全体に単一の v ヘッダーしか出さないので、p.velocity はトラックの
-		// 「ベロシティ」スライダー値が全ノートへ均一にコピーされたものでしかない。これをノート速度に
-		// 使うと (trackVol/100)*(velocity/127) が同じ値を二重に掛けてしまうので、MML読込直後のノート
-		// 速度は既定値へ戻し、トラック音量側だけに反映させる。
-		for (const p of placements) {
-			if (applyActiveOnly && p.trackIndex !== activeTrackIndex) continue;
+		// 音符の velocity は、MML の v（実効値）をトラック音量 T で割った相対値にする（上の velocitySplit）。
+		// v をそのまま入れると (trackVol/100)*(velocity/127) で T を二重に掛けてしまう。
+		// 分け方は再生専用プレイヤー（mml-player.ts）と同じなので、音量も SoundFont の明るさも揃う。
+		placements.forEach((p, k) => {
+			if (applyActiveOnly && p.trackIndex !== activeTrackIndex) return;
 			const t = trackStates[p.trackIndex];
-			if (!t) continue;
+			if (!t) return;
 			t.core.addNote(p.startStep, p.pitchUnits, {
 				noteLengthSteps: p.durationSteps,
-				velocity: DEFAULT_VELOCITY,
+				velocity: velocitySplit.velocities[k],
 			});
-		}
+		});
 		if (!applyActiveOnly && parsedBpm) setBpm(parsedBpm);
 		const targets = applyActiveOnly ? [getActive()] : trackStates;
 		for (const t of targets) {
@@ -6671,9 +6767,76 @@ export const mountDAW = (
 		/** 自動作曲が書き込んだ直後の指紋。手が入ると一致しなくなる。 */
 		let composedSignature: string | null = null;
 
+		/**
+		 * 自動作曲のノートをトラックへそのまま書き込む（前の中身は消す）。
+		 * 履歴の残し方は applyChord と揃えてあり、実行後に Undo で戻せる（Undo はトラックごと）。
+		 * 「作曲」「歌入り作曲」「伴奏主体」が共通で使う。
+		 */
+		const writeTrackAt = (index: number, notes: ComposedNote[]): void => {
+			const track = trackStates[index];
+			if (!track) return;
+			track.core.clearNotesWithoutHistory();
+			track.core.beginBatch();
+			for (const n of notes) {
+				track.core.addNote(n.startStep, n.pitchUnits, {
+					noteLengthSteps: Math.max(1, n.durationSteps),
+					velocity: n.velocity,
+				});
+			}
+			track.core.endBatch();
+		};
+
+		/**
+		 * 直前の「歌入り作曲」がボーカルを当てたままのトラックを「なし」に戻す。残っていると、ノートだけ
+		 * 差し替わって歌詞とずれたまま歌い続ける。自分で選んだ声・書いた歌詞は尊重し、まだ自動で当てた
+		 * ままのトラックだけ外す。「作曲」（歌なし）と「伴奏主体」が使う。
+		 */
+		const releaseAutoVocals = (): void => {
+			for (const [track, voice] of autoComposeVocalTracks) {
+				if (track.lyricModel === voice) {
+					track.lyrics = "";
+					track.lyricModel = "";
+					fireLyricsChange(track);
+				}
+			}
+			autoComposeVocalTracks.clear();
+		};
+
+		/**
+		 * 画面の曲が「伴奏主体」から作ったもの（`#compose=style:…`。旧書式 `accomp:…` も同じ扱い。
+		 * 作った直後も、キープから入れ替えで戻した後も同じ）で、マスタディレイとループがまだ伴奏主体の
+		 * 値のままなら、DAW の初期値へ戻す。
+		 *
+		 * 歌ものの「作曲」「歌入り作曲」が当てるおまかせマスタリングは、この2つを触らない。戻さないと、
+		 * 伴奏主体を一度押しただけで、その後の歌ものがループ・付点8分ディレイ付きで作られ続ける
+		 * （おまかせはメロディ系のトラックにディレイを送るので、実際に鳴る）。利用者が値を変えていれば
+		 * 意図した設定なので残す。マスタ音量は戻さない——おまかせのゲインステージングが今の音量と
+		 * 実測ピークから決め直すので、戻すとその計算がずれる（曲の読み込みで音量が変わるのと同じ扱い）。
+		 *
+		 * 比べる相手は、作った時点の `song.mix`（{@link composedAccompMix}）。キープや読み込みで戻した
+		 * 曲なら、その曲のスタイルのミックス（判定は {@link accompMixToRelease}。DAW はスタイルの表を
+		 * 直接見ない。`docs/accomp-style-engine.md` §2.4）。
+		 */
+		const releaseAccompMix = (): void => {
+			const release = accompMixToRelease(
+				composeSetting,
+				{ delayAmount, delayDivision, loop: loopEnabled },
+				composedAccompMix,
+			);
+			if (release.delay)
+				setMasterFx({
+					...currentMasterFx(),
+					delayAmount: dawDefaultMasterFx.delayAmount,
+					delayDivision: dawDefaultMasterFx.delayDivision,
+				});
+			if (release.loop) applyLoop(options.initialLoop ?? false);
+		};
+
 		const runCompose = (withVocal: boolean): void => {
 			stop();
 			overlayDuring(() => {
+				// 伴奏主体のディレイ・ループを持ち越さない（composeSetting を書き換える前に見る）
+				releaseAccompMix();
 				const tmpl = selectedComposeTemplate();
 				const sections = selectedComposeSections();
 				const baseKey = refs.composeKey?.value ?? "any";
@@ -6706,21 +6869,7 @@ export const mountDAW = (
 				if (recentComposeFingerprints.length > 5)
 					recentComposeFingerprints.shift();
 
-				// メロディ・サブメロ・ベースは生成したノートをそのまま書き込む。
-				// 履歴の残し方は applyChord と揃えてあり、実行後に Undo で戻せる。
-				const writeTrackAt = (index: number, notes: ComposedNote[]): void => {
-					const track = trackStates[index];
-					if (!track) return;
-					track.core.clearNotesWithoutHistory();
-					track.core.beginBatch();
-					for (const n of notes) {
-						track.core.addNote(n.startStep, n.pitchUnits, {
-							noteLengthSteps: Math.max(1, n.durationSteps),
-							velocity: n.velocity,
-						});
-					}
-					track.core.endBatch();
-				};
+				// メロディ・サブメロ・ベースは生成したノートをそのまま書き込む（writeTrackAt と同じ）。
 				const writeTrack = (id: string, notes: ComposedNote[]): void => {
 					const track = trackStates.find((t) => t.config.id === id);
 					if (!track) return;
@@ -6940,17 +7089,8 @@ export const mountDAW = (
 						}
 					}
 				} else {
-					// 「作曲」（歌なし）。直前の「歌入り作曲」がボーカルを当てたままのトラックが残っていると、
-					// ノートだけ差し替わって歌詞とずれたまま歌い続ける。自分で選んだ声・書いた歌詞は尊重し、
-					// まだ自動で当てたままのトラックだけ「なし」に戻す。
-					for (const [track, voice] of autoComposeVocalTracks) {
-						if (track.lyricModel === voice) {
-							track.lyrics = "";
-							track.lyricModel = "";
-							fireLyricsChange(track);
-						}
-					}
-					autoComposeVocalTracks.clear();
+					// 「作曲」（歌なし）。自動で当てたままの歌声だけ外す。
+					releaseAutoVocals();
 				}
 
 				// 作曲・歌入り作曲の完了時におまかせマスタリングを実行する。
@@ -6981,6 +7121,135 @@ export const mountDAW = (
 				void play();
 			});
 		};
+
+		/**
+		 * 「伴奏主体」本体（`docs/accomp-compose.md` §9.3）。確認を挟むかどうかは呼び出し側で決める。
+		 *
+		 * 旋律をほとんど置かず、分散和音・低音・和音で約2分半〜3分のループ曲を作る（{@link composeAccomp}）。
+		 * **ノートは生成したものをトラック 0〜3 へ直接書き、ミックスは曲が持つ値を自前で当てる。
+		 * おまかせマスタリングは通さない**（通すとリバーブ 50%・Decay 3.0s・ディレイ・コンプ 0・
+		 * フェード 0・楽器・パン・EQ・送りが丸ごと上書きされる。§9.4）。モードによらず同じ index 0〜3 に
+		 * 書き、上級者モードの 4〜14 は空にするので、同じ種から同じ MML が出る。
+		 *
+		 * {@link loadMML} のメタの反映をまるごと通さないのは、伴奏音源（`#audio` が無ければ外す）と
+		 * 音律（`#edo` が無ければ 12 へ戻す）まで巻き込むため。トラック設定（{@link applyTrackStripMeta}）と
+		 * マスタ（setMasterFx・{@link applyMasterDynamics}）を分けて当てる。
+		 */
+		const runComposeAccomp = (): void => {
+			stop();
+			overlayDuring(() => {
+				const baseKey = refs.composeKey?.value ?? "any";
+				// 種を引いてから作る（runCompose と同じ。`#seed` と `#compose=style:<id>.v<版>:<baseKey>:<k>`
+				// で再現できる）
+				const seed = (Math.random() * 0x100000000) >>> 0;
+				// スタイルの選択（プルダウン）はまだ無いので既定のスタイル（§9.1.1-8。登録表が2つ以上になったら置く）
+				const styleId = DEFAULT_ACCOMP_STYLE.id;
+				const recent = recentAccompSignatures.get(styleId) ?? [];
+				const song = composeAccomp({
+					style: styleId,
+					stepsPerBar: renderConfig.stepsPerBar,
+					edo: renderConfig.edo === 31 ? 31 : 12,
+					baseKey,
+					random: seededRandom(seed),
+					recent,
+				});
+				recent.push(song.planSignature);
+				if (recent.length > 5) recent.shift();
+				recentAccompSignatures.set(song.plan.style ?? styleId, recent);
+				composeSeed = seed;
+				composeSetting = song.compose;
+				// 作った時点のミックスを覚えておく（後の「作曲」で releaseAccompMix が比べる）
+				composedAccompMix = { compose: song.compose, mix: song.mix };
+
+				// 楽器プリセット。自分で選んだプリセットは尊重する（runCompose と同じ判定）。
+				// トラック 0〜3 はトラック個別の楽器（下の applyTrackStripMeta）で鳴るので、プリセットが
+				// 効くのは書き出しの `#inst=` と、後でおまかせを押したときの割り当てだけ。
+				const shouldAutoInstrument =
+					!currentInstrument ||
+					currentInstrument === "auto" ||
+					currentInstrument === autoComposeInstrument;
+				if (shouldAutoInstrument) {
+					currentInstrument = song.mix.instrument;
+					autoComposeInstrument = song.mix.instrument;
+					options.onInstrumentChange?.(song.mix.instrument);
+				}
+
+				// 伴奏主体の曲のトラックを、おまかせマスタリングの音色スロットへ対応づける（上級者モード）。
+				// 後で手動でおまかせを押したとき、分散がプリセットの melody を引くようにする。対応はスタイルの
+				// 層の定義（LayerDef.presetSlot）から作る
+				const presetSlots = accompPresetSlots(song);
+				trackStates.forEach((t, i) => {
+					const at = song.tracks[i];
+					writeTrackAt(i, at?.notes ?? []);
+					// 前の作曲の残りを消す。上級者モードの「作曲」はトラックのオクターブを層ごとに動かすので、
+					// 残ると分散が1オクターブずれて鳴る。
+					t.trackOctave = 0;
+					t.trackOctaveUnison = "none";
+					if (at) {
+						// 読み込み直後と同じ形（トラック音量 T と、相対 velocity）で書いてあるので、
+						// 作った直後・キープして戻した後・投稿した後で音量も SoundFont の明るさも一致する。
+						t.volume = at.volume;
+						t.core.setVolume(at.volume);
+					}
+					t.composeSlot =
+						isAdvanced && at && at.notes.length > 0
+							? (presetSlots[at.slot] ?? null)
+							: null;
+				});
+				if (!isAdvanced) {
+					// 和音の入力欄は表示だけ。applyChord は呼ばない（呼ぶと区間ごとの長さが奏法1つで上書きされる）。
+					// 進行はハ長調で書かれていて、調は rootShift で表す（runCompose の simple 分岐と同じ形）。
+					const chordTrack = trackStates.find((t) => t.config.id === "chord");
+					if (chordTrack) {
+						chordTrack.savedChordInput = song.chordProgression;
+						chordTrack.savedChordRoot = song.rootShift;
+					}
+				}
+				// トラック設定。0〜3 以外のトラックは既定値（楽器なし・パン中央・送り0 等）へ戻る。
+				const meta = accompMeta(song);
+				applyTrackStripMeta(meta);
+				setBpm(song.bpm);
+				// ドラムは曲のミックスのもの（fb は none）
+				currentDrumPattern = song.mix.drum;
+				refs.drumSelect.value = song.mix.drum;
+				options.onDrumChange?.(song.mix.drum);
+				applyDrumPatternFont(song.mix.drum);
+				setMasterFx(song.mix.masterFx);
+				applyMasterVolume(song.mix.volume);
+				// 前の「おまかせ」のフェードアウト 1.5 秒・コンプ 25 を消す（ループ曲にフェードは付けない）
+				applyMasterDynamics({
+					masterCompression: song.mix.masterCompression,
+					fadeInSec: song.mix.fadeIn / 10,
+					fadeOutSec: song.mix.fadeOut / 10,
+				});
+				applyLoop(song.mix.loop);
+				releaseAutoVocals();
+				// applyAutoMastering() は呼ばない（上の説明）。
+
+				if (refs.composeKeyHint) {
+					const barLimit = Number(refs.barLimitSelect.value);
+					const notes = [
+						`${song.keyLabel} で作成（伴奏主体・${song.bars}小節）`,
+						song.homeFromMinor ?? "",
+						barLimit > 0 && barLimit < song.bars
+							? `生成上限${barLimit}小節のため書き出しでは末尾が切れます`
+							: "",
+					].filter((s) => s.length > 0);
+					refs.composeKeyHint.textContent = notes.join("・");
+					refs.composeKeyHint.title = notes.join("\n");
+				}
+
+				// **頭から鳴らす。** 旅程（家→短調側→借用→…→家）は頭から聴くもので、テーマは冒頭の家。
+				playStartStep = 0;
+				redrawAll();
+				updateTrackPanel(); // 和音の入力欄・トラックの設定へ反映する
+				updateUndoRedo();
+				composedSignature = trackSignature();
+				// 作曲したらそのまま鳴らす（runCompose と同じ）
+				void play();
+			});
+		};
+
 		/**
 		 * 既にノートがあるときだけ確認する。空の状態（初心者が最初に押す場面）で毎回警告を出すと、
 		 * 一番押してほしいボタンが押しにくくなる。確認はアプリ内のモーダルで出す
@@ -6989,24 +7258,39 @@ export const mountDAW = (
 		 * **直前に作った曲へ一度も手を入れていないなら確認しない。** 自動作曲は「気に入るまで引き直す」
 		 * 使い方になるので、引き直すたびにダイアログが出ると1回が3タップになる。手を入れたかどうかは
 		 * 書き込んだ直後のノートと今のノートを比べて判定する（{@link trackSignature}）。
+		 * 「作曲」「歌入り作曲」「伴奏主体」で共通（「次回から表示しない」も共通）。
 		 */
-		const composeWithConfirm = (withVocal: boolean): void => {
+		const composeWithConfirm = (
+			title: string,
+			message: string,
+			run: () => void,
+		): void => {
 			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
 			const untouched =
 				composedSignature !== null && composedSignature === trackSignature();
 			if (hasNotes && !untouched) {
-				showConfirm(
-					withVocal ? "歌入り作曲" : "作曲",
-					`今あるノートをすべて消して、${composeBarsLabel()}の曲を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
-					() => runCompose(withVocal),
-					"compose",
-				);
+				showConfirm(title, message, run, "compose");
 				return;
 			}
-			runCompose(withVocal);
+			run();
+		};
+		/** 歌ものの「作曲」「歌入り作曲」の確認文言。構成の小節数は押した時点の選択で出す。 */
+		const composeSongWithConfirm = (withVocal: boolean): void => {
+			composeWithConfirm(
+				withVocal ? "歌入り作曲" : "作曲",
+				`今あるノートをすべて消して、${composeBarsLabel()}の曲を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
+				() => runCompose(withVocal),
+			);
 		};
 		refs.macroCompose.addEventListener("click", () => {
-			composeWithConfirm(false);
+			composeSongWithConfirm(false);
+		});
+		refs.macroComposeAccomp.addEventListener("click", () => {
+			composeWithConfirm(
+				"伴奏主体",
+				"今あるノートをすべて消して、伴奏主体のループ曲（約2分半〜3分・ドラムなし）を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）",
+				runComposeAccomp,
+			);
 		});
 
 		// --- キープ枠 ---
@@ -7078,7 +7362,7 @@ export const mountDAW = (
 		});
 		updateKeepUI();
 		refs.macroComposeVocal.addEventListener("click", () => {
-			composeWithConfirm(true);
+			composeSongWithConfirm(true);
 		});
 		refs.macroClear.addEventListener("click", () => {
 			overlayDuring(() => {

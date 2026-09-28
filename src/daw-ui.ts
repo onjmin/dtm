@@ -138,6 +138,8 @@ export type DawUIRefs = {
 	composeScale: HTMLSelectElement;
 	composeScaleHint: HTMLElement;
 	macroComposeVocal: HTMLButtonElement;
+	/** 「伴奏主体」。旋律をほとんど置かないループ曲を作る（docs/accomp-compose.md §9）。 */
+	macroComposeAccomp: HTMLButtonElement;
 	macroComposeInfo: HTMLButtonElement;
 	macroClear: HTMLButtonElement;
 	macroRandom: HTMLButtonElement;
@@ -532,6 +534,7 @@ export const buildUI = (
       <div class="dtm-row" data-dtm="compose-row">
         <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose" title="コード進行・メロディ・サブメロ・ベース・伴奏・ドラムを自動で作ります">作曲</button>
         <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose-vocal" title="作曲したうえで、メロディに歌詞を付けて歌わせます">歌入り作曲</button>
+        <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose-accomp" title="旋律をほとんど置かず、分散和音・低音・和音で約2分半〜3分のループ曲を作ります（ドラムなし・残響とディレイ付き）。ベース調は使い、構成・作る部分・音階は使いません">伴奏主体</button>
         <button class="dtm-infobtn" data-dtm="macro-compose-info" title="作曲の解説">${icon("info", 12)}</button>
         <!--
           **キープ枠は1つだけ。** 自動作曲は気に入るまで引き直す使い方になるが、
@@ -902,6 +905,7 @@ export const buildUI = (
 		composeScale: sel("compose-scale"),
 		composeScaleHint: sel("compose-scale-hint"),
 		macroComposeVocal: sel("macro-compose-vocal"),
+		macroComposeAccomp: sel("macro-compose-accomp"),
 		macroComposeInfo: sel("macro-compose-info"),
 		macroClear: sel("macro-clear"),
 		macroRandom: sel("macro-random"),

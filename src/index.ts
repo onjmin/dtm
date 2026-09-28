@@ -31,6 +31,24 @@ export {
 	durationEntropy,
 	type MelodyForm,
 } from "./compose";
+// 伴奏主体モード（旋律をほとんど置かず、分散和音・低音・和音で約2分半〜3分のループ曲を作る。
+// docs/accomp-compose.md）
+export {
+	type AccompGate,
+	type AccompMix,
+	type AccompOptions,
+	type AccompPlan,
+	type AccompRegion,
+	type AccompRole,
+	type AccompSlot,
+	type AccompSong,
+	type AccompStats,
+	type AccompTexture,
+	type AccompTrack,
+	accompMeta,
+	composeAccomp,
+} from "./compose-accomp";
+export { type AccompMmlProvenance, accompToMml } from "./compose-accomp-mml";
 // 作曲の採点に使う目標帯（人間の曲から実測したもの）
 export { CORPUS_BANDS, CORPUS_SIZE } from "./compose-corpus";
 // ベース調・調性格・雰囲気グループ
@@ -133,6 +151,8 @@ export * from "./mml-parser";
 export type { MmlPlayerInstance, MmlPlayerOptions } from "./mml-player";
 // 再生専用ビュー（mountDAW と対）
 export { decodeMml, encodeMml, mountMmlPlayer } from "./mml-player";
+// 音符ごとの強弱（v）の読み書き規則。MML の v（実効値）⇄ {トラック音量, 相対 velocity}
+export { effectiveVelocity, splitTrackVelocity } from "./mml-velocity";
 // MusicXML 入出力 — 楽譜としての読み書き。MIDI と違ってパートと歌詞が明示される
 export {
 	type ExportMusicXmlOptions,

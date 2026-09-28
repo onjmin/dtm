@@ -34,8 +34,12 @@ loader._load = (request, ...rest) =>
 
 const { formatMmlMeta, parseMML, parseMmlMeta } =
 	require("../src/mml-parser") as typeof import("../src/mml-parser");
-const { applyMasterFx, masterFxFromMeta, masterFxToMeta } =
-	require("../src/master-fx") as typeof import("../src/master-fx");
+const {
+	applyMasterFx,
+	masterDynamicsFromMeta,
+	masterFxFromMeta,
+	masterFxToMeta,
+} = require("../src/master-fx") as typeof import("../src/master-fx");
 const {
 	DEFAULT_SOUNDFONT_BANK,
 	normalizeSoundFontBank,
@@ -47,6 +51,7 @@ const {
 const { DRUM_PATTERNS, drumPatternForFullLoad, NO_DRUM_PATTERN } =
 	require("../src/drum-config") as typeof import("../src/drum-config");
 type MasterFxSettings = import("../src/master-fx").MasterFxSettings;
+type MasterDynamics = import("../src/master-fx").MasterDynamics;
 type MasterFxTarget = import("../src/master-fx").MasterFxTarget;
 
 let failed = 0;
@@ -243,6 +248,71 @@ console.log("■ DAW の全体読み込み → 書き出し（持ち越さない
 		"decay は 0.1 秒単位へ丸めて書く",
 		masterFxToMeta({ ...dawDefaults, reverbDecaySec: 2.84 }).reverbDecay,
 		28,
+	);
+}
+
+console.log(
+	"■ DAW の全体読み込み: グルーコンプとフェード（持ち越さない。accomp-compose.md §9.5）",
+);
+{
+	// DAW の初期値（DawOptions の masterCompression / fadeInSec / fadeOutSec を省略したとき）。
+	const dawDefaults: MasterDynamics = {
+		masterCompression: 0,
+		fadeInSec: 0,
+		fadeOutSec: 0,
+	};
+	const fullLoad = (mml: string): MasterDynamics =>
+		masterDynamicsFromMeta(parseMML(mml).meta, dawDefaults);
+	check(
+		"曲の指定がそのまま入る（フェードは 0.1 秒単位 → 秒）",
+		fullLoad(`#mastercomp=25 #fadein=5 #fadeout=15;\n${BODY}`),
+		{ masterCompression: 25, fadeInSec: 0.5, fadeOutSec: 1.5 },
+	);
+	// 「おまかせ」の後（コンプ 25・フェードアウト 1.5 秒）に、0 を省いて書き出された曲を読み込む。
+	// 読み込みは前の値を参照しない＝書かれていない項目は初期値に戻る。
+	const exported = formatMmlMeta(
+		{ masterCompression: 0, fadeIn: 0, fadeOut: 0, loop: true },
+		" ",
+	);
+	check("0 は書き出しで省かれる（前提）", exported, "#loop=on");
+	check(
+		"何も書いていない曲は DAW の初期値（前の曲のコンプ・フェードを残さない）",
+		fullLoad(`${exported};\n${BODY}`),
+		dawDefaults,
+	);
+	check(
+		"一部だけ書かれた曲: 書かれていない項目は初期値",
+		fullLoad(`#fadeout=20;\n${BODY}`),
+		{ ...dawDefaults, fadeOutSec: 2 },
+	);
+	check(
+		"DAW の初期値（オプション）が既定になる",
+		masterDynamicsFromMeta({}, { ...dawDefaults, masterCompression: 10 }),
+		{ ...dawDefaults, masterCompression: 10 },
+	);
+}
+
+console.log("■ #loop=on（DAW の書き出しは宣言の行の途中に置く）");
+{
+	// 再生専用プレイヤーは単独の `#loop=on` 行に加えて parseMML の meta.loop も読む（mml-player.ts）。
+	// DAW の書き出しと accompToMml の書き方の両方で meta.loop が立つことを確かめる。
+	check(
+		"宣言の行の途中（DAW の書き出し）",
+		parseMML(`#inst=retro_game #drum=none #loop=on #reverb=50;\n${BODY}`).meta
+			.loop,
+		true,
+	);
+	check(
+		"単独の行（accompToMml）",
+		parseMML(`#loop=on\n#inst=retro_game;\n${BODY}`).meta.loop,
+		true,
+	);
+	check("#loop=off", parseMML(`#loop=off;\n${BODY}`).meta.loop, false);
+	check("書かれていなければ未指定", parseMML(BODY).meta.loop, undefined);
+	check(
+		"宣言から音が生えない",
+		shape(`#inst=retro_game #loop=on;\n${BODY}`),
+		shape(BODY),
 	);
 }
 
