@@ -76,7 +76,7 @@ const BODY =
 {
 	// 宣言リストの網羅: 書き出し側が出しうる宣言を全部並べて、剥がした後に `#` が残らないこと。
 	const all =
-		"#ver=9.9.9 #seed=4022250974 #compose=jpop_standard:any:auto:intro-verse-chorus #inst=piano #drum=8beat #drumfont=X_sf2:1 #volume=1 #drumvolume=2 #reverb=3 #reverbdecay=4 #reverbpredelay=5 #delay=6 #delaydiv=8d #mastercomp=7 #fadein=8 #fadeout=9 #mode=advanced #edo=31 #loop=on #audio=https://example.com/a.mp3 #audiostart=1.5 #audioend=2 #audiooffset=-0.25 #audioat=3 #audiovol=50 #t0inst=Lead 1 (square) #t0comp=1 #t0width=2 #t0rev=3 #t0eqlo=-4 #t0eqmid=5 #t0eqhi=-6 #t0pan=7 #t0dly=8;";
+		"#ver=9.9.9 #seed=4022250974 #compose=jpop_standard:any:auto:intro-verse-chorus #inst=piano #drum=8beat #drumfont=X_sf2:1 #volume=1 #drumvolume=2 #reverb=3 #reverbdecay=4 #reverbpredelay=5 #delay=6 #delaydiv=8d #mastercomp=7 #fadein=8 #fadeout=9 #mode=advanced #edo=31 #loop=on #audio=https://example.com/a.mp3 #audiostart=1.5 #audioend=2 #audiooffset=-0.25 #audioat=3 #audiovol=50 #t0inst=Lead 1 (square) #t0font=Aspirin #t0comp=1 #t0width=2 #t0rev=3 #t0eqlo=-4 #t0eqmid=5 #t0eqhi=-6 #t0pan=7 #t0dly=8;";
 	check("全宣言を剥がして # が残らない", /#/.test(stripMmlMeta(all)), false);
 	const meta = parseMmlMeta(all);
 	check("乱数種が読める", meta.seed, 4022250974);

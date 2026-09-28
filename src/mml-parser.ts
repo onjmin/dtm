@@ -9,6 +9,11 @@
  */
 
 import { parseLyrics, stripCustomVocals, stripLyrics } from "./lyrics";
+import {
+	normalizeSoundFontBank,
+	soundFontBankShortName,
+	trackSoundFontValue,
+} from "./soundfont-banks";
 import { type Units, units } from "./tuning";
 import type { LyricTrack } from "./types";
 import { DEFAULT_STEPS_PER_BAR, MML_END_MARKER } from "./types";
@@ -52,7 +57,10 @@ export type MmlMeta = {
 	version?: string;
 	/** 楽器プリセット名（INSTRUMENT_PRESETS のキー等。利用側が音源解決に使う） */
 	instrument?: string;
-	/** ドラムパターン名（DRUM_PATTERNS のキー） */
+	/**
+	 * ドラムパターン名（DRUM_PATTERNS のキー）。`none` はドラム無しの明示
+	 * （DAW の書き出しは「なし」を `#drum=none` と書く。省略も同じくドラム無し）。
+	 */
 	drum?: string;
 	/** ドラムフォント名 */
 	drumFont?: string;
@@ -98,6 +106,14 @@ export type MmlMeta = {
 	 * 省略されたトラックはプリセットが適用される。
 	 */
 	trackInstruments?: Record<number, string>;
+	/**
+	 * トラックごとの旋律楽器の音源バンク（正式名。例 `GeneralUserGS_sf2_file`）。
+	 * `#t<n>font=<バンク>` で埋め込む。値は正式名のほか短縮名（`GeneralUserGS` 等、
+	 * 大小文字無視）も受け、書き出しは短縮名。省略されたトラックは FluidR3 GM。
+	 * 楽器（`#t<n>inst=` かプリセット）はそのままに、同じ GM 番号をこのバンクで鳴らす
+	 * （{@link file://./soundfont-banks.ts}）。
+	 */
+	trackFonts?: Record<number, string>;
 	/**
 	 * トラックごとのコンプレッサー（音圧強化）量 0-100。`#t<n>comp=<値>` で埋め込む。
 	 * 省略されたトラックは0（実質無圧縮）。ボーカル・楽器どちらのトラックにも掛かる
@@ -203,6 +219,9 @@ const AUDIO_NUM_DIRECTIVE =
 
 /** `#t<n>inst=<GM楽器名>` にマッチする（値は`;` `#` 改行以外の任意文字） */
 const TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
+
+/** `#t<n>font=<音源バンク>` にマッチする（トラック単位の旋律楽器の音源バンク） */
+const TRACK_FONT_DIRECTIVE = /#t(\d+)font=([A-Za-z0-9_-]+)/gi;
 
 /** `#t<n>comp=<0-100>` にマッチする（トラック単位コンプレッサー量） */
 const TRACK_COMP_DIRECTIVE = /#t(\d+)comp=(\d+)/gi;
@@ -310,6 +329,14 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 			meta.trackInstruments[idx] = name;
 		}
 	}
+	for (const m of mml.matchAll(TRACK_FONT_DIRECTIVE)) {
+		const idx = Number.parseInt(m[1], 10);
+		const bank = normalizeSoundFontBank(m[2]);
+		if (!Number.isNaN(idx) && bank) {
+			meta.trackFonts ??= {};
+			meta.trackFonts[idx] = bank;
+		}
+	}
 	for (const m of mml.matchAll(TRACK_COMP_DIRECTIVE)) {
 		const idx = Number.parseInt(m[1], 10);
 		const val = clamp(Number.parseInt(m[2], 10), 0, 100);
@@ -384,6 +411,7 @@ export const stripMmlMeta = (mml: string): string =>
 		.replace(AUDIO_URL_DIRECTIVE, "")
 		.replace(AUDIO_NUM_DIRECTIVE, "")
 		.replace(TRACK_INST_DIRECTIVE, "")
+		.replace(TRACK_FONT_DIRECTIVE, "")
 		.replace(TRACK_COMP_DIRECTIVE, "")
 		.replace(TRACK_WIDTH_DIRECTIVE, "")
 		.replace(TRACK_REVERBSEND_DIRECTIVE, "")
@@ -442,6 +470,13 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	if (meta.trackInstruments) {
 		for (const [idx, name] of Object.entries(meta.trackInstruments)) {
 			if (name) parts.push(`#t${idx}inst=${name}`);
+		}
+	}
+	if (meta.trackFonts) {
+		for (const [idx, font] of Object.entries(meta.trackFonts)) {
+			// 既定（FluidR3）と名前として不正な値は書かない。短縮名で書く（共有リンクの字数を食わないため）。
+			const bank = trackSoundFontValue(font);
+			if (bank) parts.push(`#t${idx}font=${soundFontBankShortName(bank)}`);
 		}
 	}
 	if (meta.trackCompression) {

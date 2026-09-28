@@ -237,6 +237,48 @@ recorder.start();
 
 ---
 
+## MML の宣言（音色・残響・ドラム）
+
+MML の先頭などに `#名前=値` で書く宣言のうち、音の質感に効くもの（抜粋）。宣言は本文の音符としては読まれず、エディタの書き出し・読み込みで往復します。
+
+| 宣言 | 値 | 意味 |
+| --- | --- | --- |
+| `#inst=` | 楽器プリセット名 | 曲全体の楽器プリセット（`INSTRUMENT_PRESETS` のキー）。 |
+| `#t<n>inst=` | GM 楽器名 | トラック n（`@n`）だけ楽器を差し替える。 |
+| `#t<n>font=` | 音源バンク | トラック n の楽器を鳴らす**音源データ**。楽器（`#t<n>inst=` かプリセット）は同じ GM 番号のまま、質感だけが変わる。省略時は FluidR3 GM。 |
+| `#reverb=` | 0-100 | マスタリバーブの掛かり具合（戻り）。 |
+| `#reverbdecay=` | 3-40（×0.1 秒） | マスタリバーブの残響の長さ。省略時 22（2.2 秒）。 |
+| `#reverbpredelay=` | 0-150（ms） | マスタリバーブの立ち上がりの遅れ。 |
+| `#delay=` | 0-100 | マスタディレイ（テンポ同期のエコー）の掛かり具合。 |
+| `#delaydiv=` | `4` / `8` / `8d` / `16` | マスタディレイの音価。省略時 `8`。 |
+| `#t<n>rev=` / `#t<n>dly=` | 0-100 | トラック n からマスタリバーブ／ディレイへの送り量。**戻り（`#reverb=` / `#delay=`）が 0 だと鳴らない。** |
+| `#drum=` | パターン名 / `none` | ドラムパターン。`none` と省略はどちらもドラム無し。 |
+
+`#t<n>font=` の値は次の正式名・短縮名（大小文字は問わない）。書き出しは短縮名で、既定の FluidR3 は書きません。どれも配信元（[webaudiofontdata](https://surikov.github.io/webaudiofontdata/)）の GM 128 音色を持ちます。バリエーションは V=0 を優先し、無ければそのプログラムの最初のものを使います。指定したバンクにその楽器が無い・読めないときは、警告を出して FluidR3 で鳴らします（一覧に無い名前も保持だけはします）。
+
+| 短縮名 | 正式名 |
+| --- | --- |
+| `FluidR3` | `FluidR3_GM_sf2_file`（既定） |
+| `GeneralUserGS` | `GeneralUserGS_sf2_file` |
+| `Aspirin` | `Aspirin_sf2_file` |
+| `SoundBlasterOld` | `SoundBlasterOld_sf2` |
+| `JCLive` | `JCLive_sf2_file` |
+| `Chaos` | `Chaos_sf2_file` |
+| `SBLive` | `SBLive_sf2` |
+
+```text
+#inst=retro_game #reverb=30 #reverbdecay=28 #delay=15 #delaydiv=8d #t0font=GeneralUserGS #t0rev=40 #t0dly=20 #t2font=SBLive #drum=none;
+@0 t140 o5 l8 cdeg a4g4;
+@2 o3 c2 g2;
+```
+
+- **再生でも効きます。** `studio.play` / `studio.mountPlayer`（埋め込みプレイヤー）/ `studio.playSingingMML` は、再生を始めるたびにその曲の `#reverb=` `#reverbdecay=` `#reverbpredelay=` `#delay=` `#delaydiv=` をマスタリバーブ／ディレイへ反映し、ディレイのテンポも曲の BPM に合わせます。**書かれていない項目は `createDtmStudio` のオプション（`reverbAmount` 等、既定 0）へ戻す**ので、前に鳴らした曲やエディタの設定は持ち越されません（`studio.setReverbAmount` 等で変えた値も、次の再生で曲の値に置き換わります）。同じ studio の編集UIは、自分の再生を始めるときに自分の設定へ戻します。
+- エディタへ曲を読み込む（現在のトラックだけに適用する部分読み込み以外）と、リバーブ／ディレイのスライダーは同じ規則で決まります。**曲に書かれていない項目はエディタの初期値（`reverbAmount` 等のオプション、既定 0）へ戻る**ので、前に開いた曲や「おまかせ」の値が残って書き出し（投稿）に `#reverb=` が付くことはありません。
+- ドラム無しの曲（`#drum` が無い／`#drum=none`）をエディタへ読み込むと、ドラム選択は「なし」になります（現在のトラックだけに適用する部分読み込みではドラムを変えません）。エディタの書き出しは「なし」を `#drum=none` と明示します。
+- studio を使わない `playMML`（内蔵の簡易シンセ）は SoundFont を使わないので `#t<n>font=` は効きません。
+
+---
+
 ## ヘルプとガイドツアー
 
 編集 UI には**ヘルプ（`?`）ボタン**と**目的別のガイドツアー**が同梱されています。どちらも埋め込み先でそのまま動きます。

@@ -38,6 +38,33 @@ import type { SongDrumPattern } from "./song-drum-config";
 
 export type AnyDrumPattern = DrumPattern | SongDrumPattern;
 
+/**
+ * ドラム無しを表すパターン名。辞書には載らない（引いても何も鳴らない）。
+ * DAW のドラム選択の「なし」と同じ値で、MML には `#drum=none` と書く。
+ */
+export const NO_DRUM_PATTERN = "none";
+
+/**
+ * MML を**全体読み込み**したときに DAW が選ぶドラムパターン。
+ *
+ * 再生専用プレイヤーは `#drum=` が無ければドラム無しで鳴らすが、DAW は既定が "dance" で、
+ * 読み込みも辞書に在る名前しか反映しなかったので、ドラム無しの曲を読み込むとダンスビートが
+ * 付いたまま残り、書き出すと `#drum=dance` まで付いていた。そこで揃える。
+ *
+ * - `#drum` が無い／`none` → {@link NO_DRUM_PATTERN}（ドラム無し）
+ * - 辞書に在るパターン → そのパターン
+ * - 辞書に無い名前 → null（呼び出し側は今の選択を変えない。従来どおり）
+ *
+ * 部分読み込み（現在のトラックだけに適用）ではドラムを触らないので、これを呼ばないこと。
+ */
+export const drumPatternForFullLoad = (
+	metaDrum: string | undefined,
+	dict: Record<string, unknown>,
+): string | null => {
+	if (!metaDrum || metaDrum === NO_DRUM_PATTERN) return NO_DRUM_PATTERN;
+	return Object.hasOwn(dict, metaDrum) ? metaDrum : null;
+};
+
 export const normalizeDrumPatterns = (
 	patterns: Record<string, AnyDrumPattern | DrumPatternDef>,
 ): Record<string, DrumPatternDef> => {

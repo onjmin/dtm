@@ -38,6 +38,7 @@ import {
 	DRUM_FONT,
 	type DrumPatternDef,
 	getDrumPatternKeys,
+	NO_DRUM_PATTERN,
 	normalizeDrumPatterns,
 } from "./drum-config";
 import { createFadeBus } from "./fade";
@@ -68,6 +69,12 @@ import {
 	type SpeechPlanInfo,
 	type SpeechPrepareOptions,
 } from "./lyrics";
+import {
+	applyMasterFx,
+	type MasterFxSettings,
+	type MasterFxTarget,
+	masterFxFromMeta,
+} from "./master-fx";
 import { type MmlMeta, parseMML, parseMmlMeta } from "./mml-parser";
 import {
 	type MmlPlayerInstance,
@@ -89,6 +96,11 @@ import { SoundFont } from "./sf/SoundFont";
 import { SoundFont_drum } from "./sf/SoundFont_drum";
 import { SoundFont_list } from "./sf/SoundFont_list";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
+import {
+	DEFAULT_SOUNDFONT_BANK,
+	resolveSoundFontFile,
+	trackSoundFontValue,
+} from "./soundfont-banks";
 import { showLoadingOverlay } from "./styles";
 import { type Units, unitsToMidiDetune } from "./tuning";
 import type {
@@ -152,6 +164,12 @@ type SoundFontDrumEngine = {
 type SoundFontListEngine = {
 	init: () => void;
 	onload: (cb: () => void) => void;
+	/**
+	 * 音源バンク → そのバンクにある楽器ファイル（`PPPV`）の集合。`#t<n>font=` の解決で
+	 * 「そのプログラムがそのバンクに在るか」を引くのに使う。持たない注入エンジンでは
+	 * V=0 を仮定して読み、失敗したら FluidR3 へ落とす。
+	 */
+	tone?: ReadonlyMap<string, ReadonlySet<string>>;
 };
 
 /** 注入で差し替え可能な外部エンジン群（未指定なら CDN から取得）。 */
@@ -162,8 +180,8 @@ export type DtmStudioEngines = {
 	parseMidi?: DawOptions["parseMidi"];
 };
 
-/** SoundFont の楽器名解決に使う SoundFont 名（FluidR3 GM）。 */
-const SOUNDFONT_NAME = "FluidR3_GM_sf2_file";
+/** ドラム音源の既定（`#drumfont=` が無いとき）。 */
+const DEFAULT_DRUM_FONT_ID = `${DRUM_FONT}:0`;
 
 /** 再生専用ビューの @n（数値）→ 役割キーの対応。0-3はsimpleモード、4以降はadvancedモード対応。 */
 const TRACK_ROLES = [
@@ -660,10 +678,14 @@ export const createDtmStudio = async (
 	 * スライダーの input イベントごとに呼ぶ想定 — 数秒分のノイズ生成程度は許容範囲の負荷。
 	 */
 	const setReverbDecay = (seconds: number): void => {
-		reverbDecaySec = Math.max(
+		const next = Math.max(
 			MIN_REVERB_DECAY_SEC,
 			Math.min(MAX_REVERB_DECAY_SEC, seconds),
 		);
+		// 再生のたびに曲のリバーブ設定を流し込む（applyMasterFx）ので、同じ長さなら
+		// インパルス応答（数秒ぶんのノイズ）を作り直さない。
+		if (next === reverbDecaySec) return;
+		reverbDecaySec = next;
 		reverbConvolver.buffer = createReverbImpulse(audioCtx, reverbDecaySec);
 	};
 	/** マスタリバーブのPre Delay（原音からリバーブが立ち上がるまでの遅延、ms）を設定する。 */
@@ -691,6 +713,31 @@ export const createDtmStudio = async (
 		division: options.delayDivision ?? "8",
 	});
 	const setDelayAmount = (amount: number): void => delayBus.setAmount(amount);
+
+	// ── 曲ごとのマスタリバーブ／ディレイ ──
+	// リバーブ・ディレイは studio に1つずつで、編集UI・再生UI・ヘッドレス再生の全部が共有する。
+	// 再生専用の経路は MML の `#reverb=` 等を読んでいなかったので、送り（`#t<n>rev=`）は
+	// 効いているのに戻りが 0 のままで残響が鳴らず、逆に編集UIで上げたリバーブが投稿の
+	// 再生にまで乗ることもあった。再生開始のたびに、その曲の設定を流し込む。
+	// 曲に書かれていない項目は studio 生成時の既定値へ戻す（前の曲の値を持ち越さない）。
+	const defaultMasterFx: MasterFxSettings = {
+		reverbAmount: options.reverbAmount ?? 0,
+		reverbDecaySec: options.reverbDecay ?? DEFAULT_REVERB_DECAY_SEC,
+		reverbPreDelayMs: options.reverbPreDelay ?? DEFAULT_REVERB_PREDELAY_MS,
+		delayAmount: options.delayAmount ?? 0,
+		delayDivision: options.delayDivision ?? "8",
+	};
+	const masterFxTarget: MasterFxTarget = {
+		setReverbAmount,
+		setReverbDecay,
+		setReverbPreDelay,
+		setDelayAmount,
+		setDelayDivision: (division) => delayBus.setDivision(division),
+		setDelayBpm: (bpm) => delayBus.setBpm(bpm),
+	};
+	/** その曲（MMLメタ）のマスタリバーブ／ディレイを流し込む。 */
+	const applySongMasterFx = (meta: MmlMeta, bpm: number): void =>
+		applyMasterFx(masterFxTarget, masterFxFromMeta(meta, defaultMasterFx), bpm);
 
 	// ── マスタバスの「グルーコンプレッサー」── 全トラックの合流点（リバーブ・ディレイの
 	// 戻りも含む finalMix）にまとめて軽く掛ける、表現目的の音楽的な圧縮。上の安全リミッター
@@ -930,7 +977,7 @@ export const createDtmStudio = async (
 	const loadedDrumKeys = new Map<string, Set<number>>();
 	const loadRequiredDrums = async (
 		keys: number[],
-		drumFontStr: string = "FluidR3_GM_sf2_file:0",
+		drumFontStr: string = DEFAULT_DRUM_FONT_ID,
 	): Promise<void> => {
 		const [font, id] = drumFontStr.split(":");
 		let set = loadedDrumKeys.get(drumFontStr);
@@ -968,31 +1015,75 @@ export const createDtmStudio = async (
 	// 楽器音源は「役割」ではなく「実際の楽器キー」で1つだけ持ち、編集UI・全再生UIで
 	// 安全に共有する。役割キー（melody等）で持つと、別プリセットを読むたびに同じ役割キーを
 	// 上書きし合い、再生UIの楽器が指定と別物になる（最後に解決したロードが勝つ）。
+	// 音源バンク（`#t<n>font=`）違いは別の音源なので、キャッシュのキーにバンクを含める
+	// （既定の FluidR3 は従来どおり楽器キーだけ）。
 	const soundFonts = new Map<string, SoundFontInstance>();
 	// 同一楽器キーの多重ロードを避けるための進行中Promise。
 	const loadingByKey = new Map<string, Promise<void>>();
 
-	const loadInstrument = (instrumentKey: string): Promise<void> => {
-		if (soundFonts.has(instrumentKey)) return Promise.resolve();
-		const inflight = loadingByKey.get(instrumentKey);
+	/** 楽器キー（FluidR3 の `PPPV`）＋音源バンク → soundFonts のキー。 */
+	const instrumentCacheKey = (instrumentKey: string, bank?: string): string => {
+		const b = trackSoundFontValue(bank);
+		return b ? `${instrumentKey}@${b}` : instrumentKey;
+	};
+
+	/** ロード済みの音源を引く（未ロードなら undefined＝無音。別の音源で代わりに鳴らさない）。 */
+	const getLoadedInstrument = (
+		instrumentKey: string,
+		bank?: string,
+	): SoundFontInstance | undefined =>
+		soundFonts.get(instrumentCacheKey(instrumentKey, bank));
+
+	const loadSoundFontFile = (
+		fileKey: string,
+		bank: string,
+	): Promise<SoundFontInstance> => {
+		const fullName = `${fileKey}_${bank}`;
+		return sf.load({
+			ctx: audioCtx,
+			fontName: `_tone_${fullName}`,
+			url: sf.toURL(fullName),
+		});
+	};
+
+	/**
+	 * 楽器を読み込む。`bank` を渡すとその音源バンク（`#t<n>font=`）で読む。
+	 * そのバンクにそのプログラムが無い（一覧で引けない・読み込みに失敗した）ときは、
+	 * 警告を出して FluidR3 で鳴らす（無音にはしない）。
+	 */
+	const loadInstrument = (
+		instrumentKey: string,
+		bank?: string,
+	): Promise<void> => {
+		const cacheKey = instrumentCacheKey(instrumentKey, bank);
+		if (soundFonts.has(cacheKey)) return Promise.resolve();
+		const inflight = loadingByKey.get(cacheKey);
 		if (inflight) return inflight;
-		const fullName = `${instrumentKey}_${SOUNDFONT_NAME}`;
-		const p = sf
-			.load({
-				ctx: audioCtx,
-				fontName: `_tone_${fullName}`,
-				url: sf.toURL(fullName),
+		const file = resolveSoundFontFile(instrumentKey, bank, sfList.tone);
+		if (file.fellBack) {
+			console.warn(
+				`[dtm] 音源バンク "${bank}" に楽器 ${instrumentKey} が無いため、FluidR3 で鳴らします`,
+			);
+		}
+		const p = loadSoundFontFile(file.key, file.bank)
+			.catch((e) => {
+				if (file.bank === DEFAULT_SOUNDFONT_BANK) throw e;
+				console.warn(
+					`[dtm] 音源バンク "${file.bank}" の楽器 ${file.key} を読めなかったため、FluidR3 で鳴らします`,
+					e,
+				);
+				return loadSoundFontFile(instrumentKey, DEFAULT_SOUNDFONT_BANK);
 			})
-			.then((sf) => {
-				soundFonts.set(instrumentKey, sf);
+			.then((inst) => {
+				soundFonts.set(cacheKey, inst);
 			})
 			.catch((e) => {
 				console.error(`[dtm] 楽器 "${instrumentKey}" の読み込みに失敗`, e);
 			})
 			.finally(() => {
-				loadingByKey.delete(instrumentKey);
+				loadingByKey.delete(cacheKey);
 			});
-		loadingByKey.set(instrumentKey, p);
+		loadingByKey.set(cacheKey, p);
 		return p;
 	};
 
@@ -1041,17 +1132,26 @@ export const createDtmStudio = async (
 		trackId: string,
 	): string => (preset as Record<string, string>)[trackId] ?? preset.melody;
 
-	/** プリセット＋トラック（役割）から、ロード済みの SoundFont を引く。 */
+	/** プリセット＋トラック（役割）から、そのトラックで鳴らす楽器キーを引く。 */
+	const presetInstrumentKey = (
+		presetKey: string,
+		trackId: string,
+		mode: DawMode = "simple",
+	): string | undefined => {
+		const preset = INSTRUMENT_PRESETS[presetKey];
+		if (!preset) return undefined;
+		const role = getRoleFromTrackId(trackId, mode);
+		return nameToKey[instrumentNameFor(preset, role)];
+	};
+
+	/** プリセット＋トラック（役割）から、ロード済みの SoundFont（FluidR3）を引く。 */
 	const resolveSoundFont = (
 		presetKey: string,
 		trackId: string,
 		mode: DawMode = "simple",
 	): SoundFontInstance | undefined => {
-		const preset = INSTRUMENT_PRESETS[presetKey];
-		if (!preset) return undefined;
-		const role = getRoleFromTrackId(trackId, mode);
-		const key = nameToKey[instrumentNameFor(preset, role)];
-		return key ? soundFonts.get(key) : undefined;
+		const key = presetInstrumentKey(presetKey, trackId, mode);
+		return key ? getLoadedInstrument(key) : undefined;
 	};
 
 	const loadPreset = async (
@@ -1200,6 +1300,7 @@ export const createDtmStudio = async (
 			presetUI,
 			onInstrumentChange,
 			onTrackInstrumentChange: externalOnTrackInstrumentChange,
+			onTrackFontChange: externalOnTrackFontChange,
 			...dawOverrides
 		} = mergedOpts;
 		const tracks: TrackConfig[] = dawOverrides.tracks ?? TRACKS_SIMPLE;
@@ -1219,9 +1320,12 @@ export const createDtmStudio = async (
 		// 楽器解決をこのエディタ専属にすることで、他のエディタ/再生UIと音源を取り合わない。
 		let editorPreset = initialPreset;
 		const isAdvancedMode = dawOverrides.mode === "advanced";
+		const editorMode: DawMode = isAdvancedMode ? "advanced" : "simple";
 
 		// トラック個別楽器オーバーライド（trackIndex → GM楽器キー）。空文字はプリセット適用。
 		const trackInstOverrides = new Map<number, string>();
+		// トラック個別の音源バンク（trackIndex → 正式名。既定の FluidR3 は持たない）。
+		const trackFontOverrides = new Map<number, string>();
 
 		// MMLに埋め込まれた初期 per-track 楽器があれば反映（スペース除去済み名も正規化して解決）
 		if (meta.trackInstruments) {
@@ -1231,23 +1335,46 @@ export const createDtmStudio = async (
 				if (key) trackInstOverrides.set(idx, key);
 			}
 		}
+		if (meta.trackFonts) {
+			for (const [idxStr, font] of Object.entries(meta.trackFonts)) {
+				const bank = trackSoundFontValue(font);
+				if (bank) trackFontOverrides.set(Number(idxStr), bank);
+			}
+		}
+
+		/** そのトラックで鳴らす楽器キー（個別指定 → このエディタのプリセット）。 */
+		const editorInstrumentKey = (
+			trackIdx: number,
+			role: string,
+		): string | undefined =>
+			(trackIdx >= 0 ? trackInstOverrides.get(trackIdx) : undefined) ??
+			presetInstrumentKey(editorPreset, role, editorMode);
+
+		/**
+		 * 各トラックの音源（楽器×音源バンク）を読み込む。読み込み済みのものは即座に済む。
+		 * 音源バンクを指定したトラックは、プリセットの読み込み（FluidR3）だけでは足りないため。
+		 */
+		const loadEditorTrackSounds = async (): Promise<void> => {
+			await listReady;
+			await Promise.all(
+				trackIds.map((trackId) => {
+					const { trackIdx, role } = resolveTrackIdxAndRole(trackId);
+					const key = editorInstrumentKey(trackIdx, role);
+					return key
+						? loadInstrument(key, trackFontOverrides.get(trackIdx))
+						: undefined;
+				}),
+			);
+		};
 
 		const playNote = (e: PlayNoteEvent): void => {
 			if (e.when === 0) restoreFadeGainIfMuted();
 			// トラックインデックスを trackId から逆引き（"melody"→0, "t2"→2, "t9"→9 等）
 			const { trackIdx, role } = resolveTrackIdxAndRole(e.trackId);
-			const overrideKey =
-				trackIdx >= 0 ? trackInstOverrides.get(trackIdx) : undefined;
-			let sfInst: SoundFontInstance | undefined;
-			if (overrideKey) {
-				sfInst = soundFonts.get(overrideKey);
-			} else {
-				sfInst = resolveSoundFont(
-					editorPreset,
-					role,
-					isAdvancedMode ? "advanced" : "simple",
-				);
-			}
+			const key = editorInstrumentKey(trackIdx, role);
+			const sfInst = key
+				? getLoadedInstrument(key, trackFontOverrides.get(trackIdx))
+				: undefined;
 			if (!sfInst) return;
 			// SoundFont は整数MIDIノートのゾーンしか持たないため、最寄りのゾーンを鳴らして
 			// 残差を detune（セント）で補正する。31平均律の音もこれで正確に鳴る。
@@ -1277,11 +1404,10 @@ export const createDtmStudio = async (
 				const wasPlaying = daw?.getPlaybackState() === "playing";
 				if (wasPlaying) daw.pause();
 				daw?.setLoading?.(true);
-				void loadPreset(
-					key,
-					trackIds,
-					isAdvancedMode ? "advanced" : "simple",
-				).finally(() => {
+				void Promise.all([
+					loadPreset(key, trackIds, editorMode),
+					loadEditorTrackSounds(),
+				]).finally(() => {
 					daw?.setLoading?.(false);
 					if (wasPlaying) daw?.play();
 				});
@@ -1296,14 +1422,34 @@ export const createDtmStudio = async (
 		): Promise<void> => {
 			if (!instrumentName) {
 				trackInstOverrides.delete(trackIndex);
+				// プリセットの楽器に戻る。音源バンク指定があればそのバンクで要る。
+				await loadEditorTrackSounds();
 				return;
 			}
 			await listReady;
 			const key = resolveNameToKey(instrumentName);
 			if (!key) return;
 			trackInstOverrides.set(trackIndex, key);
-			await loadInstrument(key);
+			await loadInstrument(key, trackFontOverrides.get(trackIndex));
 		};
+
+		// トラック個別の音源バンク変更（`#t<n>font=` の読み込みも含む）。
+		// マップは同期で更新する（同じ読み込みで続けて届く楽器変更がこの値を使うため）。
+		const handleTrackFontChange = async (
+			trackIndex: number,
+			font: string,
+		): Promise<void> => {
+			const bank = trackSoundFontValue(font);
+			if (bank) trackFontOverrides.set(trackIndex, bank);
+			else trackFontOverrides.delete(trackIndex);
+			await loadEditorTrackSounds();
+		};
+
+		// このエディタのマスタリバーブ／ディレイ（DAW のスライダー・MML読み込みから届く値。
+		// DAW はマウント時にも初期値を通知する）。リバーブ・ディレイは studio 共有で、再生UIが
+		// 曲ごとに書き換えるので、このエディタで鳴らし始めるときに戻す。
+		const editorFx: MasterFxSettings = { ...defaultMasterFx };
+		let editorBpm = dawOverrides.defaultBpm ?? DEFAULT_BPM;
 
 		// 伴奏音源（mp3/wav/YouTube）の同時再生器。エディタ1つにつき1つ作り、
 		// masterGain へ繋ぐ（＝マスタ音量が効き、録音・WAV書き出しにも乗る）。
@@ -1319,6 +1465,7 @@ export const createDtmStudio = async (
 			getAudioTime: () => audioCtx.currentTime,
 			backingAudio,
 			onResumeAudio: async () => {
+				applyMasterFx(masterFxTarget, editorFx, editorBpm);
 				await resumeAudio();
 				if (daw) {
 					await loadRequiredDrums(daw.getUsedDrumKeys(), daw.getDrumFont());
@@ -1359,19 +1506,41 @@ export const createDtmStudio = async (
 				void handleTrackInstrumentChange(idx, name);
 				externalOnTrackInstrumentChange?.(idx, name);
 			},
+			onTrackFontChange: (idx, font) => {
+				void handleTrackFontChange(idx, font);
+				externalOnTrackFontChange?.(idx, font);
+			},
 			reverbAmount: options.reverbAmount,
-			onReverbChange: setReverbAmount,
+			onReverbChange: (amount) => {
+				editorFx.reverbAmount = amount;
+				setReverbAmount(amount);
+			},
 			reverbDecay: options.reverbDecay,
-			onReverbDecayChange: setReverbDecay,
+			onReverbDecayChange: (seconds) => {
+				editorFx.reverbDecaySec = seconds;
+				setReverbDecay(seconds);
+			},
 			reverbPreDelay: options.reverbPreDelay,
-			onReverbPreDelayChange: setReverbPreDelay,
+			onReverbPreDelayChange: (ms) => {
+				editorFx.reverbPreDelayMs = ms;
+				setReverbPreDelay(ms);
+			},
 			delayAmount: options.delayAmount,
-			onDelayChange: setDelayAmount,
+			onDelayChange: (amount) => {
+				editorFx.delayAmount = amount;
+				setDelayAmount(amount);
+			},
 			delayDivision: options.delayDivision,
-			onDelayDivisionChange: (division) => delayBus.setDivision(division),
+			onDelayDivisionChange: (division) => {
+				editorFx.delayDivision = division;
+				delayBus.setDivision(division);
+			},
 			masterCompression: options.masterCompression,
 			onMasterCompressionChange: setMasterCompression,
-			onBpmChange: (bpm) => delayBus.setBpm(bpm),
+			onBpmChange: (bpm) => {
+				editorBpm = bpm;
+				delayBus.setBpm(bpm);
+			},
 			fadeInSec: options.fadeInSec,
 			fadeOutSec: options.fadeOutSec,
 			onScheduleFade: scheduleFade,
@@ -1455,11 +1624,10 @@ export const createDtmStudio = async (
 		daw.setInstrument(initialPreset);
 		const initialOverlay = rollEl ? showLoadingOverlay(rollEl) : null;
 		daw.setLoading?.(true);
-		void loadPreset(
-			initialPreset,
-			trackIds,
-			isAdvancedMode ? "advanced" : "simple",
-		).finally(() => {
+		void Promise.all([
+			loadPreset(initialPreset, trackIds, editorMode),
+			loadEditorTrackSounds(),
+		]).finally(() => {
 			initialOverlay?.remove();
 			daw.setLoading?.(false);
 		});
@@ -1611,76 +1779,92 @@ export const createDtmStudio = async (
 		return instance;
 	};
 
-	const mountPlayer = (
-		target: HTMLElement,
-		mml: string,
-		opts: MountPlayerOptions = {},
-	): MmlPlayerInstance => {
-		// MMLの #inst= からこの再生UI専属のプリセットを決め、そのプリセットの楽器を用意する。
-		// 楽器解決もこのプリセットに固定するため、他の再生UI/編集UIと音源を取り合わない。
-		const parsed = parseMML(mml, {});
+	/**
+	 * 再生専用の経路（mountPlayer / play / playSingingMML）で1曲を鳴らす準備。3経路で
+	 * 同じ解決をしないと、同じMMLでも経路によって鳴る楽器・ドラム・残響が変わる。
+	 *
+	 * - 楽器: `#inst=` のプリセット（無ければ studio の既定）を、トラックの役割で引く。
+	 *   `#t<n>inst=` があればそちらを優先し、`#t<n>font=` があればその音源バンクで鳴らす。
+	 *   この曲専属に解決するので、他の再生UI/編集UIと音源を取り合わない。ロード未完了の間は
+	 *   undefined（無音）になるだけで、別の楽器・別のバンクで代わりに鳴ることはない。
+	 * - チャンネルストリップ: `#t<n>comp=` 等（{@link createTrackStripApplier}）。
+	 * - マスタリバーブ／ディレイ: `#reverb=` `#delay=` 等を再生開始のたびに流し込む
+	 *   （書かれていなければ既定値へ戻す）。
+	 * - ドラム: `#drum=`（`none` は無し）と `#drumfont=`。
+	 */
+	const prepareSongPlayback = (
+		parsed: ReturnType<typeof parseMML>,
+		mode: DawMode,
+		opts: {
+			defaultBpm?: number;
+			drumPatterns?: Record<string, AnyDrumPattern | DrumPatternDef>;
+		},
+	): {
+		meta: MmlMeta;
+		/** 発音（trackIdx は @n の n）。 */
+		playNote: (e: PlayNoteEvent, trackIdx: number) => void;
+		/** 再生開始時（onResumeAudio）に呼ぶ。音源のロード完了まで待つ。 */
+		prepareAudio: () => Promise<void>;
+	} => {
 		const meta = parsed.meta ?? {};
 		const playerPreset =
 			meta.instrument && INSTRUMENT_PRESETS[meta.instrument]
 				? meta.instrument
 				: defaultPreset;
-
-		const isAdvancedMode = meta.mode === "advanced";
+		const roleOf = (trackIdx: number): string =>
+			getRoleForTrackIndex(trackIdx, mode);
+		/** そのトラックの音源バンク（既定の FluidR3 なら undefined）。 */
+		const bankOf = (trackIdx: number): string | undefined =>
+			trackSoundFontValue(meta.trackFonts?.[trackIdx]) || undefined;
 
 		// MML内の演奏トラックインデックスから、ロード対象の trackId リストを生成
 		const trackIndices = [
 			...new Set(parsed.placements.map((p) => p.trackIndex)),
 		];
-		const trackIds = trackIndices.map((idx) =>
-			getRoleForTrackIndex(idx, isAdvancedMode ? "advanced" : "simple"),
-		);
+		const trackIds = trackIndices.map(roleOf);
 		const loadTrackIds = trackIds.length > 0 ? trackIds : [...TRACK_ROLES];
 
-		// per-track 楽器オーバーライド（trackIndex → SF key）を構築・ロードする
-		const playerTrackInstKeys = new Map<number, string>();
-		const loadPlayerTrackInstruments = async (): Promise<void> => {
-			if (!meta.trackInstruments) return;
+		// per-track 楽器オーバーライド（trackIndex → SF key）を構築し、音源バンク込みでロードする。
+		// 音源バンクだけ指定したトラック（楽器はプリセット）も、そのバンクで読む。
+		const trackInstKeys = new Map<number, string>();
+		const loadTrackInstruments = async (): Promise<void> => {
+			if (!meta.trackInstruments && !meta.trackFonts) return;
 			await listReady;
-			for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
+			for (const [idxStr, name] of Object.entries(
+				meta.trackInstruments ?? {},
+			)) {
 				const key = resolveNameToKey(name);
-				if (!key) continue;
-				playerTrackInstKeys.set(Number(idxStr), key);
-				await loadInstrument(key);
+				if (key) trackInstKeys.set(Number(idxStr), key);
 			}
+			const loads: Promise<void>[] = [];
+			const indices = new Set([
+				...trackInstKeys.keys(),
+				...Object.keys(meta.trackFonts ?? {}).map(Number),
+			]);
+			for (const idx of indices) {
+				const key =
+					trackInstKeys.get(idx) ??
+					presetInstrumentKey(playerPreset, roleOf(idx), mode);
+				if (key) loads.push(loadInstrument(key, bankOf(idx)));
+			}
+			await Promise.all(loads);
 		};
 
-		const presetPromise = Promise.all([
-			loadPreset(
-				playerPreset,
-				loadTrackIds,
-				isAdvancedMode ? "advanced" : "simple",
-			),
-			loadPlayerTrackInstruments(),
+		const ready = Promise.all([
+			loadPreset(playerPreset, loadTrackIds, mode),
+			loadTrackInstruments(),
 		]);
 
-		// 再生専用ビューの @n（数値トラック）→ 役割 → このプリセットの楽器。
-		// per-track オーバーライドがあればそちらを優先する。
-		// ロード未完了の間は undefined（無音）になるだけで、別楽器で鳴ることはない。
 		const applyTrackStrip = createTrackStripApplier(meta);
 
-		const playPlayerNote = (e: PlayNoteEvent): void => {
-			const idx = Number(e.trackId);
-			applyTrackStrip(e.trackId, idx);
-			const overrideKey = playerTrackInstKeys.get(idx);
-			let sfInst: SoundFontInstance | undefined;
-			if (overrideKey) {
-				sfInst = soundFonts.get(overrideKey);
-			} else {
-				const role = getRoleForTrackIndex(
-					idx,
-					isAdvancedMode ? "advanced" : "simple",
-				);
-				sfInst = resolveSoundFont(
-					playerPreset,
-					role,
-					isAdvancedMode ? "advanced" : "simple",
-				);
-			}
+		const playNote = (e: PlayNoteEvent, trackIdx: number): void => {
+			applyTrackStrip(e.trackId, trackIdx);
+			const key =
+				trackInstKeys.get(trackIdx) ??
+				presetInstrumentKey(playerPreset, roleOf(trackIdx), mode);
+			const sfInst = key
+				? getLoadedInstrument(key, bankOf(trackIdx))
+				: undefined;
 			if (!sfInst) return;
 			// SoundFont は整数MIDIノートのゾーンしか持たない。最寄りのゾーンを鳴らして
 			// 残差を detune で補正する（units のままだとゾーンが無く無音になる）。
@@ -1696,34 +1880,55 @@ export const createDtmStudio = async (
 				duration: e.duration,
 			});
 		};
+
+		// ディレイはテンポ同期なので、この曲のBPMで鳴らす（再生側の解決と同じ優先順）。
+		const bpm = parsed.bpm ?? opts.defaultBpm ?? DEFAULT_BPM;
+		const prepareAudio = async (): Promise<void> => {
+			applySongMasterFx(meta, bpm);
+			await resumeAudio();
+			await ready;
+			if (meta.drum && meta.drum !== NO_DRUM_PATTERN) {
+				await loadRequiredDrums(
+					getDrumPatternKeys(
+						meta.drum,
+						resolveDrumPatterns(opts.drumPatterns ?? options.drumPatterns),
+					),
+					meta.drumFont || DEFAULT_DRUM_FONT_ID,
+				);
+			}
+		};
+
+		return { meta, playNote, prepareAudio };
+	};
+
+	const mountPlayer = (
+		target: HTMLElement,
+		mml: string,
+		opts: MountPlayerOptions = {},
+	): MmlPlayerInstance => {
+		const parsed = parseMML(mml, {});
 		const { onResumeAudio: userOnResumeAudio, ...playerOpts } = opts;
+		const song = prepareSongPlayback(
+			parsed,
+			parsed.meta?.mode === "advanced" ? "advanced" : "simple",
+			playerOpts,
+		);
 		const player = mountMmlPlayer(target, mml, {
 			...playerOpts,
 			getAudioTime: () => audioCtx.currentTime,
 			onResumeAudio: async () => {
-				await resumeAudio();
-				await presetPromise;
-				if (meta.drum) {
-					await loadRequiredDrums(
-						getDrumPatternKeys(
-							meta.drum,
-							resolveDrumPatterns(
-								playerOpts.drumPatterns ?? options.drumPatterns,
-							),
-						),
-						meta.drumFont || "FluidR3_GM_sf2_file:0",
-					);
-				}
+				await song.prepareAudio();
 				await userOnResumeAudio?.();
 			},
-			onPlayNote: playPlayerNote,
+			// 再生専用ビューの trackId は @n の n（数値文字列）。
+			onPlayNote: (e) => song.playNote(e, Number(e.trackId)),
 			onPlayDrum: playDrum,
 			// `#fadein=` / `#fadeout=` を、エディタと同じマスタバス最終段のゲインへ掛ける。
 			onScheduleFade: scheduleFade,
 			singingVoices,
 			// `#audio=` の伴奏音源。YouTubeの枠はプレイヤーUIの中にあるので、
 			// エディタと同じ data 属性で後から解決する。
-			backingAudio: meta.audio
+			backingAudio: song.meta.audio
 				? createBackingAudio({
 						audioContext: audioCtx,
 						destination: masterGain,
@@ -1750,100 +1955,22 @@ export const createDtmStudio = async (
 		> = {},
 	): MmlPlayback => {
 		const parsed = parseMML(mml, {});
-		const meta = parsed.meta ?? {};
-		const playerPreset =
-			meta.instrument && INSTRUMENT_PRESETS[meta.instrument]
-				? meta.instrument
-				: defaultPreset;
-
-		const isAdvancedMode = meta.mode === "advanced";
-
-		const trackIndices = [
-			...new Set(parsed.placements.map((p) => p.trackIndex)),
-		];
-		const trackIds = trackIndices.map((idx) =>
-			getRoleForTrackIndex(idx, isAdvancedMode ? "advanced" : "simple"),
-		);
-		const loadTrackIds = trackIds.length > 0 ? trackIds : [...TRACK_ROLES];
-
-		const playerTrackInstKeys = new Map<number, string>();
-		const loadPlayerTrackInstruments = async (): Promise<void> => {
-			if (!meta.trackInstruments) return;
-			await listReady;
-			for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
-				const key = resolveNameToKey(name);
-				if (!key) continue;
-				playerTrackInstKeys.set(Number(idxStr), key);
-				await loadInstrument(key);
-			}
-		};
-
-		const presetPromise = Promise.all([
-			loadPreset(
-				playerPreset,
-				loadTrackIds,
-				isAdvancedMode ? "advanced" : "simple",
-			),
-			loadPlayerTrackInstruments(),
-		]);
-
-		const applyTrackStrip = createTrackStripApplier(meta);
-
-		const playPlayerNote = (e: PlayNoteEvent): void => {
-			const { trackIdx } = resolveTrackIdxAndRole(e.trackId);
-			applyTrackStrip(e.trackId, trackIdx);
-			const overrideKey = playerTrackInstKeys.get(trackIdx);
-			let sfInst: SoundFontInstance | undefined;
-			if (overrideKey) {
-				sfInst = soundFonts.get(overrideKey);
-			} else {
-				const roleFromIdx = getRoleForTrackIndex(
-					trackIdx,
-					isAdvancedMode ? "advanced" : "simple",
-				);
-				sfInst = resolveSoundFont(
-					playerPreset,
-					roleFromIdx,
-					isAdvancedMode ? "advanced" : "simple",
-				);
-			}
-			if (!sfInst) return;
-			// SoundFont は整数MIDIノートのゾーンしか持たない。最寄りのゾーンを鳴らして
-			// 残差を detune で補正する（units をそのまま渡すとゾーンが無く無音になる）。
-			const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
-			sfInst.play({
-				ctx: audioCtx,
-				destination: routeToStrip(e.trackId, sfInst.tone ?? "none"),
-				pitch: midi,
-				detuneCents,
-				volume: e.volume,
-				velocity: e.velocity,
-				when: e.when,
-				duration: e.duration,
-			});
-		};
-
 		const { onResumeAudio: userOnResumeAudio, ...playOpts } = opts;
+		const song = prepareSongPlayback(
+			parsed,
+			parsed.meta?.mode === "advanced" ? "advanced" : "simple",
+			playOpts,
+		);
 		return playMML(mml, {
 			...playOpts,
 			audioContext: audioCtx,
 			destination: masterGain,
 			synth: false,
-			onPlayNote: playPlayerNote,
+			onPlayNote: (e) =>
+				song.playNote(e, resolveTrackIdxAndRole(e.trackId).trackIdx),
 			onPlayDrum: playDrum,
 			onResumeAudio: async () => {
-				await resumeAudio();
-				await presetPromise;
-				if (meta.drum) {
-					await loadRequiredDrums(
-						getDrumPatternKeys(
-							meta.drum,
-							resolveDrumPatterns(
-								playOpts.drumPatterns ?? options.drumPatterns,
-							),
-						),
-					);
-				}
+				await song.prepareAudio();
 				await userOnResumeAudio?.();
 			},
 		});
@@ -1857,103 +1984,26 @@ export const createDtmStudio = async (
 		> = {},
 	): Promise<MmlPlayback> => {
 		const parsed = parseMML(mml, {});
-		const meta = parsed.meta ?? {};
-		const playerPreset =
-			meta.instrument && INSTRUMENT_PRESETS[meta.instrument]
-				? meta.instrument
-				: defaultPreset;
-
 		const isAdvancedMode =
-			meta.mode === "advanced" ||
+			parsed.meta?.mode === "advanced" ||
 			parsed.placements.some((p) => p.trackIndex >= 4);
-
-		const trackIndices = [
-			...new Set(parsed.placements.map((p) => p.trackIndex)),
-		];
-		const trackIds = trackIndices.map((idx) =>
-			getRoleForTrackIndex(idx, isAdvancedMode ? "advanced" : "simple"),
-		);
-		const loadTrackIds = trackIds.length > 0 ? trackIds : [...TRACK_ROLES];
-
-		const playerTrackInstKeys = new Map<number, string>();
-		const loadPlayerTrackInstruments = async (): Promise<void> => {
-			if (!meta.trackInstruments) return;
-			await listReady;
-			for (const [idxStr, name] of Object.entries(meta.trackInstruments)) {
-				const key = resolveNameToKey(name);
-				if (!key) continue;
-				playerTrackInstKeys.set(Number(idxStr), key);
-				await loadInstrument(key);
-			}
-		};
-
-		const presetPromise = Promise.all([
-			loadPreset(
-				playerPreset,
-				loadTrackIds,
-				isAdvancedMode ? "advanced" : "simple",
-			),
-			loadPlayerTrackInstruments(),
-		]);
-
-		const applyTrackStrip = createTrackStripApplier(meta);
-
-		const playPlayerNote = (e: PlayNoteEvent): void => {
-			const { trackIdx } = resolveTrackIdxAndRole(e.trackId);
-			applyTrackStrip(e.trackId, trackIdx);
-			const overrideKey = playerTrackInstKeys.get(trackIdx);
-			let sfInst: SoundFontInstance | undefined;
-			if (overrideKey) {
-				sfInst = soundFonts.get(overrideKey);
-			} else {
-				const roleFromIdx = getRoleForTrackIndex(
-					trackIdx,
-					isAdvancedMode ? "advanced" : "simple",
-				);
-				sfInst = resolveSoundFont(
-					playerPreset,
-					roleFromIdx,
-					isAdvancedMode ? "advanced" : "simple",
-				);
-			}
-			if (!sfInst) return;
-			// SoundFont は整数MIDIノートのゾーンしか持たない。最寄りのゾーンを鳴らして
-			// 残差を detune で補正する（units をそのまま渡すとゾーンが無く無音になる）。
-			const { midi, detuneCents } = unitsToMidiDetune(e.pitchUnits);
-			sfInst.play({
-				ctx: audioCtx,
-				destination: routeToStrip(e.trackId, sfInst.tone ?? "none"),
-				pitch: midi,
-				detuneCents,
-				volume: e.volume,
-				velocity: e.velocity,
-				when: e.when,
-				duration: e.duration,
-			});
-		};
-
 		const { onResumeAudio: userOnResumeAudio, ...playOpts } = opts;
+		const song = prepareSongPlayback(
+			parsed,
+			isAdvancedMode ? "advanced" : "simple",
+			playOpts,
+		);
 		return playSingingMML(mml, {
 			...playOpts,
 			audioContext: audioCtx,
 			destination: masterGain,
 			synth: false,
 			singingVoices,
-			onPlayNote: playPlayerNote,
+			onPlayNote: (e) =>
+				song.playNote(e, resolveTrackIdxAndRole(e.trackId).trackIdx),
 			onPlayDrum: playDrum,
 			onResumeAudio: async () => {
-				await resumeAudio();
-				await presetPromise;
-				if (meta.drum) {
-					await loadRequiredDrums(
-						getDrumPatternKeys(
-							meta.drum,
-							resolveDrumPatterns(
-								playOpts.drumPatterns ?? options.drumPatterns,
-							),
-						),
-					);
-				}
+				await song.prepareAudio();
 				await userOnResumeAudio?.();
 			},
 		});

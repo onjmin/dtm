@@ -10,6 +10,7 @@ import {
 import { icon } from "./icons";
 import { copyToClipboard, encodeMml } from "./mml-player";
 import { SoundFont } from "./sf/SoundFont";
+import { DEFAULT_SOUNDFONT_BANK } from "./soundfont-banks";
 import { injectStyles } from "./styles";
 import { createSynth } from "./synth";
 import { pitchV1ToUnits, type Units, unitsToMidiDetune } from "./tuning";
@@ -28,7 +29,8 @@ const SECTION_COLOR_LIST = [
 	{ fg: "#ffa300", bg: "#1a0d00", border: "#ffa300" }, // orange
 ];
 
-const SOUNDFONT_NAME = "FluidR3_GM_sf2_file";
+/** コード再生は音源バンクを選ばない（常に既定の FluidR3 GM）。 */
+const SOUNDFONT_NAME = DEFAULT_SOUNDFONT_BANK;
 
 /**
  * `#tone=<名前>` で指定できる音色プリセット。

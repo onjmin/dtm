@@ -486,7 +486,8 @@
             }
         };
 
-        // 保存済みドラムパターンを（再）マウント後のDAWへ復元する（"なし"はMMLに乗らないため明示復元）。
+        // 保存済みドラムパターンを（再）マウント後のDAWへ復元する。曲を読み込まずにマウントしたとき用
+        // （MML読込時は、その曲のドラム——#drum が無ければ「なし」——が onDrumChange で先に保存される）。
         const restoreDrum = () => {
             const saved = readStored(DRUM_STORAGE_KEY);
             if (saved) daw.setDrum(saved);

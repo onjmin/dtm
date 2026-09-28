@@ -43,6 +43,7 @@ import { buildUI } from "./daw-ui";
 import type { DelayDivision } from "./delay";
 import {
 	DRUM_PATTERNS,
+	drumPatternForFullLoad,
 	getDrumPatternKeys,
 	normalizeDrumPatterns,
 	resolveDrumPattern,
@@ -88,6 +89,11 @@ import {
 	transposeNotes,
 } from "./macros";
 import {
+	type MasterFxSettings,
+	masterFxFromMeta,
+	masterFxToMeta,
+} from "./master-fx";
+import {
 	analyzeMidiTracks,
 	buildDrumPatternJson,
 	exportMIDI as exportMIDIBlob,
@@ -123,6 +129,11 @@ import {
 	type Sequencer,
 } from "./sequencer";
 import { SONG_DRUM_PATTERNS } from "./song-drum-config";
+import {
+	SOUNDFONT_BANKS,
+	soundFontBankShortName,
+	trackSoundFontValue,
+} from "./soundfont-banks";
 import { injectStyles, showLoadingOverlay } from "./styles";
 import {
 	DAW_TOUR_BRANCHES,
@@ -1328,6 +1339,11 @@ type TrackState = {
 	/** トラック個別の楽器名（GM楽器名）。空文字でプリセット適用 */
 	trackInstrument: string;
 	/**
+	 * トラック個別の旋律楽器の音源バンク（正式名。例 `GeneralUserGS_sf2_file`）。
+	 * 空文字で既定（FluidR3 GM）。`#t<n>font=` と往復する（{@link file://./soundfont-banks.ts}）。
+	 */
+	trackFont: string;
+	/**
 	 * 「作曲」がこのトラックへ割り当てた音色スロット（{@link buildAdvancedLayers}）。
 	 *
 	 * おまかせマスタリングは演奏内容から役割を推定するが、間奏のソロやサビ専用の重ねは「音の
@@ -1563,11 +1579,53 @@ export const mountDAW = (
 			t.core.endBatch();
 		}
 	};
-	let reverbAmount = options.reverbAmount ?? 0;
-	let reverbDecay = options.reverbDecay ?? DEFAULT_REVERB_DECAY_SEC;
-	let reverbPreDelay = options.reverbPreDelay ?? DEFAULT_REVERB_PREDELAY_MS;
-	let delayAmount = options.delayAmount ?? 0;
-	let delayDivision: DelayDivision = options.delayDivision ?? "8";
+	// マスタリバーブ／ディレイの初期値。全体読み込みで曲に書かれていない項目もここへ戻す
+	// （再生専用プレイヤーの masterFxFromMeta と同じ規則。前の曲の値を持ち越さない）。
+	const dawDefaultMasterFx: MasterFxSettings = {
+		reverbAmount: options.reverbAmount ?? 0,
+		reverbDecaySec: options.reverbDecay ?? DEFAULT_REVERB_DECAY_SEC,
+		reverbPreDelayMs: options.reverbPreDelay ?? DEFAULT_REVERB_PREDELAY_MS,
+		delayAmount: options.delayAmount ?? 0,
+		delayDivision: options.delayDivision ?? "8",
+	};
+	let reverbAmount = dawDefaultMasterFx.reverbAmount;
+	let reverbDecay = dawDefaultMasterFx.reverbDecaySec;
+	let reverbPreDelay = dawDefaultMasterFx.reverbPreDelayMs;
+	let delayAmount = dawDefaultMasterFx.delayAmount;
+	let delayDivision: DelayDivision = dawDefaultMasterFx.delayDivision;
+	/** 今のマスタリバーブ／ディレイ（書き出し用）。 */
+	const currentMasterFx = (): MasterFxSettings => ({
+		reverbAmount,
+		reverbDecaySec: reverbDecay,
+		reverbPreDelayMs: reverbPreDelay,
+		delayAmount,
+		delayDivision,
+	});
+	/**
+	 * マスタリバーブ／ディレイを一式まとめて差し替え、スライダー・ラベルと
+	 * コールバック（studio のリバーブ・ディレイ）へ流す。全項目を必ず上書きする。
+	 */
+	const setMasterFx = (fx: MasterFxSettings): void => {
+		reverbAmount = fx.reverbAmount;
+		refs.reverbAmount.value = String(reverbAmount);
+		refs.reverbAmountLabel.textContent = `${reverbAmount}%`;
+		options.onReverbChange?.(reverbAmount);
+		reverbDecay = fx.reverbDecaySec;
+		refs.reverbDecay.value = String(Math.round(reverbDecay * 10));
+		refs.reverbDecayLabel.textContent = `${reverbDecay.toFixed(1)}s`;
+		options.onReverbDecayChange?.(reverbDecay);
+		reverbPreDelay = fx.reverbPreDelayMs;
+		refs.reverbPreDelay.value = String(reverbPreDelay);
+		refs.reverbPreDelayLabel.textContent = `${reverbPreDelay}ms`;
+		options.onReverbPreDelayChange?.(reverbPreDelay);
+		delayAmount = fx.delayAmount;
+		refs.delayAmount.value = String(delayAmount);
+		refs.delayAmountLabel.textContent = `${delayAmount}%`;
+		options.onDelayChange?.(delayAmount);
+		delayDivision = fx.delayDivision;
+		refs.delayDivision.value = delayDivision;
+		options.onDelayDivisionChange?.(delayDivision);
+	};
 	let masterCompression = options.masterCompression ?? 0;
 	let fadeInSec = options.fadeInSec ?? 0;
 	let fadeOutSec = options.fadeOutSec ?? 0;
@@ -1924,6 +1982,7 @@ export const mountDAW = (
 				vocalOctaveUnison:
 					(t1?.vocalOctaveUnison as OctaveUnisonMode) ?? "none",
 				trackInstrument: t1?.trackInstrument ?? "",
+				trackFont: "",
 				composeSlot: null,
 				trackCompression: t1?.trackCompression ?? 0,
 				trackWidth: t1?.trackWidth ?? 100,
@@ -3756,6 +3815,10 @@ export const mountDAW = (
           <option value="up">上 (+1oct)</option>
           <option value="both">上下両方</option>
         </select>
+        <div class="dtm-row dtm-grow" style="flex-wrap:nowrap">
+          <span class="dtm-label">音源</span>
+          <select class="dtm-select dtm-grow" data-dtm="track-font" aria-label="このトラックの楽器を鳴らす音源（同じ楽器を別の音源データで鳴らす）" title="音源"></select>
+        </div>
       </div>
       <details class="dtm-advanced" data-dtm="track-fx-advanced" ${trackFxAdvancedOpen ? "open" : ""}>
         <summary>詳細設定（EQ・音圧・ステレオ幅）</summary>
@@ -4088,6 +4151,36 @@ export const mountDAW = (
 		unisonSel.addEventListener("change", () => {
 			active.trackOctaveUnison = unisonSel.value as OctaveUnisonMode;
 			persistTrack1(active);
+		});
+
+		// 音源バンク。楽器（個別指定かプリセット）はそのままに、同じGM番号を別の音源データで
+		// 鳴らす（`#t<n>font=` と往復）。歌詞トラックは声が楽器を置き換えるので、この行ごと隠れる。
+		const fontSel = refs.trackBody.querySelector(
+			'[data-dtm="track-font"]',
+		) as HTMLSelectElement;
+		for (const bank of SOUNDFONT_BANKS) {
+			const o = document.createElement("option");
+			o.value = trackSoundFontValue(bank.name);
+			o.textContent = bank.label;
+			fontSel.appendChild(o);
+		}
+		// 一覧に無いバンク（MMLに直接書かれたもの）も、選択欄に足して消さずに見せる。
+		if (
+			active.trackFont &&
+			!SOUNDFONT_BANKS.some((b) => b.name === active.trackFont)
+		) {
+			const o = document.createElement("option");
+			o.value = active.trackFont;
+			o.textContent = soundFontBankShortName(active.trackFont);
+			fontSel.appendChild(o);
+		}
+		fontSel.value = active.trackFont;
+		fontSel.addEventListener("change", () => {
+			active.trackFont = fontSel.value;
+			options.onTrackFontChange?.(
+				trackStates.indexOf(active),
+				active.trackFont,
+			);
 		});
 
 		// 歌詞エディタ（全トラック共通）。歌唱モデルのプルダウン既定「なし」が無効状態を兼ねる。
@@ -4741,6 +4834,8 @@ export const mountDAW = (
 
 		// トラック個別楽器（空＝デフォルト/プリセットは出力しない）
 		const trackInstrumentsForMeta: Record<number, string> = {};
+		// トラック個別の音源バンク（空＝既定の FluidR3 は出力しない）
+		const trackFontsForMeta: Record<number, string> = {};
 		const trackCompressionForMeta: Record<number, number> = {};
 		const trackWidthForMeta: Record<number, number> = {};
 		const trackReverbSendForMeta: Record<number, number> = {};
@@ -4751,6 +4846,7 @@ export const mountDAW = (
 		const trackDelaySendForMeta: Record<number, number> = {};
 		trackStates.forEach((t, i) => {
 			if (t.trackInstrument) trackInstrumentsForMeta[i] = t.trackInstrument;
+			if (t.trackFont) trackFontsForMeta[i] = t.trackFont;
 			if (t.trackCompression !== 0)
 				trackCompressionForMeta[i] = t.trackCompression;
 			if (t.trackWidth !== 100) trackWidthForMeta[i] = t.trackWidth;
@@ -4766,6 +4862,8 @@ export const mountDAW = (
 			Object.keys(trackInstrumentsForMeta).length > 0
 				? trackInstrumentsForMeta
 				: undefined;
+		const trackFontMeta =
+			Object.keys(trackFontsForMeta).length > 0 ? trackFontsForMeta : undefined;
 		const trackCompMeta =
 			Object.keys(trackCompressionForMeta).length > 0
 				? trackCompressionForMeta
@@ -4792,7 +4890,8 @@ export const mountDAW = (
 				: undefined;
 
 		// トップレベル宣言（楽器プリセット・ドラムパターン・全体音量・リバーブ・モード）。
-		// トラックとは1対1でなく曲全体に効く。既定/未設定（楽器=空, ドラム="none"）の項目は出力しない。
+		// トラックとは1対1でなく曲全体に効く。既定/未設定（楽器=空 等）の項目は出力しない
+		// （ドラムの「なし」だけは `#drum=none` と明示する）。
 		const metaLineFull = formatMmlMeta(
 			{
 				// **書き出したバージョンを残す。** 自動作曲の素材は外部コーパスから
@@ -4800,15 +4899,13 @@ export const mountDAW = (
 				// 是正できない。台帳は `docs/dataset-provenance.md`。
 				version: DTM_VERSION,
 				instrument: currentInstrument || undefined,
-				drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
+				// 「なし」も `#drum=none` と明示して書く。省略すると、読み込んだ側の DAW が
+				// 前から選んでいたドラム（既定のダンス等）を残し得るため（往復で「なし」を保つ）。
+				drum: currentDrumPattern || undefined,
 				drumFont: currentDrumFont,
 				volume: masterVolume,
 				drumVolume: drumVolume,
-				reverb: reverbAmount,
-				reverbDecay: Math.round(reverbDecay * 10),
-				reverbPreDelay: reverbPreDelay,
-				delay: delayAmount,
-				delayDivision: delayDivision,
+				...masterFxToMeta(currentMasterFx()),
 				masterCompression: masterCompression,
 				fadeIn: Math.round(fadeInSec * 10),
 				fadeOut: Math.round(fadeOutSec * 10),
@@ -4824,6 +4921,7 @@ export const mountDAW = (
 				audioOffset: backing.offsetSec || undefined,
 				audioVolume: backing.volume,
 				trackInstruments: trackInstMeta,
+				trackFonts: trackFontMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
 				trackReverbSend: trackReverbSendMeta,
@@ -4841,15 +4939,13 @@ export const mountDAW = (
 				// 辿れないファイルを作らない**ほうが、12文字より重い。
 				version: DTM_VERSION,
 				instrument: currentInstrument || undefined,
-				drum: currentDrumPattern !== "none" ? currentDrumPattern : undefined,
+				// 「なし」も `#drum=none` と明示して書く。省略すると、読み込んだ側の DAW が
+				// 前から選んでいたドラム（既定のダンス等）を残し得るため（往復で「なし」を保つ）。
+				drum: currentDrumPattern || undefined,
 				drumFont: currentDrumFont,
 				volume: masterVolume,
 				drumVolume: drumVolume,
-				reverb: reverbAmount,
-				reverbDecay: Math.round(reverbDecay * 10),
-				reverbPreDelay: reverbPreDelay,
-				delay: delayAmount,
-				delayDivision: delayDivision,
+				...masterFxToMeta(currentMasterFx()),
 				masterCompression: masterCompression,
 				fadeIn: Math.round(fadeInSec * 10),
 				fadeOut: Math.round(fadeOutSec * 10),
@@ -4865,6 +4961,7 @@ export const mountDAW = (
 				audioOffset: backing.offsetSec || undefined,
 				audioVolume: backing.volume,
 				trackInstruments: trackInstMeta,
+				trackFonts: trackFontMeta,
 				trackCompression: trackCompMeta,
 				trackWidth: trackWidthMeta,
 				trackReverbSend: trackReverbSendMeta,
@@ -5119,13 +5216,17 @@ export const mountDAW = (
 				refs.drumFontSelect.value = meta.drumFont;
 				options.onDrumFontChange?.(meta.drumFont);
 			}
-			if (meta.drum && drumPatterns[meta.drum]) {
-				currentDrumPattern = meta.drum;
-				refs.drumSelect.value = meta.drum;
-				options.onDrumChange?.(meta.drum);
+			// ドラム。`#drum` が無い／`none` の曲は「なし」にする（再生専用プレイヤーと揃える）。
+			// 既定のダンスを残すと、ドラム無しの曲にビートが付いて鳴り、書き出すと
+			// `#drum=dance` まで付いてしまう。辞書に無い名前は従来どおり今の選択を変えない。
+			const nextDrum = drumPatternForFullLoad(meta.drum, drumPatterns);
+			if (nextDrum !== null) {
+				currentDrumPattern = nextDrum;
+				refs.drumSelect.value = nextDrum;
+				options.onDrumChange?.(nextDrum);
 				// 古いMML（#drumfont=を含まない）を読み込む場合のフォールバック。
 				// 明示的な #drumfont= があればそちらを優先し、ここでは上書きしない。
-				if (!meta.drumFont) applyDrumPatternFont(meta.drum);
+				if (!meta.drumFont) applyDrumPatternFont(nextDrum);
 			}
 			if (meta.volume !== undefined) {
 				applyMasterVolume(meta.volume);
@@ -5141,38 +5242,11 @@ export const mountDAW = (
 				refs.drumVolume.value = String(meta.drumVolume);
 				refs.drumVolumeLabel.textContent = `${drumVolume}%`;
 			}
-			if (meta.reverb !== undefined) {
-				reverbAmount = meta.reverb;
-				refs.reverbAmount.value = String(meta.reverb);
-				refs.reverbAmountLabel.textContent = `${meta.reverb}%`;
-				options.onReverbChange?.(meta.reverb);
-			}
-			if (meta.reverbDecay !== undefined) {
-				reverbDecay = meta.reverbDecay / 10;
-				refs.reverbDecay.value = String(meta.reverbDecay);
-				refs.reverbDecayLabel.textContent = `${reverbDecay.toFixed(1)}s`;
-				options.onReverbDecayChange?.(reverbDecay);
-			}
-			if (meta.reverbPreDelay !== undefined) {
-				reverbPreDelay = meta.reverbPreDelay;
-				refs.reverbPreDelay.value = String(meta.reverbPreDelay);
-				refs.reverbPreDelayLabel.textContent = `${meta.reverbPreDelay}ms`;
-				options.onReverbPreDelayChange?.(reverbPreDelay);
-			}
-			if (meta.delay !== undefined) {
-				delayAmount = meta.delay;
-				refs.delayAmount.value = String(meta.delay);
-				refs.delayAmountLabel.textContent = `${meta.delay}%`;
-				options.onDelayChange?.(meta.delay);
-			}
-			if (
-				meta.delayDivision &&
-				["4", "8", "8d", "16"].includes(meta.delayDivision)
-			) {
-				delayDivision = meta.delayDivision as DelayDivision;
-				refs.delayDivision.value = delayDivision;
-				options.onDelayDivisionChange?.(delayDivision);
-			}
+			// マスタリバーブ／ディレイ。書かれていない項目は DAW の初期値へ戻す
+			// （再生専用プレイヤーと同じ masterFxFromMeta の規則）。書かれた項目だけ更新すると、
+			// 前の曲や「おまかせ」の値が残り、書き出しの `#reverb=…` として投稿に乗る
+			// （0 は書き出しで省かれるので、リバーブ無しの曲を読み込み直しても戻らなかった）。
+			setMasterFx(masterFxFromMeta(meta, dawDefaultMasterFx));
 			if (meta.masterCompression !== undefined) {
 				masterCompression = meta.masterCompression;
 				refs.masterComp.value = String(meta.masterCompression);
@@ -5225,6 +5299,12 @@ export const mountDAW = (
 			if (t.trackInstrument !== name) {
 				t.trackInstrument = name;
 				options.onTrackInstrumentChange?.(i, name);
+			}
+			// 音源バンク（`#t<n>font=`）。書かれていなければ既定（FluidR3）へ戻す。
+			const font = trackSoundFontValue(meta.trackFonts?.[i]);
+			if (t.trackFont !== font) {
+				t.trackFont = font;
+				options.onTrackFontChange?.(i, font);
 			}
 		});
 		// トラック個別の音圧強化・ステレオ幅を復元する

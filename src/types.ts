@@ -517,6 +517,12 @@ export type DawOptions = {
 		instrumentName: string,
 	) => void;
 	/**
+	 * トラックごとの旋律楽器の音源バンクが変化したときに呼ばれる（ユーザー操作・MML読み込みの両方）。
+	 * `trackIndex` は @n の n と同じトラック番号。`font` は音源バンクの正式名
+	 * （例 `GeneralUserGS_sf2_file`。空文字は既定＝FluidR3 GM）。`#t<n>font=` と往復する。
+	 */
+	onTrackFontChange?: (trackIndex: number, font: string) => void;
+	/**
 	 * トラック単位のコンプレッサー（音圧強化）量 0-100 が変化したときに呼ばれる。
 	 * `trackId` は演奏トラックのID（歌詞トラックと同じIDを共有していれば同じ処理が掛かる）。
 	 * 実際の音声処理は呼び出し側（studio）が担う。

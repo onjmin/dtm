@@ -149,6 +149,8 @@ export * from "./piano-roll";
 export * from "./pinyin";
 export * from "./renderer";
 export * from "./sequencer";
+// 旋律楽器の音源バンク（`#t<n>font=`）の一覧・正規化
+export * from "./soundfont-banks";
 // 語り（歌詞の「…」）— UtauTTS の計画器とプレビュー用ヘルパ
 export * from "./speech";
 // 単発の語り（speak）で遅れて届いたチャンクの扱い（SpeakVoiceOptions.lateChunks）
