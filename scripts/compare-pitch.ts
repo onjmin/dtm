@@ -12,9 +12,9 @@
  * 3. 使う材料     … 音域・使用音数・オクターブ跳躍
  */
 
-import { composeSong } from "../src/compose";
-import type { MetricNote } from "../src/compose-metrics";
-import { UNITS_PER_SEMITONE } from "../src/tuning";
+import { composeSong } from "../src/compose/compose";
+import type { MetricNote } from "../src/compose/compose-metrics";
+import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
 import {
 	channelNotes,
 	collectFromDir,

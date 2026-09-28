@@ -14,9 +14,9 @@
  *   - 「直前の小節の3割以下に落ちる」段差の割合
  */
 
-import { composeSong } from "../src/compose";
-import type { MetricNote } from "../src/compose-metrics";
-import { UNITS_PER_SEMITONE } from "../src/tuning";
+import { composeSong } from "../src/compose/compose";
+import type { MetricNote } from "../src/compose/compose-metrics";
+import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
 import {
 	channelNotes,
 	collectFromDir,

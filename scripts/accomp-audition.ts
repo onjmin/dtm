@@ -37,24 +37,24 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { composeAccomp, parseAccompCompose } =
-	require("../src/compose-accomp") as typeof import("../src/compose-accomp");
+	require("../src/compose/compose-accomp") as typeof import("../src/compose/compose-accomp");
 const { accompStyleById } =
-	require("../src/accomp-styles/index") as typeof import("../src/accomp-styles/index");
+	require("../src/compose/accomp-styles/index") as typeof import("../src/compose/accomp-styles/index");
 const { accompToMml } =
-	require("../src/compose-accomp-mml") as typeof import("../src/compose-accomp-mml");
+	require("../src/compose/compose-accomp-mml") as typeof import("../src/compose/compose-accomp-mml");
 const { accompGates, accompRegionMetrics } =
-	require("../src/compose-accomp-check") as typeof import("../src/compose-accomp-check");
+	require("../src/compose/compose-accomp-check") as typeof import("../src/compose/compose-accomp-check");
 const { candidateStreams, drawSeed, fbPlan } =
-	require("../src/compose-accomp-plan") as typeof import("../src/compose-accomp-plan");
+	require("../src/compose/compose-accomp-plan") as typeof import("../src/compose/compose-accomp-plan");
 const { realizeAccomp } =
-	require("../src/compose-accomp-realize") as typeof import("../src/compose-accomp-realize");
+	require("../src/compose/compose-accomp-realize") as typeof import("../src/compose/compose-accomp-realize");
 const { seededRandom } =
-	require("../src/compose") as typeof import("../src/compose");
+	require("../src/compose/compose") as typeof import("../src/compose/compose");
 const { FB_METRICS } =
 	require("./fixtures/accomp-fb-plan") as typeof import("./fixtures/accomp-fb-plan");
 
-type AccompSong = import("../src/compose-accomp").AccompSong;
-type AccompRealized = import("../src/compose-accomp-realize").AccompRealized;
+type AccompSong = import("../src/compose/compose-accomp").AccompSong;
+type AccompRealized = import("../src/compose/compose-accomp-realize").AccompRealized;
 
 const argv = process.argv.slice(2);
 const argOf = (name: string): string | undefined => {
@@ -309,7 +309,7 @@ const questions: string[] = [
 	"",
 	"**1日に聴くのは3本まで**（1本2分半〜3分）。陽性対照の日と生成曲の日を分ける（`docs/accomp-compose.md` §12.7）。",
 	"目隠しの A/B や順位付けはしない。回答は `docs/accomp-reviews.md` に記録し、挙がった「直す場所」を",
-	"表（`src/compose-accomp-tables.ts`）のどの行かに対応づける。",
+	"表（`src/compose/compose-accomp-tables.ts`）のどの行かに対応づける。",
 	"",
 ];
 if (fbEntry)

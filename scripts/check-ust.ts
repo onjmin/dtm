@@ -11,15 +11,15 @@
  * 表現できないため、和音を出力したときに1本へ潰れることも併せて見る。
  */
 
-import { pinyinToMoras } from "../src/pinyin";
-import { pitchV1ToUnits } from "../src/tuning";
+import { pinyinToMoras } from "../src/voice/pinyin";
+import { pitchV1ToUnits } from "../src/audio/tuning";
 import type { Note } from "../src/types";
 import {
 	buildUst,
 	decodeUstText,
 	looksLikePinyin,
 	parseUst,
-} from "../src/ust-io";
+} from "../src/io/ust-io";
 
 let failed = 0;
 const check = (label: string, got: unknown, expect: unknown): void => {

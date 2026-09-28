@@ -1,0 +1,652 @@
+import { LinkedList } from "../linked-list";
+import { chordVelocity, effectiveVelocity } from "./mml-velocity";
+import { UNITS_PER_SEMITONE, type Units, units } from "../audio/tuning";
+import type {
+	AddNoteOptions,
+	CoreEventHandlers,
+	Note,
+	RenderConfig,
+} from "../types";
+import { DEFAULT_VELOCITY } from "../types";
+
+/**
+ * 和音を書き出すときの囲み記号。
+ *
+ * 読み込みは `[ceg]4`（FlMML）・`'ceg'4`（サクラ）・`"ceg"4` の3通りを受けるが、
+ * **書き出しはシングルクォート**に統一する。`[ ]` はサクラ系では繰り返しの記号なので、
+ * 大カッコで書き出すと、あちらへ貼ったときに和音ではなくループとして読まれる。
+ * 書き出しを変えるときはこの2つだけを触れば足りる（{@link MMLCore.generateMML}）。
+ */
+const CHORD_OPEN = "'";
+const CHORD_CLOSE = "'";
+
+export const PITCH_MAP = [
+	"c",
+	"c+",
+	"d",
+	"d+",
+	"e",
+	"f",
+	"f+",
+	"g",
+	"g+",
+	"a",
+	"a+",
+	"b",
+];
+
+/**
+ * 31平均律の綴り表（度数0〜30）。
+ *
+ * 五度連鎖の伝統的綴りを基本にしつつ、重複臨時記号（`##`／`--`）を要する度数だけ
+ * 微分音記号（`+`／`_`）の短縮形を採る。結果として全31度が2文字以内に収まる。
+ * どの綴りもオクターブを跨がないものを選んであるので、`o<n>` の直後に置ける
+ * （たとえば29度は `c-` ではなく `b+`。`c-` はCの2度下＝前オクターブになってしまう）。
+ */
+export const EDO31_NAMES = [
+	"c",
+	"c+",
+	"c#",
+	"d-",
+	"d_",
+	"d",
+	"d+",
+	"d#",
+	"e-",
+	"e_",
+	"e",
+	"f-",
+	"e#",
+	"f",
+	"f+",
+	"f#",
+	"g-",
+	"g_",
+	"g",
+	"g+",
+	"g#",
+	"a-",
+	"a_",
+	"a",
+	"a+",
+	"a#",
+	"b-",
+	"b_",
+	"b",
+	"b+",
+	"b#",
+];
+
+/**
+ * ノートデータ管理とMML生成の責務を持つDOM非依存のコアロジック
+ */
+export class MMLCore {
+	private notes: Note[] = [];
+	private nextNoteId: number = 0;
+	private handlers: CoreEventHandlers;
+	private volume: number = 80;
+	private tempo: number = 120;
+	private history: LinkedList<Note[]> = new LinkedList();
+	private isUndoRedo: boolean = false;
+	public isBatchOperation: boolean = false;
+	private lastHistorySnapshot: string = "[]";
+	private lastUndoTime: number = 0;
+	private static readonly UNDO_DEBOUNCE_MS = 100;
+	private toolMode: "pen" | "select" | "eraser" = "pen";
+	/** グリッド寸法の供給元（描画器ではなく呼び出し側が持つ設定を読む） */
+	private getConfig: () => RenderConfig;
+
+	constructor(
+		handlers: CoreEventHandlers,
+		volume: number = 80,
+		getConfig: () => RenderConfig,
+	) {
+		this.handlers = handlers;
+		this.volume = volume;
+		this.getConfig = getConfig;
+		this.lastHistorySnapshot = JSON.stringify(this.notes);
+		this.history.add([]);
+		this.generateAndNotify();
+	}
+
+	public beginBatch(): void {
+		this.isBatchOperation = true;
+	}
+
+	public endBatch(): void {
+		this.isBatchOperation = false;
+		this.saveHistory();
+	}
+
+	public saveHistory(): void {
+		if (this.isUndoRedo || this.isBatchOperation) {
+			return;
+		}
+		const snapshot = JSON.stringify(this.notes);
+		if (snapshot === this.lastHistorySnapshot) {
+			return;
+		}
+		this.lastHistorySnapshot = snapshot;
+		this.history.add(JSON.parse(snapshot));
+	}
+
+	private restoreHistory(notes: Note[] | null): boolean {
+		if (notes === null) return false;
+		this.isUndoRedo = true;
+		this.notes = JSON.parse(JSON.stringify(notes));
+		this.nextNoteId =
+			this.notes.length > 0 ? Math.max(...this.notes.map((n) => n.id)) + 1 : 0;
+		this.lastHistorySnapshot = JSON.stringify(this.notes);
+		this.generateAndNotify();
+		this.isUndoRedo = false;
+		return true;
+	}
+
+	public undo(): boolean {
+		const now = Date.now();
+		if (now - this.lastUndoTime < MMLCore.UNDO_DEBOUNCE_MS) {
+			return false;
+		}
+		this.lastUndoTime = now;
+		return this.restoreHistory(this.history.undo());
+	}
+
+	public redo(): boolean {
+		const now = Date.now();
+		if (now - this.lastUndoTime < MMLCore.UNDO_DEBOUNCE_MS) {
+			return false;
+		}
+		this.lastUndoTime = now;
+		return this.restoreHistory(this.history.redo());
+	}
+
+	public canUndo(): boolean {
+		return this.history.canUndo();
+	}
+
+	public canRedo(): boolean {
+		return this.history.canRedo();
+	}
+
+	public setToolMode(mode: "pen" | "select" | "eraser"): void {
+		this.toolMode = mode;
+	}
+
+	public getToolMode(): "pen" | "select" | "eraser" {
+		return this.toolMode;
+	}
+
+	public resetHistory(): void {
+		this.history = new LinkedList();
+		this.history.add([]);
+		this.lastHistorySnapshot = JSON.stringify(this.notes);
+	}
+
+	public addHistoryOnce(): void {
+		this.lastHistorySnapshot = "[]";
+		this.saveHistory();
+	}
+
+	public clearNotesWithoutHistory(): void {
+		this.notes = [];
+		this.nextNoteId = 0;
+		this.lastHistorySnapshot = "[]";
+	}
+
+	public setLoadMode(mode: boolean): void {
+		this.isUndoRedo = mode;
+	}
+
+	// ============== ノート編集 (外部API) ==============
+
+	/**
+	 * 指定されたグリッド位置にノートを追加する操作
+	 * @param step ステップ位置
+	 * @param pitch ピッチ番号
+	 * @param options ノート長などの設定
+	 */
+	public addNote(step: number, pitch: Units, options: AddNoteOptions): void {
+		const existingIndex = this.notes.findIndex(
+			(n) => n.startStep === step && n.pitchUnits === pitch,
+		);
+
+		if (existingIndex === -1) {
+			const newNote: Note = {
+				id: this.nextNoteId++,
+				startStep: step,
+				durationSteps: options.noteLengthSteps,
+				pitchUnits: pitch,
+				velocity: options.velocity ?? DEFAULT_VELOCITY,
+			};
+			this.notes.push(newNote);
+		}
+
+		this.notes.sort((a, b) => a.startStep - b.startStep);
+
+		this.saveHistory();
+		this.generateAndNotify();
+	}
+
+	public deleteNoteById(noteId: number): void {
+		const index = this.notes.findIndex((n) => n.id === noteId);
+		if (index !== -1) {
+			this.notes.splice(index, 1);
+			this.saveHistory();
+			this.generateAndNotify();
+		}
+	}
+
+	private getMaxStep(): number {
+		if (this.notes.length === 0) return 0;
+		// 16分音符グリッドにスナップ
+		const stepsPer16th = 12;
+		const maxRaw = Math.max(
+			...this.notes.map((n) => n.startStep + n.durationSteps),
+		);
+		return Math.ceil(maxRaw / stepsPer16th) * stepsPer16th;
+	}
+
+	public moveNote(noteId: number, startStep: number, pitch: Units): void {
+		const note = this.notes.find((target) => target.id === noteId);
+		if (!note) return;
+
+		const totalSteps = this.getMaxStep() + this.getConfig().stepsPerBar;
+		const cfg = this.getConfig();
+		// keyCount は行数なので、units へ戻すには1行あたりのピッチ幅を掛ける。
+		const upr = cfg.unitsPerRow ?? UNITS_PER_SEMITONE;
+		const pitchRangeStart = cfg.pitchRangeStart;
+		const pitchRangeEnd = pitchRangeStart + (cfg.keyCount - 1) * upr;
+
+		const clampedPitch = units(
+			Math.min(Math.max(pitch, pitchRangeStart), pitchRangeEnd),
+		);
+		const clampedStart = Math.min(
+			Math.max(startStep, 0),
+			totalSteps - note.durationSteps,
+		);
+
+		note.startStep = clampedStart;
+		note.pitchUnits = clampedPitch;
+		this.notes.sort((a, b) => a.startStep - b.startStep);
+
+		this.generateAndNotify();
+	}
+
+	public moveNoteEnd(_: number): void {
+		this.saveHistory();
+	}
+
+	public resizeNote(noteId: number, durationSteps: number): void {
+		const note = this.notes.find((target) => target.id === noteId);
+		if (!note) return;
+
+		const clampedDuration = Math.max(1, durationSteps);
+		note.durationSteps = clampedDuration;
+		this.notes.sort((a, b) => a.startStep - b.startStep);
+
+		this.generateAndNotify();
+	}
+
+	public resizeNoteEnd(_: number): void {
+		this.saveHistory();
+	}
+
+	/**
+	 * 全ノートをまとめて時間方向へずらす（マクロの「シフト」用）。
+	 *
+	 * {@link moveNote} は「いまの曲の長さ＋1小節」でクランプするが、こちらはしない。
+	 * 曲の頭に無音を作る操作＝曲を伸ばす操作なので、いまの長さで頭打ちにすると
+	 * 大きくずらしたときにノートが末尾へ団子になってしまう。
+	 * 0より前へはみ出したノートは捨てる（従来のシフトと同じ）。
+	 */
+	public shiftAllNotes(steps: number): void {
+		if (steps === 0) return;
+		const kept: Note[] = [];
+		for (const note of this.notes) {
+			const startStep = note.startStep + steps;
+			if (startStep < 0) continue;
+			note.startStep = startStep;
+			kept.push(note);
+		}
+		this.notes = kept;
+		this.notes.sort((a, b) => a.startStep - b.startStep);
+		// シフト全体で1操作。ここで確定しないとUndoが直前の編集まで巻き戻る。
+		this.saveHistory();
+		this.generateAndNotify();
+	}
+
+	// ============== 状態取得 (外部API) ==============
+
+	public getNotes(): Note[] {
+		return this.notes;
+	}
+
+	public getMML(volumeOverride?: number): string {
+		return this.generateMML(volumeOverride);
+	}
+
+	// ============== 設定変更 (外部API) ==============
+
+	public setVolume(volume: number): void {
+		this.volume = volume;
+		this.generateAndNotify();
+	}
+
+	public setTempo(tempo: number): void {
+		this.tempo = tempo;
+		this.generateAndNotify();
+	}
+
+	// ============== 内部処理 ==============
+
+	private generateAndNotify(): void {
+		this.handlers.onNotesChanged([...this.notes]); // 変更されたノートデータを通知
+		const mml = this.generateMML();
+		this.handlers.onMMLGenerated(mml); // MML文字列を通知
+	}
+
+	/**
+	 * 近似値を許容して単一音符を決定する。
+	 * ただし、残りステップ(limit)は絶対に超えない。
+	 */
+	private stepsToMMLDuration(steps: number, limit: number): string {
+		const config = this.getConfig();
+		const total = config.stepsPerBar;
+
+		const candidates = [
+			{ dur: "1.", s: total * 1.5 }, // 付点全音符（最長。これ以上はタイ未対応のため表現不可）
+			{ dur: "1", s: total / 1 },
+			{ dur: "2.", s: (total / 2) * 1.5 },
+			{ dur: "2", s: total / 2 },
+			{ dur: "4.", s: (total / 4) * 1.5 },
+			{ dur: "4", s: total / 4 },
+			{ dur: "8.", s: (total / 8) * 1.5 },
+			{ dur: "8", s: total / 8 },
+			{ dur: "12", s: total / 12 },
+			{ dur: "16.", s: (total / 16) * 1.5 },
+			{ dur: "16", s: total / 16 },
+			{ dur: "24", s: total / 24 }, // 3連8分 (24step)
+			{ dur: "32", s: total / 32 },
+			{ dur: "64", s: total / 64 },
+		];
+
+		let bestDur = "64";
+		let minDiff = Infinity;
+
+		for (const cand of candidates) {
+			// 絶対条件: 小節の残り/次の音符までの距離(limit)を超えない
+			if (cand.s > limit) continue;
+
+			// 本来のステップ数(steps)との差分を計算
+			const diff = Math.abs(steps - cand.s);
+			if (diff < minDiff) {
+				minDiff = diff;
+				bestDur = cand.dur;
+			}
+		}
+
+		return bestDur;
+	}
+
+	/**
+	 * ギャップに収まる最大の音符を探す（減算アルゴリズム用）
+	 */
+	private findBestFitDuration(gap: number): { dur: number; steps: number } {
+		const config = this.getConfig();
+		const durations = [1, 2, 4, 8, 12, 16, 24, 32, 48, 64];
+
+		for (const d of durations) {
+			const stepLen = config.stepsPerBar / d;
+			if (gap >= stepLen) {
+				return { dur: d, steps: stepLen };
+			}
+		}
+
+		return { dur: 64, steps: config.stepsPerBar / 64 };
+	}
+
+	/** ピッチ(units) → その音律での「オクターブ番号」と「音名」。 */
+	private spell(pitchUnits: number): { octave: number; name: string } {
+		const edo = this.getConfig().edo ?? 12;
+		const names = edo === 31 ? EDO31_NAMES : PITCH_MAP;
+		const octave = Math.floor(pitchUnits / 372) - 1;
+		// 負のピッチでも剰余が負にならないようにする
+		const within = ((pitchUnits % 372) + 372) % 372;
+		const step = Math.round(within / (372 / edo));
+		return { octave, name: names[step % edo] };
+	}
+
+	/**
+	 * ピッチからオクターブ最適化のある音名を取得
+	 */
+	private getNoteWithOctave(
+		pitch: number,
+		lastOctave: number,
+	): { text: string; currentOctave: number } {
+		const { octave, name } = this.spell(pitch);
+
+		if (lastOctave === -1 || Math.abs(octave - lastOctave) >= 2) {
+			return { text: `o${octave}${name}`, currentOctave: octave };
+		}
+
+		if (octave === lastOctave) {
+			return { text: name, currentOctave: octave };
+		} else if (octave === lastOctave + 1) {
+			return { text: `>${name}`, currentOctave: octave };
+		} else if (octave === lastOctave - 1) {
+			return { text: `<${name}`, currentOctave: octave };
+		}
+
+		return { text: `o${octave}${name}`, currentOctave: octave };
+	}
+
+	/**
+	 * MML生成（単一パス・発音順スキャン）。
+	 *
+	 * 全ノートを発音順に一度で処理し、次の発音までの距離だけを上限として各音符の長さを忠実に
+	 * 出力する（次の音符がなければ曲末まで伸ばせる）。小節ウィンドウで走査すると、境界をまたぐ
+	 * 音符が切り詰められて「ぶつ切り」になり、歌詞（@@n）の音節割り当てもずれる。
+	 *
+	 * **強弱（v）**: 音符ごとに実効値 v = round(トラック音量 × velocity / 100) を求め
+	 * （`mml-velocity.ts`）、直前に出した v と違うときだけ音符の直前に `v<n>` を挟む。
+	 * 先頭の `v` は最初に書いた音符の v にする（全音符が既定の強さなら従来どおりトラック音量）。
+	 * したがって**全音符の velocity が100（未設定を含む）なら、出力は従来と1バイトも変わらない。**
+	 */
+	private generateMML = (volumeOverride?: number): string => {
+		const config = this.getConfig();
+		const vol = volumeOverride ?? this.volume;
+
+		const header = `t${this.tempo} v${vol}`;
+		const segments: string[] = [];
+		let lastOctave = -1;
+		let currentCursor = 0;
+
+		if (this.notes.length === 0) return header;
+
+		// 先頭の v が表す実効値。最初の音符がこれと違う v を持つときは、先頭の v をその値にする
+		// （`v100 v127 c` のように続けて2つ書かない）。既定の強さの音符ならトラック音量のまま。
+		const headerV = effectiveVelocity(vol);
+		let firstV: number | null = null;
+		let lastV = headerV;
+
+		// 末尾の余白は最後に到達する発音終端まで（最長ノートの末尾を採用）
+		const endStep = Math.max(
+			...this.notes.map((n) => n.startStep + n.durationSteps),
+		);
+
+		// 同一 startStep のノートをまとめる（和音）。発音開始位置の昇順で処理する
+		const notesByStep = new Map<number, Note[]>();
+		for (const n of this.notes) {
+			const list = notesByStep.get(n.startStep) ?? [];
+			list.push(n);
+			notesByStep.set(n.startStep, list);
+		}
+		const sortedSteps = Array.from(notesByStep.keys()).sort((a, b) => a - b);
+
+		const MIN_STEP = config.stepsPerBar / 64;
+
+		const fillRests = (until: number): void => {
+			// currentCursor は「実際に出力したトークンの合計ステップ数」と常に一致させる。
+			// 表現できる最小休符(64分=MIN_STEP)未満の端数はトークン化せず、カーソルも
+			// 進めずに残差として次回へ持ち越す。次の fillRests はこの残差を含んだ
+			// currentCursor からギャップを測り直すため、ずれが累積せず後続のタイミングが
+			// 早まっていくのを防げる（細かいリズムは近似、後続は不動）。
+			while (until - currentCursor >= MIN_STEP) {
+				const gap = until - currentCursor;
+				const { dur, steps } = this.findBestFitDuration(gap);
+				segments.push(`r${dur}`);
+				currentCursor += steps;
+			}
+		};
+
+		for (let i = 0; i < sortedSteps.length; i++) {
+			const startStep = sortedSteps[i];
+			const notes = notesByStep.get(startStep);
+			if (!notes) continue;
+
+			// この音符の発音開始位置まで休符で埋める
+			fillRests(startStep);
+
+			// 次の発音開始（無ければ曲末）までが、重ならずに伸ばせる物理的な上限
+			const nextStart = sortedSteps[i + 1] ?? endStep;
+			const physicsLimit = nextStart - currentCursor;
+
+			// 空き容量が最小単位未満なら、このノートは音価を表現できないので省略する。
+			// カーソルは動かさず（残差を持ち越し）、後続のタイミングをずらさない。
+			if (physicsLimit < MIN_STEP) {
+				continue;
+			}
+
+			// 理想の長さと物理的な限界を比較して音価を決める
+			const idealDuration = notes[0].durationSteps;
+			const durStr = this.stepsToMMLDuration(idealDuration, physicsLimit);
+			const actualStepGenerated = this.getStepFromDottedMML(durStr);
+
+			// 強弱。和音は v を1つしか持てないので構成音の最大で代表させる
+			const v = effectiveVelocity(vol, chordVelocity(notes));
+			if (firstV === null) {
+				firstV = v;
+				lastV = v;
+			} else if (v !== lastV) {
+				segments.push(`v${v}`);
+				lastV = v;
+			}
+
+			if (notes.length > 1) {
+				const noteStrs = notes.map((n) => {
+					const { octave: oct, name } = this.spell(n.pitchUnits);
+					return `o${oct}${name}`;
+				});
+				segments.push(
+					`${CHORD_OPEN}${noteStrs.join("")}${CHORD_CLOSE}${durStr}`,
+				);
+			} else {
+				const { text, currentOctave } = this.getNoteWithOctave(
+					notes[0].pitchUnits,
+					lastOctave,
+				);
+				segments.push(`${text}${durStr}`);
+				lastOctave = currentOctave;
+			}
+
+			currentCursor += actualStepGenerated;
+		}
+
+		// 末尾の余白
+		fillRests(endStep);
+
+		const head =
+			firstV === null || firstV === headerV
+				? header
+				: `t${this.tempo} v${firstV}`;
+		return `${head} ${segments.join(" ")}`;
+	};
+
+	/**
+	 * ノート配列を直接渡してMMLを生成する（一時的に内部状態を差し替えて生成後に復元）
+	 */
+	public getMMLFromNotes(
+		notes: Note[],
+		tempo?: number,
+		volume?: number,
+	): string {
+		const savedNotes = this.notes;
+		const savedTempo = this.tempo;
+		const savedVolume = this.volume;
+		this.notes = [...notes].sort((a, b) => a.startStep - b.startStep);
+		if (tempo !== undefined) this.tempo = tempo;
+		if (volume !== undefined) this.volume = volume;
+		const result = this.generateMML();
+		this.notes = savedNotes;
+		this.tempo = savedTempo;
+		this.volume = savedVolume;
+		return result;
+	}
+
+	/**
+	 * MMLの音長文字列（"4", "4.", "12"など）をステップ数に変換する
+	 */
+	private getStepFromDottedMML(durStr: string): number {
+		const config = this.getConfig();
+		const total = config.stepsPerBar; // 1小節の全ステップ数（例: 192）
+
+		// 付点があるかチェック
+		const isDotted = durStr.endsWith(".");
+		// 数値部分だけ取り出す（"4." -> 4, "8" -> 8）
+		const baseDur = parseInt(isDotted ? durStr.slice(0, -1) : durStr, 10);
+		const baseStep = total / baseDur;
+
+		// 付点なら1.5倍、そうでなければそのまま返す
+		return isDotted ? baseStep * 1.5 : baseStep;
+	}
+}
+
+/**
+ * 和音を含むノート配列を、各トラックが単音（モノフォニック）になるよう
+ * 最小トラック数に分解する（区間スケジューリング・グリーディ法）。
+ * 最小トラック数 = 任意の瞬間の最大同時発音数。
+ */
+export const decomposeToMonophonic = (notes: Note[]): Note[][] => {
+	const sorted = [...notes].sort(
+		(a, b) => a.startStep - b.startStep || a.pitchUnits - b.pitchUnits,
+	);
+	const tracks: Note[][] = [];
+	const trackEnds: number[] = [];
+
+	for (const note of sorted) {
+		let assigned = -1;
+		let minEnd = Infinity;
+		for (let i = 0; i < tracks.length; i++) {
+			if (trackEnds[i] <= note.startStep && trackEnds[i] < minEnd) {
+				minEnd = trackEnds[i];
+				assigned = i;
+			}
+		}
+		if (assigned === -1) {
+			tracks.push([note]);
+			trackEnds.push(note.startStep + note.durationSteps);
+		} else {
+			tracks[assigned].push(note);
+			trackEnds[assigned] = note.startStep + note.durationSteps;
+		}
+	}
+	return tracks;
+};
+
+/**
+ * ノート配列が「和音伴奏トラック」かどうかを判定する。
+ * 和音 = 同一 startStep に3音以上同時発音しているもの。
+ * そのような和音構成ノートの割合が threshold 以上であれば true。
+ * @param threshold 0〜1。デフォルト 0.6（60%以上が和音ノートならば伴奏トラック）
+ */
+export const isChordHeavyTrack = (notes: Note[], threshold = 0.6): boolean => {
+	if (notes.length < 3) return false;
+	const stepCounts = new Map<number, number>();
+	for (const n of notes) {
+		stepCounts.set(n.startStep, (stepCounts.get(n.startStep) ?? 0) + 1);
+	}
+	const chordNotes = notes.filter(
+		(n) => (stepCounts.get(n.startStep) ?? 0) >= 3,
+	).length;
+	return chordNotes / notes.length >= threshold;
+};

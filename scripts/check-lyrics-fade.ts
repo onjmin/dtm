@@ -12,7 +12,7 @@
  */
 import Module from "node:module";
 
-// `src/lyrics.ts` は歌唱合成エンジン @onjmin/koe を読む。あちらは WebAssembly と
+// `src/voice/lyrics.ts` は歌唱合成エンジン @onjmin/koe を読む。あちらは WebAssembly と
 // AudioWorklet 前提のブラウザ専用パッケージで、Node からは読み込めない（ESM専用の
 // exports なので require が通らない）。この検査が触るのは歌詞側の純粋なロジックだけ
 // なので、名前解決だけ空のスタブへ差し替えて中身を使わせない。
@@ -26,9 +26,9 @@ loader._load = (request, ...rest) =>
 
 // スタブを差し込んだ後に読む必要があるので、import 文ではなく require で取る。
 const { buildStreamVoiceNotes, normalizeLyrics } =
-	require("../src/lyrics") as typeof import("../src/lyrics");
-const { units } = require("../src/tuning") as typeof import("../src/tuning");
-type TieSourceNote = import("../src/lyrics").TieSourceNote;
+	require("../src/voice/lyrics") as typeof import("../src/voice/lyrics");
+const { units } = require("../src/audio/tuning") as typeof import("../src/audio/tuning");
+type TieSourceNote = import("../src/voice/lyrics").TieSourceNote;
 
 /** 1ステップ0.25秒（BPM120の16分音符相当）。実時間の細かさは結論に効かない。 */
 const SECONDS_PER_STEP = 0.25;

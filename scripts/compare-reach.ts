@@ -24,20 +24,20 @@
  * 個別の推測ではなく実測で順番を決めるためのもの。
  */
 
-import { composeSong } from "../src/compose";
+import { composeSong } from "../src/compose/compose";
 import {
 	CORPUS_BANDS,
 	CORPUS_NN_RADIUS,
 	CORPUS_PROFILE_KEYS,
-} from "../src/compose-corpus";
+} from "../src/compose/compose-corpus";
 import {
 	densityFeatures,
 	type MetricNote,
 	normalizeByBand,
 	profileDistance,
 	structureFeatures,
-} from "../src/compose-metrics";
-import { UNITS_PER_SEMITONE } from "../src/tuning";
+} from "../src/compose/compose-metrics";
+import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
 import {
 	channelNotes,
 	chromaticRatioOf,

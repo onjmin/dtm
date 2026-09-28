@@ -8,9 +8,9 @@
  */
 
 import { DOMParser } from "@xmldom/xmldom";
-import { composeSong } from "../src/compose";
-import { exportMusicXML, parseMusicXML } from "../src/musicxml-io";
-import { UNITS_PER_SEMITONE, type Units } from "../src/tuning";
+import { composeSong } from "../src/compose/compose";
+import { exportMusicXML, parseMusicXML } from "../src/io/musicxml-io";
+import { UNITS_PER_SEMITONE, type Units } from "../src/audio/tuning";
 import type { Note } from "../src/types";
 
 // biome-ignore lint/suspicious/noExplicitAny: Node には DOMParser が無いので差し込む

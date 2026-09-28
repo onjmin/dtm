@@ -14,8 +14,8 @@
  * 5. モデル規模 … 交差検証で、どこまで学習すると割に合うかを測る
  */
 
-import { composeSong, MOTIF_CELLS, RHYTHM_CELLS } from "../src/compose";
-import type { MetricNote } from "../src/compose-metrics";
+import { composeSong, MOTIF_CELLS, RHYTHM_CELLS } from "../src/compose/compose";
+import type { MetricNote } from "../src/compose/compose-metrics";
 import {
 	channelNotes,
 	collectFromDir,

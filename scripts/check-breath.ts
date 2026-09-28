@@ -13,7 +13,7 @@
  */
 import Module from "node:module";
 
-// `src/lyrics.ts` はブラウザ専用の @onjmin/koe を読むので、名前解決だけ空スタブへ差し替える
+// `src/voice/lyrics.ts` はブラウザ専用の @onjmin/koe を読むので、名前解決だけ空スタブへ差し替える
 // （check-lyrics-fade.ts と同じ手口）。
 type Loader = { _load: (request: string, ...rest: unknown[]) => unknown };
 const loader = Module as unknown as Loader;
@@ -30,9 +30,9 @@ const {
 	pickBreathAlias,
 	pickBreathSample,
 	breathPeakPosition,
-} = require("../src/lyrics") as typeof import("../src/lyrics");
-const { units } = require("../src/tuning") as typeof import("../src/tuning");
-type TieSourceNote = import("../src/lyrics").TieSourceNote;
+} = require("../src/voice/lyrics") as typeof import("../src/voice/lyrics");
+const { units } = require("../src/audio/tuning") as typeof import("../src/audio/tuning");
+type TieSourceNote = import("../src/voice/lyrics").TieSourceNote;
 type PhonemeEntry = import("@onjmin/koe").PhonemeEntry;
 
 let failed = 0;

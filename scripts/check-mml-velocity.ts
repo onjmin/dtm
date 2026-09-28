@@ -8,7 +8,7 @@
  * - DAW の読み込み … 全音符を既定値に戻し、トラック音量を**最後の v** にする
  * - 再生専用プレイヤー … トラック全体を**先頭の v** で平らにする
  *
- * 規則は `src/mml-velocity.ts` に1か所で置いた。DAW とプレイヤーは Node で読めないので、
+ * 規則は `src/mml/mml-velocity.ts` に1か所で置いた。DAW とプレイヤーは Node で読めないので、
  * 呼び出し側は1行にとどめ、その関数をここで検算する。
  *
  * 使い方: `npx tsx scripts/check-mml-velocity.ts [--file <MMLファイル>]`
@@ -20,7 +20,7 @@ import { existsSync, readFileSync } from "node:fs";
 import Module from "node:module";
 import { join } from "node:path";
 
-// `src/mml-parser.ts` は歌詞解析のために `src/lyrics.ts` を、その先で歌唱合成エンジン
+// `src/mml/mml-parser.ts` は歌詞解析のために `src/voice/lyrics.ts` を、その先で歌唱合成エンジン
 // @onjmin/koe（ブラウザ専用）を読む。ノート配置しか触らないので空のスタブへ。
 type Loader = { _load: (request: string, ...rest: unknown[]) => unknown };
 const loader = Module as unknown as Loader;
@@ -31,9 +31,9 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { parseMML } =
-	require("../src/mml-parser") as typeof import("../src/mml-parser");
+	require("../src/mml/mml-parser") as typeof import("../src/mml/mml-parser");
 const { MMLCore } =
-	require("../src/mml-core") as typeof import("../src/mml-core");
+	require("../src/mml/mml-core") as typeof import("../src/mml/mml-core");
 const {
 	bakeTrackVelocity,
 	chordVelocity,
@@ -41,14 +41,14 @@ const {
 	playerTrackVelocity,
 	splitPlacementVelocities,
 	splitTrackVelocity,
-} = require("../src/mml-velocity") as typeof import("../src/mml-velocity");
+} = require("../src/mml/mml-velocity") as typeof import("../src/mml/mml-velocity");
 const { exportMIDI } =
-	require("../src/midi-io") as typeof import("../src/midi-io");
+	require("../src/io/midi-io") as typeof import("../src/io/midi-io");
 const { goldenCases } =
 	require("./fixtures/mml-velocity-golden-cases") as typeof import("./fixtures/mml-velocity-golden-cases");
 type Note = import("../src/types").Note;
 type RenderConfig = import("../src/types").RenderConfig;
-type MMLNotePlacement = import("../src/mml-parser").MMLNotePlacement;
+type MMLNotePlacement = import("../src/mml/mml-parser").MMLNotePlacement;
 type MMLCoreT = InstanceType<typeof MMLCore>;
 
 let failed = 0;

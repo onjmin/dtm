@@ -48,10 +48,10 @@
 | コミット | 内容 |
 |---|---|
 | 主旋律の抽出 | `isPlausibleMelody` が「20半音超の跳躍が1回でもあれば弾く」判定で、91本中28本(31%)が本物の歌メロを落としていた。比率判定へ |
-| フレーズバンク | `src/compose-phrases.ts`。人間の曲から2小節フレーズを801種抜き出し、旋律の素材にする。統計ではなく**並び順そのものを借りる** |
+| フレーズバンク | `src/compose/compose-phrases.ts`。人間の曲から2小節フレーズを801種抜き出し、旋律の素材にする。統計ではなく**並び順そのものを借りる** |
 | 引き直しUX | 再生位置をサビの頭へ／直前の作曲に手を入れていなければ確認ダイアログを出さない／キープ枠1つ／**作曲したらそのまま鳴る**／キープは**入れ替え**（2曲を行き来できる）で**リロードをまたいで残る** |
 | バージョン埋め込み | MML・MIDI・MusicXML に `2.1.11` を埋める。素材の由来を辿るため（`docs/dataset-provenance.md`） |
-| MusicXML 入出力 | `src/musicxml-io.ts`。パートと歌詞が明示されるので、MIDI より主旋律の同定が確実 |
+| MusicXML 入出力 | `src/io/musicxml-io.ts`。パートと歌詞が明示されるので、MIDI より主旋律の同定が確実 |
 
 **効果が耳で確認できたものは1つも無い。** フレーズバンクを入れても「良くなっていない」
 という評価だった。
@@ -587,7 +587,7 @@ dance/16beat/disco」という既出の事実を数え直している。**作業
 
 ## やったこと（**未コミット**・作業ツリーに残っている）
 
-`src/compose.ts` と `src/compose-sections.ts` に3点。`check-compose.ts` は通過、biome/tsc クリーン。
+`src/compose/compose.ts` と `src/compose/compose-sections.ts` に3点。`check-compose.ts` は通過、biome/tsc クリーン。
 
 1. イントロを小節数ではなく**秒**で決める（`SectionSpec.seconds`、`buildSectionPlan` に bpm を渡す）
 2. **サビのフックを一級の概念に**（`hookRhythm` を先に引き、他セクションの素材から禁止。サビ内で再現）

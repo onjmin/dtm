@@ -9,8 +9,8 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { buildChordPlacements } from "../src/chords";
-import { MMLCore } from "../src/mml-core";
+import { buildChordPlacements } from "../src/chord/chords";
+import { MMLCore } from "../src/mml/mml-core";
 import type { CoreEventHandlers, Note, RenderConfig } from "../src/types";
 
 const STEPS_PER_BAR = 192;

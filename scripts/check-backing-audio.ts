@@ -21,9 +21,9 @@ import {
 	formatTimeSec,
 	parseTimeSec,
 	parseYoutubeId,
-} from "../src/backing-audio";
+} from "../src/audio/backing-audio";
 
-// `src/mml-parser.ts` は歌詞解析のために `src/lyrics.ts` を、その先で歌唱合成エンジン
+// `src/mml/mml-parser.ts` は歌詞解析のために `src/voice/lyrics.ts` を、その先で歌唱合成エンジン
 // @onjmin/koe（WebAssembly + AudioWorklet 前提のブラウザ専用パッケージ）を読む。
 // ここで触るのは宣言文字列の読み書きだけなので、名前解決だけ空のスタブへ差し替える。
 type Loader = { _load: (request: string, ...rest: unknown[]) => unknown };
@@ -35,7 +35,7 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { formatMmlMeta, parseMML, parseMmlMeta, stripMmlMeta } =
-	require("../src/mml-parser") as typeof import("../src/mml-parser");
+	require("../src/mml/mml-parser") as typeof import("../src/mml/mml-parser");
 
 let failed = 0;
 const check = (label: string, got: unknown, expect: unknown): void => {

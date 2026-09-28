@@ -9,9 +9,9 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildChordPlacements } from "../src/chords";
-import { composeSong } from "../src/compose";
-import { MMLCore } from "../src/mml-core";
+import { buildChordPlacements } from "../src/chord/chords";
+import { composeSong } from "../src/compose/compose";
+import { MMLCore } from "../src/mml/mml-core";
 import type { CoreEventHandlers, Note, RenderConfig } from "../src/types";
 
 const STEPS_PER_BAR = 192;

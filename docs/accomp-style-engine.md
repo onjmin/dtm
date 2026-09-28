@@ -2,8 +2,8 @@
 
 2026-09-28 作成。同日に改訂した（批評18件を反映。数値は `scratch/accomp-variety.ts` を種 20260929 と 777 で測り直して確かめた）。
 行番号は作業ツリー（2.1.29 ＋ 未コミットの伴奏主体モード）時点のもの。
-**実装の状況（2026-09-28）: 段階 S1 まで**（S0: `#compose` の書式・監査・`references/fb/`・黄金値・退避率の記録。S1: 表を `src/accomp-styles/fb.ts` へ移し、エンジンはスタイルから読む・DAW は `song.mix` と層の定義を読む・計画の記録 `PlanPins`）。設計からずらした点は付録 F。
-S0・S1 で `compose-accomp*.ts`・`daw.ts` の行が動いたので、本文の行番号は S0 の前のもの（表の行番号は、いまは `src/accomp-styles/fb.ts` に読み替える）。前提は `docs/accomp-compose.md`（以下「前書」）。本書は前書 §14-2「表は fb・fa・backing から起こした」の続きにあたる。
+**実装の状況（2026-09-28）: 段階 S1 まで**（S0: `#compose` の書式・監査・`references/fb/`・黄金値・退避率の記録。S1: 表を `src/compose/accomp-styles/fb.ts` へ移し、エンジンはスタイルから読む・DAW は `song.mix` と層の定義を読む・計画の記録 `PlanPins`）。設計からずらした点は付録 F。
+S0・S1 で `compose-accomp*.ts`・`daw.ts` の行が動いたので、本文の行番号は S0 の前のもの（表の行番号は、いまは `src/compose/accomp-styles/fb.ts` に読み替える）。前提は `docs/accomp-compose.md`（以下「前書」）。本書は前書 §14-2「表は fb・fa・backing から起こした」の続きにあたる。
 
 所有者の指摘（2026-09-28、1・2日目の試聴のあと）:
 
@@ -174,7 +174,7 @@ S0・S1 で `compose-accomp*.ts`・`daw.ts` の行が動いたので、本文の
 | 置き場所 | 中身 | いまの場所 |
 |---|---|---|
 | エンジン `src/accomp/` | 候補ループ・関門の実行・保険の計画への退避／和声の理論（旋法を基準にする）／生成器（分散セル・低音型・和音の打ち方・色の線。後で持続音・オスティナート）／31平均律の綴り／強弱の正規化／MML の書き出し／監査／新しさの指紋／注釈から計画を組み立てる処理 | `compose-accomp*.ts` の汎用部分（約58%。下の注） |
-| スタイル `src/accomp-styles/<id>.ts` | 型・役割の定義・句の表・パターンの表・層・制約の設定・閉じ方・切除対照・出所・監査の基準 | `compose-accomp-tables.ts`（1,161行／4,959行＝約23%）と、fb 固有のコード（約19%。棚卸しの H1〜H26）をデータにしたもの |
+| スタイル `src/compose/accomp-styles/<id>.ts` | 型・役割の定義・句の表・パターンの表・層・制約の設定・閉じ方・切除対照・出所・監査の基準 | `compose-accomp-tables.ts`（1,161行／4,959行＝約23%）と、fb 固有のコード（約19%。棚卸しの H1〜H26）をデータにしたもの |
 | 参照 `references/<id>/` | 承認した手書き試作の MML と注釈（区間の区切り・小節ごとの和音・4小節ごとの行 id）。型ごとの参照計画はこの注釈から組み立てる。git で追跡する | いまは `tmp/`。gitignore なので CI には無い（`scripts/fixtures/accomp-fb-plan.ts:13`） |
 | 検査 `scripts/` | エンジンの検査1本・スタイルの検査1本（全スタイルを回す）・監査 | `check-compose-accomp.ts`（159項目） |
 
@@ -201,7 +201,7 @@ src/accomp/          schema.ts（型と validateStylePack）· theory.ts · plan
                      generators/{arpCells,bassPattern,compHits,colorLine}.ts（後で pedal, ostinato）
                      constraints/{rateBand,contrast,forbiddenMotion,dynamicsOrder,borrowSubset,seam,harmony,clash}.ts
                      reference.ts（注釈 → 参照計画）· audit.ts · novelty.ts · mml.ts · index.ts
-src/accomp-styles/   fb.ts · index.ts（登録表）· shared/（複数のスタイルで使う句やミックス。当面は空）
+src/compose/accomp-styles/   fb.ts · index.ts（登録表）· shared/（複数のスタイルで使う句やミックス。当面は空）
 references/fb/       fb.mml · fa.mml · backing.mml ·（承認されたら）P-3 の試作 · annotations.ts
                      heard.json（所有者が聴いた型と行の組）· baseline.json（監査の基準の組とラベル）
 scripts/             check-accomp-engine.ts · check-accomp-styles.ts · audit-accomp-variety.ts
@@ -821,7 +821,7 @@ export const minorPedal: StylePack = {
 | もの | 置き場所 | 目安の大きさ |
 |---|---|---|
 | 承認した手書きの試作と注釈 | `references/<id>/` | MML 2〜3本 |
-| スタイル本体 | `src/accomp-styles/<id>.ts` | fb で表の約950行。小さなスタイルなら数百行 |
+| スタイル本体 | `src/compose/accomp-styles/<id>.ts` | fb で表の約950行。小さなスタイルなら数百行 |
 | 参照計画 | 注釈から組み立てる（型ごとに1つ） | 注釈は型ごとに数十行の見込み（未計測） |
 | 切除対照 | `scripts/fixtures/styles/<id>/ablations.ts` | 固有の制約1つにつき1項目以上 |
 | 黄金値 | 同じ場所の `golden.json` | 型ごとの参照計画と、5種×3調の MML ハッシュ |
@@ -886,7 +886,7 @@ export const minorPedal: StylePack = {
 | **P-3 新しい試作**（src を触らない） | fb 系統の新しい手書き試作を2〜3本書く。和音は、いまの解析が通すものだけ | 自己検算（`scratch/deq-check.ts` 相当） | 1日: 2〜3本。承認か却下 |
 | **較正のラベル** | §4.5 の層別の組を24〜30組 | – | 聴かない段階（S0・S1・S3）の日に、1日3組ずつ |
 | **S0 基準** | `#compose` を `style:fb.v1:…` に変える。監査を scripts へ上げる（報告だけ。リズムと形の数え方、音色の欄、曲の頭と継ぎ目の指標、基準の n と区間）。手書きの基準を `references/` へ置く。黄金値を取る。退避率・計画の中の引き直しの使い切り・k=0 の通過率を記録する | 159項目。黄金値を記録 | なし |
-| **S1 表を移す** | 表を `src/accomp-styles/fb.ts` へ移し、エンジンは `pack.*` を読む。音域窓は `relTo: "absolute"` のまま。DAW は `song.mix` と `style:` の接頭辞を読む（§2.4）。`PlanPins` の欄を足し、fb の参照計画にいまの値を書く | 黄金値と1バイトも違わない。159項目。DAW のミックス解放の検査を足す | なし（音は同じ） |
+| **S1 表を移す** | 表を `src/compose/accomp-styles/fb.ts` へ移し、エンジンは `pack.*` を読む。音域窓は `relTo: "absolute"` のまま。DAW は `song.mix` と `style:` の接頭辞を読む（§2.4）。`PlanPins` の欄を足し、fb の参照計画にいまの値を書く | 黄金値と1バイトも違わない。159項目。DAW のミックス解放の検査を足す | なし（音は同じ） |
 | **S2 fb をデータで広げる** | P-3 で承認した試作から: 役割ごとの低音・和音の表（エネルギー段）、分散のセルの行とエネルギー段ごとの窓・密度、和声のリズムとボイシングの段、ミックスの表（P-1 で承認したもの）、1行の句の表を3行以上、別の借用の組。行に `fits` を付ける。版は `fb.v2` | lint。監査（報告だけ。型の中の4指標）。k=0 の通過率と退避率。黄金値を取り直す。fb の参照計画の往復の下限 | **3日目**: 生成曲3本。参照計画は音が変わらないので聴き直さない |
 | **S3 fb 固有のコードを解釈器へ** | 棚卸しの H の群ごとに小分けにして進める（中身は下） | 小段ごとに、S2 の黄金値と1バイトも違わない | なし |
 | **S4a 型とミックス** | fb の型を3つ以上にする（fb と P-3 の試作から）。型ごとのテンポ帯・長さ・強弱の山谷（規則④の扱いを §9 で決めてから）・ミックス。区間の並びの変種は長さの違いだけ。型ごとに参照計画と往復の下限。版は `fb.v3` | 監査（型の中は4指標の規則、型の間は7指標で別に）。型ごとの往復の下限 | **4日目**: 3本＝同じ型から2本、別の型から1本。型が3つを超えたら5日目も同じ形 |
@@ -1018,7 +1018,7 @@ export const minorPedal: StylePack = {
 ### 9.1.2 見つかった問題: 伴奏主体モードに音量の段取りが無い（2026-09-29 の計測）
 
 - 伴奏主体モードは「おまかせマスタリング」を通さない（前書 §9.4）。そのため、歌ものの作曲がしている**実測ピークからの音量決め**も無い。`ACCOMP_MIX` の音量は 80 で固定。
-- 安全リミッター（`src/safety-limiter.ts`、−1dBFS・20:1＋0.85 からのソフトクリップ）の**手前**を測った（localhost:40298 の bgm.html、曲まるごと、46ms 窓の最大振幅）。
+- 安全リミッター（`src/audio/safety-limiter.ts`、−1dBFS・20:1＋0.85 からのソフトクリップ）の**手前**を測った（localhost:40298 の bgm.html、曲まるごと、46ms 窓の最大振幅）。
 
 | 曲（設定） | リミッター手前のピーク 中央値 / 上位1% / 最大 | 閾値（0.891）を超える窓 |
 |---|---|---|
@@ -1084,7 +1084,7 @@ export const minorPedal: StylePack = {
 この回の作業の約束（依頼で決まっていたこと。S0・S1 とも同じ）:
 
 - `src/compose-accomp*.ts` は名前も場所も変えない。書き出す名前も変えない。同じ時間に別の作業が `analyzeRoman` を読んでいるため。`src/accomp/` への引っ越しは S3 まで待つ。
-- 足してよいのは新しいファイル（`src/accomp-styles/`・監査・`references/fb/`）と、既存のファイルへの追記だけ。
+- 足してよいのは新しいファイル（`src/compose/accomp-styles/`・監査・`references/fb/`）と、既存のファイルへの追記だけ。
 - S1 は、黄金値と1バイトも違わないこと。計画の JSON が変わってよいのは、足した記録の欄だけ（そのときは計画の sha256 だけを取り直し、MML の sha256 が変わらないことを示す）。
 
 ### F.1 `#compose` の書式（§2.5）
@@ -1097,7 +1097,7 @@ export const minorPedal: StylePack = {
   - 理由: 1・2日目に所有者が聴いたファイル（`tmp/accomp/`）が旧書式を持つ。今のコードで作り直すと、`#ver` と `#compose` のほかは1バイトも違わない（確かめた）。
   - 読むのは `releaseAccompMix`（DAW）・`export-samples.ts`・`accomp-audition.ts`。
 - `export-samples.ts` と `accomp-audition.ts` は、知らないスタイルをエラーにし、版が今と違えば「同じ曲にはならない」と警告する（§9.1.1-6: 古い版は残さない）。
-- **スタイルの見出しだけを、S0 で先に置いた**（`src/accomp-styles/index.ts`・`fb.ts`）。
+- **スタイルの見出しだけを、S0 で先に置いた**（`src/compose/accomp-styles/index.ts`・`fb.ts`）。
   - 中身は id・版・表示名・説明・出所だけ（型 `AccompStyleInfo`）。`#compose` の id と版をここから取るため。
   - 設計（§3.1）の `StylePack` にするのは S1。表はまだ `compose-accomp-tables.ts` にある。
 - DAW（§2.4）で S0 に直したのは2つだけ。
@@ -1201,7 +1201,7 @@ export const minorPedal: StylePack = {
 ### F.6 出力を変えていないことの確かめ方
 
 - 1・2日目の試聴ファイル4本を今のコードで作り直し、`#ver` と `#compose` の書式のほかは1バイトも違わない。
-- 検証の回で、S0 の前のコードも作り直して比べた（作業の記録から `src/compose-accomp.ts`・`compose-accomp-plan.ts` の変更を逆に当てた写し。src をまるごと写した上で2ファイルだけ戻して比べ、比べ終えたあとは戻した2ファイルと比べたスクリプトだけを gitignore の `tmp/verify-s0/pre-s0/` に残した）。
+- 検証の回で、S0 の前のコードも作り直して比べた（作業の記録から `src/compose/compose-accomp.ts`・`compose-accomp-plan.ts` の変更を逆に当てた写し。src をまるごと写した上で2ファイルだけ戻して比べ、比べ終えたあとは戻した2ファイルと比べたスクリプトだけを gitignore の `tmp/verify-s0/pre-s0/` に残した）。
   - 写しは1・2日目の試聴ファイル4本を、`#compose` も含めて1バイトも違わずに作る。
   - 次の1891通りで、曲（`compose` 以外）と MML（`#compose` 以外）が同じ。`#compose` は `accomp:` → `style:fb.v1:` の置き換えだけ。
     - 種 1〜150 × baseKey 9通り（major・minor・any・key_C・key_Eb・key_Am・key_Fsm・空・前後に空白）。
@@ -1212,10 +1212,10 @@ export const minorPedal: StylePack = {
 
 ### F.7 段階 S1: 表の置き場所と、エンジンの読み方（§2.1・§2.2・§3.1・§3.2）
 
-- **表は `src/accomp-styles/fb.ts` へ移した**（`StylePack`。値は1つも変えていない）。型は `src/accomp-styles/schema.ts`。
+- **表は `src/compose/accomp-styles/fb.ts` へ移した**（`StylePack`。値は1つも変えていない）。型は `src/compose/accomp-styles/schema.ts`。
   - 設計では型は `src/accomp/schema.ts` だが、`src/accomp/` への引っ越しは S3 まで待つので、スタイルの側に置いた。S3 で移す。
   - `schema.ts` には、表を書く道具（セル・低音型・打ち方の文字列の読み方、`fromRef`・`derived`）と、スキーマの検証 `validateStylePack` も置いた。
-- **エンジンがスタイルを引く口を、新しいファイル `src/compose-accomp-style.ts` に置いた。**
+- **エンジンがスタイルを引く口を、新しいファイル `src/compose/compose-accomp-style.ts` に置いた。**
   - `accompStyleView(style?, archetype?)` が、スタイルと型1つぶんの表を id で引ける形に並べて返す（初回に検証して、使い回す）。`planStyleView(plan)` は計画の `style`・`archetype` から引く。
   - エンジン（`compose-accomp.ts`・`-plan`・`-realize`・`-check`）は表の定数を import せず、これを読む。計画を受け取る関数は計画から、計画を作る関数は `style` の引数（省くと fb）から引く。
   - 既存の関数の引数は、後ろに省略可の引数を足しただけ（`resolveAccompKey`・`drawLengths`・`assemblePlan` の `view`、`fbPlan` の `style`、`planAccomp` の入力の `style`・`archetype`）。書き出す名前は1つも変えていない。

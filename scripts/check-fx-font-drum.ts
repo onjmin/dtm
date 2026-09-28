@@ -22,7 +22,7 @@
 
 import Module from "node:module";
 
-// `src/mml-parser.ts` は歌詞解析のために `src/lyrics.ts` を、その先で歌唱合成エンジン
+// `src/mml/mml-parser.ts` は歌詞解析のために `src/voice/lyrics.ts` を、その先で歌唱合成エンジン
 // @onjmin/koe（ブラウザ専用）を読む。宣言の読み書きしか触らないので空のスタブへ。
 type Loader = { _load: (request: string, ...rest: unknown[]) => unknown };
 const loader = Module as unknown as Loader;
@@ -33,13 +33,13 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { formatMmlMeta, parseMML, parseMmlMeta } =
-	require("../src/mml-parser") as typeof import("../src/mml-parser");
+	require("../src/mml/mml-parser") as typeof import("../src/mml/mml-parser");
 const {
 	applyMasterFx,
 	masterDynamicsFromMeta,
 	masterFxFromMeta,
 	masterFxToMeta,
-} = require("../src/master-fx") as typeof import("../src/master-fx");
+} = require("../src/audio/master-fx") as typeof import("../src/audio/master-fx");
 const {
 	DEFAULT_SOUNDFONT_BANK,
 	normalizeSoundFontBank,
@@ -47,12 +47,12 @@ const {
 	soundFontBankShortName,
 	trackSoundFontValue,
 } =
-	require("../src/soundfont-banks") as typeof import("../src/soundfont-banks");
+	require("../src/instruments/soundfont-banks") as typeof import("../src/instruments/soundfont-banks");
 const { DRUM_PATTERNS, drumPatternForFullLoad, NO_DRUM_PATTERN } =
-	require("../src/drum-config") as typeof import("../src/drum-config");
-type MasterFxSettings = import("../src/master-fx").MasterFxSettings;
-type MasterDynamics = import("../src/master-fx").MasterDynamics;
-type MasterFxTarget = import("../src/master-fx").MasterFxTarget;
+	require("../src/instruments/drum-config") as typeof import("../src/instruments/drum-config");
+type MasterFxSettings = import("../src/audio/master-fx").MasterFxSettings;
+type MasterDynamics = import("../src/audio/master-fx").MasterDynamics;
+type MasterFxTarget = import("../src/audio/master-fx").MasterFxTarget;
 
 let failed = 0;
 const check = (label: string, got: unknown, expect: unknown): void => {

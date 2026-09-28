@@ -1,15 +1,15 @@
 /**
- * 自動作曲マクロ（`src/compose.ts`）の検算。
+ * 自動作曲マクロ（`src/compose/compose.ts`）の検算。
  *
  * 「聴いて確かめる」ができない代わりに、生成物の性質を機械的に測って落とす。
  * 測る項目は、実際に人が聴いて「これは質が高い／単調だ」と評価した曲の差から
- * 逆算したもの（`src/compose.ts` の冒頭コメント参照）。
+ * 逆算したもの（`src/compose/compose.ts` の冒頭コメント参照）。
  *
  *   pnpm test
  */
 
 import { parseChord } from "@onjmin/chord-parser";
-import { buildChordPlacements } from "../src/chords";
+import { buildChordPlacements } from "../src/chord/chords";
 import {
 	ANSWER_FIGURES,
 	BASE_STEPS_PER_BAR,
@@ -18,13 +18,13 @@ import {
 	MOTIF_CELLS,
 	RHYTHM_CELLS,
 	transposeChordName,
-} from "../src/compose";
+} from "../src/compose/compose";
 import {
 	COMPOSE_KEYS,
 	COMPOSE_MOOD_GROUPS,
 	resolveComposeKey,
-} from "../src/compose-keys";
-import { structureFeatures } from "../src/compose-metrics";
+} from "../src/compose/compose-keys";
+import { structureFeatures } from "../src/compose/compose-metrics";
 import {
 	COMPOSE_SCALE_IDS,
 	COMPOSE_SCALES,
@@ -32,10 +32,10 @@ import {
 	resolveCenter,
 	scaleDegrees,
 	scalePcs,
-} from "../src/compose-scales";
-import { DRUM_PATTERNS, resolveDrumPattern } from "../src/drum-config";
-import { INSTRUMENT_PRESETS } from "../src/instrument-presets";
-import { UNITS_PER_SEMITONE } from "../src/tuning";
+} from "../src/compose/compose-scales";
+import { DRUM_PATTERNS, resolveDrumPattern } from "../src/instruments/drum-config";
+import { INSTRUMENT_PRESETS } from "../src/instruments/instrument-presets";
+import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
 
 const STEPS_PER_BAR = 192;
 const BARS = 16;
@@ -211,7 +211,7 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 
 	// --- ハード制約（これを外れた曲は「音楽として壊れている」） ---
 	// しきい値の合否で採否を決めるのはここまで。残りは連続値の点数にして
-	// 候補どうしを比べる方式へ変わった（src/compose.ts の WEIGHTS 参照）ので、
+	// 候補どうしを比べる方式へ変わった（src/compose/compose.ts の WEIGHTS 参照）ので、
 	// 「休符率が0.09だから不合格」といった判定はもう行わない。
 	check(
 		`${tag} メロディが同じ音の連打になっていない`,

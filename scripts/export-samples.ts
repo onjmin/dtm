@@ -30,14 +30,14 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import Module from "node:module";
 import { join } from "node:path";
-import { programOfInstrumentName } from "../src/audio-config";
-import { buildChordPlacements } from "../src/chords";
-import { seededRandom as appSeededRandom, composeSong } from "../src/compose";
-import { STRUCTURE_TEMPLATES } from "../src/compose-sections";
-import { DRUM_PATTERNS, resolveDrumPattern } from "../src/drum-config";
-import { INSTRUMENT_PRESETS } from "../src/instrument-presets";
-import { exportMIDI } from "../src/midi-io";
-import { UNITS_PER_SEMITONE } from "../src/tuning";
+import { programOfInstrumentName } from "../src/audio/audio-config";
+import { buildChordPlacements } from "../src/chord/chords";
+import { seededRandom as appSeededRandom, composeSong } from "../src/compose/compose";
+import { STRUCTURE_TEMPLATES } from "../src/compose/compose-sections";
+import { DRUM_PATTERNS, resolveDrumPattern } from "../src/instruments/drum-config";
+import { INSTRUMENT_PRESETS } from "../src/instruments/instrument-presets";
+import { exportMIDI } from "../src/io/midi-io";
+import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
 import type { Note } from "../src/types";
 
 const STEPS_PER_BAR = 192;
@@ -142,9 +142,9 @@ const exportAccomp = (seed: number, compose: string): void => {
 			? { VoiceBank: class {}, Worldline: class {}, leadInFromEntry: () => 0 }
 			: load(request, ...rest);
 	const { composeAccomp, parseAccompCompose } =
-		require("../src/compose-accomp") as typeof import("../src/compose-accomp");
+		require("../src/compose/compose-accomp") as typeof import("../src/compose/compose-accomp");
 	const { accompStyleById } =
-		require("../src/accomp-styles/index") as typeof import("../src/accomp-styles/index");
+		require("../src/compose/accomp-styles/index") as typeof import("../src/compose/accomp-styles/index");
 	const tag = parseAccompCompose(compose);
 	if (!tag)
 		throw new Error(
@@ -168,7 +168,7 @@ const exportAccomp = (seed: number, compose: string): void => {
 	const { baseKey, pick } = tag;
 	const k = String(pick);
 	const { accompToMml } =
-		require("../src/compose-accomp-mml") as typeof import("../src/compose-accomp-mml");
+		require("../src/compose/compose-accomp-mml") as typeof import("../src/compose/compose-accomp-mml");
 	const song = composeAccomp({
 		style: tag.style,
 		stepsPerBar: STEPS_PER_BAR,

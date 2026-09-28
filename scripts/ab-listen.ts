@@ -128,19 +128,19 @@ import {
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { parseChord } from "@onjmin/chord-parser";
-import { programOfInstrumentName } from "../src/audio-config";
-import { buildChordPlacements } from "../src/chords";
-import { composeSong, transposeChordName } from "../src/compose";
+import { programOfInstrumentName } from "../src/audio/audio-config";
+import { buildChordPlacements } from "../src/chord/chords";
+import { composeSong, transposeChordName } from "../src/compose/compose";
 import {
 	COMPOSE_SCALES,
 	degreeToPitch,
 	scalePcs,
 	scaleSize,
-} from "../src/compose-scales";
-import { DRUM_PATTERNS, resolveDrumPattern } from "../src/drum-config";
-import { INSTRUMENT_PRESETS } from "../src/instrument-presets";
-import { exportMIDI } from "../src/midi-io";
-import { UNITS_PER_SEMITONE, type Units } from "../src/tuning";
+} from "../src/compose/compose-scales";
+import { DRUM_PATTERNS, resolveDrumPattern } from "../src/instruments/drum-config";
+import { INSTRUMENT_PRESETS } from "../src/instruments/instrument-presets";
+import { exportMIDI } from "../src/io/midi-io";
+import { UNITS_PER_SEMITONE, type Units } from "../src/audio/tuning";
 import type { Note } from "../src/types";
 import {
 	channelNotes,

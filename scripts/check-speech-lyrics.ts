@@ -17,7 +17,7 @@
  */
 import Module from "node:module";
 
-// `src/lyrics.ts` は @onjmin/koe（ブラウザ専用）を読むので、名前解決だけスタブへ差し替える。
+// `src/voice/lyrics.ts` は @onjmin/koe（ブラウザ専用）を読むので、名前解決だけスタブへ差し替える。
 type Loader = { _load: (request: string, ...rest: unknown[]) => unknown };
 const loader = Module as unknown as Loader;
 const load = loader._load;
@@ -41,9 +41,9 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { buildStreamVoiceNotes, normalizeLyrics, syllablesToText } =
-	require("../src/lyrics") as typeof import("../src/lyrics");
-const { units } = require("../src/tuning") as typeof import("../src/tuning");
-type TieSourceNote = import("../src/lyrics").TieSourceNote;
+	require("../src/voice/lyrics") as typeof import("../src/voice/lyrics");
+const { units } = require("../src/audio/tuning") as typeof import("../src/audio/tuning");
+type TieSourceNote = import("../src/voice/lyrics").TieSourceNote;
 type LyricSyllable = import("../src/types").LyricSyllable;
 
 /** 音節 1 つを `種別:中身` の 1 語へ畳む（歌唱のかなはそのまま、語りは `S:` 付き）。 */

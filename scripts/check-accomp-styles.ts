@@ -23,26 +23,26 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const styles =
-	require("../src/accomp-styles/index") as typeof import("../src/accomp-styles/index");
+	require("../src/compose/accomp-styles/index") as typeof import("../src/compose/accomp-styles/index");
 const styleView =
-	require("../src/compose-accomp-style") as typeof import("../src/compose-accomp-style");
+	require("../src/compose/compose-accomp-style") as typeof import("../src/compose/compose-accomp-style");
 const plan =
-	require("../src/compose-accomp-plan") as typeof import("../src/compose-accomp-plan");
+	require("../src/compose/compose-accomp-plan") as typeof import("../src/compose/compose-accomp-plan");
 const realize =
-	require("../src/compose-accomp-realize") as typeof import("../src/compose-accomp-realize");
+	require("../src/compose/compose-accomp-realize") as typeof import("../src/compose/compose-accomp-realize");
 const gates =
-	require("../src/compose-accomp-check") as typeof import("../src/compose-accomp-check");
+	require("../src/compose/compose-accomp-check") as typeof import("../src/compose/compose-accomp-check");
 const entry =
-	require("../src/compose-accomp") as typeof import("../src/compose-accomp");
+	require("../src/compose/compose-accomp") as typeof import("../src/compose/compose-accomp");
 const tables =
-	require("../src/compose-accomp-tables") as typeof import("../src/compose-accomp-tables");
+	require("../src/compose/compose-accomp-tables") as typeof import("../src/compose/compose-accomp-tables");
 const { seededRandom } =
-	require("../src/compose") as typeof import("../src/compose");
+	require("../src/compose/compose") as typeof import("../src/compose/compose");
 const { COMPOSE_KEYS } =
-	require("../src/compose-keys") as typeof import("../src/compose-keys");
+	require("../src/compose/compose-keys") as typeof import("../src/compose/compose-keys");
 
-type StylePack = import("../src/accomp-styles/schema").StylePack;
-type AccompMix = import("../src/compose-accomp").AccompMix;
+type StylePack = import("../src/compose/accomp-styles/schema").StylePack;
+type AccompMix = import("../src/compose/compose-accomp").AccompMix;
 
 const {
 	ACCOMP_STYLES,

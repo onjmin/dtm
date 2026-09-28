@@ -5,7 +5,7 @@
 段階2（DAW への組み込み）まで。** 実装で設計からずらした点は付録 C（段階1-B）・付録 D（段階1-C）・付録 E（段階2）。
 **`#compose` の書式は、後継の `docs/accomp-style-engine.md` の段階 S0 で `accomp:<baseKey>:<k>` から
 `style:fb.v1:<baseKey>:<k>` に変えた**（同書 §2.5・付録 F）。本書の `accomp:…` は変更前の書式として読むこと（旧書式も読める）。
-**表は、同書の段階 S1 で `src/compose-accomp-tables.ts` から `src/accomp-styles/fb.ts`（スタイル fb）へ移した**（同書 付録 F.7）。
+**表は、同書の段階 S1 で `src/compose/compose-accomp-tables.ts` から `src/compose/accomp-styles/fb.ts`（スタイル fb）へ移した**（同書 付録 F.7）。
 本書の「表（`compose-accomp-tables.ts`）」は `fb.ts` と読み替えること。`compose-accomp-tables.ts` は同じ名前で読み直すだけの互換の口として残してある。
 
 所有者が承認した目的に対して、設計案3つ（「表を組み合わせる案」「指標で選ぶ案」「最小の組み込み案」）と
@@ -32,7 +32,7 @@
 - **DAW**: 「伴奏主体」ボタンを1つ足す。
   - ノートを直接書き、ミックス（楽器・パン・EQ・送り・マスタFX・ドラムなし・ループ）は自前で当てる。
   - **おまかせマスタリングは通さない。**
-- **触らないもの**: `src/compose.ts` は1行も変えない。unj-reze もコードを変えず、dtm を publish した後に依存を上げるだけで済む。
+- **触らないもの**: `src/compose/compose.ts` は1行も変えない。unj-reze もコードを変えず、dtm を publish した後に依存を上げるだけで済む。
 
 ---
 
@@ -153,13 +153,13 @@
 
 | ファイル | 役割 | 規模 |
 |---|---|---|
-| `src/mml-velocity.ts`（新規） | v の読み書き規則を1か所に置く。`splitTrackVelocity` / `effectiveVelocity` / `chordVelocity`。依存なしの純関数 | 約60行 |
-| `src/compose-accomp-tables.ts`（新規） | **データだけ**。旅程、区間長、和声の句、借用和音の組、ボイシング用の度数、分散のセル、低音型、和音の打ち方、役割ごとの質感、強弱、ミックス | 約400行 |
-| `src/compose-accomp-plan.ts`（新規） | 段0〜3（調・テンポ・旅程・和声・質感）から `AccompPlan` を作る。純関数 | 約300行 |
-| `src/compose-accomp-realize.ts`（新規） | 段4〜9（和音・低音・分散・色の線・強弱・継ぎ目）で、計画を4トラックのノートにする。純関数 | 約450行 |
-| `src/compose-accomp-check.ts`（新規） | 硬い制約（関門）と表示用の指標。生成器と scripts の両方から使う | 約300行 |
-| `src/compose-accomp.ts`（新規） | 公開の入口 `composeAccomp` と `accompMeta`。候補のループ、保険の計画、正規化、ミックス | 約200行 |
-| `src/compose-accomp-mml.ts`（新規） | `accompToMml`。`MMLCore.getMMLFromNotes`（v を出すよう直したもの）と `formatMmlMeta` で組む。**mml-parser を読むので koe まで引く**。compose-accomp からは import しない | 約80行 |
+| `src/mml/mml-velocity.ts`（新規） | v の読み書き規則を1か所に置く。`splitTrackVelocity` / `effectiveVelocity` / `chordVelocity`。依存なしの純関数 | 約60行 |
+| `src/compose/compose-accomp-tables.ts`（新規） | **データだけ**。旅程、区間長、和声の句、借用和音の組、ボイシング用の度数、分散のセル、低音型、和音の打ち方、役割ごとの質感、強弱、ミックス | 約400行 |
+| `src/compose/compose-accomp-plan.ts`（新規） | 段0〜3（調・テンポ・旅程・和声・質感）から `AccompPlan` を作る。純関数 | 約300行 |
+| `src/compose/compose-accomp-realize.ts`（新規） | 段4〜9（和音・低音・分散・色の線・強弱・継ぎ目）で、計画を4トラックのノートにする。純関数 | 約450行 |
+| `src/compose/compose-accomp-check.ts`（新規） | 硬い制約（関門）と表示用の指標。生成器と scripts の両方から使う | 約300行 |
+| `src/compose/compose-accomp.ts`（新規） | 公開の入口 `composeAccomp` と `accompMeta`。候補のループ、保険の計画、正規化、ミックス | 約200行 |
+| `src/compose/compose-accomp-mml.ts`（新規） | `accompToMml`。`MMLCore.getMMLFromNotes`（v を出すよう直したもの）と `formatMmlMeta` で組む。**mml-parser を読むので koe まで引く**。compose-accomp からは import しない | 約80行 |
 | `scripts/check-mml-velocity.ts`（新規） | v の往復の検算 | 約200行 |
 | `scripts/check-compose-accomp.ts`（新規） | 生成器の検算。陽性対照と切除対照を含む | 約400行 |
 | `scripts/fixtures/accomp-fb-plan.ts`（新規） | fb を `AccompPlan` として手で書き直した陽性対照 | 約200行 |
@@ -214,7 +214,7 @@ baseKey, random(seed) ─▶ composeAccomp
 ## 5. 公開 API（型）
 
 ```ts
-// src/compose-accomp.ts
+// src/compose/compose-accomp.ts
 export type AccompRole =
   | "home" | "minorDwell" | "borrowA" | "glimpse" | "borrowB" | "lift" | "return";
 
@@ -314,10 +314,10 @@ export type AccompSong = {
 export const composeAccomp: (o?: AccompOptions) => AccompSong;
 export const accompMeta: (s: AccompSong) => MmlMeta;  // DAW の適用と MML 書き出しが共通で通る唯一の変換
 
-// src/compose-accomp-mml.ts（mml-parser を読む）
+// src/compose/compose-accomp-mml.ts（mml-parser を読む）
 export const accompToMml: (s: AccompSong, prov?: { seed?: number; version?: string; minified?: boolean }) => string;
 
-// src/mml-velocity.ts
+// src/mml/mml-velocity.ts
 export const splitTrackVelocity: (vs: readonly number[], fallback: number) => { volume: number; velocities: number[] };
 export const effectiveVelocity: (trackVolume: number, velocity?: number) => number;
 export const chordVelocity: (notes: readonly { velocity?: number }[]) => number;
@@ -707,7 +707,7 @@ fb と fa の実測（指標案の調査。dtm の `parseMML` で測定）:
 - MML の `v` は、**実効値** = round(T·velocity/100) とする。
 - 最終的な音量は、DAW でもプレイヤーでも (T/100)·(velocity/127) = v/127 になる。式は `midi-io.ts:572-574` と同じ。
 
-### 8.3 関数（`src/mml-velocity.ts`）
+### 8.3 関数（`src/mml/mml-velocity.ts`）
 
 ```ts
 effectiveVelocity(T, vel = 100) = clamp(round(T·vel/100), 0, 127)
@@ -766,7 +766,7 @@ splitTrackVelocity(vs, fallback):
 
 ## 9. DAW への組み込み
 
-### 9.1 UI（`src/daw-ui.ts`）
+### 9.1 UI（`src/ui/daw-ui.ts`）
 
 - compose-row（533〜535行）の「歌入り作曲」の後ろにボタンを足す。
 
@@ -781,7 +781,7 @@ splitTrackVelocity(vs, fallback):
 - 別ボタンにするので、構成・作る部分の UI を出し分ける必要は無い。
 - `macro-state.ts` の保存キーは増やさない。ベース調の select をそのまま使う。
 
-### 9.2 `src/daw.ts` のリファクタ（`loadMML` の挙動は変えない）
+### 9.2 `src/ui/daw.ts` のリファクタ（`loadMML` の挙動は変えない）
 
 1. `runCompose` の中にある `writeTrackAt`（6712行）を外に出して共有する。
 2. `loadMML` のトラック設定の反映（5291〜5353行。inst・font・comp・width・rev・eq・pan・dly、書かれていない項目は既定値へ戻す）を `applyTrackStripMeta(meta, { activeOnly })` に切り出す。
@@ -1108,48 +1108,48 @@ koe のスタブを入れる**前**に `compose-accomp` を require する。こ
 
 | 場所 | 中身 |
 |---|---|
-| `src/compose.ts:1247` | `ComposedNote` |
-| `src/compose.ts:1410-1419` | `seededRandom`（mulberry32） |
-| `src/compose.ts:5267-5270` | ハ長調で作って rootShift でずらす規約 |
-| `src/compose.ts:5493-5498` | 旋律の必須化 |
-| `src/compose.ts:5613-5628` | `pickBuiltinDrum` |
-| `src/chords.ts:57` | `semitonesToUnits` |
-| `src/chords.ts:100` | `spelledToUnits` |
-| `src/chords.ts:113-140` | 分散の R-3-5-8 |
-| `src/chords.ts:177` | `Math.floor` の潜在バグ |
-| `src/compose-keys.ts:346` | `resolveComposeKey`（短調は Am 基準、長調は C 基準） |
-| `src/mml-core.ts:449-537` | `generateMML` |
-| `src/mml-player.ts:569-590` | プレイヤーでの v の平坦化 |
-| `src/mml-parser.ts:205` | `#compose` の値 `[\w:.-]+` |
-| `src/mml-parser.ts:447-452` | 0 の mastercomp・fade を省く書き出し |
-| `src/mml-parser.ts:568-571` | `trackVelocity` のコメント |
-| `src/daw.ts:1530` | `applyLoop` |
-| `src/daw.ts:1608` | `setMasterFx` |
-| `src/daw.ts:1629-1631` | コンプとフェードの初期値 |
-| `src/daw.ts:2154-2162` | オクターブ重ね |
-| `src/daw.ts:4977-4995` | 和音分解 |
-| `src/daw.ts:5206-5290` | `loadMML` のメタ反映 |
-| `src/daw.ts:5291-5353` | トラック設定の反映 |
-| `src/daw.ts:5354-5362` | 最後の v をトラック音量にする処理 |
-| `src/daw.ts:5418-5429` | velocity を既定値に戻す処理 |
-| `src/daw.ts:6177` | `applyAutoMastering` |
-| `src/daw.ts:6658` | `trackSignature` |
-| `src/daw.ts:6674` | `runCompose` |
-| `src/daw.ts:6712` | `writeTrackAt` |
-| `src/daw.ts:6946-6953` | 歌声を外す処理 |
-| `src/daw.ts:6993` | `composeWithConfirm` |
-| `src/daw-ui.ts:128-141` | refs の型 |
-| `src/daw-ui.ts:533-535` | compose-row |
-| `src/daw-ui.ts:894-905` | `sel()` |
-| `src/drum-config.ts:45` | `NO_DRUM_PATTERN` |
-| `src/instrument-presets.ts:227-240` | `retro_game` |
-| `src/advanced-layers.ts:4-8` | Node から読める形にしている理由 |
+| `src/compose/compose.ts:1247` | `ComposedNote` |
+| `src/compose/compose.ts:1410-1419` | `seededRandom`（mulberry32） |
+| `src/compose/compose.ts:5267-5270` | ハ長調で作って rootShift でずらす規約 |
+| `src/compose/compose.ts:5493-5498` | 旋律の必須化 |
+| `src/compose/compose.ts:5613-5628` | `pickBuiltinDrum` |
+| `src/chord/chords.ts:57` | `semitonesToUnits` |
+| `src/chord/chords.ts:100` | `spelledToUnits` |
+| `src/chord/chords.ts:113-140` | 分散の R-3-5-8 |
+| `src/chord/chords.ts:177` | `Math.floor` の潜在バグ |
+| `src/compose/compose-keys.ts:346` | `resolveComposeKey`（短調は Am 基準、長調は C 基準） |
+| `src/mml/mml-core.ts:449-537` | `generateMML` |
+| `src/mml/mml-player.ts:569-590` | プレイヤーでの v の平坦化 |
+| `src/mml/mml-parser.ts:205` | `#compose` の値 `[\w:.-]+` |
+| `src/mml/mml-parser.ts:447-452` | 0 の mastercomp・fade を省く書き出し |
+| `src/mml/mml-parser.ts:568-571` | `trackVelocity` のコメント |
+| `src/ui/daw.ts:1530` | `applyLoop` |
+| `src/ui/daw.ts:1608` | `setMasterFx` |
+| `src/ui/daw.ts:1629-1631` | コンプとフェードの初期値 |
+| `src/ui/daw.ts:2154-2162` | オクターブ重ね |
+| `src/ui/daw.ts:4977-4995` | 和音分解 |
+| `src/ui/daw.ts:5206-5290` | `loadMML` のメタ反映 |
+| `src/ui/daw.ts:5291-5353` | トラック設定の反映 |
+| `src/ui/daw.ts:5354-5362` | 最後の v をトラック音量にする処理 |
+| `src/ui/daw.ts:5418-5429` | velocity を既定値に戻す処理 |
+| `src/ui/daw.ts:6177` | `applyAutoMastering` |
+| `src/ui/daw.ts:6658` | `trackSignature` |
+| `src/ui/daw.ts:6674` | `runCompose` |
+| `src/ui/daw.ts:6712` | `writeTrackAt` |
+| `src/ui/daw.ts:6946-6953` | 歌声を外す処理 |
+| `src/ui/daw.ts:6993` | `composeWithConfirm` |
+| `src/ui/daw-ui.ts:128-141` | refs の型 |
+| `src/ui/daw-ui.ts:533-535` | compose-row |
+| `src/ui/daw-ui.ts:894-905` | `sel()` |
+| `src/instruments/drum-config.ts:45` | `NO_DRUM_PATTERN` |
+| `src/instruments/instrument-presets.ts:227-240` | `retro_game` |
+| `src/compose/advanced-layers.ts:4-8` | Node から読める形にしている理由 |
 | `scripts/export-samples.ts:75-91` | `#compose` の解析 |
 | `scripts/compose-lab.ts:38` | 誤ったコメント |
 
 ---
 
-## 付録 C: 段階1-B（実現器 `src/compose-accomp-realize.ts`）で設計からずらした点
+## 付録 C: 段階1-B（実現器 `src/compose/compose-accomp-realize.ts`）で設計からずらした点
 
 2026-09-28。どれも陽性対照（fb の計画を realize した結果）を fb.mml の実測に合わせるためのもの。値は表
 （`compose-accomp-tables.ts`）にあり、聴いて直すときは表の1行を触る。
@@ -1188,8 +1188,8 @@ fb が C1 の ♭VI・♭VII に @0 を置かなかった理由と同じなの�
 
 ## 付録 D: 段階1-C（関門・入口・書き出し・検査・試聴）で設計からずらした点
 
-2026-09-28。ファイルは `src/compose-accomp-check.ts`（関門と指標）・`src/compose-accomp.ts`（`composeAccomp`・
-`accompMeta`）・`src/compose-accomp-mml.ts`（`accompToMml`）・`scripts/accomp-audition.ts`、と
+2026-09-28。ファイルは `src/compose/compose-accomp-check.ts`（関門と指標）・`src/compose/compose-accomp.ts`（`composeAccomp`・
+`accompMeta`）・`src/compose/compose-accomp-mml.ts`（`accompToMml`）・`scripts/accomp-audition.ts`、と
 `scripts/check-compose-accomp.ts`・`scripts/export-samples.ts`・`scripts/compose-lab.ts`（コメント）・`src/index.ts` の変更。
 §14 の未決事項は、1〜7 を所有者の方針どおりの既定（旅程と規則①〜⑤は固定・home が backing に寄るのは許す・
 短調は平行長調を家に・@0 は on・v の修正は単独で publish できる形・ペンの既定 velocity は入れない・山は borrowB 固定）で進めた。
@@ -1233,9 +1233,9 @@ mood_*・any の計57曲）で採った候補はすべて k=0（保険の計画 
 
 ## 付録 E: 段階2（DAW への組み込み）で設計からずらした点
 
-2026-09-28。変更したファイルは `src/daw.ts`（`applyTrackStripMeta`・`applyMasterDynamics`・`writeTrackAt` の共有・
-`releaseAutoVocals`・`composeWithConfirm(title, message, run)`・`runComposeAccomp`・解説）、`src/daw-ui.ts`（ボタン・refs）、
-`src/master-fx.ts`（`masterDynamicsFromMeta`）、`src/mml-player.ts`（ループ）、`scripts/check-fx-font-drum.ts`（検算）。
+2026-09-28。変更したファイルは `src/ui/daw.ts`（`applyTrackStripMeta`・`applyMasterDynamics`・`writeTrackAt` の共有・
+`releaseAutoVocals`・`composeWithConfirm(title, message, run)`・`runComposeAccomp`・解説）、`src/ui/daw-ui.ts`（ボタン・refs）、
+`src/audio/master-fx.ts`（`masterDynamicsFromMeta`）、`src/mml/mml-player.ts`（ループ）、`scripts/check-fx-font-drum.ts`（検算）。
 
 | 箇所 | 設計書 | 実装 | 理由 |
 |---|---|---|---|

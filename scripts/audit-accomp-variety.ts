@@ -46,24 +46,24 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { composeAccomp } =
-	require("../src/compose-accomp") as typeof import("../src/compose-accomp");
+	require("../src/compose/compose-accomp") as typeof import("../src/compose/compose-accomp");
 const { accompToMml } =
-	require("../src/compose-accomp-mml") as typeof import("../src/compose-accomp-mml");
+	require("../src/compose/compose-accomp-mml") as typeof import("../src/compose/compose-accomp-mml");
 const { fbPlan } =
-	require("../src/compose-accomp-plan") as typeof import("../src/compose-accomp-plan");
+	require("../src/compose/compose-accomp-plan") as typeof import("../src/compose/compose-accomp-plan");
 const { accompStyleById } =
-	require("../src/accomp-styles/index") as typeof import("../src/accomp-styles/index");
+	require("../src/compose/accomp-styles/index") as typeof import("../src/compose/accomp-styles/index");
 const { seededRandom } =
-	require("../src/compose") as typeof import("../src/compose");
+	require("../src/compose/compose") as typeof import("../src/compose/compose");
 const { parseMML } =
-	require("../src/mml-parser") as typeof import("../src/mml-parser");
+	require("../src/mml/mml-parser") as typeof import("../src/mml/mml-parser");
 const { DEFAULT_SOUNDFONT_BANK, normalizeSoundFontBank } =
-	require("../src/soundfont-banks") as typeof import("../src/soundfont-banks");
+	require("../src/instruments/soundfont-banks") as typeof import("../src/instruments/soundfont-banks");
 
-type AccompPlan = import("../src/compose-accomp").AccompPlan;
-type AccompSong = import("../src/compose-accomp").AccompSong;
-type AccompCandidateDiag = import("../src/compose-accomp").AccompCandidateDiag;
-type MmlMeta = import("../src/mml-parser").MmlMeta;
+type AccompPlan = import("../src/compose/compose-accomp").AccompPlan;
+type AccompSong = import("../src/compose/compose-accomp").AccompSong;
+type AccompCandidateDiag = import("../src/compose/compose-accomp").AccompCandidateDiag;
+type MmlMeta = import("../src/mml/mml-parser").MmlMeta;
 
 // ============================================================
 // CLI

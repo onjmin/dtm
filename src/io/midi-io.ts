@@ -1,0 +1,869 @@
+/**
+ * MIDI入出力ユーティリティ。
+ *
+ * - 入力: 注入された parseMidi（midi-parser-js 互換）の戻り値を解析し、
+ *   チャンネルを melody/submelody/bass/chord へ自動分類してノート配置を返す。
+ * - 出力: トラック群とドラムパターンから .mid バイナリ(Blob)を生成する。
+ */
+
+import { DRUM_KEYS, type DrumPattern } from "../instruments/drum-config";
+import { effectiveVelocity } from "../mml/mml-velocity";
+import { unitsToMidiDetune } from "../audio/tuning";
+import type { Note } from "../types";
+import { DTM_VERSION } from "../version";
+
+const STEPS_PER_BEAT = 48;
+
+type MidiEvent = {
+	delta: number;
+	channel?: number;
+	noteOn?: {
+		noteNumber: number;
+		velocity: number;
+	};
+	noteOff?: {
+		noteNumber: number;
+		velocity: number;
+	};
+	setTempo?: {
+		microsecondsPerQuarter: number;
+	};
+	[key: string]: unknown;
+};
+type MidiData = {
+	division: number;
+	format: number;
+	tracks: MidiEvent[][];
+};
+
+export type MidiTrackAnalysis = {
+	index: number;
+	name: string;
+	noteCount: number;
+	selected: boolean;
+};
+
+export type MidiNotePlacement = {
+	/** melody/submelody/bass/chord */
+	trackId: string;
+	startStep: number;
+	pitch: number;
+	durationSteps: number;
+	velocity: number;
+};
+
+export type MidiExtraction = {
+	placements: MidiNotePlacement[];
+	bpm: number;
+};
+
+/**
+ * MIDIの各トラックを走査し、ノート数などの概要を返す（トラック選択UI用）。
+ * ノート数はピアノロールで編集可能なノートのみを数える（ドラム ch10 は除外）。
+ * ドラム(ch10)だけで構成されたトラックは編集できないため、結果に含めない。
+ */
+export const analyzeMidiTracks = (midi: unknown): MidiTrackAnalysis[] => {
+	const { tracks } = midi as MidiData;
+	const result: MidiTrackAnalysis[] = [];
+
+	for (let i = 0; i < tracks.length; i++) {
+		const notes: { pitch: number; channel: number; end?: number }[] = [];
+		let currentTime = 0;
+		for (const event of tracks[i]) {
+			currentTime += event.delta;
+			if (event.noteOn && event.noteOn.velocity > 0) {
+				notes.push({
+					pitch: event.noteOn.noteNumber,
+					channel: event.channel ?? 0,
+				});
+			} else if (
+				event.noteOff ||
+				(event.noteOn && event.noteOn.velocity === 0)
+			) {
+				const noteOff = event.noteOff || event.noteOn;
+				if (noteOff) {
+					for (let k = notes.length - 1; k >= 0; k--) {
+						if (
+							notes[k].pitch === noteOff.noteNumber &&
+							notes[k].end === undefined
+						) {
+							notes[k].end = currentTime;
+							break;
+						}
+					}
+				}
+			}
+		}
+		const validNotes = notes.filter((n) => n.end !== undefined);
+		// ピアノロールで編集できるのはノートのみ。MIDIのドラム(ch10 = channel 9)は
+		// 取り込み時にスキップされ編集できないので、ドラムだけのトラックは選択UIに出さない。
+		const editableNotes = validNotes.filter((n) => n.channel !== 9);
+		if (validNotes.length > 0 && editableNotes.length === 0) continue;
+		result.push({
+			index: i,
+			name: `Ch${i + 1}`,
+			noteCount: editableNotes.length,
+			selected: editableNotes.length > 0,
+		});
+	}
+
+	return result;
+};
+
+/** MIDIメタイベントからBPMを取得（無ければ120）。 */
+export const getMidiBPM = (midi: unknown): number => {
+	const { tracks } = midi as MidiData;
+	for (const track of tracks) {
+		for (const event of track) {
+			if (
+				event.setTempo &&
+				typeof event.setTempo.microsecondsPerQuarter === "number"
+			) {
+				return 60000000 / event.setTempo.microsecondsPerQuarter;
+			}
+		}
+	}
+	return 120;
+};
+
+/**
+ * 選択トラックからノートを抽出し、チャンネル特性に基づいて
+ * melody/submelody/bass/chord へ自動分類した配置を返す。
+ */
+export const extractMidiPlacements = (
+	midi: unknown,
+	selectedTrackIndices: number[],
+): MidiExtraction => {
+	const { tracks, division } = midi as MidiData;
+	const ticksPerBeat = division;
+	const bpm = getMidiBPM(midi);
+
+	type RawNote = {
+		pitch: number;
+		velocity: number;
+		start: number;
+		end: number | null;
+	};
+	const channelNotes: Record<number, RawNote[]> = {};
+
+	for (const trackIdx of selectedTrackIndices) {
+		const trackData = tracks[trackIdx];
+		if (!trackData) continue;
+		let currentTime = 0;
+		for (const event of trackData) {
+			currentTime += event.delta;
+			if (event.channel === 9) continue; // ドラムチャンネルはスキップ
+
+			if (event.noteOn && event.noteOn.velocity > 0) {
+				const pitch = event.noteOn.noteNumber;
+				const velocity = event.noteOn.velocity;
+				const channel = event.channel ?? 0;
+
+				if (!channelNotes[channel]) channelNotes[channel] = [];
+				channelNotes[channel].push({
+					pitch,
+					velocity,
+					start: currentTime,
+					end: null,
+				});
+			} else if (
+				event.noteOff ||
+				(event.noteOn && event.noteOn.velocity === 0)
+			) {
+				const noteOff = event.noteOff || event.noteOn;
+				if (noteOff) {
+					const pitch = noteOff.noteNumber;
+					const channel = event.channel ?? 0;
+
+					if (channelNotes[channel]) {
+						for (let i = channelNotes[channel].length - 1; i >= 0; i--) {
+							const note = channelNotes[channel][i];
+							if (note.pitch === pitch && note.end === null) {
+								note.end = currentTime;
+								break;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// チャンネル特性分析
+	const ticksPerBar = ticksPerBeat * 4;
+	const ticksPer8Bars = ticksPerBar * 8;
+	const channelAnalysis: Record<
+		number,
+		{ avgPitch: number; maxSimultaneous: number; hasSubmelodyPattern: boolean }
+	> = {};
+
+	for (const [channelStr, notes] of Object.entries(channelNotes)) {
+		const channel = Number.parseInt(channelStr, 10);
+		const validNotes = notes.filter(
+			(n) => n.end !== null,
+		) as Required<RawNote>[];
+		if (validNotes.length === 0) {
+			channelAnalysis[channel] = {
+				avgPitch: 60,
+				maxSimultaneous: 0,
+				hasSubmelodyPattern: false,
+			};
+			continue;
+		}
+
+		const avgPitch =
+			validNotes.reduce((sum, n) => sum + n.pitch, 0) / validNotes.length;
+
+		let maxSimultaneous = 0;
+		const sortedNotes = [...validNotes].sort((a, b) => a.start - b.start);
+		for (let i = 0; i < sortedNotes.length; i++) {
+			let simultaneous = 1;
+			for (let j = i + 1; j < sortedNotes.length; j++) {
+				if (sortedNotes[j].start < (sortedNotes[i].end as number)) {
+					simultaneous++;
+				}
+			}
+			maxSimultaneous = Math.max(maxSimultaneous, simultaneous);
+		}
+
+		const isSubmelodyPattern = (): boolean => {
+			if (sortedNotes.length === 0) return false;
+			const blocks: { start: number; end: number }[] = [];
+			let blockStart = sortedNotes[0].start;
+			let blockEnd = sortedNotes[0].end as number;
+			for (let i = 1; i < sortedNotes.length; i++) {
+				const gap = sortedNotes[i].start - (sortedNotes[i - 1].end as number);
+				if (gap >= ticksPerBar) {
+					blocks.push({ start: blockStart, end: blockEnd });
+					blockStart = sortedNotes[i].start;
+					blockEnd = sortedNotes[i].end as number;
+				} else {
+					blockEnd = sortedNotes[i].end as number;
+				}
+			}
+			blocks.push({ start: blockStart, end: blockEnd });
+			return blocks.every((b) => b.end - b.start < ticksPer8Bars);
+		};
+
+		channelAnalysis[channel] = {
+			avgPitch,
+			maxSimultaneous,
+			hasSubmelodyPattern: isSubmelodyPattern(),
+		};
+	}
+
+	const channels = Object.keys(channelNotes)
+		.map(Number)
+		.sort((a, b) => a - b);
+	const sortedByPitch = [...channels].sort(
+		(a, b) => channelAnalysis[a].avgPitch - channelAnalysis[b].avgPitch,
+	);
+
+	const bassThreshold =
+		channelAnalysis[sortedByPitch[Math.floor(sortedByPitch.length / 4)]]
+			?.avgPitch ?? 60;
+	const bassChannels = channels.filter(
+		(ch) =>
+			channelAnalysis[ch].avgPitch <= bassThreshold &&
+			channelAnalysis[ch].maxSimultaneous <= 2,
+	);
+	const melodyTypeChannels = channels.filter(
+		(ch) =>
+			channelAnalysis[ch].maxSimultaneous <= 1 && !bassChannels.includes(ch),
+	);
+	const submelodyChannels = melodyTypeChannels.filter(
+		(ch) => channelAnalysis[ch].hasSubmelodyPattern,
+	);
+	const melodyChannels = melodyTypeChannels.filter(
+		(ch) => !channelAnalysis[ch].hasSubmelodyPattern,
+	);
+	const chordChannels = channels.filter(
+		(ch) =>
+			!bassChannels.includes(ch) &&
+			!melodyChannels.includes(ch) &&
+			!submelodyChannels.includes(ch),
+	);
+
+	const channelToTrack: Record<string, number[]> = {
+		melody: melodyChannels,
+		submelody: submelodyChannels,
+		bass: bassChannels,
+		chord: chordChannels,
+	};
+
+	const placements: MidiNotePlacement[] = [];
+	const ticksPerStep = ticksPerBeat / STEPS_PER_BEAT;
+
+	for (const [channelStr, notes] of Object.entries(channelNotes)) {
+		const channel = Number.parseInt(channelStr, 10);
+		let trackId: string | null = null;
+		for (const [tid, chs] of Object.entries(channelToTrack)) {
+			if (chs.includes(channel)) {
+				trackId = tid;
+				break;
+			}
+		}
+		if (!trackId) continue;
+
+		for (const note of notes) {
+			if (note.end === null) continue;
+			const startStep = Math.round(note.start / ticksPerStep);
+			const durationSteps = Math.max(
+				1,
+				Math.round((note.end - note.start) / ticksPerStep),
+			);
+			placements.push({
+				trackId,
+				startStep,
+				pitch: note.pitch,
+				durationSteps,
+				velocity: note.velocity,
+			});
+		}
+	}
+
+	if (placements.length > 0) {
+		const minStartStep = Math.min(...placements.map((p) => p.startStep));
+		const stepsPerBar = STEPS_PER_BEAT * 4;
+		const emptyBars = Math.floor(minStartStep / stepsPerBar);
+		if (emptyBars > 0) {
+			const shift = emptyBars * stepsPerBar;
+			for (const p of placements) p.startStep -= shift;
+		}
+	}
+
+	return { placements, bpm };
+};
+
+/**
+ * AI採譜（audio→MIDI）にありがちな「めちゃくちゃな採譜」を弾くための簡易品質判定。
+ * 人力採譜では起こりにくい特徴を検出する:
+ *   - 極端に短い音符（グレースノート未満）が大半を占める → onset誤検出の乱打
+ *   - 同一startStepに多数の音（半音混じりの塊）が積み重なる → ノイズをそのまま音高化した塊
+ * どちらかが閾値を超えたら「人力採譜ではなさそう」と判定する。
+ */
+export const isPlausibleMidiTranscription = (
+	midi: unknown,
+	selectedIndices: number[],
+): boolean => {
+	const { placements } = extractMidiPlacements(midi, selectedIndices);
+	if (placements.length < 4) return false;
+
+	const shortCount = placements.filter((p) => p.durationSteps <= 1).length;
+	const shortRatio = shortCount / placements.length;
+
+	const countByStep = new Map<number, number>();
+	for (const p of placements) {
+		countByStep.set(p.startStep, (countByStep.get(p.startStep) ?? 0) + 1);
+	}
+	const denseSteps = [...countByStep.values()].filter((n) => n >= 6).length;
+	const denseRatio = denseSteps / countByStep.size;
+
+	return shortRatio < 0.6 && denseRatio < 0.35;
+};
+
+/**
+ * advancedモード用：選択された MIDI トラックを選択順に DAW トラックへ上から詰める
+ * （k番目に選んだトラック → trackIds[k]）。自動分類なし。
+ *
+ * MIDIの実トラック番号ではなく「選択順の位置」で割り当てるため、先頭のテンポ/コンダクタ
+ * トラックや、空・ドラムだけのトラックが混ざっていても DAW レーンがずれない
+ * （これらは選択リストに出ない／選ばれないので位置を消費しない）。
+ * ドラム(ch10 = channel 9)のノートはスキップする。
+ */
+export const extractMidiPlacementsByTrack = (
+	midi: unknown,
+	selectedIndices: number[],
+	trackIds: string[],
+): MidiExtraction => {
+	const { tracks, division } = midi as MidiData;
+	const ticksPerBeat = division;
+	const bpm = getMidiBPM(midi);
+	const ticksPerStep = ticksPerBeat / STEPS_PER_BEAT;
+
+	const placements: MidiNotePlacement[] = [];
+
+	selectedIndices.forEach((midiIdx, lane) => {
+		if (lane >= trackIds.length) return;
+		const trackData = tracks[midiIdx];
+		if (!trackData) return;
+		const trackId = trackIds[lane];
+
+		type RawNote = {
+			pitch: number;
+			velocity: number;
+			start: number;
+			end: number | null;
+		};
+		const active: RawNote[] = [];
+		let currentTime = 0;
+
+		for (const event of trackData) {
+			currentTime += event.delta;
+			if (event.channel === 9) continue; // ドラムチャンネルはスキップ
+
+			if (event.noteOn && event.noteOn.velocity > 0) {
+				const pitch = event.noteOn.noteNumber;
+				const velocity = event.noteOn.velocity;
+				active.push({ pitch, velocity, start: currentTime, end: null });
+			} else if (
+				event.noteOff ||
+				(event.noteOn && event.noteOn.velocity === 0)
+			) {
+				const noteOff = event.noteOff || event.noteOn;
+				if (noteOff) {
+					const pitch = noteOff.noteNumber;
+					for (let i = active.length - 1; i >= 0; i--) {
+						if (active[i].pitch === pitch && active[i].end === null) {
+							active[i].end = currentTime;
+							break;
+						}
+					}
+				}
+			}
+		}
+
+		for (const note of active) {
+			if (note.end === null) continue;
+			const startStep = Math.round(note.start / ticksPerStep);
+			const durationSteps = Math.max(
+				1,
+				Math.round((note.end - note.start) / ticksPerStep),
+			);
+			placements.push({
+				trackId,
+				startStep,
+				pitch: note.pitch,
+				durationSteps,
+				velocity: note.velocity,
+			});
+		}
+	});
+	if (placements.length > 0) {
+		const minStartStep = Math.min(...placements.map((p) => p.startStep));
+		const stepsPerBar = STEPS_PER_BEAT * 4;
+		const emptyBars = Math.floor(minStartStep / stepsPerBar);
+		if (emptyBars > 0) {
+			const shift = emptyBars * stepsPerBar;
+			for (const p of placements) p.startStep -= shift;
+		}
+	}
+
+	return { placements, bpm };
+};
+
+// ============================================================
+// MIDI出力
+// ============================================================
+
+const to2byte = (n: number): number[] => [(n & 0xff00) >> 8, n & 0xff];
+const to3byte = (n: number): number[] => [(n & 0xff0000) >> 16, ...to2byte(n)];
+const to4byte = (n: number): number[] => [
+	(n & 0xff000000) >> 24,
+	...to3byte(n),
+];
+const deltaTime = (n: number): number[] => {
+	const res: number[] = [n & 0x7f];
+	let v = n >> 7;
+	while (v > 0) {
+		res.push((v & 0x7f) | 0x80);
+		v >>= 7;
+	}
+	return res.reverse();
+};
+const headerChunks = (arr: number[], trackCount: number, div: number): void => {
+	arr.push(0x4d, 0x54, 0x68, 0x64);
+	arr.push(...to4byte(6));
+	arr.push(...to2byte(1));
+	arr.push(...to2byte(trackCount));
+	arr.push(...to2byte(div));
+};
+const trackChunks = (arr: number[], func: (a: number[]) => void): void => {
+	arr.push(0x4d, 0x54, 0x72, 0x6b);
+	const a: number[] = [];
+	func(a);
+	a.push(...deltaTime(0));
+	a.push(0xff, 0x2f, 0x00);
+	arr.push(...to4byte(a.length));
+	arr.push(...a);
+};
+
+export type ExportMidiTrack = {
+	notes: Note[];
+	volume: number;
+	program?: number; // GMプログラム番号 (0-127)
+};
+
+export type ExportMidiOptions = {
+	tracks: ExportMidiTrack[];
+	getDrumPattern?: (currentBar: number) => DrumPattern | null;
+	drumVolume?: number; // 0-100
+	bpm: number;
+	stepsPerBar: number;
+};
+
+/**
+ * トラック群とドラムパターンから .mid バイナリ(Blob)を生成する。
+ */
+export const exportMIDI = (options: ExportMidiOptions): Blob => {
+	const { tracks, getDrumPattern, drumVolume = 80, bpm, stepsPerBar } = options;
+	const div = 480;
+	const tickPerStep = div / STEPS_PER_BEAT;
+	const midiTracks: { t: number; m: number[] }[][] = [];
+
+	const bendKey = (cents: number): number => Math.round(cents * 100);
+	const hasMicrotones = tracks.some((track) =>
+		track.notes.some((n) => {
+			const { detuneCents } = unitsToMidiDetune(n.pitchUnits);
+			return bendKey(detuneCents) !== 0;
+		}),
+	);
+
+	const bendSetup: { t: number; m: number[] }[] = [];
+
+	if (hasMicrotones) {
+		// ── 微分音の書き出し（ピッチベンド多チャンネル方式）──
+		//
+		// MIDIのピッチベンドはチャンネル単位でノート単位ではないため、31平均律のように
+		// 整数MIDIノートへ乗らない音を出すには「同時に鳴るベンド値の種類だけチャンネルを
+		// 使い分ける」必要がある。曲全体で使われるベンド値を数え、1種類につき
+		// 1チャンネルを割り当てて曲頭で一度だけベンドを設定する。
+		//
+		// トラックの区別はMIDIのトラックチャンク側が担うので、チャンネルを転用しても
+		// トラックは混ざらない（dtmの書き出しはプログラムチェンジを出さないため、
+		// チャンネルに楽器の意味は乗っていない）。
+		//
+		// 使えるのはドラム(ch9)を除く15チャンネル。曲が15種類を超えるベンド値を使う場合は
+		// 頻度の低いものから最寄りの半音へ丸める（音は出るが微分音は失われる）。
+		const NOTE_CHANNELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15];
+		/** ベンドのレンジ（半音）。RPN 0,0 で明示するので受け側の既定に依存しない。 */
+		const BEND_RANGE_SEMITONES = 2;
+
+		const bendUse = new Map<number, number>();
+		for (const track of tracks) {
+			for (const n of track.notes) {
+				const { detuneCents } = unitsToMidiDetune(n.pitchUnits);
+				const k = bendKey(detuneCents);
+				bendUse.set(k, (bendUse.get(k) ?? 0) + 1);
+			}
+		}
+		// 使用頻度の高いベンド値から順にチャンネルを割り当てる
+		const bendChannel = new Map<number, number>();
+		const ordered = [...bendUse.entries()].sort((a, b) => b[1] - a[1]);
+		for (const [k] of ordered) {
+			if (bendChannel.size >= NOTE_CHANNELS.length) break;
+			bendChannel.set(k, NOTE_CHANNELS[bendChannel.size]);
+		}
+
+		tracks.forEach((track) => {
+			if (track.notes.length === 0) return;
+			const events: { t: number; m: number[] }[] = [];
+			for (const n of track.notes) {
+				const { midi, detuneCents } = unitsToMidiDetune(n.pitchUnits);
+				const k = bendKey(detuneCents);
+				// 割り当てが溢れたベンド値は最寄りの半音へ丸めて鳴らす（ベンド0のチャンネル）
+				const channel = bendChannel.get(k) ?? bendChannel.get(0) ?? 0;
+				const note = Math.max(0, Math.min(127, midi));
+				const startTick = Math.round(n.startStep * tickPerStep);
+				const endTick = Math.round(
+					(n.startStep + (n.durationSteps || 1)) * tickPerStep,
+				);
+				// MML の v と同じ実効値（0〜127 に丸める。velocity127×音量127 が 161 にならない）。
+				// volume 0（ミュート）を 100 に化けさせないため ?? を使う（0 は有効値）
+				const vel = effectiveVelocity(track.volume ?? 100, n.velocity);
+				events.push({ t: startTick, m: [0x90 | channel, note, vel] });
+				events.push({ t: endTick, m: [0x90 | channel, note, 0] });
+			}
+			events.sort((a, b) => a.t - b.t);
+			midiTracks.push(events);
+		});
+
+		/** 各チャンネルのベンドレンジ設定(RPN)とベンド値を曲頭へ置くイベント列。 */
+		for (const [k, channel] of bendChannel) {
+			const cents = k / 100;
+			// RPN 0,0 = ピッチベンド感度。Data Entry で 2半音0セントに固定する。
+			bendSetup.push({ t: 0, m: [0xb0 | channel, 101, 0] });
+			bendSetup.push({ t: 0, m: [0xb0 | channel, 100, 0] });
+			bendSetup.push({ t: 0, m: [0xb0 | channel, 6, BEND_RANGE_SEMITONES] });
+			bendSetup.push({ t: 0, m: [0xb0 | channel, 38, 0] });
+			// RPN null（以降の Data Entry が誤って感度へ効かないようにする）
+			bendSetup.push({ t: 0, m: [0xb0 | channel, 101, 127] });
+			bendSetup.push({ t: 0, m: [0xb0 | channel, 100, 127] });
+			// ベンド値。中央8192、±(BEND_RANGE_SEMITONES × 100)セントで全可動域。
+			const raw =
+				8192 + Math.round((cents / (BEND_RANGE_SEMITONES * 100)) * 8192);
+			const v = Math.max(0, Math.min(16383, raw));
+			bendSetup.push({ t: 0, m: [0xe0 | channel, v & 0x7f, (v >> 7) & 0x7f] });
+		}
+	} else {
+		// ── 通常の書き出し（12平均律 / detuneなし）──
+		//
+		// GMの打楽器チャンネル(9 = MIDI ch10)を避ける。
+		// TRACK 01〜09 → ch1〜9 / TRACK 10〜15 → ch11〜16 に書き出す。
+		tracks.forEach((track, trIdx) => {
+			if (track.notes.length === 0) return;
+			const channel = trIdx < 9 ? trIdx : (trIdx + 1) & 0x0f;
+			const events: { t: number; m: number[] }[] = [];
+			if (
+				track.program !== undefined &&
+				track.program >= 0 &&
+				track.program <= 127
+			) {
+				events.push({ t: 0, m: [0xc0 | channel, track.program] });
+			}
+			for (const n of track.notes) {
+				const { midi } = unitsToMidiDetune(n.pitchUnits);
+				const note = Math.max(0, Math.min(127, midi));
+				const startTick = Math.round(n.startStep * tickPerStep);
+				const endTick = Math.round(
+					(n.startStep + (n.durationSteps || 1)) * tickPerStep,
+				);
+				// MML の v と同じ実効値（0〜127 に丸める。velocity127×音量127 が 161 にならない）。
+				// volume 0（ミュート）を 100 に化けさせないため ?? を使う（0 は有効値）
+				const vel = effectiveVelocity(track.volume ?? 100, n.velocity);
+				events.push({ t: startTick, m: [0x90 | channel, note, vel] });
+				events.push({ t: endTick, m: [0x90 | channel, note, 0] });
+			}
+			events.sort((a, b) => {
+				if (a.t !== b.t) return a.t - b.t;
+				// 同一tickではプログラムチェンジ(0xC0)をノートオン(0x90)より先に出す
+				const typeA = a.m[0] & 0xf0;
+				const typeB = b.m[0] & 0xf0;
+				if (typeA === 0xc0 && typeB !== 0xc0) return -1;
+				if (typeB === 0xc0 && typeA !== 0xc0) return 1;
+				return 0;
+			});
+			midiTracks.push(events);
+		});
+	}
+
+	// ドラムトラック
+	const maxStep = Math.max(
+		...tracks
+			.filter((t) => t.notes.length > 0)
+			.map((t) =>
+				Math.max(...t.notes.map((n) => n.startStep + n.durationSteps)),
+			),
+		stepsPerBar,
+	);
+	const drumEvents: { t: number; m: number[] }[] = [];
+	const numBars = Math.ceil(maxStep / stepsPerBar);
+	for (let bar = 0; bar < numBars; bar++) {
+		const currentBar = bar + 1;
+		const drumPattern = getDrumPattern ? getDrumPattern(currentBar) : null;
+		if (drumPattern && drumPattern.length > 0) {
+			const barStart = bar * stepsPerBar;
+			for (const drum of drumPattern) {
+				const step = barStart + drum.step;
+				if (step >= maxStep) continue;
+				const vel = Math.round(
+					(drum.velocity ?? 1.0) * (drumVolume / 100) * 127,
+				);
+				drumEvents.push({
+					t: Math.round(step * tickPerStep),
+					m: [0x99, drum.pitch, vel],
+				});
+				drumEvents.push({
+					t: Math.round((step + 1) * tickPerStep),
+					m: [0x99, drum.pitch, 0],
+				});
+			}
+		}
+	}
+	drumEvents.sort((a, b) => a.t - b.t);
+	if (drumEvents.length > 0) midiTracks.push(drumEvents);
+
+	const arr: number[] = [];
+	headerChunks(arr, midiTracks.length + 1, div);
+	trackChunks(arr, (a) => {
+		a.push(0, 0xff, 0x51, 0x03, ...to3byte(Math.round(6e7 / bpm)));
+		// **どのバージョンが書き出したかを埋める。** 自動作曲の素材は外部コーパスから
+		// 作るので、権利の申告が誤っていた場合に「どこまでが影響範囲か」を後から
+		// 言えないと是正できない。テキストメタ（0xff 0x01）はどの再生環境でも
+		// 無視されるので、鳴りには影響しない。台帳は `docs/dataset-provenance.md`。
+		const stamp = Array.from(new TextEncoder().encode(`dtm ${DTM_VERSION}`));
+		a.push(0, 0xff, 0x01, ...deltaTime(stamp.length), ...stamp);
+		// ベンドの初期設定は曲頭に一度だけ置けばよいのでテンポトラックへまとめる
+		for (const ev of bendSetup) a.push(0, ...ev.m);
+	});
+	for (const events of midiTracks) {
+		trackChunks(arr, (a) => {
+			let lastTick = 0;
+			for (const ev of events) {
+				a.push(...deltaTime(ev.t - lastTick), ...ev.m);
+				lastTick = ev.t;
+			}
+		});
+	}
+
+	return new Blob([new Uint8Array(arr).buffer], { type: "audio/midi" });
+};
+
+/**
+ * MIDIからドラムトラック(Ch.10)を抽出し、動的計画法(DP)を用いて
+ * 最もコンパクトな SongDrumInstruction[] のJSON文字列を生成する。
+ */
+export const extractDrumPatternFromNotes = (
+	rawNotes: { step: number; pitch: number; velocity: number }[],
+	drumFont: string = "FluidR3_GM_sf2_file:0",
+): { json: string; patternDef: import("../instruments/drum-config").DrumPatternDef } => {
+	if (rawNotes.length === 0)
+		return { json: "[]", patternDef: { label: "抽出ドラム", pattern: [] } };
+
+	rawNotes.sort((a, b) => a.step - b.step);
+	const stepsPerBar = STEPS_PER_BEAT * 4;
+
+	if (rawNotes.length > 0) {
+		const emptyBars = Math.floor(rawNotes[0].step / stepsPerBar);
+		if (emptyBars > 0) {
+			const shift = emptyBars * stepsPerBar;
+			for (const note of rawNotes) note.step -= shift;
+		}
+	}
+
+	// 各ノート（step位置、音高、ベロシティ）がどの小節に出現するかを記録
+	const noteRanges: Record<string, number[]> = {};
+	for (const note of rawNotes) {
+		const b = Math.floor(note.step / stepsPerBar) + 1;
+		const stepInBar = note.step % stepsPerBar;
+		const key = `${stepInBar}_${note.pitch}_${note.velocity}`;
+		if (!noteRanges[key]) noteRanges[key] = [];
+		if (noteRanges[key][noteRanges[key].length - 1] !== b) {
+			noteRanges[key].push(b);
+		}
+	}
+
+	// 連続する小節を [startBar, endBar] のレンジに変換し、同じレンジを持つノートを束ねる
+	const rangeMap: Record<
+		string,
+		{ step: number; pitch: number; velocity: number }[]
+	> = {};
+	for (const key in noteRanges) {
+		const bList = noteRanges[key];
+		let start = bList[0];
+		let prev = bList[0];
+		const parts = key.split("_");
+		const noteObj = { step: +parts[0], pitch: +parts[1], velocity: +parts[2] };
+
+		for (let i = 1; i <= bList.length; i++) {
+			if (i === bList.length || bList[i] !== prev + 1) {
+				const rKey = `${start}-${prev}`;
+				if (!rangeMap[rKey]) rangeMap[rKey] = [];
+				rangeMap[rKey].push(noteObj);
+				if (i < bList.length) {
+					start = bList[i];
+					prev = bList[i];
+				}
+			} else {
+				prev = bList[i];
+			}
+		}
+	}
+
+	// パターンごとに ranges を束ねる
+	const patternMap: Record<string, [number, number][]> = {};
+	for (const rKey in rangeMap) {
+		const [s, e] = rKey.split("-");
+		const pattern = rangeMap[rKey].sort((a, b) => a.step - b.step);
+		const pKey = JSON.stringify(pattern);
+		if (!patternMap[pKey]) patternMap[pKey] = [];
+		patternMap[pKey].push([+s, +e]);
+	}
+
+	// JSON構造に変換
+	const instructions: any[] = [];
+	for (const pKey in patternMap) {
+		const ranges = patternMap[pKey];
+		ranges.sort((a, b) => a[0] - b[0]);
+		instructions.push({
+			ranges,
+			pattern: JSON.parse(pKey),
+		});
+	}
+
+	// 長い総レンジ（ベースとなるループ）を上に、短いレンジ（アクセントやフィル）を下にソート
+	instructions.sort((a, b) => {
+		const durA = a.ranges.reduce(
+			(sum: number, r: [number, number]) => sum + (r[1] - r[0]),
+			0,
+		);
+		const durB = b.ranges.reduce(
+			(sum: number, r: [number, number]) => sum + (r[1] - r[0]),
+			0,
+		);
+		if (durA !== durB) return durB - durA;
+		return a.ranges[0][0] - b.ranges[0][0];
+	});
+
+	const json = buildDrumPatternJson(instructions, drumFont);
+
+	const patternDef: import("../instruments/drum-config").DrumPatternDef = {
+		label: "抽出ドラム",
+		pattern: instructions,
+	};
+
+	return { json, patternDef };
+};
+
+/**
+ * 抽出済みドラム定義（SongDrumInstruction[]）と音源を
+ * `extracted_song: { label, font, pattern }` 形式の文字列に組み立てる。
+ * コピー＆ペーストできるよう JSON 生成ロジックを分離したもの。
+ */
+export const buildDrumPatternJson = (
+	instructions: import("../instruments/song-drum-config").SongDrumPattern,
+	drumFont: string,
+): string => {
+	const pitchToDrumKey = Object.entries(DRUM_KEYS).reduce(
+		(acc, [key, val]) => {
+			acc[val] = `DRUM_KEYS.${key}`;
+			return acc;
+		},
+		{} as Record<number, string>,
+	);
+
+	const instructionStrings = instructions.map((inst) => {
+		const rangesStr = `[${inst.ranges.map((r: number[]) => `[${r[0]}, ${r[1]}]`).join(", ")}]`;
+		const patternLines = inst.pattern
+			.map((n: any) => {
+				const pitchStr = pitchToDrumKey[n.pitch] ?? n.pitch;
+				return `\t\t\t\t\t{ step: ${n.step}, pitch: ${pitchStr}, velocity: ${n.velocity} },`;
+			})
+			.join("\n");
+
+		return `\t\t\t{\n\t\t\t\tranges: ${rangesStr},\n\t\t\t\tpattern: [\n${patternLines}\n\t\t\t\t],\n\t\t\t}`;
+	});
+
+	const patternStr = `[\n${instructionStrings.join(",\n")}\n\t\t]`;
+
+	return `\textracted_song: {\n\t\tlabel: "抽出ドラム",\n\t\tfont: "${drumFont}",\n\t\tpattern: ${patternStr}\n\t},`;
+};
+
+/**
+ * MIDIからドラムトラック(Ch.10)を抽出し、動的計画法(DP)を用いて
+ * 最もコンパクトな SongDrumInstruction[] のJSON文字列を生成する。
+ */
+export const extractMidiDrumPattern = (
+	midi: unknown,
+	drumFont: string = "FluidR3_GM_sf2_file:0",
+): { json: string; patternDef: import("../instruments/drum-config").DrumPatternDef } => {
+	const { tracks, division } = midi as MidiData;
+	const ticksPerBeat = division;
+	const rawNotes: { step: number; pitch: number; velocity: number }[] = [];
+
+	for (const track of tracks) {
+		let currentTime = 0;
+		for (const event of track) {
+			currentTime += event.delta;
+			if (event.channel === 9 && event.noteOn && event.noteOn.velocity > 0) {
+				const step = Math.round((currentTime * STEPS_PER_BEAT) / ticksPerBeat);
+				rawNotes.push({
+					step,
+					pitch: event.noteOn.noteNumber,
+					velocity: Math.round((event.noteOn.velocity / 127) * 10) / 10,
+				});
+			}
+		}
+	}
+	return extractDrumPatternFromNotes(rawNotes, drumFont);
+};

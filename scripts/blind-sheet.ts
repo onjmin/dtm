@@ -7,7 +7,7 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { transposeChordName } from "../src/compose";
+import { transposeChordName } from "../src/compose/compose";
 import { composeOne } from "./compose-lab";
 import type { HandScore } from "./hand-compile";
 

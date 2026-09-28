@@ -46,37 +46,37 @@ loader._load = (request, ...rest) => {
 	return originalLoad(request, ...rest);
 };
 const plan =
-	require("../src/compose-accomp-plan") as typeof import("../src/compose-accomp-plan");
+	require("../src/compose/compose-accomp-plan") as typeof import("../src/compose/compose-accomp-plan");
 const tables =
-	require("../src/compose-accomp-tables") as typeof import("../src/compose-accomp-tables");
+	require("../src/compose/compose-accomp-tables") as typeof import("../src/compose/compose-accomp-tables");
 const realize =
-	require("../src/compose-accomp-realize") as typeof import("../src/compose-accomp-realize");
+	require("../src/compose/compose-accomp-realize") as typeof import("../src/compose/compose-accomp-realize");
 const gates =
-	require("../src/compose-accomp-check") as typeof import("../src/compose-accomp-check");
+	require("../src/compose/compose-accomp-check") as typeof import("../src/compose/compose-accomp-check");
 const entry =
-	require("../src/compose-accomp") as typeof import("../src/compose-accomp");
+	require("../src/compose/compose-accomp") as typeof import("../src/compose/compose-accomp");
 const styles =
-	require("../src/accomp-styles/index") as typeof import("../src/accomp-styles/index");
+	require("../src/compose/accomp-styles/index") as typeof import("../src/compose/accomp-styles/index");
 // ---- ここから先は mml-parser（→ lyrics → koe）を読む。koe はブラウザ専用なので空のスタブへ ----
 loader._load = (request, ...rest) =>
 	request === "@onjmin/koe"
 		? { VoiceBank: class {}, Worldline: class {}, leadInFromEntry: () => 0 }
 		: originalLoad(request, ...rest);
 const { parseMML } =
-	require("../src/mml-parser") as typeof import("../src/mml-parser");
+	require("../src/mml/mml-parser") as typeof import("../src/mml/mml-parser");
 const { accompToMml } =
-	require("../src/compose-accomp-mml") as typeof import("../src/compose-accomp-mml");
+	require("../src/compose/compose-accomp-mml") as typeof import("../src/compose/compose-accomp-mml");
 const { masterFxToMeta } =
-	require("../src/master-fx") as typeof import("../src/master-fx");
+	require("../src/audio/master-fx") as typeof import("../src/audio/master-fx");
 const { DTM_VERSION } =
 	require("../src/version") as typeof import("../src/version");
 
 const { parseChord, parseChords } =
 	require("@onjmin/chord-parser") as typeof import("@onjmin/chord-parser");
 const { seededRandom } =
-	require("../src/compose") as typeof import("../src/compose");
+	require("../src/compose/compose") as typeof import("../src/compose/compose");
 const { COMPOSE_KEYS } =
-	require("../src/compose-keys") as typeof import("../src/compose-keys");
+	require("../src/compose/compose-keys") as typeof import("../src/compose/compose-keys");
 const {
 	FB_PLAN,
 	FB_CHORD_NAMES,
@@ -88,15 +88,15 @@ const {
 } =
 	require("./fixtures/accomp-fb-plan") as typeof import("./fixtures/accomp-fb-plan");
 const { spelledToUnits } =
-	require("../src/chords") as typeof import("../src/chords");
+	require("../src/chord/chords") as typeof import("../src/chord/chords");
 const { effectiveVelocity } =
-	require("../src/mml-velocity") as typeof import("../src/mml-velocity");
+	require("../src/mml/mml-velocity") as typeof import("../src/mml/mml-velocity");
 
-type AccompPlan = import("../src/compose-accomp").AccompPlan;
-type AccompRole = import("../src/compose-accomp").AccompRole;
-type AccompRegion = import("../src/compose-accomp").AccompRegion;
-type AccompGate = import("../src/compose-accomp").AccompGate;
-type AccompArpCell = import("../src/compose-accomp-tables").AccompArpCell;
+type AccompPlan = import("../src/compose/compose-accomp").AccompPlan;
+type AccompRole = import("../src/compose/compose-accomp").AccompRole;
+type AccompRegion = import("../src/compose/compose-accomp").AccompRegion;
+type AccompGate = import("../src/compose/compose-accomp").AccompGate;
+type AccompArpCell = import("../src/compose/compose-accomp-tables").AccompArpCell;
 
 const {
 	analyzeRoman,
@@ -1029,8 +1029,8 @@ section("計画の読み出し");
 // ============================================================
 // 実現（段4〜段10）
 // ============================================================
-type Realized = import("../src/compose-accomp-realize").AccompRealized;
-type RNote = import("../src/compose-accomp-realize").AccompRealizedNote;
+type Realized = import("../src/compose/compose-accomp-realize").AccompRealized;
+type RNote = import("../src/compose/compose-accomp-realize").AccompRealizedNote;
 const { realizeAccomp, accompTracksFromNotes, ACCOMP_SLOTS } = realize;
 const {
 	accompGates,
@@ -1431,7 +1431,7 @@ section("実現: 種ごと（候補 0 の計画を realize する）");
 // ============================================================
 // 段階1-C: 関門・入口・ミックス・MML の往復
 // ============================================================
-type AccompSong = import("../src/compose-accomp").AccompSong;
+type AccompSong = import("../src/compose/compose-accomp").AccompSong;
 
 section("切除対照（音を置いた後）: 1点ずつ壊すと、狙った関門だけが落ちる");
 {
@@ -2372,7 +2372,7 @@ section(
 	"監査用の記録（diagnostics。docs/accomp-style-engine.md §5「退避の率を数える」）",
 );
 {
-	type Diag = import("../src/compose-accomp").AccompCandidateDiag;
+	type Diag = import("../src/compose/compose-accomp").AccompCandidateDiag;
 	const bad: string[] = [];
 	let candidates = 0;
 	for (const c of songCases.slice(0, 20)) {

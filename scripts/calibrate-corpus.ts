@@ -1,10 +1,10 @@
 /**
  * 受け入れ基準を**人間の曲から採る**ための較正スクリプト。
  *
- * `src/compose.ts` のしきい値（`MIN_ENTROPY_BITS = 1.1` など）は、もともと手で決めた
+ * `src/compose/compose.ts` のしきい値（`MIN_ENTROPY_BITS = 1.1` など）は、もともと手で決めた
  * 定数だった。「勘で決めた代理指標」のままでは、いくら引き直しても人間の曲に近づく
- * 保証が無い。そこで人間が書いたMIDIから `src/compose-metrics.ts` と**同じ指標**を
- * 抽出し、その分布のパーセンタイルを目標帯として `src/compose-corpus.ts` へ書き出す。
+ * 保証が無い。そこで人間が書いたMIDIから `src/compose/compose-metrics.ts` と**同じ指標**を
+ * 抽出し、その分布のパーセンタイルを目標帯として `src/compose/compose-corpus.ts` へ書き出す。
  *
  *   # ローカルのMIDIフォルダから較正する
  *   npx tsx scripts/calibrate-corpus.ts --dir "C:/path/to/midis"
@@ -12,7 +12,7 @@
  *   # picotune から取ってきて較正する（AGENTS.md のAPI）
  *   npx tsx scripts/calibrate-corpus.ts --api --limit 200
  *
- * 生成された `src/compose-corpus.ts` はコミットする。実行時にネットワークを触らせない
+ * 生成された `src/compose/compose-corpus.ts` はコミットする。実行時にネットワークを触らせない
  * ため、較正は開発時に済ませて定数として焼き込む。
  *
  * ## MIDIパーサを内蔵している理由
@@ -32,7 +32,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { durationEntropy } from "../src/compose";
+import { durationEntropy } from "../src/compose/compose";
 import {
 	type Band,
 	type DensityFeatures,
@@ -42,7 +42,7 @@ import {
 	normalizeByBand,
 	type StructureFeatures,
 	structureFeatures,
-} from "../src/compose-metrics";
+} from "../src/compose/compose-metrics";
 
 const STEPS_PER_BAR = 192;
 const DEBUG = process.argv.includes("--debug");
@@ -818,7 +818,7 @@ const main = async (): Promise<void> => {
  *   npx tsx scripts/calibrate-corpus.ts --dir <MIDIのフォルダ>
  *   npx tsx scripts/calibrate-corpus.ts --api --limit 200
  *
- * 人間が書いた曲 ${rows.length}本 から \`src/compose-metrics.ts\` と同じ指標を抽出し、
+ * 人間が書いた曲 ${rows.length}本 から \`src/compose/compose-metrics.ts\` と同じ指標を抽出し、
  * その分布の中央50%（p25〜p75）を満点、p05〜p95 の外側を0点とする目標帯にしたもの。
  * 手で決めた定数の代わりにこれを使うことで、受け入れ基準が
  * 「勘で決めた代理指標」から「人間の曲から採った代理指標」になる。
@@ -890,8 +890,8 @@ export const CORPUS_CELL_WEIGHTS: Record<string, number> = {
 ${cellWeightLines}
 };
 `;
-	writeFileSync(new URL("../src/compose-corpus.ts", import.meta.url), body);
-	console.log("\n  → src/compose-corpus.ts を書き出しました");
+	writeFileSync(new URL("../src/compose/compose-corpus.ts", import.meta.url), body);
+	console.log("\n  → src/compose/compose-corpus.ts を書き出しました");
 };
 
 // 直接実行されたときだけ較正を走らせる（分析スクリプトから部品を import できるように）。

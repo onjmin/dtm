@@ -11,7 +11,7 @@
  * 2. `lateChunks: "shift"` … 遅れて届いたチャンクは飛ばさず、時間軸ごと後ろへずらす
  *    （koe のデモと同じ）。`"first-chunk"` の既定。
  *
- * を足した。ここでは音を出さずに決められる時刻の計算（src/speech-schedule.ts）を、
+ * を足した。ここでは音を出さずに決められる時刻の計算（src/voice/speech-schedule.ts）を、
  * チャンクの到着時刻を偽って確かめる。
  *
  * - shift: 先頭余白（先行発声）ぶん今より前にはみ出す最初のチャンクも頭から鳴る
@@ -33,7 +33,7 @@ import {
 	skipPlacement,
 	speechBufferReached,
 	speechStartTime,
-} from "../src/speech-schedule";
+} from "../src/voice/speech-schedule";
 
 let failed = 0;
 let total = 0;

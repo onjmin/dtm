@@ -1,7 +1,7 @@
 /**
  * **人間が書いた2小節フレーズを、そのまま素材として抜き出す。**
  *
- *   npx tsx scripts/calibrate-phrases.ts --dir <MIDIのフォルダ> [--out src/compose-phrases.ts]
+ *   npx tsx scripts/calibrate-phrases.ts --dir <MIDIのフォルダ> [--out src/compose/compose-phrases.ts]
  *
  * ## なぜ要るか
  *
@@ -14,7 +14,7 @@
  * 音の列」になりうる。距離を目標にする方式ではこの情報は原理的に入らない。
  *
  * そこで、統計ではなく**実在したフレーズそのもの**を素材にする。リズムについては
- * 既に {@link file://../src/compose-corpus.ts} の `CORPUS_CELL_WEIGHTS` が出現頻度を
+ * 既に {@link file://../src/compose/compose-corpus.ts} の `CORPUS_CELL_WEIGHTS` が出現頻度を
  * 取り込んでいたが、**音高の並びだけが取り込まれていなかった**。ここを同じ仕組みで埋める。
  *
  * ## 何を保存するか
@@ -98,7 +98,7 @@ const main = (): void => {
 		console.error("--dir <MIDIのフォルダ> が要ります");
 		process.exit(1);
 	}
-	const out = argOf("--out") ?? "src/compose-phrases.ts";
+	const out = argOf("--out") ?? "src/compose/compose-phrases.ts";
 
 	const found = new Map<string, CorpusPhrase>();
 	let songs = 0;
@@ -204,7 +204,7 @@ const main = (): void => {
  * まさに人間が選んだ情報が消える）。
  *
  * 生成側はここから素材を引いて、移調・和音合わせ・セクション展開に掛ける。
- * **統計を目標にするのをやめた理由**は {@link file://../scripts/calibrate-phrases.ts}
+ * **統計を目標にするのをやめた理由**は {@link file://./calibrate-phrases.ts}
  * の冒頭にある。
  *
  * 抽出元: ${songs}本 / 2小節窓 ${windows} 個 → 使える形 ${phrases.length} 種

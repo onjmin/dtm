@@ -28,7 +28,7 @@ export default defineConfig([
 	{
 		// 歌声合成Worker。classic Web Worker として importScripts で worldline.js を
 		// 読むため、IIFE（非module）でビルドし koe を同梱する。dist/voice-worker.js を出力。
-		entry: { "voice-worker": "src/voice-worker.ts" },
+		entry: { "voice-worker": "src/voice/voice-worker.ts" },
 		format: ["iife"],
 		platform: "browser",
 		sourcemap: false,

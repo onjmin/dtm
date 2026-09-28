@@ -1,0 +1,942 @@
+/**
+ * DAWのDOM構築。innerHTMLでマークアップを生成し、要素参照を返す。
+ * すべて `dtm-` クラスでスタイル付けし、参照は data-dtm 属性経由で取得する。
+ */
+
+import { DELAY_DIVISIONS } from "../audio/delay";
+import { icon } from "./icons";
+import { persistPanels } from "./state/panel-state";
+import type { TrackConfig } from "../types";
+
+export type DawUIRefs = {
+	root: HTMLElement;
+	// transport
+	topbar: HTMLElement;
+	topbarLoading: HTMLElement;
+	playBtn: HTMLButtonElement;
+	prevBarBtn: HTMLButtonElement;
+	nextBarBtn: HTMLButtonElement;
+	soloCheckbox: HTMLInputElement;
+	clipBadge: HTMLButtonElement;
+	helpBtn: HTMLButtonElement;
+	// tools
+	toolPen: HTMLButtonElement;
+	toolSelect: HTMLButtonElement;
+	toolEraser: HTMLButtonElement;
+	undoBtn: HTMLButtonElement;
+	redoBtn: HTMLButtonElement;
+	noteLengthSelect: HTMLSelectElement;
+	bpmInput: HTMLInputElement;
+	zoomXLabel: HTMLElement;
+	zoomYLabel: HTMLElement;
+	zoomXIn: HTMLButtonElement;
+	zoomXOut: HTMLButtonElement;
+	zoomYIn: HTMLButtonElement;
+	zoomYOut: HTMLButtonElement;
+	bgFileInput: HTMLInputElement;
+	bgUploadBtn: HTMLButtonElement;
+	bgRemoveBtn: HTMLButtonElement;
+	bgOpacityInput: HTMLInputElement;
+	bgOpacityRow: HTMLElement;
+	bgYoutubeThumb: HTMLInputElement;
+	// roll
+	rollContainer: HTMLElement;
+	wrapper: HTMLElement;
+	vScroll: HTMLElement;
+	vScrollThumb: HTMLElement;
+	hScroll: HTMLElement;
+	hScrollThumb: HTMLElement;
+	// track panel
+	loopToggle: HTMLInputElement;
+	loopToggleLabel: HTMLElement;
+	loopInfoBtn: HTMLButtonElement;
+	masterVolume: HTMLInputElement;
+	masterVolumeLabel: HTMLElement;
+	masterComp: HTMLInputElement;
+	masterCompLabel: HTMLElement;
+	masterCompInfoBtn: HTMLButtonElement;
+	reverbAmount: HTMLInputElement;
+	reverbAmountLabel: HTMLElement;
+	reverbAmountInfoBtn: HTMLButtonElement;
+	reverbDecay: HTMLInputElement;
+	reverbDecayLabel: HTMLElement;
+	reverbPreDelay: HTMLInputElement;
+	reverbPreDelayLabel: HTMLElement;
+	delayAmount: HTMLInputElement;
+	delayAmountLabel: HTMLElement;
+	delayAmountInfoBtn: HTMLButtonElement;
+	delayDivision: HTMLSelectElement;
+	fadeIn: HTMLInputElement;
+	fadeInLabel: HTMLElement;
+	fadeOut: HTMLInputElement;
+	fadeOutLabel: HTMLElement;
+	fadeInfoBtn: HTMLButtonElement;
+	autoMasterBtn: HTMLButtonElement;
+	autoMasterInfoBtn: HTMLButtonElement;
+	trackTabs: HTMLElement;
+	trackBody: HTMLElement;
+	// drum
+	drumSelect: HTMLSelectElement;
+	drumFontSelect: HTMLSelectElement;
+	drumVolume: HTMLInputElement;
+	drumVolumeLabel: HTMLElement;
+	// audio（伴奏音源）
+	audioPanel: HTMLElement;
+	audioFileInput: HTMLInputElement;
+	audioUrlInput: HTMLInputElement;
+	audioUrlLoadBtn: HTMLButtonElement;
+	audioClearBtn: HTMLButtonElement;
+	audioInfoBtn: HTMLButtonElement;
+	audioStatus: HTMLElement;
+	audioYoutubeRow: HTMLElement;
+	audioYoutube: HTMLElement;
+	audioVolume: HTMLInputElement;
+	audioVolumeLabel: HTMLElement;
+	audioMute: HTMLInputElement;
+	audioStartInput: HTMLInputElement;
+	audioEndInput: HTMLInputElement;
+	audioLeadSelect: HTMLSelectElement;
+	audioOffsetInput: HTMLInputElement;
+	audioOffsetTail: HTMLElement;
+	// io
+	midiInput: HTMLInputElement;
+	midiLoadBtn: HTMLButtonElement;
+	midiInfoBtn: HTMLButtonElement;
+	midiTrackSelection: HTMLElement;
+	midiPanel: HTMLElement;
+	midiSearchOpenBtn: HTMLButtonElement;
+	musicXmlInput: HTMLInputElement;
+	musicXmlLoadBtn: HTMLButtonElement;
+	musicXmlInfoBtn: HTMLButtonElement;
+	musicXmlPartSelection: HTMLElement;
+	musicXmlLoadNote: HTMLElement;
+	ustInput: HTMLInputElement;
+	ustLoadBtn: HTMLButtonElement;
+	ustInfoBtn: HTMLButtonElement;
+	ustLoadNote: HTMLElement;
+	mmlInput: HTMLTextAreaElement;
+	mmlLoadBtn: HTMLButtonElement;
+	mmlLoadNote: HTMLElement;
+	applyActiveOnly: HTMLInputElement;
+	shiftSelect: HTMLSelectElement;
+	shiftApplyBtn: HTMLButtonElement;
+	shiftActiveOnly: HTMLInputElement;
+	transposeSelect: HTMLSelectElement;
+	transposeApplyBtn: HTMLButtonElement;
+	transposeInfoBtn: HTMLButtonElement;
+	// macros
+	macroCompose: HTMLButtonElement;
+	/** 今の曲を1つだけ取っておくボタン。作曲を押しても消えない退避枠。 */
+	composeKeep: HTMLButtonElement;
+	/** キープした曲へ戻すボタン。 */
+	composeRecall: HTMLButtonElement;
+	composeTemplate: HTMLSelectElement | null;
+	composeSections: HTMLElement;
+	composeSectionsLen: HTMLElement;
+	composeKey: HTMLSelectElement;
+	composeKeyHint: HTMLElement;
+	composeScale: HTMLSelectElement;
+	composeScaleHint: HTMLElement;
+	macroComposeVocal: HTMLButtonElement;
+	/** 「伴奏主体」。旋律をほとんど置かないループ曲を作る（docs/accomp-compose.md §9）。 */
+	macroComposeAccomp: HTMLButtonElement;
+	macroComposeInfo: HTMLButtonElement;
+	macroClear: HTMLButtonElement;
+	macroRandom: HTMLButtonElement;
+	macroHarmonic: HTMLButtonElement;
+	macroMono: HTMLButtonElement;
+	// output
+	exportMidiBtn: HTMLButtonElement;
+	exportMusicXmlBtn: HTMLButtonElement;
+	exportUstBtn: HTMLButtonElement;
+	exportWavBtn: HTMLButtonElement;
+	drumJsonExportBtn: HTMLButtonElement;
+	drumJsonOutput: HTMLElement;
+	drumJsonStatus: HTMLElement;
+	drumJsonText: HTMLElement;
+	drumJsonCopyBtn: HTMLButtonElement;
+	generateMmlBtn: HTMLButtonElement;
+	decomposeChordToggle: HTMLInputElement;
+	ignoreChordHeavyToggle: HTMLInputElement;
+	barLimitSelect: HTMLSelectElement;
+	outputContainer: HTMLElement;
+	outputStatus: HTMLElement;
+	outputFull: HTMLElement;
+	outputMini: HTMLElement;
+	copyFullBtn: HTMLButtonElement;
+	copyMiniBtn: HTMLButtonElement;
+	// overlay
+	overlay: HTMLElement;
+	edoSelect: HTMLSelectElement;
+	edoInfoBtn: HTMLButtonElement;
+	// modal
+	mmlInfoBtn: HTMLButtonElement;
+	modalOverlay: HTMLElement;
+	modalTitle: HTMLElement;
+	modalBody: HTMLElement;
+	modalClose: HTMLButtonElement;
+};
+
+const q = <T extends HTMLElement>(root: HTMLElement, sel: string): T =>
+	root.querySelector(sel) as T;
+
+export type BuildUIOptions = {
+	tracks: TrackConfig[];
+	drumPatterns: { value: string; label: string }[];
+	defaultDrumPattern: string;
+	defaultBpm: number;
+	showMidi: boolean;
+	showChord: boolean;
+	/** 伴奏音源（mp3/wav/YouTube）のパネルを出すか。再生器が注入されたときだけ出す。 */
+	showAudio: boolean;
+	showMidiSearch: boolean;
+	/** 「作曲」ボタンを出すか。役割が固定の4トラック（シンプルモード）でしか成立しない。 */
+	showCompose: boolean;
+	/** ヘルプ（「?」）ボタンを出すか。押すと使い方モーダル／ガイドツアーの入口になる。 */
+	showHelp: boolean;
+};
+
+/**
+ * DAWのUIを構築し、要素参照を返す。
+ */
+export const buildUI = (
+	target: HTMLElement,
+	options: BuildUIOptions,
+): DawUIRefs => {
+	const {
+		drumPatterns,
+		defaultDrumPattern,
+		defaultBpm,
+		showMidi,
+		showMidiSearch,
+		showCompose,
+		showAudio,
+		showHelp,
+	} = options;
+
+	const drumOptions = [`<option value="none">なし</option>`]
+		.concat(
+			drumPatterns.map(
+				(p) =>
+					`<option value="${p.value}" ${p.value === defaultDrumPattern ? "selected" : ""}>${p.label}</option>`,
+			),
+		)
+		.join("");
+
+	target.innerHTML = `
+<div class="dtm-daw" data-dtm="root">
+  <!-- 編集ヘッド。トランスポート・ツール・ピアノロールをひとまとめにして
+       画面上部へ貼り付ける（.dtm-daw-head が position:sticky）。パネルを
+       いくつ開いてもロールが視界から消えないようにするための箱。 -->
+  <div class="dtm-daw-head">
+  <div class="dtm-topbar" data-dtm="transport">
+    <div class="dtm-topbar-row1">
+      <button class="dtm-iconbtn" data-dtm="prev-bar" title="1小節前">${icon("chevronLeft")}</button>
+      <button class="dtm-play" data-dtm="play" disabled>${icon("play")}</button>
+      <button class="dtm-iconbtn" data-dtm="next-bar" title="1小節後">${icon("chevronRight")}</button>
+      <label class="dtm-toggle"><input type="checkbox" data-dtm="solo"><span>ソロ</span></label>
+      <span class="dtm-topbar-loading dtm-blink" data-dtm="topbar-loading">... LOADING ...</span>
+      <button class="dtm-clip-badge dtm-hidden" data-dtm="clip-badge" title="音割れ検知（クリックで消す）">CLIP</button>
+      <span class="dtm-grow"></span>
+      <button class="dtm-iconbtn${showHelp ? "" : " dtm-hidden"}" data-dtm="help" title="使い方・ガイドツアー" aria-label="使い方・ガイドツアー">${icon("help")}</button>
+      <span class="dtm-label">BPM</span>
+      <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
+    </div>
+    <div class="dtm-tracks" data-dtm="track-tabs"></div>
+  </div>
+
+  <div class="dtm-tooldock">
+    <div class="dtm-seg">
+      <button class="dtm-segbtn dtm-segbtn--active" data-dtm="tool-pen" title="ペン">${icon("pen")}</button>
+      <button class="dtm-segbtn" data-dtm="tool-select" title="選択">${icon("select")}</button>
+      <button class="dtm-segbtn" data-dtm="tool-eraser" title="消しゴム">${icon("eraser")}</button>
+    </div>
+    <button class="dtm-iconbtn" data-dtm="undo" title="元に戻す" disabled>${icon("undo")}</button>
+    <button class="dtm-iconbtn" data-dtm="redo" title="やり直し" disabled>${icon("redo")}</button>
+    <select class="dtm-select dtm-grow" data-dtm="note-length" title="音符の長さ">
+      <option value="48">4分</option>
+      <option value="32">3連4</option>
+      <option value="24">8分</option>
+      <option value="16">3連8</option>
+      <option value="12" selected>16分</option>
+      <option value="8">3連16</option>
+      <option value="6">32分</option>
+      <option value="4">3連32</option>
+    </select>
+  </div>
+
+  <div class="dtm-roll-wrap">
+    <div class="dtm-roll" data-dtm="roll">
+      <div data-dtm="wrapper" style="position:absolute;inset:0;"></div>
+      <div class="dtm-overlay" data-dtm="overlay" hidden><div class="dtm-spinner"></div></div>
+    </div>
+    <div class="dtm-vscroll" data-dtm="vscroll"><div class="dtm-vscroll-thumb" data-dtm="vscroll-thumb"></div></div>
+  </div>
+  <div class="dtm-hscroll" data-dtm="hscroll"><div class="dtm-hscroll-thumb" data-dtm="hscroll-thumb"></div></div>
+  </div>
+
+  <!-- 設定パネル群。広い画面ではヘッドの右隣に立つ独立した列になる。 -->
+  <div class="dtm-daw-panels">
+
+  <details class="dtm-panel" data-dtm-acc="track" open>
+    <summary>個別トラック設定</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-track-body" data-dtm="track-body"></div>
+    </div>
+  </details>
+
+  <details class="dtm-panel" data-dtm-acc="view">
+    <summary>表示</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row">
+        <span class="dtm-label">横ズーム</span>
+        <button class="dtm-iconbtn" data-dtm="zoomx-out" title="縮小">−</button>
+        <span class="dtm-label" data-dtm="zoomx-label">100%</span>
+        <button class="dtm-iconbtn" data-dtm="zoomx-in" title="拡大">＋</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">縦ズーム</span>
+        <button class="dtm-iconbtn" data-dtm="zoomy-out" title="縮小">−</button>
+        <span class="dtm-label" data-dtm="zoomy-label">100%</span>
+        <button class="dtm-iconbtn" data-dtm="zoomy-in" title="拡大">＋</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">背景画像</span>
+        <input type="file" accept="image/*" data-dtm="bg-file-input" class="dtm-hidden">
+        <button class="dtm-btn dtm-btn--primary" data-dtm="bg-upload">アップロード</button>
+        <button class="dtm-btn dtm-btn--danger dtm-hidden" data-dtm="bg-remove">削除</button>
+      </div>
+      <div class="dtm-row">
+        <label class="dtm-checkbox-label" title="YouTubeの音源を読み込んだとき、その動画のサムネイルを背景に使います（自分で設定した背景画像があればそちらが優先）">
+          <input type="checkbox" class="dtm-checkbox" data-dtm="bg-youtube-thumb"> YouTubeのサムネを背景にする
+        </label>
+      </div>
+      <div class="dtm-row dtm-hidden" data-dtm="bg-opacity-row">
+        <span class="dtm-label">背景不透明度</span>
+        <input type="range" min="0" max="100" value="40" data-dtm="bg-opacity" class="dtm-slider">
+      </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel" data-dtm-acc="global" open>
+    <summary>全体トラック設定</summary>
+    <div class="dtm-panel-body">
+      <div data-dtm="preset-select-slot"></div>
+      <div class="dtm-row">
+        <span class="dtm-label">音律</span>
+        <select class="dtm-select dtm-grow" data-dtm="edo-select">
+          <option value="12">12平均律（通常）</option>
+          <option value="31">31平均律（微分音）</option>
+        </select>
+        <button class="dtm-infobtn" data-dtm="edo-info" title="音律の解説">${icon("info", 12)}</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">ループ再生</span>
+        <label class="dtm-toggle">
+          <input type="checkbox" data-dtm="loop-toggle">
+          <span data-dtm="loop-toggle-label">OFF</span>
+        </label>
+        <span class="dtm-grow"></span>
+        <button class="dtm-infobtn" data-dtm="loop-info" title="ループ再生の解説">${icon("info", 12)}</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">全体音量</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="master-volume" value="50" min="0" max="100">
+        <span class="dtm-label" data-dtm="master-volume-label">50%</span>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">グルーコンプ</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="master-comp" value="0" min="0" max="100" aria-label="マスタバスのグルーコンプレッサー（全トラックをまとめて軽く圧縮し、一体感を出す）">
+        <span class="dtm-label" data-dtm="master-comp-label">0%</span>
+        <button class="dtm-infobtn" data-dtm="master-comp-info" title="グルーコンプの解説">${icon("info", 12)}</button>
+      </div>
+      <div class="dtm-row">
+        <button class="dtm-btn dtm-btn--ghost dtm-btn--xs" data-dtm="auto-master" title="音圧・ステレオ幅・リバーブに加え、各トラックの楽器・音量も自動推定して一括設定します">おまかせマスタリング</button>
+        <button class="dtm-infobtn" data-dtm="auto-master-info" title="おまかせマスタリングの解説">${icon("info", 12)}</button>
+        <span class="dtm-grow"></span>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">リバーブ</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="reverb-amount" value="0" min="0" max="100" aria-label="マスタリバーブ（全トラックへ一律に掛かる残響）">
+        <span class="dtm-label" data-dtm="reverb-amount-label">0%</span>
+        <button class="dtm-infobtn" data-dtm="reverb-amount-info" title="マスタリバーブの解説">${icon("info", 12)}</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">Decay</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="reverb-decay" value="22" min="3" max="40" step="1" aria-label="リバーブのDecay（残響の長さ、秒）">
+        <span class="dtm-label" data-dtm="reverb-decay-label">2.2s</span>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">Pre Delay</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="reverb-predelay" value="0" min="0" max="150" step="5" aria-label="リバーブのPre Delay（原音から残響が立ち上がるまでの遅延、ms）">
+        <span class="dtm-label" data-dtm="reverb-predelay-label">0ms</span>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">ディレイ</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="delay-amount" value="0" min="0" max="100" aria-label="マスタディレイ（テンポ同期したエコー）">
+        <span class="dtm-label" data-dtm="delay-amount-label">0%</span>
+        <select class="dtm-select" data-dtm="delay-division" aria-label="ディレイの音価（テンポに同期）">
+          ${DELAY_DIVISIONS.map((d) => `<option value="${d.value}">${d.label}</option>`).join("")}
+        </select>
+        <button class="dtm-infobtn" data-dtm="delay-amount-info" title="マスタディレイの解説">${icon("info", 12)}</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">フェードイン</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="fade-in" value="0" min="0" max="10" step="0.5" aria-label="曲頭のフェードイン長（秒）">
+        <span class="dtm-label" data-dtm="fade-in-label">0.0s</span>
+        <button class="dtm-infobtn" data-dtm="fade-info" title="フェードイン/アウトの解説">${icon("info", 12)}</button>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">フェードアウト</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="fade-out" value="0" min="0" max="10" step="0.5" aria-label="曲尾のフェードアウト長（秒）">
+        <span class="dtm-label" data-dtm="fade-out-label">0.0s</span>
+      </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel" data-dtm-acc="drum">
+    <summary>ドラム設定</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row">
+        <span class="dtm-label">リズム</span>
+        <select class="dtm-select" data-dtm="drum-select">${drumOptions}</select>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">音源</span>
+        <select class="dtm-select" data-dtm="drum-font-select">
+          ${[
+						"Chaos_sf2_file",
+						"FluidR3_GM_sf2_file",
+						"JCLive_sf2_file",
+						"SBLive_sf2",
+					]
+						.flatMap((font) =>
+							[0, 11, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(
+								(id) =>
+									`<option value="${font}:${id}">${font} (${id})</option>`,
+							),
+						)
+						.join("")}
+        </select>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">音量</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="drum-volume" value="80" min="0" max="100">
+        <span class="dtm-label" data-dtm="drum-volume-label">80%</span>
+      </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel ${showAudio ? "" : "dtm-hidden"}" data-dtm="audio-panel" data-dtm-acc="audio">
+    <summary>オーディオ同時再生</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
+          <span class="dtm-label" style="line-height: 1;">音源</span>
+          <button class="dtm-infobtn" data-dtm="audio-info" title="オーディオ同時再生の解説">${icon("info", 12)}</button>
+        </div>
+        <input type="file" class="dtm-input dtm-grow" accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac" data-dtm="audio-file" style="min-width:0">
+      </div>
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <span class="dtm-label" style="flex-shrink:0">URL</span>
+        <input type="url" class="dtm-input dtm-grow" data-dtm="audio-url" placeholder="mp3 / wav / YouTube のURL" style="min-width:0">
+        <button class="dtm-btn dtm-btn--success" data-dtm="audio-url-load" style="flex-shrink:0">読込</button>
+      </div>
+      <p class="dtm-audio-note dtm-hidden" data-dtm="audio-status"></p>
+      <div class="dtm-row dtm-hidden" data-dtm="audio-youtube-row">
+        <div class="dtm-audio-yt" data-dtm="audio-youtube"></div>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">音量</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="audio-volume" value="80" min="0" max="100">
+        <span class="dtm-label" data-dtm="audio-volume-label">80%</span>
+        <label class="dtm-checkbox-label" title="打ち込みだけを聴きたいときに外す">
+          <input type="checkbox" class="dtm-checkbox" data-dtm="audio-mute"> ミュート
+        </label>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">音源の範囲</span>
+        <input type="text" class="dtm-input" data-dtm="audio-start" value="0:00.000" placeholder="0:00.000" style="width:88px" title="音源のどこから鳴らすか（分:秒.ミリ秒）。いらない部分を飛ばせます">
+        <span class="dtm-label">〜</span>
+        <input type="text" class="dtm-input" data-dtm="audio-end" placeholder="最後まで" style="width:88px" title="音源のどこで止めるか（分:秒.ミリ秒）。空欄なら最後まで">
+      </div>
+      <div class="dtm-row" style="flex-wrap:wrap">
+        <span class="dtm-label">開始のずれ</span>
+        <select class="dtm-select" data-dtm="audio-lead" title="音源と打ち込みのどちらを先に始めるか">
+          <option value="audio">音源</option>
+          <option value="song">打ち込み</option>
+        </select>
+        <span class="dtm-label">が先、</span>
+        <input type="text" class="dtm-input" data-dtm="audio-offset" value="0:00.000" placeholder="0:00.000" style="width:88px" title="もう一方が始まるまでの時間（分:秒.ミリ秒）。0なら同時に始まります">
+        <span class="dtm-label" data-dtm="audio-offset-tail">後に打ち込み開始</span>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-grow"></span>
+        <button class="dtm-btn dtm-btn--danger" data-dtm="audio-clear">外す</button>
+      </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel ${showMidi ? "" : "dtm-hidden"}" data-dtm="midi-panel" data-dtm-acc="io-in">
+    <summary>MIDI / MusicXML / UST / MML 入力</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
+          <span class="dtm-label" style="line-height: 1;">MIDI</span>
+          <button class="dtm-infobtn" data-dtm="midi-info" title="MIDIの読み込み解説">${icon("info", 12)}</button>
+        </div>
+        <input type="file" class="dtm-input dtm-grow" accept=".mid,.midi" data-dtm="midi-input" style="min-width:0">
+        <button class="dtm-btn dtm-btn--success" data-dtm="midi-load" style="flex-shrink:0">読込</button>
+      </div>
+      <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
+          <span class="dtm-label" style="line-height: 1;">MusicXML</span>
+          <button class="dtm-infobtn" data-dtm="musicxml-info" title="MusicXMLの読み込み解説">${icon("info", 12)}</button>
+        </div>
+        <input type="file" class="dtm-input dtm-grow" accept=".musicxml,.xml" data-dtm="musicxml-input" style="min-width:0">
+        <button class="dtm-btn dtm-btn--success" data-dtm="musicxml-load" style="flex-shrink:0">読込</button>
+      </div>
+      <div class="dtm-row dtm-hidden" data-dtm="musicxml-part-selection"></div>
+      <p class="dtm-load-note dtm-hidden" data-dtm="musicxml-load-note"></p>
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
+          <span class="dtm-label" style="line-height: 1;">UST</span>
+          <button class="dtm-infobtn" data-dtm="ust-info" title="USTの読み込み解説">${icon("info", 12)}</button>
+        </div>
+        <input type="file" class="dtm-input dtm-grow" accept=".ust" multiple data-dtm="ust-input" style="min-width:0">
+        <button class="dtm-btn dtm-btn--success" data-dtm="ust-load" style="flex-shrink:0">読込</button>
+      </div>
+      <p class="dtm-load-note dtm-hidden" data-dtm="ust-load-note"></p>
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
+          <span class="dtm-label" style="line-height: 1;">MML</span>
+          <button class="dtm-infobtn" data-dtm="mml-info" title="MMLの書き方解説">${icon("info", 12)}</button>
+        </div>
+        <textarea class="dtm-textarea dtm-grow" data-dtm="mml-input" placeholder="MMLを入力"></textarea>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="mml-load" style="flex-shrink:0">読込</button>
+      </div>
+      <div class="dtm-row" data-dtm="midi-search-row" style="justify-content:flex-end;${showMidiSearch ? "" : "display:none"}">
+        <button class="dtm-btn dtm-btn--primary" data-dtm="midi-search-open">MML検索</button>
+      </div>
+      <p class="dtm-load-note dtm-hidden" data-dtm="mml-load-note"></p>
+      <div class="dtm-row" style="margin-top:8px;">
+        <label class="dtm-checkbox-label" title="有効にすると、現在選択中のトラックのみ変更します">
+          <input type="checkbox" class="dtm-checkbox" data-dtm="apply-active-only"> 現在のトラックのみ対象とする
+        </label>
+      </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel dtm-panel--compose ${showCompose ? "" : "dtm-hidden"}" data-dtm-acc="compose">
+    <summary>自動作曲</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row" data-dtm="compose-row">
+        <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose" title="コード進行・メロディ・サブメロ・ベース・伴奏・ドラムを自動で作ります">作曲</button>
+        <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose-vocal" title="作曲したうえで、メロディに歌詞を付けて歌わせます">歌入り作曲</button>
+        <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose-accomp" title="旋律をほとんど置かず、分散和音・低音・和音で約2分半〜3分のループ曲を作ります（ドラムなし・残響とディレイ付き）。ベース調は使い、構成・作る部分・音階は使いません">伴奏主体</button>
+        <button class="dtm-infobtn" data-dtm="macro-compose-info" title="作曲の解説">${icon("info", 12)}</button>
+        <!--
+          **キープ枠は1つだけ。** 自動作曲は気に入るまで引き直す使い方になるが、
+          「引き直すと今のが消える」と思うと引き直せなくなる。取っておける場所が
+          1つあれば、2つを比べて選ぶことは成立する。候補を並べるUIはスマホでは
+          成立しない（試聴時間・画面・生成コストのどれも足りない）。
+          「入れ替え」は今の曲とキープを交換する。呼び出すだけだと今の曲が消えて
+          2曲を行き来できないため。枠はリロードをまたいで残る（localStorage）。
+        -->
+        <button class="dtm-btn" data-dtm="compose-keep" title="今の曲を1つだけ取っておきます。作曲を押し直しても、ページを開き直しても消えません">キープ</button>
+        <button class="dtm-btn" data-dtm="compose-recall" title="キープした曲と今の曲を入れ替えて、キープしていた曲を鳴らします。もう一度押すと戻ります" disabled>入れ替え</button>
+        <span class="dtm-grow"></span>
+      </div>
+      <div class="dtm-row" data-dtm="compose-template-row">
+        <span class="dtm-label">構成</span>
+        <select class="dtm-select" data-dtm="compose-template" title="J-POP王道などのプリセット構成を選びます">
+          <option value="custom">自由選択（下記チェック）</option>
+          <option value="1chorus">1コーラス（短め・初心者向け）</option>
+          <option value="jpop_standard">JPOP王道（マリーゴールド型 2番/Cメロ/ラスサビ）</option>
+          <option value="jpop_drop">落ちサビ入り（JPOP王道 + ラスサビ前落ちサビ）</option>
+          <option value="vocaloid">ボカロ王道（疾走・2番/Cメロ/ラスサビ）</option>
+          <option value="verse_chorus">Verse-Chorus（Bメロなし・洋楽風）</option>
+          <option value="game_loop">ゲームBGM（ループ・16分リフ）</option>
+        </select>
+      </div>
+      <div class="dtm-row" data-dtm="compose-sections-row">
+        <span class="dtm-label">作る部分</span>
+        <div class="dtm-checks" data-dtm="compose-sections">
+          <label class="dtm-check"><input type="checkbox" value="intro" checked>イントロ</label>
+          <label class="dtm-check"><input type="checkbox" value="verse" checked>Aメロ</label>
+          <label class="dtm-check"><input type="checkbox" value="prechorus" checked>Bメロ</label>
+          <label class="dtm-check"><input type="checkbox" value="chorus" checked>サビ</label>
+          <label class="dtm-check"><input type="checkbox" value="bridge">Cメロ</label>
+          <label class="dtm-check"><input type="checkbox" value="drop_chorus">落ちサビ</label>
+          <label class="dtm-check"><input type="checkbox" value="interlude">間奏</label>
+          <label class="dtm-check"><input type="checkbox" value="outro">アウトロ</label>
+        </div>
+        <span class="dtm-grow"></span>
+        <span class="dtm-hint" data-dtm="compose-sections-len"></span>
+      </div>
+      <div class="dtm-row" data-dtm="compose-key-row">
+        <span class="dtm-label">ベース調</span>
+        <select class="dtm-select" data-dtm="compose-key" title="自動作曲のベースとなる調や雰囲気を選びます">
+          <option value="any" title="全24調からランダムに決定します">希望なし</option>
+          <optgroup label="基本">
+            <option value="major" title="12の長調の中からランダムに抽選します">長調</option>
+            <option value="minor" title="12の短調の中からランダムに抽選します">短調</option>
+          </optgroup>
+          <optgroup label="雰囲気から選ぶ（抽選）">
+            <option value="mood_happy" title="ハ長調・イ長調・変ロ長調から抽選（無垢に喜ばしい、牧歌的、陽気）">喜ばしい・陽気な曲</option>
+            <option value="mood_triumphant" title="ニ長調・変ト長調から抽選（意気揚々、勝利の喊声、困難打破、安堵）">勝利・力強い曲</option>
+            <option value="mood_fierce" title="ホ長調・ヘ長調・ロ長調から抽選（けんかっ早い、怒り狂った荒々しさ、どぎつく猛烈）">激しい・荒々しい曲</option>
+            <option value="mood_solemn" title="ト長調・ニ短調・イ短調から抽選（厳粛、崇高、幻想、敬虔、思索的）">厳粛・幻想的な曲</option>
+            <option value="mood_plaintive" title="ハ短調・ホ短調・ヘ短調から抽選（純粋に悲しげ、恋わずらい、落ち着きのない、物悲しい哀愁）">物悲しい・哀愁の曲</option>
+            <option value="mood_melancholy" title="変ニ長調・ロ短調・嬰ハ短調から抽選（悲しみ、憂鬱、孤独、忍耐、落胆、悲涙）">憂鬱・孤独な曲</option>
+            <option value="mood_anxious" title="ト短調・変ホ短調・嬰ヘ短調・変イ短調から抽選（不満、不安、深い苦悩、陰気な憤り）">不安・苦悩な曲</option>
+            <option value="mood_dark" title="変ホ長調・変イ長調・変ロ短調から抽選（厳しい愛、死、永遠、裁き、暗闇、恐ろしい嘲り）">暗闇・重厚な曲</option>
+          </optgroup>
+          <optgroup label="長調（個別指定）">
+            <option value="key_C" title="無垢に喜ばしい、純粋、素朴、出発">ハ長調 (C)</option>
+            <option value="key_Db" title="悲しみ、憂鬱な、甘美な感傷">変ニ長調 (D♭)</option>
+            <option value="key_D" title="意気揚々とした、勝利の、喊声">ニ長調 (D)</option>
+            <option value="key_Eb" title="厳しい、きつい、それでいて愛に満ちた">変ホ長調 (E♭)</option>
+            <option value="key_E" title="けんかっ早い、荒々しい、輝かしい情熱">ホ長調 (E)</option>
+            <option value="key_F" title="怒り狂った、気性の荒い、一時的な悲嘆">ヘ長調 (F)</option>
+            <option value="key_Gb" title="困難の打破、安堵のため息、凱旋">変ト長調 (G♭)</option>
+            <option value="key_G" title="厳粛な、崇高な、幻想、誠実">ト長調 (G)</option>
+            <option value="key_Ab" title="死、永遠、裁き、深遠な瞑想">変イ長調 (A♭)</option>
+            <option value="key_A" title="うれしい、牧歌的な、愛の告白">イ長調 (A)</option>
+            <option value="key_Bb" title="喜ばしい、風変わりな、陽気な、軽快">変ロ長調 (B♭)</option>
+            <option value="key_B" title="どぎつい、強烈な、荒っぽい、猛烈">ロ長調 (B)</option>
+          </optgroup>
+          <optgroup label="短調（個別指定）">
+            <option value="key_Am" title="柔らかな、物悲しい、敬虔な、素朴な哀愁">イ短調 (Am)</option>
+            <option value="key_Bbm" title="恐ろしい、暗闇、嘲るような、不気味">変ロ短調 (B♭m)</option>
+            <option value="key_Bm" title="孤独な、憂鬱な、忍耐、静かな諦念">ロ短調 (Bm)</option>
+            <option value="key_Cm" title="純粋に悲しげな、恋わずらいの、悲劇的">ハ短調 (Cm)</option>
+            <option value="key_Csm" title="落胆、泣き叫んだ、悲涙の、深い嘆き">嬰ハ短調 (C♯m)</option>
+            <option value="key_Dm" title="厳粛な、敬虔な、思索的な、重厚な祈り">ニ短調 (Dm)</option>
+            <option value="key_Ebm" title="深い苦悩、実存的な不安、戦慄">変ホ短調 (E♭m)</option>
+            <option value="key_Em" title="弱々しい、なまめかしい、落ち着きのない">ホ短調 (Em)</option>
+            <option value="key_Fm" title="ぼんやりした、物悲しい、しめやかな、葬送">ヘ短調 (Fm)</option>
+            <option value="key_Fsm" title="陰気な、激しい憤り、暗い情念">嬰ヘ短調 (F♯m)</option>
+            <option value="key_Gm" title="不満、不安、やるせなさ、悲痛な叫び">ト短調 (Gm)</option>
+            <option value="key_Abm" title="不服な、嘆きの、泣き叫んだ">変イ短調 (A♭m)</option>
+          </optgroup>
+        </select>
+        <span class="dtm-grow"></span>
+        <span class="dtm-hint" data-dtm="compose-key-hint"></span>
+      </div>
+      <div class="dtm-row" data-dtm="compose-scale-row">
+        <span class="dtm-label">音階</span>
+        <select class="dtm-select" data-dtm="compose-scale" title="旋律が使う音階を選びます。ベース調（主音の高さ）とは独立した設定です">
+          <option value="auto" title="ベース調の長短に合わせて、陽音階（長調）か民謡音階（短調）を使います">おまかせ（従来どおり）</option>
+          <option value="any" title="9つの音階からランダムに抽選します">希望なし（全音階から抽選）</option>
+          <optgroup label="ペンタトニック（5音音階）">
+            <option value="yo" title="J-POPの標準。明るく素直で歌いやすい。従来の長調と同じ">陽音階（長調ペンタ）</option>
+            <option value="minyo" title="わらべ歌・民謡の音階。翳りがあるが暗すぎない。従来の短調と同じ">民謡音階（短調ペンタ）</option>
+            <option value="ryukyu" title="沖縄音階。レとラを抜き、ファとシを柱にする。明るく跳ねる">琉球音階（沖縄）</option>
+            <option value="miyakobushi" title="『さくらさくら』の音階。主音のすぐ上が半音で、翳りが濃い">都節音階（陰音階）</option>
+            <option value="ritsu" title="雅楽・声明の音階。半音を含まず、平らで荘重に流れる">律音階（雅楽）</option>
+          </optgroup>
+          <optgroup label="チャーチモード（7音音階）">
+            <option value="dorian" title="短調だが6度が明るい。ケルト・ロック・シティポップ">ドリアン</option>
+            <option value="phrygian" title="主音の上が半音。スパニッシュ／メタルの緊迫した響き">フリジアン</option>
+            <option value="lydian" title="4度が高く、浮遊して広がる。映画音楽・ゲームの空の色">リディアン</option>
+            <option value="mixolydian" title="長調だが7度が低い。ブルースロック・民族音楽の土くささ">ミクソリディアン</option>
+          </optgroup>
+          <optgroup label="特殊音階（音程集合ごと入れ替わる）">
+            <option value="harmonic_minor" title="導音ソ♯を持つ短調。増2度が泣きを作る。クラシック・V系・劇伴">和声的短音階</option>
+            <option value="hijaz" title="主音の上が半音、主和音は長三和音。中東・スパニッシュ・メタル">ヒジャーズ（フリジアン・ドミナント）</option>
+            <option value="hungarian" title="増2度が2か所。音階の中でいちばん跳ねた、異国めいた響き">ハンガリアン・マイナー（ジプシー）</option>
+            <option value="blues" title="ブルーノート入りの6音音階。短3度で歌い、伴奏は長3度で鳴る">ブルース音階</option>
+            <option value="minor_blues" title="短調の上を♭5が半音で掠める。一つの和音でリフを回すゲーム・ロック">マイナー・ブルース</option>
+          </optgroup>
+        </select>
+        <span class="dtm-grow"></span>
+        <span class="dtm-hint" data-dtm="compose-scale-hint"></span>
+      </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel" data-dtm-acc="macro">
+    <summary>一括編集</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row">
+        <span class="dtm-label">全体シフト</span>
+        <select class="dtm-select" data-dtm="shift-select">
+          <option value="-1536">-8小節</option>
+          <option value="-192">-1小節</option>
+          <option value="-96">-2分</option>
+          <option value="-48">-4分</option>
+          <option value="-24">-8分</option>
+          <option value="-12">-16分</option>
+          <option value="12">+16分</option>
+          <option value="24">+8分</option>
+          <option value="48">+4分</option>
+          <option value="96">+2分</option>
+          <option value="192">+1小節</option>
+          <option value="1536">+8小節</option>
+        </select>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="shift-apply">適用</button>
+        <label class="dtm-checkbox-label" title="有効にすると、いま開いているトラックだけをシフトします">
+          <input type="checkbox" class="dtm-checkbox" data-dtm="shift-active-only"> このトラックのみ
+        </label>
+      </div>
+      <div class="dtm-row">
+        <span class="dtm-label">移調</span>
+        <select class="dtm-select" data-dtm="transpose-select" aria-label="移調する半音数">
+          <option value="-12">-1oct</option>
+          <option value="-7">-5th</option>
+          <option value="-5">-4th</option>
+          <option value="-3">-3半音</option>
+          <option value="-2">-2半音</option>
+          <option value="-1">-1半音</option>
+          <option value="1">+1半音</option>
+          <option value="2">+2半音</option>
+          <option value="3">+3半音</option>
+          <option value="5">+4th</option>
+          <option value="7">+5th</option>
+          <option value="12">+1oct</option>
+        </select>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="transpose-apply">適用</button>
+        <button class="dtm-infobtn" data-dtm="transpose-info" title="移調の解説">${icon("info", 12)}</button>
+      </div>
+      <div class="dtm-row">
+        <button class="dtm-btn dtm-btn--danger" data-dtm="macro-clear">全消去</button>
+        <button class="dtm-btn dtm-btn--accent" data-dtm="macro-random">ランダム配置</button>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="macro-harmonic">伴奏フィルタ</button>
+        <button class="dtm-btn dtm-btn--primary" data-dtm="macro-mono">単音化</button>
+      </div>
+    </div>
+  </details>
+
+  <details class="dtm-panel" data-dtm-acc="io-out">
+    <summary>MIDI / MusicXML / UST / MML 出力</summary>
+    <div class="dtm-panel-body">
+      <div class="dtm-row">
+        <button class="dtm-btn dtm-btn--accent" data-dtm="export-midi">MIDI出力</button>
+        <button class="dtm-btn dtm-btn--accent" data-dtm="export-musicxml" title="全トラックをMusicXML（楽譜）形式で書き出します">MusicXML出力</button>
+        <button class="dtm-btn dtm-btn--accent" data-dtm="export-ust" title="現在選択中のトラックだけをUSTで書き出します">UST出力</button>
+        <button class="dtm-btn dtm-btn--success" data-dtm="generate-mml">MML生成</button>
+        <button class="dtm-btn dtm-btn--primary dtm-hidden" data-dtm="export-wav">WAV書き出し</button>
+      </div>
+      <div class="dtm-row">
+        <button class="dtm-btn dtm-btn--primary" data-dtm="drum-json-export" title="読み込んだMIDIのドラム定義をJSON出力">ドラムJSON出力</button>
+      </div>
+      <label class="dtm-checkbox-label">
+        <input type="checkbox" class="dtm-checkbox" data-dtm="decompose-chord">
+        <span>和音分解モード（単音トラックに最適分割）</span>
+      </label>
+      <label class="dtm-checkbox-label dtm-checkbox-label--sub">
+        <input type="checkbox" class="dtm-checkbox" data-dtm="ignore-chord-heavy">
+        <span>和音伴奏トラックを無視（分解対象から除外）</span>
+      </label>
+      <div class="dtm-row" style="margin-top:6px;align-items:center;gap:8px;">
+        <span class="dtm-label">生成上限</span>
+        <select class="dtm-select" data-dtm="bar-limit">
+          <option value="0">制限なし</option>
+          <option value="8">8小節</option>
+          <option value="16">16小節</option>
+          <option value="24">24小節</option>
+          <option value="32">32小節</option>
+          <option value="64">64小節</option>
+          <option value="128">128小節</option>
+        </select>
+      </div>
+      <div class="dtm-output dtm-hidden" data-dtm="drum-json-output">
+        <p class="dtm-label" data-dtm="drum-json-status"></p>
+        <div class="dtm-output-row">
+          <pre class="dtm-output-scroll"><code data-dtm="drum-json-text"></code></pre>
+          <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="drum-json-copy" title="コピー">${icon("copy")}</button>
+        </div>
+      </div>
+      <div class="dtm-output dtm-hidden" data-dtm="output-container">
+        <p class="dtm-label" data-dtm="output-status"></p>
+        <div class="dtm-output-label">改行あり版</div>
+        <div class="dtm-output-row">
+          <pre><code data-dtm="output-full"></code></pre>
+          <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="copy-full" title="コピー">${icon("copy")}</button>
+        </div>
+        <div class="dtm-output-label">１行版</div>
+        <div class="dtm-output-row">
+          <pre><code data-dtm="output-mini"></code></pre>
+          <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="copy-mini" title="コピー">${icon("copy")}</button>
+        </div>
+      </div>
+    </div>
+  </details>
+  </div>
+
+  <!-- ════ 解説モーダル ════ -->
+  <div class="dtm-modal-overlay" data-dtm="modal-overlay" hidden>
+    <div class="dtm-win dtm-modal">
+      <div class="dtm-modal-header">
+        <span class="dtm-modal-title" data-dtm="modal-title"></span>
+        <button class="dtm-modal-close" data-dtm="modal-close">&times;</button>
+      </div>
+      <div class="dtm-modal-body" data-dtm="modal-body"></div>
+    </div>
+  </div>
+
+</div>`;
+
+	const root = q<HTMLElement>(target, '[data-dtm="root"]');
+	// 各パネルの開閉状態を localStorage から復元し、以後の開閉を覚えさせる。
+	persistPanels(root);
+	const sel = <T extends HTMLElement>(name: string): T =>
+		q<T>(root, `[data-dtm="${name}"]`);
+
+	return {
+		root,
+		topbar: sel("transport"),
+		topbarLoading: sel("topbar-loading"),
+		playBtn: sel("play"),
+		prevBarBtn: sel("prev-bar"),
+		nextBarBtn: sel("next-bar"),
+		soloCheckbox: sel("solo"),
+		clipBadge: sel("clip-badge"),
+		helpBtn: sel("help"),
+		toolPen: sel("tool-pen"),
+		toolSelect: sel("tool-select"),
+		toolEraser: sel("tool-eraser"),
+		undoBtn: sel("undo"),
+		redoBtn: sel("redo"),
+		noteLengthSelect: sel("note-length"),
+		bpmInput: sel("bpm"),
+		zoomXLabel: sel("zoomx-label"),
+		zoomYLabel: sel("zoomy-label"),
+		zoomXIn: sel("zoomx-in"),
+		zoomXOut: sel("zoomx-out"),
+		zoomYIn: sel("zoomy-in"),
+		zoomYOut: sel("zoomy-out"),
+		bgFileInput: sel("bg-file-input"),
+		bgUploadBtn: sel("bg-upload"),
+		bgRemoveBtn: sel("bg-remove"),
+		bgOpacityInput: sel("bg-opacity"),
+		bgOpacityRow: sel("bg-opacity-row"),
+		bgYoutubeThumb: sel("bg-youtube-thumb"),
+		rollContainer: sel("roll"),
+		wrapper: sel("wrapper"),
+		vScroll: sel("vscroll"),
+		vScrollThumb: sel("vscroll-thumb"),
+		hScroll: sel("hscroll"),
+		hScrollThumb: sel("hscroll-thumb"),
+		loopToggle: sel<HTMLInputElement>("loop-toggle"),
+		loopToggleLabel: sel("loop-toggle-label"),
+		loopInfoBtn: sel<HTMLButtonElement>("loop-info"),
+		masterVolume: sel("master-volume"),
+		masterVolumeLabel: sel("master-volume-label"),
+		masterComp: sel("master-comp"),
+		masterCompLabel: sel("master-comp-label"),
+		masterCompInfoBtn: sel("master-comp-info"),
+		reverbAmount: sel("reverb-amount"),
+		reverbAmountLabel: sel("reverb-amount-label"),
+		reverbAmountInfoBtn: sel("reverb-amount-info"),
+		reverbDecay: sel("reverb-decay"),
+		reverbDecayLabel: sel("reverb-decay-label"),
+		reverbPreDelay: sel("reverb-predelay"),
+		reverbPreDelayLabel: sel("reverb-predelay-label"),
+		delayAmount: sel("delay-amount"),
+		delayAmountLabel: sel("delay-amount-label"),
+		delayAmountInfoBtn: sel("delay-amount-info"),
+		delayDivision: sel("delay-division"),
+		fadeIn: sel("fade-in"),
+		fadeInLabel: sel("fade-in-label"),
+		fadeOut: sel("fade-out"),
+		fadeOutLabel: sel("fade-out-label"),
+		fadeInfoBtn: sel("fade-info"),
+		autoMasterBtn: sel("auto-master"),
+		autoMasterInfoBtn: sel("auto-master-info"),
+		trackTabs: sel("track-tabs"),
+		trackBody: sel("track-body"),
+		drumSelect: sel("drum-select"),
+		drumFontSelect: sel("drum-font-select"),
+		drumVolume: sel("drum-volume"),
+		drumVolumeLabel: sel("drum-volume-label"),
+		audioPanel: sel("audio-panel"),
+		audioFileInput: sel("audio-file"),
+		audioUrlInput: sel("audio-url"),
+		audioUrlLoadBtn: sel("audio-url-load"),
+		audioClearBtn: sel("audio-clear"),
+		audioInfoBtn: sel("audio-info"),
+		audioStatus: sel("audio-status"),
+		audioYoutubeRow: sel("audio-youtube-row"),
+		audioYoutube: sel("audio-youtube"),
+		audioVolume: sel("audio-volume"),
+		audioVolumeLabel: sel("audio-volume-label"),
+		audioMute: sel("audio-mute"),
+		audioStartInput: sel("audio-start"),
+		audioEndInput: sel("audio-end"),
+		audioLeadSelect: sel("audio-lead"),
+		audioOffsetInput: sel("audio-offset"),
+		audioOffsetTail: sel("audio-offset-tail"),
+		midiInput: sel("midi-input"),
+		midiLoadBtn: sel("midi-load"),
+		midiInfoBtn: sel("midi-info"),
+		midiTrackSelection: sel("midi-track-selection"),
+		midiPanel: sel("midi-panel"),
+		midiSearchOpenBtn: sel("midi-search-open"),
+		musicXmlInput: sel("musicxml-input"),
+		musicXmlLoadBtn: sel("musicxml-load"),
+		musicXmlInfoBtn: sel("musicxml-info"),
+		musicXmlPartSelection: sel("musicxml-part-selection"),
+		musicXmlLoadNote: sel("musicxml-load-note"),
+		ustInput: sel("ust-input"),
+		ustLoadBtn: sel("ust-load"),
+		ustInfoBtn: sel("ust-info"),
+		ustLoadNote: sel("ust-load-note"),
+		mmlInput: sel("mml-input"),
+		mmlLoadBtn: sel("mml-load"),
+		mmlLoadNote: sel("mml-load-note"),
+		applyActiveOnly: sel("apply-active-only"),
+		shiftSelect: sel("shift-select"),
+		shiftApplyBtn: sel("shift-apply"),
+		shiftActiveOnly: sel("shift-active-only"),
+		transposeSelect: sel("transpose-select"),
+		transposeApplyBtn: sel("transpose-apply"),
+		transposeInfoBtn: sel("transpose-info"),
+		macroCompose: sel("macro-compose"),
+		composeKeep: sel("compose-keep"),
+		composeRecall: sel("compose-recall"),
+		composeTemplate: sel("compose-template") as HTMLSelectElement | null,
+		composeSections: sel("compose-sections"),
+		composeSectionsLen: sel("compose-sections-len"),
+		composeKey: sel("compose-key"),
+		composeKeyHint: sel("compose-key-hint"),
+		composeScale: sel("compose-scale"),
+		composeScaleHint: sel("compose-scale-hint"),
+		macroComposeVocal: sel("macro-compose-vocal"),
+		macroComposeAccomp: sel("macro-compose-accomp"),
+		macroComposeInfo: sel("macro-compose-info"),
+		macroClear: sel("macro-clear"),
+		macroRandom: sel("macro-random"),
+		macroHarmonic: sel("macro-harmonic"),
+		macroMono: sel("macro-mono"),
+		exportMidiBtn: sel("export-midi"),
+		exportMusicXmlBtn: sel("export-musicxml"),
+		exportUstBtn: sel("export-ust"),
+		exportWavBtn: sel("export-wav") as HTMLButtonElement,
+		drumJsonExportBtn: sel("drum-json-export"),
+		drumJsonOutput: sel("drum-json-output"),
+		drumJsonStatus: sel("drum-json-status"),
+		drumJsonText: sel("drum-json-text"),
+		drumJsonCopyBtn: sel("drum-json-copy") as HTMLButtonElement,
+		generateMmlBtn: sel("generate-mml"),
+		decomposeChordToggle: sel<HTMLInputElement>("decompose-chord"),
+		ignoreChordHeavyToggle: sel<HTMLInputElement>("ignore-chord-heavy"),
+		barLimitSelect: sel<HTMLSelectElement>("bar-limit"),
+		outputContainer: sel("output-container"),
+		outputStatus: sel("output-status"),
+		outputFull: sel("output-full"),
+		outputMini: sel("output-mini"),
+		copyFullBtn: sel("copy-full"),
+		copyMiniBtn: sel("copy-mini"),
+		overlay: sel("overlay"),
+		mmlInfoBtn: sel("mml-info"),
+		edoSelect: sel("edo-select") as HTMLSelectElement,
+		edoInfoBtn: sel("edo-info") as HTMLButtonElement,
+		modalOverlay: sel("modal-overlay"),
+		modalTitle: sel("modal-title"),
+		modalBody: sel("modal-body"),
+		modalClose: sel("modal-close"),
+	};
+};

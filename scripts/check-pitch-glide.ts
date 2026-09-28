@@ -24,7 +24,7 @@ import {
 	pitchCurveFor,
 	STEP_GLIDE_RATIO,
 	unitsToHz,
-} from "../src/pitch-curve";
+} from "../src/voice/pitch-curve";
 
 /** A4 = 2139 units（1半音 = 31 units）。 */
 const A4 = 2139;

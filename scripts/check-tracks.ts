@@ -17,13 +17,13 @@
  *    別音色のユニゾン（音を太くする層）は正当なので、**楽器が同じ場合だけ**を数える。
  */
 
-import { buildAdvancedLayers } from "../src/advanced-layers";
-import { composeSong } from "../src/compose";
+import { buildAdvancedLayers } from "../src/compose/advanced-layers";
+import { composeSong } from "../src/compose/compose";
 import {
 	INSTRUMENT_PRESETS,
 	type InstrumentPreset,
-} from "../src/instrument-presets";
-import { UNITS_PER_SEMITONE } from "../src/tuning";
+} from "../src/instruments/instrument-presets";
+import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
 
 const STEPS_PER_BAR = 192;
 const SONGS = Number.parseInt(process.argv[2] ?? "200", 10);

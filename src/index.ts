@@ -3,7 +3,7 @@
 // ============================================================
 
 // 設定・プリセット
-export * from "./audio-config";
+export * from "./audio/audio-config";
 // 伴奏音源（mp3 / wav / YouTube）の同時再生
 export {
 	type BackingAudio,
@@ -18,9 +18,9 @@ export {
 	parseTimeSec,
 	parseYoutubeId,
 	resolveYoutubeThumbnail,
-} from "./backing-audio";
-export * from "./chord-player";
-export * from "./chords";
+} from "./audio/backing-audio";
+export * from "./chord/chord-player";
+export * from "./chord/chords";
 // 自動作曲（コード進行→リズム→モチーフ展開で16小節を組み立てる）
 export {
 	type ComposedNote,
@@ -30,7 +30,7 @@ export {
 	composeSong,
 	durationEntropy,
 	type MelodyForm,
-} from "./compose";
+} from "./compose/compose";
 // 伴奏主体モード（旋律をほとんど置かず、分散和音・低音・和音で約2分半〜3分のループ曲を作る。
 // docs/accomp-compose.md）
 export {
@@ -47,10 +47,10 @@ export {
 	type AccompTrack,
 	accompMeta,
 	composeAccomp,
-} from "./compose-accomp";
-export { type AccompMmlProvenance, accompToMml } from "./compose-accomp-mml";
+} from "./compose/compose-accomp";
+export { type AccompMmlProvenance, accompToMml } from "./compose/compose-accomp-mml";
 // 作曲の採点に使う目標帯（人間の曲から実測したもの）
-export { CORPUS_BANDS, CORPUS_SIZE } from "./compose-corpus";
+export { CORPUS_BANDS, CORPUS_SIZE } from "./compose/compose-corpus";
 // ベース調・調性格・雰囲気グループ
 export {
 	COMPOSE_KEYS,
@@ -64,7 +64,7 @@ export {
 	MINOR_KEY_IDS,
 	type ResolvedComposeKey,
 	resolveComposeKey,
-} from "./compose-keys";
+} from "./compose/compose-keys";
 // 生成物の良さを測る指標（順序に依存する構造の指標・緊張カーブ・曲どうしの距離）
 export {
 	type Band,
@@ -78,7 +78,7 @@ export {
 	structureFeatures,
 	type TensionFeatures,
 	tensionFeatures,
-} from "./compose-metrics";
+} from "./compose/compose-metrics";
 // 音階（琉球・都節・律・チャーチモード・和声的短音階・ヒジャーズ・ハンガリアン・ブルース）
 export {
 	BLUES_SCALE,
@@ -97,7 +97,7 @@ export {
 	scaleSize,
 	type TonicCenter,
 	type TonicDegree,
-} from "./compose-scales";
+} from "./compose/compose-scales";
 export {
 	buildSectionPlan,
 	DEFAULT_SECTIONS,
@@ -108,10 +108,10 @@ export {
 	type SectionKind,
 	type SectionSpec,
 	sectionPlanBarRange,
-} from "./compose-sections";
-export { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
-export * from "./drum-config";
-export * from "./global-state";
+} from "./compose/compose-sections";
+export { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./ui/daw";
+export * from "./instruments/drum-config";
+export * from "./ui/state/global-state";
 // ヘッドレス再生（DOM非依存・BGM向け）＋ 内蔵synthプリミティブ
 export {
 	type MmlPlayback,
@@ -123,36 +123,36 @@ export {
 	playMML,
 	playNote,
 	playPlacements,
-} from "./headless-player";
+} from "./mml/headless-player";
 export {
 	type PlaySingingMmlOptions,
 	playSingingMML,
-} from "./headless-singing-player";
-export { icon } from "./icons";
-export * from "./instrument-presets";
+} from "./voice/headless-singing-player";
+export { icon } from "./ui/icons";
+export * from "./instruments/instrument-presets";
 export * from "./linked-list";
 // 歌詞拡張（@@n model lyrics）— 解析・正規化・同期・歌唱合成ヘルパ
-export * from "./lyrics";
-export * from "./macro-state";
-export * from "./macros";
-export * from "./midi-io";
+export * from "./voice/lyrics";
+export * from "./ui/state/macro-state";
+export * from "./mml/macros";
+export * from "./io/midi-io";
 export type {
 	MidiSearchConfig,
 	PicotuneSearchParams,
 	PicotuneSong,
-} from "./midi-search";
-export { MidiSearchClient } from "./midi-search";
+} from "./io/midi-search";
+export { MidiSearchClient } from "./io/midi-search";
 // ============================================================
 // Layer 1: ヘッドレスコア & プリミティブ
 // ============================================================
-export * from "./mml-core";
+export * from "./mml/mml-core";
 // 補助ロジック（再利用可能）
-export * from "./mml-parser";
-export type { MmlPlayerInstance, MmlPlayerOptions } from "./mml-player";
+export * from "./mml/mml-parser";
+export type { MmlPlayerInstance, MmlPlayerOptions } from "./mml/mml-player";
 // 再生専用ビュー（mountDAW と対）
-export { decodeMml, encodeMml, mountMmlPlayer } from "./mml-player";
+export { decodeMml, encodeMml, mountMmlPlayer } from "./mml/mml-player";
 // 音符ごとの強弱（v）の読み書き規則。MML の v（実効値）⇄ {トラック音量, 相対 velocity}
-export { effectiveVelocity, splitTrackVelocity } from "./mml-velocity";
+export { effectiveVelocity, splitTrackVelocity } from "./mml/mml-velocity";
 // MusicXML 入出力 — 楽譜としての読み書き。MIDI と違ってパートと歌詞が明示される
 export {
 	type ExportMusicXmlOptions,
@@ -163,18 +163,18 @@ export {
 	type MusicXmlPart,
 	musicXmlToNotes,
 	parseMusicXML,
-} from "./musicxml-io";
-export * from "./piano-roll";
+} from "./io/musicxml-io";
+export * from "./ui/piano-roll";
 // 中国語ピンイン → かな の転写（中国語USTの取り込みに使う）
-export * from "./pinyin";
-export * from "./renderer";
-export * from "./sequencer";
+export * from "./voice/pinyin";
+export * from "./ui/renderer";
+export * from "./audio/sequencer";
 // 旋律楽器の音源バンク（`#t<n>font=`）の一覧・正規化
-export * from "./soundfont-banks";
+export * from "./instruments/soundfont-banks";
 // 語り（歌詞の「…」）— UtauTTS の計画器とプレビュー用ヘルパ
-export * from "./speech";
+export * from "./voice/speech";
 // 単発の語り（speak）で遅れて届いたチャンクの扱い（SpeakVoiceOptions.lateChunks）
-export type { SpeechLateChunks } from "./speech-schedule";
+export type { SpeechLateChunks } from "./voice/speech-schedule";
 // ============================================================
 // Layer 3: 全部入りスタジオ（CDN SoundFont + 歌声 + 録音 を内包）
 // ============================================================
@@ -190,10 +190,10 @@ export {
 	type MountPlayerOptions,
 	type PresetSelectInstance,
 	type PresetSelectOptions,
-} from "./studio";
+} from "./ui/studio";
 // UIユーティリティ
-export { DAW_CSS, injectStyles, showLoadingOverlay } from "./styles";
-export { createSynth, freqFromPitch, type Synth } from "./synth";
+export { DAW_CSS, injectStyles, showLoadingOverlay } from "./ui/styles";
+export { createSynth, freqFromPitch, type Synth } from "./audio/synth";
 // ガイドツアー（スポットライト型ウォークスルー）。mountDAW に依存しないので、
 // 埋め込み側が自分のUIを指すステップを書いて単体で呼ぶこともできる。
 export {
@@ -210,14 +210,14 @@ export {
 	type TourLabels,
 	type TourOptions,
 	type TourStep,
-} from "./tour";
+} from "./ui/tour";
 // 音律とピッチの内部表現（units ⇄ Hz / MIDI、五度圏、協調編集のバージョン）
-export * from "./tuning";
+export * from "./audio/tuning";
 export type { NoteData, NoteRemove } from "./types";
 export * from "./types";
 // UST（UTAU）入出力 — 歌詞付きで読み込み、選択中のトラックを書き出す
-export * from "./ust-io";
+export * from "./io/ust-io";
 // ライブラリのバージョン。書き出したMML/MIDI/MusicXMLに埋まる値
 export { DTM_VERSION } from "./version";
-export { VOICE_IMAGES } from "./voice-images";
-export { concatFloat32, encodeWavPCM16 } from "./wav-export";
+export { VOICE_IMAGES } from "./voice/voice-images";
+export { concatFloat32, encodeWavPCM16 } from "./audio/wav-export";

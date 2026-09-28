@@ -1,9 +1,9 @@
-import type { ClipMeter } from "./clip-meter";
-import type { DelayDivision } from "./delay";
-import type { SingingVoices } from "./lyrics";
-import type { MidiSearchConfig } from "./midi-search";
-import type { PitchSegment } from "./pitch-curve";
-import type { Units } from "./tuning";
+import type { ClipMeter } from "./audio/clip-meter";
+import type { DelayDivision } from "./audio/delay";
+import type { SingingVoices } from "./voice/lyrics";
+import type { MidiSearchConfig } from "./io/midi-search";
+import type { PitchSegment } from "./voice/pitch-curve";
+import type { Units } from "./audio/tuning";
 
 export const DEFAULT_VOCAL_VOLUME = 200;
 export const DEFAULT_BPM = 120;
@@ -651,8 +651,8 @@ export type DawOptions = {
 	/** ドラムパターン辞書。既定は DRUM_PATTERNS */
 	drumPatterns?: Record<
 		string,
-		| import("./drum-config").AnyDrumPattern
-		| import("./drum-config").DrumPatternDef
+		| import("./instruments/drum-config").AnyDrumPattern
+		| import("./instruments/drum-config").DrumPatternDef
 	>;
 	/** ドラム音源が変更されたときのコールバック（font:id形式） */
 	onDrumFontChange?: (fontId: string) => void;
@@ -666,7 +666,7 @@ export type DawOptions = {
 	 * ライブラリ自身は音を出さないので、AudioContextを持つ利用側（`createDtmStudio` 等）が
 	 * `createBackingAudio` で作って渡す。渡さないとオーディオ同時再生のUIごと出ない。
 	 */
-	backingAudio?: import("./backing-audio").BackingAudio;
+	backingAudio?: import("./audio/backing-audio").BackingAudio;
 	/**
 	 * 編集中の音割れ検知メーター（マスタの安全リミッター手前を監視）。
 	 * 渡すとDAW UIにクリップ警告バッジを表示できる。studio.mountEditor が自動的に渡す。
@@ -708,14 +708,14 @@ export type DawOptions = {
 	tour?: {
 		/** 初回訪問時（`storageKey` が未記録のとき）に自動で開始する。既定 false。 */
 		autoStart?: boolean;
-		/** 既定ステップ（{@link import("./tour").DAW_TOUR_STEPS}）を丸ごと差し替える。 */
-		steps?: import("./tour").TourStep[];
+		/** 既定ステップ（{@link import("./ui/tour").DAW_TOUR_STEPS}）を丸ごと差し替える。 */
+		steps?: import("./ui/tour").TourStep[];
 		/** 既定ステップの後ろに足すステップ（埋め込み側のUIを案内したいとき）。 */
-		extraSteps?: import("./tour").TourStep[];
+		extraSteps?: import("./ui/tour").TourStep[];
 		/** 「もう見た」フラグの保存キー（既定 `"dtm-tour-seen"`）。`null` で記録しない。 */
 		storageKey?: string | null;
 		/** 吹き出しの文言の差し替え（日本語以外へ差し替えるとき）。 */
-		labels?: Partial<import("./tour").TourLabels>;
+		labels?: Partial<import("./ui/tour").TourLabels>;
 	};
 	/** MIDI検索クライアントの設定（未指定なら検索UI非表示）。 */
 	midiSearch?: MidiSearchConfig;
@@ -755,7 +755,7 @@ export type DawInstance = {
 	/** 指定したドラムパターンを追加し、利用可能にする */
 	addDrumPattern: (
 		name: string,
-		pattern: import("./drum-config").DrumPatternDef,
+		pattern: import("./instruments/drum-config").DrumPatternDef,
 	) => void;
 	/** 現在のドラム音源（font:id）を返す */
 	getDrumFont: () => string;
@@ -847,12 +847,12 @@ export type DawInstance = {
 	 * （上級者モード切替後の再ロード用。省略時は選択中のトラックから）。
 	 */
 	applyUstParsed?: (
-		ustTracks: import("./ust-io").UstTrackData[],
+		ustTracks: import("./io/ust-io").UstTrackData[],
 		startIndex?: number,
 	) => void;
 	/** 解析済みMusicXMLの選択パートを適用する（上級者モード切替後の再ロード用）。 */
 	applyMusicXmlParsed?: (
-		xml: import("./musicxml-io").MusicXmlExtraction,
+		xml: import("./io/musicxml-io").MusicXmlExtraction,
 		selectedIndices: number[],
 	) => void;
 	/**

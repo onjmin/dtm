@@ -1,6 +1,6 @@
 # 素材の出どころ台帳
 
-自動作曲が使う素材（`src/compose-phrases.ts` など）が、**どのデータから作られたか**を
+自動作曲が使う素材（`src/compose/compose-phrases.ts` など）が、**どのデータから作られたか**を
 バージョンごとに記録する。
 
 ## なぜ要るか
@@ -32,7 +32,7 @@
 
 | ライブラリ | 素材ファイル | 元データ | ライセンス | 取得日 |
 |---|---|---|---|---|
-| 〜 2.1.29 | `src/compose-corpus.ts`<br>`src/compose-phrases.ts` | `Music/_own/自作/界隈曲` 91本（**プロジェクト所有者の自作**） | 所有者に帰属 | — |
+| 〜 2.1.29 | `src/compose/compose-corpus.ts`<br>`src/compose/compose-phrases.ts` | `Music/_own/自作/界隈曲` 91本（**プロジェクト所有者の自作**） | 所有者に帰属 | — |
 
 現時点で**外部コーパス由来の素材は同梱していない**。
 

@@ -2,7 +2,7 @@
  * 陽性対照: 所有者が評価した手書き編曲 fb（`tmp/full/gen-fb.mjs`）を、`AccompPlan` として
  * **手で**書き直したもの（`docs/accomp-compose.md` §12.3）。ホ長調（rootShift 4）・112BPM・76小節。
  *
- * `src/compose-accomp-plan.ts` の `fbPlan()`（表の行を決めた値で組み立てる、保険の計画）は、
+ * `src/compose/compose-accomp-plan.ts` の `fbPlan()`（表の行を決めた値で組み立てる、保険の計画）は、
  * これと一致しなければならない。表の行が fb からずれたら検査で分かるように、ここは表を
  * 参照せずに書いてある。
  *
@@ -19,7 +19,7 @@
  * `tmp/` は CI に無いので、fb の値はここに写してある（検査は tmp/ を読まない）。
  */
 
-import type { AccompPlan } from "../../src/compose-accomp";
+import type { AccompPlan } from "../../src/compose/compose-accomp";
 
 const HOME_WINDOW = { lowMin: 59, lowMax: 64, topMin: 76, topMax: 78 };
 

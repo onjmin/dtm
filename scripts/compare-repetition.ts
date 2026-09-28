@@ -13,9 +13,9 @@
  * 人間の曲は小節のリズムを半分近くそのまま繰り返す。ここが生成物の最大の欠落。
  */
 
-import { composeSong } from "../src/compose";
-import type { MetricNote } from "../src/compose-metrics";
-import { UNITS_PER_SEMITONE } from "../src/tuning";
+import { composeSong } from "../src/compose/compose";
+import type { MetricNote } from "../src/compose/compose-metrics";
+import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
 import {
 	channelNotes,
 	collectFromDir,

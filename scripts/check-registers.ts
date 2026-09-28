@@ -31,7 +31,7 @@ import {
 	GM_BRIGHT_CEILING,
 	GM_INSTRUMENT_RANGE,
 	INSTRUMENT_PRESETS,
-} from "../src/instrument-presets";
+} from "../src/instruments/instrument-presets";
 
 /**
  * `compose.ts` が書くパートの実測音域 `[p01, p99]`。
@@ -149,7 +149,7 @@ const ROLES: {
 
 /**
  * 実用上限をこれだけ超えるまでは許す（半音）。
- * `src/instrument-presets.ts` の `OCTAVE_FIT_TOLERANCE` と同じ値・同じ考え方。
+ * `src/instruments/instrument-presets.ts` の `OCTAVE_FIT_TOLERANCE` と同じ値・同じ考え方。
  */
 const TOLERANCE = 3;
 

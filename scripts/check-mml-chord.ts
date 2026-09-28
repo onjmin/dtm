@@ -16,7 +16,7 @@
 
 import Module from "node:module";
 
-// `src/mml-parser.ts` は歌詞解析のために `src/lyrics.ts` を、その先で歌唱合成エンジン
+// `src/mml/mml-parser.ts` は歌詞解析のために `src/voice/lyrics.ts` を、その先で歌唱合成エンジン
 // @onjmin/koe（ブラウザ専用）を読む。ノート配置しか触らないので空のスタブへ。
 type Loader = { _load: (request: string, ...rest: unknown[]) => unknown };
 const loader = Module as unknown as Loader;
@@ -27,9 +27,9 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { parseMML } =
-	require("../src/mml-parser") as typeof import("../src/mml-parser");
+	require("../src/mml/mml-parser") as typeof import("../src/mml/mml-parser");
 const { MMLCore } =
-	require("../src/mml-core") as typeof import("../src/mml-core");
+	require("../src/mml/mml-core") as typeof import("../src/mml/mml-core");
 type Note = import("../src/types").Note;
 type CoreEventHandlers = import("../src/types").CoreEventHandlers;
 type RenderConfig = import("../src/types").RenderConfig;
