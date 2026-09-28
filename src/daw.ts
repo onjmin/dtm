@@ -59,7 +59,7 @@ import {
 	displayKana,
 	groupVoiceModels,
 	isValidHttpUrl,
-	KOE_VOICEBANK_LABELS,
+	KOE_VOICEBANK_NAMES,
 	KOE_VOICEBANK_TERMS,
 	KOE_VOICEBANKS,
 	MAX_VOCAL_VOLUME,
@@ -1047,7 +1047,7 @@ const pickComposeVocal = (exclude?: string | null): string => {
 /** 内蔵モデルキーワード → プルダウン表示名 */
 const BASE_LYRIC_MODEL_LABELS: Record<string, string> = {
 	klatt: "軽量ロボ声",
-	...KOE_VOICEBANK_LABELS,
+	...KOE_VOICEBANK_NAMES,
 };
 
 /** モデルキーワードのUI表示名を返す（カスタムボーカル辞書を参照し、未登録はキーワードそのまま） */

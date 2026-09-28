@@ -32,7 +32,7 @@ import {
 	buildStreamVoiceNotes,
 	createSingingVoices,
 	displayKana,
-	KOE_VOICEBANK_LABELS,
+	KOE_VOICEBANK_NAMES,
 	KOE_VOICEBANK_TERMS,
 	PREWARM_NOTES,
 	panToStereo,
@@ -177,7 +177,7 @@ const agreedModelsInSession = new Set<string>();
 
 const LYRIC_MODEL_LABELS: Record<string, string> = {
 	klatt: "軽量ロボ声",
-	...KOE_VOICEBANK_LABELS,
+	...KOE_VOICEBANK_NAMES,
 };
 
 /** 現在表示中の吹き出し要素とその自動非表示タイマー */
@@ -1447,7 +1447,7 @@ export const mountMmlPlayer = (
 				sep.textContent = "・";
 				termsDiv.appendChild(sep);
 			}
-			const label = KOE_VOICEBANK_LABELS[model] ?? model;
+			const label = KOE_VOICEBANK_NAMES[model] ?? model;
 			const a = doc.createElement("a");
 			a.textContent = label;
 			a.href = KOE_VOICEBANK_TERMS[model];
@@ -1507,7 +1507,7 @@ export const mountMmlPlayer = (
 			let contentHTML = `<p style="margin: 0 0 8px 0; line-height: 1.4; font-weight: bold; color: var(--dtm-danger);">本データには UTAU 歌声音源が含まれています。<br>ご利用にあたっては、以下の音源利用規約への同意が必要です。</p>`;
 
 			for (const model of unagreed) {
-				const label = KOE_VOICEBANK_LABELS[model] || model;
+				const label = KOE_VOICEBANK_NAMES[model] || model;
 				const url = KOE_VOICEBANK_TERMS[model];
 				contentHTML += `
 					<div style="margin-bottom: 8px; padding: 6px 10px; background: var(--dtm-deep); border: 2px solid var(--c-black); box-shadow: 2px 2px 0 var(--c-black);">

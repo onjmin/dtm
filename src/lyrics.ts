@@ -1484,36 +1484,14 @@ export const KOE_VOICEBANKS: Record<string, string> = {
 	nynroid: "NYNRoidver1.4.koe",
 	uc: "蓄音キリコ （beta1.1）.koe",
 	hibika_aru: "響化アル.koe",
-	uta: "uta.koe"
+	uta: "uta.koe",
 };
 
 /**
  * 内蔵koe音源の表示名（キーワード → 音源名）。音源選択 UI のラベル用。
- * {@link KOE_VOICEBANKS} のファイル名から版数を落としたもの。
- */
-export const KOE_VOICEBANK_NAMES: Record<string, string> = {
-	tsukuyomi: "つくよみちゃん",
-	rino: "春音リノ",
-	rino121: "春音リノ (1.1)",
-	roze: "束音ロゼ",
-	ruko_male: "欲音ルコ♂",
-	ruko_female: "欲音ルコ♀",
-	teto: "重音テト",
-	shiyo: "革命シヨ",
-	rei: "足立レイ",
-	mgroid: "MGRoid",
-	motroid: "MOTRoid",
-	nynroid: "NYNRoid",
-	uc: "蓄音キリコ",
-	hibika_aru: "響化アル",
-	uta: "デフォ子",
-};
-
-/**
- * koe音源キーワード → UI表示名（日本語）。歌詞モデルのプルダウン等で使う。
  * MML中の値はキーワード（{@link KOE_VOICEBANKS} のキー）のまま、表示だけ和名にする。
  */
-export const KOE_VOICEBANK_LABELS: Record<string, string> = {
+export const KOE_VOICEBANK_NAMES: Record<string, string> = {
 	tsukuyomi: "つくよみちゃん",
 	rino: "春音リノ",
 	rino121: "春音リノv1.2.1",
@@ -1560,7 +1538,7 @@ export type VoiceModelGroup = {
 /**
  * 音源一覧（キーワード → 表示名）を {@link VOICE_MODEL_CATEGORIES} の大分類へ分ける。
  * 渡された `names` に載っているキーだけを返すので、歌唱用（klatt 込み＝
- * {@link KOE_VOICEBANK_LABELS} + klatt）でも読み上げ用（klatt は語れないので
+ * {@link KOE_VOICEBANK_NAMES} + klatt）でも読み上げ用（klatt は語れないので
  * {@link KOE_VOICEBANK_NAMES} だけ）でも同じ関数で組める。
  * 分類に無いキーは末尾の「その他」にまとめる（音源を足した日に選べなくならないように）。
  */
