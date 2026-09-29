@@ -9,6 +9,7 @@
  * ミキサーへルーティングしたり、SE と AudioContext を共有したりできるようにするため。
  */
 
+import type { PlayDrumEvent, PlayNoteEvent } from "../types";
 import {
 	createDrumKit,
 	MIN_ATTACK_SEC,
@@ -16,7 +17,6 @@ import {
 	TAIL_RATIO,
 } from "./synth-drums";
 import { type Units, unitsToHz } from "./tuning";
-import type { PlayDrumEvent, PlayNoteEvent } from "../types";
 
 /**
  * ピッチ(units) → 周波数(Hz)。A4 = 2139 units = 440Hz 基準。

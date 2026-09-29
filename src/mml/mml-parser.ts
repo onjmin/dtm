@@ -8,15 +8,15 @@
  * `collectLyrics` 指定時は解析済みの歌詞トラック辞書も併せて返す。
  */
 
-import { parseLyrics, stripCustomVocals, stripLyrics } from "../voice/lyrics";
+import { type Units, units } from "../audio/tuning";
 import {
 	normalizeSoundFontBank,
 	soundFontBankShortName,
 	trackSoundFontValue,
 } from "../instruments/soundfont-banks";
-import { type Units, units } from "../audio/tuning";
 import type { LyricTrack } from "../types";
 import { DEFAULT_STEPS_PER_BAR, MML_END_MARKER } from "../types";
+import { parseLyrics, stripCustomVocals, stripLyrics } from "../voice/lyrics";
 
 /**
  * 幹音のオクターブ内位置（格子ステップ）。音律ごとに持つ。

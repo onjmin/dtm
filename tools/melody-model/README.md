@@ -85,7 +85,7 @@ python tools/melody-model/train.py --data tmp/dataset.jsonl --init tmp/base.pt \
 
 ```bash
 python tools/melody-model/generate.py --model tmp/melody-model.pt \
-    --out src/compose-melodies.ts --n 2000 --keep 801
+    --out src/compose/compose-melodies.ts --n 2000 --keep 801
 ```
 
 **`--keep` が要る。** 2000本引くと候補は 19,969種・2.7MB になり、人間側のバンク
@@ -129,7 +129,7 @@ npx tsx tmp/ab-bank.ts --out tmp/ab-bank
 |---|---|
 | `tokenizer.py` | 旋律 ↔ トークン列。REMI風（BAR / POS / DEG / DUR）。単体実行で往復の検算ができる |
 | `train.py` | 小さな decoder-only Transformer。`--init` で事前学習から再開 |
-| `generate.py` | サンプリング → 2小節フレーズ → `src/compose-melodies.ts` |
+| `generate.py` | サンプリング → 2小節フレーズ → `src/compose/compose-melodies.ts` |
 
 ## 注意
 

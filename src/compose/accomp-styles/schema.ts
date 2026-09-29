@@ -18,9 +18,9 @@
  * 読めなければならない。`docs/accomp-compose.md` §4.2）。型の import は構わない。
  */
 
+import type { MasterFxSettings } from "../../audio/master-fx";
 import type { PresetSlot } from "../advanced-layers";
 import type { AccompTexture } from "../compose-accomp";
-import type { MasterFxSettings } from "../../audio/master-fx";
 
 // ============================================================
 // 共通

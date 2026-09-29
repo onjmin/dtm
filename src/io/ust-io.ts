@@ -14,9 +14,9 @@
  * 詳細は {@link looksLikePinyin} と `pinyin.ts`。
  */
 
-import { pinyinToMoras } from "../voice/pinyin";
 import { unitsToMidiDetune } from "../audio/tuning";
 import { DEFAULT_VELOCITY, type Note } from "../types";
+import { pinyinToMoras } from "../voice/pinyin";
 
 /** このアプリの内部ステップ解像度（4分音符あたり）。 */
 const STEPS_PER_BEAT = 48;

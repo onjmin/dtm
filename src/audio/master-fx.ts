@@ -18,8 +18,8 @@
  * DOM に依存しない（`scripts/check-fx-font-drum.ts` が Node で検算する）。
  */
 
-import type { DelayDivision } from "./delay";
 import type { MmlMeta } from "../mml/mml-parser";
+import type { DelayDivision } from "./delay";
 
 export type MasterFxSettings = {
 	/** リバーブの掛かり具合 0-100。 */

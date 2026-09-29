@@ -1,6 +1,5 @@
-import { MMLCore } from "../mml/mml-core";
-import { createRenderer } from "./renderer";
 import { UNITS_PER_SEMITONE, units } from "../audio/tuning";
+import { MMLCore } from "../mml/mml-core";
 import type {
 	AddNoteOptions,
 	CoreEventHandlers,
@@ -8,6 +7,7 @@ import type {
 	PianoRollOptions,
 	ToolMode,
 } from "../types";
+import { createRenderer } from "./renderer";
 
 export type { ToolMode };
 

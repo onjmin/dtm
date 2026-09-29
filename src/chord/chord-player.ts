@@ -1,20 +1,20 @@
 import { parseChord, parseChords } from "@onjmin/chord-parser";
 import { buildNameToKeyMapping } from "../audio/audio-config";
-import { CHORD_INFO_HTML } from "./chord-info";
+import { createSynth } from "../audio/synth";
+import { pitchV1ToUnits, type Units, unitsToMidiDetune } from "../audio/tuning";
 import { DRUM_KEYS } from "../instruments/drum-config";
+import { SoundFont } from "../instruments/sf/SoundFont";
+import { DEFAULT_SOUNDFONT_BANK } from "../instruments/soundfont-banks";
 import {
 	type MmlPlayback,
 	type PlayPlacementsOptions,
 	playPlacements,
 } from "../mml/headless-player";
-import { icon } from "../ui/icons";
 import { copyToClipboard, encodeMml } from "../mml/mml-player";
-import { SoundFont } from "../instruments/sf/SoundFont";
-import { DEFAULT_SOUNDFONT_BANK } from "../instruments/soundfont-banks";
-import { injectStyles } from "../ui/styles";
-import { createSynth } from "../audio/synth";
-import { pitchV1ToUnits, type Units, unitsToMidiDetune } from "../audio/tuning";
 import { DEFAULT_STEPS_PER_BAR } from "../types";
+import { icon } from "../ui/icons";
+import { injectStyles } from "../ui/styles";
+import { CHORD_INFO_HTML } from "./chord-info";
 
 /**
  * PICO-8 16色パレットから選んだセクション配色

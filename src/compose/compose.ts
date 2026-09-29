@@ -13,6 +13,7 @@
  */
 
 import { parseChord } from "@onjmin/chord-parser";
+import { UNITS_PER_SEMITONE, type Units } from "../audio/tuning";
 import {
 	type ChordPatternType,
 	semitonesToUnits,
@@ -65,7 +66,6 @@ import {
 	STRUCTURE_TEMPLATES,
 	sectionAt,
 } from "./compose-sections";
-import { UNITS_PER_SEMITONE, type Units } from "../audio/tuning";
 
 // ============================================================
 // 受け入れ基準

@@ -5,7 +5,6 @@
  */
 
 import type { DrumPattern } from "../instruments/drum-config";
-import type { Units } from "./tuning";
 import type {
 	LoopConfig,
 	LoopPoint,
@@ -15,6 +14,7 @@ import type {
 	PlayNoteEvent,
 } from "../types";
 import { DEFAULT_PLAYBACK_VELOCITY } from "../types";
+import type { Units } from "./tuning";
 
 const STEPS_PER_BEAT = 48;
 // 先読み秒。ノートは AudioContext クロックへ最大この秒数だけ先に予約される。

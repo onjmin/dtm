@@ -20,8 +20,8 @@
  * 参考曲名・作者名はここにも references にも書かない（§4.3・§9.1.1-10）。
  */
 
-import type { AccompRole } from "../compose-accomp";
 import { NO_DRUM_PATTERN } from "../../instruments/drum-config";
+import type { AccompRole } from "../compose-accomp";
 import {
 	type ArpCellBody,
 	type BassPatternBody,

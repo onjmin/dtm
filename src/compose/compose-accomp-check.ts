@@ -14,6 +14,7 @@
  * 実行時に import してよいものは §4.2 のとおり（`mml-parser`・`lyrics`・`daw` は読まない）。
  */
 
+import { effectiveVelocity } from "../mml/mml-velocity";
 import type {
 	AccompGate,
 	AccompPlan,
@@ -34,7 +35,6 @@ import {
 	isClash,
 } from "./compose-accomp-realize";
 import { planStyleView } from "./compose-accomp-style";
-import { effectiveVelocity } from "../mml/mml-velocity";
 
 /**
  * 関門「ぶつかり」（§7.2）: 全トラックの組で、別トラックの音が半音（短2度・短9度）で重なる数の

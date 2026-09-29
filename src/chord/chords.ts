@@ -6,7 +6,12 @@
  */
 
 import { parseChord, parseChords } from "@onjmin/chord-parser";
-import { fifthToStep, UNITS_PER_OCTAVE, type Units, units } from "../audio/tuning";
+import {
+	fifthToStep,
+	UNITS_PER_OCTAVE,
+	type Units,
+	units,
+} from "../audio/tuning";
 
 export type ChordPatternType =
 	| "block"

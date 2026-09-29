@@ -6,9 +6,9 @@
  * - 出力: トラック群とドラムパターンから .mid バイナリ(Blob)を生成する。
  */
 
+import { unitsToMidiDetune } from "../audio/tuning";
 import { DRUM_KEYS, type DrumPattern } from "../instruments/drum-config";
 import { effectiveVelocity } from "../mml/mml-velocity";
-import { unitsToMidiDetune } from "../audio/tuning";
 import type { Note } from "../types";
 import { DTM_VERSION } from "../version";
 
@@ -706,7 +706,10 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 export const extractDrumPatternFromNotes = (
 	rawNotes: { step: number; pitch: number; velocity: number }[],
 	drumFont: string = "FluidR3_GM_sf2_file:0",
-): { json: string; patternDef: import("../instruments/drum-config").DrumPatternDef } => {
+): {
+	json: string;
+	patternDef: import("../instruments/drum-config").DrumPatternDef;
+} => {
 	if (rawNotes.length === 0)
 		return { json: "[]", patternDef: { label: "抽出ドラム", pattern: [] } };
 
@@ -846,7 +849,10 @@ export const buildDrumPatternJson = (
 export const extractMidiDrumPattern = (
 	midi: unknown,
 	drumFont: string = "FluidR3_GM_sf2_file:0",
-): { json: string; patternDef: import("../instruments/drum-config").DrumPatternDef } => {
+): {
+	json: string;
+	patternDef: import("../instruments/drum-config").DrumPatternDef;
+} => {
 	const { tracks, division } = midi as MidiData;
 	const ticksPerBeat = division;
 	const rawNotes: { step: number; pitch: number; velocity: number }[] = [];

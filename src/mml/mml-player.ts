@@ -19,6 +19,15 @@ import {
 	backingPreRollFromRoll,
 	backingPreRollSec,
 } from "../audio/backing-audio";
+import { computeFadeParams, createFadeBus, type FadeBus } from "../audio/fade";
+import { createSafetyLimiter } from "../audio/safety-limiter";
+import {
+	createSequencer,
+	SEQUENCER_START_DELAY,
+	type SequencerTrack,
+} from "../audio/sequencer";
+import { createSynth, type Synth } from "../audio/synth";
+import { UNITS_PER_OCTAVE, unitsToPitchV1 } from "../audio/tuning";
 import {
 	type AnyDrumPattern,
 	DRUM_PATTERNS,
@@ -26,8 +35,21 @@ import {
 	normalizeDrumPatterns,
 	resolveDrumPattern,
 } from "../instruments/drum-config";
-import { computeFadeParams, createFadeBus, type FadeBus } from "../audio/fade";
+import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
+import type {
+	FadeScheduleParams,
+	Note,
+	PlayDrumEvent,
+	PlayNoteEvent,
+} from "../types";
+import {
+	DEFAULT_BPM,
+	DEFAULT_GATE,
+	DEFAULT_PAN,
+	DEFAULT_VOCAL_VOLUME,
+} from "../types";
 import { icon } from "../ui/icons";
+import { injectStyles, showLoadingOverlay } from "../ui/styles";
 import {
 	buildStreamVoiceNotes,
 	createSingingVoices,
@@ -42,32 +64,10 @@ import {
 	VOICE_IMAGE_KEY,
 	vocalVolumeToGain,
 } from "../voice/lyrics";
+import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "../voice/voice-images";
 import { MML_INFO_HTML } from "./mml-info";
 import { parseMML } from "./mml-parser";
 import { playerTrackVelocity } from "./mml-velocity";
-import { createSafetyLimiter } from "../audio/safety-limiter";
-import {
-	createSequencer,
-	SEQUENCER_START_DELAY,
-	type SequencerTrack,
-} from "../audio/sequencer";
-import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
-import { injectStyles, showLoadingOverlay } from "../ui/styles";
-import { createSynth, type Synth } from "../audio/synth";
-import { UNITS_PER_OCTAVE, unitsToPitchV1 } from "../audio/tuning";
-import type {
-	FadeScheduleParams,
-	Note,
-	PlayDrumEvent,
-	PlayNoteEvent,
-} from "../types";
-import {
-	DEFAULT_BPM,
-	DEFAULT_GATE,
-	DEFAULT_PAN,
-	DEFAULT_VOCAL_VOLUME,
-} from "../types";
-import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "../voice/voice-images";
 
 const STEPS_PER_BEAT = 48;
 const STEPS_PER_BAR = 192;

@@ -16,11 +16,6 @@
 import { fb } from "./fb";
 import type { StylePack } from "./schema";
 
-export {
-	ACCOMP_STYLE_ID_RE,
-	ROLE_TAGS,
-	validateStylePack,
-} from "./schema";
 export type {
 	Archetype,
 	LayerDef,
@@ -33,6 +28,11 @@ export type {
 	StyleId,
 	StylePack,
 	W,
+} from "./schema";
+export {
+	ACCOMP_STYLE_ID_RE,
+	ROLE_TAGS,
+	validateStylePack,
 } from "./schema";
 
 /** スタイルの見出し（DAW の選択肢と `#compose` が読む欄）。 */

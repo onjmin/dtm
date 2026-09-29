@@ -19,8 +19,10 @@
  * Node から検算するので、`mml-parser`・`lyrics`・`daw` を実行時に読んではいけない。
  */
 
-import type { PresetSlot } from "./advanced-layers";
+import type { MasterFxSettings } from "../audio/master-fx";
+import type { MmlMeta } from "../mml/mml-parser";
 import { ACCOMP_STYLE_ID_RE, accompStyleById } from "./accomp-styles/index";
+import type { PresetSlot } from "./advanced-layers";
 import type { ComposedNote } from "./compose";
 import { seededRandom } from "./compose";
 import { accompGates, accompStats } from "./compose-accomp-check";
@@ -45,8 +47,6 @@ import {
 	planStyleView,
 } from "./compose-accomp-style";
 import { COMPOSE_KEYS } from "./compose-keys";
-import type { MasterFxSettings } from "../audio/master-fx";
-import type { MmlMeta } from "../mml/mml-parser";
 
 /** 候補を引く上限（§7.1）。エンジンの定数（スタイルによらない）。 */
 export const CANDIDATE_LIMIT = 24;

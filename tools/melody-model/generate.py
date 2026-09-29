@@ -1,7 +1,7 @@
 """学習したモデルで旋律を生成し、フレーズバンクとして書き出す。
 
     python tools/melody-model/generate.py --model tmp/melody-model.pt \
-        --out src/compose-melodies.ts --n 2000
+        --out src/compose/compose-melodies.ts --n 2000
 
 ## なぜ2小節のフレーズとして出すのか
 
@@ -134,7 +134,7 @@ def pick_bank(phrases: list[Phrase], keep: int, seed: int) -> list[Phrase]:
 HEADER = """/**
  * **自動生成ファイル。手で編集しないこと。**
  *
- *   python tools/melody-model/generate.py --model <.pt> --out src/compose-melodies.ts
+ *   python tools/melody-model/generate.py --model <.pt> --out src/compose/compose-melodies.ts
  *
  * 旋律の並び順を学習したモデルが作った**2小節フレーズ**のバンク。形は
  * {@link file://./compose-phrases.ts}（人間の曲から抜き出した実在フレーズ）と同じで、
@@ -161,7 +161,7 @@ export const MODEL_PHRASES: CorpusPhrase[] = [
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="tmp/melody-model.pt")
-    ap.add_argument("--out", default="src/compose-melodies.ts")
+    ap.add_argument("--out", default="src/compose/compose-melodies.ts")
     ap.add_argument("--n", type=int, default=500, help="引く旋律の本数")
     ap.add_argument("--length", type=int, default=768, help="1本あたりのトークン数")
     ap.add_argument("--temp", type=float, default=1.0)

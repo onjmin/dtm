@@ -23,15 +23,34 @@ import {
 	type ChannelStrip,
 	createChannelStrip,
 } from "../audio/channel-strip";
+import { createClipMeter } from "../audio/clip-meter";
+import { createDelayBus, type DelayDivision } from "../audio/delay";
+import { createFadeBus } from "../audio/fade";
+import {
+	applyMasterFx,
+	type MasterFxSettings,
+	type MasterFxTarget,
+	masterFxFromMeta,
+} from "../audio/master-fx";
+import {
+	createReverbImpulse,
+	DEFAULT_REVERB_DECAY_SEC,
+	DEFAULT_REVERB_PREDELAY_MS,
+	MAX_REVERB_DECAY_SEC,
+	MAX_REVERB_PREDELAY_MS,
+	MIN_REVERB_DECAY_SEC,
+	MIN_REVERB_PREDELAY_MS,
+	reverbAmountToGain,
+} from "../audio/reverb";
+import { createSafetyLimiter } from "../audio/safety-limiter";
+import { type Units, unitsToMidiDetune } from "../audio/tuning";
+import { concatFloat32, encodeWavPCM16 } from "../audio/wav-export";
 import {
 	type ChordPlayerInstance,
 	type MountChordPlayerOptions,
 	mountChordPlayer,
 } from "../chord/chord-player";
 import { buildChordPlacements } from "../chord/chords";
-import { createClipMeter } from "../audio/clip-meter";
-import { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
-import { createDelayBus, type DelayDivision } from "../audio/delay";
 import {
 	type AnyDrumPattern,
 	DRUM_PATTERNS as DEFAULT_DRUM_PATTERNS,
@@ -41,7 +60,16 @@ import {
 	NO_DRUM_PATTERN,
 	normalizeDrumPatterns,
 } from "../instruments/drum-config";
-import { createFadeBus } from "../audio/fade";
+import { INSTRUMENT_PRESETS } from "../instruments/instrument-presets";
+import { SoundFont } from "../instruments/sf/SoundFont";
+import { SoundFont_drum } from "../instruments/sf/SoundFont_drum";
+import { SoundFont_list } from "../instruments/sf/SoundFont_list";
+import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
+import {
+	DEFAULT_SOUNDFONT_BANK,
+	resolveSoundFontFile,
+	trackSoundFontValue,
+} from "../instruments/soundfont-banks";
 import {
 	type MmlPlayback,
 	type PlayChordsOptions,
@@ -52,11 +80,25 @@ import {
 	playNote,
 	playPlacements,
 } from "../mml/headless-player";
+import { type MmlMeta, parseMML, parseMmlMeta } from "../mml/mml-parser";
+import {
+	type MmlPlayerInstance,
+	type MmlPlayerOptions,
+	mountMmlPlayer,
+} from "../mml/mml-player";
+import type {
+	DawInstance,
+	DawMode,
+	DawOptions,
+	PlayDrumEvent,
+	PlayNoteEvent,
+	TrackConfig,
+} from "../types";
+import { DEFAULT_BPM, DEFAULT_STEPS_PER_BAR } from "../types";
 import {
 	type PlaySingingMmlOptions,
 	playSingingMML,
 } from "../voice/headless-singing-player";
-import { INSTRUMENT_PRESETS } from "../instruments/instrument-presets";
 import {
 	createSingingVoices,
 	KOE_VOICEBANKS,
@@ -69,50 +111,8 @@ import {
 	type SpeechPlanInfo,
 	type SpeechPrepareOptions,
 } from "../voice/lyrics";
-import {
-	applyMasterFx,
-	type MasterFxSettings,
-	type MasterFxTarget,
-	masterFxFromMeta,
-} from "../audio/master-fx";
-import { type MmlMeta, parseMML, parseMmlMeta } from "../mml/mml-parser";
-import {
-	type MmlPlayerInstance,
-	type MmlPlayerOptions,
-	mountMmlPlayer,
-} from "../mml/mml-player";
-import {
-	createReverbImpulse,
-	DEFAULT_REVERB_DECAY_SEC,
-	DEFAULT_REVERB_PREDELAY_MS,
-	MAX_REVERB_DECAY_SEC,
-	MAX_REVERB_PREDELAY_MS,
-	MIN_REVERB_DECAY_SEC,
-	MIN_REVERB_PREDELAY_MS,
-	reverbAmountToGain,
-} from "../audio/reverb";
-import { createSafetyLimiter } from "../audio/safety-limiter";
-import { SoundFont } from "../instruments/sf/SoundFont";
-import { SoundFont_drum } from "../instruments/sf/SoundFont_drum";
-import { SoundFont_list } from "../instruments/sf/SoundFont_list";
-import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
-import {
-	DEFAULT_SOUNDFONT_BANK,
-	resolveSoundFontFile,
-	trackSoundFontValue,
-} from "../instruments/soundfont-banks";
+import { mountDAW, TRACKS_ADVANCED, TRACKS_SIMPLE } from "./daw";
 import { showLoadingOverlay } from "./styles";
-import { type Units, unitsToMidiDetune } from "../audio/tuning";
-import type {
-	DawInstance,
-	DawMode,
-	DawOptions,
-	PlayDrumEvent,
-	PlayNoteEvent,
-	TrackConfig,
-} from "../types";
-import { DEFAULT_BPM, DEFAULT_STEPS_PER_BAR } from "../types";
-import { concatFloat32, encodeWavPCM16 } from "../audio/wav-export";
 
 // ── 外部エンジンの最小型（SoundFont / midi-parser）──
 type SoundFontInstance = {

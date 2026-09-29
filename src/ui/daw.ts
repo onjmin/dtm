@@ -6,12 +6,9 @@
  */
 
 import {
-	type AdvancedLayer,
-	type AutoRole,
-	buildAdvancedLayers,
-	type PresetSlot,
-} from "../compose/advanced-layers";
-import { GM_INSTRUMENT_NAMES, programOfInstrumentName } from "../audio/audio-config";
+	GM_INSTRUMENT_NAMES,
+	programOfInstrumentName,
+} from "../audio/audio-config";
 import {
 	backingMediaSec,
 	backingPreRollFromRoll,
@@ -22,8 +19,47 @@ import {
 	parseYoutubeId,
 	resolveYoutubeThumbnail,
 } from "../audio/backing-audio";
-import { type ChordPlayerInstance, mountChordPlayer } from "../chord/chord-player";
+import type { DelayDivision } from "../audio/delay";
+import { computeFadeParams } from "../audio/fade";
+import {
+	type MasterDynamics,
+	type MasterFxSettings,
+	masterDynamicsFromMeta,
+	masterFxFromMeta,
+	masterFxToMeta,
+} from "../audio/master-fx";
+import {
+	DEFAULT_REVERB_DECAY_SEC,
+	DEFAULT_REVERB_PREDELAY_MS,
+	MAX_REVERB_DECAY_SEC,
+	MAX_REVERB_PREDELAY_MS,
+	MIN_REVERB_DECAY_SEC,
+	MIN_REVERB_PREDELAY_MS,
+} from "../audio/reverb";
+import {
+	createSequencer,
+	SEQUENCER_START_DELAY,
+	type Sequencer,
+} from "../audio/sequencer";
+import {
+	pitchV1ToUnits,
+	UNITS_PER_OCTAVE,
+	UNITS_PER_SEMITONE,
+	type Units,
+	units,
+} from "../audio/tuning";
+import {
+	type ChordPlayerInstance,
+	mountChordPlayer,
+} from "../chord/chord-player";
 import { buildChordPlacements, type ChordPatternType } from "../chord/chords";
+import { DEFAULT_ACCOMP_STYLE } from "../compose/accomp-styles/index";
+import {
+	type AdvancedLayer,
+	type AutoRole,
+	buildAdvancedLayers,
+	type PresetSlot,
+} from "../compose/advanced-layers";
 import {
 	alignLyrics,
 	type ComposedNote,
@@ -31,7 +67,6 @@ import {
 	composeSong,
 	seededRandom,
 } from "../compose/compose";
-import { DEFAULT_ACCOMP_STYLE } from "../compose/accomp-styles/index";
 import {
 	type AccompMix,
 	accompMeta,
@@ -47,8 +82,6 @@ import {
 	STRUCTURE_TEMPLATES,
 	sectionPlanBarRange,
 } from "../compose/compose-sections";
-import { buildUI } from "./daw-ui";
-import type { DelayDivision } from "../audio/delay";
 import {
 	DRUM_PATTERNS,
 	drumPatternForFullLoad,
@@ -56,53 +89,17 @@ import {
 	normalizeDrumPatterns,
 	resolveDrumPattern,
 } from "../instruments/drum-config";
-import { computeFadeParams } from "../audio/fade";
-import { icon } from "./icons";
 import {
 	fitInstrumentOctave,
 	INSTRUMENT_PRESETS,
 	type InstrumentPreset,
 } from "../instruments/instrument-presets";
+import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
 import {
-	buildStreamVoiceNotes,
-	displayKana,
-	groupVoiceModels,
-	isValidHttpUrl,
-	KOE_VOICEBANK_NAMES,
-	KOE_VOICEBANK_TERMS,
-	KOE_VOICEBANKS,
-	MAX_VOCAL_VOLUME,
-	normalizeLyrics,
-	panToStereo,
-	parseCustomVocals,
-	type StreamVoiceTrack,
-	syllablesToText,
-	VOICE_IMAGE_KEY,
-	vocalVolumeToGain,
-} from "../voice/lyrics";
-import {
-	type KeptSong,
-	readKeptSong,
-	readMacroSections,
-	readMacroSetting,
-	writeKeptSong,
-	writeMacroSections,
-	writeMacroSetting,
-} from "./state/macro-state";
-import {
-	applyHarmonicFilter,
-	applyMonophonic,
-	generateRandomPattern,
-	shiftNotes,
-	transposeNotes,
-} from "../mml/macros";
-import {
-	type MasterDynamics,
-	type MasterFxSettings,
-	masterDynamicsFromMeta,
-	masterFxFromMeta,
-	masterFxToMeta,
-} from "../audio/master-fx";
+	SOUNDFONT_BANKS,
+	soundFontBankShortName,
+	trackSoundFontValue,
+} from "../instruments/soundfont-banks";
 import {
 	analyzeMidiTracks,
 	buildDrumPatternJson,
@@ -113,58 +110,32 @@ import {
 	isPlausibleMidiTranscription,
 } from "../io/midi-io";
 import { MidiSearchClient } from "../io/midi-search";
-import { decomposeToMonophonic, isChordHeavyTrack, MMLCore } from "../mml/mml-core";
-import { MML_INFO_HTML } from "../mml/mml-info";
-import { formatMmlMeta, type MmlMeta, parseMML } from "../mml/mml-parser";
-import { mountMmlPlayer } from "../mml/mml-player";
-import { bakeTrackVelocity, splitPlacementVelocities } from "../mml/mml-velocity";
 import {
 	exportMusicXML as exportMusicXmlString,
 	type MusicXmlExtraction,
 	musicXmlToNotes,
 	parseMusicXML,
 } from "../io/musicxml-io";
-import { readPanelOpen, writePanelOpen } from "./state/panel-state";
-import { createRenderer, type Renderer } from "./renderer";
+import { buildUst, parseUst, type UstTrackData } from "../io/ust-io";
 import {
-	DEFAULT_REVERB_DECAY_SEC,
-	DEFAULT_REVERB_PREDELAY_MS,
-	MAX_REVERB_DECAY_SEC,
-	MAX_REVERB_PREDELAY_MS,
-	MIN_REVERB_DECAY_SEC,
-	MIN_REVERB_PREDELAY_MS,
-} from "../audio/reverb";
+	applyHarmonicFilter,
+	applyMonophonic,
+	generateRandomPattern,
+	shiftNotes,
+	transposeNotes,
+} from "../mml/macros";
 import {
-	createSequencer,
-	SEQUENCER_START_DELAY,
-	type Sequencer,
-} from "../audio/sequencer";
-import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
+	decomposeToMonophonic,
+	isChordHeavyTrack,
+	MMLCore,
+} from "../mml/mml-core";
+import { MML_INFO_HTML } from "../mml/mml-info";
+import { formatMmlMeta, type MmlMeta, parseMML } from "../mml/mml-parser";
+import { mountMmlPlayer } from "../mml/mml-player";
 import {
-	SOUNDFONT_BANKS,
-	soundFontBankShortName,
-	trackSoundFontValue,
-} from "../instruments/soundfont-banks";
-import { injectStyles, showLoadingOverlay } from "./styles";
-import {
-	DAW_TOUR_BRANCHES,
-	DAW_TOUR_STEPS,
-	hasSeenTour,
-	startTour,
-	TOUR_STORAGE_KEY,
-} from "./tour";
-import {
-	readTrack1Settings,
-	type Track1Settings,
-	writeTrack1Settings,
-} from "./state/track1-state";
-import {
-	pitchV1ToUnits,
-	UNITS_PER_OCTAVE,
-	UNITS_PER_SEMITONE,
-	type Units,
-	units,
-} from "../audio/tuning";
+	bakeTrackVelocity,
+	splitPlacementVelocities,
+} from "../mml/mml-velocity";
 import type {
 	CustomVocalDef,
 	DawInstance,
@@ -193,9 +164,51 @@ import {
 	PITCH_RANGE_START,
 	unitsPerRow,
 } from "../types";
-import { buildUst, parseUst, type UstTrackData } from "../io/ust-io";
 import { DTM_VERSION } from "../version";
+import {
+	buildStreamVoiceNotes,
+	displayKana,
+	groupVoiceModels,
+	isValidHttpUrl,
+	KOE_VOICEBANK_NAMES,
+	KOE_VOICEBANK_TERMS,
+	KOE_VOICEBANKS,
+	MAX_VOCAL_VOLUME,
+	normalizeLyrics,
+	panToStereo,
+	parseCustomVocals,
+	type StreamVoiceTrack,
+	syllablesToText,
+	VOICE_IMAGE_KEY,
+	vocalVolumeToGain,
+} from "../voice/lyrics";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "../voice/voice-images";
+import { buildUI } from "./daw-ui";
+import { icon } from "./icons";
+import { createRenderer, type Renderer } from "./renderer";
+import {
+	type KeptSong,
+	readKeptSong,
+	readMacroSections,
+	readMacroSetting,
+	writeKeptSong,
+	writeMacroSections,
+	writeMacroSetting,
+} from "./state/macro-state";
+import { readPanelOpen, writePanelOpen } from "./state/panel-state";
+import {
+	readTrack1Settings,
+	type Track1Settings,
+	writeTrack1Settings,
+} from "./state/track1-state";
+import { injectStyles, showLoadingOverlay } from "./styles";
+import {
+	DAW_TOUR_BRANCHES,
+	DAW_TOUR_STEPS,
+	hasSeenTour,
+	startTour,
+	TOUR_STORAGE_KEY,
+} from "./tour";
 
 const CHORD_INFO_HTML = `
 <div class="dtm-modal-body-content">
@@ -7468,8 +7481,9 @@ export const mountDAW = (
 		});
 
 		// サンプル再生用状態変数
-		let activeSamplePlayer: import("../mml/mml-player").MmlPlayerInstance | null =
-			null;
+		let activeSamplePlayer:
+			| import("../mml/mml-player").MmlPlayerInstance
+			| null = null;
 		let activeSampleButton: HTMLButtonElement | null = null;
 
 		const collapseActiveSample = (): void => {
@@ -7764,8 +7778,9 @@ export const mountDAW = (
 	let pendingMidi: unknown = null;
 	let detectedTracks: ReturnType<typeof analyzeMidiTracks> = [];
 	// MIDI選択時に自動抽出したドラム定義（ドラムJSON出力で現在の音源と併せて再生成する）
-	let extractedMidiDrum: import("../instruments/song-drum-config").SongDrumPattern | null =
-		null;
+	let extractedMidiDrum:
+		| import("../instruments/song-drum-config").SongDrumPattern
+		| null = null;
 	/**
 	 * ドラムパターンを DAW に追加して選択状態にする。ドラム選択の `<option>` も
 	 * 作り足すので、ユーザーは後から手で他のパターンへ切り替えられる。

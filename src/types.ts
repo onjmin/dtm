@@ -1,9 +1,9 @@
 import type { ClipMeter } from "./audio/clip-meter";
 import type { DelayDivision } from "./audio/delay";
-import type { SingingVoices } from "./voice/lyrics";
-import type { MidiSearchConfig } from "./io/midi-search";
-import type { PitchSegment } from "./voice/pitch-curve";
 import type { Units } from "./audio/tuning";
+import type { MidiSearchConfig } from "./io/midi-search";
+import type { SingingVoices } from "./voice/lyrics";
+import type { PitchSegment } from "./voice/pitch-curve";
 
 export const DEFAULT_VOCAL_VOLUME = 200;
 export const DEFAULT_BPM = 120;

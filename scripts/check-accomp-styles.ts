@@ -327,7 +327,7 @@ section("エンジンは表をスタイルから読む（§2.1・段階 S1）");
 		"compose-accomp-style.ts",
 	];
 	const offenders = ENGINE.filter((f) => {
-		const s = src(f);
+		const s = src(`compose/${f}`);
 		return (
 			/from "\.\/compose-accomp-tables"/.test(s) ||
 			/from "\.\/accomp-styles\/(?!index"|schema")/.test(s)
@@ -338,7 +338,7 @@ section("エンジンは表をスタイルから読む（§2.1・段階 S1）");
 		offenders.length === 0,
 		offenders,
 	);
-	const shim = src("compose-accomp-tables.ts");
+	const shim = src("compose/compose-accomp-tables.ts");
 	ok(
 		"互換の口（compose-accomp-tables.ts）は値を持たず、スタイルとエンジンから読み直すだけ（数の配列・文字列の表が無い）",
 		!/\[\s*\d+\s*,\s*\d+\s*\]/.test(shim) &&
@@ -379,7 +379,7 @@ section("エンジンは表をスタイルから読む（§2.1・段階 S1）");
 			for (const r of list) ids.add(r.id);
 	}
 	const counts = ENGINE.map((f) => {
-		const s = src(f);
+		const s = src(`compose/${f}`);
 		let n = 0;
 		for (const m of s.matchAll(/"([A-Za-z0-9_]+)"/g)) if (ids.has(m[1])) n++;
 		return `${f.replace(".ts", "")} ${n}`;
@@ -488,7 +488,7 @@ section("DAW のミックス解放（§2.4）");
 			song.tracks.every((t) => accompPresetSlots(song)[t.slot] !== undefined),
 	);
 
-	const daw = src("daw.ts");
+	const daw = src("ui/daw.ts");
 	const fn = (name: string): string => {
 		const i = daw.indexOf(`const ${name} = `);
 		if (i < 0) return "";
@@ -546,7 +546,7 @@ section("DAW のミックス解放（§2.4）");
 		problems.length === 0,
 		problems,
 	);
-	const ui = src("daw-ui.ts");
+	const ui = src("ui/daw-ui.ts");
 	const named = ACCOMP_STYLES.flatMap((s) =>
 		[`"${s.id}"`, `'${s.id}'`, s.label].filter(
 			(x) => daw.includes(x) || ui.includes(x),

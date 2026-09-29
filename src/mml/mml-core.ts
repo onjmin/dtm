@@ -1,6 +1,5 @@
-import { LinkedList } from "../linked-list";
-import { chordVelocity, effectiveVelocity } from "./mml-velocity";
 import { UNITS_PER_SEMITONE, type Units, units } from "../audio/tuning";
+import { LinkedList } from "../linked-list";
 import type {
 	AddNoteOptions,
 	CoreEventHandlers,
@@ -8,6 +7,7 @@ import type {
 	RenderConfig,
 } from "../types";
 import { DEFAULT_VELOCITY } from "../types";
+import { chordVelocity, effectiveVelocity } from "./mml-velocity";
 
 /**
  * 和音を書き出すときの囲み記号。

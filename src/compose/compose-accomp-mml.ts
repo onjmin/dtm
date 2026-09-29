@@ -16,11 +16,11 @@
  * DAW の読み込み（`parseMmlMeta`）はループとして読むが、埋め込みではループしない。
  */
 
-import { type AccompSong, accompMeta } from "./compose-accomp";
 import { MMLCore } from "../mml/mml-core";
 import { formatMmlMeta } from "../mml/mml-parser";
 import { MML_END_MARKER, type Note, type RenderConfig } from "../types";
 import { DTM_VERSION } from "../version";
+import { type AccompSong, accompMeta } from "./compose-accomp";
 
 export type AccompMmlProvenance = {
 	/** アプリの種（`#seed=`。`composeAccomp` に `seededRandom(seed)` を渡したときの値）。 */

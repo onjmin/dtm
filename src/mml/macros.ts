@@ -1,4 +1,3 @@
-import type { MMLCore } from "./mml-core";
 import {
 	UNITS_PER_OCTAVE,
 	UNITS_PER_SEMITONE,
@@ -6,6 +5,7 @@ import {
 	units,
 } from "../audio/tuning";
 import { PITCH_RANGE_END, PITCH_RANGE_START } from "../types";
+import type { MMLCore } from "./mml-core";
 
 const SCALES = [
 	[0, 2, 4, 5, 7, 9, 11], // Major

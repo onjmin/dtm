@@ -20,16 +20,7 @@
  */
 
 import { type ChannelStrip, createChannelStrip } from "../audio/channel-strip";
-import { buildChordPlacements, type ChordPatternType } from "../chord/chords";
-import {
-	type AnyDrumPattern,
-	DRUM_PATTERNS,
-	type DrumPatternDef,
-	normalizeDrumPatterns,
-	resolveDrumPattern,
-} from "../instruments/drum-config";
 import { computeFadeParams, createFadeBus } from "../audio/fade";
-import { parseMML } from "./mml-parser";
 import {
 	createReverbImpulse,
 	DEFAULT_REVERB_DECAY_SEC,
@@ -39,9 +30,17 @@ import {
 } from "../audio/reverb";
 import { createSafetyLimiter } from "../audio/safety-limiter";
 import { createSequencer, type SequencerTrack } from "../audio/sequencer";
-import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
 import { createSynth, type Synth } from "../audio/synth";
 import type { Units } from "../audio/tuning";
+import { buildChordPlacements, type ChordPatternType } from "../chord/chords";
+import {
+	type AnyDrumPattern,
+	DRUM_PATTERNS,
+	type DrumPatternDef,
+	normalizeDrumPatterns,
+	resolveDrumPattern,
+} from "../instruments/drum-config";
+import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
 import type {
 	LoopConfig,
 	Note,
@@ -50,6 +49,7 @@ import type {
 	PlayNoteEvent,
 } from "../types";
 import { DEFAULT_BPM } from "../types";
+import { parseMML } from "./mml-parser";
 
 const STEPS_PER_BAR = 192;
 

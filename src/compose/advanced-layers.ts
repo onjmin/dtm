@@ -8,14 +8,14 @@
  * 編曲の割り当ては耳で気付きにくい壊れ方をするので、テストできる場所に置く。
  */
 
+import { UNITS_PER_SEMITONE } from "../audio/tuning";
 import { buildChordPlacements, type ChordPatternType } from "../chord/chords";
-import type { ComposedNote, ComposeResult } from "./compose";
-import type { SectionKind } from "./compose-sections";
 import {
 	fitInstrumentOctave,
 	type InstrumentPreset,
 } from "../instruments/instrument-presets";
-import { UNITS_PER_SEMITONE } from "../audio/tuning";
+import type { ComposedNote, ComposeResult } from "./compose";
+import type { SectionKind } from "./compose-sections";
 
 /** 音色を引く役割。{@link INSTRUMENT_PRESETS} のキーに対応する。 */
 export type AutoRole = "melody" | "submelody" | "bass" | "chord";

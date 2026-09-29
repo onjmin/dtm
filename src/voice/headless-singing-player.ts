@@ -7,6 +7,14 @@
  * DOM を抜いたもの」。
  */
 
+import { createSafetyLimiter } from "../audio/safety-limiter";
+import {
+	createSequencer,
+	resolveLoopPoint,
+	type SequencerTrack,
+} from "../audio/sequencer";
+import { createSynth, type Synth } from "../audio/synth";
+import { UNITS_PER_OCTAVE } from "../audio/tuning";
 import {
 	type AnyDrumPattern,
 	DRUM_PATTERNS,
@@ -14,7 +22,16 @@ import {
 	normalizeDrumPatterns,
 	resolveDrumPattern,
 } from "../instruments/drum-config";
+import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
 import type { MmlPlayback, PlayMmlOptions } from "../mml/headless-player";
+import { parseMML } from "../mml/mml-parser";
+import type { Note, PlayDrumEvent, PlayNoteEvent } from "../types";
+import {
+	DEFAULT_BPM,
+	DEFAULT_GATE,
+	DEFAULT_PAN,
+	DEFAULT_VOCAL_VOLUME,
+} from "../types";
 import {
 	buildStreamVoiceNotes,
 	createSingingVoices,
@@ -26,23 +43,6 @@ import {
 	type StreamVoiceTrack,
 	vocalVolumeToGain,
 } from "./lyrics";
-import { parseMML } from "../mml/mml-parser";
-import { createSafetyLimiter } from "../audio/safety-limiter";
-import {
-	createSequencer,
-	resolveLoopPoint,
-	type SequencerTrack,
-} from "../audio/sequencer";
-import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
-import { createSynth, type Synth } from "../audio/synth";
-import { UNITS_PER_OCTAVE } from "../audio/tuning";
-import type { Note, PlayDrumEvent, PlayNoteEvent } from "../types";
-import {
-	DEFAULT_BPM,
-	DEFAULT_GATE,
-	DEFAULT_PAN,
-	DEFAULT_VOCAL_VOLUME,
-} from "../types";
 
 const STEPS_PER_BEAT = 48;
 const STEPS_PER_BAR = 192;

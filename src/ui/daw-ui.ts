@@ -4,9 +4,9 @@
  */
 
 import { DELAY_DIVISIONS } from "../audio/delay";
+import type { TrackConfig } from "../types";
 import { icon } from "./icons";
 import { persistPanels } from "./state/panel-state";
-import type { TrackConfig } from "../types";
 
 export type DawUIRefs = {
 	root: HTMLElement;

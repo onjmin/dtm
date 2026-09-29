@@ -26,6 +26,17 @@ import {
 	VoiceBank,
 	Worldline,
 } from "@onjmin/koe";
+import { UNITS_PER_SEMITONE, type Units, units } from "../audio/tuning";
+import { VIBRATO_MIN_SEC } from "../audio/vibrato";
+import type {
+	CustomVocalDef,
+	FadeStop,
+	LyricSyllable,
+	LyricTrack,
+	OctaveUnisonMode,
+	PlayNoteEvent,
+} from "../types";
+import { DEFAULT_GATE, DEFAULT_PAN, DEFAULT_VOCAL_VOLUME } from "../types";
 import type { PitchSegment } from "./pitch-curve";
 import {
 	glideMsForSegments,
@@ -57,17 +68,6 @@ import {
 	speechBufferReached,
 	speechStartTime,
 } from "./speech-schedule";
-import { UNITS_PER_SEMITONE, type Units, units } from "../audio/tuning";
-import type {
-	CustomVocalDef,
-	FadeStop,
-	LyricSyllable,
-	LyricTrack,
-	OctaveUnisonMode,
-	PlayNoteEvent,
-} from "../types";
-import { DEFAULT_GATE, DEFAULT_PAN, DEFAULT_VOCAL_VOLUME } from "../types";
-import { VIBRATO_MIN_SEC } from "../audio/vibrato";
 import type {
 	VoiceWorkerInit,
 	VoiceWorkerOutbound,
@@ -80,14 +80,14 @@ import type {
 } from "./voice-worker-types";
 import { packCompositeAlias, unpackCompositeAlias } from "./voice-worker-types";
 
-export type { PitchSegment } from "./pitch-curve";
+export { VIBRATO_MIN_SEC } from "../audio/vibrato";
 export type {
 	LyricSyllable,
 	LyricSyllableKind,
 	LyricTrack,
 	OctaveUnisonMode,
 } from "../types";
-export { VIBRATO_MIN_SEC } from "../audio/vibrato";
+export type { PitchSegment } from "./pitch-curve";
 
 /** かな → [子音, 母音] のローマ字対応表（清音・濁音・半濁音・撥音） */
 const kanaTable: Record<string, [string, string]> = {

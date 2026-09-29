@@ -44,6 +44,9 @@
  * 実行時に import してよいものは §4.2 のとおり（`mml-parser`・`lyrics`・`daw` は読まない）。
  */
 
+import type { Units } from "../audio/tuning";
+import { semitonesToUnits, spelledToUnits } from "../chord/chords";
+import { splitTrackVelocity } from "../mml/mml-velocity";
 import type {
 	Accents,
 	ArpSetParams,
@@ -51,7 +54,6 @@ import type {
 	BassTone,
 	CompHit,
 } from "./accomp-styles/schema";
-import { semitonesToUnits, spelledToUnits } from "../chord/chords";
 import type { ComposedNote } from "./compose";
 import { seededRandom } from "./compose";
 import type {
@@ -76,8 +78,6 @@ import {
 	type CompHitPattern,
 	planStyleView,
 } from "./compose-accomp-style";
-import { splitTrackVelocity } from "../mml/mml-velocity";
-import type { Units } from "../audio/tuning";
 
 /**
  * 使う音価（16分の数）。MMLCore が表せる長さで、タイは使えない（§6 共通の約束）。エンジンの定数
