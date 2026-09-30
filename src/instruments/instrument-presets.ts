@@ -238,6 +238,22 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		bassAlt: "Synth Bass 2",
 		harmonyAlt: "Lead 6 (voice)",
 	},
+	// 界隈曲向け。retro_game の Clavinet 伴奏は音数が多いと潰れる（手書き A/B）ので、エレピとパッドにする。
+	chip_pop: {
+		displayName: "チップポップ",
+		description:
+			"矩形波リードにエレピと柔らかいパッドを重ねた、ネット発の打ち込み曲の響き。",
+		melody: "Lead 1 (square)",
+		submelody: "Lead 6 (voice)",
+		bass: "Synth Bass 1",
+		chord: "Electric Piano 1",
+		solo: "Lead 2 (sawtooth)",
+		chorusLead: "Lead 4 (chiff)",
+		chordAlt: "Pad 3 (polysynth)",
+		sparkle: "Celesta",
+		bassAlt: "Synth Bass 2",
+		harmonyAlt: "Synth Choir",
+	},
 };
 
 /**

@@ -582,7 +582,7 @@ const COMPOSE_INFO_HTML = `
   <ul>
     <li><strong>フレーズの骨格</strong>（どの楽句をモチーフの原形・セクエンツ・答えにするか）</li>
     <li><strong>メロディの書法</strong>——走句の形（音階／折り返し／分散和音／ジグザグ）、つなぎの形（山なり／谷／上行／下行／うねり／軸音まわり）、終止の形（順次下降／ソミド／跳ね上がり／ロングトーン）、モチーフの原型、跳躍の混ぜ具合、開始音、基準の刻み（8分／16分／三連）、スウィング量</li>
-    <li><strong>ベースの奏法</strong>（4分打ち／オルタネイト／2分／8分ドライブ／シンコペ／ウォーキング／オクターブ）</li>
+    <li><strong>ベースの奏法</strong>（4分打ち／オルタネイト／2分／8分ドライブ／シンコペ／ウォーキング／オクターブ。テンプレートによっては8分のオクターブ往復・ルート連打・トレシーロなど）</li>
     <li><strong>サブメロの書き方</strong>——合いの手（メロディが休んだ隙間にだけ入る）、ハモリ（メロディのリズムをなぞって3度・6度下を歌う）、対旋律（8分でメロディと反行する）、保続音（同じ音を伸ばし続ける）、パッド。小節ごとに、メロディが息継ぎしている場所では自動で合いの手に切り替わります。</li>
     <li><strong>編曲プラン</strong>（上級者モードのみ）——伴奏を何層にするか、それぞれどの奏法でどのセクションを鳴らすか、サビの重ねを出すか・ユニゾンかオクターブ上か、装飾をどこに置くか。400曲引くと392通りの型が出ます。</li>
   </ul>
@@ -628,7 +628,7 @@ const COMPOSE_INFO_HTML = `
     <li><strong>曲の途中で転調します</strong>（およそ半分の曲）。五度圏で近い属調・下属調へは共通する和音（ピボットコード）か新しい調のドミナントで橋渡しし、ラスサビの半音上げは準備なしの直接転調にします。調号を変えずに明暗だけ入れ替える<strong>平行調</strong>（ハ長調↔イ短調）と、主音を保ったまま暗くする<strong>同主調</strong>（ハ長調→ハ短調）も引きます。1割強の曲は主和音を避けて「明るいのか暗いのか分からない」浮遊感で通します。</li>
     <li>調はハ長調（またはイ短調）で固定です。別の調にしたいときは、この下の「移調」で動かしてください。</li>
     <li>31平均律の曲でも使えます。和音・メロディとも31平均律の格子に乗せて生成します。</li>
-    <li><strong>ドラムも曲に合わせて組み立てます</strong>。テンポとメロディの刻みから8ビート／16ビート／4つ打ち／シャッフル／バラード／ロックのどれかを選び、A・A'・サビ・A'' で刻みの強さを変え、4小節ごとにフィル、セクションの頭にクラッシュを置きます。気に入らなければ「ドラム設定」から他のリズムへ切り替えられます。</li>
+    <li><strong>ドラムは曲に合う固定パターンから選びます</strong>。テンポとメロディの刻みから8ビート／16ビート／4つ打ち／シャッフル／バラード／ロックなどの候補を絞って1つ引きます（テンプレートは専用の候補を持ちます）。気に入らなければ「ドラム設定」から他のリズムへ切り替えられます。</li>
     <li>実行後は「元に戻す」で作曲前の状態へ戻せます。元に戻すはトラックごとに効くので、4トラックすべてを戻したいときはトラックを切り替えながら1回ずつ押してください。</li>
   </ul>
 </div>
@@ -6587,17 +6587,25 @@ export const mountDAW = (
 		 * ここは1つの数ではなく**幅**を出す。押す前の表示と実際の曲の長さが違うと、
 		 * 「表示が壊れている」としか受け取れない。
 		 */
+		/** 骨格借用のテンプレートか。曲の長さもセクションも引いた骨格が決めるので、箱は効かない。 */
+		const isSkeletonTemplate = (name?: string): boolean =>
+			STRUCTURE_TEMPLATES.find((t) => t.name === name)?.engine === "skeleton";
 		const composeBarsLabel = (): string => {
-			const range = sectionPlanBarRange(
-				selectedComposeSections(),
-				selectedComposeTemplate(),
-			);
-			return range.min === range.max
-				? `${range.min}小節`
-				: `${range.min}〜${range.max}小節`;
+			const tmplName = selectedComposeTemplate();
+			const range = sectionPlanBarRange(selectedComposeSections(), tmplName);
+			const text =
+				range.min === range.max
+					? `${range.min}小節`
+					: `${range.min}〜${range.max}小節`;
+			return isSkeletonTemplate(tmplName) ? `骨格しだい（${text}）` : text;
 		};
 		const updateComposeSectionsLen = (): void => {
 			refs.composeSectionsLen.textContent = composeBarsLabel();
+			const disabled = isSkeletonTemplate(selectedComposeTemplate());
+			for (const box of refs.composeSections.querySelectorAll<HTMLInputElement>(
+				'input[type="checkbox"]',
+			))
+				box.disabled = disabled;
 		};
 		// 自動作曲パネルの選択値を localStorage から復元
 		const savedTemplate = readMacroSetting("template");
@@ -7007,6 +7015,7 @@ export const mountDAW = (
 						}
 						melodyTrack.lyrics = composeLyrics(song.melody, {
 							stepsPerBar: renderConfig.stepsPerBar,
+							words: song.lyricWords,
 						});
 						fireLyricsChange(melodyTrack);
 					}

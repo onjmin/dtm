@@ -30,6 +30,8 @@
  * 1回目から再現する）。
  */
 
+import type { ChordPatternType } from "../chord/chords";
+
 /** セクションの種類。 */
 export type SectionKind =
 	| "intro"
@@ -250,13 +252,26 @@ export type PlacedSection = {
 /**
  * 曲構成テンプレート。名前付きで、UIのドロップダウンから選べるようにする。同じセクションの
  * **繰り返し**が曲の基本構造なので、plan配列で同一種別を複数回指定できるようにしてある。
+ *
+ * **省略可能なフィールドは、読む側が `template?.field` の有無で分岐する。** 無ければ従来の
+ * 経路をそのまま通す（テンプレート名の文字列比較は書かない）。共通経路の乱数消費を変えると
+ * 既存テンプレートの `#seed` から別の曲が出るので、分岐の中でだけ `rnd()` を引く。
  */
 export type StructureTemplate = {
 	name: string;
 	label: string;
 	plan: SectionKind[];
+	/**
+	 * seed ごとに引く構成の候補（要素の重複が重み）。`plan` は UI の長さ表示に使う代表で、
+	 * 作曲は `plans` があればこちらから引く。
+	 */
+	plans?: SectionKind[][];
+	/** セクション仕様の上書き（{@link SECTION_SPECS} に浅く重ねる）。 */
+	sectionSpecs?: Partial<Record<SectionKind, Partial<SectionSpec>>>;
 	/** テンポの候補。省略時は compose 側の既定の候補から引く。 */
 	bpmChoices?: number[];
+	/** UI の調が `"any"` のときの既定（`"major"` / `"minor"`）。利用者の指定が優先。 */
+	baseKey?: string;
 	/** 展開の仕方（`ComposeOptions.form`）。呼び出し側の明示指定が優先。 */
 	form?: string;
 	/** 音階の候補。音階が `"auto"` のときだけ、ここから引く。 */
@@ -267,11 +282,144 @@ export type StructureTemplate = {
 	 */
 	bassByScale?: Record<string, string>;
 	/**
+	 * ベースの奏法・骨格の候補（compose 側の `BassStyle` / `BassSkeleton` の名前）。
+	 * `sustainCadence: false` は hold/cadence の小節でも全音符に伸ばさず型を刻み続ける。
+	 */
+	bass?: { styles: string[]; skeletons?: string[]; sustainCadence?: boolean };
+	/**
+	 * 固定ドラムパターンの候補（`DRUM_PATTERNS` のキー）。`dense` は主旋律が
+	 * 音のある小節1つあたり `notesPerBar` 音以上のときに使う候補（裏拍の音を外すなど）。
+	 */
+	drums?: { pool: string[]; dense?: { notesPerBar: number; pool: string[] } };
+	/** 楽器プリセットの候補（`INSTRUMENT_PRESETS` のキー）。 */
+	instruments?: string[];
+	/** 伴奏の奏法の候補。 */
+	chordPatterns?: ChordPatternType[];
+	/** 和声リズムの候補（compose 側の `HarmonicRhythm` の名前）。 */
+	harmonicRhythms?: string[];
+	/**
+	 * 進行プールの差し替え（ハ長調／イ短調の綴り）。短調のときだけ効く——利用者が長調を
+	 * 手で指定したら従来プールへ退避する。既存プールへ要素を足すと `pick` の添字がずれるので、
+	 * テンプレートは必ず自前のプールを持つ。
+	 */
+	progressions?: { a: string[][]; b: string[][]; c: string[][] };
+	/** 旋律の「歌の制約」を緩める値。 */
+	melody?: {
+		wideLeapBudget?: number;
+		midBreath?: number;
+		maxLeapChoices?: number[];
+		groove?: string;
+	};
+	/** 歌の割り当ての候補（compose 側の `DuetStyle` の名前）。 */
+	vocal?: { duetStyles?: string[] };
+	/** 仮歌詞の語彙。 */
+	lyricWords?: string[];
+	/**
 	 * 主旋律の書き方。`"riff"` は歌メロの代わりに楽器の16分リフを回す。
 	 * 手本2曲の上声は16分間隔が35〜67%あり、歌メロ（1〜13%）とは別物だった。
 	 */
 	lead?: "riff";
+	/**
+	 * サブメロの書き方。`"arpeggio"` はハモリ／対旋律の代わりに、進行の構成音を16分で回す
+	 * アルペジオ（1オクターブ上）を全小節に置く。ハモリ2声は空になる。
+	 */
+	sub?: "arpeggio";
+	/**
+	 * 生成エンジンの差し替え。`"skeleton"` は `composeSong` の先頭で骨格借用
+	 * （{@link file://./compose-skeleton.ts}）へ渡す。共通経路の乱数は消費しない。
+	 */
+	engine?: "skeleton";
 };
+
+/**
+ * 界隈曲の Aメロ・アウトロ用（12本）。**全行 Am 始まり**——compose 側は A の1和音目で
+ * 主和音を決めるので、外すと短調曲の締めがハ長調へ落ちる。空白区切りの要素は1小節に2和音。
+ */
+// 第3版の試聴で、三和音の王道進行（Am Em F G・Am C G D）のAメロは「似ない」、二次ドミナントや
+// 増和音で短調へ引き戻すサビ（FM7 E7 Am7 C7・Dm7 E+ Am7 A7）は「若干似る」だった。ダイアトニックな
+// 7th だけの行（Am7 Em7 Dm7 G7 CM7）も似なかったので、**全行に 7th の二次ドミナントか変化和音を置く**。
+const KAIWAI_A: string[][] = [
+	["Am7", "G7", "FM7", "E7"],
+	["Am7", "E7", "Am7", "E7"],
+	["Am7", "Dm7", "BbM7", "E7"],
+	["Am7 Em7", "Dm7 G7", "CM7 C7", "Bm7-5 E7"],
+	["Am7", "C7", "FM7", "E7"],
+	["Am7 G7", "FM7 E7", "Am7 G7", "FM7 E7"],
+	["Am", "AmM7", "Am7", "D7"],
+	["Am7", "A7", "Dm7", "E+"],
+	["Am7", "AbM7", "GM7", "E7"],
+	["Am7", "Dm7 G7", "CM7", "Bm7-5 E7"],
+	["Am7 Dm7", "G7 CM7", "FM7 Bm7-5", "E7 E+"],
+	["Am7", "Em7/A", "FM7/A", "E7/A"],
+];
+/**
+ * 界隈曲のイントロ・サビ・間奏用（11本）。サビ頭に 7th・裏コード・SDM・♭II・I7 を置く。
+ * Am を含まない行を3本持つ——浮遊感の曲（`withoutTonic`）が1本へ潰れないため。
+ */
+const KAIWAI_B: string[][] = [
+	["Dm7", "Db7", "CM7", "A7"],
+	["Bm7-5", "E7", "Am", "A7"],
+	["Dm7", "E7", "Am", "A7"],
+	["FM7", "Fm7", "Em7", "Am"],
+	["FM7", "G7", "CM7", "Am7"],
+	["Am7", "AbM7", "GM7", "E7"],
+	["Am7", "Abm7", "Gm7", "C7"],
+	["Dm7", "E+", "Am7", "A7"],
+	["FM7 E7", "Am7 C7", "FM7 E7", "Am7 A7"],
+	["Dm7", "G7", "CM7", "FM7"],
+	["FM7", "G7", "Em7", "A7"],
+];
+/** 界隈曲の Cメロ用（5本）。Am を含まない行を2本持つ（上と同じ理由）。 */
+const KAIWAI_C: string[][] = [
+	["FM7", "Em7", "Am7", "Dm7"],
+	["Am", "G", "FM7", "E7"],
+	["Dm7", "G7", "Em7", "Am"],
+	["F", "G", "Ab", "Bb"],
+	["Dm7", "Em7", "FM7", "G7"],
+];
+/** 界隈曲の仮歌詞。開音節・2〜3拍・海産物と断片。 */
+const KAIWAI_LYRIC_WORDS: string[] = [
+	"いわし",
+	"くらげ",
+	"さかな",
+	"うみ",
+	"しお",
+	"なみ",
+	"すな",
+	"つち",
+	"そら",
+	"あめ",
+	"かげ",
+	"ひかり",
+	"そこ",
+	"ふかく",
+	"はえる",
+	"とぶ",
+	"しずむ",
+	"ゆれる",
+	"きえる",
+	"とける",
+	"まわる",
+	"ながれる",
+	"こえ",
+	"みず",
+	"ほね",
+	"よる",
+	"あさ",
+	"まち",
+	"ゆび",
+	"くも",
+	"ほし",
+	"つき",
+	"そして",
+	"どこか",
+	"なにも",
+	"ない",
+	"もう",
+	"まだ",
+	"しろい",
+	"あかい",
+];
 
 export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 	// 1コーラス（現行デフォルト、短い曲・初心者向け）
@@ -374,16 +522,151 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 			minor_blues: "power-riff",
 		},
 	},
+
+	// 界隈曲。短調・4つ打ち・8分ベース・多回サビ。コーパス（bars≥40・非ドラム ch≥6 の43曲）と
+	// 当たり12曲の実測から。細部の根拠は docs/handover-compose.md「界隈曲テンプレート」。
+	{
+		name: "kaiwai",
+		label: "界隈曲（短調・4つ打ち・8分ベース）",
+		plan: [
+			"intro",
+			"verse",
+			"chorus",
+			"verse",
+			"chorus",
+			"bridge",
+			"chorus",
+			"chorus",
+		],
+		// 2:1:1。64小節型（当たり 60小節 7/12・ラスサビ2連）／イントロ無し（歌が1小節目から。
+		// 絞り後 8/43）／36小節前後（コーパスの 32〜40 の峰）。
+		// Bメロは持たない（第3版）——界隈曲の歌はAメロの型とサビの型の詠唱で、サビへの助走が無い。
+		plans: [
+			[
+				"intro",
+				"verse",
+				"chorus",
+				"verse",
+				"chorus",
+				"bridge",
+				"chorus",
+				"chorus",
+			],
+			[
+				"intro",
+				"verse",
+				"chorus",
+				"verse",
+				"chorus",
+				"bridge",
+				"chorus",
+				"chorus",
+			],
+			["verse", "chorus", "verse", "chorus", "chorus"],
+			["intro", "verse", "chorus", "verse", "chorus"],
+		],
+		// 歌メロは詠唱（{@link MelodyForm} の `chant`）、サブメロは16分のアルペジオ。第2版の
+		// 試聴で「イントロ（伴奏だけ）は若干似ている、歌が入ると化けの皮が剥がれる」——犯人は
+		// 旋律の作り（動機→セクエンツ→駆け上がり→歌い上げ→終止形）とハモリだった。
+		form: "chant",
+		sub: "arpeggio",
+		// 128〜142 に10本（コーパス中央135）、150〜185 に6本（当たり中央152.5）。
+		// 第1段の試聴（2026-09-30）で、当たり集合由来の「幅」（16beat・ピアノ・ルート刻み・disco・
+		// アルペジオ・トレシーロ）は「界隈曲っぽくない」、4つ打ち＋8分オクターブ＋140 の1本だけが
+		// 「若干」だった。以後はコーパスの核（130〜140・4つ打ち・8分オクターブ往復・2拍で動く和声・
+		// 8分の歌メロ）へ絞る。幅は調・進行・構成の側で出す。
+		bpmChoices: [
+			128, 130, 130, 132, 132, 135, 135, 135, 135, 138, 140, 140, 142, 150,
+		],
+		baseKey: "minor",
+		// 民謡ペンタ（シとファが無い）だと歌メロが民謡・ゲーム音楽側へ寄る。界隈曲の歌メロは
+		// 四抜き短調（ラシドレミソ。イワシ・ヤツメ穴の実測）なので、シを柱に戻す。
+		scales: ["yonuki_minor"],
+		drums: {
+			pool: ["four_clap", "four_clap", "four_clap", "dance", "dance"],
+			// 主旋律が7音/小節以上（歌のある小節で割る）なら裏拍オープンハット（dance）を外す
+			// ——16分旋律と帯域を取り合う。
+			dense: {
+				notesPerBar: 7,
+				pool: ["four_clap"],
+			},
+		},
+		// 第3版で「若干似た」のは retro_game（矩形波＋クラビネット）と synth_pop、似なかったのは chip_pop。
+		instruments: [
+			"retro_game",
+			"retro_game",
+			"synth_pop",
+			"synth_pop",
+			"chip_pop",
+		],
+		// 第3版で「若干似た」2本は block と offbeat、似なかった1本は yatsume（ヤツメ穴固有の刻み）。
+		chordPatterns: ["block", "block", "offbeat", "offbeat", "yatsume"],
+		harmonicRhythms: ["half", "half", "half", "bar"],
+		bass: {
+			styles: [
+				"octave-eighth",
+				"octave-eighth",
+				"octave-eighth",
+				"octave-fifth",
+			],
+			skeletons: ["per-bar", "per-bar", "approach"],
+			sustainCadence: false,
+		},
+		progressions: { a: KAIWAI_A, b: KAIWAI_B, c: KAIWAI_C },
+		// 主旋律が出るまでの小節数はコーパスで 0/1/4/8 に峰（0 はイントロ無しの plan で出す）。
+		// 1小節のイントロは置けない——compose 側の楽句は2小節単位で、奇数長のセクションを挟むと
+		// 以降の楽句が全部1小節ずれる（実測：1小節イントロの曲は歌が2小節目から始まり、詠唱の
+		// 4小節周期も和声の4小節から1小節ずれる）。最短は2にする。
+		sectionSpecs: {
+			intro: { barChoices: [2, 2, 4, 4, 8, 8], seconds: { min: 1, max: 16 } },
+		},
+		// 歌メロは8分で組む（コーパスの主旋律の16分間隔は中央 0.027・p75 0.095。16分で走る曲は例外）。
+		melody: { wideLeapBudget: 3, midBreath: 0.15, groove: "eighth" },
+		vocal: { duetStyles: ["none", "section", "phrase", "chorus", "verse"] },
+		lyricWords: KAIWAI_LYRIC_WORDS,
+	},
+
+	// 界隈曲（骨格借用）。所有者の耳コピから抜いた設計図を1つ引き、調だけ変えて、和音・ベース・
+	// ドラム・層の配置は骨格どおり、歌メロは骨格のリズムに他曲の実在フレーズを当てる。
+	// plan は UI の長さ表示の代表で、実際の構成は骨格が持つ。
+	{
+		name: "kaiwai_skeleton",
+		label: "界隈曲（骨格借用）",
+		plan: ["intro", "verse", "chorus"],
+		engine: "skeleton",
+		baseKey: "minor",
+		// 音階 "auto" のとき短調の骨格で引く（長調の骨格は陽音階）。
+		scales: ["yonuki_minor"],
+		instruments: ["retro_game", "synth_pop", "chip_pop"],
+		vocal: { duetStyles: ["none", "section", "phrase", "chorus", "verse"] },
+		lyricWords: KAIWAI_LYRIC_WORDS,
+	},
 ];
 
-/** {@link buildSectionPlan} の並び順を決める（テンプレート優先、無ければチェック）。 */
+/** テンプレートのセクション仕様（上書きがあれば {@link SECTION_SPECS} に重ねる）。 */
+const specOf = (kind: SectionKind, tmpl?: StructureTemplate): SectionSpec =>
+	tmpl?.sectionSpecs?.[kind]
+		? { ...SECTION_SPECS[kind], ...tmpl.sectionSpecs[kind] }
+		: SECTION_SPECS[kind];
+
+const findTemplate = (name?: string): StructureTemplate | undefined =>
+	name ? STRUCTURE_TEMPLATES.find((t) => t.name === name) : undefined;
+
+/**
+ * {@link buildSectionPlan} の並び順を決める（テンプレート優先、無ければチェック）。
+ * `plans` を持つテンプレートは `rnd` があるときだけそこから引く（セクション長の抽選より前に1回）。
+ */
 const orderedKinds = (
 	kinds: SectionKind[],
 	templateName?: string,
+	rnd?: () => number,
 ): SectionKind[] => {
 	if (templateName) {
-		const tmpl = STRUCTURE_TEMPLATES.find((t) => t.name === templateName);
-		return tmpl ? tmpl.plan : DEFAULT_SECTIONS;
+		const tmpl = findTemplate(templateName);
+		if (!tmpl) return DEFAULT_SECTIONS;
+		return tmpl.plans?.length && rnd
+			? tmpl.plans[Math.floor(rnd() * tmpl.plans.length)]
+			: tmpl.plan;
 	}
 	const wanted = kinds.length > 0 ? kinds : DEFAULT_SECTIONS;
 	// 並び順は SECTION_ORDER に従う（チェックの付け外しの順に依存させない）。
@@ -416,13 +699,14 @@ export const buildSectionPlan = (
 	rnd?: () => number,
 	bpm?: number,
 ): PlacedSection[] => {
-	const ordered = orderedKinds(kinds, templateName);
+	const tmpl = findTemplate(templateName);
+	const ordered = orderedKinds(kinds, templateName, rnd);
 
 	/** 種別ごとの長さ。同じ種別は曲中で同じ長さに揃える。 */
 	const barsOf = new Map<SectionKind, number>();
 	for (const kind of ordered) {
 		if (barsOf.has(kind)) continue;
-		const spec = SECTION_SPECS[kind];
+		const spec = specOf(kind, tmpl);
 		const choices = spec.barChoices ?? [];
 		if (!rnd || choices.length === 0) {
 			barsOf.set(kind, spec.bars);
@@ -450,7 +734,7 @@ export const buildSectionPlan = (
 	/** 各種別が何回出てきたか。2回目以降は restatement。 */
 	const seen = new Map<SectionKind, number>();
 	for (const kind of ordered) {
-		const spec = SECTION_SPECS[kind];
+		const spec = specOf(kind, tmpl);
 		const bars = barsOf.get(kind) ?? spec.bars;
 		const count = seen.get(kind) ?? 0;
 		plan.push({
@@ -477,17 +761,29 @@ export const sectionPlanBarRange = (
 	kinds: SectionKind[],
 	templateName?: string,
 ): { min: number; max: number; typical: number } => {
-	const ordered = orderedKinds(kinds, templateName);
-	let min = 0;
+	const tmpl = findTemplate(templateName);
+	// 骨格借用は plan を読まず、引いた骨格の小節数がそのまま曲の長さになる。骨格データはバンドルに
+	// 入れない（scripts/ から渡す）ので、ここは抽出時の実測（62本: 12〜146、中央 49）を定数で返す。
+	if (tmpl?.engine === "skeleton") return { min: 12, max: 146, typical: 49 };
+	const typicalKinds = orderedKinds(kinds, templateName);
+	// 構成を seed ごとに引くテンプレートは、全候補の最短・最長を取る。代表値は `plan`。
+	const plans = tmpl?.plans?.length ? tmpl.plans : [typicalKinds];
+	let min = Number.POSITIVE_INFINITY;
 	let max = 0;
 	let typical = 0;
-	for (const kind of ordered) {
-		const spec = SECTION_SPECS[kind];
-		const choices = spec.barChoices?.length ? spec.barChoices : [spec.bars];
-		min += Math.min(...choices);
-		max += Math.max(...choices);
-		typical += spec.bars;
+	for (const kinds of plans) {
+		let lo = 0;
+		let hi = 0;
+		for (const kind of kinds) {
+			const spec = specOf(kind, tmpl);
+			const choices = spec.barChoices?.length ? spec.barChoices : [spec.bars];
+			lo += Math.min(...choices);
+			hi += Math.max(...choices);
+		}
+		min = Math.min(min, lo);
+		max = Math.max(max, hi);
 	}
+	for (const kind of typicalKinds) typical += specOf(kind, tmpl).bars;
 	return { min, max, typical };
 };
 

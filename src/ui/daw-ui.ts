@@ -558,6 +558,7 @@ export const buildUI = (
           <option value="vocaloid">ボカロ王道（疾走・2番/Cメロ/ラスサビ）</option>
           <option value="verse_chorus">Verse-Chorus（Bメロなし・洋楽風）</option>
           <option value="game_loop">ゲームBGM（ループ・16分リフ）</option>
+          <option value="kaiwai">界隈曲（短調・4つ打ち・8分ベース・多回サビ）</option>
         </select>
       </div>
       <div class="dtm-row" data-dtm="compose-sections-row">
@@ -633,6 +634,7 @@ export const buildUI = (
           <optgroup label="ペンタトニック（5音音階）">
             <option value="yo" title="J-POPの標準。明るく素直で歌いやすい。従来の長調と同じ">陽音階（長調ペンタ）</option>
             <option value="minyo" title="わらべ歌・民謡の音階。翳りがあるが暗すぎない。従来の短調と同じ">民謡音階（短調ペンタ）</option>
+            <option value="yonuki_minor" title="短調からファを抜いた6音。シが柱に入り、淡々と順次で動く。界隈曲の歌メロ">四抜き短音階（界隈曲）</option>
             <option value="ryukyu" title="沖縄音階。レとラを抜き、ファとシを柱にする。明るく跳ねる">琉球音階（沖縄）</option>
             <option value="miyakobushi" title="『さくらさくら』の音階。主音のすぐ上が半音で、翳りが濃い">都節音階（陰音階）</option>
             <option value="ritsu" title="雅楽・声明の音階。半音を含まず、平らで荘重に流れる">律音階（雅楽）</option>

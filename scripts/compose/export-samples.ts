@@ -31,15 +31,23 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import Module from "node:module";
 import { join } from "node:path";
 import { programOfInstrumentName } from "../../src/audio/audio-config";
+import { UNITS_PER_SEMITONE } from "../../src/audio/tuning";
 import { buildChordPlacements } from "../../src/chord/chords";
-import { seededRandom as appSeededRandom, composeSong } from "../../src/compose/compose";
+import {
+	seededRandom as appSeededRandom,
+	composeSong,
+} from "../../src/compose/compose";
 import { STRUCTURE_TEMPLATES } from "../../src/compose/compose-sections";
-import { DRUM_PATTERNS, resolveDrumPattern } from "../../src/instruments/drum-config";
+import {
+	DRUM_PATTERNS,
+	resolveDrumPattern,
+} from "../../src/instruments/drum-config";
 import { INSTRUMENT_PRESETS } from "../../src/instruments/instrument-presets";
 import { exportMIDI } from "../../src/io/midi-io";
-import { UNITS_PER_SEMITONE } from "../../src/audio/tuning";
 import type { Note } from "../../src/types";
+import { loadSkeletons } from "../corpus/skeleton-data";
 
+const KAIWAI_SKELETONS = loadSkeletons();
 const STEPS_PER_BAR = 192;
 const argv = process.argv.slice(2);
 const argOf = (name: string): string | undefined => {
@@ -209,6 +217,7 @@ const main = async (): Promise<void> => {
 		const song = composeSong(
 			appOptions
 				? {
+						skeletons: KAIWAI_SKELETONS,
 						stepsPerBar: STEPS_PER_BAR,
 						random: appSeededRandom(seed),
 						template: appOptions.template,

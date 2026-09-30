@@ -57,6 +57,12 @@ type MidiEvent = {
 	noteOn?: { noteNumber: number; velocity: number };
 	noteOff?: { noteNumber: number; velocity: number };
 	setTempo?: { microsecondsPerQuarter: number };
+	/** プログラムチェンジ（0xC0）。編成の測定（measure-arrangement.ts）が使う。 */
+	programChange?: { program: number };
+	/** 拍子（meta 0x58）。同上。 */
+	timeSignature?: { numerator: number; denominator: number };
+	/** トラック名（meta 0x03）。骨格抽出（extract-skeletons.ts）が和音 ch の手がかりに使う。 */
+	trackName?: string;
 };
 
 export const parseSmf = (
@@ -129,6 +135,20 @@ export const parseSmf = (
 								(data[0] << 16) | (data[1] << 8) | data[2],
 						},
 					});
+				} else if (metaType === 0x58 && length >= 2) {
+					events.push({
+						delta,
+						timeSignature: { numerator: data[0], denominator: 2 ** data[1] },
+					});
+				} else if (metaType === 0x03) {
+					// Domino 等の日本語 DAW は Shift_JIS で書く。UTF-8 で読めなければそちらで読む。
+					const utf8 = data.toString("utf8");
+					events.push({
+						delta,
+						trackName: utf8.includes("�")
+							? new TextDecoder("shift_jis").decode(data)
+							: utf8,
+					});
 				} else {
 					events.push({ delta });
 				}
@@ -141,7 +161,10 @@ export const parseSmf = (
 				} while (lb & 0x80);
 				p += length;
 				events.push({ delta });
-			} else if (type === 0xc0 || type === 0xd0) {
+			} else if (type === 0xc0) {
+				const program = buf[p++];
+				events.push({ delta, channel, programChange: { program } });
+			} else if (type === 0xd0) {
 				p += 1;
 				events.push({ delta, channel });
 			} else {
@@ -890,7 +913,10 @@ export const CORPUS_CELL_WEIGHTS: Record<string, number> = {
 ${cellWeightLines}
 };
 `;
-	writeFileSync(new URL("../../src/compose/compose-corpus.ts", import.meta.url), body);
+	writeFileSync(
+		new URL("../../src/compose/compose-corpus.ts", import.meta.url),
+		body,
+	);
 	console.log("\n  → src/compose/compose-corpus.ts を書き出しました");
 };
 

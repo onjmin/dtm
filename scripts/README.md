@@ -8,8 +8,8 @@
 
 | ファイル名 | 役割 | コマンド例 |
 | :--- | :--- | :--- |
-| `check-compose.ts` | 自動作曲パイプラインの品質・回帰テスト（`pnpm test` から呼び出し） | `pnpm test` または `npx tsx scripts/test/check-compose.ts` |
-| `check-tracks.ts` | 上級者モード15トラックの検算（声部の分割で音が消えていないか・トラックが遊んでいないか・同じ楽器で同じ音を重ねていないか。`pnpm test` から呼び出し） | `pnpm test` または `npx tsx scripts/test/check-tracks.ts` |
+| `check-compose.ts` | 自動作曲パイプラインの品質・回帰テスト（`pnpm test` から呼び出し）。**既存テンプレートの黄金値**（既定＋6構成 × アプリの種3つの生成物の sha256 を `test/fixtures/compose-golden.json` と照合。テンプレートを足したときに共通経路の乱数消費が変わっていない番。取り直しは `--bless` だけ）と、**界隈曲テンプレート `kaiwai`** の到達検算（ドラム・楽器・進行・ベース4型・構成の候補が生成物に届くか）を含む | `pnpm test` または `npx tsx scripts/test/check-compose.ts` / 黄金値の取り直し `npx tsx scripts/test/check-compose.ts --bless` |
+| `check-tracks.ts` | 上級者モード15トラックの検算（声部の分割で音が消えていないか・トラックが遊んでいないか・同じ楽器で同じ音を重ねていないか。既定構成と `kaiwai` を交互に回す。`pnpm test` から呼び出し） | `pnpm test` または `npx tsx scripts/test/check-tracks.ts` |
 | `check-compose-accomp.ts` | 伴奏主体モード（`composeAccomp`、[docs/accomp-compose.md](../docs/accomp-compose.md)）の検算。依存（koe・mml-parser を読まない）・表の健全性・計画器・実現器・関門・入口（決定性・`pick`・`recent`・上書き・保険の計画）・ミックス・MML の往復（音符と絶対値の v まで）。**陽性対照**（fb を計画として書き直した `test/fixtures/accomp-fb-plan.ts` を鳴らして fb の実測に合うか）と**切除対照**（1点ずつ壊すと狙った関門だけが落ちるか）を含む。`#compose` の書式（`style:<id>.v<版>:<baseKey>:<k>`）と監査用の記録（`diagnostics`）も確かめる。計画の記録（`PlanPins`: スタイル・型・ミックスと小節ごとの和音の打ち方。実現の段が記録し、記録があれば従う）も確かめる。`pnpm test` から呼び出し | `pnpm test` または `npx tsx scripts/test/check-compose-accomp.ts` |
 | `check-accomp-styles.ts` | **伴奏主体モードのスタイルの検査**（[docs/accomp-style-engine.md](../docs/accomp-style-engine.md) §7.1、段階 S1）。登録した全スタイル（`src/compose/accomp-styles/`）を同じコードで回す: スキーマ（`validateStylePack`）といまのエンジンの前提・その陰性対照、型ごとの参照計画（全調・全テンポの前提と秒数）、エンジンが表をスタイルから読むこと（互換の口 `compose-accomp-tables.ts` を読まない）、DAW のミックス解放（`accompMixToRelease` の判定と `daw.ts` が `song.mix` と層の定義を使うこと）、DAW と UI にスタイル名が無いこと。`pnpm test` から呼び出し | `pnpm test` または `npx tsx scripts/test/check-accomp-styles.ts` |
 | `check-accomp-golden.ts` | **伴奏主体モードの黄金値**（[docs/accomp-style-engine.md](../docs/accomp-style-engine.md) §7.2・§8 段階 S0）。200種 × {major, minor, any} の計画 JSON（段階 S1 から計画の記録 `PlanPins` 込み）と MML、`fbPlan` × 長調12調 × 全テンポ、変種（31平均律・色の線なし・`pick`・`recent` の100曲）の sha256 を `test/fixtures/styles/<id>/golden.json` と照合する（出力を1バイトも変えない作り替えの番）。`--bless` で取り直す（出力を意図して変えたときだけ。スタイルの版も上げる）。`pnpm test` から呼び出し | `pnpm test` / 取り直し `pnpm accomp:bless` |
@@ -43,6 +43,9 @@
 | :--- | :--- | :--- |
 | `calibrate-corpus.ts` | 参考MIDIコーパス群から目標帯（`src/compose/compose-corpus.ts`）を算出し校正するスクリプト | `npx tsx scripts/corpus/calibrate-corpus.ts --dir "<path>" --out src/compose/compose-corpus.ts` |
 | `check-evaluator.ts` | **評価機そのものの検算。** 人間の曲が生成物と同等以上の点を取るかを見る（取らないなら基準の側が壊れている） | `npx tsx scripts/corpus/check-evaluator.ts --dir "<path>"` |
+| `measure-arrangement.ts` | **旋律の外側**（テンポ・調・和声・ベース・ドラム・音色・構成）を参考コーパスと生成物で同じ物差しで測って並べる。生成物は `export-samples.ts` と同じ手順で .mid にしてから読む。`--generate <テンプレート名\|all>`（all は vocaloid / 1chorus / game_loop / kaiwai / kaiwai_skeleton）、`--min-bars <n> --min-channels <n>` で未完成の耳コピを対照から外す（`corpus-profile.md` に絞る前後を併記）。出力 `<out>/corpus-profile.{md,json}`・`gen-<template>.{md,json}`・`gap.md` | `npx tsx scripts/corpus/measure-arrangement.ts --dir "C:/Users/frgk2/Music/_own/自作/界隈曲" --generate kaiwai --count 40 --seed 1 --min-bars 40 --min-channels 6 --out tmp/kaiwai` |
+| `extract-skeletons.ts` | **骨格借用の抽出。** 界隈曲の耳コピ MIDI から曲ごとの設計図（和音列・ベース・主旋律のリズムと反復の地図・層・ドラム型・刻み）を抜き、`src/compose/compose-skeletons.ts` を生成する（自動生成、手で編集しない）。辞書に無いドラム型は `drum-config.ts` のマーカー間に `kaiwai_*` として書き足す。`--show <曲名>` で1曲の和音列・セクション、`--bars a-b` で半小節ごとの重み、`--check` で生成済みファイルの検算だけ。型と検算は `src/compose/skeleton-types.ts` | `npx tsx scripts/corpus/extract-skeletons.ts --dir "C:/Users/frgk2/Music/_own/自作/界隈曲" --out src/compose/compose-skeletons.ts` |
+| `check-skeleton-closeness.ts` | **骨格借用の生成物が元曲にどれだけ近いか。** 生成 N 曲を借りた骨格の元曲と突き合わせ、(a) 和音列の一致率、(b) 主旋律の度数列が小節単位で一致する割合（既定 `phrases` は ≤10%、`--source original` は 100%）、(c) 旋律のリズムの一致率を出す。上限を超えたら exit 1 | `npx tsx scripts/corpus/check-skeleton-closeness.ts --count 40 --seed 1` |
 | `compare-reach.ts` | **生成系の到達範囲**を測る。採点を切って引き、コーパスのどの曲へ届かないか・どの軸が原因かを出す | `npx tsx scripts/corpus/compare-reach.ts --dir "<path>" --songs 1500` |
 | `compare-corpus.ts` | 生成物と参考コーパスの音楽的特徴（周辺分布・中央値）を突き合わせて測定・比較するスクリプト | `npx tsx scripts/corpus/compare-corpus.ts --dir "<path>" --songs 80` |
 | `compare-bar-density.ts` | 小節ごとの音数の分布を参考コーパスと突き合わせるスクリプト（`--profile` で小節ごとの表） | `npx tsx scripts/corpus/compare-bar-density.ts --dir "<path>" --profile` |
@@ -51,11 +54,19 @@
 | `compare-repetition.ts` | 小節のリズム・音高の輪郭が完全一致で反復する割合を参考コーパスと比べるスクリプト | `npx tsx scripts/corpus/compare-repetition.ts --dir "<path>"` |
 | `scratch-analyze.ts` | 生成曲の特徴量（音数、跳躍率、反復率、休符率等）をサンプリング測定するスクリプト | `npx tsx scripts/corpus/scratch-analyze.ts` |
 
+### transcribe/ — 自動採譜（耳コピ）の評価実験（Python。テストには入れない）
+
+| ファイル名 | 役割 | コマンド例 |
+| :--- | :--- | :--- |
+| `eval_transcription.py` | **音声→採譜の精度を、人力の耳コピ MIDI を正解にして測る。** `inventory` で音声フォルダと耳コピ MIDI フォルダの対応表を作り、完成度（MIDI の長さ÷音声の長さが 0.95〜1.05・音数・ドラムの有無）で並べる。`run` で Demucs（音源分離）→ Basic Pitch（採譜）→ クロマと打点包絡による位置合わせ（倍率・ずれ・移調を推定）→ パートごとの音符 F1（mir_eval）を出し、`summary.md` と各曲の `transcribed.mid`（DAW に取り込める）を書く。正解のパート分けはトラック名（ウタ／Vocal 等）を優先し、無ければ規則で決める。pip: `demucs basic-pitch mir_eval pretty_midi librosa soundfile`、ffmpeg が要る（Windows では basic-pitch が onnxruntime-gpu を CPU 版で上書きするので入れ直す）。2026-09-30 の5曲の結果と但し書きは [docs/transcription-eval.md](../docs/transcription-eval.md) | `PYTHONIOENCODING=utf-8 python scripts/transcribe/eval_transcription.py inventory --audio "<音声フォルダ>" --midi "<耳コピMIDIフォルダ>" --out tmp/transcribe-eval` / `python scripts/transcribe/eval_transcription.py run --pairs tmp/transcribe-eval/pairs.json --out tmp/transcribe-eval` |
+| `midi-to-embed.ts` | **MIDI → MML → 公開デモの埋め込み URL。** 採譜結果（`transcribed.mid`）や耳コピ MIDI を `https://onjmin.github.io/dtm/demo/embed.html#g.…` で聴ける形にする。simple（4トラック。ベース＝音高中央値が最低、主旋律＝単旋律で最長）と advanced（チャンネル順に15トラック、プログラムチェンジを `#t<n>inst=` に）。ドラムは固定パターンから選ぶ（`--drum auto`） | `npx tsx scripts/transcribe/midi-to-embed.ts tmp/transcribe-eval/yatsume-ana/transcribed.mid --out tmp/embed --mode simple --inst synth_pop` |
+
 ### misc/ — リリース補助・その他
 
 | ファイル名 | 役割 | コマンド例 |
 | :--- | :--- | :--- |
 | `test-chord.ts` | MMLからの和音・コード解析およびカバレッジ測定を行うスクリプト | `npx tsx scripts/misc/test-chord.ts` |
+| `mml-embed-url.ts` | **.mml → 公開デモの埋め込み URL**（`demo/embed.html` の "g." 形式＝gzip+base64url を location.hash に載せる。編集画面 `demo/#g…` の URL も出す）。作曲結果の試聴を URL で渡すときに使う | `npx tsx scripts/misc/mml-embed-url.ts tmp/kaiwai/audition/*.mml --json tmp/kaiwai/audition/urls.json` |
 | `downscale-assets.py` | アセット画像の縮小処理ユーティリティ | `python scripts/misc/downscale-assets.py` |
 | `sync-version.ts` | `package.json` のバージョンを `src/version.ts` と `docs/dataset-provenance.md` へ写す（`pnpm version` から自動で呼ぶ） | `pnpm patch` |
 

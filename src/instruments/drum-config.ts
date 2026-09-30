@@ -255,6 +255,89 @@ export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
 			{ step: 168, pitch: DRUM_KEYS.tambourine, velocity: 0.8 },
 		],
 	},
+
+	// 界隈4つ打ち。dance の骨格で裏拍をクローズド（弱め）にし、2・4拍にクラップ＋薄いスネア、
+	// 3・4拍にタンバリン。裏拍オープンハットは16分旋律・矩形波と帯域を取り合う。
+	four_clap: {
+		label: "界隈4つ打ち（クラップ・裏拍クローズド）",
+		pattern: [
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 24, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+			{ step: 48, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 48, pitch: DRUM_KEYS.handClap, velocity: 0.9 },
+			{ step: 48, pitch: DRUM_KEYS.acousticSnare, velocity: 0.5 },
+			{ step: 72, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 96, pitch: DRUM_KEYS.tambourine, velocity: 0.6 },
+			{ step: 120, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+			{ step: 144, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 144, pitch: DRUM_KEYS.handClap, velocity: 0.9 },
+			{ step: 144, pitch: DRUM_KEYS.acousticSnare, velocity: 0.5 },
+			{ step: 144, pitch: DRUM_KEYS.tambourine, velocity: 0.6 },
+			{ step: 168, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+		],
+	},
+
+	// 軽いバックビート。キック1・3拍、スネア2・4拍、ハット4分。8beat より薄く、フィル・タム・クラッシュ無し。
+	light_backbeat: {
+		label: "軽いバックビート",
+		pattern: [
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 0, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+			{ step: 48, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 48, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 96, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+			{ step: 144, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 144, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
+		],
+	},
+	// --- 界隈曲の骨格のドラム型（scripts/corpus/extract-skeletons.ts が生成。ここから） ---
+	// 出自: Green wisteria/嵌り合う体は (240104.mid)
+	kaiwai_1: {
+		label: "界隈曲 骨格1",
+		pattern: [
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 48, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 48, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 96, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 144, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 144, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+		],
+	},
+	// 出自: さむい/しずむゆうひをみていた (260109.mid)
+	kaiwai_2: {
+		label: "界隈曲 骨格2",
+		pattern: [
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 48, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 144, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+		],
+	},
+	// 出自: 天井の研ナ〇コが気になって眠れない (220904.mid)
+	kaiwai_3: {
+		label: "界隈曲 骨格3",
+		pattern: [
+			{ step: 24, pitch: DRUM_KEYS.closedHihat, velocity: 0.6 },
+			{ step: 48, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 72, pitch: DRUM_KEYS.closedHihat, velocity: 0.6 },
+			{ step: 72, pitch: DRUM_KEYS.acousticSnare, velocity: 0.8 },
+			{ step: 120, pitch: DRUM_KEYS.closedHihat, velocity: 0.6 },
+			{ step: 144, pitch: DRUM_KEYS.acousticSnare, velocity: 1.0 },
+			{ step: 168, pitch: DRUM_KEYS.closedHihat, velocity: 0.6 },
+		],
+	},
+	// 出自: すずぬい/_ (220515.mid)
+	kaiwai_4: {
+		label: "界隈曲 骨格4",
+		pattern: [
+			{ step: 48, pitch: DRUM_KEYS.handClap, velocity: 1.0 },
+			{ step: 144, pitch: DRUM_KEYS.handClap, velocity: 1.0 },
+		],
+	},
+	// --- （ここまで） ---
 };
 
 export const getDrumPatternKeys = (

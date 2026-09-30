@@ -135,6 +135,7 @@ export const MINOR_BLUES_SCALE: ScaleDegree[] = [
 export type ComposeScaleId =
 	| "yo"
 	| "minyo"
+	| "yonuki_minor"
 	| "ritsu"
 	| "miyakobushi"
 	| "ryukyu"
@@ -209,6 +210,12 @@ export type ComposeScale = {
 	 * 都節だけ。
 	 */
 	center?: TonicCenter;
+	/**
+	 * 旋律から抜くダイアトニック度数（`parent` の添字）。詠唱（`MelodyForm` の `chant`）が
+	 * 素材の度数を写すときだけ効き、抜いた音は隣の度数へ寄せる。`parent` を6音に差し替える
+	 * 方法を採らないのは、素材バンクが「7度＝1オクターブ」で度数を持っているため。
+	 */
+	omit?: number[];
 	/** どんな曲になるかの説明。UI のヒントに出す。 */
 	description: string;
 };
@@ -529,6 +536,20 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		description:
 			"わらべ歌・民謡の音階。翳りがあるが暗すぎない。従来の短調と同じ",
 	},
+	// 界隈曲の歌メロ（イワシ・ヤツメ穴の実測）は短調からファ（♭6）だけを抜いた6音で、
+	// 民謡音階と違ってシを柱に使う。柱の5音は主音側に寄せ、ソは和音構成音・経過音として通す。
+	yonuki_minor: {
+		id: "yonuki_minor",
+		label: "四抜き短音階（界隈曲）",
+		tonic: 5,
+		core: [5, 6, 0, 1, 2], // ラ シ ド レ ミ
+		strict: false,
+		// strict:false かつ parent 無しなので、これが無いと度数はハ長調の7音で読まれてファが普通に出る
+		// （実測 13%。コーパスの主旋律は中央 4%）。
+		omit: [3], // ファ
+		description:
+			"短調からファを抜いた6音。シが柱に入り、淡々と順次で動く。界隈曲の歌メロ",
+	},
 	ritsu: {
 		id: "ritsu",
 		label: "律音階",
@@ -642,9 +663,11 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 };
 
 /** 全音階の識別子。 */
+// minor_blues と yonuki_minor は「希望なし」の抽選に入れない（テンプレートか明示指定で使う）。
+// 増やすと `pick` の添字がずれ、既存の `scale: "any"` の曲が変わる。
 export const COMPOSE_SCALE_IDS = (
 	Object.keys(COMPOSE_SCALES) as ComposeScaleId[]
-).filter((id) => id !== "minor_blues");
+).filter((id) => id !== "minor_blues" && id !== "yonuki_minor");
 
 /**
  * 主音の位置ごとの「和声の中心」。進行プールと終止形をここで引く。

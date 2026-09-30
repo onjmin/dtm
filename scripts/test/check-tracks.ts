@@ -17,14 +17,16 @@
  *    別音色のユニゾン（音を太くする層）は正当なので、**楽器が同じ場合だけ**を数える。
  */
 
+import { UNITS_PER_SEMITONE } from "../../src/audio/tuning";
 import { buildAdvancedLayers } from "../../src/compose/advanced-layers";
 import { composeSong } from "../../src/compose/compose";
 import {
 	INSTRUMENT_PRESETS,
 	type InstrumentPreset,
 } from "../../src/instruments/instrument-presets";
-import { UNITS_PER_SEMITONE } from "../../src/audio/tuning";
+import { loadSkeletons } from "../corpus/skeleton-data";
 
+const KAIWAI_SKELETONS = loadSkeletons();
 const STEPS_PER_BAR = 192;
 const SONGS = Number.parseInt(process.argv[2] ?? "200", 10);
 
@@ -46,8 +48,21 @@ const filled = new Array(15).fill(0);
 const instCounts: number[] = [];
 let sameInstDupes = 0;
 
+/** 既定構成と、進行・ベース・楽器を自前で持つテンプレート、骨格借用（別エンジン）を回す。 */
+const TEMPLATES: (string | undefined)[] = [
+	undefined,
+	"kaiwai",
+	// 骨格データは git に入れないので、手元に無ければ骨格借用は回さない
+	...(KAIWAI_SKELETONS.length > 0 ? ["kaiwai_skeleton"] : []),
+];
+
 for (let i = 0; i < SONGS; i++) {
-	const song = composeSong({ stepsPerBar: STEPS_PER_BAR });
+	const template = TEMPLATES[i % TEMPLATES.length];
+	const song = composeSong({
+		stepsPerBar: STEPS_PER_BAR,
+		template,
+		skeletons: KAIWAI_SKELETONS,
+	});
 	const preset: InstrumentPreset =
 		INSTRUMENT_PRESETS[song.instrument] ?? INSTRUMENT_PRESETS.piano;
 	const layers = buildAdvancedLayers(song, {

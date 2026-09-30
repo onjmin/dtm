@@ -1,6 +1,8 @@
 AGENTS.md
 tmp
 scratch
+# 耳コピ MIDI から生成する骨格データ（他人の曲の和音・ベース・構成をそのまま持つ）。scripts/corpus/extract-skeletons.ts で作る
+src/compose/compose-skeletons.ts
 .claude
 
 # Python（scripts/melody-model/ の学習パイプライン）
