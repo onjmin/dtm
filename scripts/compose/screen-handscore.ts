@@ -1,6 +1,6 @@
 /**
  * 手書き譜面を、自動作曲と**同じ物差し**（screen-compose.ts の減点表）に掛ける。
- *   npx tsx scripts/screen-handscore.ts <score.json> [<score.json> ...]
+ *   npx tsx scripts/compose/screen-handscore.ts <score.json> [<score.json> ...]
  */
 import { readFileSync } from "node:fs";
 import type { HandScore } from "./hand-compile";

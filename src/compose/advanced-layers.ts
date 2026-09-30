@@ -4,7 +4,7 @@
  * **daw.ts から切り出してある。** ここは DOM も音声も触らない純粋な写像で、
  * 声部をどのトラックへ・どの音色で置くかを決めるだけ。daw.ts に置いたままだと
  * `@onjmin/koe`（ブラウザ前提）を巻き込んで Node から読めず、
- * **分割で音が消えていないかを機械で検算できなかった**（`scripts/check-tracks.ts`）。
+ * **分割で音が消えていないかを機械で検算できなかった**（`scripts/test/check-tracks.ts`）。
  * 編曲の割り当ては耳で気付きにくい壊れ方をするので、テストできる場所に置く。
  */
 
@@ -42,7 +42,7 @@ export type AdvancedLayer = {
  * 編曲プランを15トラックへ写す。`duet`（t11）は歌入り作曲だけが後から埋めるので、
  * ここでは空で置く。
  *
- * @internal 検証用に公開している（`scripts/check-tracks.ts`）。声部をトラックへ分割する
+ * @internal 検証用に公開している（`scripts/test/check-tracks.ts`）。声部をトラックへ分割する
  * 処理は、**間違えると音が黙って消える**ので機械で検算する。
  */
 export const buildAdvancedLayers = (
@@ -72,7 +72,7 @@ export const buildAdvancedLayers = (
 	 *
 	 * **足す層にだけ掛ける。** 主旋律・サブメロ・ベースの音域は曲の骨格そのもので、
 	 * 楽器の都合で勝手に1オクターブ動かすと別の曲になる（そちらは音色の選び方の問題
-	 * なので、`scripts/check-registers.ts` が報告して人が直す）。
+	 * なので、`scripts/test/check-registers.ts` が報告して人が直す）。
 	 */
 	const fit = (
 		notes: ComposedNote[],

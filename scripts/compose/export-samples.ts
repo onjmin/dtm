@@ -1,13 +1,13 @@
 /**
  * 生成した曲を .mid で書き出す。**指標ではなく耳で確かめる**ための唯一の出口。
  *
- *   npx tsx scripts/export-samples.ts [--out tmp/samples] [--count 6] [--seed 1]
+ *   npx tsx scripts/compose/export-samples.ts [--out tmp/samples] [--count 6] [--seed 1]
  *                                     [--template jpop_standard] [--bars 24]
  *
  * **アプリで作った曲を再現する:** 書き出した MML の先頭にある `#seed=` と `#compose=` を
  * そのまま渡す。同じ曲が1本出る（アプリと同じ乱数列 `seededRandom` を使う）。
  *
- *   npx tsx scripts/export-samples.ts --app-seed 4022250974 --compose jpop_standard:any:auto:intro-verse-chorus
+ *   npx tsx scripts/compose/export-samples.ts --app-seed 4022250974 --compose jpop_standard:any:auto:intro-verse-chorus
  *
  * **伴奏主体モード**（`#compose=style:<スタイル id>.v<版>:<baseKey>:<候補番号>`、
  * `docs/accomp-style-engine.md` §2.5）は `composeAccomp` と `accompToMml` へ振り分け、.mid ではなく
@@ -15,7 +15,7 @@
  * （`#compose` は音律を持たない）。段階 S0 より前の書式 `accomp:<baseKey>:<候補番号>` は
  * `style:fb.v1:…` として読む。
  *
- *   npx tsx scripts/export-samples.ts --app-seed 3842857959 --compose style:fb.v1:any:0
+ *   npx tsx scripts/compose/export-samples.ts --app-seed 3842857959 --compose style:fb.v1:any:0
  *
  * 知らないテンプレート名（`--template`・`--compose` の1項目め）はエラーにする（黙って既定構成の
  * 歌もの曲を出さない）。
@@ -30,15 +30,15 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import Module from "node:module";
 import { join } from "node:path";
-import { programOfInstrumentName } from "../src/audio/audio-config";
-import { buildChordPlacements } from "../src/chord/chords";
-import { seededRandom as appSeededRandom, composeSong } from "../src/compose/compose";
-import { STRUCTURE_TEMPLATES } from "../src/compose/compose-sections";
-import { DRUM_PATTERNS, resolveDrumPattern } from "../src/instruments/drum-config";
-import { INSTRUMENT_PRESETS } from "../src/instruments/instrument-presets";
-import { exportMIDI } from "../src/io/midi-io";
-import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
-import type { Note } from "../src/types";
+import { programOfInstrumentName } from "../../src/audio/audio-config";
+import { buildChordPlacements } from "../../src/chord/chords";
+import { seededRandom as appSeededRandom, composeSong } from "../../src/compose/compose";
+import { STRUCTURE_TEMPLATES } from "../../src/compose/compose-sections";
+import { DRUM_PATTERNS, resolveDrumPattern } from "../../src/instruments/drum-config";
+import { INSTRUMENT_PRESETS } from "../../src/instruments/instrument-presets";
+import { exportMIDI } from "../../src/io/midi-io";
+import { UNITS_PER_SEMITONE } from "../../src/audio/tuning";
+import type { Note } from "../../src/types";
 
 const STEPS_PER_BAR = 192;
 const argv = process.argv.slice(2);
@@ -142,9 +142,9 @@ const exportAccomp = (seed: number, compose: string): void => {
 			? { VoiceBank: class {}, Worldline: class {}, leadInFromEntry: () => 0 }
 			: load(request, ...rest);
 	const { composeAccomp, parseAccompCompose } =
-		require("../src/compose/compose-accomp") as typeof import("../src/compose/compose-accomp");
+		require("../../src/compose/compose-accomp") as typeof import("../../src/compose/compose-accomp");
 	const { accompStyleById } =
-		require("../src/compose/accomp-styles/index") as typeof import("../src/compose/accomp-styles/index");
+		require("../../src/compose/accomp-styles/index") as typeof import("../../src/compose/accomp-styles/index");
 	const tag = parseAccompCompose(compose);
 	if (!tag)
 		throw new Error(
@@ -163,12 +163,12 @@ const exportAccomp = (seed: number, compose: string): void => {
 		);
 	if (tag.pick === "plan")
 		throw new Error(
-			`--compose ${compose}: …:plan は計画を丸ごと与えた曲で、種からは再現できない（scripts/accomp-audition.ts --fb-plan を使う）`,
+			`--compose ${compose}: …:plan は計画を丸ごと与えた曲で、種からは再現できない（scripts/accomp/accomp-audition.ts --fb-plan を使う）`,
 		);
 	const { baseKey, pick } = tag;
 	const k = String(pick);
 	const { accompToMml } =
-		require("../src/compose/compose-accomp-mml") as typeof import("../src/compose/compose-accomp-mml");
+		require("../../src/compose/compose-accomp-mml") as typeof import("../../src/compose/compose-accomp-mml");
 	const song = composeAccomp({
 		style: tag.style,
 		stepsPerBar: STEPS_PER_BAR,

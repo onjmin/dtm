@@ -1,5 +1,5 @@
 {
-	"about": "伴奏主体モードの黄金値（scripts/check-accomp-golden.ts）。取り直しは pnpm accomp:bless。出力を意図して変えたときだけ取り直し、スタイルの版も上げる（docs/accomp-style-engine.md §7.2）。",
+	"about": "伴奏主体モードの黄金値（scripts/test/check-accomp-golden.ts）。取り直しは pnpm accomp:bless。出力を意図して変えたときだけ取り直し、スタイルの版も上げる（docs/accomp-style-engine.md §7.2）。",
 	"style": "fb.v1",
 	"mml": {
 		"version": "0",

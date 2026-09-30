@@ -1,5 +1,5 @@
 /**
- * `scripts/check-mml-velocity.ts` の互換検査（§12.1 の2）に使う入力。
+ * `scripts/test/check-mml-velocity.ts` の互換検査（§12.1 の2）に使う入力。
  *
  * **全音符の velocity が100（未設定を含む）**のノート列だけを作る。音符ごとの v を書き出すように
  * `MMLCore.generateMML` を直した後も、これらの書き出しは直す前と1バイトも変わってはいけない。
@@ -11,7 +11,7 @@
  * dtm のコードは読まない（型だけ）。乱数は自前の線形合同法で、実行環境に依らず同じ列になる。
  */
 
-type Note = import("../../src/types").Note;
+type Note = import("../../../src/types").Note;
 
 export type GoldenCase = {
 	name: string;

@@ -1,7 +1,7 @@
 /**
  * **語彙**（リズム型の集合）を参考コーパスと突き合わせる調査スクリプト。
  *
- *   npx tsx scripts/compare-vocabulary.ts --dir "C:/path/to/midis" [--songs 80]
+ *   npx tsx scripts/corpus/compare-vocabulary.ts --dir "C:/path/to/midis" [--songs 80]
  *
  * `compare-corpus.ts` が曲の特徴量を比べるのに対し、こちらは
  * **「そもそも語彙が足りているのか」「多すぎないか」** を測る。
@@ -14,8 +14,8 @@
  * 5. モデル規模 … 交差検証で、どこまで学習すると割に合うかを測る
  */
 
-import { composeSong, MOTIF_CELLS, RHYTHM_CELLS } from "../src/compose/compose";
-import type { MetricNote } from "../src/compose/compose-metrics";
+import { composeSong, MOTIF_CELLS, RHYTHM_CELLS } from "../../src/compose/compose";
+import type { MetricNote } from "../../src/compose/compose-metrics";
 import {
 	channelNotes,
 	collectFromDir,

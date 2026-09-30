@@ -26,9 +26,9 @@ loader._load = (request, ...rest) =>
 
 // スタブを差し込んだ後に読む必要があるので、import 文ではなく require で取る。
 const { buildStreamVoiceNotes, normalizeLyrics } =
-	require("../src/voice/lyrics") as typeof import("../src/voice/lyrics");
-const { units } = require("../src/audio/tuning") as typeof import("../src/audio/tuning");
-type TieSourceNote = import("../src/voice/lyrics").TieSourceNote;
+	require("../../src/voice/lyrics") as typeof import("../../src/voice/lyrics");
+const { units } = require("../../src/audio/tuning") as typeof import("../../src/audio/tuning");
+type TieSourceNote = import("../../src/voice/lyrics").TieSourceNote;
 
 /** 1ステップ0.25秒（BPM120の16分音符相当）。実時間の細かさは結論に効かない。 */
 const SECONDS_PER_STEP = 0.25;

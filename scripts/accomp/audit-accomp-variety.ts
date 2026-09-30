@@ -4,7 +4,7 @@
  * 同じ罠になる、§4.5）。
  *
  *   pnpm audit:accomp
- *   npx tsx scripts/audit-accomp-variety.ts --count 20 --seed 777 --out tmp/audit
+ *   npx tsx scripts/accomp/audit-accomp-variety.ts --count 20 --seed 777 --out tmp/audit
  *
  * - `--style fb` … スタイル（いまは fb だけ）。基準は `references/<style>/baseline.json`
  * - `--count n --seed s --keys major,minor,any` … 生成曲（調の指定ごとに n 曲。種は調ごとにずらす。
@@ -46,24 +46,24 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { composeAccomp } =
-	require("../src/compose/compose-accomp") as typeof import("../src/compose/compose-accomp");
+	require("../../src/compose/compose-accomp") as typeof import("../../src/compose/compose-accomp");
 const { accompToMml } =
-	require("../src/compose/compose-accomp-mml") as typeof import("../src/compose/compose-accomp-mml");
+	require("../../src/compose/compose-accomp-mml") as typeof import("../../src/compose/compose-accomp-mml");
 const { fbPlan } =
-	require("../src/compose/compose-accomp-plan") as typeof import("../src/compose/compose-accomp-plan");
+	require("../../src/compose/compose-accomp-plan") as typeof import("../../src/compose/compose-accomp-plan");
 const { accompStyleById } =
-	require("../src/compose/accomp-styles/index") as typeof import("../src/compose/accomp-styles/index");
+	require("../../src/compose/accomp-styles/index") as typeof import("../../src/compose/accomp-styles/index");
 const { seededRandom } =
-	require("../src/compose/compose") as typeof import("../src/compose/compose");
+	require("../../src/compose/compose") as typeof import("../../src/compose/compose");
 const { parseMML } =
-	require("../src/mml/mml-parser") as typeof import("../src/mml/mml-parser");
+	require("../../src/mml/mml-parser") as typeof import("../../src/mml/mml-parser");
 const { DEFAULT_SOUNDFONT_BANK, normalizeSoundFontBank } =
-	require("../src/instruments/soundfont-banks") as typeof import("../src/instruments/soundfont-banks");
+	require("../../src/instruments/soundfont-banks") as typeof import("../../src/instruments/soundfont-banks");
 
-type AccompPlan = import("../src/compose/compose-accomp").AccompPlan;
-type AccompSong = import("../src/compose/compose-accomp").AccompSong;
-type AccompCandidateDiag = import("../src/compose/compose-accomp").AccompCandidateDiag;
-type MmlMeta = import("../src/mml/mml-parser").MmlMeta;
+type AccompPlan = import("../../src/compose/compose-accomp").AccompPlan;
+type AccompSong = import("../../src/compose/compose-accomp").AccompSong;
+type AccompCandidateDiag = import("../../src/compose/compose-accomp").AccompCandidateDiag;
+type MmlMeta = import("../../src/mml/mml-parser").MmlMeta;
 
 // ============================================================
 // CLI
@@ -1428,7 +1428,7 @@ const labels = basePairs.filter((p) => p.ownerLabel);
 push(
 	`# 伴奏主体モードのばらつきの監査（${style.id}.v${style.version}）`,
 	"",
-	"`scripts/audit-accomp-variety.ts` が書いた。**報告だけ**（関門ではない。曲の選抜にも使わない）。値は組ごとの類似度（1 = 同一）。",
+	"`scripts/accomp/audit-accomp-variety.ts` が書いた。**報告だけ**（関門ではない。曲の選抜にも使わない）。値は組ごとの類似度（1 = 同一）。",
 	"",
 	`- 生成 ${gens.length}曲（baseKey ${KEYS.join("/")} × 種 ${SEED}〜${SEED + KEYS.length * COUNT - 1}、調の指定ごとに ${COUNT}曲）。型は ${[...new Set(gens.map((g) => g.archetype))].join("・")}（${[...new Set(gens.map((g) => g.archetype))].length}つ）なので、生成曲の組は型の中 ${within.length}組・型の間 ${between.length}組`,
 	`- 基準: \`${BASELINE_PATH}\`（${baseline.pairs.length}組）${localBaseline ? ` ＋ ローカル \`${LOCAL_BASELINE}\`（${localBaseline.pairs.length}組。gitignore）` : "（ローカルの基準なし。H-ref・H-diff は n=0）"}${missing.length ? `。無いファイル: ${missing.join("・")}` : ""}`,

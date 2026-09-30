@@ -5,11 +5,11 @@
  * 覆面の譜面シートにして、審査エージェントへ渡す指示文まで書き出す。
  * 1曲あたり数千トークン掛かる審査に全候補を読ませないための道具。
  *
- * 手書きの曲（{@link file://../docs/handscore.md}）を `--hand` で混ぜると、
+ * 手書きの曲（{@link file://../../docs/handscore.md}）を `--hand` で混ぜると、
  * 自動作曲と**同じ書式・同じ物差し**で同じ土俵に並ぶ。どちらの出自かはシートに出ない。
  *
- *   npx tsx scripts/compose-audition.ts --count 200 --seed 5000 --top 6
- *   npx tsx scripts/compose-audition.ts --count 120 --top 4 --hand tmp/handscore/a.json
+ *   npx tsx scripts/compose/compose-audition.ts --count 200 --seed 5000 --top 6
+ *   npx tsx scripts/compose/compose-audition.ts --count 120 --top 4 --hand tmp/handscore/a.json
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";

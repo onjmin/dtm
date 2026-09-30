@@ -5,7 +5,7 @@ import {
 	readGlobalNumber,
 	readGlobalSetting,
 	writeGlobalSetting,
-} from "../src/ui/state/global-state";
+} from "../../src/ui/state/global-state";
 
 console.log("● global-state tests");
 

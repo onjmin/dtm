@@ -1,7 +1,7 @@
 /**
  * **反復**を参考コーパスと突き合わせる調査スクリプト。
  *
- *   npx tsx scripts/compare-repetition.ts --dir "C:/path/to/midis" [--songs 80] [--template jpop_standard]
+ *   npx tsx scripts/corpus/compare-repetition.ts --dir "C:/path/to/midis" [--songs 80] [--template jpop_standard]
  *
  * `compose-metrics.ts` の `sim1`〜`sim8` は Jaccard と輪郭の**ソフトな類似度**なので、
  * 「似ている」で満点が取れてしまい、「**同一である**」が足りないことを検出できない。
@@ -13,9 +13,9 @@
  * 人間の曲は小節のリズムを半分近くそのまま繰り返す。ここが生成物の最大の欠落。
  */
 
-import { composeSong } from "../src/compose/compose";
-import type { MetricNote } from "../src/compose/compose-metrics";
-import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
+import { composeSong } from "../../src/compose/compose";
+import type { MetricNote } from "../../src/compose/compose-metrics";
+import { UNITS_PER_SEMITONE } from "../../src/audio/tuning";
 import {
 	channelNotes,
 	collectFromDir,

@@ -27,12 +27,12 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { parseMML } =
-	require("../src/mml/mml-parser") as typeof import("../src/mml/mml-parser");
+	require("../../src/mml/mml-parser") as typeof import("../../src/mml/mml-parser");
 const { MMLCore } =
-	require("../src/mml/mml-core") as typeof import("../src/mml/mml-core");
-type Note = import("../src/types").Note;
-type CoreEventHandlers = import("../src/types").CoreEventHandlers;
-type RenderConfig = import("../src/types").RenderConfig;
+	require("../../src/mml/mml-core") as typeof import("../../src/mml/mml-core");
+type Note = import("../../src/types").Note;
+type CoreEventHandlers = import("../../src/types").CoreEventHandlers;
+type RenderConfig = import("../../src/types").RenderConfig;
 
 let failed = 0;
 const check = (label: string, got: unknown, expect: unknown): void => {

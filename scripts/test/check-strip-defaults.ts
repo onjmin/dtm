@@ -3,7 +3,7 @@ import {
 	applyStripSettings,
 	STRIP_DEFAULTS,
 	type StripSettings,
-} from "../src/audio/channel-strip";
+} from "../../src/audio/channel-strip";
 
 // 再生専用プレイヤー（studio.play 等）はチャンネルストリップを曲をまたいで使い回す。
 // 曲に書かれていない項目が前の曲の値のまま残ると、同じMMLでも直前に鳴らした曲次第で

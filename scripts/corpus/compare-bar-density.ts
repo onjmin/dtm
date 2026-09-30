@@ -1,7 +1,7 @@
 /**
  * **1小節ごとの音数の分布**を、参考コーパスと生成物で突き合わせる調査スクリプト。
  *
- *   npx tsx scripts/compare-bar-density.ts --dir "C:/path/to/midis" --songs 80
+ *   npx tsx scripts/corpus/compare-bar-density.ts --dir "C:/path/to/midis" --songs 80
  *
  * `compare-corpus.ts` は曲全体の平均（notesPerBar など）を並べるが、平均が同じでも
  * **どの小節に音が集まっているか**は分からない。「セクションの終わりだけ1音になる」
@@ -14,9 +14,9 @@
  *   - 「直前の小節の3割以下に落ちる」段差の割合
  */
 
-import { composeSong } from "../src/compose/compose";
-import type { MetricNote } from "../src/compose/compose-metrics";
-import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
+import { composeSong } from "../../src/compose/compose";
+import type { MetricNote } from "../../src/compose/compose-metrics";
+import { UNITS_PER_SEMITONE } from "../../src/audio/tuning";
 import {
 	channelNotes,
 	collectFromDir,

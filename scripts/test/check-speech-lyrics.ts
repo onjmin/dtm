@@ -1,7 +1,7 @@
 /**
  * 語り（`「…」`）の歌詞解析のチェック。
  *
- *   npx tsx scripts/check-speech-lyrics.ts
+ *   npx tsx scripts/test/check-speech-lyrics.ts
  *
  * `@@0 tsukuyomi ふつうにうたう「かたるばしょ」ふつうにうたう` のように、歌詞の中で
  * `「」` で囲んだ部分は歌わずに読み上げる（UtauTTS）。ここで守りたいのは次の 4 点。
@@ -41,10 +41,10 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { buildStreamVoiceNotes, normalizeLyrics, syllablesToText } =
-	require("../src/voice/lyrics") as typeof import("../src/voice/lyrics");
-const { units } = require("../src/audio/tuning") as typeof import("../src/audio/tuning");
-type TieSourceNote = import("../src/voice/lyrics").TieSourceNote;
-type LyricSyllable = import("../src/types").LyricSyllable;
+	require("../../src/voice/lyrics") as typeof import("../../src/voice/lyrics");
+const { units } = require("../../src/audio/tuning") as typeof import("../../src/audio/tuning");
+type TieSourceNote = import("../../src/voice/lyrics").TieSourceNote;
+type LyricSyllable = import("../../src/types").LyricSyllable;
 
 /** 音節 1 つを `種別:中身` の 1 語へ畳む（歌唱のかなはそのまま、語りは `S:` 付き）。 */
 const fmtSyllable = (s: LyricSyllable): string => {

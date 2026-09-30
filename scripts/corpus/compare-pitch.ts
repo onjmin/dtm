@@ -1,7 +1,7 @@
 /**
  * **音高側**を参考コーパスと突き合わせる調査スクリプト。
  *
- *   npx tsx scripts/compare-pitch.ts --dir "C:/path/to/midis" [--songs 80]
+ *   npx tsx scripts/corpus/compare-pitch.ts --dir "C:/path/to/midis" [--songs 80]
  *
  * `compare-vocabulary.ts` がリズムの語彙を測るのに対し、こちらは音の並びを測る。
  * リズム側で「語彙の被覆率」「集中度」「反復」が問題になったので、音高側にも
@@ -12,9 +12,9 @@
  * 3. 使う材料     … 音域・使用音数・オクターブ跳躍
  */
 
-import { composeSong } from "../src/compose/compose";
-import type { MetricNote } from "../src/compose/compose-metrics";
-import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
+import { composeSong } from "../../src/compose/compose";
+import type { MetricNote } from "../../src/compose/compose-metrics";
+import { UNITS_PER_SEMITONE } from "../../src/audio/tuning";
 import {
 	channelNotes,
 	collectFromDir,

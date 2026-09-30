@@ -29,9 +29,9 @@ const {
 	koeAliasCandidates,
 	syllablesToText,
 	PHRASE_GAP_SEC,
-} = require("../src/voice/lyrics") as typeof import("../src/voice/lyrics");
-const { units } = require("../src/audio/tuning") as typeof import("../src/audio/tuning");
-type TieSourceNote = import("../src/voice/lyrics").TieSourceNote;
+} = require("../../src/voice/lyrics") as typeof import("../../src/voice/lyrics");
+const { units } = require("../../src/audio/tuning") as typeof import("../../src/audio/tuning");
+type TieSourceNote = import("../../src/voice/lyrics").TieSourceNote;
 
 let failed = 0;
 const check = (ok: boolean, label: string, why: string, detail = ""): void => {

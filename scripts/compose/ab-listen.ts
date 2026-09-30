@@ -1,12 +1,12 @@
 /**
  * **目隠し A/B の作成器。同じ曲から、歌の旋律だけを差し替えた2本を出す。**
  *
- *   npx tsx scripts/ab-listen.ts --variant broken --out tmp/ab-broken
- *   npx tsx scripts/ab-listen.ts --variant chords --out tmp/ab-chords
- *   npx tsx scripts/ab-listen.ts --pdmx tmp/pdmx.jsonl --release --out tmp/abc-release
- *   npx tsx scripts/ab-listen.ts --pdmx tmp/pdmx.jsonl --out tmp/ab-pdmx
- *   npx tsx scripts/ab-listen.ts --human "<他人の曲のフォルダ>" --out tmp/ab-human
- *   npx tsx scripts/ab-listen.ts --model tmp/whole-melodies.jsonl --out tmp/ab-model
+ *   npx tsx scripts/compose/ab-listen.ts --variant broken --out tmp/ab-broken
+ *   npx tsx scripts/compose/ab-listen.ts --variant chords --out tmp/ab-chords
+ *   npx tsx scripts/compose/ab-listen.ts --pdmx tmp/pdmx.jsonl --release --out tmp/abc-release
+ *   npx tsx scripts/compose/ab-listen.ts --pdmx tmp/pdmx.jsonl --out tmp/ab-pdmx
+ *   npx tsx scripts/compose/ab-listen.ts --human "<他人の曲のフォルダ>" --out tmp/ab-human
+ *   npx tsx scripts/compose/ab-listen.ts --model tmp/whole-melodies.jsonl --out tmp/ab-model
  *
  *   --release     A/B/C にする。A = main で出荷しているものそのまま（12本引き＋選抜・
  *                 ハモリ・サブメロ・自前の進行・楽器プリセット）、B = その曲の旋律を
@@ -44,7 +44,7 @@
  *
  * `--human`（他作フォルダ `it_is_used`）で最初に出したとき、所有者は1本を
  * 「よく覚えてる」と言った。**知っている旋律は「ましか」の判定に使えない**。
- * 既定の素材は **PDMX**（`tmp/pdmx.jsonl`、`scripts/export-dataset.ts` の出力）。
+ * 既定の素材は **PDMX**（`tmp/pdmx.jsonl`、`scripts/corpus/export-dataset.ts` の出力）。
  * 18万曲のパブリックドメイン譜面で、所有者が知っている確率が無視できる。
  * 作風は界隈曲と完全には重ならない（9項目中6項目で近い。`docs/dataset-provenance.md`）
  * ので、「人間の本物」ではあっても「界隈の本物」ではないことは覚えておく。
@@ -81,7 +81,7 @@
  *
  *   A … 出荷版そのまま。`composeSong` の既定（12本引き＋選抜）で、ハモリ・2声・
  *       オクターブ重ね・サブメロ・自前のコード進行・楽器プリセットまで全部入り。
- *       書き出しは `scripts/export-samples.ts` と同じ（オクターブ重ねだけは
+ *       書き出しは `scripts/compose/export-samples.ts` と同じ（オクターブ重ねだけは
  *       アプリと同じく1オクターブ下げる）
  *   B … 同じ曲の同じ旋律を、この道具の和声付け直し（ハモリ・サブメロ無し）に通したもの
  *   C … 素材（PDMX の人間の旋律）を同じ道具に通したもの
@@ -128,20 +128,20 @@ import {
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { parseChord } from "@onjmin/chord-parser";
-import { programOfInstrumentName } from "../src/audio/audio-config";
-import { buildChordPlacements } from "../src/chord/chords";
-import { composeSong, transposeChordName } from "../src/compose/compose";
+import { programOfInstrumentName } from "../../src/audio/audio-config";
+import { buildChordPlacements } from "../../src/chord/chords";
+import { composeSong, transposeChordName } from "../../src/compose/compose";
 import {
 	COMPOSE_SCALES,
 	degreeToPitch,
 	scalePcs,
 	scaleSize,
-} from "../src/compose/compose-scales";
-import { DRUM_PATTERNS, resolveDrumPattern } from "../src/instruments/drum-config";
-import { INSTRUMENT_PRESETS } from "../src/instruments/instrument-presets";
-import { exportMIDI } from "../src/io/midi-io";
-import { UNITS_PER_SEMITONE, type Units } from "../src/audio/tuning";
-import type { Note } from "../src/types";
+} from "../../src/compose/compose-scales";
+import { DRUM_PATTERNS, resolveDrumPattern } from "../../src/instruments/drum-config";
+import { INSTRUMENT_PRESETS } from "../../src/instruments/instrument-presets";
+import { exportMIDI } from "../../src/io/midi-io";
+import { UNITS_PER_SEMITONE, type Units } from "../../src/audio/tuning";
+import type { Note } from "../../src/types";
 import {
 	channelNotes,
 	collectFromDir,
@@ -150,7 +150,7 @@ import {
 	parseSmf,
 	quantize,
 	toMonophonic,
-} from "./calibrate-corpus";
+} from "../corpus/calibrate-corpus";
 
 const SPB = 192;
 /** 曲の主旋律の音域は2オクターブ（`compose.ts` の MELODY_LOW/HIGH）。窓の上限もこれ。 */
@@ -719,7 +719,7 @@ const render = (song: Song, fromBar: number, arr: Arrangement): Blob => {
 	});
 };
 
-/** 出荷版の窓。`scripts/export-samples.ts` と同じトラック構成・音量・音色。 */
+/** 出荷版の窓。`scripts/compose/export-samples.ts` と同じトラック構成・音量・音色。 */
 const releaseChords = (song: Song): ComposedNote[] =>
 	buildChordPlacements({
 		chordStr: song.chordProgression,

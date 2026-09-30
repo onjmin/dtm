@@ -160,10 +160,10 @@
 | `src/compose/compose-accomp-check.ts`（新規） | 硬い制約（関門）と表示用の指標。生成器と scripts の両方から使う | 約300行 |
 | `src/compose/compose-accomp.ts`（新規） | 公開の入口 `composeAccomp` と `accompMeta`。候補のループ、保険の計画、正規化、ミックス | 約200行 |
 | `src/compose/compose-accomp-mml.ts`（新規） | `accompToMml`。`MMLCore.getMMLFromNotes`（v を出すよう直したもの）と `formatMmlMeta` で組む。**mml-parser を読むので koe まで引く**。compose-accomp からは import しない | 約80行 |
-| `scripts/check-mml-velocity.ts`（新規） | v の往復の検算 | 約200行 |
-| `scripts/check-compose-accomp.ts`（新規） | 生成器の検算。陽性対照と切除対照を含む | 約400行 |
-| `scripts/fixtures/accomp-fb-plan.ts`（新規） | fb を `AccompPlan` として手で書き直した陽性対照 | 約200行 |
-| `scripts/accomp-audition.ts`（新規） | 試聴用。テストには入れない | 約150行 |
+| `scripts/test/check-mml-velocity.ts`（新規） | v の往復の検算 | 約200行 |
+| `scripts/test/check-compose-accomp.ts`（新規） | 生成器の検算。陽性対照と切除対照を含む | 約400行 |
+| `scripts/test/fixtures/accomp-fb-plan.ts`（新規） | fb を `AccompPlan` として手で書き直した陽性対照 | 約200行 |
+| `scripts/accomp/accomp-audition.ts`（新規） | 試聴用。テストには入れない | 約150行 |
 
 既存ファイルの変更は次の8本。
 
@@ -174,7 +174,7 @@
 - `midi-io.ts`
 - `mml-parser.ts`（コメントのみ）
 - `index.ts`
-- `scripts/export-samples.ts`・`scripts/compose-lab.ts`
+- `scripts/compose/export-samples.ts`・`scripts/compose/compose-lab.ts`
 
 ### 4.2 依存の制約
 
@@ -681,7 +681,7 @@ fb と fa の実測（指標案の調査。dtm の `parseMML` で測定）:
 | M14 v の種類数 | トラック別 | 30／19／26 | 22／13／21 | 表示。往復の退行検査 |
 
 - **fb と fa で差が出たのは M3・M7・M9・M10 と、M2 の一部だけ。** ただし比べたのは1組で、差はレビューで変えた点そのもの（fb は fa のレビューを反映した版）。**どの指標も品質の証拠ではない。**
-- 所有者の評価ラベル（使う／捨てる／直す場所）が10本以上たまったら、`scripts/calibrate-accomp.ts`（段階5で作る）で、各指標が「使う」と「捨てる」を**分けるか**を問う（handover の「まず分けるかを問え」）。採点へ上げるかどうかは、その結果と所有者の判断で決める。
+- 所有者の評価ラベル（使う／捨てる／直す場所）が10本以上たまったら、`scripts/accomp/calibrate-accomp.ts`（段階5で作る）で、各指標が「使う」と「捨てる」を**分けるか**を問う（handover の「まず分けるかを問え」）。採点へ上げるかどうかは、その結果と所有者の判断で決める。
 
 ---
 
@@ -919,7 +919,7 @@ const runComposeAccomp = (): void => {
 
 ## 12. 検査計画
 
-### 12.1 `scripts/check-mml-velocity.ts`（段階0。`pnpm test` の `check-mml-chord.ts` の後に置く。koe はスタブで外す）
+### 12.1 `scripts/test/check-mml-velocity.ts`（段階0。`pnpm test` の `check-mml-chord.ts` の後に置く。koe はスタブで外す）
 
 1. **純関数**: T∈1..127、v∈0..127 の全組で、`effectiveVelocity(split.volume, split.velocities[i]) === vs[i]` が成り立つ。空の列、全部0、最大が100を超える場合も含む。`effectiveVelocity(127,127) === 127`。
 2. **互換**: velocity が100（未設定を含む）だけの fixture で、`getMMLFromNotes` の出力が、変更前に採取した golden 文字列と完全一致する。golden は段階0の最初に採る。`check-mml-chord.ts` の既存の期待値もそのまま通る。
@@ -935,7 +935,7 @@ const runComposeAccomp = (): void => {
 
 DAW と mml-player は Node で読めない。そこで分割のロジックは必ず `mml-velocity.ts` に置き、呼び出し側は1行にとどめる。
 
-### 12.2 `scripts/check-compose-accomp.ts`（段階1。`check-compose.ts` の後に置く）
+### 12.2 `scripts/test/check-compose-accomp.ts`（段階1。`check-compose.ts` の後に置く）
 
 koe のスタブを入れる**前**に `compose-accomp` を require する。これで koe に依存していないことを確かめる。そのあとでスタブを入れて、`mml-parser` と `compose-accomp-mml` を読む。
 
@@ -954,7 +954,7 @@ koe のスタブを入れる**前**に `compose-accomp` を require する。こ
 
 ### 12.3 陽性対照と切除対照（同じスクリプト内）
 
-- **陽性対照**: `scripts/fixtures/accomp-fb-plan.ts` は、fb を `AccompPlan` として手で書き直したもの（ホ長調 rootShift 4、112BPM）。
+- **陽性対照**: `scripts/test/fixtures/accomp-fb-plan.ts` は、fb を `AccompPlan` として手で書き直したもの（ホ長調 rootShift 4、112BPM）。
   - `overrides.plan` で realize し、指標が fb の実測値に許容幅で一致することを確かめる。
     - 分散の毎秒音数 ±0.2
     - 上半分の平均 ±1.5
@@ -983,8 +983,8 @@ koe のスタブを入れる**前**に `compose-accomp` を require する。こ
 
 ### 12.5 スクリプトの修正と試聴用スクリプト
 
-- **`scripts/accomp-audition.ts`**（試聴用。テストには入れない）
-  - 使い方: `npx tsx scripts/accomp-audition.ts --count 3 --seed 20260929 --key major --out tmp/accomp`
+- **`scripts/accomp/accomp-audition.ts`**（試聴用。テストには入れない）
+  - 使い方: `npx tsx scripts/accomp/accomp-audition.ts --count 3 --seed 20260929 --key major --out tmp/accomp`
   - 再現: `--app-seed <n> --compose accomp:<baseKey>:<k>` でアプリの出力を再現する。
   - 陽性対照: `--fb-plan` で fb の計画を realize する。
   - 出力:
@@ -992,10 +992,10 @@ koe のスタブを入れる**前**に `compose-accomp` を require する。こ
     - `_summary.md`（区間表・和声・質感・基準 v・秒数・関門の値）
     - `_questions.md`（3問）
   - **公開中の github.io の embed は段階0より前のビルド**なので、強弱が平らになって試聴にならない。ローカルの `pnpm dev`（`demo/`）に貼って聴いてもらうこと。
-- **`scripts/export-samples.ts:75-91`**
+- **`scripts/compose/export-samples.ts:75-91`**
   - `#compose` が `accomp:` で始まるときは、`composeAccomp` と `accompToMml` へ振り分ける。
   - 未知のテンプレート名はエラーにする。今は既定構成の歌もの曲が黙って出る（`compose-sections.ts:384-386`）。
-- **`scripts/compose-lab.ts:38`** のコメントを直す。直した文:「線形合同法。アプリの `seededRandom`（mulberry32）とは別物なので `#seed` は再現できない。再現は `export-samples.ts --app-seed` で行う」。
+- **`scripts/compose/compose-lab.ts:38`** のコメントを直す。直した文:「線形合同法。アプリの `seededRandom`（mulberry32）とは別物なので `#seed` は再現できない。再現は `export-samples.ts --app-seed` で行う」。
 
 ### 12.6 手動の確認（段階2。`pnpm dev` の demo）
 
@@ -1144,8 +1144,8 @@ koe のスタブを入れる**前**に `compose-accomp` を require する。こ
 | `src/instruments/drum-config.ts:45` | `NO_DRUM_PATTERN` |
 | `src/instruments/instrument-presets.ts:227-240` | `retro_game` |
 | `src/compose/advanced-layers.ts:4-8` | Node から読める形にしている理由 |
-| `scripts/export-samples.ts:75-91` | `#compose` の解析 |
-| `scripts/compose-lab.ts:38` | 誤ったコメント |
+| `scripts/compose/export-samples.ts:75-91` | `#compose` の解析 |
+| `scripts/compose/compose-lab.ts:38` | 誤ったコメント |
 
 ---
 
@@ -1189,8 +1189,8 @@ fb が C1 の ♭VI・♭VII に @0 を置かなかった理由と同じなの�
 ## 付録 D: 段階1-C（関門・入口・書き出し・検査・試聴）で設計からずらした点
 
 2026-09-28。ファイルは `src/compose/compose-accomp-check.ts`（関門と指標）・`src/compose/compose-accomp.ts`（`composeAccomp`・
-`accompMeta`）・`src/compose/compose-accomp-mml.ts`（`accompToMml`）・`scripts/accomp-audition.ts`、と
-`scripts/check-compose-accomp.ts`・`scripts/export-samples.ts`・`scripts/compose-lab.ts`（コメント）・`src/index.ts` の変更。
+`accompMeta`）・`src/compose/compose-accomp-mml.ts`（`accompToMml`）・`scripts/accomp/accomp-audition.ts`、と
+`scripts/test/check-compose-accomp.ts`・`scripts/compose/export-samples.ts`・`scripts/compose/compose-lab.ts`（コメント）・`src/index.ts` の変更。
 §14 の未決事項は、1〜7 を所有者の方針どおりの既定（旅程と規則①〜⑤は固定・home が backing に寄るのは許す・
 短調は平行長調を家に・@0 は on・v の修正は単独で publish できる形・ペンの既定 velocity は入れない・山は borrowB 固定）で進めた。
 
@@ -1212,7 +1212,7 @@ fb が C1 の ♭VI・♭VII に @0 を置かなかった理由と同じなの�
 | §14-9 和音欄の調 | 実装時に合わせる | `chordProgression` はハ長調で書き、調は `rootShift` で表す（`planChordProgression`）。`runCompose` の simple 分岐（`savedChordInput = song.chordProgression`・`savedChordRoot = song.rootShift`）と同じ形なので、段階2でもそのまま渡せる | — |
 | 関門「継ぎ目」の @0（§2.3 閉じ方⑤・§10） | 5点は段2・5・6・7・8 で作り、関門で確かめる | `AccompRealized.colorLine`（実現で色の線を置いたか）が true なら、最終小節に4度→3度が 0+8・8+8（2拍ずつ）で必ずあること。false なら最終小節に @0 が無いこと（2026-09-28、レビュー指摘で修正） | 初版は「最終小節に @0 を置いたなら形を見る」だけだったので、置けなかった曲が関門を通っていた（240曲中6曲。変ニ長調で、range の中の4度の候補が1つしか無く、3度が分散と同音で落ちた。例 `seededRandom(20260946)`・`(20260954)`）。色の線の有無を関門の引数でなく実現の結果に持たせたのは、呼び出し側が渡し忘れて食い違うのを防ぐため |
 
-**検算の結果**: `scripts/check-compose-accomp.ts` は 159 項目（色の線の修正で6項目を足した: 陽性対照の @0 が fb と
+**検算の結果**: `scripts/test/check-compose-accomp.ts` は 159 項目（色の線の修正で6項目を足した: 陽性対照の @0 が fb と
 小節・位置・長さ・v・音名で一致／高さ 5/6 一致／`colorLine: false` の実現も関門を通る／切除対照「最終小節の @0 を消す」
 「3度を1拍に縮める」→ 継ぎ目だけ／生成曲57曲の最終小節 2拍＋2拍・borrowB の音価・1曲の音数）。種ごと（12平均律 40・31平均律 5・key_E・minor・key_Em・
 mood_*・any の計57曲）で採った候補はすべて k=0（保険の計画 0/57）、1曲あたり約10ms。採った曲を (seed, k) から作り直すと
@@ -1235,7 +1235,7 @@ mood_*・any の計57曲）で採った候補はすべて k=0（保険の計画 
 
 2026-09-28。変更したファイルは `src/ui/daw.ts`（`applyTrackStripMeta`・`applyMasterDynamics`・`writeTrackAt` の共有・
 `releaseAutoVocals`・`composeWithConfirm(title, message, run)`・`runComposeAccomp`・解説）、`src/ui/daw-ui.ts`（ボタン・refs）、
-`src/audio/master-fx.ts`（`masterDynamicsFromMeta`）、`src/mml/mml-player.ts`（ループ）、`scripts/check-fx-font-drum.ts`（検算）。
+`src/audio/master-fx.ts`（`masterDynamicsFromMeta`）、`src/mml/mml-player.ts`（ループ）、`scripts/test/check-fx-font-drum.ts`（検算）。
 
 | 箇所 | 設計書 | 実装 | 理由 |
 |---|---|---|---|

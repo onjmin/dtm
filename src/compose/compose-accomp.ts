@@ -106,7 +106,7 @@ export type AccompOptions = {
 		plan?: AccompPlan;
 	};
 	/**
-	 * 監査用（`scripts/audit-accomp-variety.ts`、`docs/accomp-style-engine.md` §5「退避の率を数える」）。
+	 * 監査用（`scripts/accomp/audit-accomp-variety.ts`、`docs/accomp-style-engine.md` §5「退避の率を数える」）。
 	 * 候補を1つ関門に掛けるたび、保険の計画を鳴らしたときに1回ずつ呼ぶ。**曲は変えない**（乱数の
 	 * 引き方も同じ）。選抜には使わない。
 	 */
@@ -745,7 +745,7 @@ const styleMixes = (styleId: string): AccompMix[] => {
 
 /**
  * DAW の「伴奏主体のミックスを戻す」（`daw.ts` の `releaseAccompMix`）の判定。検査できるように
- * 純関数にしてある（`scripts/check-accomp-styles.ts`）。
+ * 純関数にしてある（`scripts/test/check-accomp-styles.ts`）。
  *
  * - `compose`（DAW の `#compose` の値）が伴奏主体の値（`style:…`・旧書式 `accomp:…`）でなければ、何も戻さない
  * - 比べる相手は、作った時点の `song.mix`（`remembered`。`#compose` が同じときだけ）。無ければ

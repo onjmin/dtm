@@ -1,11 +1,11 @@
 /**
  * **評価機そのものの検算。** 生成物ではなく、`src/compose/compose.ts` の採点式を疑う。
  *
- *   npx tsx scripts/check-evaluator.ts --dir "C:/path/to/midis"
+ *   npx tsx scripts/corpus/check-evaluator.ts --dir "C:/path/to/midis"
  *
  * ## なぜ要るか
  *
- * `scripts/check-compose.ts` は「生成物が基準を満たすか」を見る。だがそれは
+ * `scripts/test/check-compose.ts` は「生成物が基準を満たすか」を見る。だがそれは
  * **基準が正しいことを前提にしている**。実際、この検算を初めて走らせたとき
  *
  *   コーパス91本の素点  中央値 0.673
@@ -23,15 +23,15 @@
  * 参考コーパスを差し替えたり `compose-metrics.ts` を触ったら、ここを通すこと。
  */
 
-import { composeSong } from "../src/compose/compose";
-import { CORPUS_BANDS, CORPUS_DEVIATION_BUDGET } from "../src/compose/compose-corpus";
+import { composeSong } from "../../src/compose/compose";
+import { CORPUS_BANDS, CORPUS_DEVIATION_BUDGET } from "../../src/compose/compose-corpus";
 import {
 	densityFeatures,
 	type MetricNote,
 	plausibleBand,
 	structureFeatures,
-} from "../src/compose/compose-metrics";
-import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
+} from "../../src/compose/compose-metrics";
+import { UNITS_PER_SEMITONE } from "../../src/audio/tuning";
 import {
 	channelNotes,
 	chromaticRatioOf,

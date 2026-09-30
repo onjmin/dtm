@@ -5,13 +5,13 @@
  * 入力の記法は compose-lab.ts が出す譜面シートと**同じ**なので、自動作曲の出力を読んで
  * 書き直す、という使い方ができる。
  *
- *   npx tsx scripts/hand-compile.ts <score.json> <out.mml>
+ *   npx tsx scripts/compose/hand-compile.ts <score.json> <out.mml>
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { buildChordPlacements } from "../src/chord/chords";
-import { MMLCore } from "../src/mml/mml-core";
-import type { CoreEventHandlers, Note, RenderConfig } from "../src/types";
+import { buildChordPlacements } from "../../src/chord/chords";
+import { MMLCore } from "../../src/mml/mml-core";
+import type { CoreEventHandlers, Note, RenderConfig } from "../../src/types";
 
 const STEPS_PER_BAR = 192;
 const UNITS_PER_SEMITONE = 31;

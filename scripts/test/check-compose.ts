@@ -9,7 +9,7 @@
  */
 
 import { parseChord } from "@onjmin/chord-parser";
-import { buildChordPlacements } from "../src/chord/chords";
+import { buildChordPlacements } from "../../src/chord/chords";
 import {
 	ANSWER_FIGURES,
 	BASE_STEPS_PER_BAR,
@@ -18,13 +18,13 @@ import {
 	MOTIF_CELLS,
 	RHYTHM_CELLS,
 	transposeChordName,
-} from "../src/compose/compose";
+} from "../../src/compose/compose";
 import {
 	COMPOSE_KEYS,
 	COMPOSE_MOOD_GROUPS,
 	resolveComposeKey,
-} from "../src/compose/compose-keys";
-import { structureFeatures } from "../src/compose/compose-metrics";
+} from "../../src/compose/compose-keys";
+import { structureFeatures } from "../../src/compose/compose-metrics";
 import {
 	COMPOSE_SCALE_IDS,
 	COMPOSE_SCALES,
@@ -32,10 +32,10 @@ import {
 	resolveCenter,
 	scaleDegrees,
 	scalePcs,
-} from "../src/compose/compose-scales";
-import { DRUM_PATTERNS, resolveDrumPattern } from "../src/instruments/drum-config";
-import { INSTRUMENT_PRESETS } from "../src/instruments/instrument-presets";
-import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
+} from "../../src/compose/compose-scales";
+import { DRUM_PATTERNS, resolveDrumPattern } from "../../src/instruments/drum-config";
+import { INSTRUMENT_PRESETS } from "../../src/instruments/instrument-presets";
+import { UNITS_PER_SEMITONE } from "../../src/audio/tuning";
 
 const STEPS_PER_BAR = 192;
 const BARS = 16;

@@ -1,9 +1,9 @@
 /**
  * 生成物と参考コーパスを**同じ物差しで並べる**調査スクリプト。
  *
- *   npx tsx scripts/compare-corpus.ts --dir "C:/path/to/midis" --songs 80
+ *   npx tsx scripts/corpus/compare-corpus.ts --dir "C:/path/to/midis" --songs 80
  *
- * `scripts/calibrate-corpus.ts` が目標帯（`src/compose/compose-corpus.ts`）を作るのに対し、
+ * `scripts/corpus/calibrate-corpus.ts` が目標帯（`src/compose/compose-corpus.ts`）を作るのに対し、
  * こちらは**採点に入っていない観点まで含めて**両者の分布を突き合わせる。
  * 「基準は満たしているのに人間の曲と違って聞こえる」ときに、どこが違うのかを
  * 数字で出すために使う。実際、この比較で
@@ -20,10 +20,10 @@
  * 生成側もメロディの入りから測る（イントロの無音を休符に数えない）。
  */
 
-import { composeSong } from "../src/compose/compose";
-import type { MetricNote } from "../src/compose/compose-metrics";
-import { densityFeatures } from "../src/compose/compose-metrics";
-import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
+import { composeSong } from "../../src/compose/compose";
+import type { MetricNote } from "../../src/compose/compose-metrics";
+import { densityFeatures } from "../../src/compose/compose-metrics";
+import { UNITS_PER_SEMITONE } from "../../src/audio/tuning";
 import {
 	channelNotes,
 	chromaticRatioOf,

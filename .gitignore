@@ -3,7 +3,7 @@ tmp
 scratch
 .claude
 
-# Python（tools/ の学習パイプライン）
+# Python（scripts/melody-model/ の学習パイプライン）
 __pycache__/
 *.pt
 

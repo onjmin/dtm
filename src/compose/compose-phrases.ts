@@ -1,14 +1,14 @@
 /**
  * **自動生成ファイル。手で編集しないこと。**
  *
- *   npx tsx scripts/calibrate-phrases.ts --dir <MIDIのフォルダ>
+ *   npx tsx scripts/corpus/calibrate-phrases.ts --dir <MIDIのフォルダ>
  *
  * 人間が書いた曲から抜き出した**2小節フレーズ**のバンク。リズムと音高の並びを
  * 対にしたまま持つ（別々に持つと「この並びがこのリズムに乗っている」という、
  * まさに人間が選んだ情報が消える）。
  *
  * 生成側はここから素材を引いて、移調・和音合わせ・セクション展開に掛ける。
- * **統計を目標にするのをやめた理由**は {@link file://../../scripts/calibrate-phrases.ts}
+ * **統計を目標にするのをやめた理由**は {@link file://../../scripts/corpus/calibrate-phrases.ts}
  * の冒頭にある。
  *
  * 抽出元: 91本 / 2小節窓 2444 個 → 使える形 801 種

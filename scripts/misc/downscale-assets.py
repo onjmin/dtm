@@ -7,7 +7,7 @@ assets/*.png を 384×384 → 32×32 (÷12 等倍) にダウンスケールす�
 from pathlib import Path
 from PIL import Image
 
-ASSETS = Path(__file__).parent.parent / "assets"
+ASSETS = Path(__file__).parent.parent.parent / "assets"
 TARGET = (32, 32)
 
 for png in sorted(ASSETS.glob("*.png")):

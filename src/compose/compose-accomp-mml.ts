@@ -33,7 +33,7 @@ export type AccompMmlProvenance = {
 
 /**
  * 曲を MML 文字列にする。`parseMML` で読み戻すと、音符（開始・長さ・音高）と絶対値の v まで
- * `s.tracks` と一致する（`scripts/check-compose-accomp.ts` が検算する）。
+ * `s.tracks` と一致する（`scripts/test/check-compose-accomp.ts` が検算する）。
  */
 export const accompToMml = (
 	s: AccompSong,

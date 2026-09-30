@@ -7,7 +7,7 @@
  * `formatAccompCompose`）。
  *
  * **スタイルを1つ足しても、エンジン・DAW・UI のコードは変えない**（§2.4・§7）。足すのはこの一覧の1行と
- * `<id>.ts`・`references/<id>/`・`scripts/fixtures/styles/<id>/`。
+ * `<id>.ts`・`references/<id>/`・`scripts/test/fixtures/styles/<id>/`。
  *
  * **実行時の import を増やさないこと。** `compose-accomp.ts` から読むので、ここも Node から koe 無しで
  * 読めなければならない（`docs/accomp-compose.md` §4.2）。

@@ -2,16 +2,16 @@
  * 伴奏主体モード（`composeAccomp`）の試聴用の書き出し（`docs/accomp-compose.md` §12.5・§12.7）。
  * **テストには入れない。** 耳で仕様を聞き取るための出口。
  *
- *   npx tsx scripts/accomp-audition.ts --count 3 --seed 20260929 --key major --out tmp/accomp
- *   npx tsx scripts/accomp-audition.ts --count 3 --seed 20260929 --fb-plan --out tmp/accomp
- *   npx tsx scripts/accomp-audition.ts --app-seed 3842857959 --compose style:fb.v1:any:0 --out tmp/accomp
+ *   npx tsx scripts/accomp/accomp-audition.ts --count 3 --seed 20260929 --key major --out tmp/accomp
+ *   npx tsx scripts/accomp/accomp-audition.ts --count 3 --seed 20260929 --fb-plan --out tmp/accomp
+ *   npx tsx scripts/accomp/accomp-audition.ts --app-seed 3842857959 --compose style:fb.v1:any:0 --out tmp/accomp
  *
  * - `--count n --seed s` … 種 s, s+1, … で n 曲。種はアプリと同じ使い方（`seededRandom(seed)` を
  *   `composeAccomp` に渡す）なので、書いた `#seed` と `#compose` でアプリの出力と同じ曲になる
  * - `--key` … ベース調（DAW の select の値。既定 any）。`--edo 31` で31平均律。`--no-color` で @0 なし
  * - `--app-seed n --compose style:<id>.v<版>:<baseKey>:<k>` … アプリで作った曲の再現（1曲）。
  *   旧書式 `accomp:<baseKey>:<k>`（段階 S0 より前。1・2日目の試聴ファイル）は `style:fb.v1:…` として読む
- * - `--fb-plan` … 陽性対照。fb を計画として書き直したもの（`scripts/fixtures/accomp-fb-plan.ts`）を
+ * - `--fb-plan` … 陽性対照。fb を計画として書き直したもの（`scripts/test/fixtures/accomp-fb-plan.ts`）を
  *   生成器で鳴らす。`--count 0 --fb-plan` なら陽性対照だけ
  *
  * 出力（`--out`、既定 tmp/accomp）:
@@ -37,24 +37,24 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { composeAccomp, parseAccompCompose } =
-	require("../src/compose/compose-accomp") as typeof import("../src/compose/compose-accomp");
+	require("../../src/compose/compose-accomp") as typeof import("../../src/compose/compose-accomp");
 const { accompStyleById } =
-	require("../src/compose/accomp-styles/index") as typeof import("../src/compose/accomp-styles/index");
+	require("../../src/compose/accomp-styles/index") as typeof import("../../src/compose/accomp-styles/index");
 const { accompToMml } =
-	require("../src/compose/compose-accomp-mml") as typeof import("../src/compose/compose-accomp-mml");
+	require("../../src/compose/compose-accomp-mml") as typeof import("../../src/compose/compose-accomp-mml");
 const { accompGates, accompRegionMetrics } =
-	require("../src/compose/compose-accomp-check") as typeof import("../src/compose/compose-accomp-check");
+	require("../../src/compose/compose-accomp-check") as typeof import("../../src/compose/compose-accomp-check");
 const { candidateStreams, drawSeed, fbPlan } =
-	require("../src/compose/compose-accomp-plan") as typeof import("../src/compose/compose-accomp-plan");
+	require("../../src/compose/compose-accomp-plan") as typeof import("../../src/compose/compose-accomp-plan");
 const { realizeAccomp } =
-	require("../src/compose/compose-accomp-realize") as typeof import("../src/compose/compose-accomp-realize");
+	require("../../src/compose/compose-accomp-realize") as typeof import("../../src/compose/compose-accomp-realize");
 const { seededRandom } =
-	require("../src/compose/compose") as typeof import("../src/compose/compose");
+	require("../../src/compose/compose") as typeof import("../../src/compose/compose");
 const { FB_METRICS } =
-	require("./fixtures/accomp-fb-plan") as typeof import("./fixtures/accomp-fb-plan");
+	require("../test/fixtures/accomp-fb-plan") as typeof import("../test/fixtures/accomp-fb-plan");
 
-type AccompSong = import("../src/compose/compose-accomp").AccompSong;
-type AccompRealized = import("../src/compose/compose-accomp-realize").AccompRealized;
+type AccompSong = import("../../src/compose/compose-accomp").AccompSong;
+type AccompRealized = import("../../src/compose/compose-accomp-realize").AccompRealized;
 
 const argv = process.argv.slice(2);
 const argOf = (name: string): string | undefined => {
@@ -230,7 +230,7 @@ if (appSeedArg !== undefined) {
 const summary: string[] = [
 	"# 伴奏主体モードの試聴: 曲ごとの区間表",
 	"",
-	"`scripts/accomp-audition.ts` が書いた。区間の値は計画（表から引いたもの）と、音を置いた後の実測。",
+	"`scripts/accomp/accomp-audition.ts` が書いた。区間の値は計画（表から引いたもの）と、音を置いた後の実測。",
 	"実測は**表示だけ**で、採点・選抜には使っていない（`docs/accomp-compose.md` §7）。",
 	"",
 ];
@@ -258,7 +258,7 @@ for (const e of entries) {
 	);
 	if (!e.fb && s.pick >= 0)
 		summary.push(
-			`- 再現: \`npx tsx scripts/accomp-audition.ts --app-seed ${e.seed} --compose ${s.compose}${edo === 31 ? " --edo 31" : ""}\``,
+			`- 再現: \`npx tsx scripts/accomp/accomp-audition.ts --app-seed ${e.seed} --compose ${s.compose}${edo === 31 ? " --edo 31" : ""}\``,
 		);
 	summary.push(
 		`- 関門: ${gates.length === 0 ? "全部通る" : gates.map((g) => `${g.gate}（${g.detail}）`).join("、")}`,

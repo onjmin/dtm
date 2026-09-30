@@ -4,15 +4,15 @@
  *   - DAW と同じ経路で MML を組み立てる（そのままエディタへインポートできる）
  *   - 人／エージェントが読める「譜面シート」を出す
  *
- *   npx tsx scripts/compose-lab.ts <count> <startSeed> [outDir] [optionsJson]
+ *   npx tsx scripts/compose/compose-lab.ts <count> <startSeed> [outDir] [optionsJson]
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildChordPlacements } from "../src/chord/chords";
-import { composeSong } from "../src/compose/compose";
-import { MMLCore } from "../src/mml/mml-core";
-import type { CoreEventHandlers, Note, RenderConfig } from "../src/types";
+import { buildChordPlacements } from "../../src/chord/chords";
+import { composeSong } from "../../src/compose/compose";
+import { MMLCore } from "../../src/mml/mml-core";
+import type { CoreEventHandlers, Note, RenderConfig } from "../../src/types";
 
 const STEPS_PER_BAR = 192;
 const UNITS_PER_SEMITONE = 31;
@@ -314,7 +314,7 @@ export const scoreSheet = (
 if (process.argv[1]?.includes("compose-lab")) {
 	const count = Number(process.argv[2] ?? 8);
 	const startSeed = Number(process.argv[3] ?? 1);
-	const outDir = process.argv[4] ?? join(__dirname, "..", "tmp", "compose");
+	const outDir = process.argv[4] ?? join(__dirname, "..", "..", "tmp", "compose");
 	const opts: Opts = process.argv[5] ? JSON.parse(process.argv[5]) : {};
 	mkdirSync(outDir, { recursive: true });
 	const sheets: string[] = [];

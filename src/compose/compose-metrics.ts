@@ -7,7 +7,7 @@
  *
  * 指標は {@link StructureFeatures}（コードを知らなくても測れる＝人間の曲から較正できる）と
  * {@link TensionFeatures}（和音が要る＝音楽理論から決める）に分けてある。前者は
- * `scripts/calibrate-corpus.ts` が人間の曲から採った実測値
+ * `scripts/corpus/calibrate-corpus.ts` が人間の曲から採った実測値
  * （{@link file://./compose-corpus.ts}）を目標値に使う。
  *
  * MIDI取り込みの曲と生成物を**同じ関数で測る**ため、入力は units ではなく半音
@@ -441,7 +441,7 @@ export const band = (
 	return hi === idealHi ? 0 : (hi - v) / (hi - idealHi);
 };
 
-/** 目標帯。`scripts/calibrate-corpus.ts` が人間の曲から採った値をこの形で出す。 */
+/** 目標帯。`scripts/corpus/calibrate-corpus.ts` が人間の曲から採った値をこの形で出す。 */
 export type Band = [lo: number, idealLo: number, idealHi: number, hi: number];
 
 /**
@@ -513,7 +513,7 @@ export const featureDistance = (a: number[], b: number[]): number => {
 //
 // いま残してあるのは**生成系がコーパスのどこへ到達できるかを測る**ため。
 // 採点を完全に切って1500本引いても届かない曲が91本中33本あり、そこが
-// 生成系を広げる作業の入口になる。`scripts/compare-reach.ts`。
+// 生成系を広げる作業の入口になる。`scripts/corpus/compare-reach.ts`。
 
 /**
  * 指標の値を、帯の p05〜p95 を 0〜1 とする尺度へ写す。項目ごとに単位が違う（半音・比率・個数）
@@ -552,7 +552,7 @@ export const nearestProfileDistance = (
 	profiles: readonly (readonly number[])[],
 	/**
 	 * 距離がこれ未満の相手を「自分自身」とみなして数えない。
-	 * コーパスの曲そのものを採点するとき（`scripts/check-evaluator.ts`）に要る——
+	 * コーパスの曲そのものを採点するとき（`scripts/corpus/check-evaluator.ts`）に要る——
 	 * 自分と一致する点が必ず1つあるので、そのままだと全曲が距離0になり、
 	 * 「人間の曲は必ず満点」という無意味な検算になってしまう。
 	 */

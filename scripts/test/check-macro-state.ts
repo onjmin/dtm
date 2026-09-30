@@ -7,7 +7,7 @@ import {
 	writeKeptSong,
 	writeMacroSections,
 	writeMacroSetting,
-} from "../src/ui/state/macro-state";
+} from "../../src/ui/state/macro-state";
 
 console.log("● macro-state tests");
 

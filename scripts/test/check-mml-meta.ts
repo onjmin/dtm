@@ -23,7 +23,7 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { formatMmlMeta, parseMML, parseMmlMeta, stripMmlMeta } =
-	require("../src/mml/mml-parser") as typeof import("../src/mml/mml-parser");
+	require("../../src/mml/mml-parser") as typeof import("../../src/mml/mml-parser");
 
 let failed = 0;
 const check = (label: string, got: unknown, expect: unknown): void => {

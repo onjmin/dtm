@@ -1,7 +1,7 @@
 /**
  * **人間が書いた2小節フレーズを、そのまま素材として抜き出す。**
  *
- *   npx tsx scripts/calibrate-phrases.ts --dir <MIDIのフォルダ> [--out src/compose/compose-phrases.ts]
+ *   npx tsx scripts/corpus/calibrate-phrases.ts --dir <MIDIのフォルダ> [--out src/compose/compose-phrases.ts]
  *
  * ## なぜ要るか
  *
@@ -14,7 +14,7 @@
  * 音の列」になりうる。距離を目標にする方式ではこの情報は原理的に入らない。
  *
  * そこで、統計ではなく**実在したフレーズそのもの**を素材にする。リズムについては
- * 既に {@link file://../src/compose/compose-corpus.ts} の `CORPUS_CELL_WEIGHTS` が出現頻度を
+ * 既に {@link file://../../src/compose/compose-corpus.ts} の `CORPUS_CELL_WEIGHTS` が出現頻度を
  * 取り込んでいたが、**音高の並びだけが取り込まれていなかった**。ここを同じ仕組みで埋める。
  *
  * ## 何を保存するか
@@ -197,7 +197,7 @@ const main = (): void => {
 	const header = `/**
  * **自動生成ファイル。手で編集しないこと。**
  *
- *   npx tsx scripts/calibrate-phrases.ts --dir <MIDIのフォルダ>
+ *   npx tsx scripts/corpus/calibrate-phrases.ts --dir <MIDIのフォルダ>
  *
  * 人間が書いた曲から抜き出した**2小節フレーズ**のバンク。リズムと音高の並びを
  * 対にしたまま持つ（別々に持つと「この並びがこのリズムに乗っている」という、

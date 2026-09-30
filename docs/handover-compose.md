@@ -14,7 +14,7 @@
 
 生成物と参考コーパス（`Music/_own/自作/界隈曲` 91本）は、次がすべて一致していた。
 
-- `scripts/compare-corpus.ts` の17指標
+- `scripts/corpus/compare-corpus.ts` の17指標
 - **隣接音程のヒストグラム**（0度 16.5/14.1、1度 10.5/14.5、2度 34.9/36.2 …）
 - 反復（`compare-repetition.ts`）はむしろ生成物の方が多い
 - `compare-reach.ts` の到達率 75%
@@ -60,8 +60,8 @@
 
 ### 方針B（モデルで並び順を学ぶ）— 事前学習まで済んだ
 
-`tools/melody-model/`（`tokenizer.py` / `train.py` / `generate.py` / `README.md`）。
-手順は `tools/melody-model/README.md`。**残っているのは耳での選別（手順4）だけ。**
+`scripts/melody-model/`（`tokenizer.py` / `train.py` / `generate.py` / `README.md`）。
+手順は `scripts/melody-model/README.md`。**残っているのは耳での選別（手順4）だけ。**
 
 事前学習のコーパスは **PDMX**（作風・権利の両面で Lakh より適していることは実測済み。
 9項目中6項目で界隈曲に近い。特に順次進行 0.512 対 0.278。`docs/dataset-provenance.md`）。
@@ -191,13 +191,13 @@ B は5組中4組で和音内が低く、3組で衝突が多い。**A の旋律�
 `ab-listening-budget` の実測どおり。**良否の判定には全トラックが要る**が、旋律だけを
 差し替えると上記1で成立しない。両立させるには**A・B の両方に和声を付け直す**しかない。
 
-### 陽性対照: `scripts/ab-listen.ts`
+### 陽性対照: `scripts/compose/ab-listen.ts`
 
 `tmp/ab-whole.ts` の後継で、`scripts/` へ移して残した。B に**人間の本物の旋律**（PDMX）を
 入れ、**A・B とも同じ手続きで和声を付け直して**全トラックで鳴らす。
 
 ```
-npx tsx scripts/ab-listen.ts --pdmx tmp/pdmx.jsonl --out tmp/ab-pdmx
+npx tsx scripts/compose/ab-listen.ts --pdmx tmp/pdmx.jsonl --out tmp/ab-pdmx
 ```
 
 手続き: 元の進行の小節割りを単位にし、調のダイアトニック三和音を候補に「和音内の音価−衝突」
@@ -224,7 +224,7 @@ npx tsx scripts/ab-listen.ts --pdmx tmp/pdmx.jsonl --out tmp/ab-pdmx
 並んでいなかった（所有者の指摘）。`--release` で1曲につき3本出す。
 
 ```
-npx tsx scripts/ab-listen.ts --pdmx tmp/pdmx.jsonl --release --out tmp/abc-release
+npx tsx scripts/compose/ab-listen.ts --pdmx tmp/pdmx.jsonl --release --out tmp/abc-release
 ```
 
 | | 中身 | 何が分かるか |
@@ -309,7 +309,7 @@ A/B/C で B が A に勝った2組は、**付け直しで和音内の割合が�
 信号。旋律を固定して和声だけを入れ替え、直接測る。
 
 ```
-npx tsx scripts/ab-listen.ts --variant chords --seed 20260920 --out tmp/ab-chords
+npx tsx scripts/compose/ab-listen.ts --variant chords --seed 20260920 --out tmp/ab-chords
 ```
 
 | | 中身 |
@@ -359,7 +359,7 @@ A 2 / B 1 / 引き分け 2。**和音内が最も上がった組で A が勝ち�
 三全音ずらし）。
 
 ```
-npx tsx scripts/ab-listen.ts --variant broken --seed 20260921 --out tmp/ab-broken
+npx tsx scripts/compose/ab-listen.ts --variant broken --seed 20260921 --out tmp/ab-broken
 ```
 
 | 結果 | 読み |
@@ -393,13 +393,13 @@ npx tsx scripts/ab-listen.ts --variant broken --seed 20260921 --out tmp/ab-broke
 直すか／ゼロから書くより速いか」**を訊く。これは採点ではなく仕様の聞き取りで、
 1曲ずつでよく、目隠しも要らない。
 
-`scripts/ab-listen.ts` は残す（陽性対照・感度検査・和声付け直しの道具として再利用できる）。
+`scripts/compose/ab-listen.ts` は残す（陽性対照・感度検査・和声付け直しの道具として再利用できる）。
 `tmp/ab-*` `tmp/abc-*` は消えてよい。
 
 ### 次: 曲まるごとの聞き取り（採点ではなく仕様の聞き取り）
 
 ```
-npx tsx scripts/export-samples.ts --out tmp/interview --count 3 --seed 20260922
+npx tsx scripts/compose/export-samples.ts --out tmp/interview --count 3 --seed 20260922
 ```
 
 出荷版そのまま（`export-samples.ts`。オクターブ重ねをアプリと同じく1オクターブ下げるよう
@@ -500,7 +500,7 @@ npx tsx scripts/export-samples.ts --out tmp/interview --count 3 --seed 20260922
 MML の宣言は引き継ぐ）。再現は
 
 ```
-npx tsx scripts/export-samples.ts --app-seed 3842857959 --compose custom:any:auto:intro-verse-prechorus-chorus
+npx tsx scripts/compose/export-samples.ts --app-seed 3842857959 --compose custom:any:auto:intro-verse-prechorus-chorus
 ```
 
 で、アプリの主旋律と**音符単位で一致**することを確かめた。これで所有者が今後貼る「当たり」は、
@@ -513,7 +513,7 @@ npx tsx scripts/export-samples.ts --app-seed 3842857959 --compose custom:any:aut
 - **引き直しUX の残り**（下記）。スマホで「たくさん引いて選ぶ」を成立させる設計
 - 編曲・音色・構成・歌詞の側。ここは一度も測っていない
 
-学習パイプライン（`tools/melody-model/`）はそのまま残す。**結論は否定的だが配線と
+学習パイプライン（`scripts/melody-model/`）はそのまま残す。**結論は否定的だが配線と
 実測値は揃っている**ので、旋律の外側を変えたあとで効き方が変わるなら再利用できる。
 
 ### 引き直しUXの残り
@@ -535,7 +535,7 @@ npx tsx scripts/export-samples.ts --app-seed 3842857959 --compose custom:any:aut
 リストに `ver` を足しておらず、`#ver=2.1.13` が本文に残って `v` `e` `r` が音符に
 なり、**読み戻した曲の track 0 先頭に E の16分が1つ生えていた**（キープ→入れ替えで
 MML が往復しないことから発覚）。`mml-parser.ts` の `META_DIRECTIVE` を直し、
-`scripts/check-mml-meta.ts` が「宣言から音が生えない」ことを検算する。
+`scripts/test/check-mml-meta.ts` が「宣言から音が生えない」ことを検算する。
 **2.1.11〜2.1.13 で書き出した MML を読み込むと先頭に余計な音が入る**——手元の
 ファイルを読み戻したら先頭の1音を疑うこと（修正後のパーサでは出ない）。
 

@@ -175,7 +175,7 @@ S0・S1 で `compose-accomp*.ts`・`daw.ts` の行が動いたので、本文の
 |---|---|---|
 | エンジン `src/accomp/` | 候補ループ・関門の実行・保険の計画への退避／和声の理論（旋法を基準にする）／生成器（分散セル・低音型・和音の打ち方・色の線。後で持続音・オスティナート）／31平均律の綴り／強弱の正規化／MML の書き出し／監査／新しさの指紋／注釈から計画を組み立てる処理 | `compose-accomp*.ts` の汎用部分（約58%。下の注） |
 | スタイル `src/compose/accomp-styles/<id>.ts` | 型・役割の定義・句の表・パターンの表・層・制約の設定・閉じ方・切除対照・出所・監査の基準 | `compose-accomp-tables.ts`（1,161行／4,959行＝約23%）と、fb 固有のコード（約19%。棚卸しの H1〜H26）をデータにしたもの |
-| 参照 `references/<id>/` | 承認した手書き試作の MML と注釈（区間の区切り・小節ごとの和音・4小節ごとの行 id）。型ごとの参照計画はこの注釈から組み立てる。git で追跡する | いまは `tmp/`。gitignore なので CI には無い（`scripts/fixtures/accomp-fb-plan.ts:13`） |
+| 参照 `references/<id>/` | 承認した手書き試作の MML と注釈（区間の区切り・小節ごとの和音・4小節ごとの行 id）。型ごとの参照計画はこの注釈から組み立てる。git で追跡する | いまは `tmp/`。gitignore なので CI には無い（`scripts/test/fixtures/accomp-fb-plan.ts:13`） |
 | 検査 `scripts/` | エンジンの検査1本・スタイルの検査1本（全スタイルを回す）・監査 | `check-compose-accomp.ts`（159項目） |
 
 注: 表の23%は行数で数えた。fb 固有の約19%は棚卸しの見積もりで、汎用の約58%はその残り。汎用と fb 固有の境目は、行単位では数え直していない。
@@ -626,7 +626,7 @@ export const minorPedal: StylePack = {
 
 ### 4.5 ばらつきの検査（監査）
 
-`scratch/accomp-variety.ts` を `scripts/audit-accomp-variety.ts` に上げる。MML だけを読むので、どのスタイルにも同じコードで使える。
+`scratch/accomp-variety.ts` を `scripts/accomp/audit-accomp-variety.ts` に上げる。MML だけを読むので、どのスタイルにも同じコードで使える。
 
 先に直すこと:
 
@@ -756,7 +756,7 @@ export const minorPedal: StylePack = {
   - 固有: スタイルの `constraints` と `seam`。fb なら規則①〜⑤とループの閉じ方5点。
 - **陽性対照**:
   - fb の32項目はそのまま残す（`romanToC` と fb 2・fbPlan 8・fb の実現 15・fb のミックス 3・ほか）。変わるのは import 先だけ。
-  - **型ごとに**参照計画を1つ持つ。参照計画は、表を見ずに、注釈した手書きの MML から組み立てる（`FB_PLAN` と同じ考え方、`scripts/fixtures/accomp-fb-plan.ts:4-7`）。組み立ては注釈を読むエンジンの1か所で行う（§7.2）。
+  - **型ごとに**参照計画を1つ持つ。参照計画は、表を見ずに、注釈した手書きの MML から組み立てる（`FB_PLAN` と同じ考え方、`scripts/test/fixtures/accomp-fb-plan.ts:4-7`）。組み立ては注釈を読むエンジンの1か所で行う（§7.2）。
   - **実現の段で引くものは、すべて計画に記録し、参照計画はそれを固定する**（§3.1 の `PlanPins`）: 型 id・ミックス id・小節ごとの和音の打ち方 id。強弱は型の `arc` から来るので、型 id を固定すれば出どころも決まる。
     - いまは、借用和音の打ち方（`compose-accomp-realize.ts:384-410`）と、低音・和音の強弱（`LEVELS[region.role]`、`:741`）が計画の外で決まる。
     - `compRules` の borrowed を表から引く型を作った時点（S4b）で、記録が無ければ fb の参照計画は fb を再現しなくなる。fb の計画では、76小節中16小節が借用和音の long（`scratch/comp-forced.ts`）。
@@ -823,7 +823,7 @@ export const minorPedal: StylePack = {
 | 承認した手書きの試作と注釈 | `references/<id>/` | MML 2〜3本 |
 | スタイル本体 | `src/compose/accomp-styles/<id>.ts` | fb で表の約950行。小さなスタイルなら数百行 |
 | 参照計画 | 注釈から組み立てる（型ごとに1つ） | 注釈は型ごとに数十行の見込み（未計測） |
-| 切除対照 | `scripts/fixtures/styles/<id>/ablations.ts` | 固有の制約1つにつき1項目以上 |
+| 切除対照 | `scripts/test/fixtures/styles/<id>/ablations.ts` | 固有の制約1つにつき1項目以上 |
 | 黄金値 | 同じ場所の `golden.json` | 型ごとの参照計画と、5種×3調の MML ハッシュ |
 | 監査の基準 | `references/<id>/baseline.json` | 承認した試作の組2つ以上と、所有者のラベル |
 | 聴いた組の記録 | `references/<id>/heard.json` | 試聴のたびに追記 |
@@ -1105,7 +1105,7 @@ export const minorPedal: StylePack = {
   - 直近の `planSignature` を、スタイル id ごとの表にした（いまは fb だけ）。新しさの指紋（§4.4）に変えるのは S4c。
 - 検査（`check-compose-accomp.ts`）に8項目を足した（159 → 167）。書式の往復・読める値・読めない値13通り・書けない値・旧書式・MML の宣言の往復・スタイルの登録表・`diagnostics`（F.5）。
 
-### F.2 監査（`scripts/audit-accomp-variety.ts`、§4.5）
+### F.2 監査（`scripts/accomp/audit-accomp-variety.ts`、§4.5）
 
 `pnpm audit:accomp`。約10秒。`pnpm test` には入れていない（報告だけで、落ちない）。
 
@@ -1172,7 +1172,7 @@ export const minorPedal: StylePack = {
 
 ### F.4 黄金値（§7.2・§8）
 
-- 置き場所は設計どおり `scripts/fixtures/styles/fb/golden.json`。照合は新しい `scripts/check-accomp-golden.ts`（`pnpm test` に入れた。約8秒）。取り直しは `pnpm accomp:bless`。
+- 置き場所は設計どおり `scripts/test/fixtures/styles/fb/golden.json`。照合は新しい `scripts/test/check-accomp-golden.ts`（`pnpm test` に入れた。約8秒）。取り直しは `pnpm accomp:bless`。
   - 設計（§7.1）では黄金値は `check-accomp-styles.ts` の中だが、そのファイルは S1 以降にできるので、S0 では別のファイルにした。S1 で移すか、そのまま呼ぶ。
 - 中身:
   - 200種（1〜200）× baseKey {major, minor, any} = 600曲: 採った候補番号・計画 JSON の sha256・MML の sha256。600曲とも候補 k=0。
@@ -1241,7 +1241,7 @@ export const minorPedal: StylePack = {
   - 変形で作った行: P2（P1 の入れ替え）は2日目の試聴で聴いた組（`heard.json` の `pair:P2`）なので `approved: true`。home のセルを1段上げた4行（`leap_a_lift`・`ret_b_lift`・`k_a1a_lift`・`k_a1b_lift`）は聴いていないので `approved: false`。S1 では `approved` で引く行を絞らない（S2 の lint から）。
   - 低音の層の `nonChordTones` は `["passing", "approach"]`（§3.2 の例は `["approach"]` だが、いまの低音は経過音 P も置く）。宣言だけで、エンジンは読まない。
 - `AccompMix` の欄の型を、fb のリテラル（`"retro_game"`・`80`・`"none"`・`true`・`0`）から文字列・数・真偽へ広げた（§3.1 の「主な変更」）。欄の名前と並びは同じ。
-- 検査: `scripts/check-accomp-styles.ts` を新しく足した（§7.1 の名前。`pnpm test` で `check-compose-accomp.ts` の次に回す。約2秒）。
+- 検査: `scripts/test/check-accomp-styles.ts` を新しく足した（§7.1 の名前。`pnpm test` で `check-compose-accomp.ts` の次に回す。約2秒）。
   - 中身: 登録表、スキーマといまのエンジンの前提（全スタイル）とその陰性対照（スキーマ10項目・エンジンの前提6項目）、型ごとの参照計画（長調12調 × 型のテンポ4つで計画の段の前提・秒数、基準の調で関門）、エンジンが互換の口もスタイルの本体も直接 import しないこと・互換の口の値がスタイルの値そのものであること、DAW のミックス解放（F.8）。
   - 表示だけ: エンジンのコードに引用符つきで出てくるスタイルの id の数（役割・行・パターン・句の表・型・ミックス）。いまは入口 11・plan 40・realize 13・check 16・mml 0・`compose-accomp-style.ts` 26（S1 のエンジンの前提の一覧を含む）。S3g で0にする。§2.1 の「64か所」は引用符つきの役割名だけを数えた値で、数え方が違う。
   - 黄金値は設計（§7.1）では `check-accomp-styles.ts` の中だが、`check-accomp-golden.ts` のまま別に回す（`pnpm accomp:bless` の入口も兼ねるため）。
@@ -1256,7 +1256,7 @@ export const minorPedal: StylePack = {
   - 打ち方の決め方（realize の `compHitsFor`）は、id を決める段（優先順位。S3a で `compRules` へ）と、id から形を選ぶ段（打ち方の `alternate`。F.7）に分けた。出力は同じ。
   - 記録が壊れていたら（表に無い打ち方・小節数と合わない）、実現の段は例外、計画の段は関門「表現」で落とす。表に無いミックスは、入口が例外、計画の段が「表現」。知らないスタイル・型は例外。
   - `composeAccomp` に `style` を足した（省くと fb）。`overrides.plan` の `style` と違えば例外。
-- **fb の参照計画（`scripts/fixtures/accomp-fb-plan.ts`）に、いまの値を書いた**: `style`・`archetype`・`mix` はどれも `fb`、打ち方は gen-fb.mjs の `COMP` を id に読み直したもの（A 1〜12 は short2、13〜15 は fore、16 は final、B は alt13 と short2、C は long、L は alt13、A' は short2 と最後に final）。
+- **fb の参照計画（`scripts/test/fixtures/accomp-fb-plan.ts`）に、いまの値を書いた**: `style`・`archetype`・`mix` はどれも `fb`、打ち方は gen-fb.mjs の `COMP` を id に読み直したもの（A 1〜12 は short2、13〜15 は fore、16 は final、B は alt13 と short2、C は long、L は alt13、A' は short2 と最後に final）。
   - `fbPlan()` は打ち方の記録を持たないので、`fbPlan()` と fixture が一致するのは打ち方の記録を除いた部分。`fbPlan()` を鳴らした曲の計画は、記録ごと fixture と一致する。
   - 既存の検査のうち「計画が同じ」を見る3項目（候補3を直接作る・`pick: −1`・`overrides.plan`）は、曲の計画から打ち方の記録を除いて比べるように直した。`check-compose-accomp.ts` は 167 → 175項目（計画の記録の8項目を足した）。
 - **記録に入れていないもの**: 和音の置き方と分散の組の同点を割る乱数、色の線の度数の順（候補の乱数列「配置」「色」）。§3.1 の `PlanPins` にも無い。だから記録つきの計画から同じ曲を作り直すには、同じ乱数列が要る。
@@ -1274,7 +1274,7 @@ export const minorPedal: StylePack = {
 
 ### F.9 段階 S1: 出力を変えていないことの確かめ方と、黄金値の取り直し
 
-- **黄金値は、計画の sha256 だけを取り直した**（曲の計画に記録が入ったため。`scripts/check-accomp-golden.ts` の前提の検査「保険の計画は `fbPlan` と同じ」も、打ち方の記録を除いて比べるように直した）。
+- **黄金値は、計画の sha256 だけを取り直した**（曲の計画に記録が入ったため。`scripts/test/check-accomp-golden.ts` の前提の検査「保険の計画は `fbPlan` と同じ」も、打ち方の記録を除いて比べるように直した）。
   - S0 の `golden.json` と列ごとに比べた（`tmp/verify-s1/golden-diff.mjs`）: 748行すべてで計画の列だけが変わり、MML の列（796個: 600曲・保険の計画と計画を与えた MML 48組ずつ・変種100曲）と候補番号は1文字も違わない。
   - S1 のコードで、記録を消した計画の sha256 を取ると、748行すべてで S0 の値に戻る（`tmp/verify-s1/compare.ts`）。記録つきの保険の計画を `overrides.plan` に渡した MML も、S0 の「計画を与えた MML」と同じ。
 - **S1 の前のコードとも比べた**（`src` をまるごと `tmp/verify-s1/old-src/` に写し、同じ呼び出しを両方に投げた）: F.6 と同じ1891通り（種 150 × baseKey 9、種 40 × 31平均律・stepsPerBar 96 と 48・色の線なし・`pick` 5通り・`overrides` 3通り、`recent` の積み上げ、24候補を全部落とす1曲）で、曲（計画の記録のほかは全部）・MML・minify の MML が1バイトも違わない。計画の段の関数（`resolveAccompKey`・`planAccomp`・`planViolations`・`drawLengths`・`fbPlan`）も72通りで同じ。
@@ -1299,5 +1299,5 @@ export const minorPedal: StylePack = {
   - 記録の往復120曲: 曲 → 記録つきの計画（JSON を通したもの）→ 同じ候補の乱数列で `realizeAccomp` → MML と記録が1バイトも違わない（120/120。記録を消しても同じ）。`overrides.plan` で鳴らし直して元の曲と同じ MML になるのは候補 0 の94曲すべてで、候補 1 以降と保険の計画の26曲は0曲（F.8 のとおり）。記録つきの計画を渡した S1 の `overrides.plan` と、記録の無い計画を渡した S1 の前の `overrides.plan` は、120曲とも同じ曲。
   - デモ（`http://localhost:40298`、この回の `pnpm build` の dist）を検証用ブラウザで動かした: 「伴奏主体」→ ディレイ 25・付点8分・ループあり・ドラムなし。そのまま「作曲」→ ディレイ 0・8分・ループなしへ戻る。利用者がディレイを 40 にしてから「作曲」→ 40 のまま、ループだけ戻る。「伴奏主体」→ キープ →「伴奏主体」→ 入れ替え →「作曲」→ 戻る。作曲の前後で手元の保存（localStorage・IndexedDB）を写しておき、終わってから元に戻した。この回の DAW の1行（上）を入れる前の build で動かしたので、入れ替えの経路は「覚えた `#compose` と同じ文字列だったか」で比べる相手が違いうる（どちらでも戻る値は同じ）。
 - **直していない点**（報告だけ）:
-  - fixture（`scripts/fixtures/accomp-fb-plan.ts`）の minorDwell の最後の小節（36小節目、`Vsus4 V` の2和音）の打ち方の記録は `alt13`。gen-fb.mjs はここを `two()`（1拍目と3拍目）で書いていて、fixture の見出しの読み方（`two` は short2）なら `short2` になる。2和音の小節は、どちらの打ち方も `two` の形が同じ（`a:2 r:6 b:2 r:6`）なので音は同じ。fixture の記録は、手で読んだ値というより実現の段の優先順位の値に合わせてある。打ち方を表から引くようにする S3a・S4b で、2和音の形が打ち方ごとに違う行を足すなら、この小節の id を決め直す。
+  - fixture（`scripts/test/fixtures/accomp-fb-plan.ts`）の minorDwell の最後の小節（36小節目、`Vsus4 V` の2和音）の打ち方の記録は `alt13`。gen-fb.mjs はここを `two()`（1拍目と3拍目）で書いていて、fixture の見出しの読み方（`two` は short2）なら `short2` になる。2和音の小節は、どちらの打ち方も `two` の形が同じ（`a:2 r:6 b:2 r:6`）なので音は同じ。fixture の記録は、手で読んだ値というより実現の段の優先順位の値に合わせてある。打ち方を表から引くようにする S3a・S4b で、2和音の形が打ち方ごとに違う行を足すなら、この小節の id を決め直す。
   - エンジンのコードに出てくる句の表の名前は、S1 で `HOME_OPEN` のような定数名から `P.homeOpen` のようなプロパティ参照に変わった。スタイルの id に当たるプロパティ参照を数えると（この回の数え方。コメントを除き、句の表の名前も含める。§2.1 の「plan 16」は役割名だけ）、plan は 26 → 46 に増えて見える（引用符つきは 64 → 40 に減った）。名前で引く結合そのものは S1 の前からあり、増えていない。`compose-accomp-style.ts` の26か所は、エンジンの前提を1か所に書き出した一覧。どちらも S3f・S3g で消す。

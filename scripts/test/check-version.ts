@@ -10,7 +10,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { DTM_VERSION } from "../src/version";
+import { DTM_VERSION } from "../../src/version";
 
 const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
 	version: string;

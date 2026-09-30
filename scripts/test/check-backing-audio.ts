@@ -21,7 +21,7 @@ import {
 	formatTimeSec,
 	parseTimeSec,
 	parseYoutubeId,
-} from "../src/audio/backing-audio";
+} from "../../src/audio/backing-audio";
 
 // `src/mml/mml-parser.ts` は歌詞解析のために `src/voice/lyrics.ts` を、その先で歌唱合成エンジン
 // @onjmin/koe（WebAssembly + AudioWorklet 前提のブラウザ専用パッケージ）を読む。
@@ -35,7 +35,7 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { formatMmlMeta, parseMML, parseMmlMeta, stripMmlMeta } =
-	require("../src/mml/mml-parser") as typeof import("../src/mml/mml-parser");
+	require("../../src/mml/mml-parser") as typeof import("../../src/mml/mml-parser");
 
 let failed = 0;
 const check = (label: string, got: unknown, expect: unknown): void => {

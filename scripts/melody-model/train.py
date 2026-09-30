@@ -1,6 +1,6 @@
 """旋律の並び順を学習する（小さな GPT）。
 
-    python tools/melody-model/train.py --data tmp/dataset.jsonl --out tmp/melody-model.pt
+    python scripts/melody-model/train.py --data tmp/dataset.jsonl --out tmp/melody-model.pt
 
 ## 大きさについて
 

@@ -19,7 +19,7 @@
  * `tmp/` は CI に無いので、fb の値はここに写してある（検査は tmp/ を読まない）。
  */
 
-import type { AccompPlan } from "../../src/compose/compose-accomp";
+import type { AccompPlan } from "../../../src/compose/compose-accomp";
 
 const HOME_WINDOW = { lowMin: 59, lowMax: 64, topMin: 76, topMax: 78 };
 

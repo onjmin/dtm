@@ -7,10 +7,10 @@
  * 抽出し、その分布のパーセンタイルを目標帯として `src/compose/compose-corpus.ts` へ書き出す。
  *
  *   # ローカルのMIDIフォルダから較正する
- *   npx tsx scripts/calibrate-corpus.ts --dir "C:/path/to/midis"
+ *   npx tsx scripts/corpus/calibrate-corpus.ts --dir "C:/path/to/midis"
  *
  *   # picotune から取ってきて較正する（AGENTS.md のAPI）
- *   npx tsx scripts/calibrate-corpus.ts --api --limit 200
+ *   npx tsx scripts/corpus/calibrate-corpus.ts --api --limit 200
  *
  * 生成された `src/compose/compose-corpus.ts` はコミットする。実行時にネットワークを触らせない
  * ため、較正は開発時に済ませて定数として焼き込む。
@@ -32,7 +32,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { durationEntropy } from "../src/compose/compose";
+import { durationEntropy } from "../../src/compose/compose";
 import {
 	type Band,
 	type DensityFeatures,
@@ -42,7 +42,7 @@ import {
 	normalizeByBand,
 	type StructureFeatures,
 	structureFeatures,
-} from "../src/compose/compose-metrics";
+} from "../../src/compose/compose-metrics";
 
 const STEPS_PER_BAR = 192;
 const DEBUG = process.argv.includes("--debug");
@@ -579,7 +579,7 @@ const apiToken = (): string => {
 	const fromEnv = process.env.RPGEN_SEARCH_TOKEN;
 	if (fromEnv) return fromEnv;
 	const agents = readFileSync(
-		new URL("../AGENTS.md", import.meta.url),
+		new URL("../../AGENTS.md", import.meta.url),
 		"utf-8",
 	);
 	const found = agents.match(/Authorization:\s*Bearer\s+(\S+?)`/);
@@ -592,7 +592,7 @@ const apiToken = (): string => {
 
 /** ダウンロードしたMIDIの置き場。tmp/ は gitignore 済み。 */
 const CACHE_DIR = new URL(
-	"../tmp/picotune-cache/",
+	"../../tmp/picotune-cache/",
 	import.meta.url,
 ).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 
@@ -815,8 +815,8 @@ const main = async (): Promise<void> => {
 	const body = `/**
  * **自動生成ファイル。手で編集しないこと。**
  *
- *   npx tsx scripts/calibrate-corpus.ts --dir <MIDIのフォルダ>
- *   npx tsx scripts/calibrate-corpus.ts --api --limit 200
+ *   npx tsx scripts/corpus/calibrate-corpus.ts --dir <MIDIのフォルダ>
+ *   npx tsx scripts/corpus/calibrate-corpus.ts --api --limit 200
  *
  * 人間が書いた曲 ${rows.length}本 から \`src/compose/compose-metrics.ts\` と同じ指標を抽出し、
  * その分布の中央50%（p25〜p75）を満点、p05〜p95 の外側を0点とする目標帯にしたもの。
@@ -884,13 +884,13 @@ export const CORPUS_DEVIATION_BUDGET = ${budget};
  *
  * リズム型の抽選を**人が実際に書く頻度**へ寄せるために使う。直積で作った語彙を
  * 一様に引くと、参考曲の上位10パターンが小節の57%を占めるのに対し生成物は25%
- * しか集中しない（scripts/compare-vocabulary.ts の③）。
+ * しか集中しない（scripts/corpus/compare-vocabulary.ts の③）。
  */
 export const CORPUS_CELL_WEIGHTS: Record<string, number> = {
 ${cellWeightLines}
 };
 `;
-	writeFileSync(new URL("../src/compose/compose-corpus.ts", import.meta.url), body);
+	writeFileSync(new URL("../../src/compose/compose-corpus.ts", import.meta.url), body);
 	console.log("\n  → src/compose/compose-corpus.ts を書き出しました");
 };
 

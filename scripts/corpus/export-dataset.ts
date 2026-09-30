@@ -1,13 +1,13 @@
 /**
  * **学習用のデータセットを書き出す。**
  *
- *   npx tsx scripts/export-dataset.ts --dir <MIDIのフォルダ> [--out tmp/dataset.jsonl]
+ *   npx tsx scripts/corpus/export-dataset.ts --dir <MIDIのフォルダ> [--out tmp/dataset.jsonl]
  *
  * ## 何のためか
  *
  * 旋律の「並び順」を学習するモデルを外（Python 側）で作るための入り口。
  * リポジトリ本体はブラウザ向けの TypeScript なのでモデルは載せない。**オフラインで
- * 大量に生成して、通ったものをデータとして同梱する**——今の {@link file://../src/compose/compose-phrases.ts}
+ * 大量に生成して、通ったものをデータとして同梱する**——今の {@link file://../../src/compose/compose-phrases.ts}
  * と同じ形で、素材が「実在した2小節」から「学習した任意長の旋律」に変わるだけ。
  *
  * ## なぜこの形式か
@@ -102,7 +102,7 @@ const main = (): void => {
 	// **除外リスト。** パブリックドメインの申告が誤っていたと分かったファイルを
 	// 外すための口（`docs/dataset-provenance.md` の是正手順）。外部コーパスから
 	// 素材を作る以上、あとから「あれは違った」が起きうる前提で作っておく。
-	const excludePath = argOf("--exclude") ?? "tools/melody-model/exclude.txt";
+	const excludePath = argOf("--exclude") ?? "scripts/melody-model/exclude.txt";
 	const excluded = new Set<string>();
 	try {
 		for (const line of readFileSync(excludePath, "utf8").split(/\r?\n/)) {

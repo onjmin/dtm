@@ -21,11 +21,11 @@
 
 ## 申告が誤っていたときの手順
 
-1. 該当ファイルを `tools/melody-model/exclude.txt` に追記する
-2. データセットを作り直す（`scripts/export-dataset.ts`）
-3. 素材を作り直す（`scripts/calibrate-phrases.ts` など）
+1. 該当ファイルを `scripts/melody-model/exclude.txt` に追記する
+2. データセットを作り直す（`scripts/corpus/export-dataset.ts`）
+3. 素材を作り直す（`scripts/corpus/calibrate-phrases.ts` など）
 4. **バージョンを上げる**（`package.json` と `src/version.ts` の両方。
-   `scripts/check-version.ts` が一致を検算する）
+   `scripts/test/check-version.ts` が一致を検算する）
 5. 下の表に「影響のあったバージョン」として追記する
 
 ## バージョンごとの素材

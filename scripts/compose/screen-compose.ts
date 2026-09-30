@@ -11,7 +11,7 @@
  *   - Aメロとサビのリズム型が同じ＝対比が「オクターブを上げただけ」
  *   - 歌えない跳躍
  *
- *   npx tsx scripts/screen-compose.ts <count> <startSeed> [top]
+ *   npx tsx scripts/compose/screen-compose.ts <count> <startSeed> [top]
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";

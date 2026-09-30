@@ -1,7 +1,7 @@
 /**
  * **生成系の到達範囲を測る。**「出てこない曲」の原因が採点なのか生成なのかを分ける。
  *
- *   npx tsx scripts/compare-reach.ts --dir "C:/path/to/midis" --songs 1500
+ *   npx tsx scripts/corpus/compare-reach.ts --dir "C:/path/to/midis" --songs 1500
  *
  * ## なぜ要るか
  *
@@ -24,20 +24,20 @@
  * 個別の推測ではなく実測で順番を決めるためのもの。
  */
 
-import { composeSong } from "../src/compose/compose";
+import { composeSong } from "../../src/compose/compose";
 import {
 	CORPUS_BANDS,
 	CORPUS_NN_RADIUS,
 	CORPUS_PROFILE_KEYS,
-} from "../src/compose/compose-corpus";
+} from "../../src/compose/compose-corpus";
 import {
 	densityFeatures,
 	type MetricNote,
 	normalizeByBand,
 	profileDistance,
 	structureFeatures,
-} from "../src/compose/compose-metrics";
-import { UNITS_PER_SEMITONE } from "../src/audio/tuning";
+} from "../../src/compose/compose-metrics";
+import { UNITS_PER_SEMITONE } from "../../src/audio/tuning";
 import {
 	channelNotes,
 	chromaticRatioOf,

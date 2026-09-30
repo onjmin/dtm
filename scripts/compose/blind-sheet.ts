@@ -2,12 +2,12 @@
  * 覆面審査用の譜面シート。自動作曲の曲も手書きの曲も、**同じ書式・同じ見出し**で出す。
  * どちらの出自かが分かる情報（seed・機械採点・自動生成のラベル）は一切載せない。
  *
- *   npx tsx scripts/blind-sheet.ts auto <seed> <label> <outFile>
- *   npx tsx scripts/blind-sheet.ts hand <score.json> <label> <outFile>
+ *   npx tsx scripts/compose/blind-sheet.ts auto <seed> <label> <outFile>
+ *   npx tsx scripts/compose/blind-sheet.ts hand <score.json> <label> <outFile>
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { transposeChordName } from "../src/compose/compose";
+import { transposeChordName } from "../../src/compose/compose";
 import { composeOne } from "./compose-lab";
 import type { HandScore } from "./hand-compile";
 

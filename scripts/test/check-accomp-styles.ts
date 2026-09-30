@@ -14,35 +14,35 @@
  *   コードにスタイル名が無いこと
  * - 表示だけ: エンジンのコードに出てくるスタイルの id（役割・行・パターン）の数（S3g で0にする。§2.1）
  *
- * 黄金値（1バイトも違わないこと）は `scripts/check-accomp-golden.ts`（`pnpm test` で続けて回す）。
+ * 黄金値（1バイトも違わないこと）は `scripts/test/check-accomp-golden.ts`（`pnpm test` で続けて回す）。
  *
- *   npx tsx scripts/check-accomp-styles.ts
+ *   npx tsx scripts/test/check-accomp-styles.ts
  */
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const styles =
-	require("../src/compose/accomp-styles/index") as typeof import("../src/compose/accomp-styles/index");
+	require("../../src/compose/accomp-styles/index") as typeof import("../../src/compose/accomp-styles/index");
 const styleView =
-	require("../src/compose/compose-accomp-style") as typeof import("../src/compose/compose-accomp-style");
+	require("../../src/compose/compose-accomp-style") as typeof import("../../src/compose/compose-accomp-style");
 const plan =
-	require("../src/compose/compose-accomp-plan") as typeof import("../src/compose/compose-accomp-plan");
+	require("../../src/compose/compose-accomp-plan") as typeof import("../../src/compose/compose-accomp-plan");
 const realize =
-	require("../src/compose/compose-accomp-realize") as typeof import("../src/compose/compose-accomp-realize");
+	require("../../src/compose/compose-accomp-realize") as typeof import("../../src/compose/compose-accomp-realize");
 const gates =
-	require("../src/compose/compose-accomp-check") as typeof import("../src/compose/compose-accomp-check");
+	require("../../src/compose/compose-accomp-check") as typeof import("../../src/compose/compose-accomp-check");
 const entry =
-	require("../src/compose/compose-accomp") as typeof import("../src/compose/compose-accomp");
+	require("../../src/compose/compose-accomp") as typeof import("../../src/compose/compose-accomp");
 const tables =
-	require("../src/compose/compose-accomp-tables") as typeof import("../src/compose/compose-accomp-tables");
+	require("../../src/compose/compose-accomp-tables") as typeof import("../../src/compose/compose-accomp-tables");
 const { seededRandom } =
-	require("../src/compose/compose") as typeof import("../src/compose/compose");
+	require("../../src/compose/compose") as typeof import("../../src/compose/compose");
 const { COMPOSE_KEYS } =
-	require("../src/compose/compose-keys") as typeof import("../src/compose/compose-keys");
+	require("../../src/compose/compose-keys") as typeof import("../../src/compose/compose-keys");
 
-type StylePack = import("../src/compose/accomp-styles/schema").StylePack;
-type AccompMix = import("../src/compose/compose-accomp").AccompMix;
+type StylePack = import("../../src/compose/accomp-styles/schema").StylePack;
+type AccompMix = import("../../src/compose/compose-accomp").AccompMix;
 
 const {
 	ACCOMP_STYLES,
@@ -78,7 +78,7 @@ const throws = (f: () => unknown): boolean => {
 	}
 };
 const src = (file: string): string =>
-	readFileSync(join(__dirname, "..", "src", file), "utf8");
+	readFileSync(join(__dirname, "..", "..", "src", file), "utf8");
 
 // ============================================================
 section("登録表");

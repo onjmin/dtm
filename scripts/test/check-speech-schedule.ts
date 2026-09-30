@@ -1,7 +1,7 @@
 /**
  * 単発の語り（`speak`）のチャンク配置のチェック。
  *
- *   npx tsx scripts/check-speech-schedule.ts
+ *   npx tsx scripts/test/check-speech-schedule.ts
  *
  * 語りは計画が先に出来て、音はチャンクごとに後から届く。`awaitRender: false` のまま
  * 計画が出来た時点で時刻を決めると、最初のチャンクが間に合わず**頭が欠けた**
@@ -33,7 +33,7 @@ import {
 	skipPlacement,
 	speechBufferReached,
 	speechStartTime,
-} from "../src/voice/speech-schedule";
+} from "../../src/voice/speech-schedule";
 
 let failed = 0;
 let total = 0;

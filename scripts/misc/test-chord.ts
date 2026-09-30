@@ -7,10 +7,10 @@ if (typeof Worker === "undefined") {
 	};
 }
 
-const { parseMML } = require("../dist/index.js");
+const { parseMML } = require("../../dist/index.js");
 const { detectChord } = require("@onjmin/chord-parser");
 
-const mmlPath = path.resolve(__dirname, "../tmp/mml.md");
+const mmlPath = path.resolve(__dirname, "../../tmp/mml.md");
 const mml = fs.readFileSync(mmlPath, "utf-8");
 const { placements } = parseMML(mml, { collectTokens: true });
 

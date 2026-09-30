@@ -11,7 +11,7 @@
  * 規則は `src/mml/mml-velocity.ts` に1か所で置いた。DAW とプレイヤーは Node で読めないので、
  * 呼び出し側は1行にとどめ、その関数をここで検算する。
  *
- * 使い方: `npx tsx scripts/check-mml-velocity.ts [--file <MMLファイル>]`
+ * 使い方: `npx tsx scripts/test/check-mml-velocity.ts [--file <MMLファイル>]`
  * `--file` を付けると、そのファイルを DAW と同じ手順で往復させて v の種類数を表示する
  * （tmp/ の手本など。ファイルが無ければ飛ばしたと表示する）。
  */
@@ -31,9 +31,9 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { parseMML } =
-	require("../src/mml/mml-parser") as typeof import("../src/mml/mml-parser");
+	require("../../src/mml/mml-parser") as typeof import("../../src/mml/mml-parser");
 const { MMLCore } =
-	require("../src/mml/mml-core") as typeof import("../src/mml/mml-core");
+	require("../../src/mml/mml-core") as typeof import("../../src/mml/mml-core");
 const {
 	bakeTrackVelocity,
 	chordVelocity,
@@ -41,14 +41,14 @@ const {
 	playerTrackVelocity,
 	splitPlacementVelocities,
 	splitTrackVelocity,
-} = require("../src/mml/mml-velocity") as typeof import("../src/mml/mml-velocity");
+} = require("../../src/mml/mml-velocity") as typeof import("../../src/mml/mml-velocity");
 const { exportMIDI } =
-	require("../src/io/midi-io") as typeof import("../src/io/midi-io");
+	require("../../src/io/midi-io") as typeof import("../../src/io/midi-io");
 const { goldenCases } =
 	require("./fixtures/mml-velocity-golden-cases") as typeof import("./fixtures/mml-velocity-golden-cases");
-type Note = import("../src/types").Note;
-type RenderConfig = import("../src/types").RenderConfig;
-type MMLNotePlacement = import("../src/mml/mml-parser").MMLNotePlacement;
+type Note = import("../../src/types").Note;
+type RenderConfig = import("../../src/types").RenderConfig;
+type MMLNotePlacement = import("../../src/mml/mml-parser").MMLNotePlacement;
 type MMLCoreT = InstanceType<typeof MMLCore>;
 
 let failed = 0;

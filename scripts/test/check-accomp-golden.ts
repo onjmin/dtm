@@ -2,15 +2,15 @@
  * 伴奏主体モードの黄金値（`docs/accomp-style-engine.md` §7.2・§8 段階 S0）。
  *
  * 出力を1バイトも変えない作り替え（段階 S1・S3）の番をする。スタイルごとに
- * `scripts/fixtures/styles/<id>/golden.json` を持ち、次の sha256 を照合する（いまは fb だけ）。
+ * `scripts/test/fixtures/styles/<id>/golden.json` を持ち、次の sha256 を照合する（いまは fb だけ）。
  *
  * - 200種 × baseKey {major, minor, any}: 採った候補番号・計画 JSON・MML
  *   （`composeAccomp({ random: seededRandom(seed), baseKey })` を `accompToMml(song, { seed, version: "0" })`）
  * - `fbPlan` × 長調12調 × `BPM_TABLE` の全テンポ: 計画 JSON・保険の計画として鳴らした MML
  *   （`pick: -1`、決まった乱数列）・計画を丸ごと与えて鳴らした MML（`overrides.plan`、種 0 の乱数列）
  *
- *   npx tsx scripts/check-accomp-golden.ts            # 照合（pnpm test に入っている）
- *   npx tsx scripts/check-accomp-golden.ts --bless    # 取り直し（pnpm accomp:bless）
+ *   npx tsx scripts/test/check-accomp-golden.ts            # 照合（pnpm test に入っている）
+ *   npx tsx scripts/test/check-accomp-golden.ts --bless    # 取り直し（pnpm accomp:bless）
  *
  * - MML の `#ver` は "0" に固定する。パッケージの版を上げただけで黄金値が変わらないように。
  * - 取り直すのは、出力を**意図して**変えたときだけ。そのときはスタイルの版（`#compose` の
@@ -42,22 +42,22 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { composeAccomp } =
-	require("../src/compose/compose-accomp") as typeof import("../src/compose/compose-accomp");
+	require("../../src/compose/compose-accomp") as typeof import("../../src/compose/compose-accomp");
 const { accompToMml } =
-	require("../src/compose/compose-accomp-mml") as typeof import("../src/compose/compose-accomp-mml");
+	require("../../src/compose/compose-accomp-mml") as typeof import("../../src/compose/compose-accomp-mml");
 const { fbPlan } =
-	require("../src/compose/compose-accomp-plan") as typeof import("../src/compose/compose-accomp-plan");
+	require("../../src/compose/compose-accomp-plan") as typeof import("../../src/compose/compose-accomp-plan");
 const { accompStyleView } =
-	require("../src/compose/compose-accomp-style") as typeof import("../src/compose/compose-accomp-style");
+	require("../../src/compose/compose-accomp-style") as typeof import("../../src/compose/compose-accomp-style");
 const { DEFAULT_ACCOMP_STYLE } =
-	require("../src/compose/accomp-styles/index") as typeof import("../src/compose/accomp-styles/index");
+	require("../../src/compose/accomp-styles/index") as typeof import("../../src/compose/accomp-styles/index");
 const { seededRandom } =
-	require("../src/compose/compose") as typeof import("../src/compose/compose");
+	require("../../src/compose/compose") as typeof import("../../src/compose/compose");
 const { COMPOSE_KEYS } =
-	require("../src/compose/compose-keys") as typeof import("../src/compose/compose-keys");
+	require("../../src/compose/compose-keys") as typeof import("../../src/compose/compose-keys");
 
-type AccompSong = import("../src/compose/compose-accomp").AccompSong;
-type AccompPlan = import("../src/compose/compose-accomp").AccompPlan;
+type AccompSong = import("../../src/compose/compose-accomp").AccompSong;
+type AccompPlan = import("../../src/compose/compose-accomp").AccompPlan;
 
 const BLESS = process.argv.includes("--bless");
 const STYLE = DEFAULT_ACCOMP_STYLE;
@@ -180,7 +180,7 @@ if (recentSkipped === 0)
 
 const now: Golden = {
 	about:
-		"伴奏主体モードの黄金値（scripts/check-accomp-golden.ts）。取り直しは pnpm accomp:bless。出力を意図して変えたときだけ取り直し、スタイルの版も上げる（docs/accomp-style-engine.md §7.2）。",
+		"伴奏主体モードの黄金値（scripts/test/check-accomp-golden.ts）。取り直しは pnpm accomp:bless。出力を意図して変えたときだけ取り直し、スタイルの版も上げる（docs/accomp-style-engine.md §7.2）。",
 	style: `${STYLE.id}.v${STYLE.version}`,
 	mml: { version: MML_VERSION, stepsPerBar: 192, edo: 12 },
 	songs: { seeds: [SEED_FROM, SEED_FROM + SEED_COUNT - 1], rows: songRows },

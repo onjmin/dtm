@@ -25,7 +25,7 @@
 ### 0. データを出す（TypeScript 側）
 
 ```bash
-npx tsx scripts/export-dataset.ts --dir <MIDIのフォルダ> --out tmp/dataset.jsonl
+npx tsx scripts/corpus/export-dataset.ts --dir <MIDIのフォルダ> --out tmp/dataset.jsonl
 ```
 
 主旋律だけを JSONL で出す。トークン化はしない（何を1トークンにするかはモデルの
@@ -38,8 +38,8 @@ npx tsx scripts/export-dataset.ts --dir <MIDIのフォルダ> --out tmp/dataset.
 curl -L -o tmp/pdmx/mid.tar.gz "https://zenodo.org/records/15571083/files/mid.tar.gz?download=1"
 tar -xzf tmp/pdmx/mid.tar.gz -C tmp/pdmx
 
-npx tsx scripts/export-dataset.ts --dir tmp/pdmx/mid --out tmp/pdmx.jsonl
-python tools/melody-model/train.py --data tmp/pdmx.jsonl --out tmp/base.pt --steps 60000
+npx tsx scripts/corpus/export-dataset.ts --dir tmp/pdmx/mid --out tmp/pdmx.jsonl
+python scripts/melody-model/train.py --data tmp/pdmx.jsonl --out tmp/base.pt --steps 60000
 ```
 
 コーパスに **PDMX** を採る理由は `docs/dataset-provenance.md` にある（作風が界隈曲に
@@ -65,7 +65,7 @@ Lakh MIDI は配布元自身が帰属を辿れないと書いているので採�
 ### 2. 微調整（界隈曲91本）
 
 ```bash
-python tools/melody-model/train.py --data tmp/dataset.jsonl --init tmp/base.pt \
+python scripts/melody-model/train.py --data tmp/dataset.jsonl --init tmp/base.pt \
     --out tmp/melody-model.pt --steps 600 --lr 1e-4 --eval-every 25
 ```
 
@@ -84,7 +84,7 @@ python tools/melody-model/train.py --data tmp/dataset.jsonl --init tmp/base.pt \
 ### 3. 生成してバンクへ
 
 ```bash
-python tools/melody-model/generate.py --model tmp/melody-model.pt \
+python scripts/melody-model/generate.py --model tmp/melody-model.pt \
     --out src/compose/compose-melodies.ts --n 2000 --keep 801
 ```
 
@@ -133,7 +133,7 @@ npx tsx tmp/ab-bank.ts --out tmp/ab-bank
 
 ## 注意
 
-- `tools/` は npm パッケージに入らない（`package.json` の `files` は `dist` のみ）
+- `scripts/` は npm パッケージに入らない（`package.json` の `files` は `dist` のみ）
 - 語彙（`tokenizer.py` の `build_vocab`）の**順番を変えると学習済みモデルと食い違う**。
   足すときは末尾へ
 - 度数は曲ごとに7の倍数でずらして ±21 の窓へ収めている（`octave_offset`）。

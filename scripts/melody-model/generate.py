@@ -1,6 +1,6 @@
 """学習したモデルで旋律を生成し、フレーズバンクとして書き出す。
 
-    python tools/melody-model/generate.py --model tmp/melody-model.pt \
+    python scripts/melody-model/generate.py --model tmp/melody-model.pt \
         --out src/compose/compose-melodies.ts --n 2000
 
 ## なぜ2小節のフレーズとして出すのか
@@ -60,7 +60,7 @@ def sample(
 def to_phrases(notes: list[dict]) -> list[tuple[list[int], list[int]]]:
     """音の並び → 2小節フレーズ（`rhythm`, `degrees`）。
 
-    採用の条件は `scripts/calibrate-phrases.ts` の `usable` と揃えてある。
+    採用の条件は `scripts/corpus/calibrate-phrases.ts` の `usable` と揃えてある。
     片方だけ緩いと、比較したときに「モデルのほうが多様」に見えるだけになる。
     """
     out: list[tuple[list[int], list[int]]] = []
@@ -134,7 +134,7 @@ def pick_bank(phrases: list[Phrase], keep: int, seed: int) -> list[Phrase]:
 HEADER = """/**
  * **自動生成ファイル。手で編集しないこと。**
  *
- *   python tools/melody-model/generate.py --model <.pt> --out src/compose/compose-melodies.ts
+ *   python scripts/melody-model/generate.py --model <.pt> --out src/compose/compose-melodies.ts
  *
  * 旋律の並び順を学習したモデルが作った**2小節フレーズ**のバンク。形は
  * {@link file://./compose-phrases.ts}（人間の曲から抜き出した実在フレーズ）と同じで、

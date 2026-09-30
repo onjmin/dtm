@@ -19,7 +19,7 @@
  * - `headless-player`（`studio.play`）は v を相対化せずそのまま velocity に使う。
  *   音量は同じで、SoundFont の明るさだけが DAW と違う（以前からある差）。
  *
- * 依存なしの純関数だけを置く（Node の検査 `scripts/check-mml-velocity.ts` から直接読むため）。
+ * 依存なしの純関数だけを置く（Node の検査 `scripts/test/check-mml-velocity.ts` から直接読むため）。
  */
 
 /** 未設定の velocity の既定値（`types.ts` の DEFAULT_VELOCITY と同じ。依存を持たないため再定義）。 */

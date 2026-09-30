@@ -8,7 +8,7 @@
  *
  * {@link DRAW_COUNT} 本の候補を引き、{@link HARD} に触れたものを捨て、残りから確率的に
  * 引く（{@link evaluate}・{@link SELECT_TEMPERATURE}）。目標帯（{@link CORPUS_BANDS}）は
- * 人間のMIDIからの実測で、較正は `scripts/calibrate-corpus.ts`。生成物とコーパスを同じ
+ * 人間のMIDIからの実測で、較正は `scripts/corpus/calibrate-corpus.ts`。生成物とコーパスを同じ
  * 物差しで並べるのは `scripts/compare-*.ts`。
  */
 
@@ -820,7 +820,7 @@ const HALF_BAR_FIGURES: number[][] = [
 	[-QUARTER, EIGHTH, EIGHTH], // 2拍目裏からのアウフタクト（タタ）
 	[QUARTER, -EIGHTH, EIGHTH], // ター・休タ（8分裏弱起）
 	// **3+3+2（トレシーヨ）。** 参考曲91本で最も多かった「語彙に無い形」で、
-	// 174小節ぶんの穴が空いていた（`scripts/compare-vocabulary.ts` の①）。
+	// 174小節ぶんの穴が空いていた（`scripts/corpus/compare-vocabulary.ts` の①）。
 	// 付点8分が `[DOT_EIGHTH, SIXTEENTH]` の対でしか入っておらず、
 	// 付点8分を2つ並べる形が作れなかった。界隈曲・ボカロの推進力の中心。
 	[DOT_EIGHTH, DOT_EIGHTH, EIGHTH],
@@ -5364,7 +5364,7 @@ const evaluate = (
 	const restRatio = d.restSteps / d.totalSteps;
 	// **メロディが歌い始めるところから測る。** イントロはメロディを書かないので、
 	// 曲頭から測ると休符率も密度もクライマックスの位置も「イントロの長さ」に
-	// 引きずられる。較正側（`scripts/calibrate-corpus.ts`）も主旋律の入りから
+	// 引きずられる。較正側（`scripts/corpus/calibrate-corpus.ts`）も主旋律の入りから
 	// 測っているので、ここを揃えないと目標帯と別のものを比べることになる。
 	const melodyNotes = toMetricNotes(d.melody);
 	const offset =

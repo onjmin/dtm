@@ -580,7 +580,7 @@ export type SeamRecipe = {
 	color?: string;
 };
 
-/** 監査の軸の名前（`scripts/audit-accomp-variety.ts`）。 */
+/** 監査の軸の名前（`scripts/accomp/audit-accomp-variety.ts`）。 */
 export type AuditAxis = string;
 
 /** スタイル（§3.1）。役割 id の型 `R` は、fb では `AccompRole`（S3g で文字列にする）。 */
@@ -619,7 +619,7 @@ export type StylePack<R extends string = string> = {
 	constraints: readonly Constraint[];
 	/** S3e で読む（段階 S1 では宣言だけ）。 */
 	seam?: SeamRecipe;
-	/** 切除対照（expect は制約 id）。段階 S1 ではまだ `scripts/check-compose-accomp.ts` にある。 */
+	/** 切除対照（expect は制約 id）。段階 S1 ではまだ `scripts/test/check-compose-accomp.ts` にある。 */
 	ablations?: readonly { mutate: string; expect: string }[];
 	variety?: {
 		/** 設計で固定する軸。合否から外し、値は表示する。 */

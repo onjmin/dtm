@@ -31,7 +31,7 @@ import {
 	GM_BRIGHT_CEILING,
 	GM_INSTRUMENT_RANGE,
 	INSTRUMENT_PRESETS,
-} from "../src/instruments/instrument-presets";
+} from "../../src/instruments/instrument-presets";
 
 /**
  * `compose.ts` が書くパートの実測音域 `[p01, p99]`。

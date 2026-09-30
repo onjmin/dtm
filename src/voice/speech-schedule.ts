@@ -15,7 +15,7 @@
  *   言葉は欠けない代わりに、遅れたぶんだけ間が空き、後ろのモーラが遅れて鳴る。
  *   koe のデモ（最初のチャンクで時間軸を決め、遅れたら残りをずらす）と同じ考え方。
  *
- * AudioContext に触らない純粋な計算だけを置き、`scripts/check-speech-schedule.ts` で
+ * AudioContext に触らない純粋な計算だけを置き、`scripts/test/check-speech-schedule.ts` で
  * チャンクの到着時刻を偽って検算する。
  *
  * @module

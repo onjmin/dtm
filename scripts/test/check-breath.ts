@@ -30,9 +30,9 @@ const {
 	pickBreathAlias,
 	pickBreathSample,
 	breathPeakPosition,
-} = require("../src/voice/lyrics") as typeof import("../src/voice/lyrics");
-const { units } = require("../src/audio/tuning") as typeof import("../src/audio/tuning");
-type TieSourceNote = import("../src/voice/lyrics").TieSourceNote;
+} = require("../../src/voice/lyrics") as typeof import("../../src/voice/lyrics");
+const { units } = require("../../src/audio/tuning") as typeof import("../../src/audio/tuning");
+type TieSourceNote = import("../../src/voice/lyrics").TieSourceNote;
 type PhonemeEntry = import("@onjmin/koe").PhonemeEntry;
 
 let failed = 0;

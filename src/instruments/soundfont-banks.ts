@@ -8,7 +8,7 @@
  * ファイル名は `PPPV_<バンク>.js`（PPP = GM プログラム3桁、V = バリエーション）。
  * 一覧は `sf2/list.txt`（{@link file://./sf/SoundFont_list.ts} が読む）。
  *
- * DOM に依存しない（`scripts/check-fx-font-drum.ts` が Node で検算する）。
+ * DOM に依存しない（`scripts/test/check-fx-font-drum.ts` が Node で検算する）。
  */
 
 /** 既定の音源バンク（これまで固定だったもの）。 */

@@ -33,13 +33,13 @@ loader._load = (request, ...rest) =>
 		: load(request, ...rest);
 
 const { formatMmlMeta, parseMML, parseMmlMeta } =
-	require("../src/mml/mml-parser") as typeof import("../src/mml/mml-parser");
+	require("../../src/mml/mml-parser") as typeof import("../../src/mml/mml-parser");
 const {
 	applyMasterFx,
 	masterDynamicsFromMeta,
 	masterFxFromMeta,
 	masterFxToMeta,
-} = require("../src/audio/master-fx") as typeof import("../src/audio/master-fx");
+} = require("../../src/audio/master-fx") as typeof import("../../src/audio/master-fx");
 const {
 	DEFAULT_SOUNDFONT_BANK,
 	normalizeSoundFontBank,
@@ -47,12 +47,12 @@ const {
 	soundFontBankShortName,
 	trackSoundFontValue,
 } =
-	require("../src/instruments/soundfont-banks") as typeof import("../src/instruments/soundfont-banks");
+	require("../../src/instruments/soundfont-banks") as typeof import("../../src/instruments/soundfont-banks");
 const { DRUM_PATTERNS, drumPatternForFullLoad, NO_DRUM_PATTERN } =
-	require("../src/instruments/drum-config") as typeof import("../src/instruments/drum-config");
-type MasterFxSettings = import("../src/audio/master-fx").MasterFxSettings;
-type MasterDynamics = import("../src/audio/master-fx").MasterDynamics;
-type MasterFxTarget = import("../src/audio/master-fx").MasterFxTarget;
+	require("../../src/instruments/drum-config") as typeof import("../../src/instruments/drum-config");
+type MasterFxSettings = import("../../src/audio/master-fx").MasterFxSettings;
+type MasterDynamics = import("../../src/audio/master-fx").MasterDynamics;
+type MasterFxTarget = import("../../src/audio/master-fx").MasterFxTarget;
 
 let failed = 0;
 const check = (label: string, got: unknown, expect: unknown): void => {

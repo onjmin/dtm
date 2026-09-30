@@ -2,7 +2,7 @@
  * 伴奏主体モードの最初のスタイル `fb`（`docs/accomp-style-engine.md` §3.2）。
  *
  * 段階 S1 で、`compose-accomp-tables.ts` の表をここへ移した（値は1つも変えていない。黄金値と1バイトも
- * 違わないことを `scripts/check-accomp-golden.ts` で確かめる）。エンジン（`compose-accomp*.ts`）は
+ * 違わないことを `scripts/test/check-accomp-golden.ts` で確かめる）。エンジン（`compose-accomp*.ts`）は
  * この表を `compose-accomp-style.ts` 経由で読む。`compose-accomp-tables.ts` は、いままでの名前と形で
  * ここを読み直すだけの互換の口になった。
  *
@@ -1026,7 +1026,7 @@ export const fb: StylePack<AccompRole> = {
 						lift: 8,
 						return: 12,
 					},
-					// 表の行 id。`scripts/fixtures/accomp-fb-plan.ts` の手書きと一致すること
+					// 表の行 id。`scripts/test/fixtures/accomp-fb-plan.ts` の手書きと一致すること
 					harmonyPicks: {
 						pair: ["P1"],
 						homeOpen: ["ho_fb"],
