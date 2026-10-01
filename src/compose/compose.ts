@@ -45,8 +45,6 @@ import {
 	type TensionFeatures,
 	tensionFeatures,
 } from "./compose-metrics";
-import type { CorpusPhrase } from "./phrase-types";
-import type { SectionBank } from "./section-bank-types";
 import {
 	type ComposeScale,
 	type ComposeScaleId,
@@ -75,6 +73,8 @@ import {
 } from "./compose-sections";
 import { composeSkeleton } from "./compose-skeleton";
 import { composeSplice } from "./compose-splice";
+import type { CorpusPhrase } from "./phrase-types";
+import type { SectionBank } from "./section-bank-types";
 import type { Skeleton } from "./skeleton-types";
 
 // ============================================================
@@ -1278,7 +1278,11 @@ type BassStyle =
 	/** 往復に5度と経過音を混ぜる。同音連打を作らず次の根音へ入る。 */
 	| "octave-fifth"
 	/** 3:3:2 ×2。 */
-	| "tresillo";
+	| "tresillo"
+	/** 付点8分の連続でオクターブを往復する（拍頭は小節頭だけ）。 */
+	| "octave-dotted"
+	/** 拍頭を抜いた16分でオクターブを往復する。 */
+	| "octave-offbeat16";
 
 /**
  * ベースの骨格。奏法（{@link BassStyle}）の上位にある、「1小節をどう扱うか」。
@@ -1294,7 +1298,9 @@ type BassSkeleton =
 	/** 小節の終わりで次の和音のルートへ半音・全音で入る（アプローチノート）。 */
 	| "approach"
 	/** ペダル。和音が変わってもベースは主音に留まる。 */
-	| "pedal";
+	| "pedal"
+	/** 4小節の最後の小節だけ別の奏法（{@link MelodyStyle.bassStyleAlt}）で書く。 */
+	| "fourth-bar";
 
 /** ベースの奏法の候補。よく使う型ほど多く入れてある。 */
 const BASS_STYLES: BassStyle[] = [
@@ -2049,6 +2055,31 @@ const phraseLeapShare = (p: CorpusPhrase): number => {
 	for (let i = 1; i < p.degrees.length; i++)
 		if (Math.abs(p.degrees[i] - p.degrees[i - 1]) >= 2) leaps++;
 	return leaps / Math.max(1, p.degrees.length - 1);
+};
+
+/** 隣接する度数が同じ（同音連打）の割合。 */
+const phraseRepeatShare = (p: CorpusPhrase): number => {
+	let same = 0;
+	for (let i = 1; i < p.degrees.length; i++)
+		if (p.degrees[i] === p.degrees[i - 1]) same++;
+	return same / Math.max(1, p.degrees.length - 1);
+};
+
+/** 16分を含み、その16分がすべて拍内の付点（付点8分＋16分）の後半である素材か。 */
+const phraseDottedBeatOnly = (p: CorpusPhrase): boolean => {
+	let has = false;
+	let at = 0;
+	for (let i = 0; i < p.rhythm.length; i++) {
+		const v = p.rhythm[i];
+		if (Math.abs(v) <= SIXTEENTH) {
+			const prev = p.rhythm[i - 1] ?? 0;
+			if (v < 0 || prev !== DOT_EIGHTH || (at - DOT_EIGHTH) % QUARTER !== 0)
+				return false;
+			has = true;
+		}
+		at += Math.abs(v);
+	}
+	return has;
 };
 
 /** 素材の音のうち8分音符の割合。 */
@@ -3000,6 +3031,48 @@ const RIFF_FIGURES: ((a: number, rnd: () => number) => RiffNote[])[] = [
 const makeRiffHalf = (rnd: () => number, lo: number, hi: number): RiffNote[] =>
 	pick(RIFF_FIGURES, rnd)(lo + Math.floor(rnd() * (hi - lo + 1)), rnd);
 
+const riffNote = (step: number, len: number): RiffNote => ({
+	step,
+	chrom: false,
+	len,
+});
+
+/** 走句リード（`lead: "riff16"`）の半小節。16分・3連（len 4/3）・拍内の付点。合計は16分8つ。 */
+const LINE_FIGURES: ((a: number) => RiffNote[])[] = [
+	(a) => [0, 1, 2, 3, 4, 3, 2, 1].map((d) => riffNote(a + d, 1)),
+	(a) => [0, -1, -2, -3, -2, -1, 0, 1].map((d) => riffNote(a + d, 1)),
+	(a) => [
+		riffNote(a, 4 / 3),
+		riffNote(a + 1, 4 / 3),
+		riffNote(a, 4 / 3),
+		riffNote(a - 1, 1),
+		riffNote(a - 2, 1),
+		riffNote(a - 1, 1),
+		riffNote(a, 1),
+	],
+	(a) => [
+		riffNote(a, 3),
+		riffNote(a + 1, 1),
+		riffNote(a + 2, 3),
+		riffNote(a + 1, 1),
+	],
+	(a) => [
+		riffNote(a, 2),
+		riffNote(a + 1, 1),
+		riffNote(a + 2, 1),
+		riffNote(a + 1, 2),
+		riffNote(a, 1),
+		riffNote(a - 1, 1),
+	],
+	(a) => [0, 2, 1, 3, 2, 4].map((d) => riffNote(a + d, 4 / 3)),
+];
+
+/** 走句リードの1小節。前半は主音の上（0〜3歩）、後半は下寄り（-1〜2歩）から始める。 */
+const makeLineBar = (rnd: () => number): RiffNote[] => [
+	...pick(LINE_FIGURES, rnd)(Math.floor(rnd() * 4)),
+	...pick(LINE_FIGURES, rnd)(Math.floor(rnd() * 4) - 1),
+];
+
 const draw = (
 	options: ComposeOptions,
 	resolvedKey: ResolvedComposeKey,
@@ -3076,7 +3149,7 @@ const draw = (
 	// **モードの曲では平行調・同主調へ振らない。** 明暗の入れ替えは長調と短調が
 	// 同じ音集合を共有していることに乗った仕掛けで、主音がドでもラでもない曲には
 	// 対応する「平行調」が無い。`rnd()` は必ず消費して、従来の曲の抽選を変えない。
-	if (rnd() < 0.25 && !center) {
+	if (rnd() < 0.25 && !center && template?.tonalMoves !== false) {
 		// **Aメロは含めない。** 調を名乗る場所なので、最初のAメロが平行調だと
 		// その曲が何調なのかが決まらないまま進む。陰らせるのはBメロ・Cメロ。
 		for (const kind of pick<SectionKind[]>(
@@ -3092,7 +3165,7 @@ const draw = (
 	 * トニックを避ける（浮遊感）。主和音を鳴らさず主音へも着地しないと、明るいのか暗いのか
 	 * 決まらない。曲全体でやると芯が無くなるので、1割強の曲でだけ引く。
 	 */
-	const floating = rnd() < 0.12;
+	const floating = rnd() < 0.12 && template?.tonalMoves !== false;
 
 	// --- 曲中転調 ---
 	//
@@ -3107,7 +3180,12 @@ const draw = (
 		for (const s of sectionPlan)
 			if (relativeKinds.has(s.kind)) s.keyShift = relativeShift;
 
-	if (relativeKinds.size === 0 && !floating && rnd() < 0.32) {
+	if (
+		relativeKinds.size === 0 &&
+		!floating &&
+		rnd() < 0.32 &&
+		template?.tonalMoves !== false
+	) {
 		const modType = pick<"chorus_up" | "color" | "dominant" | "subdominant">(
 			["chorus_up", "chorus_up", "color", "dominant", "subdominant"],
 			rnd,
@@ -3332,18 +3410,28 @@ const draw = (
 		rnd,
 	);
 	const tonic = center ? center.tonic : progA[0].startsWith("Am") ? "Am" : "C";
+	/** テンプレートの締めの表（{@link StructureTemplate.cadences}）。 */
+	const cadenceTable =
+		typeof template?.cadences === "object" ? template.cadences : undefined;
+	const loopCadence = template?.cadences === "loop";
 	/** ドミナントで終わる4小節（Bメロの末尾＝サビへの助走に使う）。 */
-	const progHalf = center
-		? pick(MODAL_HALF_DERIVATIONS, rnd)(progA, center)
-		: pick(SECTION_A2_DERIVATIONS, rnd)(progA);
+	const progHalf = cadenceTable
+		? [...progA.slice(0, 2), ...pick(cadenceTable.half, rnd)]
+		: center
+			? pick(MODAL_HALF_DERIVATIONS, rnd)(progA, center)
+			: pick(SECTION_A2_DERIVATIONS, rnd)(progA);
 	/** 主音で終わる4小節（セクションの締めに使う）。 */
-	const progFull = center
-		? pick(MODAL_FULL_DERIVATIONS, rnd)(progA, center)
-		: pick(SECTION_A3_DERIVATIONS, rnd)(progA, tonic);
+	const progFull = cadenceTable
+		? [...progA.slice(0, 2), ...pick(cadenceTable.full, rnd)]
+		: center
+			? pick(MODAL_FULL_DERIVATIONS, rnd)(progA, center)
+			: pick(SECTION_A3_DERIVATIONS, rnd)(progA, tonic);
 	/** 主和音の代理へ落とす4小節（途中のサビを続けるのに使う）。 */
-	const progDeceptive = center
-		? pick(MODAL_DECEPTIVE_DERIVATIONS, rnd)(progA, center)
-		: pick(SECTION_DECEPTIVE_DERIVATIONS, rnd)(progA, tonic);
+	const progDeceptive = cadenceTable
+		? [...progA.slice(0, 2), ...pick(cadenceTable.deceptive, rnd)]
+		: center
+			? pick(MODAL_DECEPTIVE_DERIVATIONS, rnd)(progA, center)
+			: pick(SECTION_DECEPTIVE_DERIVATIONS, rnd)(progA, tonic);
 	/** 曲の最後のサビ。ここだけは全終止で締める。 */
 	let lastChorusBar = -1;
 	for (const section of sectionPlan)
@@ -3369,7 +3457,7 @@ const draw = (
 			const put = (cells: string[]): void => {
 				progression.push(...cells.slice(0, room));
 			};
-			if (!isLastPhrase) {
+			if (!isLastPhrase || loopCadence) {
 				put(base);
 				continue;
 			}
@@ -3390,7 +3478,7 @@ const draw = (
 				// 仕組みを積んでも働かない。J-POPのサビは4小節の進行を2周して最後だけ解決する形が定石で、
 				// 締めの進行の**後ろ2小節**を使えば終止（主音への着地）は保たれる。
 				put(
-					section.kind === "chorus"
+					section.kind === "chorus" || cadenceTable
 						? [...base.slice(0, 2), ...close.slice(2)]
 						: close,
 				);
@@ -3453,7 +3541,7 @@ const draw = (
 	// 同主短調から1和音だけ借りる（{@link MODAL_BORROW}）。**次が主和音の小節**にだけ置くので、
 	// 借りた響きは必ず解決先を持つ。モードの曲では借りない——仕掛けが主音はドかラであることに
 	// 乗っているうえ、借用和音が入った瞬間にモードの色が上書きされる。
-	if (rnd() < 0.3 && !center) {
+	if (rnd() < 0.3 && !center && template?.tonalMoves !== false) {
 		const tonicNames = tonic === "Am" ? ["Am", "Am7"] : ["C", "CM7"];
 		const spots: number[] = [];
 		for (let bar = 0; bar + 1 < totalBars; bar++) {
@@ -3600,6 +3688,7 @@ const draw = (
 	/** 詠唱が唯一着地する場所＝歌のある最後のセクション。 */
 	const lastSungSection =
 		sectionPlan.filter((s) => s.spec.melody).at(-1) ?? null;
+	const barLoop = form === "chant" && template?.melody?.barLoop === true;
 	for (const section of sectionPlan) {
 		const unitCount = Math.max(1, Math.round(section.bars / 2));
 		const src = sourceOf(section.kind);
@@ -3616,7 +3705,7 @@ const draw = (
 					// 楽句が2つしか無いセクション（4小節のCメロ）は問いを2回回す——問い・答え1回ずつ
 					// では反復が無い。
 					source:
-						u % 2 === 0 || unitCount <= 2
+						u % 2 === 0 || unitCount <= 2 || barLoop
 							? src === "a2"
 								? "a"
 								: src
@@ -3752,6 +3841,15 @@ const draw = (
 		// 毎回そのまま歌い直す——4小節の型を延々と回すのが詠唱の中身で、答えの後半も含めて
 		// リズムも度数も変えない（変化音も採らない。`applyChromatic` の `skipAltered`）。
 		// 他のセクションの答え（source が同じ "answer"）は写さない。
+		if (barLoop) {
+			// 1小節の型：同じ側の最初の楽句の1小節目を全小節が写す。
+			for (let v = unitOf(curSec.startBar); v <= u; v++) {
+				if (units[v].section !== curSec) continue;
+				if (units[v].source !== units[u].source) continue;
+				return v * 2 === bar ? null : v * 2;
+			}
+			return null;
+		}
 		if (form === "chant") {
 			for (let v = unitOf(curSec.startBar); v < u; v++) {
 				if (units[v].section !== curSec) continue;
@@ -3863,7 +3961,9 @@ const draw = (
 			: pick(BASS_SKELETONS, rnd),
 		// 2小節フレーズの後半。前半と同じ型を引いたら「1小節フレーズ×2」に戻るので、
 		// **必ず別の型**にする。
-		bassStyleAlt: bassOverride ?? pick<BassStyle>(BASS_STYLES, rnd),
+		bassStyleAlt: template?.bass?.alt
+			? (pick(template.bass.alt, rnd) as BassStyle)
+			: (bassOverride ?? pick<BassStyle>(BASS_STYLES, rnd)),
 		// 短く切る奏法は、刻みの細かい書法（8分・オクターブ・オルタネイト）でだけ引く。
 		// 4分打ちやウォーキングを短く切ると、支えるべき土台がスカスカになる。
 		bassStaccato: rnd() < 0.45,
@@ -4050,11 +4150,19 @@ const draw = (
 				// 8分のグルーヴなら16分入りの素材を引きにくくする（界隈曲コーパスの主旋律の
 				// 16分間隔は中央 0.027・p75 0.095——皆無ではないので、外さずに軽くする）。手書きの素材は
 				// 16分入りの型が多いので 0.3 では詠唱の16分間隔が 0.163 になった。
+				const dottedOnly =
+					template?.melody?.smooth === true && phraseDottedBeatOnly(x);
 				if (
 					style.groove === "eighth" &&
-					x.rhythm.some((v) => Math.abs(v) <= SIXTEENTH)
+					x.rhythm.some((v) => Math.abs(v) <= SIXTEENTH) &&
+					!dottedOnly
 				)
 					w *= 0.1;
+				if (template?.melody?.smooth) {
+					w /= 1 + (phraseLeapShare(x) * 10) ** 2;
+					w /= 1 + (phraseRepeatShare(x) * 8) ** 2;
+					if (dottedOnly) w *= 2;
+				}
 			}
 			total += w;
 			return w;
@@ -5085,10 +5193,12 @@ const draw = (
 		// --- コードパッド ---
 		// Bメロ以降でコード構成音のロングトーンを鳴らす。
 		if (
-			barSec.kind === "prechorus" ||
-			barSec.kind === "chorus" ||
-			barSec.kind === "bridge" ||
-			barSec.kind === "drop_chorus"
+			template?.padKinds
+				? template.padKinds.includes(barSec.kind)
+				: barSec.kind === "prechorus" ||
+					barSec.kind === "chorus" ||
+					barSec.kind === "bridge" ||
+					barSec.kind === "drop_chorus"
 		) {
 			const padTone = nearestChordTone(
 				MELODY_HIGH + 2, // メロディの上の音域
@@ -5297,6 +5407,32 @@ const draw = (
 				[RL, DOT_EIGHTH],
 				[RL + 12, EIGHTH],
 			],
+			"octave-dotted": [
+				[RL, DOT_EIGHTH],
+				[RL + 12, DOT_EIGHTH],
+				[RL, DOT_EIGHTH],
+				[RL + 12, DOT_EIGHTH],
+				[RL, DOT_EIGHTH],
+				[RL + 12, SIXTEENTH],
+			],
+			"octave-offbeat16": [
+				[RL, -SIXTEENTH],
+				[RL + 12, SIXTEENTH],
+				[RL, SIXTEENTH],
+				[RL + 12, SIXTEENTH],
+				[RL, -SIXTEENTH],
+				[RL + 12, SIXTEENTH],
+				[RL, SIXTEENTH],
+				[RL + 12, SIXTEENTH],
+				[RL, -SIXTEENTH],
+				[RL + 12, SIXTEENTH],
+				[RL, SIXTEENTH],
+				[RL + 12, SIXTEENTH],
+				[RL, -SIXTEENTH],
+				[RL + 12, SIXTEENTH],
+				[RL, SIXTEENTH],
+				[RL + 12, SIXTEENTH],
+			],
 		};
 		// **骨格（{@link BassSkeleton}）で1小節の扱い方を決める。** 奏法だけを引くと、どの曲も
 		// 「毎小節アタマにルート＋同じ型の反復」という同一の骨格になる。
@@ -5306,14 +5442,17 @@ const draw = (
 		// - `approach`… 小節の最後の音を、次の小節のルートへ入る経過音に差し替える。
 		const isLateBar = bar % 2 === 1;
 		const activeStyle: BassStyle =
-			style.bassSkeleton === "two-bar" && isLateBar
+			(style.bassSkeleton === "two-bar" && isLateBar) ||
+			(style.bassSkeleton === "fourth-bar" && bar % 4 === 3)
 				? style.bassStyleAlt
 				: style.bassStyle;
 		/** 往復の型か。後半和音へ移すときに RL / RL+12 の対を保つ（下）。 */
 		const pairStyle =
 			activeStyle === "octave-eighth" ||
 			activeStyle === "octave-fifth" ||
-			activeStyle === "tresillo";
+			activeStyle === "tresillo" ||
+			activeStyle === "octave-dotted" ||
+			activeStyle === "octave-offbeat16";
 		const sustainBar =
 			(role === "hold" || role === "cadence") &&
 			(template?.bass?.sustainCadence ?? true);
@@ -5744,6 +5883,101 @@ const draw = (
 		}
 	}
 
+	// --- 流派テンプレートの楽器リード（{@link StructureTemplate.lead} の riff16 / riff-bar） ---
+	// 和音に付いて動かない型を回す。riff16 は4小節ブロック [x y x z] でサビだけ1オクターブ上、
+	// riff-bar は1小節の型をセクションの全小節で繰り返す。パッドは残す。
+	const lineLead =
+		template?.lead === "riff16" || template?.lead === "riff-bar"
+			? template.lead
+			: null;
+	if (lineLead) {
+		melody.length = 0;
+		submelody.length = 0;
+		harmony.length = 0;
+		harmony2.length = 0;
+		const sixteenth = scaleStep(SIXTEENTH);
+		const tonicStep = degreeToCore(scale, scale.tonic);
+		const tonicSemi = degreeToPitch(scale, scale.tonic).semi;
+		const octave = Math.ceil((60 - rootShift - tonicSemi) / 12) * 12;
+		const pitchOf = (step: number): ScaleDegree => {
+			const d = degreeToPitch(scale, coreToDegree(scale, tonicStep + step));
+			return { semi: d.semi + octave, fifth: d.fifth };
+		};
+		const thinBar = (cell: RiffNote[]): RiffNote[] => {
+			const out: RiffNote[] = [];
+			let acc = 0;
+			for (const n of cell) {
+				if (acc % 2 === 0) out.push({ ...n, chrom: false });
+				else if (out.length > 0) out[out.length - 1].len += n.len;
+				acc += n.len;
+			}
+			return out;
+		};
+		const blocks = new Map<string, RiffNote[][]>();
+		const blockOf = (side: string): RiffNote[][] => {
+			const hit = blocks.get(side);
+			if (hit) return hit;
+			let made: RiffNote[][];
+			if (lineLead === "riff-bar") {
+				const cell = [...makeRiffHalf(rnd, 1, 3), ...makeRiffHalf(rnd, -1, 1)];
+				made = [side === "a" ? thinBar(cell) : cell];
+			} else {
+				const x = makeLineBar(rnd);
+				made = [x, makeLineBar(rnd), x, makeLineBar(rnd)];
+			}
+			blocks.set(side, made);
+			return made;
+		};
+		for (let bar = 0; bar < totalBars; bar++) {
+			const sec = sectionAt(sectionPlan, bar);
+			if (!sec?.spec.melody) continue;
+			const side =
+				sec.kind === "chorus" || sec.kind === "drop_chorus"
+					? "b"
+					: sec.kind === "bridge"
+						? "c"
+						: "a";
+			const block = blockOf(side);
+			let cell = block[(bar - sec.startBar) % block.length];
+			const lift =
+				lineLead === "riff16" && side === "b"
+					? scale.core.length
+					: side === "c"
+						? 1
+						: 0;
+			if (bar === totalBars - 1)
+				cell = [
+					{ step: 0, chrom: false, len: 8 },
+					{ step: 0, chrom: false, len: -8 },
+				];
+			const k = barKeyShift[bar];
+			const fifthShift =
+				k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
+			const barStart = bar * stepsPerBar;
+			let at = 0;
+			for (const n of cell) {
+				if (n.len < 0) {
+					at -= n.len;
+					continue;
+				}
+				const base = pitchOf(n.step + lift);
+				const start = barStart + Math.round(at * sixteenth);
+				const end = barStart + Math.round((at + n.len) * sixteenth);
+				melody.push({
+					startStep: start,
+					pitchUnits: spelledToUnits(
+						base.semi - (n.chrom ? 1 : 0) + k,
+						base.fifth + (n.chrom ? 5 : 0) + fifthShift,
+						edo,
+					),
+					durationSteps: Math.max(1, end - start),
+					velocity: Math.abs(at % 4) < 1e-6 ? 100 : 82,
+				});
+				at += n.len;
+			}
+		}
+	}
+
 	// --- サブメロのアルペジオ層（{@link StructureTemplate.sub}） ---
 	// 上で引いたサブメロ（ハモリ／対旋律）は捨て、進行の構成音を16分で上へ回す「ピロピロ」を
 	// 全小節（イントロも）に置く。界隈曲の歌にハモリ・対旋律は付かず、伴奏に16分のアルペジオが
@@ -5770,19 +6004,22 @@ const draw = (
 			[...sectionPlan].reverse().find((s) => s.spec.melody) ??
 			sectionPlan[sectionPlan.length - 1];
 		const arpBars = new Set<number>();
-		for (
-			let b = lastChorus.startBar;
-			b < lastChorus.startBar + lastChorus.bars;
-			b++
-		)
-			arpBars.add(b);
+		for (const sec of template?.arpeggioKinds
+			? sectionPlan.filter((s) => template.arpeggioKinds?.includes(s.kind))
+			: [lastChorus])
+			for (let b = sec.startBar; b < sec.startBar + sec.bars; b++)
+				arpBars.add(b);
 		// **歌の上に置く。** 1オクターブ上に固定すると半分以上が主旋律と同じ高さか下で鳴る
 		// （40曲で主旋律より高い音は 43%）。主旋律の最高音以上まで塊ごとオクターブで折り上げる。
 		// 主旋律も submelody もこの後で同じだけ移調されるので、移調前どうしで比べてよい。
-		const arpFloor =
+		const melodyTop =
 			melody.length > 0
 				? melody.reduce((m, n) => Math.max(m, n.pitchUnits), 0)
 				: 6 * UNITS_PER_OCTAVE;
+		// 楽器リードはサビで1オクターブ上がるので、その上に積まない。
+		const arpFloor = lineLead
+			? Math.min(melodyTop, 6 * UNITS_PER_OCTAVE)
+			: melodyTop;
 		// 構成音と和音の区間は伴奏と同じ写像で取る（bpm 120 固定——`parseChords` は秒で刻むので、
 		// 割り切れないテンポでは小節頭が1ステップ前へ丸まる）。移調はこの後で曲全体に掛かる。
 		const groups = new Map<number, { end: number; tones: number[] }>();
@@ -5846,6 +6083,79 @@ const draw = (
 		}
 	}
 
+	// 抜く度数を主旋律から外す（塊ごとの移調の後でも残らないよう最後に掛ける）。`weakOnly` の度数は
+	// 拍の裏の短い経過音（前後と2度で、前後が違う音）にだけ残す。隣の度数のうち前後の音と重ならないほうへ寄せ、
+	// どちらへ寄せても前後と同音になるときは直前の音に吸収する。
+	const snap = template?.melody?.snap;
+	if (snap) {
+		const size = scaleSize(scale);
+		const mod = (d: number): number => ((d % size) + size) % size;
+		const eighth = scaleStep(EIGHTH);
+		const semiOf = (n: ComposedNote): number =>
+			Math.round(n.pitchUnits / UNITS_PER_SEMITONE);
+		const line = [...melody].sort((a, b) => a.startStep - b.startStep);
+		const absorbed = new Set<ComposedNote>();
+		for (let i = 0; i < line.length; i++) {
+			const n = line[i];
+			const semi = semiOf(n);
+			const deg = semitoneToDegree(scale, semi);
+			const prevNote = i > 0 && !absorbed.has(line[i - 1]) ? line[i - 1] : null;
+			const prev = prevNote ? semiOf(prevNote) : null;
+			const next = i + 1 < line.length ? semiOf(line[i + 1]) : null;
+			const passing =
+				prev !== null &&
+				next !== null &&
+				prev !== next &&
+				Math.abs(prev - semi) <= 2 &&
+				Math.abs(next - semi) <= 2 &&
+				n.startStep % quarterSteps !== 0 &&
+				n.durationSteps <= eighth;
+			if (
+				!snap.omit.includes(mod(deg)) &&
+				!(snap.weakOnly.includes(mod(deg)) && !passing)
+			)
+				continue;
+			const options = [deg - 1, deg + 1]
+				.filter((d) => !snap.omit.includes(mod(d)))
+				.map((d) => degreeToPitch(scale, d));
+			const to = options.find((p) => p.semi !== prev && p.semi !== next);
+			if (to) n.pitchUnits = spelledToUnits(to.semi, to.fifth, edo);
+			else if (
+				prevNote &&
+				prevNote.startStep + prevNote.durationSteps === n.startStep
+			) {
+				prevNote.durationSteps += n.durationSteps;
+				absorbed.add(n);
+			} else {
+				const alt = options.find((p) => p.semi !== prev) ?? options[0];
+				if (alt) n.pitchUnits = spelledToUnits(alt.semi, alt.fifth, edo);
+			}
+		}
+		if (absorbed.size > 0) {
+			const kept = melody.filter((n) => !absorbed.has(n));
+			melody.length = 0;
+			melody.push(...kept);
+		}
+	}
+
+	// 旋律の無いイントロは、ベース→パッド→サブメロの順に4分の1ずつ遅れて入る。
+	const intro = sectionPlan[0];
+	if (template?.introBuild && intro?.kind === "intro" && !intro.spec.melody) {
+		const entry = (k: number): number =>
+			(intro.startBar + Math.round((intro.bars * k) / 4)) * stepsPerBar;
+		const dropBefore = (list: ComposedNote[], until: number): void => {
+			const kept = list.filter(
+				(n) =>
+					n.startStep >= until || n.startStep < intro.startBar * stepsPerBar,
+			);
+			list.length = 0;
+			list.push(...kept);
+		};
+		dropBefore(bass, entry(1));
+		dropBefore(pad, entry(2));
+		dropBefore(submelody, entry(3));
+	}
+
 	// 曲全体を同じ量だけずらす。units は絶対音高なので、綴りの関係は保たれたまま動く。
 	const shiftUnits = semitonesToUnits(rootShift, edo);
 	if (shiftUnits !== 0)
@@ -5872,8 +6182,10 @@ const draw = (
 	// 短い音から落とす。移調が済んだ後の音をそのまま写す（トラック側のオクターブ
 	// 設定で下げるので、ここでは音高を触らない）。
 	// アルペジオ層の曲（界隈曲）は歌が1本——オクターブ下の重ねも置かない（ハモリを空にしたのと同じ理由）。
-	const octave: ComposedNote[] =
-		useOctaveLayer && !arpeggioSub
+	const fullOctave = template?.vocal?.octave === true;
+	const octave: ComposedNote[] = fullOctave
+		? melody.map((n) => ({ ...n, velocity: Math.max(40, n.velocity - 26) }))
+		: useOctaveLayer && !arpeggioSub && !lineLead
 			? melody
 					.filter(
 						(n) => n.durationSteps >= quarterSteps || rnd() < octaveCoverage,
@@ -5899,7 +6211,7 @@ const draw = (
 			duetStyle,
 			harmonyKinds,
 			harmony2: useHarmony2,
-			octaveLayer: useOctaveLayer && !arpeggioSub,
+			octaveLayer: fullOctave || (useOctaveLayer && !arpeggioSub && !lineLead),
 		},
 		tonal: { relativeKinds: [...relativeKinds], relativeShift, floating },
 		melody,
@@ -6236,7 +6548,9 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	result.instrument = template?.instruments
 		? pick(template.instruments, rnd)
 		: pickBuiltinInstrument(result, rnd);
-	result.arrange = buildArrangePlan(result, rnd, template?.chordPatterns);
+	result.arrange = template?.arrange
+		? templateArrangePlan(result, template.arrange)
+		: buildArrangePlan(result, rnd, template?.chordPatterns);
 	return result;
 };
 
@@ -6430,6 +6744,46 @@ const buildArrangePlan = (
 			: null;
 
 	return { backing, sparkle, padSections, lead, bassLayer };
+};
+
+/** テンプレートが指定した層の割り当て（{@link StructureTemplate.arrange}）。抽選しない。 */
+const templateArrangePlan = (
+	song: ComposeResult,
+	plan: NonNullable<StructureTemplate["arrange"]>,
+): ArrangePlan => {
+	const present = new Set(song.sections.map((s) => s.kind));
+	const narrow = (kinds: SectionKind[]): SectionKind[] =>
+		kinds.filter((k) => present.has(k));
+	const base: ArrangeLayer = {
+		pattern: song.chordPattern,
+		sections: null,
+		octave: 0,
+	};
+	const extra = plan.backing
+		.filter((l) => l.pattern !== base.pattern)
+		.slice(0, 2)
+		.map(
+			(l): ArrangeLayer => ({
+				pattern: l.pattern,
+				sections: l.sections && narrow(l.sections),
+				octave: 0,
+			}),
+		);
+	return {
+		backing: [base, ...extra],
+		sparkle: plan.sparkle
+			? {
+					pattern: plan.sparkle.pattern,
+					sections: narrow(plan.sparkle.sections),
+					octave: 1,
+				}
+			: null,
+		padSections: narrow(plan.pad),
+		lead: plan.lead
+			? { sections: narrow(plan.lead.sections), octave: plan.lead.octave }
+			: null,
+		bassLayer: null,
+	};
 };
 
 /**

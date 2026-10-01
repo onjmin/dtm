@@ -26,7 +26,6 @@ import {
 	nearestChordTone,
 	omitDegrees,
 } from "./compose";
-import type { CorpusPhrase } from "./phrase-types";
 import {
 	type ComposeScale,
 	degreeToPitch,
@@ -35,6 +34,7 @@ import {
 	semitoneToDegree,
 } from "./compose-scales";
 import type { PlacedSection, SectionKind } from "./compose-sections";
+import type { CorpusPhrase } from "./phrase-types";
 
 /** 1小節のステップ数（skeleton-types.ts の基準）。compose.ts の値をここで読むと循環 import の初期化順で落ちる。 */
 const BASE_STEPS_PER_BAR = 192;

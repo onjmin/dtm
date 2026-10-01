@@ -147,7 +147,9 @@ export type ComposeScaleId =
 	| "hijaz"
 	| "hungarian"
 	| "blues"
-	| "minor_blues";
+	| "minor_blues"
+	| "yonuki_penta"
+	| "penta_minor";
 
 /**
  * 主音のダイアトニック度数。0=ド, 1=レ, ..., 6=シ。
@@ -660,14 +662,40 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 		description:
 			"短調の上を♭5が半音で掠める。一つの和音でリフを回すゲーム・ロック",
 	},
+	// 界隈曲（海鮮）の歌メロ。柱はラドレミソで、シは経過音として少しだけ通し、ファは抜く。
+	yonuki_penta: {
+		id: "yonuki_penta",
+		label: "四抜き五音（ファ抜き・シ少し）",
+		tonic: 5,
+		core: [5, 0, 1, 2, 4], // ラ ド レ ミ ソ
+		strict: false,
+		omit: [3], // ファ
+		description:
+			"ラドレミソが柱。ファを抜き、シは経過音だけ。なめらかに順次で動く",
+	},
+	penta_minor: {
+		id: "penta_minor",
+		label: "五音（ラドレミソ・厳格）",
+		tonic: 5,
+		core: [5, 0, 1, 2, 4], // ラ ド レ ミ ソ
+		strict: true,
+		description:
+			"ラドレミソの5音だけで歌う。和音がセブンスでも旋律は5音に留まる",
+	},
 };
 
 /** 全音階の識別子。 */
-// minor_blues と yonuki_minor は「希望なし」の抽選に入れない（テンプレートか明示指定で使う）。
+// minor_blues・yonuki_minor・yonuki_penta・penta_minor は「希望なし」の抽選に入れない（テンプレートか明示指定で使う）。
 // 増やすと `pick` の添字がずれ、既存の `scale: "any"` の曲が変わる。
 export const COMPOSE_SCALE_IDS = (
 	Object.keys(COMPOSE_SCALES) as ComposeScaleId[]
-).filter((id) => id !== "minor_blues" && id !== "yonuki_minor");
+).filter(
+	(id) =>
+		id !== "minor_blues" &&
+		id !== "yonuki_minor" &&
+		id !== "yonuki_penta" &&
+		id !== "penta_minor",
+);
 
 /**
  * 主音の位置ごとの「和声の中心」。進行プールと終止形をここで引く。

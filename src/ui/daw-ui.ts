@@ -559,6 +559,11 @@ export const buildUI = (
           <option value="verse_chorus">Verse-Chorus（Bメロなし・洋楽風）</option>
           <option value="game_loop">ゲームBGM（ループ・16分リフ）</option>
           <option value="kaiwai">界隈曲（短調・4つ打ち・8分ベース・多回サビ）</option>
+          <option value="kaiwai_kaisen">界隈曲・海鮮リスペクト</option>
+          <option value="kaiwai_2go_lead">界隈曲・2号兄貴リスペクト</option>
+          <option value="kaiwai_2go">界隈曲・2号兄貴リスペクト（歌入り）</option>
+          <option value="kaiwai_speder2_lead">界隈曲・Speder2リスペクト</option>
+          <option value="kaiwai_speder2">界隈曲・Speder2リスペクト（歌入り）</option>
         </select>
       </div>
       <div class="dtm-row" data-dtm="compose-sections-row">

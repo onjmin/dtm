@@ -285,7 +285,13 @@ export type StructureTemplate = {
 	 * ベースの奏法・骨格の候補（compose 側の `BassStyle` / `BassSkeleton` の名前）。
 	 * `sustainCadence: false` は hold/cadence の小節でも全音符に伸ばさず型を刻み続ける。
 	 */
-	bass?: { styles: string[]; skeletons?: string[]; sustainCadence?: boolean };
+	bass?: {
+		styles: string[];
+		skeletons?: string[];
+		sustainCadence?: boolean;
+		/** 骨格 `two-bar` / `fourth-bar` が差し替える小節の奏法の候補。 */
+		alt?: string[];
+	};
 	/**
 	 * 固定ドラムパターンの候補（`DRUM_PATTERNS` のキー）。`dense` は主旋律が
 	 * 音のある小節1つあたり `notesPerBar` 音以上のときに使う候補（裏拍の音を外すなど）。
@@ -309,21 +315,57 @@ export type StructureTemplate = {
 		midBreath?: number;
 		maxLeapChoices?: number[];
 		groove?: string;
+		/** 詠唱の素材を2度寄りに引く（同音連打を減らし、拍内の付点だけは16分でも通す）。 */
+		smooth?: true;
+		/** 詠唱を1小節の型の繰り返しにする（セクション内の全小節が最初の小節を写す）。 */
+		barLoop?: true;
+		/** 主旋律から抜く度数（`omit`）と、拍の裏の短い音にだけ残す度数（`weakOnly`）。ハ長調の度数。 */
+		snap?: { omit: number[]; weakOnly: number[] };
 	};
-	/** 歌の割り当ての候補（compose 側の `DuetStyle` の名前）。 */
-	vocal?: { duetStyles?: string[] };
+	/**
+	 * 歌の割り当ての候補（compose 側の `DuetStyle` の名前）。`octave` は主旋律のオクターブ下を
+	 * 全音で重ねる（歌入り作曲では2本目の歌になる）。
+	 */
+	vocal?: { duetStyles?: string[]; octave?: true };
 	/** 仮歌詞の語彙。 */
 	lyricWords?: string[];
 	/**
 	 * 主旋律の書き方。`"riff"` は歌メロの代わりに楽器の16分リフを回す。
 	 * 手本2曲の上声は16分間隔が35〜67%あり、歌メロ（1〜13%）とは別物だった。
+	 * `"riff16"` は16分と3連の走句を4小節ブロックで回し続け、サビでオクターブ上へ移る。
+	 * `"riff-bar"` は1小節の型をセクションの全小節でそのまま繰り返す。
 	 */
-	lead?: "riff";
+	lead?: "riff" | "riff16" | "riff-bar";
 	/**
 	 * サブメロの書き方。`"arpeggio"` はハモリ／対旋律の代わりに、進行の構成音を16分で回す
 	 * アルペジオ（1オクターブ上）を全小節に置く。ハモリ2声は空になる。
 	 */
 	sub?: "arpeggio";
+	/** アルペジオを置くセクション。省略時は最後のサビだけ。 */
+	arpeggioKinds?: SectionKind[];
+	/** コードパッドを書くセクション。省略時は Bメロ・サビ・Cメロ・落ちサビ。 */
+	padKinds?: SectionKind[];
+	/**
+	 * セクションの締め（最後の4小節の後ろ2小節）。`"loop"` は締めずに進行をそのまま回す。
+	 * 表は半終止・全終止・偽終止の候補で、要素は進行と同じ綴り。
+	 */
+	cadences?:
+		| "loop"
+		| { half: string[][]; full: string[][]; deceptive: string[][] };
+	/** `false` で平行調・同主調・曲中転調・借用和音・トニック回避を掛けない。 */
+	tonalMoves?: false;
+	/** 旋律の無いイントロで、ベース→パッド→サブメロの順に4分の1ずつ遅らせて入れる。 */
+	introBuild?: true;
+	/**
+	 * 上級者モードの層の割り当て（抽選しない）。地の伴奏と同じ奏法の層は飛ばし、
+	 * 残りの先頭2本を使う。
+	 */
+	arrange?: {
+		backing: { pattern: ChordPatternType; sections: SectionKind[] | null }[];
+		sparkle: { pattern: ChordPatternType; sections: SectionKind[] } | null;
+		pad: SectionKind[];
+		lead: { sections: SectionKind[]; octave: number } | null;
+	};
 	/**
 	 * 生成エンジンの差し替え。`"skeleton"` は `composeSong` の先頭で骨格借用
 	 * （{@link file://./compose-skeleton.ts}）へ、`"splice"` は継ぎ合わせ
@@ -421,6 +463,320 @@ const KAIWAI_LYRIC_WORDS: string[] = [
 	"しろい",
 	"あかい",
 ];
+
+// 以下3流派の進行は docs/kaiwai-lineages.md の度数の規則から手で書いたもの（どの曲の写しでもない）。
+// 要素は1小節に2和音（2拍ごと）か1和音。A は全行 Am 始まり（主和音の判定が A の1和音目を見る）。
+
+/** 海鮮: Ⅵm 中心・4度上への根音進行・属7（E7）で短調Ⅰへ引き戻す。 */
+const KAISEN_A: string[][] = [
+	["Am Dm", "G C", "F Bm7-5", "E7 Am"],
+	["Am7 Dm7", "Am7 Dm7", "FM7 E7", "Am7 E7"],
+	["Am Em", "Am Dm", "FM7 E7", "Am Am7"],
+	["Am7 A7", "Dm7 G7", "CM7 FM7", "Bm7-5 E7"],
+	["Am Am7", "Dm7 E7", "Am Am7", "FM7 E7"],
+	["Am7 Em7", "Am7 Dm7", "G7 CM7", "Dm7 E7"],
+];
+const KAISEN_B: string[][] = [
+	["FM7 E7", "Am7 A7", "Dm7 G7", "CM7 E7"],
+	["Dm7 E7", "Am7 A7", "Dm7 E7", "Am Am7"],
+	["FM7 G7", "Em7 Am7", "Dm7 E7", "Am7 A7"],
+	["Am7 Dm7", "G7 CM7", "FM7 E7", "Am7 E7"],
+	["Dm7 Am7", "Dm7 E7", "FM7 Am7", "Bm7-5 E7"],
+];
+const KAISEN_C: string[][] = [
+	["FM7 Em7", "Dm7 Am7", "FM7 G7", "Bm7-5 E7"],
+	["Dm7 G7", "CM7 Am7", "Dm7 E7", "Am Am7"],
+	["FM7 G7", "Am7 Dm7", "FM7 G7", "E7 Am7"],
+];
+const KAISEN_CADENCES = {
+	half: [
+		["Dm7 G7", "FM7 E7"],
+		["FM7 Dm7", "Bm7-5 E7"],
+	],
+	full: [
+		["Dm7 E7", "Am Am7"],
+		["FM7 E7", "Am7 Am"],
+	],
+	deceptive: [
+		["Dm7 E7", "FM7 E7"],
+		["Bm7-5 E7", "FM7 G7"],
+	],
+};
+
+/**
+ * 2号兄貴: ほぼ全部セブンス・ⅣM7 多め・Ⅱm7→Ⅴ7・副次の2-5（Gm7→C7→FM7）・Ⅶm7♭5→Ⅲ7→Ⅵm7・
+ * ⅣM7⇄Ⅲm7 の往復・根が半音ずつ下がる列に2-5を挟む。
+ */
+const NIGO_A: string[][] = [
+	["Am7 Em7", "FM7 Em7", "Dm7 G7", "CM7 E7"],
+	["Am7 Dm7", "Gm7 C7", "FM7 Em7", "Bm7-5 E7"],
+	["Am7 Abm7", "Gm7 C7", "FM7 Em7", "Dm7 E7"],
+	["Am7 Bm7-5", "E7 Am7", "FM7 Em7", "Dm7 G7"],
+	["Am7 FM7", "Em7 Am7", "Dm7 G7", "CM7 A7"],
+];
+const NIGO_B: string[][] = [
+	["FM7 Em7", "FM7 Em7", "Dm7 G7", "Em7 Am7"],
+	["FM7 E7", "Am7 Gm7", "C7 FM7", "Bm7-5 E7"],
+	["Dm7 G7", "CM7 FM7", "Bm7-5 E7", "Am7 A7"],
+	["FM7 Em7", "Ebm7 Ab7", "Dm7 G7", "CM7 E7"],
+	["FM7 Fm7", "Em7 A7", "Dm7 G7", "CM7 E7"],
+];
+const NIGO_C: string[][] = [
+	["Dm7 Em7", "FM7 G7", "Em7 Am7", "Dm7 E7"],
+	["FM7 Em7", "Dm7 CM7", "Bm7-5 E7", "Am7 A7"],
+	["Gm7 C7", "FM7 Em7", "Dm7 G7", "Bm7-5 E7"],
+];
+const NIGO_CADENCES = {
+	half: [
+		["Dm7 G7", "Bm7-5 E7"],
+		["FM7 Em7", "Dm7 E7"],
+	],
+	full: [
+		["Bm7-5 E7", "Am7 Am9"],
+		["Dm7 G7", "CM7 Am7"],
+	],
+	deceptive: [
+		["Dm7 G7", "CM7 E7"],
+		["Bm7-5 E7", "FM7 E7"],
+	],
+};
+
+/**
+ * Speder2: 7th 以上の和音を少数でループ。A は1〜2和音（セクションがそのまま8小節以上の
+ * 1〜2和音区間になる）。2-5（m7→4度上の属7）は置かない——G7・Bm7-5・Gm7 を持たない。
+ */
+const SPEDER_A: string[][] = [
+	["Am7", "Am7", "Am7", "Am7"],
+	["Am7", "FM7", "Am7", "FM7"],
+	["Am7", "Am7", "Dm7", "Dm7"],
+	["Am7", "Em7", "Am7", "Em7"],
+	["Am9", "Am9", "FM7", "FM7"],
+];
+const SPEDER_B: string[][] = [
+	["FM7", "Em7", "FM7", "Em7"],
+	["FM7", "E7", "Am7", "Am7"],
+	["Dm7", "Em7", "FM7", "Em7"],
+	["CM7", "FM7", "CM7", "FM7"],
+	["FM7", "Am7", "FM7", "C7"],
+];
+const SPEDER_C: string[][] = [
+	["Dm7", "Dm7", "Em7", "Em7"],
+	["FM7", "FM7", "Em7", "Em7"],
+	["CM7", "CM7", "Dm7", "Dm7"],
+];
+
+/** 海鮮リスペクト。歌入り（UTAU）前提で、歌を2本重ねる。 */
+const KAIWAI_KAISEN: StructureTemplate = {
+	name: "kaiwai_kaisen",
+	label: "界隈曲・海鮮リスペクト",
+	plan: [
+		"intro",
+		"verse",
+		"chorus",
+		"verse",
+		"chorus",
+		"interlude",
+		"chorus",
+		"outro",
+	],
+	// 旋律なしイントロ8小節 → 歌 → いちばん厚い8小節（間奏）で歌が引っ込む → 楽器だけのアウトロ。
+	plans: [
+		[
+			"intro",
+			"verse",
+			"chorus",
+			"verse",
+			"chorus",
+			"interlude",
+			"chorus",
+			"outro",
+		],
+		["intro", "verse", "chorus", "interlude", "chorus", "outro"],
+		[
+			"intro",
+			"verse",
+			"chorus",
+			"verse",
+			"chorus",
+			"interlude",
+			"chorus",
+			"chorus",
+			"outro",
+		],
+	],
+	sectionSpecs: {
+		intro: { bars: 8, barChoices: [8], seconds: { min: 1, max: 30 } },
+		chorus: { barChoices: [8] },
+		interlude: { bars: 8, barChoices: [8] },
+		// 後半は同じ進行（サビの "b"）を使い回す。
+		outro: {
+			bars: 8,
+			barChoices: [4, 8],
+			melody: false,
+			landing: null,
+			progression: "b",
+		},
+	},
+	form: "chant",
+	sub: "arpeggio",
+	arpeggioKinds: ["interlude", "outro"],
+	padKinds: ["chorus", "interlude"],
+	bpmChoices: [130, 131, 132, 133, 134, 135],
+	baseKey: "minor",
+	scales: ["yonuki_penta"],
+	drums: { pool: ["four_clap_pedal", "dance"] },
+	instruments: ["retro_game", "synth_pop", "chip_pop"],
+	chordPatterns: ["block", "offbeat"],
+	harmonicRhythms: ["half"],
+	bass: {
+		styles: ["octave-eighth"],
+		skeletons: ["fourth-bar", "fourth-bar", "per-bar"],
+		alt: ["tresillo"],
+		sustainCadence: false,
+	},
+	progressions: { a: KAISEN_A, b: KAISEN_B, c: KAISEN_C },
+	cadences: KAISEN_CADENCES,
+	tonalMoves: false,
+	melody: {
+		wideLeapBudget: 2,
+		midBreath: 0.15,
+		groove: "eighth",
+		smooth: true,
+		snap: { omit: [3], weakOnly: [6] },
+	},
+	vocal: { duetStyles: ["none"], octave: true },
+	lyricWords: KAIWAI_LYRIC_WORDS,
+	// イントロ 2〜3層 → サビ 7層前後 → 間奏 8〜9層。
+	arrange: {
+		backing: [
+			{ pattern: "arpeggio", sections: ["chorus", "interlude", "outro"] },
+			{ pattern: "offbeat", sections: ["interlude"] },
+			{ pattern: "block", sections: ["interlude"] },
+		],
+		sparkle: { pattern: "alternating", sections: ["interlude"] },
+		pad: ["chorus", "interlude"],
+		lead: { sections: ["chorus"], octave: 0 },
+	},
+};
+
+/** 2号兄貴リスペクト（歌）。主旋律を楽器で回す版は {@link KAIWAI_NIGO_LEAD}。 */
+const KAIWAI_NIGO: StructureTemplate = {
+	name: "kaiwai_2go",
+	label: "界隈曲・2号兄貴リスペクト（歌入り）",
+	plan: ["intro", "verse", "chorus", "verse", "chorus", "chorus"],
+	// 4小節ブロックの使い回し。歌が引っ込むサビは置かない。
+	plans: [
+		["intro", "verse", "chorus", "verse", "chorus", "chorus"],
+		["intro", "verse", "chorus", "bridge", "chorus", "chorus"],
+		["verse", "chorus", "verse", "chorus"],
+	],
+	sectionSpecs: {
+		intro: { barChoices: [4, 8], seconds: { min: 1, max: 20 } },
+		bridge: { barChoices: [8] },
+	},
+	form: "motif",
+	bpmChoices: [140, 142, 145, 145, 145, 145, 148, 150, 152, 155, 160, 170, 180],
+	baseKey: "minor",
+	scales: ["penta_minor"],
+	drums: { pool: ["four_openhat", "four_openhat", "dance"] },
+	instruments: ["synth_pop", "synth_pop", "retro_game"],
+	chordPatterns: ["block", "block", "stab-eighth"],
+	harmonicRhythms: ["half"],
+	bass: {
+		styles: ["octave-eighth", "octave-eighth", "tresillo"],
+		skeletons: ["per-bar"],
+		sustainCadence: false,
+	},
+	progressions: { a: NIGO_A, b: NIGO_B, c: NIGO_C },
+	cadences: NIGO_CADENCES,
+	tonalMoves: false,
+	padKinds: ["intro", "verse", "chorus", "bridge"],
+	melody: {
+		groove: "sixteenth",
+		maxLeapChoices: [7, 9, 10, 12, 14],
+		wideLeapBudget: 4,
+	},
+	vocal: { duetStyles: ["none"] },
+	arrange: {
+		backing: [
+			{ pattern: "stab-quarter", sections: ["chorus", "bridge"] },
+			{ pattern: "offbeat", sections: ["verse"] },
+		],
+		sparkle: null,
+		pad: ["intro", "verse", "chorus", "bridge"],
+		lead: { sections: ["chorus"], octave: 1 },
+	},
+};
+/** 2号兄貴リスペクト（楽器リード）。原曲どおりインストで、リードが休まず鳴る。 */
+const KAIWAI_NIGO_LEAD: StructureTemplate = {
+	...KAIWAI_NIGO,
+	name: "kaiwai_2go_lead",
+	label: "界隈曲・2号兄貴リスペクト",
+	lead: "riff16",
+};
+
+/** Speder2 リスペクト（歌）。主旋律を楽器で回す版は {@link KAIWAI_SPEDER_LEAD}。 */
+const KAIWAI_SPEDER: StructureTemplate = {
+	name: "kaiwai_speder2",
+	label: "界隈曲・Speder2リスペクト（歌入り）",
+	plan: ["intro", "verse", "chorus", "verse", "chorus"],
+	// 旋律なし16小節イントロ（層を足していく）→ 4小節ブロックの使い回し。
+	plans: [
+		["intro", "verse", "chorus", "verse", "chorus"],
+		["intro", "verse", "chorus", "bridge", "chorus"],
+		["intro", "chorus", "verse", "chorus", "chorus"],
+	],
+	sectionSpecs: {
+		intro: {
+			bars: 16,
+			barChoices: [16],
+			seconds: { min: 1, max: 60 },
+			progression: "a",
+		},
+		verse: { barChoices: [8, 16] },
+		chorus: { barChoices: [8, 16] },
+		bridge: { barChoices: [8] },
+	},
+	form: "chant",
+	sub: "arpeggio",
+	arpeggioKinds: ["intro", "chorus"],
+	padKinds: ["intro", "verse", "chorus", "bridge"],
+	introBuild: true,
+	bpmChoices: [110, 112, 115, 118, 120, 122, 125, 128, 130, 132, 135],
+	baseKey: "minor",
+	scales: ["penta_minor", "yonuki_penta"],
+	drums: { pool: ["four_clap_16hat"] },
+	instruments: ["ep_celesta", "ep_celesta", "chip_pop"],
+	chordPatterns: ["block"],
+	harmonicRhythms: ["bar", "bar", "slow"],
+	bass: {
+		styles: ["octave-dotted", "octave-offbeat16"],
+		skeletons: ["per-bar"],
+		sustainCadence: false,
+	},
+	progressions: { a: SPEDER_A, b: SPEDER_B, c: SPEDER_C },
+	cadences: "loop",
+	tonalMoves: false,
+	melody: { barLoop: true },
+	vocal: { duetStyles: ["none"] },
+	// 和音の層を刻みの長さ違いで重ねる（全音符＝地・4分・8分・16分）。
+	arrange: {
+		backing: [
+			{ pattern: "stab-quarter", sections: null },
+			{ pattern: "stab-eighth", sections: ["chorus", "bridge"] },
+		],
+		sparkle: { pattern: "stab-sixteenth", sections: ["chorus"] },
+		pad: ["intro", "verse", "chorus", "bridge"],
+		lead: null,
+	},
+};
+/** Speder2 リスペクト（楽器リード）。原曲どおりインストで、1小節の型を楽器で回す。 */
+const KAIWAI_SPEDER_LEAD: StructureTemplate = {
+	...KAIWAI_SPEDER,
+	name: "kaiwai_speder2_lead",
+	label: "界隈曲・Speder2リスペクト",
+	lead: "riff-bar",
+};
 
 export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 	// 1コーラス（現行デフォルト、短い曲・初心者向け）
@@ -665,6 +1021,13 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 		vocal: { duetStyles: ["none", "section", "phrase", "chorus", "verse"] },
 		lyricWords: KAIWAI_LYRIC_WORDS,
 	},
+
+	// 界隈曲の流派（docs/kaiwai-lineages.md の規則案）。
+	KAIWAI_KAISEN,
+	KAIWAI_NIGO,
+	KAIWAI_NIGO_LEAD,
+	KAIWAI_SPEDER,
+	KAIWAI_SPEDER_LEAD,
 ];
 
 /** テンプレートのセクション仕様（上書きがあれば {@link SECTION_SPECS} に重ねる）。 */

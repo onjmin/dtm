@@ -1763,6 +1763,550 @@ console.log("● 界隈曲テンプレート");
 }
 
 // ============================================================
+// 2.95 界隈曲の流派（kaiwai_kaisen / kaiwai_2go / kaiwai_speder2 と楽器リード版）
+//     docs/kaiwai-lineages.md の規則案が生成物に出ているか（到達の検算。良否ではない）。
+//     音程・音の割合は同文書の測り方（8分以上の休符を挟む対は数えない・音価で重み付け）。
+// ============================================================
+
+console.log("● 界隈曲の流派テンプレート");
+{
+	const N = 30;
+	const avg = (xs: number[]): number =>
+		xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
+	const pc = (n: number): number => ((n % 12) + 12) % 12;
+	/** 進行を2拍ごとの和音列へ（1小節1和音は2つ並べる）。 */
+	const slotsOf = (prog: string): string[] =>
+		prog.split("|").flatMap((b) => {
+			const cs = b.trim().split(/\s+/);
+			return cs.length === 1 ? [cs[0], cs[0]] : cs;
+		});
+	const rootOf = (c: string): number => pc(parseChord(c).notes[0] ?? 0);
+	const isM7 = (c: string): boolean => /^[A-G][#b]?m7(?!-5)/.test(c);
+	const isDom7 = (c: string): boolean => /^[A-G][#b]?(7|9)/.test(c);
+	/** 和音の変わり目のうち Ⅱm7→Ⅴ7（m7 から4度上の属7）の数。 */
+	const twoFives = (slots: string[]): number => {
+		let n = 0;
+		for (let i = 1; i < slots.length; i++)
+			if (
+				isM7(slots[i - 1]) &&
+				isDom7(slots[i]) &&
+				pc(rootOf(slots[i]) - rootOf(slots[i - 1])) === 5
+			)
+				n++;
+		return n;
+	};
+	const drumHits = (name: string, pitches: number[]): number[] =>
+		(DRUM_PATTERNS[name]?.pattern ?? [])
+			.filter((p) => pitches.includes(p.pitch))
+			.map((p) => p.step);
+	const KICK = [36];
+	const CLAP = [39];
+	const HAT = [42, 44, 46];
+	/** 主旋律の音を曲の主音ラ＝9 の枠（ハ長調／イ短調）へ戻したピッチクラス。 */
+	const melPcs = (song: ReturnType<typeof composeSong>): number[] =>
+		[...song.melody]
+			.sort((a, b) => a.startStep - b.startStep)
+			.map((n) =>
+				pc(Math.round(n.pitchUnits / UNITS_PER_SEMITONE) - song.rootShift),
+			);
+	const sectionsLayers = (
+		song: ReturnType<typeof composeSong>,
+	): Map<number, number> => {
+		const layers = buildAdvancedLayers(song, {
+			stepsPerBar: STEPS_PER_BAR,
+			preset: INSTRUMENT_PRESETS[song.instrument],
+		});
+		const out = new Map<number, number>();
+		song.sections.forEach((s, i) => {
+			const lo = s.startBar * STEPS_PER_BAR;
+			const hi = (s.startBar + s.bars) * STEPS_PER_BAR;
+			out.set(
+				i,
+				layers.filter((l) =>
+					l.notes.some((n) => n.startStep >= lo && n.startStep < hi),
+				).length,
+			);
+		});
+		return out;
+	};
+	const notesIn = (
+		notes: { startStep: number }[],
+		fromBar: number,
+		toBar: number,
+	): number =>
+		notes.filter(
+			(n) =>
+				n.startStep >= fromBar * STEPS_PER_BAR &&
+				n.startStep < toBar * STEPS_PER_BAR,
+		).length;
+	const PENTA = new Set([9, 0, 2, 4, 7]);
+
+	for (const name of [
+		"kaiwai_kaisen",
+		"kaiwai_2go",
+		"kaiwai_2go_lead",
+		"kaiwai_speder2",
+		"kaiwai_speder2_lead",
+	]) {
+		const tmpl = STRUCTURE_TEMPLATES.find((t) => t.name === name);
+		check(`${name} テンプレートがある`, tmpl !== undefined, "無い");
+		if (!tmpl) continue;
+		const lineage = name.replace(/_lead$/, "");
+		const bpmRange: [number, number] =
+			lineage === "kaiwai_kaisen"
+				? [130, 135]
+				: lineage === "kaiwai_2go"
+					? [140, 180]
+					: [110, 135];
+		const m = {
+			step: [] as number[],
+			same: [] as number[],
+			six: [] as number[],
+			dotted: [] as number[],
+			triplet: [] as number[],
+			penta: [] as number[],
+			top5: [] as number[],
+			fa: [] as number[],
+			range: [] as number[],
+			amShare: [] as number[],
+			fourthUp: [] as number[],
+			seventh: [] as number[],
+			twoFive: [] as number[],
+			tresilloBars: [] as number[],
+			barLoop: [] as number[],
+			occupancy: [] as number[],
+			lift: [] as number[],
+		};
+		let threw = 0;
+		for (let seed = 1; seed <= N; seed++) {
+			const tag = `${name} seed=${seed}`;
+			let song: ReturnType<typeof composeSong>;
+			try {
+				song = composeSong({
+					stepsPerBar: STEPS_PER_BAR,
+					edo: 12,
+					template: name,
+					random: seededRandom(seed * 7919),
+				});
+			} catch (e) {
+				threw++;
+				check(`${tag} 例外なし`, false, String(e));
+				continue;
+			}
+			// --- テンポ・調・音階・候補 ---
+			check(
+				`${tag} bpm が ${bpmRange.join("〜")}`,
+				song.bpm >= bpmRange[0] && song.bpm <= bpmRange[1],
+				`${song.bpm}`,
+			);
+			check(`${tag} 短調`, song.keyName.endsWith("m"), song.keyName);
+			check(
+				`${tag} 音階がテンプレートの候補`,
+				(tmpl.scales ?? []).includes(song.scaleId),
+				song.scaleId,
+			);
+			check(
+				`${tag} ドラムがテンプレートの候補`,
+				(tmpl.drums?.pool ?? []).includes(song.drum),
+				song.drum,
+			);
+			check(
+				`${tag} 楽器がテンプレートの候補`,
+				(tmpl.instruments ?? []).includes(song.instrument),
+				song.instrument,
+			);
+			// --- ドラム: 4つ打ち＋裏8分のハット（海鮮・Speder2 は2・4拍クラップ、Speder2 は16分裏の閉じハット） ---
+			const kick = drumHits(song.drum, KICK);
+			const hat = drumHits(song.drum, HAT);
+			check(
+				`${tag} ドラムが4つ打ち＋裏8分ハット`,
+				[0, 48, 96, 144].every((s) => kick.includes(s)) &&
+					[24, 72, 120, 168].every((s) => hat.includes(s)),
+				song.drum,
+			);
+			if (lineage !== "kaiwai_2go") {
+				const clap = drumHits(song.drum, CLAP);
+				check(
+					`${tag} ドラムが2・4拍クラップ`,
+					clap.includes(48) && clap.includes(144),
+					song.drum,
+				);
+			}
+			if (lineage === "kaiwai_speder2")
+				check(
+					`${tag} 16分裏のハットが1小節2打以上`,
+					hat.filter((s) => s % 24 === 12).length >= 2,
+					song.drum,
+				);
+
+			// --- 和音 ---
+			const slots = slotsOf(song.chordProgression);
+			const bars = song.chordProgression.split("|");
+			const changes = slots.filter((c, i) => i > 0 && c !== slots[i - 1]);
+			const fourth =
+				slots.filter(
+					(c, i) =>
+						i > 0 &&
+						c !== slots[i - 1] &&
+						pc(rootOf(c) - rootOf(slots[i - 1])) === 5,
+				).length / Math.max(1, changes.length);
+			m.fourthUp.push(fourth);
+			const seventh = slots.filter((c) => /7|9/.test(c)).length / slots.length;
+			m.seventh.push(seventh);
+			m.twoFive.push(twoFives(slots) / Math.max(1, changes.length));
+			if (lineage === "kaiwai_kaisen") {
+				const am = slots.filter((c) => /^Am(?!aj|M)/.test(c)).length;
+				m.amShare.push(am / slots.length);
+				check(
+					`${tag} 和音が2拍ごと（2和音の小節が9割以上）`,
+					bars.filter((b) => b.trim().includes(" ")).length / bars.length >=
+						0.9,
+					song.chordProgression.slice(0, 80),
+				);
+				check(
+					`${tag} 属7で短調Ⅰへ引き戻す（E7→Am 系）`,
+					slots.some((c, i) => c === "E7" && /^Am/.test(slots[i + 1] ?? "")),
+					"無い",
+				);
+			}
+			if (lineage === "kaiwai_2go") {
+				check(
+					`${tag} セブンスが拍の8割以上`,
+					seventh >= 0.8,
+					seventh.toFixed(2),
+				);
+				check(`${tag} ⅣM7（FM7）がある`, slots.includes("FM7"), "無い");
+			}
+			if (lineage === "kaiwai_speder2") {
+				check(`${tag} 7th 以上が9割以上`, seventh >= 0.9, seventh.toFixed(2));
+				check(`${tag} 2-5 が無い`, twoFives(slots) === 0, `${twoFives(slots)}`);
+				const heads = bars.map((b) => b.trim().split(/\s+/));
+				let vamp = false;
+				for (let i = 0; i + 8 <= heads.length && !vamp; i++)
+					vamp = new Set(heads.slice(i, i + 8).flat()).size <= 2;
+				check(`${tag} 1〜2和音で8小節以上回す区間がある`, vamp, "無い");
+			}
+
+			// --- ベース ---
+			const bass = [...song.bass].sort((a, b) => a.startStep - b.startStep);
+			const bassSemis = bass.map((n) =>
+				Math.round(n.pitchUnits / UNITS_PER_SEMITONE),
+			);
+			let pairs = 0;
+			let oct = 0;
+			for (let i = 1; i < bass.length; i++) {
+				if (
+					Math.floor(bass[i].startStep / STEPS_PER_BAR) !==
+					Math.floor(bass[i - 1].startStep / STEPS_PER_BAR)
+				)
+					continue;
+				pairs++;
+				if (Math.abs(bassSemis[i] - bassSemis[i - 1]) === 12) oct++;
+			}
+			if (song.stats.bassStyle !== "tresillo")
+				check(
+					`${tag} ベースがオクターブ往復`,
+					pairs > 0 && oct / pairs >= 0.6,
+					`${oct}/${pairs}`,
+				);
+			const onsetsByBar = new Map<number, number[]>();
+			for (const n of bass) {
+				const b = Math.floor(n.startStep / STEPS_PER_BAR);
+				onsetsByBar.set(b, [
+					...(onsetsByBar.get(b) ?? []),
+					n.startStep % STEPS_PER_BAR,
+				]);
+			}
+			const tresillo = [...onsetsByBar.values()].filter(
+				(on) => on.includes(36) && on.includes(132),
+			).length;
+			if (lineage !== "kaiwai_speder2")
+				m.tresilloBars.push(tresillo / Math.max(1, onsetsByBar.size));
+			if (song.stats.bassStyle === "tresillo")
+				check(
+					`${tag} 3:3:2 のベースが小節の半分以上`,
+					tresillo / Math.max(1, onsetsByBar.size) >= 0.5,
+					`${tresillo}/${onsetsByBar.size}`,
+				);
+			if (lineage === "kaiwai_speder2") {
+				const onBeat = bass.filter(
+					(n) => n.startStep % 48 === 0 && n.startStep % STEPS_PER_BAR !== 0,
+				).length;
+				check(
+					`${tag} ベースが拍頭をずらす（2〜4拍の頭が 2割以下）`,
+					onBeat / Math.max(1, bass.length) <= 0.2,
+					`${onBeat}/${bass.length}`,
+				);
+			} else
+				check(
+					`${tag} ベースが8分オクターブか3:3:2`,
+					["octave-eighth", "tresillo"].includes(song.stats.bassStyle),
+					song.stats.bassStyle,
+				);
+
+			// --- 旋律 ---
+			const mel = [...song.melody].sort((a, b) => a.startStep - b.startStep);
+			const semis = mel.map((n) =>
+				Math.round(n.pitchUnits / UNITS_PER_SEMITONE),
+			);
+			// 音程は docs/kaiwai-lineages.md の測り方（8分以上の休符を挟む対は数えない）。
+			let step = 0;
+			let same = 0;
+			let pairsMel = 0;
+			for (let i = 1; i < semis.length; i++) {
+				if (
+					mel[i].startStep -
+						(mel[i - 1].startStep + mel[i - 1].durationSteps) >=
+					24
+				)
+					continue;
+				pairsMel++;
+				const d = Math.abs(semis[i] - semis[i - 1]);
+				if (d === 0) same++;
+				else if (d <= 2) step++;
+			}
+			m.step.push(step / Math.max(1, pairsMel));
+			m.same.push(same / Math.max(1, pairsMel));
+			m.six.push(
+				mel.filter((n) => n.durationSteps <= STEPS_PER_BAR / 16).length /
+					Math.max(1, mel.length),
+			);
+			m.dotted.push(
+				mel.filter((n) => n.durationSteps === 36 && n.startStep % 48 === 0)
+					.length / Math.max(1, mel.length),
+			);
+			m.triplet.push(
+				mel.filter((n) => n.startStep % 16 === 0 && n.startStep % 12 !== 0)
+					.length / Math.max(1, mel.length),
+			);
+			// 音の割合は音価で重み付けする（同上）。
+			const pcs = melPcs(song);
+			const durOf = (keep: (p: number) => boolean): number =>
+				mel.reduce((a, n, i) => a + (keep(pcs[i]) ? n.durationSteps : 0), 0) /
+				Math.max(
+					1,
+					mel.reduce((a, n) => a + n.durationSteps, 0),
+				);
+			m.penta.push(durOf((p) => PENTA.has(p)));
+			const byPc = Array.from({ length: 12 }, (_, k) => durOf((p) => p === k));
+			m.top5.push(
+				[...byPc]
+					.sort((a, b) => b - a)
+					.slice(0, 5)
+					.reduce((a, b) => a + b, 0),
+			);
+			m.fa.push(durOf((p) => p === 5));
+			m.range.push(Math.max(...semis) - Math.min(...semis));
+
+			// --- 構成 ---
+			const first = song.sections[0];
+			const layers = sectionsLayers(song);
+			if (lineage === "kaiwai_kaisen") {
+				check(
+					`${tag} 旋律なしの8小節イントロ`,
+					first.kind === "intro" &&
+						first.bars === 8 &&
+						notesIn(song.melody, 0, 8) === 0,
+					`${first.kind}${first.bars}`,
+				);
+				const inter = song.sections.findIndex((s) => s.kind === "interlude");
+				const sec = song.sections[inter];
+				check(
+					`${tag} 8小節の間奏で歌が引っ込む`,
+					inter >= 0 &&
+						sec.bars === 8 &&
+						notesIn(song.melody, sec.startBar, sec.startBar + 8) === 0,
+					song.sections.map((s) => s.kind).join("-"),
+				);
+				const maxLayers = Math.max(...layers.values());
+				check(
+					`${tag} 間奏が一番厚い（イントロ ≤3 層・間奏 ≥7 層）`,
+					inter >= 0 &&
+						layers.get(inter) === maxLayers &&
+						(layers.get(inter) ?? 0) >= 7 &&
+						(layers.get(0) ?? 9) <= 3,
+					[...layers.values()].join(","),
+				);
+				const last = song.sections.at(-1);
+				check(
+					`${tag} 楽器だけのアウトロ`,
+					last?.kind === "outro" &&
+						notesIn(song.melody, last.startBar, song.bars) === 0,
+					`${last?.kind}`,
+				);
+				check(
+					`${tag} 歌を2本重ねる（オクターブ下の全音重ね）`,
+					song.octave.length === song.melody.length && song.melody.length > 0,
+					`${song.octave.length}/${song.melody.length}`,
+				);
+			}
+			if (lineage === "kaiwai_2go") {
+				const quiet = song.sections.filter(
+					(s) =>
+						s.kind !== "intro" &&
+						notesIn(song.melody, s.startBar, s.startBar + s.bars) === 0,
+				);
+				check(
+					`${tag} 歌（リード）が引っ込むセクションが無い`,
+					quiet.length === 0,
+					quiet.map((s) => s.kind).join(","),
+				);
+			}
+			if (lineage === "kaiwai_speder2") {
+				check(
+					`${tag} 旋律なしの16小節イントロ`,
+					first.kind === "intro" &&
+						first.bars === 16 &&
+						notesIn(song.melody, 0, 16) === 0,
+					`${first.kind}${first.bars}`,
+				);
+				check(
+					`${tag} イントロで層を足していく（ベース5小節目・サブメロ13小節目から）`,
+					notesIn(song.bass, 0, 4) === 0 &&
+						notesIn(song.bass, 4, 16) > 0 &&
+						notesIn(song.pad, 0, 8) === 0 &&
+						notesIn(song.submelody, 0, 12) === 0 &&
+						notesIn(song.submelody, 12, 16) > 0,
+					`bass ${notesIn(song.bass, 0, 4)}/${notesIn(song.bass, 4, 16)} sub ${notesIn(song.submelody, 0, 12)}/${notesIn(song.submelody, 12, 16)}`,
+				);
+				// 1小節の型の繰り返し：歌のあるセクションの小節が、そのセクションの1小節目と同じリズム
+				const keyOf = (bar: number, withPitch: boolean): string =>
+					song.melody
+						.filter(
+							(n) =>
+								n.startStep >= bar * STEPS_PER_BAR &&
+								n.startStep < (bar + 1) * STEPS_PER_BAR,
+						)
+						.map(
+							(n) =>
+								`${n.startStep % STEPS_PER_BAR}:${n.durationSteps}${withPitch ? `:${n.pitchUnits}` : ""}`,
+						)
+						.join(",");
+				let same1 = 0;
+				let total1 = 0;
+				for (const s of song.sections) {
+					if (!s.spec.melody) continue;
+					const head = keyOf(s.startBar, name.endsWith("_lead"));
+					for (let b = s.startBar + 1; b < s.startBar + s.bars; b++) {
+						if (b === song.bars - 1) continue;
+						total1++;
+						if (keyOf(b, name.endsWith("_lead")) === head) same1++;
+					}
+				}
+				m.barLoop.push(same1 / Math.max(1, total1));
+			}
+			if (name.endsWith("_lead")) {
+				let sounding = 0;
+				let span = 0;
+				for (const s of song.sections) {
+					if (!s.spec.melody) continue;
+					span += s.bars * STEPS_PER_BAR;
+					sounding += song.melody
+						.filter(
+							(n) =>
+								n.startStep >= s.startBar * STEPS_PER_BAR &&
+								n.startStep < (s.startBar + s.bars) * STEPS_PER_BAR,
+						)
+						.reduce((a, n) => a + n.durationSteps, 0);
+				}
+				m.occupancy.push(sounding / Math.max(1, span));
+				check(
+					`${tag} ハモリ・オクターブ重ねが無い（楽器リード）`,
+					song.harmony.length === 0 && song.octave.length === 0,
+					`${song.harmony.length}/${song.octave.length}`,
+				);
+			}
+			if (name === "kaiwai_2go_lead") {
+				const meanOf = (kind: string): number => {
+					const ps = song.melody
+						.filter((n) => {
+							const s = song.sections.find(
+								(x) =>
+									n.startStep >= x.startBar * STEPS_PER_BAR &&
+									n.startStep < (x.startBar + x.bars) * STEPS_PER_BAR,
+							);
+							return s?.kind === kind;
+						})
+						.map((n) => n.pitchUnits / UNITS_PER_SEMITONE);
+					return avg(ps);
+				};
+				m.lift.push(meanOf("chorus") - meanOf("verse"));
+			}
+		}
+		check(`${name} 例外なし`, threw === 0, `${threw}/${N}`);
+		const f = (xs: number[]): string => avg(xs).toFixed(3);
+		// --- 30曲の平均で見る規則 ---
+		if (lineage === "kaiwai_kaisen") {
+			check("海鮮: ラドレミソが旋律の9割以上", avg(m.penta) >= 0.9, f(m.penta));
+			check("海鮮: ファが 3% 未満", avg(m.fa) < 0.03, f(m.fa));
+			// 規則は 64%。ファ抜き・シ少しへ寄せた後は 5割前後まで（比較群 55%）。
+			check("海鮮: 2度が隣接音程の 45% 以上", avg(m.step) >= 0.45, f(m.step));
+			check("海鮮: 同音連打が 12% 以下", avg(m.same) <= 0.12, f(m.same));
+			check("海鮮: 16分の音価が 15% 以下", avg(m.six) <= 0.15, f(m.six));
+			check("海鮮: 拍内の付点が出る", avg(m.dotted) > 0, f(m.dotted));
+			check(
+				"海鮮: Ⅵm（Am 系）が和音の 2割以上",
+				avg(m.amShare) >= 0.2,
+				f(m.amShare),
+			);
+			check(
+				"海鮮: 4度上への根音進行が 3割以上",
+				avg(m.fourthUp) >= 0.3,
+				f(m.fourthUp),
+			);
+			check(
+				"海鮮: 3:3:2 の小節が 15% 以上の曲が出る",
+				m.tresilloBars.some((x) => x >= 0.15),
+				m.tresilloBars.map((x) => x.toFixed(2)).join(" "),
+			);
+		}
+		if (lineage === "kaiwai_2go") {
+			check("2号: 旋律がドレミソラ 9割以上", avg(m.penta) >= 0.9, f(m.penta));
+			check(
+				"2号: 2-5 が和音の変わり目の 5% 以上ある曲が 7割以上",
+				m.twoFive.filter((x) => x >= 0.05).length >= m.twoFive.length * 0.7,
+				m.twoFive.map((x) => x.toFixed(2)).join(" "),
+			);
+			// 歌の版は既存の語彙（16分グルーヴ）までで、実測は 3割弱（規則は 47%）。
+			check(
+				"2号: 16分の音価が 2割5分以上",
+				avg(m.six) >= (name.endsWith("_lead") ? 0.4 : 0.25),
+				f(m.six),
+			);
+			if (name.endsWith("_lead")) {
+				check("2号（楽器リード）: 3連が出る", avg(m.triplet) > 0, f(m.triplet));
+				check(
+					"2号（楽器リード）: リードが鳴り続ける（占有 9割以上）",
+					avg(m.occupancy) >= 0.9,
+					f(m.occupancy),
+				);
+				check(
+					"2号（楽器リード）: サビでオクターブ上へ移る（平均 9 半音以上）",
+					avg(m.lift) >= 9,
+					f(m.lift),
+				);
+				check(
+					"2号（楽器リード）: 音域が広い（平均 20 半音以上）",
+					avg(m.range) >= 20,
+					f(m.range),
+				);
+			}
+		}
+		if (lineage === "kaiwai_speder2") {
+			check("Speder2: 旋律の上位5音が9割以上", avg(m.top5) >= 0.9, f(m.top5));
+			check(
+				"Speder2: 1小節の型をそのまま繰り返す（8割以上）",
+				avg(m.barLoop) >= 0.8,
+				f(m.barLoop),
+			);
+		}
+		console.log(
+			`  ${name.padEnd(20)} 2度 ${f(m.step)} / 同音 ${f(m.same)} / 16分 ${f(m.six)} / 付点 ${f(m.dotted)} / 3連 ${f(m.triplet)} / 5音 ${f(m.penta)} / ファ ${f(m.fa)} / 音域 ${avg(m.range).toFixed(1)} / Am ${f(m.amShare)} / 4度上 ${f(m.fourthUp)} / 7th ${f(m.seventh)} / 2-5 ${f(m.twoFive)} / 3:3:2小節 ${f(m.tresilloBars)} / 1小節反復 ${f(m.barLoop)} / 占有 ${f(m.occupancy)} / サビ上げ ${avg(m.lift).toFixed(1)}`,
+		);
+	}
+}
+
+// ============================================================
 // 3. 31平均律でも成立するか
 // ============================================================
 

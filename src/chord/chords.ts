@@ -19,7 +19,11 @@ export type ChordPatternType =
 	| "arpeggio-fast"
 	| "offbeat"
 	| "yatsume"
-	| "alternating";
+	| "alternating"
+	/** 和音を4分・8分・16分で刻み直す。 */
+	| "stab-quarter"
+	| "stab-eighth"
+	| "stab-sixteenth";
 
 export type ChordPlacement = {
 	startStep: number;
@@ -291,6 +295,28 @@ export const buildChordPlacements = (
 									velocity: 100,
 								});
 							}
+						}
+					}
+				} else if (
+					patternType === "stab-quarter" ||
+					patternType === "stab-eighth" ||
+					patternType === "stab-sixteenth"
+				) {
+					const div =
+						patternType === "stab-quarter"
+							? 4
+							: patternType === "stab-eighth"
+								? 8
+								: 16;
+					const interval = Math.max(1, Math.floor(stepsPerBar / div));
+					for (let at = 0; at < noteLength; at += interval) {
+						for (const noteOffset of notes) {
+							placements.push({
+								startStep: chord.whenStep + at,
+								pitchUnits: toUnits(noteOffset),
+								durationSteps: Math.min(interval, noteLength - at),
+								velocity: 100,
+							});
 						}
 					}
 				} else if (patternType === "alternating") {

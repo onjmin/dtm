@@ -292,6 +292,56 @@ export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
 			{ step: 144, pitch: DRUM_KEYS.closedHihat, velocity: 0.5 },
 		],
 	},
+	// 4つ打ち＋2・4拍クラップ＋裏8分のペダルハット。
+	four_clap_pedal: {
+		label: "4つ打ち（クラップ・裏拍ペダルハット）",
+		pattern: [
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 24, pitch: DRUM_KEYS.pedalHihat, velocity: 0.6 },
+			{ step: 48, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 48, pitch: DRUM_KEYS.handClap, velocity: 0.9 },
+			{ step: 72, pitch: DRUM_KEYS.pedalHihat, velocity: 0.6 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 120, pitch: DRUM_KEYS.pedalHihat, velocity: 0.6 },
+			{ step: 144, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 144, pitch: DRUM_KEYS.handClap, velocity: 0.9 },
+			{ step: 168, pitch: DRUM_KEYS.pedalHihat, velocity: 0.6 },
+		],
+	},
+	// 4つ打ち＋裏8分のオープンハット（クラップ無し）。
+	four_openhat: {
+		label: "4つ打ち（裏拍オープンハット）",
+		pattern: [
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 24, pitch: DRUM_KEYS.openHihat, velocity: 0.7 },
+			{ step: 48, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 72, pitch: DRUM_KEYS.openHihat, velocity: 0.7 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 120, pitch: DRUM_KEYS.openHihat, velocity: 0.7 },
+			{ step: 144, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 168, pitch: DRUM_KEYS.openHihat, velocity: 0.7 },
+		],
+	},
+	// 4つ打ち＋2・4拍クラップ＋裏8分オープンハット＋各拍の4つ目の16分に閉じハット。
+	four_clap_16hat: {
+		label: "4つ打ち（クラップ・裏拍ハット＋16分裏ハット）",
+		pattern: [
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 24, pitch: DRUM_KEYS.openHihat, velocity: 0.6 },
+			{ step: 36, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 48, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 48, pitch: DRUM_KEYS.handClap, velocity: 0.9 },
+			{ step: 72, pitch: DRUM_KEYS.openHihat, velocity: 0.6 },
+			{ step: 84, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 120, pitch: DRUM_KEYS.openHihat, velocity: 0.6 },
+			{ step: 132, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+			{ step: 144, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 144, pitch: DRUM_KEYS.handClap, velocity: 0.9 },
+			{ step: 168, pitch: DRUM_KEYS.openHihat, velocity: 0.6 },
+			{ step: 180, pitch: DRUM_KEYS.closedHihat, velocity: 0.4 },
+		],
+	},
 	// --- 界隈曲の骨格のドラム型（scripts/corpus/extract-skeletons.ts が生成。ここから） ---
 	// 出自: Green wisteria/嵌り合う体は (240104.mid)
 	kaiwai_1: {

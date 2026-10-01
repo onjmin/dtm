@@ -48,6 +48,7 @@ import {
 	SECTION_SPECS,
 	type StructureTemplate,
 } from "./compose-sections";
+import type { CorpusPhrase } from "./phrase-types";
 import {
 	type BankSection,
 	type BassFigure,
@@ -55,7 +56,6 @@ import {
 	isSungKind,
 	type SectionBank,
 } from "./section-bank-types";
-import type { CorpusPhrase } from "./phrase-types";
 
 const BASE_STEPS_PER_BAR = 192;
 

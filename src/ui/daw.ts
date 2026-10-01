@@ -4809,6 +4809,9 @@ export const mountDAW = (
             <option value="offbeat">裏打ち</option>
             <option value="yatsume">ヤツメ穴</option>
             <option value="alternating">交互奏</option>
+            <option value="stab-quarter">4分刻み</option>
+            <option value="stab-eighth">8分刻み</option>
+            <option value="stab-sixteenth">16分刻み</option>
           </select>
         </div>
         <div class="dtm-row">

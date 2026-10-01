@@ -238,6 +238,20 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		bassAlt: "Synth Bass 2",
 		harmonyAlt: "Lead 6 (voice)",
 	},
+	ep_celesta: {
+		displayName: "エレピ＆チェレスタ",
+		description: "エレピの和音にチェレスタの粒を重ね、シンセベースで支える。",
+		melody: "Vibraphone",
+		submelody: "Celesta",
+		bass: "Synth Bass 1",
+		chord: "Electric Piano 1",
+		solo: "Lead 1 (square)",
+		chorusLead: "Celesta",
+		chordAlt: "Pad 3 (polysynth)",
+		sparkle: "Music Box",
+		bassAlt: "Synth Bass 2",
+		harmonyAlt: "Synth Choir",
+	},
 	// 界隈曲向け。retro_game の Clavinet 伴奏は音数が多いと潰れる（手書き A/B）ので、エレピとパッドにする。
 	chip_pop: {
 		displayName: "チップポップ",
