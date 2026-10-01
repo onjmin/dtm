@@ -1127,3 +1127,138 @@ caveat 8 のうち 6 を直した（残り 2 は所有者の判断）。
   `options.skeletons` で受け取る（バンドルは 2.0MB → 1.75MB に戻った）。
 - 次: 「骨格を抽象化して継ぎ合わせる」方式（和音は機能を保った置換、ベースは実音でなく型の種類、セクションは別々の曲から、
   近さを検査で縛る）。骨格借用が界隈曲に聴こえたことが、この方式の見込みの根拠。
+
+### 継ぎ合わせ（第1段、2026-10-01）
+
+所有者の指示「骨格を抽象化して継ぎ合わせる」の第1段。テンプレート `kaiwai_splice`（「界隈曲（継ぎ合わせ）」、
+`engine: "splice"`、UI の構成に option あり）。骨格借用の `kaiwai_skeleton` は丸写しなので製品にせず、
+こちらは**元曲を特定できる情報を持たないバンク**から作るので git とバンドルに入れる（dist/index.js は
+1,938,886 bytes。骨格データを外した直後の 1.75MB からバンクのぶん増えた）。反証（seed-safety / closeness-fidelity /
+conventions）の指摘を 2026-10-01 に直した——下の各項の「直す前」がその跡。
+
+#### 方式
+
+- **抽象骨格バンク** `src/compose/compose-section-bank.ts`（自動生成 128KB、`scripts/corpus/build-section-bank.ts`
+  が手元の骨格データ `loadSkeletons()` から作り、書いた後に `biome format` を掛ける。再生成は byte 同一。型と符号化・
+  検算は `src/compose/section-bank-types.ts`）。単位は**セクション**（60 曲 → 310 本: intro 38 / verse 77 / bridge 67 /
+  chorus 74 / interlude 27 / outro 27）。長さは 4 の倍数に丸め（0 になる 13 本は落とす）、**歌わない種類
+  （intro/interlude/outro）は 16 小節で頭打ち**（`NON_SUNG_MAX_BARS`。抽出が大きな後奏を 1 セクションにまとめた
+  64〜72 小節の outro があり、そのまま構成に使うと歌 14 小節の 88 小節曲になった）。**donor の選別**
+  （`donorRejection`）: 和音が 2 つ以下（3 本。置換は最初と最後の和音に掛けないので、`Gdim7 | F | 継続×14` のような
+  サビは donor と同じ並びを縮められない）・最初／最後の和音が 12 半小節を超えて続く（0 本）・調外のルートが過半
+  （8 本。抽出の和音名がクロマチックに付いた印）を落とす。
+  持つのは kind・mode・bars・src（id 順の通し番号。曲名は `tmp/section-bank-map.json` にだけ置く）・和音名
+  （Am/C 基準、null は継続）・**ベースの型の種類**（`classifyBass`: octave8 1344 / offbeat 260 / tresillo 249 /
+  sustain 193 / fifthmix 177 / quarter 134 / root8 17 / dotted 4 / rest 290 / other 1084。offbeat（裏打ち）は仕様の
+  一覧に無かったが 8分オクターブ・休みに次いで多い型なので足した。ヤツメ穴の 36+36+24 は tresillo、dotted は
+  付点8分＋16分のギャロップで実データにはほぼ無い）・ドラム型・刻み・歌メロのリズム（度数は持たない）・
+  セクション内の反復の地図（sameAs/rhythmSameAs をセクション先頭からの相対番号に直した。連鎖の解決は生成側の
+  `headOfBar` を使う）・arp/pad 層・音域の中心（歌う小節の度数の中央値を主音からの半音差に。実音ではない）。
+  `FORM_BANK`（55 本）は曲ごとの構成（種類と長さ）で、サビがあって 24 小節以上の曲だけ。
+- **生成** `src/compose/compose-splice.ts` の `composeSplice`。`composeSong` の先頭で `engine === "splice"` なら
+  共通経路の乱数を1つも消費せずに分岐（compose.ts、骨格借用の分岐の直後）。乱数の順は 構成 → 調（長短が構成と
+  違えば構成を引き直し）→ 音階 → テンポ → 楽器 → ベースの帯（根音の下端 30/32）→ セクション長（種類ごとに1回）
+  → 和音の donor とベースの donor（種類ごとに2回）→ 和音ごとの置換の当否（当たれば候補の抽選）→ 連続一致の
+  上限を超えた並びの強制置換 → ラスサビ転調の当否 → ドラム（donor が none のときだけ）→ 楽句ごとのフレーズ
+  → アルペジオの形・強さ。
+  1. 構成: FORM_BANK から1曲の構成を引き、長さを揺らす（`bankSectionBarChoices`: intro は 2/4/8 の近いもの、他は
+     ±4 で 4 以上、歌わない種類は 16 まで。UI の長さ表示 `sectionPlanBarRange` も同じ関数）。調が "any" のときは
+     **テンプレートの baseKey（短調）の構成だけ**を引く（長調は調を指名したときだけ。長調 donor は薄く、"auto" の
+     音階が陽音階になる。直す前は any で 2〜3 割が長調）。同種のセクションの 2 回目以降は restatement（同じ donor・
+     同じ置換後の和音・同じ長さ・旋律は sameAs で 1 回目を写す）。
+  2. 継ぎ合わせ: セクションごとに同じ kind・同じ mode の donor を引く。直前の donor と同じ src は避け、曲全体で
+     同じ src を 2 回使わない（足りなければ許す）。長さが違えば 4 小節単位で切る／繰り返す（繰り返した小節は
+     sameAs で前を指す）。
+  3. 和音: 置換表（`MINOR_SUBS` / `MAJOR_SUBS`、Am/C 基準）で各和音 p=0.35 の機能を保った置換。セクションの最初と
+     最後の和音は置換しない。「Bm7-5 E7」は 1 小節の E7 を 2 拍に割る。A7 は次が Dm 系のときだけ。E → E+ は
+     置かない（増三和音の小節割合がコーパスの p75 を超えた）。**表に無い和音は既定の置換**（`genericSubstitutes`:
+     同じルートで 7th / 6th / M7 を付け外す。分数コードは分母を落とす）——表だけだと長調の網羅率が 62% で
+     置換率が下限 0.2 に貼り付いた（直した後は短調・長調とも 0.35）。donor と構成音の集合が同じ半小節が **12 を
+     超えて続く並びは真ん中に近い置換できる和音を 1 つ必ず置き換える**（`MAX_SAME_RUN`。候補は表＋既定の置換から
+     集合の変わるもの。近さの検査 (a) の上限 16 に対して余裕を持たせた。置換できなかった回数は
+     `spliceStats.unresolvedRuns`、600 曲で 0）。ラスサビは p=0.25 で `keyShift +3`（以降の全セクション。和音名は
+     `transposeChordName`、旋律・ベース・層は +3 半音）。
+  4. ベース: **別の曲の同種セクション**（長短は問わない）から型の種類だけ借り、実音は型テンプレート（`realizeBass`）
+     からその時点の和音ルートで作る。和音の donor と同じ曲から借りると、8分オクターブはルートと帯が同じ小節で
+     元曲と同じ実音になり、近さ (b) が 8% に張り付いた（別の曲から借りて 3.9%）。根音は曲ごとの帯（30〜41 or
+     32〜43）に畳み、オクターブ上 +12・5度 +7 で 28〜55 に収まる。tresillo（3:3:2）は同じ音の連打（ヤツメ穴の実測
+     [0,0,0,0,0,0]。コーパス上位にも [0,12,7] 型は無い）。"other"（歩き・経過音など）はその donor で最も多い
+     具体の型、無ければ曲で最も多い型、それも無ければ octave8。**歌うセクション（verse/bridge/chorus）は donor が
+     全小節 rest でも同じ型で埋める**（バンクには全小節 rest のセクションがあり、曲全体がベース 0 音になる
+     seed があった）。
+  5. ドラム: 最初に歌うセクションの donor の drum。none なら four_clap / dance / kaiwai_1 から。1曲1パターン。
+  6. 歌メロ: donor のリズムと反復の地図に CORPUS_PHRASES の実在フレーズを当てる。**骨格借用と共有**
+     （`src/compose/compose-melody-fit.ts` の `fitPhrases` / `renderFittedMelody`、arp/pad も `buildArpLayer` /
+     `buildPadLayer`、検算値も `fittedDrawStats`。骨格借用の黄金値 3/3 は変わっていない）。音域の中心は
+     セクションごとに主音＋melodyCenterRel を、**直前のセクションから ±7 半音に挟む**（donor の値そのままだと
+     継ぎ目で 10 半音以上跳んだ）。**転調するセクションの再現は 1 番と同じオクターブに乗せる**——窓の上端を
+     転調ぶん下げ、帯への折り返しは 1 番とラスサビ両方の移調量で見る（`foldRangeAt`。直す前は 83 を超えた小節が
+     丸ごと −12 され、ラスサビの途中で 1 小節だけオクターブ落ちる曲が転調曲の半分にあった。300 曲でズレ 0 音）。
+  7. 層: arp は**ラスサビの小節だけ**（donor の arp は見ない）、pad は donor どおり。ハモリ・オクターブ重ねは空。
+  8. 楽器は template.instruments、伴奏の刻みは最初に歌うセクションの donor の chordPattern（arpeggio 系は block）。
+  9. ComposeResult は `form: "splice"`、`spliceSources`（セクションごとの和音 donor の src）、`spliceStats`
+     （置換数/対象数・unresolvedRuns・keyShift・小節ごとのベース型・`bassSources`。テストと近さの検査が読む）。
+
+#### 生成例（app seed 1、`export-samples --app-seed 1 --compose kaiwai_splice`）
+
+Am / 四抜き短音階 / 150bpm / four_clap / block / chip_pop / 36 小節。構成 intro 8 (src28、ベース型 src32) →
+verse 8 (src47 / src12) → bridge 8 (src33 / src22) → chorus 12 (src18 / src53)。置換 25/55、転調なし。先頭 8 小節の
+和音 `A | F#m A | F#m Em7 | Dm Am | AM7 | F#m7 A7 | F#m7 Em | Dm Am7`。ベース型は intro が rest、verse が octave8、
+bridge/chorus が tresillo。arp 12 小節（ラスサビ）、pad 11 小節、旋律 162 音。
+
+#### 元曲との近さ（`scripts/corpus/check-splice-closeness.ts`、既定 200 曲、骨格データが無ければ skip）
+
+seed 1..40 だけでは上限ちょうどの曲を拾えなかった（直す前は 300 曲で (a) 33 半小節・(b) 連続 11 小節が出て
+検査自体が exit 1 だった）ので既定を 200 曲にした。(b) は仕様どおり一致率 5% で縛る（連続一致 8 小節も併せて）。
+200 曲（`tmp/splice-closeness-fix.log`）・300 曲とも exit 0:
+- (a) 半小節の和音列（構成音の集合）の最長一致: 最大 **13 半小節**（上限 16。直す前は 300 曲で 33）。
+- (b) ベースの実音が和音 donor・型 donor の元曲の同じ小節と一致する小節: **3.9%**（477/12365、上限 5%。300 曲で
+  3.8%。直す前 7.9%）、連続一致の最長 **5 小節**（上限 8。直す前 11）。内訳はほぼ octave8（和音 donor 679 / 型 donor
+  178）——2 音の往復はルートと帯が同じなら必ず同じ実音になるので 0 にはならない。
+- (c) 旋律の度数列が一致する小節: **2.3%**（上限 5%。1〜2 音の小節の偶然）。
+- (d) 同じ src の連続: 0。
+
+#### 検算
+
+- `npx tsc --noEmit` 0 エラー。`pnpm check` exit 0（26 warnings は既存）。`pnpm test` exit 0（`tmp/pnpm-test-splice-fix.log`）。
+- `check-compose.ts`「● 継ぎ合わせ」節: バンクの不変条件（`validateSectionBank`）・生成ファイルに曲名/度数が
+  無い・150KB 以下・SECTION_BANK ≥ 200・intro/interlude/outro ≤ 16 小節・全和音に既定の置換候補があり parseChord を
+  通る・seed 1..30 で 例外なし・form が splice・全和音 parseChord・セクションが小節を覆う・旋律が 59〜83 と音階内・
+  ベースが 28〜55・**歌うセクションにベースがある**・置換できない並びが残っていない・arp がラスサビの小節だけ・
+  keyShift が +3・**ラスサビの再現の各音が 1 番サビの +3**・**donor の和音列との一致が 16 半小節以下**（バンクだけで
+  検算、骨格データ不要）・同一 src の連続なし・再現が同じ長さ・決定性・小節頭のベース音が DAW 経路の伴奏の
+  構成音に乗る ≥ 0.9・fingerprint が数、40 曲で 置換率 0.35（0.2〜0.5）・keyShift のある曲 ≥3。黄金値 21/21 と
+  骨格借用 3/3 はそのまま。
+- 既存テンプレートの #seed: 7 構成 × 2 seed の .mid sha256 が `tmp/seedcheck/before.sha256` と一致
+  （`tmp/seedcheck/after-splice-fix.diff` が空）。
+- 300 seed（`scratch/_splice-fix-probe.ts`、any / key_C / key_Em）: 置換率 0.354 / 0.354 / 0.358、未解決の並び 0、
+  keyShift 70〜82/300、転調の折り返しズレ 0 音、歌うセクションのベース無音 0、ベース 0 音の曲 0、
+  長調 0/300（any）、小節数 16〜168（中央 56）、歌う小節比 中央 79%。継ぎ目で旋律の中央値が 10 半音以上跳ぶのは
+  1038 継ぎ目中 9（`scratch/_center-jump.ts`。直す前は 300 曲で 62 継ぎ目）。
+- 試聴用: `tmp/kaiwai/splice-fix-samples/`（`export-samples --template kaiwai_splice --count 6 --seed 1`）。
+
+#### コーパスとの差（`measure-arrangement.ts --generate kaiwai_splice --count 40 --seed 1 --min-bars 40 --min-channels 6`、`tmp/kaiwai-splice-fix/gap.md`）
+
+伴奏側の行はコーパスの中央 50% にほぼ入る: ベース 音数/小節 7.23（コーパス中央 7.38、差 0.08）、8分格子 0.98（0.98）、
+音価中央値 24（24）、同音連打 0.090（0.066、0.16）、和音が変わる頻度 0.90（0.91、0.05）、小節内で変わる 0.81（0.80、
+0.06）、三和音外 0.020（0.038、0.17）、4つ打ち 1（0.79、0.23）、BPM 135（135）、調号外の根音 0.072（0.05、0.21。
+直す前 0.092 / 0.40）、ベースのオクターブ交互 0.597（0.44、0.29。直す前 0.645 / 0.38）、音高中央値 41（39、0.22。
+直す前 42 / 0.33）、総秒数 113.5（162、0.51。直す前 87.5 / 0.78）。
+外れている行: 非ドラム ch 数 5（コーパス 9、差 1.18。構造）、旋律の同音連打率 0.184（差 1.06。骨格借用と同じ出どころ
+＝強拍の構成音寄せ）、増三和音の小節割合 0.056（コーパス 0.020、p75 0.046、差 0.71。置換率が 0.28 → 0.35 に上がって 0.068 まで出たので
+E → E+ を止めた。残りは E7 → E+ と donor 由来）。
+
+#### 既知の制限
+
+- ベースの "other"（全小節の 29%）は型に落とせていない（歩き・経過音・16分混じりで、上位の形がばらける。
+  8分格子 n=8 が 223 小節、16分格子が 500 小節超）。その donor の最頻型で埋めている。
+- 界隈曲の常套「intro は最初のサビの和音で始まる」は起きない（intro と chorus は必ず別の src）。intro だけ
+  サビ donor の和音列を借りるかは所有者の判断待ち。
+- 同種セクションは必ず restatement（2 番の verse が別の素材だった曲でも 1 番と同じになる）。
+- 骨格の bpm は持たないので template.bpmChoices から引く。ハモリ・counter・stab 層は無し。
+- 長調は調を指名したときだけ。そのとき "auto" の音階は陽音階（共通経路の kaiwai と同じ規則）。
+
+#### 所有者の評価（2026-10-01）
+
+- 「A（テト）」= seed 87 / 138 BPM / C♯m / four_clap / retro_game / 56 小節 / 伴奏 block /
+  verse8-bridge8-chorus40 / 元曲番号 23,36,0 は **界隈曲っぽい**。B・C への言及は無し。

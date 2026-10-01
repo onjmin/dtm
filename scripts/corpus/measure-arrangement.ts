@@ -11,6 +11,7 @@
  *   # 未完成の耳コピを対照から外す（小節数・非ドラム ch 数の下限。既定は絞らない）
  *   npx tsx scripts/corpus/measure-arrangement.ts --dir ... --generate kaiwai --min-bars 40 --min-channels 6 --out tmp/kaiwai
  *   npx tsx scripts/corpus/measure-arrangement.ts --dir ... --generate kaiwai_skeleton --count 40 --seed 1 --min-bars 40 --min-channels 6 --out tmp/kaiwai-skel
+ *   npx tsx scripts/corpus/measure-arrangement.ts --dir ... --generate kaiwai_splice --count 40 --seed 1 --min-bars 40 --min-channels 6 --out tmp/kaiwai-splice
  *
  * 旋律の分布は `calibrate-corpus.ts` が較正済みで、**旋律を合わせても界隈曲に聞こえない**ことが
  * `docs/handover-compose.md` で確定している。ここは旋律以外を測るためのもので、SMF の読み込み・
@@ -1812,7 +1813,14 @@ const main = async (): Promise<void> => {
 		? []
 		: generateArg && generateArg !== "all"
 			? [generateArg]
-			: ["vocaloid", "1chorus", "game_loop", "kaiwai", "kaiwai_skeleton"];
+			: [
+					"vocaloid",
+					"1chorus",
+					"game_loop",
+					"kaiwai",
+					"kaiwai_skeleton",
+					"kaiwai_splice",
+				];
 	for (const t of templates)
 		if (!STRUCTURE_TEMPLATES.some((s) => s.name === t))
 			throw new Error(`知らないテンプレート ${t}`);

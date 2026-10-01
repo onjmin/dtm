@@ -41,8 +41,22 @@ import {
 	scaleDegrees,
 	scalePcs,
 } from "../../src/compose/compose-scales";
+import {
+	FORM_BANK,
+	SECTION_BANK,
+} from "../../src/compose/compose-section-bank";
 import { STRUCTURE_TEMPLATES } from "../../src/compose/compose-sections";
 import { composeSkeleton } from "../../src/compose/compose-skeleton";
+import {
+	genericSubstitutes,
+	SPLICE_BASS_HIGH,
+	SPLICE_BASS_LOW,
+} from "../../src/compose/compose-splice";
+import {
+	isSungKind,
+	NON_SUNG_MAX_BARS,
+	validateSectionBank,
+} from "../../src/compose/section-bank-types";
 import { validateSkeletons } from "../../src/compose/skeleton-types";
 import {
 	DRUM_PATTERNS,
@@ -2432,6 +2446,394 @@ console.log("● 骨格借用");
 			"composeSong(kaiwai_skeleton) が曲を返す",
 			viaSong.melody.length > 0 && viaSong.bars > 0,
 			`${viaSong.melody.length}音 / ${viaSong.bars}小節`,
+		);
+	}
+}
+
+// ============================================================
+// 2.11 継ぎ合わせ（`src/compose/compose-splice.ts`）
+//
+//     抽象骨格バンク（compose-section-bank.ts。git に入れるので骨格データが無くても回る）の
+//     不変条件と、seed 1..30 で「壊れていない」こと：例外なし・全和音が parseChord を通る・
+//     旋律が音階内と歌える帯・ベースが 28〜55（歌うセクションには必ずある）・決定性・アルペジオは
+//     ラスサビの小節だけ・ラスサビの再現は1番サビの各音 +3・donor の和音列との一致が 16 半小節以下
+//     （バンクだけで検算できる）・置換率・同じ src の連続なし・ラスサビ転調が 40 曲中 3 曲以上・
+//     バンクが 200 本以上。元曲との近さの数値は scripts/corpus/check-splice-closeness.ts（骨格データが要る）。
+// ============================================================
+
+console.log("● 継ぎ合わせ");
+{
+	const tmpl = STRUCTURE_TEMPLATES.find((t) => t.name === "kaiwai_splice");
+	check("kaiwai_splice テンプレートがある", tmpl !== undefined, "無い");
+	check(
+		"kaiwai_splice は engine: splice",
+		tmpl?.engine === "splice",
+		String(tmpl?.engine),
+	);
+	check(
+		"SECTION_BANK が 200 本以上",
+		SECTION_BANK.length >= 200,
+		`${SECTION_BANK.length}`,
+	);
+	check("FORM_BANK がある", FORM_BANK.length > 0, `${FORM_BANK.length}`);
+	{
+		const errors = validateSectionBank(
+			SECTION_BANK,
+			FORM_BANK,
+			new Set(Object.keys(DRUM_PATTERNS)),
+			parseChord,
+		);
+		check(
+			"バンクが不変条件を満たす",
+			errors.length === 0,
+			errors.slice(0, 5).join(" / "),
+		);
+		// 元曲を特定できる情報を持たない（曲名・ファイル名・旋律の度数・ベースの実音）
+		const src = readFileSync(
+			join(__dirname, "../../src/compose/compose-section-bank.ts"),
+			"utf8",
+		);
+		check(
+			"バンクの生成ファイルに曲名・ファイル名・度数が無い",
+			!/\.mid|degrees|melodyCenter:|\bid:/.test(src),
+			"元曲を特定できる欄がある",
+		);
+		check(
+			"バンクの生成ファイルが 150KB 以下",
+			Buffer.byteLength(src) <= 150 * 1024,
+			`${Buffer.byteLength(src)}`,
+		);
+		// 歌わない種類は NON_SUNG_MAX_BARS で頭打ち（64〜72 小節の outro が構成に入らない）
+		const longNonSung = SECTION_BANK.filter(
+			(sec) => !isSungKind(sec.kind) && sec.bars > NON_SUNG_MAX_BARS,
+		).length;
+		check(
+			`バンクの intro/interlude/outro が ${NON_SUNG_MAX_BARS} 小節以下`,
+			longNonSung === 0,
+			`${longNonSung} 本`,
+		);
+		// 置換表に無い和音の既定の置換（同じルートで 7th/6th を付け外す）が全和音にあり、parseChord を通る
+		const tokens = new Set(
+			SECTION_BANK.flatMap((sec) =>
+				sec.chords.flat().filter((c): c is string => c !== null),
+			),
+		);
+		let noGeneric = 0;
+		const badGeneric: string[] = [];
+		for (const t of tokens) {
+			const cands = genericSubstitutes(t);
+			if (cands.length === 0) noGeneric++;
+			for (const c of cands) {
+				try {
+					parseChord(c);
+				} catch {
+					badGeneric.push(`${t}→${c}`);
+				}
+			}
+		}
+		check(
+			`バンクの全和音（${tokens.size} 種）に既定の置換候補がある`,
+			noGeneric === 0,
+			`無いもの ${noGeneric}`,
+		);
+		check(
+			"既定の置換候補が全部 parseChord を通る",
+			badGeneric.length === 0,
+			badGeneric.slice(0, 5).join(" "),
+		);
+	}
+	if (tmpl) {
+		const semiOf = (u: number): number => Math.round(u / UNITS_PER_SEMITONE);
+		const pc = (v: number): number => ((v % 12) + 12) % 12;
+		const run = (seed: number) =>
+			composeSong({
+				stepsPerBar: STEPS_PER_BAR,
+				edo: 12,
+				template: "kaiwai_splice",
+				baseKey: "any",
+				scale: "auto",
+				random: appSeededRandom(seed),
+			});
+		const digestOf = (song: ReturnType<typeof run>): string =>
+			JSON.stringify([
+				song.chordProgression,
+				song.melody,
+				song.bass,
+				song.submelody,
+				song.pad,
+				song.sections.map((s) => [s.kind, s.bars, s.keyShift]),
+			]);
+		let substituted = 0;
+		let eligible = 0;
+		let keyShifted = 0;
+		for (let seed = 1; seed <= 40; seed++) {
+			const tag = `継ぎ合わせ seed=${seed}`;
+			let song: ReturnType<typeof run>;
+			try {
+				song = run(seed);
+			} catch (e) {
+				check(`${tag} 例外なし`, false, String(e));
+				continue;
+			}
+			const st = song.spliceStats;
+			check(`${tag} spliceStats がある`, st !== undefined, "無い");
+			if (!st) continue;
+			substituted += st.substituted;
+			eligible += st.eligible;
+			if (st.keyShift !== 0) keyShifted++;
+			if (seed > 30) continue;
+			check(`${tag} form が splice`, song.form === "splice", song.form);
+			check(
+				`${tag} 全和音が parseChord を通る`,
+				song.chordProgression.split("|").every((bar) =>
+					bar
+						.trim()
+						.split(/\s+/)
+						.every((c) => {
+							try {
+								parseChord(c);
+								return true;
+							} catch {
+								return false;
+							}
+						}),
+				),
+				song.chordProgression.slice(0, 80),
+			);
+			check(
+				`${tag} セクションが小節を覆う`,
+				song.sections.reduce((a, s) => a + s.bars, 0) === song.bars &&
+					song.sections.every((s, i) =>
+						i === 0
+							? s.startBar === 0
+							: s.startBar ===
+								song.sections[i - 1].startBar + song.sections[i - 1].bars,
+					),
+				`${song.bars}`,
+			);
+			const keyShiftAt = (b: number): number =>
+				song.sections.find((s) => b >= s.startBar && b < s.startBar + s.bars)
+					?.keyShift ?? 0;
+			const pcs = scalePcs(COMPOSE_SCALES[song.scaleId]);
+			const outOfBand = song.melody.filter((n) => {
+				const s = semiOf(n.pitchUnits);
+				return s < MELODY_LOW || s > MELODY_HIGH;
+			}).length;
+			check(`${tag} 旋律が 59〜83`, outOfBand === 0, `${outOfBand} 音`);
+			const outOfScale = song.melody.filter((n) => {
+				const b = Math.floor(n.startStep / STEPS_PER_BAR);
+				return !pcs.has(
+					pc(semiOf(n.pitchUnits) - song.rootShift - keyShiftAt(b)),
+				);
+			}).length;
+			check(`${tag} 旋律が音階内`, outOfScale === 0, `${outOfScale} 音`);
+			check(`${tag} 旋律がある`, song.melody.length > 0, "0 音");
+			const bassOut = song.bass.filter((n) => {
+				const s = semiOf(n.pitchUnits);
+				return s < SPLICE_BASS_LOW || s > SPLICE_BASS_HIGH;
+			}).length;
+			check(`${tag} ベースが 28〜55`, bassOut === 0, `${bassOut} 音`);
+			check(`${tag} ベースがある`, song.bass.length > 0, "0 音");
+			// 歌うセクション（verse/bridge/chorus）はベースの donor が全小節 rest でも無音にしない
+			const bassBars = new Set(
+				song.bass.map((n) => Math.floor(n.startStep / STEPS_PER_BAR)),
+			);
+			const silentSung = song.sections.filter(
+				(s) =>
+					isSungKind(s.kind) &&
+					![...Array(s.bars).keys()].some((i) => bassBars.has(s.startBar + i)),
+			);
+			check(
+				`${tag} 歌うセクションにベースがある`,
+				silentSung.length === 0,
+				silentSung.map((s) => `${s.kind}@${s.startBar}`).join(","),
+			);
+			check(
+				`${tag} 置換できない並びが残っていない`,
+				st.unresolvedRuns === 0,
+				`${st.unresolvedRuns}`,
+			);
+			// ラスサビの小節だけアルペジオ
+			let lastChorus: (typeof song.sections)[number] | undefined;
+			for (const s of song.sections) if (s.kind === "chorus") lastChorus = s;
+			const arpBars = new Set(
+				song.submelody.map((n) => Math.floor(n.startStep / STEPS_PER_BAR)),
+			);
+			const inLastChorus = (b: number): boolean =>
+				lastChorus !== undefined &&
+				b >= lastChorus.startBar &&
+				b < lastChorus.startBar + lastChorus.bars;
+			check(
+				`${tag} アルペジオがラスサビの小節だけ`,
+				lastChorus
+					? [...arpBars].every(inLastChorus) && arpBars.size > 0
+					: arpBars.size === 0,
+				`${[...arpBars].slice(0, 5)} / ラスサビ ${lastChorus?.startBar}+${lastChorus?.bars}`,
+			);
+			if (st.keyShift !== 0 && lastChorus) {
+				check(
+					`${tag} ラスサビ以降の keyShift が +3`,
+					song.sections
+						.slice(song.sections.indexOf(lastChorus))
+						.every((s) => s.keyShift === 3),
+					song.sections.map((s) => s.keyShift).join(","),
+				);
+				// ラスサビが1番サビの再現なら、各音が同じ位置の音の +3（オクターブ折り返しで −9 にならない）
+				const firstChorus = song.sections.find((s) => s.kind === "chorus");
+				if (
+					firstChorus &&
+					firstChorus !== lastChorus &&
+					lastChorus.restatement
+				) {
+					const notesIn = (sec: typeof firstChorus): number[] =>
+						[...song.melody]
+							.filter((n) => {
+								const b = Math.floor(n.startStep / STEPS_PER_BAR);
+								return b >= sec.startBar && b < sec.startBar + sec.bars;
+							})
+							.sort((a, b) => a.startStep - b.startStep)
+							.map((n) => semiOf(n.pitchUnits));
+					const a = notesIn(firstChorus);
+					const z = notesIn(lastChorus);
+					const off = a.filter((v, i) => z[i] !== v + 3).length;
+					check(
+						`${tag} ラスサビの各音が1番サビの +3`,
+						a.length === z.length && off === 0,
+						`${off} 音がずれ（${a.length}/${z.length} 音）`,
+					);
+				}
+			}
+			// donor の和音列（バンク）との最長一致 ≤ 16 半小節（構成音の集合で比べる。骨格データは要らない）
+			{
+				const pcKey = (name: string, k: number): string => {
+					try {
+						return [...new Set(parseChord(name).notes.map((n) => pc(n - k)))]
+							.sort((x, y) => x - y)
+							.join(",");
+					} catch {
+						return "";
+					}
+				};
+				const gen = song.chordProgression.split("|").flatMap((bar, b) => {
+					const parts = bar.trim().split(/\s+/);
+					const k = keyShiftAt(b);
+					return [pcKey(parts[0], k), pcKey(parts[1] ?? parts[0], k)];
+				});
+				let worst = 0;
+				const srcsOf = song.spliceSources ?? [];
+				song.sections.forEach((sec, si) => {
+					for (const donor of SECTION_BANK.filter(
+						(d) => d.src === srcsOf[si] && d.kind === sec.kind,
+					)) {
+						const dh: string[] = [];
+						let p = "Am";
+						for (const [c0, c1] of donor.chords) {
+							const x = c0 ?? p;
+							const y = c1 ?? x;
+							dh.push(pcKey(x, 0), pcKey(y, 0));
+							p = y;
+						}
+						let run = 0;
+						for (let i = 0; i < sec.bars * 2; i++) {
+							const g = gen[sec.startBar * 2 + i];
+							if (g !== "" && g === dh[i % dh.length]) {
+								run++;
+								worst = Math.max(worst, run);
+							} else run = 0;
+						}
+					}
+				});
+				check(
+					`${tag} donor の和音列との一致が 16 半小節以下`,
+					worst <= 16,
+					`${worst}`,
+				);
+			}
+			// 同じ src の連続なし（restatement は除く）
+			const srcs = song.spliceSources ?? [];
+			check(
+				`${tag} 同じ src のセクションが連続しない`,
+				song.sections.every(
+					(s, i) => i === 0 || s.restatement || srcs[i] !== srcs[i - 1],
+				),
+				srcs.join(","),
+			);
+			check(
+				`${tag} spliceSources がセクション数ぶん`,
+				srcs.length === song.sections.length,
+				`${srcs.length}/${song.sections.length}`,
+			);
+			// 2回目の再現が1回目と同じ長さ
+			const firstBars = new Map<string, number>();
+			for (const s of song.sections) {
+				const f = firstBars.get(s.kind);
+				if (f === undefined) firstBars.set(s.kind, s.bars);
+				else
+					check(
+						`${tag} ${s.kind} の再現が同じ長さ`,
+						f === s.bars,
+						`${f} / ${s.bars}`,
+					);
+			}
+			// 決定性
+			check(
+				`${tag} 決定性`,
+				digestOf(run(seed)) === digestOf(song),
+				"同じ seed で違う曲",
+			);
+			// DAW 経路の伴奏（chordProgression + rootShift）の構成音に小節頭のベース音が乗る
+			// （block の置き方は同じ和音が続くと1つの長い音になるので、小節頭を含む区間で見る）
+			const spans: { start: number; end: number; pcs: Set<number> }[] = [];
+			for (const pl of buildChordPlacements({
+				edo: 12,
+				chordStr: song.chordProgression,
+				patternType: "block",
+				rootShift: song.rootShift,
+				bpm: 120,
+				stepsPerBar: STEPS_PER_BAR,
+			})) {
+				const hit = spans.find((x) => x.start === pl.startStep);
+				if (hit) hit.pcs.add(pc(semiOf(pl.pitchUnits)));
+				else
+					spans.push({
+						start: pl.startStep,
+						end: pl.startStep + pl.durationSteps,
+						pcs: new Set([pc(semiOf(pl.pitchUnits))]),
+					});
+			}
+			let heads = 0;
+			let onChord = 0;
+			for (const n of song.bass) {
+				if (n.startStep % STEPS_PER_BAR !== 0) continue;
+				const span = spans.find(
+					(x) => n.startStep >= x.start && n.startStep < x.end,
+				);
+				if (!span) continue;
+				heads++;
+				if (span.pcs.has(pc(semiOf(n.pitchUnits)))) onChord++;
+			}
+			check(
+				`${tag} 小節頭のベース音が伴奏の構成音に乗る ≥ 0.9`,
+				heads === 0 || onChord / heads >= 0.9,
+				`${onChord}/${heads}`,
+			);
+			check(
+				`${tag} fingerprint が数`,
+				song.stats.fingerprint.length > 0 &&
+					song.stats.fingerprint.every((v) => Number.isFinite(v)),
+				JSON.stringify(song.stats.fingerprint),
+			);
+		}
+		const rate = substituted / Math.max(1, eligible);
+		check(
+			"置換率が 0.2〜0.5（40 曲）",
+			rate >= 0.2 && rate <= 0.5,
+			`${rate.toFixed(3)}（${substituted}/${eligible}）`,
+		);
+		check(
+			"keyShift のある曲が 40 曲中 3 曲以上",
+			keyShifted >= 3,
+			`${keyShifted}`,
 		);
 	}
 }

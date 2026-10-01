@@ -6587,9 +6587,11 @@ export const mountDAW = (
 		 * ここは1つの数ではなく**幅**を出す。押す前の表示と実際の曲の長さが違うと、
 		 * 「表示が壊れている」としか受け取れない。
 		 */
-		/** 骨格借用のテンプレートか。曲の長さもセクションも引いた骨格が決めるので、箱は効かない。 */
-		const isSkeletonTemplate = (name?: string): boolean =>
-			STRUCTURE_TEMPLATES.find((t) => t.name === name)?.engine === "skeleton";
+		/** 別エンジン（骨格借用・継ぎ合わせ）のテンプレートか。曲の長さもセクションも引いた設計図が決めるので、箱は効かない。 */
+		const engineOf = (name?: string): string | undefined =>
+			STRUCTURE_TEMPLATES.find((t) => t.name === name)?.engine;
+		const hasOwnEngine = (name?: string): boolean =>
+			engineOf(name) !== undefined;
 		const composeBarsLabel = (): string => {
 			const tmplName = selectedComposeTemplate();
 			const range = sectionPlanBarRange(selectedComposeSections(), tmplName);
@@ -6597,11 +6599,16 @@ export const mountDAW = (
 				range.min === range.max
 					? `${range.min}小節`
 					: `${range.min}〜${range.max}小節`;
-			return isSkeletonTemplate(tmplName) ? `骨格しだい（${text}）` : text;
+			const engine = engineOf(tmplName);
+			return engine === "skeleton"
+				? `骨格しだい（${text}）`
+				: engine === "splice"
+					? `構成しだい（${text}）`
+					: text;
 		};
 		const updateComposeSectionsLen = (): void => {
 			refs.composeSectionsLen.textContent = composeBarsLabel();
-			const disabled = isSkeletonTemplate(selectedComposeTemplate());
+			const disabled = hasOwnEngine(selectedComposeTemplate());
 			for (const box of refs.composeSections.querySelectorAll<HTMLInputElement>(
 				'input[type="checkbox"]',
 			))

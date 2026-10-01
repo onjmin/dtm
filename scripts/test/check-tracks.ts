@@ -48,10 +48,11 @@ const filled = new Array(15).fill(0);
 const instCounts: number[] = [];
 let sameInstDupes = 0;
 
-/** 既定構成と、進行・ベース・楽器を自前で持つテンプレート、骨格借用（別エンジン）を回す。 */
+/** 既定構成と、進行・ベース・楽器を自前で持つテンプレート、骨格借用・継ぎ合わせ（別エンジン）を回す。 */
 const TEMPLATES: (string | undefined)[] = [
 	undefined,
 	"kaiwai",
+	"kaiwai_splice",
 	// 骨格データは git に入れないので、手元に無ければ骨格借用は回さない
 	...(KAIWAI_SKELETONS.length > 0 ? ["kaiwai_skeleton"] : []),
 ];

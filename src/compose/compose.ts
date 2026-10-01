@@ -73,6 +73,7 @@ import {
 	sectionAt,
 } from "./compose-sections";
 import { composeSkeleton } from "./compose-skeleton";
+import { composeSplice } from "./compose-splice";
 import type { Skeleton } from "./skeleton-types";
 
 // ============================================================
@@ -1082,7 +1083,9 @@ export type MelodyForm =
 	| "through"
 	| "chant"
 	/** 骨格借用（{@link file://./compose-skeleton.ts}）。抽選では出ない。 */
-	| "skeleton";
+	| "skeleton"
+	/** 継ぎ合わせ（{@link file://./compose-splice.ts}）。抽選では出ない。 */
+	| "splice";
 
 /**
  * `form` の指定を解く。省略時（`"auto"`）は曲ごとに引く。
@@ -1439,6 +1442,18 @@ export type ComposeResult = {
 	stats: ComposeStats;
 	/** 骨格借用で引いた骨格の出自（{@link Skeleton.id}）。DAW の #compose には出さず、scripts と試聴の表示に使う。 */
 	skeletonId?: string;
+	/** 継ぎ合わせで各セクションに引いた donor の元曲番号（バンクの匿名 `src`。曲名ではない）。近さの検査が読む。 */
+	spliceSources?: number[];
+	/** 継ぎ合わせの内訳（置換した和音の数と対象数・ラスサビの転調量・小節ごとのベース型・ベースの型を借りた donor）。テストと近さの検査が読む。 */
+	spliceStats?: {
+		substituted: number;
+		eligible: number;
+		/** donor と同じ和音の並びが上限を超えたのに置換できる和音が無かった回数。 */
+		unresolvedRuns: number;
+		keyShift: number;
+		figures: string[];
+		bassSources: number[];
+	};
 };
 
 // ============================================================
@@ -6019,6 +6034,8 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			);
 		return composeSkeleton(options, template, options.skeletons);
 	}
+	// 継ぎ合わせも同じ場所で分岐する。バンクはバンドルに入っているので options は要らない。
+	if (template?.engine === "splice") return composeSplice(options, template);
 	// UI の調が "any" のときだけテンプレートの既定（長短）に倒す。抽選回数は "any" と同じ1回。
 	const baseKey =
 		(options.baseKey?.trim() || "any") === "any"
