@@ -82,6 +82,11 @@ const MAX_SAME_RUN = 12;
 /** ラスサビを短3度上へ転調する確率（ヤツメ穴型）。 */
 const KEY_SHIFT_P = 0.25;
 const KEY_SHIFT = 3;
+/**
+ * イントロの和音を最初のサビの和音（置換後）にする確率。界隈曲を分ける要素ではない（所有者の推測。
+ * バンクの元曲では 35 曲中 1 曲）ので、両方が出るよう半々にする。
+ */
+const INTRO_FROM_CHORUS_P = 0.5;
 /** donor のドラムが none のときの候補。 */
 const DRUM_FALLBACK = ["four_clap", "dance", "kaiwai_1"];
 
@@ -584,6 +589,17 @@ export const composeSplice = (
 		cursor += bars;
 	}
 	const totalBars = cursor;
+	// イントロとサビの両方がある曲だけ抽選する（無い曲の乱数列を変えない）。和音だけ写し、
+	// リズム・ベースの型・層はイントロの donor のまま。
+	const introSec = spliced.get("intro");
+	const chorusSec = spliced.get("chorus");
+	const introFromChorus =
+		introSec !== undefined &&
+		chorusSec !== undefined &&
+		rnd() < INTRO_FROM_CHORUS_P;
+	if (introSec && chorusSec && introFromChorus)
+		for (let i = 0; i < introSec.bars; i++)
+			introSec.chords[i] = [...chorusSec.chords[i % chorusSec.bars]];
 
 	// --- 4. ラスサビの転調（短3度上。以降の全セクションに掛ける） ---
 	let lastChorus = -1;
@@ -859,6 +875,7 @@ export const composeSplice = (
 			keyShift: keyShiftOfSection[keyShiftOfSection.length - 1] ?? 0,
 			figures: figureAt,
 			bassSources: placed.map((p) => sectionOf(p).bassDonor.src),
+			introFromChorus,
 		},
 	};
 };

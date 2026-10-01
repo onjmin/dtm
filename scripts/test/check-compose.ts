@@ -2566,6 +2566,8 @@ console.log("● 継ぎ合わせ");
 		let substituted = 0;
 		let eligible = 0;
 		let keyShifted = 0;
+		let introFrom = 0;
+		let introNotFrom = 0;
 		for (let seed = 1; seed <= 40; seed++) {
 			const tag = `継ぎ合わせ seed=${seed}`;
 			let song: ReturnType<typeof run>;
@@ -2581,6 +2583,43 @@ console.log("● 継ぎ合わせ");
 			substituted += st.substituted;
 			eligible += st.eligible;
 			if (st.keyShift !== 0) keyShifted++;
+			{
+				const intro = song.sections.find((s) => s.kind === "intro");
+				const chorus = song.sections.find((s) => s.kind === "chorus");
+				if (intro && chorus) {
+					if (st.introFromChorus) introFrom++;
+					else introNotFrom++;
+				} else
+					check(
+						`${tag} イントロかサビが無い曲は introFromChorus が false`,
+						!st.introFromChorus,
+						"true",
+					);
+				if (intro && chorus && st.introFromChorus) {
+					// サビがラスサビ1回だけの曲は転調ぶんずれるので、転調を戻した構成音の集合で比べる。
+					const bars = song.chordProgression.split("|").map((b) => b.trim());
+					const keyOf = (bar: string, k: number): string =>
+						bar
+							.split(/\s+/)
+							.map((c) =>
+								[...new Set(parseChord(c).notes.map((n) => pc(n - k)))]
+									.sort((x, y) => x - y)
+									.join(","),
+							)
+							.join(" ");
+					const ih = bars.slice(intro.startBar, intro.startBar + intro.bars);
+					const ch = bars.slice(chorus.startBar, chorus.startBar + chorus.bars);
+					check(
+						`${tag} イントロの和音が最初のサビの和音`,
+						ih.every(
+							(b, i) =>
+								keyOf(b, intro.keyShift) ===
+								keyOf(ch[i % ch.length], chorus.keyShift),
+						),
+						`intro=${ih.join("|")} / chorus=${ch.slice(0, ih.length).join("|")}`,
+					);
+				}
+			}
 			if (seed > 30) continue;
 			check(`${tag} form が splice`, song.form === "splice", song.form);
 			check(
@@ -2834,6 +2873,11 @@ console.log("● 継ぎ合わせ");
 			"keyShift のある曲が 40 曲中 3 曲以上",
 			keyShifted >= 3,
 			`${keyShifted}`,
+		);
+		check(
+			"イントロをサビの和音で始める曲と始めない曲が両方ある（40 曲）",
+			introFrom > 0 && introNotFrom > 0,
+			`${introFrom} / ${introNotFrom}`,
 		);
 	}
 }

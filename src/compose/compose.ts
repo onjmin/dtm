@@ -1453,6 +1453,8 @@ export type ComposeResult = {
 		keyShift: number;
 		figures: string[];
 		bassSources: number[];
+		/** イントロの和音を最初のサビの和音にしたか。 */
+		introFromChorus: boolean;
 	};
 };
 
