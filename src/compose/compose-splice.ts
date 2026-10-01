@@ -74,11 +74,11 @@ const BASS_ROOT_BANDS = [30, 32];
 /** 置換の確率（セクションの最初と最後の和音は掛けない）。 */
 const SUBSTITUTE_P = 0.35;
 /**
- * donor と同じ和音が続いてよい上限（半小節）。乱数の置換だけだと 8 小節ループ×4 のセクションで
- * 16 小節そのまま残ることがある。超える並びは真ん中に近い置換できる和音を1つ必ず置き換える。
- * 近さの検査 (a) の上限は 16 半小節で、donor と同じ進行を持つ別の元曲に当たっても余裕が要る。
+ * donor と同じ和音が続いてよい上限（半小節）。「同じ」は構成音の集合か根音が同じこと——Dm→Dm6 の
+ * 色替えだけだと根音の並びが元曲のまま残り、seed 87 の Aメロ 8 小節が丸写しに聞こえた（2026-10-01）。
+ * 超える並びは真ん中に近い置換できる和音を1つ、根音の変わる候補へ必ず置き換える。
  */
-const MAX_SAME_RUN = 12;
+const MAX_SAME_RUN = 8;
 /** ラスサビを短3度上へ転調する確率（ヤツメ穴型）。 */
 const KEY_SHIFT_P = 0.25;
 const KEY_SHIFT = 3;
@@ -210,6 +210,46 @@ export const genericSubstitutes = (name: string): string[] => {
 	return list.map((s) => root + s).filter((c) => c !== name && parses(c));
 };
 
+const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+const MAJOR_LIKE = new Set(["", "M7", "maj7", "6", "69", "M9", "add9", "sus2", "sus4"]);
+const DOMINANT_LIKE = new Set(["7", "9", "7-9", "7sus4", "+", "aug"]);
+const MINOR_LIKE = new Set(["m", "m7", "m6", "mM7", "m9"]);
+const DIM_LIKE = new Set(["dim", "dim7", "m7-5"]);
+
+/**
+ * 根音の変わる機能代理（表と既定の置換に根音の変わる候補が無いときだけ、連続一致を切るのに使う）:
+ * 長三和音系→平行短調の m7 か長3度上の減和音、属和音系→裏コード、短三和音系→平行長調、
+ * 減和音系→長3度下の属7。平行調と減和音は調（Am は和声的短音階、C は長音階）の音だけのもの。
+ */
+const IN_KEY = {
+	minor: new Set([9, 11, 0, 2, 4, 5, 7, 8]),
+	major: new Set([0, 2, 4, 5, 7, 9, 11]),
+};
+const inKey = (name: string, minor: boolean): boolean => {
+	try {
+		const key = minor ? IN_KEY.minor : IN_KEY.major;
+		return parseChord(name).notes.every((n) => key.has(((n % 12) + 12) % 12));
+	} catch {
+		return false;
+	}
+};
+const rootChangingFallback = (name: string, minor: boolean): string[] => {
+	const m = /^([A-G][#b]?)([^/]*)/.exec(name);
+	if (!m) return [];
+	const [, root, suffix] = m;
+	const pc = NOTE_NAMES.indexOf(root) >= 0 ? NOTE_NAMES.indexOf(root) : rootPcOf(root);
+	const at = (d: number, sfx: string): string =>
+		(sfx === "dim" && (pc + d) % 12 === 8 ? "G#" : NOTE_NAMES[(pc + d) % 12]) + sfx;
+	if (DOMINANT_LIKE.has(suffix)) return [at(6, "7")].filter(parses);
+	if (DIM_LIKE.has(suffix)) return [at(8, "7")].filter(parses);
+	const diatonic = MAJOR_LIKE.has(suffix)
+		? [at(9, "m7"), at(4, "dim")]
+		: MINOR_LIKE.has(suffix)
+			? [at(3, suffix === "m7" ? "M7" : "")]
+			: [];
+	return diatonic.filter((c) => parses(c) && inKey(c, minor));
+};
+
 const substitutes = (
 	name: string,
 	next: string | null,
@@ -242,6 +282,23 @@ const pcSetKey = (name: string): string => {
 		return "";
 	}
 };
+
+/**
+ * 連続一致を切る置換の抽選は曲の乱数を使わず、donor と位置から決める。上限の規則を変えても
+ * 強制置換の起きない曲の乱数列（以降の donor・旋律）が動かない。
+ */
+const positionRandom = (src: number, at: number): (() => number) => {
+	let h = (Math.imul(src + 1, 0x9e3779b1) ^ Math.imul(at + 1, 0x85ebca6b)) >>> 0;
+	return () => {
+		h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0;
+		h = Math.imul(h ^ (h >>> 12), 0x297a2d39) >>> 0;
+		return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+	};
+};
+
+/** 近さの上限で「同じ和音」とみなすもの（構成音の集合か根音が同じ。Am7 と C6、Dm と Dm6）。 */
+const sameChord = (a: string, b: string): boolean =>
+	pcSetKey(a) === pcSetKey(b) || rootPcOf(a) === rootPcOf(b);
 
 type BassEvent = { step: number; semi: number; dur: number };
 
@@ -496,8 +553,6 @@ export const composeSplice = (
 			}
 			substituted++;
 		}
-		// donor と同じ和音（構成音の集合で見る。Am7→C6 は同じ）が MAX_SAME_RUN 半小節を超えて続く並びは、
-		// 真ん中に近い置換できる和音を1つ、集合の変わる候補へ置き換える。
 		const resolve = (list: (string | null)[][]): string[] => {
 			const out: string[] = [];
 			let p: string = minor ? "Am" : "C";
@@ -519,7 +574,7 @@ export const composeSplice = (
 			for (let h = 0; h <= genHalf.length; h++) {
 				const same =
 					h < genHalf.length &&
-					pcSetKey(genHalf[h]) === pcSetKey(donorHalf[h % donorHalf.length]);
+					sameChord(genHalf[h], donorHalf[h % donorHalf.length]);
 				if (same) {
 					if (run === 0) runStart = h;
 					run++;
@@ -543,7 +598,9 @@ export const composeSplice = (
 				const name = chords[tk.bar][tk.half];
 				if (name === null) continue;
 				const nt = tokens[t + 1];
-				const cands = [
+				const changes = (c: string | [string, string]): boolean =>
+					!sameChord(typeof c === "string" ? c : c[0], name);
+				let cands = [
 					...substitutes(
 						name,
 						chords[nt.bar][nt.half],
@@ -551,11 +608,10 @@ export const composeSplice = (
 						minor,
 					),
 					...genericSubstitutes(name),
-				].filter(
-					(c) => pcSetKey(typeof c === "string" ? c : c[0]) !== pcSetKey(name),
-				);
+				].filter(changes);
+				if (cands.length === 0) cands = rootChangingFallback(name, minor).filter(changes);
 				if (cands.length === 0) continue;
-				const chosen = pick(cands, rnd);
+				const chosen = pick(cands, positionRandom(donor.src, tk.bar * 2 + tk.half));
 				if (typeof chosen === "string") chords[tk.bar][tk.half] = chosen;
 				else {
 					chords[tk.bar][0] = chosen[0];
