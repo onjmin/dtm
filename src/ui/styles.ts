@@ -688,6 +688,127 @@ export const DAW_CSS = `
   background: var(--dtm-success);
 }
 
+/* ジャンルのカード（「何を作る？」）。パネルは横の帯にも狭い列にも置かれるので、
+   画面幅ではなく置かれた幅で列数を決める（狭い列・スマホでは2列）。 */
+.dtm-genres {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(132px, calc(50% - 4px)), 1fr));
+  gap: 8px;
+}
+.dtm-genre {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 52px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 2px solid var(--dtm-border2);
+  background: var(--dtm-deep);
+  color: var(--dtm-text);
+  font-family: var(--dtm-font);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--c-black);
+}
+.dtm-genre b { font-size: 13px; font-weight: normal; line-height: 1.25; overflow-wrap: anywhere; }
+.dtm-genre small { font-size: 10px; color: var(--dtm-muted); line-height: 1.3; overflow-wrap: anywhere; }
+.dtm-genre:hover { border-color: var(--dtm-success); }
+.dtm-genre:active { transform: translate(3px,3px); box-shadow: none; }
+.dtm-genre[aria-checked="true"] {
+  border-color: var(--dtm-success);
+  background: var(--dtm-surface);
+  box-shadow: inset 0 0 0 2px var(--dtm-success), 3px 3px 0 var(--c-black);
+}
+.dtm-genre[aria-checked="true"] b { color: var(--dtm-success); }
+.dtm-genre[aria-checked="true"] b::before { content: "▶ "; }
+
+/* 歌あり／インストの切り替え */
+.dtm-seg { display: inline-flex; }
+.dtm-seg-btn {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 2px solid var(--dtm-border2);
+  background: var(--dtm-deep);
+  color: var(--dtm-muted);
+  font-family: var(--dtm-font);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dtm-seg-btn + .dtm-seg-btn { border-left: 0; }
+.dtm-seg-btn[aria-checked="true"] {
+  border-color: var(--dtm-success);
+  background: var(--dtm-success);
+  color: var(--c-black);
+}
+.dtm-seg-btn:disabled { opacity: .35; cursor: default; }
+.dtm-compose-voice { flex: 1 1 140px; min-width: 0; max-width: 240px; }
+
+.dtm-compose-go {
+  width: 100%;
+  min-height: 48px;
+  font-size: 16px;
+}
+.dtm-compose-len { margin: -4px 0 0; white-space: normal; }
+
+/* 作った曲の結果カード */
+.dtm-compose-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 2px solid var(--dtm-success);
+  background: var(--dtm-deep);
+}
+.dtm-compose-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 0;
+  font-family: var(--dtm-font);
+  font-size: 12px;
+}
+.dtm-compose-facts dt { color: var(--dtm-muted); }
+.dtm-compose-facts dd { margin: 0; color: var(--dtm-text); overflow-wrap: anywhere; }
+.dtm-compose-note { white-space: normal; margin: 0; }
+.dtm-compose-note .dtm-btn { min-height: 28px; font-size: 11px; margin-left: 6px; }
+
+/* 「残した曲」「詳しく」の折りたたみ */
+.dtm-compose-sub > summary {
+  cursor: pointer;
+  font-family: var(--dtm-font);
+  font-size: 12px;
+  color: var(--dtm-muted);
+  padding: 4px 0;
+  list-style: revert;
+}
+.dtm-compose-sub > summary:hover { color: var(--dtm-text); }
+.dtm-compose-more-body { display: flex; flex-direction: column; gap: 10px; padding-top: 6px; }
+.dtm-compose-tempo { width: 96px; flex: 0 0 auto; }
+.dtm-kept-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dtm-kept-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 6px 8px;
+  border: 2px solid var(--dtm-border2);
+  background: var(--dtm-deep);
+}
+.dtm-kept-item[data-current="true"] { border-color: var(--dtm-success); }
+.dtm-kept-text { flex: 1 1 160px; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-family: var(--dtm-font); }
+.dtm-kept-text b { font-size: 12px; font-weight: normal; overflow-wrap: anywhere; }
+.dtm-kept-text small { font-size: 10px; color: var(--dtm-muted); overflow-wrap: anywhere; }
+.dtm-kept-item .dtm-btn { min-height: 32px; font-size: 11px; padding: 0 8px; }
+
+.dtm-panel--compose .dtm-btn:focus-visible,
+.dtm-genre:focus-visible,
+.dtm-seg-btn:focus-visible,
+.dtm-compose-sub > summary:focus-visible {
+  outline: 2px solid var(--c-white);
+  outline-offset: 2px;
+}
+
 /* ─── アクティブトラック色（個別トラック設定パネルの左端ライン） ─── */
 .dtm-panel--track > summary::before,
 .dtm-panel--track[open] > summary::before {

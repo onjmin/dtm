@@ -5,6 +5,7 @@
 
 import { DELAY_DIVISIONS } from "../audio/delay";
 import type { TrackConfig } from "../types";
+import { COMPOSE_GENRES } from "./compose-genres";
 import { icon } from "./icons";
 import { persistPanels } from "./state/panel-state";
 
@@ -125,21 +126,33 @@ export type DawUIRefs = {
 	transposeApplyBtn: HTMLButtonElement;
 	transposeInfoBtn: HTMLButtonElement;
 	// macros
+	/** 大きな「作る」ボタン。選んだジャンル・歌で1曲作る。 */
 	macroCompose: HTMLButtonElement;
-	/** 今の曲を1つだけ取っておくボタン。作曲を押しても消えない退避枠。 */
+	composeGenres: HTMLElement;
+	composeVocal: HTMLElement;
+	composeVoice: HTMLSelectElement;
+	composeVocalHint: HTMLElement;
+	composeResult: HTMLElement;
+	composeResultFacts: HTMLElement;
+	composeResultNote: HTMLElement;
+	composeAgain: HTMLButtonElement;
+	/** 今の曲を「残した曲」一覧へ足すボタン。 */
 	composeKeep: HTMLButtonElement;
-	/** キープした曲へ戻すボタン。 */
-	composeRecall: HTMLButtonElement;
+	composeSaved: HTMLDetailsElement;
+	composeSavedTitle: HTMLElement;
+	composeSavedList: HTMLElement;
+	composeMore: HTMLDetailsElement;
+	/** 「曲の形」（J-POP カードのときだけ効く）。値は既存のテンプレート名か `custom`。 */
 	composeTemplate: HTMLSelectElement | null;
+	composeTemplateHint: HTMLElement;
+	composeSectionsRow: HTMLElement;
+	composeTempo: HTMLInputElement;
 	composeSections: HTMLElement;
 	composeSectionsLen: HTMLElement;
 	composeKey: HTMLSelectElement;
 	composeKeyHint: HTMLElement;
 	composeScale: HTMLSelectElement;
 	composeScaleHint: HTMLElement;
-	macroComposeVocal: HTMLButtonElement;
-	/** 「伴奏主体」。旋律をほとんど置かないループ曲を作る（docs/accomp-compose.md §9）。 */
-	macroComposeAccomp: HTMLButtonElement;
 	macroComposeInfo: HTMLButtonElement;
 	macroClear: HTMLButtonElement;
 	macroRandom: HTMLButtonElement;
@@ -531,40 +544,58 @@ export const buildUI = (
   <details class="dtm-panel dtm-panel--compose ${showCompose ? "" : "dtm-hidden"}" data-dtm-acc="compose">
     <summary>自動作曲</summary>
     <div class="dtm-panel-body">
-      <div class="dtm-row" data-dtm="compose-row">
-        <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose" title="コード進行・メロディ・サブメロ・ベース・伴奏・ドラムを自動で作ります">作曲</button>
-        <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose-vocal" title="作曲したうえで、メロディに歌詞を付けて歌わせます">歌入り作曲</button>
-        <button class="dtm-btn dtm-btn--success" data-dtm="macro-compose-accomp" title="旋律をほとんど置かず、分散和音・低音・和音で約2分半〜3分のループ曲を作ります（ドラムなし・残響とディレイ付き）。ベース調は使い、構成・作る部分・音階は使いません">伴奏主体</button>
-        <button class="dtm-infobtn" data-dtm="macro-compose-info" title="作曲の解説">${icon("info", 12)}</button>
-        <!--
-          **キープ枠は1つだけ。** 自動作曲は気に入るまで引き直す使い方になるが、
-          「引き直すと今のが消える」と思うと引き直せなくなる。取っておける場所が
-          1つあれば、2つを比べて選ぶことは成立する。候補を並べるUIはスマホでは
-          成立しない（試聴時間・画面・生成コストのどれも足りない）。
-          「入れ替え」は今の曲とキープを交換する。呼び出すだけだと今の曲が消えて
-          2曲を行き来できないため。枠はリロードをまたいで残る（localStorage）。
-        -->
-        <button class="dtm-btn" data-dtm="compose-keep" title="今の曲を1つだけ取っておきます。作曲を押し直しても、ページを開き直しても消えません">キープ</button>
-        <button class="dtm-btn" data-dtm="compose-recall" title="キープした曲と今の曲を入れ替えて、キープしていた曲を鳴らします。もう一度押すと戻ります" disabled>入れ替え</button>
+      <div class="dtm-row">
+        <span class="dtm-label" id="dtm-compose-genre-label">何を作る？</span>
         <span class="dtm-grow"></span>
+        <button class="dtm-infobtn" data-dtm="macro-compose-info" title="作曲の解説">${icon("info", 12)}</button>
       </div>
+      <div class="dtm-genres" role="radiogroup" aria-labelledby="dtm-compose-genre-label" data-dtm="compose-genres">
+        ${COMPOSE_GENRES.map(
+					(g) =>
+						`<button type="button" class="dtm-genre" role="radio" aria-checked="false" tabindex="-1" data-genre="${g.id}"><b>${g.label}</b><small>${g.desc}</small></button>`,
+				).join("")}
+      </div>
+      <div class="dtm-row" data-dtm="compose-vocal-row">
+        <span class="dtm-label" id="dtm-compose-vocal-label">歌</span>
+        <div class="dtm-seg" role="radiogroup" aria-labelledby="dtm-compose-vocal-label" data-dtm="compose-vocal">
+          <button type="button" class="dtm-seg-btn" role="radio" aria-checked="true" data-vocal="on">歌あり</button>
+          <button type="button" class="dtm-seg-btn" role="radio" aria-checked="false" data-vocal="off">インスト</button>
+        </div>
+        <select class="dtm-select dtm-compose-voice" data-dtm="compose-voice" aria-label="歌う声" title="メロディを歌う声。トラックの「歌唱モデル」と同じものです"></select>
+        <span class="dtm-hint" data-dtm="compose-vocal-hint"></span>
+      </div>
+      <button class="dtm-btn dtm-btn--success dtm-compose-go" data-dtm="macro-compose">${icon("play", 14)} 作る</button>
+      <p class="dtm-hint dtm-compose-len" data-dtm="compose-sections-len"></p>
+      <!--
+        **結果カードは作った直後の曲だけを映す。** 「もう1回」は同じ設定で引き直し、
+        「これを残す」は今の曲を一覧へ足す。引き直すと今の曲が消えると思うと引き直せなくなるので、
+        残す場所を先に用意しておく。
+      -->
+      <div class="dtm-compose-result dtm-hidden" data-dtm="compose-result" aria-live="polite">
+        <dl class="dtm-compose-facts" data-dtm="compose-result-facts"></dl>
+        <p class="dtm-hint dtm-compose-note dtm-hidden" data-dtm="compose-result-note"></p>
+        <div class="dtm-row">
+          <button class="dtm-btn" data-dtm="compose-again" title="同じ設定でもう1曲作ります">もう1回</button>
+          <button class="dtm-btn dtm-btn--primary" data-dtm="compose-keep" title="今の曲を「残した曲」に入れます。作り直しても、ページを開き直しても消えません">これを残す</button>
+        </div>
+      </div>
+      <details class="dtm-compose-sub dtm-hidden" data-dtm="compose-saved">
+        <summary data-dtm="compose-saved-title">残した曲</summary>
+        <ol class="dtm-kept-list" data-dtm="compose-saved-list"></ol>
+      </details>
+      <details class="dtm-compose-sub" data-dtm="compose-more">
+        <summary>詳しく</summary>
+        <div class="dtm-compose-more-body">
       <div class="dtm-row" data-dtm="compose-template-row">
-        <span class="dtm-label">構成</span>
-        <select class="dtm-select" data-dtm="compose-template" title="J-POP王道などのプリセット構成を選びます">
-          <option value="custom">自由選択（下記チェック）</option>
-          <option value="1chorus">1コーラス（短め・初心者向け）</option>
-          <option value="jpop_standard">JPOP王道（マリーゴールド型 2番/Cメロ/ラスサビ）</option>
-          <option value="jpop_drop">落ちサビ入り（JPOP王道 + ラスサビ前落ちサビ）</option>
-          <option value="vocaloid">ボカロ王道（疾走・2番/Cメロ/ラスサビ）</option>
-          <option value="verse_chorus">Verse-Chorus（Bメロなし・洋楽風）</option>
-          <option value="game_loop">ゲームBGM（ループ・16分リフ）</option>
-          <option value="kaiwai">界隈曲（短調・4つ打ち・8分ベース・多回サビ）</option>
-          <option value="kaiwai_kaisen">界隈曲・海鮮リスペクト</option>
-          <option value="kaiwai_2go_lead">界隈曲・2号兄貴リスペクト</option>
-          <option value="kaiwai_2go">界隈曲・2号兄貴リスペクト（歌入り）</option>
-          <option value="kaiwai_speder2_lead">界隈曲・Speder2リスペクト</option>
-          <option value="kaiwai_speder2">界隈曲・Speder2リスペクト（歌入り）</option>
+        <span class="dtm-label">曲の形</span>
+        <select class="dtm-select" data-dtm="compose-template" title="J-POPの曲の並びを選びます">
+          <option value="jpop_standard">王道（2番・Cメロ・ラスサビ）</option>
+          <option value="1chorus">1コーラス（短め）</option>
+          <option value="jpop_drop">落ちサビ入り</option>
+          <option value="verse_chorus">Bメロなし（洋楽風）</option>
+          <option value="custom">作る部分を自分で選ぶ</option>
         </select>
+        <span class="dtm-hint" data-dtm="compose-template-hint"></span>
       </div>
       <div class="dtm-row" data-dtm="compose-sections-row">
         <span class="dtm-label">作る部分</span>
@@ -578,8 +609,11 @@ export const buildUI = (
           <label class="dtm-check"><input type="checkbox" value="interlude">間奏</label>
           <label class="dtm-check"><input type="checkbox" value="outro">アウトロ</label>
         </div>
-        <span class="dtm-grow"></span>
-        <span class="dtm-hint" data-dtm="compose-sections-len"></span>
+      </div>
+      <div class="dtm-row" data-dtm="compose-tempo-row">
+        <span class="dtm-label">テンポ</span>
+        <input type="number" class="dtm-input dtm-compose-tempo" data-dtm="compose-tempo" min="40" max="300" step="1" inputmode="numeric" placeholder="おまかせ" aria-label="テンポ（空ならジャンルに合わせる）" title="空ならジャンルに合わせて決めます">
+        <span class="dtm-hint">空ならおまかせ</span>
       </div>
       <div class="dtm-row" data-dtm="compose-key-row">
         <span class="dtm-label">ベース調</span>
@@ -661,6 +695,8 @@ export const buildUI = (
         <span class="dtm-grow"></span>
         <span class="dtm-hint" data-dtm="compose-scale-hint"></span>
       </div>
+        </div>
+      </details>
     </div>
   </details>
 
@@ -902,17 +938,29 @@ export const buildUI = (
 		transposeApplyBtn: sel("transpose-apply"),
 		transposeInfoBtn: sel("transpose-info"),
 		macroCompose: sel("macro-compose"),
+		composeGenres: sel("compose-genres"),
+		composeVocal: sel("compose-vocal"),
+		composeVoice: sel<HTMLSelectElement>("compose-voice"),
+		composeVocalHint: sel("compose-vocal-hint"),
+		composeResult: sel("compose-result"),
+		composeResultFacts: sel("compose-result-facts"),
+		composeResultNote: sel("compose-result-note"),
+		composeAgain: sel("compose-again"),
 		composeKeep: sel("compose-keep"),
-		composeRecall: sel("compose-recall"),
+		composeSaved: sel<HTMLDetailsElement>("compose-saved"),
+		composeSavedTitle: sel("compose-saved-title"),
+		composeSavedList: sel("compose-saved-list"),
+		composeMore: sel<HTMLDetailsElement>("compose-more"),
 		composeTemplate: sel("compose-template") as HTMLSelectElement | null,
+		composeTemplateHint: sel("compose-template-hint"),
+		composeSectionsRow: sel("compose-sections-row"),
+		composeTempo: sel<HTMLInputElement>("compose-tempo"),
 		composeSections: sel("compose-sections"),
 		composeSectionsLen: sel("compose-sections-len"),
 		composeKey: sel("compose-key"),
 		composeKeyHint: sel("compose-key-hint"),
 		composeScale: sel("compose-scale"),
 		composeScaleHint: sel("compose-scale-hint"),
-		macroComposeVocal: sel("macro-compose-vocal"),
-		macroComposeAccomp: sel("macro-compose-accomp"),
 		macroComposeInfo: sel("macro-compose-info"),
 		macroClear: sel("macro-clear"),
 		macroRandom: sel("macro-random"),

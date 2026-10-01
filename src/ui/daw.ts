@@ -183,15 +183,24 @@ import {
 	vocalVolumeToGain,
 } from "../voice/lyrics";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "../voice/voice-images";
+import {
+	COMPOSE_SHAPES,
+	type ComposeGenre,
+	DEFAULT_COMPOSE_SHAPE,
+	findComposeGenre,
+	genreFromTemplate,
+} from "./compose-genres";
 import { buildUI } from "./daw-ui";
 import { icon } from "./icons";
 import { createRenderer, type Renderer } from "./renderer";
 import {
+	KEPT_SONGS_LIMIT,
 	type KeptSong,
-	readKeptSong,
+	newKeptId,
+	readKeptSongs,
 	readMacroSections,
 	readMacroSetting,
-	writeKeptSong,
+	writeKeptSongs,
 	writeMacroSections,
 	writeMacroSetting,
 } from "./state/macro-state";
@@ -542,8 +551,10 @@ const COMPOSE_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>作曲とは</h4>
   <p>コード進行・メロディ・サブメロ・ベース・伴奏・ドラムをまとめて自動で作るボタンです。押すたびに違う曲ができます。できあがった曲はそのまま編集できるので、気に入らないところだけ後から直すこともできますし、もう一度押して作り直すこともできます。</p>
+  <h4>ジャンルと歌</h4>
+  <p>「何を作る？」で選んだジャンルに合わせて、曲の形・テンポ・楽器・ドラムが決まります。<strong>歌あり</strong>はメロディに歌詞を付けて歌わせ、<strong>インスト</strong>は歌なしで作ります。<strong>BGM</strong>は旋律をほとんど置かない伴奏主体のループ曲（約2分半〜3分・ドラムなし）です。楽器プリセットを自分で選んだ後は、その楽器を使います。</p>
   <h4>作る部分を選べます</h4>
-  <p>ボタンの下のチェックで、<strong>イントロ・Aメロ・Bメロ・サビ・間奏・アウトロ</strong>のどれを作るかを選べます。選んだぶんだけ曲が長くなり、右に何小節になるかが出ます（既定はイントロ＋Aメロ＋Bメロ＋サビの24小節）。「サビだけ作り直したい」「間奏を足したい」といった使い方ができます。</p>
+  <p>J-POPでは「詳しく」の<strong>曲の形</strong>で「作る部分を自分で選ぶ」にすると、<strong>イントロ・Aメロ・Bメロ・サビ・間奏・アウトロ</strong>のどれを作るかを選べます。選んだぶんだけ曲が長くなり、何小節になるかが出ます。「サビだけ作り直したい」「間奏を足したい」といった使い方ができます。</p>
   <p>セクションごとに作り分けている中身は次のとおりです。</p>
   <table class="dtm-info-table">
     <tr><th>　</th><th>メロディ</th><th>音域</th><th>ドラム</th><th>終わり方</th></tr>
@@ -1770,11 +1781,31 @@ export const mountDAW = (
 	// MML出力の先頭に埋め込む楽器プリセット名（トップレベル宣言。空なら宣言なし）
 	let currentInstrument = "";
 	/**
-	 * 直前の「作曲」が自動で当てた楽器プリセット名。ユーザーが自分で選んだプリセットを
-	 * 上書きしないための目印で、`currentInstrument` がこの値のまま（＝ユーザーは触っていない）
-	 * または "auto" / 未設定なら、次の作曲で曲調に合わせて引き直す。
+	 * 利用者が楽器プリセットの選択UI（「全体トラック設定」の preset-select-slot）で**自分で**選んだ値。
+	 * 自動作曲はこれがあればジャンルの楽器より優先する。`setInstrument`（ホストの初期値や永続化の
+	 * 書き戻し）は利用者の選択とみなさない——デモが最初に当てる retro_game でジャンルの楽器が
+	 * 使われなくなっていた。
 	 */
-	let autoComposeInstrument: string | null = null;
+	let userInstrument: string | null = (() => {
+		const v = readMacroSetting("userInstrument");
+		return v && INSTRUMENT_PRESETS[v] ? v : null;
+	})();
+	// root は再マウントで作り直されるので、リスナーが前のインスタンスに残らない
+	refs.root.addEventListener("change", (e) => {
+		const el = e.target as HTMLElement;
+		if (!(el instanceof HTMLSelectElement)) return;
+		if (!el.closest('[data-dtm="preset-select-slot"]')) return;
+		if (!INSTRUMENT_PRESETS[el.value]) return;
+		userInstrument = el.value;
+		writeMacroSetting("userInstrument", el.value);
+	});
+	/** 自動作曲の楽器プリセット。利用者が自分で選んでいればそれ、無ければジャンルの候補から引いた値。 */
+	const applyComposeInstrument = (picked: string): void => {
+		const want = userInstrument ?? picked;
+		if (!want || want === currentInstrument) return;
+		currentInstrument = want;
+		options.onInstrumentChange?.(want);
+	};
 	/**
 	 * 直近の自動作曲の乱数種と設定。MML の `#seed=` `#compose=` に埋める。
 	 * 気に入った曲が外へ貼られたとき、**どの抽選から出たかを再現する**ための記録で、
@@ -1855,6 +1886,9 @@ export const mountDAW = (
 	 * UI（カスタム音声を追加…）からも登録される。
 	 */
 	const customVocalsMap = new Map<string, CustomVocalDef>();
+	/** トラック側で歌唱モデルを選んだときの通知（自動作曲パネルの「声」を合わせる）。 */
+	let onMelodyVoicePicked: ((track: TrackState, model: string) => void) | null =
+		null;
 	/** 辞書へ登録する（キーは小文字化。内蔵モデル名との衝突は無視して乗っ取りを防ぐ） */
 	const registerCustomVocal = (def: CustomVocalDef): void => {
 		const key = def.key.toLowerCase();
@@ -4666,6 +4700,7 @@ export const mountDAW = (
 				}
 				lyricCustom.classList.add("dtm-hidden");
 				active.lyricModel = lyricModelSel.value;
+				onMelodyVoicePicked?.(active, active.lyricModel);
 				syncLyricVisibility();
 				syncInstDisabled();
 				syncOctaveVisibility();
@@ -6562,14 +6597,38 @@ export const mountDAW = (
 			showModal("作曲の解説", COMPOSE_INFO_HTML);
 		});
 
-		/**
-		 * 「作曲」本体。確認を挟むかどうかは呼び出し側で決める。
-		 * `withVocal` を立てると、メロディトラックに歌詞を付けて歌わせる。
-		 */
-		const selectedComposeTemplate = (): string | undefined => {
-			const val = refs.composeTemplate?.value;
-			return val && val !== "custom" ? val : undefined;
-		};
+		// --- 何を作る？（ジャンルのカード）・歌・曲の形 ---
+		//
+		// カードは既存テンプレートへの入口を並べ替えただけ（対応表は compose-genres.ts）。「曲の形」は
+		// J-POP カードのときだけ効き、他のジャンルは形がテンプレートで決まっている。
+		const savedGenre = readMacroSetting("genre");
+		const migratedGenre = genreFromTemplate(readMacroSetting("template"));
+		let genre: ComposeGenre = findComposeGenre(
+			savedGenre ?? migratedGenre.genre,
+		);
+		const savedVocal = readMacroSetting("vocal");
+		let vocalOn =
+			savedVocal === "on"
+				? true
+				: savedVocal === "off"
+					? false
+					: savedGenre
+						? genre.vocalDefault
+						: (migratedGenre.vocal ?? genre.vocalDefault);
+		if (genre.engine === "accomp") vocalOn = false;
+		if (refs.composeTemplate) {
+			const shape = savedGenre
+				? readMacroSetting("template")
+				: migratedGenre.shape;
+			refs.composeTemplate.value =
+				shape && (COMPOSE_SHAPES as readonly string[]).includes(shape)
+					? shape
+					: DEFAULT_COMPOSE_SHAPE;
+		}
+		const composeShape = (): string =>
+			refs.composeTemplate?.value ?? DEFAULT_COMPOSE_SHAPE;
+		const selectedComposeTemplate = (): string | undefined =>
+			genre.template(vocalOn, composeShape());
 
 		/** チェックの入っているセクション。全部外れていたら既定の構成に戻す。 */
 		const selectedComposeSections = (): SectionKind[] => {
@@ -6593,8 +6652,6 @@ export const mountDAW = (
 		/** 別エンジン（骨格借用・継ぎ合わせ）のテンプレートか。曲の長さもセクションも引いた設計図が決めるので、箱は効かない。 */
 		const engineOf = (name?: string): string | undefined =>
 			STRUCTURE_TEMPLATES.find((t) => t.name === name)?.engine;
-		const hasOwnEngine = (name?: string): boolean =>
-			engineOf(name) !== undefined;
 		const composeBarsLabel = (): string => {
 			const tmplName = selectedComposeTemplate();
 			const range = sectionPlanBarRange(selectedComposeSections(), tmplName);
@@ -6610,49 +6667,193 @@ export const mountDAW = (
 					: text;
 		};
 		const updateComposeSectionsLen = (): void => {
-			refs.composeSectionsLen.textContent = composeBarsLabel();
-			const disabled = hasOwnEngine(selectedComposeTemplate());
+			refs.composeSectionsLen.textContent =
+				genre.engine === "accomp"
+					? "長さ：約2分半〜3分のループ（ドラムなし）"
+					: `長さ：${composeBarsLabel()}`;
+		};
+		const setSectionBoxes = (kinds: Set<string>): void => {
 			for (const box of refs.composeSections.querySelectorAll<HTMLInputElement>(
 				'input[type="checkbox"]',
 			))
-				box.disabled = disabled;
+				box.checked = kinds.has(box.value);
 		};
-		// 自動作曲パネルの選択値を localStorage から復元
-		const savedTemplate = readMacroSetting("template");
-		if (savedTemplate && refs.composeTemplate) {
-			const hasOption = Array.from(refs.composeTemplate.options).some(
-				(opt) => opt.value === savedTemplate,
-			);
-			if (hasOption) {
-				refs.composeTemplate.value = savedTemplate;
-			}
-		}
-
-		const savedSections = readMacroSections();
-		if (savedSections && refs.composeSections) {
-			const boxes = refs.composeSections.querySelectorAll<HTMLInputElement>(
-				'input[type="checkbox"]',
-			);
-			const validValues = new Set(savedSections);
-			for (const box of boxes) {
-				box.checked = validValues.has(box.value);
-			}
-		} else if (
-			savedTemplate &&
-			savedTemplate !== "custom" &&
-			refs.composeSections
-		) {
-			const tmpl = STRUCTURE_TEMPLATES.find((t) => t.name === savedTemplate);
+		/**
+		 * 作る部分の箱をテンプレートの構成へ合わせる（旧 UI で構成を選んだときと同じ）。作曲に渡す
+		 * `sections` は箱から読むので、同じテンプレートなら旧 UI と同じ値が渡る（`#compose=` も同じ）。
+		 * テンプレートの無い「作る部分を自分で選ぶ」は、保存してある選択へ戻す。
+		 */
+		const syncSectionsToTemplate = (): void => {
+			const tmplName = selectedComposeTemplate();
+			const tmpl = tmplName
+				? STRUCTURE_TEMPLATES.find((t) => t.name === tmplName)
+				: undefined;
 			if (tmpl) {
-				const planSet = new Set(tmpl.plan);
-				const boxes = refs.composeSections.querySelectorAll<HTMLInputElement>(
-					'input[type="checkbox"]',
-				);
-				for (const box of boxes) {
-					box.checked = planSet.has(box.value as SectionKind);
-				}
+				setSectionBoxes(new Set(tmpl.plan));
+				return;
 			}
-		}
+			const saved = readMacroSections();
+			if (saved) setSectionBoxes(new Set(saved));
+		};
+		const savedSections = readMacroSections();
+		if (savedSections) setSectionBoxes(new Set(savedSections));
+		syncSectionsToTemplate();
+
+		/** 歌う声の選択肢（「おまかせ」＋トラックの歌唱モデルと同じもの）。 */
+		const fillComposeVoiceOptions = (): void => {
+			const sel = refs.composeVoice;
+			const want = sel.value || readMacroSetting("voice") || "";
+			sel.innerHTML = "";
+			const add = (value: string, label: string): void => {
+				const o = document.createElement("option");
+				o.value = value;
+				o.textContent = label;
+				sel.appendChild(o);
+			};
+			add("", "声：おまかせ（毎回かえる）");
+			for (const m of BASE_LYRIC_MODELS)
+				add(m, lyricModelLabel(m, customVocalsMap));
+			for (const key of customVocalsMap.keys())
+				add(key, lyricModelLabel(key, customVocalsMap));
+			sel.value = [...sel.options].some((o) => o.value === want) ? want : "";
+		};
+		fillComposeVoiceOptions();
+		refs.composeVoice.addEventListener("focus", fillComposeVoiceOptions);
+		/** 歌入りで主旋律を歌うトラック（simple はメロディ、advanced は t0）。 */
+		const composeMelodyTrack = (): TrackState | undefined =>
+			isAdvanced
+				? trackStates[0]
+				: trackStates.find((t) => t.config.id === "melody");
+		refs.composeVoice.addEventListener("change", () => {
+			const voice = refs.composeVoice.value;
+			writeMacroSetting("voice", voice);
+			// いま歌っているなら、その場で声を替える（トラックの歌唱モデルと同じ値）
+			const mt = composeMelodyTrack();
+			if (!voice || !mt || !mt.lyricModel.trim()) return;
+			mt.lyricModel = voice;
+			autoComposeVocalTracks.delete(mt);
+			fireLyricsChange(mt);
+			reloadVoicesForModel(voice);
+			updateTrackPanel();
+			updateTrackTabs();
+			redrawAll();
+		});
+		// トラック側で主旋律の歌唱モデルを選んだら、こちらの声も合わせる
+		onMelodyVoicePicked = (track, model) => {
+			if (track !== composeMelodyTrack() || !model) return;
+			fillComposeVoiceOptions();
+			if ([...refs.composeVoice.options].some((o) => o.value === model)) {
+				refs.composeVoice.value = model;
+				writeMacroSetting("voice", model);
+			}
+		};
+
+		/** カード・歌・詳しくの表示を今の選択に合わせる。 */
+		const renderComposeControls = (): void => {
+			for (const card of refs.composeGenres.querySelectorAll<HTMLElement>(
+				"[data-genre]",
+			)) {
+				const on = card.dataset.genre === genre.id;
+				card.setAttribute("aria-checked", on ? "true" : "false");
+				card.tabIndex = on ? 0 : -1;
+			}
+			const accomp = genre.engine === "accomp";
+			for (const b of refs.composeVocal.querySelectorAll<HTMLButtonElement>(
+				"[data-vocal]",
+			)) {
+				const on = (b.dataset.vocal === "on") === vocalOn;
+				b.setAttribute("aria-checked", on ? "true" : "false");
+				b.tabIndex = on ? 0 : -1;
+				b.disabled = accomp;
+			}
+			refs.composeVoice.classList.toggle("dtm-hidden", !vocalOn);
+			refs.composeVocalHint.textContent = accomp ? "BGMは歌なしで作ります" : "";
+			refs.composeTemplate?.classList.toggle(
+				"dtm-hidden",
+				!genre.shapeSelectable,
+			);
+			refs.composeTemplateHint.textContent = genre.shapeSelectable
+				? ""
+				: "このジャンルは形が決まっています";
+			refs.composeSectionsRow.classList.toggle(
+				"dtm-hidden",
+				!(genre.shapeSelectable && composeShape() === "custom"),
+			);
+			// 伴奏主体はベース調だけ使う（音階は使わない）
+			refs.composeScale.disabled = accomp;
+			updateComposeSectionsLen();
+		};
+		const selectGenre = (next: ComposeGenre): void => {
+			genre = next;
+			vocalOn = next.engine === "accomp" ? false : next.vocalDefault;
+			writeMacroSetting("genre", next.id);
+			writeMacroSetting("vocal", vocalOn ? "on" : "off");
+			syncSectionsToTemplate();
+			renderComposeControls();
+		};
+		const setVocal = (on: boolean): void => {
+			if (genre.engine === "accomp") return;
+			vocalOn = on;
+			writeMacroSetting("vocal", on ? "on" : "off");
+			syncSectionsToTemplate();
+			renderComposeControls();
+		};
+		/** ラジオの並び（role="radio"）を矢印・Home・End で動かす。 */
+		const radioKeys = (
+			group: HTMLElement,
+			selector: string,
+			pick: (el: HTMLElement) => void,
+		): void => {
+			group.addEventListener("keydown", (e) => {
+				const items = [...group.querySelectorAll<HTMLElement>(selector)].filter(
+					(el) => !(el as HTMLButtonElement).disabled,
+				);
+				const at = items.indexOf(document.activeElement as HTMLElement);
+				if (at < 0) return;
+				let next = -1;
+				if (e.key === "ArrowRight" || e.key === "ArrowDown")
+					next = (at + 1) % items.length;
+				else if (e.key === "ArrowLeft" || e.key === "ArrowUp")
+					next = (at - 1 + items.length) % items.length;
+				else if (e.key === "Home") next = 0;
+				else if (e.key === "End") next = items.length - 1;
+				if (next < 0) return;
+				e.preventDefault();
+				const el = items[next];
+				if (!el) return;
+				pick(el);
+				el.focus();
+			});
+		};
+		refs.composeGenres.addEventListener("click", (e) => {
+			const card = (e.target as HTMLElement).closest<HTMLElement>(
+				"[data-genre]",
+			);
+			if (card) selectGenre(findComposeGenre(card.dataset.genre));
+		});
+		radioKeys(refs.composeGenres, "[data-genre]", (el) =>
+			selectGenre(findComposeGenre(el.dataset.genre)),
+		);
+		refs.composeVocal.addEventListener("click", (e) => {
+			const b = (e.target as HTMLElement).closest<HTMLElement>("[data-vocal]");
+			if (b) setVocal(b.dataset.vocal === "on");
+		});
+		radioKeys(refs.composeVocal, "[data-vocal]", (el) =>
+			setVocal(el.dataset.vocal === "on"),
+		);
+
+		/** 詳しくのテンポ。空・範囲外ならジャンルに任せる（undefined）。 */
+		const composeTempo = (): number | undefined => {
+			const v = Number.parseInt(refs.composeTempo.value, 10);
+			return Number.isFinite(v) && v >= 40 && v <= 300 ? v : undefined;
+		};
+		const savedTempo = readMacroSetting("tempo");
+		if (savedTempo) refs.composeTempo.value = savedTempo;
+		refs.composeTempo.addEventListener("change", () => {
+			const v = composeTempo();
+			refs.composeTempo.value = v === undefined ? "" : String(v);
+			writeMacroSetting("tempo", refs.composeTempo.value);
+		});
 
 		const savedKey = readMacroSetting("key");
 		if (savedKey && refs.composeKey) {
@@ -6705,31 +6906,20 @@ export const mountDAW = (
 				writeMacroSetting("template", "custom");
 			}
 			writeMacroSections(selectedComposeSections());
-			updateComposeSectionsLen();
+			renderComposeControls();
 		});
 		const composeTemplate = refs.composeTemplate;
 		if (composeTemplate) {
 			composeTemplate.addEventListener("change", () => {
 				writeMacroSetting("template", composeTemplate.value);
-				const tmplName = selectedComposeTemplate();
-				if (tmplName) {
-					const tmpl = STRUCTURE_TEMPLATES.find((t) => t.name === tmplName);
-					if (tmpl) {
-						const planSet = new Set(tmpl.plan);
-						const boxes =
-							refs.composeSections.querySelectorAll<HTMLInputElement>(
-								'input[type="checkbox"]',
-							);
-						for (const box of boxes) {
-							box.checked = planSet.has(box.value as SectionKind);
-						}
-					}
+				if (selectedComposeTemplate()) {
+					syncSectionsToTemplate();
+					writeMacroSections(selectedComposeSections());
 				}
-				writeMacroSections(selectedComposeSections());
-				updateComposeSectionsLen();
+				renderComposeControls();
 			});
 		}
-		updateComposeSectionsLen();
+		renderComposeControls();
 
 		const updateComposeKeyHint = (): void => {
 			if (!refs.composeKey || !refs.composeKeyHint) return;
@@ -6919,15 +7109,7 @@ export const mountDAW = (
 				// **楽器プリセットは、ノートを書く前に決める。** 上級者モードの編曲は層のオクターブを楽器の
 				// 音域へ合わせる（{@link fitInstrumentOctave}）ので、何の音色で鳴るかが先に分かっていないと
 				// 合わせようが無い。自分で選んだプリセットは尊重して維持する。
-				const shouldAutoInstrument =
-					!currentInstrument ||
-					currentInstrument === "auto" ||
-					currentInstrument === autoComposeInstrument;
-				if (shouldAutoInstrument && song.instrument) {
-					currentInstrument = song.instrument;
-					autoComposeInstrument = song.instrument;
-					options.onInstrumentChange?.(song.instrument);
-				}
+				applyComposeInstrument(song.instrument);
 
 				if (isAdvanced) {
 					// --- 上級者モード（15トラック）---
@@ -6988,8 +7170,9 @@ export const mountDAW = (
 					}
 				}
 				// テンポも曲ごとに決める。設定しないと全曲が既定値のままで、
-				// 続けて聴いたときに曲の違いが出にくい。
-				setBpm(song.bpm);
+				// 続けて聴いたときに曲の違いが出にくい。「詳しく」でテンポを決めていればそれ。
+				const songBpm = composeTempo() ?? song.bpm;
+				setBpm(songBpm);
 
 				// ドラムも曲に合わせて組み込みパターンから自動選択する。
 				currentDrumPattern = song.drum;
@@ -7012,7 +7195,15 @@ export const mountDAW = (
 						// 曲が変わるたびに声も変わるようにするため引き直す（毎回同じ声だと
 						// 「歌入り作曲」を押し直しても曲の印象が似通って聞こえる）。
 						const current = melodyTrack.lyricModel.trim();
-						if (!current || current === autoComposeVocal) {
+						// 自動作曲パネルで声を選んでいれば、その声で歌う
+						const preferred = refs.composeVoice.value;
+						if (preferred) {
+							if (!current && melodyTrack.vocalOctave === 0) {
+								melodyTrack.vocalOctave = -1;
+							}
+							melodyTrack.lyricModel = preferred;
+							autoComposeVocalTracks.set(melodyTrack, preferred);
+						} else if (!current || current === autoComposeVocal) {
 							// 初めてこのトラックに歌声を当てるときだけ、オクターブも既定の -1 に倒す。UTAU/koe系の歌唱
 							// 合成は中〜低音域のほうがピッチ追従・声質が安定する。既にオクターブを触っている場合や、
 							// 単なる声の引き直しでは上書きしない。
@@ -7146,6 +7337,15 @@ export const mountDAW = (
 				updateUndoRedo();
 				// 「作ったまま手を入れていない」状態を覚えておく（{@link composeWithConfirm}）。
 				composedSignature = trackSignature();
+				showComposeResult({
+					bpm: songBpm,
+					keyLabel: song.keyLabel,
+					bars: song.sections.reduce(
+						(m, x) => Math.max(m, x.startBar + x.bars),
+						0,
+					),
+					genreInstrument: song.instrument,
+				});
 				// **そのまま鳴らす。** 再生位置をサビの頭に置いてあるのに再生ボタンを
 				// 待つと、引き直し1回が「作曲→再生」の2タップになる。作曲ボタンを押した
 				// 人が次にすることは聴くことしかないので、ここで始めてしまう。
@@ -7196,15 +7396,7 @@ export const mountDAW = (
 				// 楽器プリセット。自分で選んだプリセットは尊重する（runCompose と同じ判定）。
 				// トラック 0〜3 はトラック個別の楽器（下の applyTrackStripMeta）で鳴るので、プリセットが
 				// 効くのは書き出しの `#inst=` と、後でおまかせを押したときの割り当てだけ。
-				const shouldAutoInstrument =
-					!currentInstrument ||
-					currentInstrument === "auto" ||
-					currentInstrument === autoComposeInstrument;
-				if (shouldAutoInstrument) {
-					currentInstrument = song.mix.instrument;
-					autoComposeInstrument = song.mix.instrument;
-					options.onInstrumentChange?.(song.mix.instrument);
-				}
+				applyComposeInstrument(song.mix.instrument);
 
 				// 伴奏主体の曲のトラックを、おまかせマスタリングの音色スロットへ対応づける（上級者モード）。
 				// 後で手動でおまかせを押したとき、分散がプリセットの melody を引くようにする。対応はスタイルの
@@ -7240,7 +7432,8 @@ export const mountDAW = (
 				// トラック設定。0〜3 以外のトラックは既定値（楽器なし・パン中央・送り0 等）へ戻る。
 				const meta = accompMeta(song);
 				applyTrackStripMeta(meta);
-				setBpm(song.bpm);
+				const songBpm = composeTempo() ?? song.bpm;
+				setBpm(songBpm);
 				// ドラムは曲のミックスのもの（fb は none）
 				currentDrumPattern = song.mix.drum;
 				refs.drumSelect.value = song.mix.drum;
@@ -7277,6 +7470,12 @@ export const mountDAW = (
 				updateTrackPanel(); // 和音の入力欄・トラックの設定へ反映する
 				updateUndoRedo();
 				composedSignature = trackSignature();
+				showComposeResult({
+					bpm: songBpm,
+					keyLabel: song.keyLabel,
+					bars: song.bars,
+					genreInstrument: song.mix.instrument,
+				});
 				// 作曲したらそのまま鳴らす（runCompose と同じ）
 				void play();
 			});
@@ -7306,60 +7505,252 @@ export const mountDAW = (
 			}
 			run();
 		};
-		/** 歌ものの「作曲」「歌入り作曲」の確認文言。構成の小節数は押した時点の選択で出す。 */
-		const composeSongWithConfirm = (withVocal: boolean): void => {
-			composeWithConfirm(
-				withVocal ? "歌入り作曲" : "作曲",
-				`今あるノートをすべて消して、${composeBarsLabel()}の曲を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
-				() => runCompose(withVocal),
-			);
+		/**
+		 * インストで作る前に、全トラックの歌（歌詞と歌唱モデル）を外す。残すと前の曲の `@@n` 行が
+		 * 新しいノートに乗ったまま書き出される。
+		 */
+		const clearAllVocals = (): void => {
+			for (const t of trackStates) {
+				if (!t.lyrics && !t.lyricModel) continue;
+				t.lyrics = "";
+				t.lyricModel = "";
+				fireLyricsChange(t);
+			}
+			autoComposeVocalTracks.clear();
 		};
-		refs.macroCompose.addEventListener("click", () => {
-			composeSongWithConfirm(false);
-		});
-		refs.macroComposeAccomp.addEventListener("click", () => {
-			composeWithConfirm(
-				"伴奏主体",
-				"今あるノートをすべて消して、伴奏主体のループ曲（約2分半〜3分・ドラムなし）を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）",
-				runComposeAccomp,
-			);
-		});
 
-		// --- キープ枠 ---
-		//
-		// **自動作曲は「気に入るまで引き直す」使い方になる。** ところが引き直すと今のものが消えるので、
-		// 「これより良いのが出なかったら困る」と思った時点で引き直せなくなる。取っておける場所が1つ
-		// あれば、2つを比べて選ぶことは成立する。候補を何件も並べるUIにはしない——1曲1〜2分の試聴が
-		// 20件で30分になり、画面にも載らない。
-		//
-		// 中身は {@link generateMML} が出すMMLそのもの（項目を手で並べると、あとから足した設定が
-		// 漏れる）。**リロードをまたいで残す**（{@link readKeptSong}）——スマホでは別アプリを見て戻ると
-		// タブが再読み込みされることが日常的にある。
-		let kept: KeptSong | null = readKeptSong();
-		const updateKeepUI = (): void => {
-			refs.composeRecall.disabled = kept === null;
-			refs.composeKeep.textContent = kept === null ? "キープ" : "キープ済";
+		/** 作る時点の選択（作曲は setTimeout の後で走るので、押した時点で控える）。 */
+		let composing: { title: string; vocal: boolean } | null = null;
+		/** 直前に作った曲（「これを残す」で一覧の見出しと補足へ写す）。 */
+		let lastComposed: {
+			title: string;
+			keyLabel: string;
+			bars: number;
+			signature: string;
+		} | null = null;
+		const presetLabel = (key: string): string =>
+			INSTRUMENT_PRESETS[key]?.displayName ?? (key || "—");
+
+		/** 大きな「作る」ボタン・「もう1回」。選んだジャンルと歌で1曲作る。 */
+		const composeSelected = (): void => {
+			const g = genre;
+			const vocal = g.engine === "song" && vocalOn;
+			const title =
+				g.engine === "accomp"
+					? g.label
+					: `${g.label}・${vocal ? "歌あり" : "インスト"}`;
+			const run = (): void => {
+				composing = { title, vocal };
+				if (!vocal) clearAllVocals();
+				if (g.engine === "accomp") runComposeAccomp();
+				else runCompose(vocal);
+			};
+			composeWithConfirm(
+				"作る",
+				g.engine === "accomp"
+					? "今あるノートをすべて消して、BGM（伴奏主体のループ曲・約2分半〜3分・ドラムなし）を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）"
+					: `今あるノートをすべて消して、${g.label}の曲（${composeBarsLabel()}）を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
+				run,
+			);
 		};
-		/** 今の画面の曲をキープ枠の形にする。 */
-		const snapshotKept = (): KeptSong => ({
+		refs.macroCompose.addEventListener("click", composeSelected);
+		refs.composeAgain.addEventListener("click", composeSelected);
+
+		/**
+		 * 作り終えたら結果カードを出す（runCompose / runComposeAccomp の最後から呼ぶ）。
+		 * 楽器は利用者が自分で選んだプリセットを使ったときだけ、その旨と「ジャンルに任せる」を出す。
+		 */
+		const showComposeResult = (r: {
+			bpm: number;
+			keyLabel: string;
+			bars: number;
+			genreInstrument: string;
+		}): void => {
+			const c = composing ?? { title: genre.label, vocal: false };
+			composing = null;
+			const facts: [string, string][] = [
+				["ジャンル", c.title],
+				["テンポ", `${r.bpm}`],
+				["調", r.keyLabel],
+				["長さ", `${r.bars}小節`],
+				["楽器", presetLabel(currentInstrument)],
+			];
+			const mt = composeMelodyTrack();
+			if (c.vocal && mt?.lyricModel)
+				facts.push(["声", lyricModelLabel(mt.lyricModel, customVocalsMap)]);
+			refs.composeResultFacts.replaceChildren(
+				...facts.flatMap(([k, v]) => {
+					const dt = document.createElement("dt");
+					dt.textContent = k;
+					const dd = document.createElement("dd");
+					dd.textContent = v;
+					return [dt, dd];
+				}),
+			);
+			const note = refs.composeResultNote;
+			note.replaceChildren();
+			const ownPick =
+				userInstrument !== null && userInstrument !== r.genreInstrument;
+			note.classList.toggle("dtm-hidden", !ownPick);
+			if (ownPick) {
+				note.append(
+					`楽器は自分で選んだ「${presetLabel(userInstrument ?? "")}」のままです（このジャンルなら「${presetLabel(r.genreInstrument)}」）。`,
+				);
+				const btn = document.createElement("button");
+				btn.type = "button";
+				btn.className = "dtm-btn";
+				btn.textContent = "ジャンルに任せる";
+				btn.title = "次に作る曲から、楽器をジャンルに合わせて選びます";
+				btn.addEventListener("click", () => {
+					userInstrument = null;
+					writeMacroSetting("userInstrument", "");
+					note.textContent = "次に作る曲から、楽器をジャンルに合わせます。";
+				});
+				note.append(btn);
+			}
+			lastComposed = {
+				title: c.title,
+				keyLabel: r.keyLabel,
+				bars: r.bars,
+				signature: trackSignature(),
+			};
+			refs.composeResult.classList.remove("dtm-hidden");
+			refs.composeKeep.disabled = false;
+			refs.composeKeep.textContent = "これを残す";
+			renderKeptSongs();
+		};
+
+		// --- 残した曲 ---
+		//
+		// **自動作曲は「気に入るまで引き直す」使い方になる。** 引き直すと今のものが消えると思うと
+		// 引き直せなくなるので、残す場所を用意する。中身は {@link generateMML} が出す MML そのもの
+		// （項目を手で並べると、あとから足した設定が漏れる）。**リロードをまたいで残す**
+		// （{@link readKeptSongs}）——スマホでは別アプリを見て戻るとタブが再読み込みされる。
+		// 旧キープ枠（1曲）は初回に一覧へ移す。
+		let keptSongs: KeptSong[] = readKeptSongs();
+		/** 画面の曲が一覧のどれと同じか（呼び出し・残した直後から手を入れていない間だけ）。 */
+		let currentKept: { id: string; signature: string } | null = null;
+		const currentKeptId = (): string | null =>
+			currentKept &&
+			currentKept.signature === trackSignature() &&
+			keptSongs.some((k) => k.id === currentKept?.id)
+				? currentKept.id
+				: null;
+		const hasAnyNotes = (): boolean =>
+			trackStates.some((t) => t.core.getNotes().length > 0);
+		const saveKeptSongs = (): boolean => writeKeptSongs(keptSongs);
+		const snapshotKept = (title: string, info: string): KeptSong => ({
+			id: newKeptId(),
 			// 小節数の上限は共有リンクの文字数のためのもので、アプリ内の退避には
-			// 効かせない（効かせると長い曲がキープした時点で切れる）。
+			// 効かせない（効かせると長い曲が残した時点で切れる）。
 			mml: generateMML({ ignoreBarLimit: true }).full,
 			startStep: playStartStep,
-		});
-		refs.composeKeep.addEventListener("click", () => {
-			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
-			if (!hasNotes) return;
-			kept = snapshotKept();
-			writeKeptSong(kept);
-			updateKeepUI();
+			title,
+			info,
+			savedAt: Date.now(),
 		});
 		/**
-		 * キープ枠の曲を画面へ戻す。再生位置はキープした時点のもの（作曲直後なら
-		 * サビの頭）に置き直し、そのまま鳴らす——聴き比べる場所を毎回探させない。
+		 * 今の曲の見出しと補足。作った直後から音符に手を入れていなければ結果カードの値を使う。
+		 * テンポ・楽器・声は後から替えられるので、残す時点の値を読む。
+		 */
+		const currentSongLabel = (fallback: string): [string, string] => {
+			const made =
+				lastComposed && lastComposed.signature === trackSignature()
+					? lastComposed
+					: null;
+			const mt = composeMelodyTrack();
+			const voice =
+				mt?.lyricModel && mt.lyrics.trim()
+					? lyricModelLabel(mt.lyricModel, customVocalsMap)
+					: "";
+			const info = [
+				`${bpm} BPM`,
+				made?.keyLabel ?? "",
+				made ? `${made.bars}小節` : "",
+				presetLabel(currentInstrument),
+				voice,
+			]
+				.filter((x) => x.length > 0)
+				.join("・");
+			return [made?.title ?? fallback, info];
+		};
+		const renderKeptSongs = (): void => {
+			refs.composeSaved.classList.toggle("dtm-hidden", keptSongs.length === 0);
+			refs.composeSavedTitle.textContent = `残した曲（${keptSongs.length}/${KEPT_SONGS_LIMIT}）`;
+			const cur = currentKeptId();
+			refs.composeSavedList.replaceChildren(
+				...keptSongs.map((song, i) => {
+					const li = document.createElement("li");
+					li.className = "dtm-kept-item";
+					li.dataset.current = song.id === cur ? "true" : "false";
+					const text = document.createElement("div");
+					text.className = "dtm-kept-text";
+					const b = document.createElement("b");
+					b.textContent = `${keptSongs.length - i}. ${song.title ?? "残した曲"}${song.id === cur ? "（再生中の曲）" : ""}`;
+					const small = document.createElement("small");
+					small.textContent = song.info ?? "";
+					text.append(b, small);
+					const play = document.createElement("button");
+					play.type = "button";
+					play.className = "dtm-btn dtm-btn--primary";
+					play.textContent = "鳴らす";
+					play.title =
+						"今の曲とこの曲を入れ替えて鳴らします（今の曲が残していなければ、一覧へ残してから）";
+					play.addEventListener("click", () => recallKept(song.id ?? ""));
+					const del = document.createElement("button");
+					del.type = "button";
+					del.className = "dtm-btn dtm-btn--ghost";
+					del.textContent = "消す";
+					del.setAttribute(
+						"aria-label",
+						`「${song.title ?? "残した曲"}」を一覧から消す`,
+					);
+					del.addEventListener("click", () => {
+						showConfirm(
+							"残した曲を消す",
+							`「${song.title ?? "残した曲"}」を一覧から消します。元に戻せません。よろしいですか？`,
+							() => {
+								keptSongs = keptSongs.filter((k) => k.id !== song.id);
+								saveKeptSongs();
+								renderKeptSongs();
+							},
+						);
+					});
+					li.append(text, play, del);
+					return li;
+				}),
+			);
+		};
+		const keepFullMessage = `残した曲がいっぱいです（${KEPT_SONGS_LIMIT}曲まで）。いらない曲を「消す」で減らしてください。`;
+		refs.composeKeep.addEventListener("click", () => {
+			if (!hasAnyNotes()) return;
+			if (currentKeptId() === null) {
+				if (keptSongs.length >= KEPT_SONGS_LIMIT) {
+					showModal("これを残す", `<p>${keepFullMessage}</p>`);
+					refs.composeSaved.open = true;
+					return;
+				}
+				const [title, info] = currentSongLabel("残した曲");
+				const song = snapshotKept(title, info);
+				keptSongs = [song, ...keptSongs];
+				if (!saveKeptSongs())
+					showModal(
+						"これを残す",
+						"<p>ブラウザに保存できませんでした（容量の上限か、保存が許可されていません）。ページを開き直すまでは一覧に残ります。</p>",
+					);
+				currentKept = { id: song.id ?? "", signature: trackSignature() };
+			}
+			refs.composeKeep.disabled = true;
+			refs.composeKeep.textContent = "残しました";
+			refs.composeSaved.open = true;
+			renderKeptSongs();
+		});
+		/**
+		 * 残した曲を画面へ戻す。再生位置は残した時点のもの（作曲直後ならサビの頭）に置き直し、
+		 * そのまま鳴らす——聴き比べる場所を毎回探させない。
 		 */
 		const loadKept = (song: KeptSong): void => {
-			// **「選択中のトラックだけに適用」は無視する。** キープは曲まるごとの
+			// **「選択中のトラックだけに適用」は無視する。** 残した曲は曲まるごとの
 			// 退避なので、部分適用だと戻したつもりで戻らない。チェックは触らずに
 			// この呼び出しの間だけ外す。
 			const box = refs.applyActiveOnly;
@@ -7374,28 +7765,41 @@ export const mountDAW = (
 			// 戻した直後は「手を入れていない」状態ではない（作曲が書いたものではない）。
 			// 次に作曲を押したときは確認を出す。
 			composedSignature = null;
+			currentKept = { id: song.id ?? "", signature: trackSignature() };
+			// 結果カードは作った直後の曲を映すもの。別の曲に替わったので畳む
+			refs.composeResult.classList.add("dtm-hidden");
 			void play();
 		};
-		// --- 入れ替え ---
-		//
-		// 「呼び出す」だと今の曲が消えるので、A と B を行き来して聴き比べることができない。**今の曲を
-		// キープ枠へ入れてからキープを取り出す**＝入れ替えなら、もう一度押せば元に戻る。枠は1つのまま
-		// で2曲の比較が成立する。今の画面に音が無ければ、ただ取り出すだけ。
-		refs.composeRecall.addEventListener("click", () => {
-			if (kept === null) return;
-			const previous = kept;
-			const hasNotes = trackStates.some((t) => t.core.getNotes().length > 0);
-			if (hasNotes) {
-				kept = snapshotKept();
-				writeKeptSong(kept);
+		/**
+		 * 「鳴らす」。**今の曲が一覧に無ければ先に残してから入れ替える**——呼び出すだけだと今の曲が
+		 * 消えて、2曲を行き来して聴き比べられない。一覧がいっぱいなら、今の曲を捨ててよいか確かめる。
+		 */
+		const recallKept = (id: string): void => {
+			const song = keptSongs.find((k) => k.id === id);
+			if (!song) return;
+			if (!hasAnyNotes() || currentKeptId() !== null) {
+				loadKept(song);
+				renderKeptSongs();
+				return;
 			}
-			loadKept(previous);
-			updateKeepUI();
-		});
-		updateKeepUI();
-		refs.macroComposeVocal.addEventListener("click", () => {
-			composeSongWithConfirm(true);
-		});
+			if (keptSongs.length >= KEPT_SONGS_LIMIT) {
+				showConfirm(
+					"残した曲を鳴らす",
+					`残した曲がいっぱいなので、今の曲は残せません。今の曲を消して「${song.title ?? "残した曲"}」を鳴らします。よろしいですか？`,
+					() => {
+						loadKept(song);
+						renderKeptSongs();
+					},
+				);
+				return;
+			}
+			const [title, info] = currentSongLabel("入れ替える前の曲");
+			keptSongs = [snapshotKept(title, info), ...keptSongs];
+			saveKeptSongs();
+			loadKept(song);
+			renderKeptSongs();
+		};
+		renderKeptSongs();
 		refs.macroClear.addEventListener("click", () => {
 			overlayDuring(() => {
 				const active = getActive();

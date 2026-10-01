@@ -14,6 +14,12 @@ export const MACRO_STORAGE_KEYS = {
 	shift: "dtm-macro:shift",
 	shiftActiveOnly: "dtm-macro:shift-active-only",
 	transpose: "dtm-macro:transpose",
+	genre: "dtm-macro:genre",
+	vocal: "dtm-macro:vocal",
+	voice: "dtm-macro:voice",
+	tempo: "dtm-macro:tempo",
+	/** 利用者が楽器プリセットを自分で選んだときの値。自動作曲はこれを優先する。 */
+	userInstrument: "dtm-macro:user-instrument",
 } as const;
 
 export type MacroStorageKey = keyof typeof MACRO_STORAGE_KEYS;
@@ -84,12 +90,25 @@ export type KeptSong = {
 	mml: string;
 	/** キープした時点の再生開始位置（ステップ）。 */
 	startStep: number;
+	/** 一覧の識別子（「残した曲」一覧のみ）。 */
+	id?: string;
+	/** 一覧の見出し（例「界隈曲・歌あり」）。 */
+	title?: string;
+	/** 一覧の補足（テンポ・調・小節数・楽器）。 */
+	info?: string;
+	/** 残した時刻（ms）。 */
+	savedAt?: number;
 };
 
+/** 「残した曲」一覧の上限。1曲あたり数十KBの MML なので localStorage に収まる数にする。 */
+export const KEPT_SONGS_LIMIT = 10;
+
 const KEPT_STORAGE_KEY = "dtm-macro:kept";
+const KEPT_LIST_STORAGE_KEY = "dtm-macro:kept-list";
 
 /**
- * キープ枠を localStorage から読む。無い・壊れている・読めない場合は null。
+ * 旧キープ枠（1曲）を localStorage から読む。無い・壊れている・読めない場合は null。
+ * 今の UI は {@link readKeptSongs}（一覧）を使い、初回にこの枠を一覧へ移す。
  *
  * **リロードをまたいで残す**のは、スマホでは「別アプリを見て戻ったらタブが
  * 再読み込みされていた」が日常的に起きるため。メモリだけに持つと、取っておいた
@@ -133,4 +152,70 @@ export const writeKeptSong = (kept: KeptSong | null): void => {
 		}
 		localStorage.setItem(KEPT_STORAGE_KEY, JSON.stringify(kept));
 	} catch (_) {}
+};
+
+const parseKept = (parsed: unknown): KeptSong | null => {
+	if (!parsed || typeof parsed !== "object") return null;
+	const o = parsed as Record<string, unknown>;
+	if (typeof o.mml !== "string" || o.mml.length === 0) return null;
+	const startStep =
+		typeof o.startStep === "number" &&
+		Number.isFinite(o.startStep) &&
+		o.startStep >= 0
+			? Math.floor(o.startStep)
+			: 0;
+	const song: KeptSong = { mml: o.mml, startStep };
+	if (typeof o.id === "string") song.id = o.id;
+	if (typeof o.title === "string") song.title = o.title;
+	if (typeof o.info === "string") song.info = o.info;
+	if (typeof o.savedAt === "number" && Number.isFinite(o.savedAt))
+		song.savedAt = o.savedAt;
+	return song;
+};
+
+let keptIdSeq = 0;
+/** 一覧の識別子を振る。 */
+export const newKeptId = (): string =>
+	`k${Date.now().toString(36)}${(keptIdSeq++).toString(36)}`;
+
+/**
+ * 「残した曲」一覧を読む（新しい順）。旧キープ枠（1曲）しか無ければ、それを一覧へ移して旧枠を消す。
+ */
+export const readKeptSongs = (): KeptSong[] => {
+	try {
+		if (typeof localStorage === "undefined" || !localStorage) return [];
+		const raw = localStorage.getItem(KEPT_LIST_STORAGE_KEY);
+		if (raw) {
+			const parsed = JSON.parse(raw);
+			if (!Array.isArray(parsed)) return [];
+			return parsed
+				.map(parseKept)
+				.filter((s): s is KeptSong => s !== null)
+				.map((s) => (s.id ? s : { ...s, id: newKeptId() }))
+				.slice(0, KEPT_SONGS_LIMIT);
+		}
+		const old = readKeptSong();
+		if (!old) return [];
+		const migrated: KeptSong[] = [
+			{ ...old, id: newKeptId(), title: "キープしていた曲" },
+		];
+		if (writeKeptSongs(migrated)) localStorage.removeItem(KEPT_STORAGE_KEY);
+		return migrated;
+	} catch (_) {}
+	return [];
+};
+
+/**
+ * 「残した曲」一覧を書く。書けたら true（容量超過などで書けなければ false。メモリ上の一覧は生きている）。
+ */
+export const writeKeptSongs = (songs: KeptSong[]): boolean => {
+	try {
+		if (typeof localStorage === "undefined" || !localStorage) return false;
+		localStorage.setItem(
+			KEPT_LIST_STORAGE_KEY,
+			JSON.stringify(songs.slice(0, KEPT_SONGS_LIMIT)),
+		);
+		return true;
+	} catch (_) {}
+	return false;
 };

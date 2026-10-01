@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
+import { STRUCTURE_TEMPLATES } from "../../src/compose/compose-sections";
 import {
+	COMPOSE_GENRES,
+	COMPOSE_SHAPES,
+	genreFromTemplate,
+} from "../../src/ui/compose-genres";
+import {
+	KEPT_SONGS_LIMIT,
 	MACRO_STORAGE_KEYS,
 	readKeptSong,
+	readKeptSongs,
 	readMacroSections,
 	readMacroSetting,
 	writeKeptSong,
+	writeKeptSongs,
 	writeMacroSections,
 	writeMacroSetting,
 } from "../../src/ui/state/macro-state";
@@ -172,4 +181,91 @@ console.log("✓ すべてのテストに合格しました！");
 		"再生位置が無ければ 0",
 	);
 	console.log("  ✓ キープ枠の読み書き");
+}
+
+// 残した曲（一覧）と旧キープ枠の移行
+{
+	mockStorage.clear();
+	assert.deepEqual(readKeptSongs(), [], "一覧の初期値は空");
+
+	// 旧キープ枠（1曲）だけがあれば一覧へ移し、旧枠は消す
+	writeKeptSong({ mml: "t120 o4 cdef", startStep: 768 });
+	const migrated = readKeptSongs();
+	assert.equal(migrated.length, 1, "旧キープ枠が一覧へ移ること");
+	assert.equal(migrated[0]?.mml, "t120 o4 cdef");
+	assert.equal(migrated[0]?.startStep, 768);
+	assert.ok(migrated[0]?.id, "移した曲に id が付くこと");
+	assert.equal(readKeptSong(), null, "移した後は旧枠が空になること");
+	assert.equal(readKeptSongs()[0]?.id, migrated[0]?.id, "2回目は同じ一覧");
+
+	// 往復と上限
+	const many = Array.from({ length: KEPT_SONGS_LIMIT + 3 }, (_, i) => ({
+		id: `id${i}`,
+		mml: `cde${i}`,
+		startStep: i,
+		title: `曲${i}`,
+		info: "120 BPM",
+		savedAt: i,
+	}));
+	assert.equal(writeKeptSongs(many), true);
+	const back = readKeptSongs();
+	assert.equal(back.length, KEPT_SONGS_LIMIT, "上限で切ること");
+	assert.deepEqual(back[0], many[0], "見出し・補足まで往復すること");
+
+	// 壊れた要素は捨てる
+	mockStorage.setItem(
+		"dtm-macro:kept-list",
+		JSON.stringify([{ mml: "" }, { mml: "abc", startStep: -1 }, 3]),
+	);
+	const cleaned = readKeptSongs();
+	assert.equal(cleaned.length, 1);
+	assert.equal(cleaned[0]?.startStep, 0);
+	mockStorage.setItem("dtm-macro:kept-list", "{not json");
+	assert.deepEqual(readKeptSongs(), [], "JSON でなければ空");
+	console.log("  ✓ 残した曲の一覧と旧枠の移行");
+}
+
+// ジャンルのカード → テンプレート
+{
+	const names = new Set(STRUCTURE_TEMPLATES.map((t) => t.name));
+	for (const g of COMPOSE_GENRES) {
+		for (const vocal of [true, false])
+			for (const shape of COMPOSE_SHAPES) {
+				const t = g.template(vocal, shape);
+				if (t !== undefined)
+					assert.ok(names.has(t), `${g.id} → ${t} は既存テンプレート`);
+			}
+	}
+	// 旧「構成」の保存値はすべてカードへ戻せる（往復でテンプレート名が変わらない）
+	for (const old of [
+		"1chorus",
+		"jpop_standard",
+		"jpop_drop",
+		"vocaloid",
+		"verse_chorus",
+		"game_loop",
+		"kaiwai",
+		"kaiwai_kaisen",
+		"kaiwai_2go_lead",
+		"kaiwai_2go",
+		"kaiwai_speder2_lead",
+		"kaiwai_speder2",
+	]) {
+		const m = genreFromTemplate(old);
+		const g = COMPOSE_GENRES.find((x) => x.id === m.genre);
+		assert.ok(g, old);
+		assert.equal(
+			g.template(m.vocal ?? g.vocalDefault, m.shape),
+			old,
+			`${old} の移行`,
+		);
+	}
+	const custom = genreFromTemplate("custom");
+	assert.equal(custom.genre, "jpop");
+	assert.equal(custom.shape, "custom");
+	assert.equal(
+		COMPOSE_GENRES.find((x) => x.id === "jpop")?.template(true, "custom"),
+		undefined,
+	);
+	console.log("  ✓ ジャンルのカードとテンプレートの対応");
 }
