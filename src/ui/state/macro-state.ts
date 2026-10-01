@@ -20,6 +20,8 @@ export const MACRO_STORAGE_KEYS = {
 	tempo: "dtm-macro:tempo",
 	/** 利用者が楽器プリセットを自分で選んだときの値。自動作曲はこれを優先する。 */
 	userInstrument: "dtm-macro:user-instrument",
+	/** 歌入り作曲が自動で当てた声。声はトラック設定に残るので、読み込み直しても自分で選んだ声と区別する。 */
+	autoVoice: "dtm-macro:auto-voice",
 } as const;
 
 export type MacroStorageKey = keyof typeof MACRO_STORAGE_KEYS;

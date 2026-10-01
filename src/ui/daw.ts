@@ -1755,12 +1755,10 @@ export const mountDAW = (
 	 * 上書きしないための目印で、`lyricModel` がこの値のままなら（＝ユーザーは触っていない）
 	 * 次の作曲で別の声へ引き直す。null は「まだ一度も自動で当てていない」。
 	 */
-	let autoComposeVocal: string | null = null;
+	let autoComposeVocal: string | null = readMacroSetting("autoVoice") || null;
 	/**
-	 * 直前の「歌入り作曲」が自動で歌わせたトラックと、そのとき当てた声の対応。
-	 * 「作曲」（歌なし）を続けて押したときに、この記録どおり（＝ユーザーが
-	 * 手で触っていない）なら歌唱設定を解除する。ユーザーが選び直した声や
-	 * 手入力の歌詞まで消さないよう、値が一致する場合だけ消す。
+	 * 直前の「歌入り作曲」が歌詞を書いたトラックと、そのとき書いた歌詞の対応。声ではなく歌詞で照合する:
+	 * 声はトラック設定に残り、自分で選んだ声と区別できない。歌詞が書いたままのトラックだけ声ごと外す。
 	 */
 	const autoComposeVocalTracks = new Map<TrackState, string>();
 	let currentDrumFont = options.drumFont ?? "FluidR3_GM_sf2_file:0";
@@ -4700,6 +4698,12 @@ export const mountDAW = (
 				}
 				lyricCustom.classList.add("dtm-hidden");
 				active.lyricModel = lyricModelSel.value;
+				// 手で選んだ声は自分の選択。次の作曲で外さず、引き直しもしない。
+				autoComposeVocalTracks.delete(active);
+				if (active.lyricModel === autoComposeVocal) {
+					autoComposeVocal = null;
+					writeMacroSetting("autoVoice", "");
+				}
 				onMelodyVoicePicked?.(active, active.lyricModel);
 				syncLyricVisibility();
 				syncInstDisabled();
@@ -7008,13 +7012,13 @@ export const mountDAW = (
 		};
 
 		/**
-		 * 直前の「歌入り作曲」がボーカルを当てたままのトラックを「なし」に戻す。残っていると、ノートだけ
-		 * 差し替わって歌詞とずれたまま歌い続ける。自分で選んだ声・書いた歌詞は尊重し、まだ自動で当てた
-		 * ままのトラックだけ外す。「作曲」（歌なし）と「伴奏主体」が使う。
+		 * 直前の「歌入り作曲」が歌詞を書いたままのトラックを「なし」に戻す。残っていると、ノートだけ
+		 * 差し替わって歌詞とずれたまま歌い続ける。手で書き直した歌詞は残す。`keep` は直後に書き直す
+		 * トラック（声を引き継ぐので外さない）。
 		 */
-		const releaseAutoVocals = (): void => {
-			for (const [track, voice] of autoComposeVocalTracks) {
-				if (track.lyricModel === voice) {
+		const releaseAutoVocals = (keep?: TrackState): void => {
+			for (const [track, lyrics] of autoComposeVocalTracks) {
+				if (track !== keep && track.lyrics === lyrics) {
 					track.lyrics = "";
 					track.lyricModel = "";
 					fireLyricsChange(track);
@@ -7182,13 +7186,12 @@ export const mountDAW = (
 
 				// --- 歌入り ---
 				if (withVocal) {
-					// 今回の歌入り作曲が当てる声を記録し直す（古い記録が残っていると
-					// 次の「作曲」（歌なし）で消してよいトラックの判定を誤る）。
-					autoComposeVocalTracks.clear();
 					// simple はメロディトラック、advanced はレイアウト上のメロディ（t0）。
 					const melodyTrack = isAdvanced
 						? trackStates[0]
 						: trackStates.find((t) => t.config.id === "melody");
+					// 前の曲で掛け合い・ハモリを歌わせ、今回は歌わせないトラックに歌詞を残さない。
+					releaseAutoVocals(melodyTrack);
 					if (melodyTrack) {
 						// ユーザーが自分で選んだ声は尊重し、差し替えない。差し替えるのは
 						// 「未選択」か「前回この機能が当てた声のまま」のときだけで、後者は
@@ -7202,7 +7205,6 @@ export const mountDAW = (
 								melodyTrack.vocalOctave = -1;
 							}
 							melodyTrack.lyricModel = preferred;
-							autoComposeVocalTracks.set(melodyTrack, preferred);
 						} else if (!current || current === autoComposeVocal) {
 							// 初めてこのトラックに歌声を当てるときだけ、オクターブも既定の -1 に倒す。UTAU/koe系の歌唱
 							// 合成は中〜低音域のほうがピッチ追従・声質が安定する。既にオクターブを触っている場合や、
@@ -7212,12 +7214,13 @@ export const mountDAW = (
 							}
 							melodyTrack.lyricModel = pickComposeVocal(autoComposeVocal);
 							autoComposeVocal = melodyTrack.lyricModel;
-							autoComposeVocalTracks.set(melodyTrack, melodyTrack.lyricModel);
+							writeMacroSetting("autoVoice", autoComposeVocal);
 						}
 						melodyTrack.lyrics = composeLyrics(song.melody, {
 							stepsPerBar: renderConfig.stepsPerBar,
 							words: song.lyricWords,
 						});
+						autoComposeVocalTracks.set(melodyTrack, melodyTrack.lyrics);
 						fireLyricsChange(melodyTrack);
 					}
 
@@ -7238,9 +7241,9 @@ export const mountDAW = (
 						): void => {
 							if (!track) return;
 							track.lyricModel = voice;
-							autoComposeVocalTracks.set(track, voice);
 							if (track.vocalOctave === 0) track.vocalOctave = -1;
 							track.lyrics = lyrics;
+							autoComposeVocalTracks.set(track, lyrics);
 							fireLyricsChange(track);
 						};
 
