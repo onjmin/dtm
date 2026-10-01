@@ -26,7 +26,11 @@ import {
 	degreeToPitch,
 } from "../../src/compose/compose-scales";
 import type { Skeleton } from "../../src/compose/skeleton-types";
-import { bankSourceOrder, loadSkeletons } from "./skeleton-data";
+import {
+	bankSourceOrder,
+	loadSkeletons,
+	localExperimentData,
+} from "./skeleton-data";
 
 const argv = process.argv.slice(2);
 const argOf = (name: string): string | undefined => {
@@ -163,6 +167,7 @@ for (let i = 0; i < count; i++) {
 		baseKey: "any",
 		scale: "auto",
 		random: seededRandom(seed * 104729),
+		...localExperimentData(),
 	});
 	const srcs = song.spliceSources ?? [];
 	// (a)

@@ -1,5 +1,5 @@
 /**
- * 「リズムと反復の地図に、他の曲の実在フレーズ（{@link CORPUS_PHRASES}）の音を当てる」歌メロの共有部。
+ * 「リズムと反復の地図に、2小節素材（呼び出し側が渡す）の音を当てる」歌メロの共有部。
  * 骨格借用（{@link file://./compose-skeleton.ts}）と継ぎ合わせ（{@link file://./compose-splice.ts}）の
  * 両エンジンがここを呼ぶ。アルペジオ・パッドの層もここに置く。
  *
@@ -26,7 +26,7 @@ import {
 	nearestChordTone,
 	omitDegrees,
 } from "./compose";
-import { CORPUS_PHRASES, type CorpusPhrase } from "./compose-phrases";
+import type { CorpusPhrase } from "./phrase-types";
 import {
 	type ComposeScale,
 	degreeToPitch,
@@ -226,7 +226,7 @@ export const headOfBar = (bars: FitBar[], b: number): number => {
 };
 
 /**
- * 全小節のリズムと反復の地図に、CORPUS_PHRASES の実在フレーズの度数を当てる。
+ * 全小節のリズムと反復の地図に、`phrases` の素材の度数を当てる。
  * 楽句グループの先頭で2小節ぶんのフレーズを引き（次の小節が独立の楽句でなければ結合）、
  * sameAs の小節は連鎖の先頭を写し、rhythmSameAs の小節は参照先と同じ度数列を避ける。
  * 強拍は構成音へ寄せる（{@link alignStrongBeats}）。`centerBasisAt` は小節ごとの窓の中心（基準調の半音）。
@@ -237,6 +237,7 @@ export const fitPhrases = (
 	centerBasisAt: (bar: number) => number,
 	chordAt: [string, string][],
 	rnd: () => number,
+	phrases: CorpusPhrase[],
 ): (number[] | null)[] => {
 	const n = bars.length;
 	const absDeg: (number[] | null)[] = new Array(n).fill(null);
@@ -274,7 +275,7 @@ export const fitPhrases = (
 			avoidBar !== null ? (usedPhrase[headOf(avoidBar)] ?? null) : null;
 		let bestSim = -1;
 		let ties: CorpusPhrase[] = [];
-		for (const p of CORPUS_PHRASES) {
+		for (const p of phrases) {
 			const s = similarity(rhythm2, grid, p);
 			if (s > bestSim + 1e-9) {
 				bestSim = s;

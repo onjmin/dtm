@@ -2,10 +2,9 @@
  * 継ぎ合わせ（`compose-splice.ts`）が読む**抽象骨格バンク**の型と符号化。
  *
  * 骨格（`skeleton-types.ts`、耳コピの和音・ベース・旋律をそのまま持つ）から
- * `scripts/corpus/build-section-bank.ts` が作る。単位はセクションで、**元曲を特定できる情報を持たない**:
- * 曲名・ファイル名・旋律の度数・ベースの実音は落とし、和音名（Am/C 基準）・ベースの型の種類・
- * 歌メロのリズム・反復の地図・層だけを残す。データ本体は `compose-section-bank.ts`（自動生成。
- * 骨格データと違って **git とバンドルに入れる**）。
+ * `scripts/corpus/build-section-bank.ts` が作る。単位はセクションで、曲名・旋律の度数・ベースの実音は
+ * 落とすが、和音進行と歌のリズムから元曲にたどれる。データ本体は `compose-section-bank.ts`（自動生成）で、
+ * 骨格データと同じく **git にもバンドルにも入れない**（scripts/ から options.sectionBank で渡す）。
  */
 
 import type { ChordPatternType } from "../chord/chords";
@@ -89,6 +88,9 @@ export type BankForm = {
 	src: number;
 	mode: "minor" | "major";
 };
+
+/** 継ぎ合わせに渡すバンク一式（`compose-section-bank.ts` の FORM_BANK / SECTION_BANK）。 */
+export type SectionBank = { forms: BankForm[]; sections: BankSection[] };
 
 // ============================================================
 // 符号化（compose-section-bank.ts を小さく保つ）

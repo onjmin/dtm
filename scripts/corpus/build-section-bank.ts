@@ -1,6 +1,6 @@
 /**
  * 抽象骨格バンクの生成。手元の骨格データ（`src/compose/compose-skeletons.ts`、git に入れない）から
- * セクション単位の設計図を抜き、`src/compose/compose-section-bank.ts`（git とバンドルに入れる）を書く。
+ * セクション単位の設計図を抜き、`src/compose/compose-section-bank.ts`（git にもバンドルにも入れない）を書く。
  *
  *   npx tsx scripts/corpus/build-section-bank.ts [--out src/compose/compose-section-bank.ts] [--check]
  *

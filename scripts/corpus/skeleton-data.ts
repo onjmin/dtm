@@ -10,6 +10,12 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { CorpusPhrase } from "../../src/compose/phrase-types";
+import type {
+	BankForm,
+	BankSection,
+	SectionBank,
+} from "../../src/compose/section-bank-types";
 import {
 	type Skeleton,
 	usableSkeletons,
@@ -31,3 +37,35 @@ export const bankSourceOrder = (skeletons: Skeleton[]): Skeleton[] =>
 	usableSkeletons(skeletons).sort((a, b) =>
 		a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
 	);
+
+const PHRASES_FILE = join(__dirname, "../../src/compose/compose-phrases.ts");
+const SECTION_BANK_FILE = join(
+	__dirname,
+	"../../src/compose/compose-section-bank.ts",
+);
+
+/**
+ * 耳コピから抜いたフレーズ集（`calibrate-phrases.ts` が作る。git にもバンドルにも入れない）。
+ * 骨格借用・継ぎ合わせの実験に options.phrases で渡す。無ければ undefined（生成側は SYNTH_PHRASES）。
+ */
+export const loadCorpusPhrases = (): CorpusPhrase[] | undefined =>
+	existsSync(PHRASES_FILE)
+		? (require(PHRASES_FILE) as { CORPUS_PHRASES: CorpusPhrase[] })
+				.CORPUS_PHRASES
+		: undefined;
+
+/** 継ぎ合わせのバンク（`build-section-bank.ts` が作る。git にもバンドルにも入れない）。無ければ undefined。 */
+export const loadSectionBank = (): SectionBank | undefined => {
+	if (!existsSync(SECTION_BANK_FILE)) return undefined;
+	const m = require(SECTION_BANK_FILE) as {
+		FORM_BANK: BankForm[];
+		SECTION_BANK: BankSection[];
+	};
+	return { forms: m.FORM_BANK, sections: m.SECTION_BANK };
+};
+
+/** 実験用テンプレート（骨格借用・継ぎ合わせ）へ渡す手元データ一式。composeSong の options に広げる。 */
+export const localExperimentData = (): {
+	phrases?: CorpusPhrase[];
+	sectionBank?: SectionBank;
+} => ({ phrases: loadCorpusPhrases(), sectionBank: loadSectionBank() });

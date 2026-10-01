@@ -20,6 +20,7 @@ import {
 	seededRandom as appSeededRandom,
 	BASE_STEPS_PER_BAR,
 	composeSong,
+	SYNTH_PHRASES,
 	durationEntropy,
 	MELODY_HIGH,
 	MELODY_LOW,
@@ -41,10 +42,6 @@ import {
 	scaleDegrees,
 	scalePcs,
 } from "../../src/compose/compose-scales";
-import {
-	FORM_BANK,
-	SECTION_BANK,
-} from "../../src/compose/compose-section-bank";
 import { STRUCTURE_TEMPLATES } from "../../src/compose/compose-sections";
 import { composeSkeleton } from "../../src/compose/compose-skeleton";
 import {
@@ -63,10 +60,11 @@ import {
 	resolveDrumPattern,
 } from "../../src/instruments/drum-config";
 import { INSTRUMENT_PRESETS } from "../../src/instruments/instrument-presets";
-import { loadSkeletons } from "../corpus/skeleton-data";
+import { loadSkeletons, localExperimentData } from "../corpus/skeleton-data";
 import { FIXTURE_SKELETONS } from "./fixtures/skeleton-fixture";
 
 const KAIWAI_SKELETONS = loadSkeletons();
+const LOCAL = localExperimentData();
 const STEPS_PER_BAR = 192;
 const BARS = 16;
 
@@ -260,6 +258,7 @@ console.log("● 既存テンプレートの黄金値");
 	const digest = (template: string | undefined, seed: number): string => {
 		const song = composeSong({
 			skeletons: KAIWAI_SKELETONS,
+			...LOCAL,
 			stepsPerBar: STEPS_PER_BAR,
 			edo: 12,
 			template,
@@ -2174,6 +2173,7 @@ console.log("● 骨格借用");
 					},
 					tmpl,
 					set.skeletons,
+					LOCAL.phrases ?? SYNTH_PHRASES,
 				);
 			/** 小節ごとの旋律を音階度数の列に戻す（移調を戻し、pc → 度数）。 */
 			const degreeRows = (
@@ -2433,6 +2433,7 @@ console.log("● 骨格借用");
 		}
 		// composeSong 経由（共通経路の先頭で骨格借用へ分岐する）。データが無ければ fixture で
 		const viaSong = composeSong({
+			...LOCAL,
 			skeletons:
 				KAIWAI_SKELETONS.length > 0 ? KAIWAI_SKELETONS : FIXTURE_SKELETONS,
 			stepsPerBar: STEPS_PER_BAR,
@@ -2462,7 +2463,14 @@ console.log("● 骨格借用");
 // ============================================================
 
 console.log("● 継ぎ合わせ");
-{
+splice: {
+	// バンクは耳コピから作る手元データ（git に入れない）。無ければ skip。
+	if (!LOCAL.sectionBank) {
+		console.log("  （compose-section-bank.ts が無いので skip）");
+		break splice;
+	}
+	const SECTION_BANK = LOCAL.sectionBank.sections;
+	const FORM_BANK = LOCAL.sectionBank.forms;
 	const tmpl = STRUCTURE_TEMPLATES.find((t) => t.name === "kaiwai_splice");
 	check("kaiwai_splice テンプレートがある", tmpl !== undefined, "無い");
 	check(
@@ -2553,6 +2561,7 @@ console.log("● 継ぎ合わせ");
 				baseKey: "any",
 				scale: "auto",
 				random: appSeededRandom(seed),
+				...LOCAL,
 			});
 		const digestOf = (song: ReturnType<typeof run>): string =>
 			JSON.stringify([

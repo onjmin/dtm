@@ -26,9 +26,10 @@ import {
 	degreeToPitch,
 } from "../../src/compose/compose-scales";
 import type { Skeleton } from "../../src/compose/skeleton-types";
-import { loadSkeletons } from "./skeleton-data";
+import { loadSkeletons, localExperimentData } from "./skeleton-data";
 
 const KAIWAI_SKELETONS = loadSkeletons();
+const LOCAL = localExperimentData();
 
 const argv = process.argv.slice(2);
 const argOf = (name: string): string | undefined => {
@@ -143,6 +144,7 @@ for (const source of sources) {
 		const seed = baseSeed + i;
 		const song = composeSong({
 			skeletons: KAIWAI_SKELETONS,
+			...LOCAL,
 			stepsPerBar: BAR,
 			edo: 12,
 			template,

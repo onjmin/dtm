@@ -45,9 +45,10 @@ import {
 import { INSTRUMENT_PRESETS } from "../../src/instruments/instrument-presets";
 import { exportMIDI } from "../../src/io/midi-io";
 import type { Note } from "../../src/types";
-import { loadSkeletons } from "../corpus/skeleton-data";
+import { loadSkeletons, localExperimentData } from "../corpus/skeleton-data";
 
 const KAIWAI_SKELETONS = loadSkeletons();
+const LOCAL = localExperimentData();
 const STEPS_PER_BAR = 192;
 const argv = process.argv.slice(2);
 const argOf = (name: string): string | undefined => {
@@ -218,6 +219,7 @@ const main = async (): Promise<void> => {
 			appOptions
 				? {
 						skeletons: KAIWAI_SKELETONS,
+						...LOCAL,
 						stepsPerBar: STEPS_PER_BAR,
 						random: appSeededRandom(seed),
 						template: appOptions.template,

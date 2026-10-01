@@ -49,9 +49,10 @@ import {
 	quantize,
 	toMonophonic,
 } from "./calibrate-corpus";
-import { loadSkeletons } from "./skeleton-data";
+import { loadSkeletons, localExperimentData } from "./skeleton-data";
 
 const KAIWAI_SKELETONS = loadSkeletons();
+const LOCAL = localExperimentData();
 
 const BAR = 192;
 const HALF = BAR / 2;
@@ -1087,6 +1088,7 @@ const generateOne = async (
 ): Promise<{ buf: Buffer; label: string; fingerprint: number[] }> => {
 	const song = composeSong({
 		skeletons: KAIWAI_SKELETONS,
+		...LOCAL,
 		stepsPerBar: BAR,
 		random: lcgRandom(seed * 104729),
 		recent: recent.slice(-3),

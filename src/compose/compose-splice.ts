@@ -1,6 +1,6 @@
 /**
  * 継ぎ合わせの生成エンジン。骨格借用（{@link file://./compose-skeleton.ts}）が1曲を丸写ししたのに対し、
- * ここは**抽象骨格バンク**（{@link SECTION_BANK}、曲名・旋律の度数・ベースの実音を持たない）から
+ * ここは**抽象骨格バンク**（`compose-section-bank.ts`。git にもバンドルにも入れず、scripts/ から渡す）から
  * セクションごとに別々の曲の設計図を引いて継ぐ。和音は機能を保った置換を掛け、ベースは**別の曲の
  * 同種セクション**から型の種類だけ借りて実音はその時点の和音ルートから作る。歌メロは骨格借用と同じく
  * 他曲の実在フレーズを当てる（{@link file://./compose-melody-fit.ts}）。伴奏の形（4つ打ち・8分オクターブ・
@@ -43,7 +43,6 @@ import {
 	rootPcOf,
 } from "./compose-melody-fit";
 import { resolveComposeScale } from "./compose-scales";
-import { FORM_BANK, SECTION_BANK } from "./compose-section-bank";
 import {
 	type PlacedSection,
 	SECTION_SPECS,
@@ -54,7 +53,9 @@ import {
 	type BassFigure,
 	bankSectionBarChoices,
 	isSungKind,
+	type SectionBank,
 } from "./section-bank-types";
+import type { CorpusPhrase } from "./phrase-types";
 
 const BASE_STEPS_PER_BAR = 192;
 
@@ -210,8 +211,31 @@ export const genericSubstitutes = (name: string): string[] => {
 	return list.map((s) => root + s).filter((c) => c !== name && parses(c));
 };
 
-const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
-const MAJOR_LIKE = new Set(["", "M7", "maj7", "6", "69", "M9", "add9", "sus2", "sus4"]);
+const NOTE_NAMES = [
+	"C",
+	"Db",
+	"D",
+	"Eb",
+	"E",
+	"F",
+	"F#",
+	"G",
+	"Ab",
+	"A",
+	"Bb",
+	"B",
+];
+const MAJOR_LIKE = new Set([
+	"",
+	"M7",
+	"maj7",
+	"6",
+	"69",
+	"M9",
+	"add9",
+	"sus2",
+	"sus4",
+]);
 const DOMINANT_LIKE = new Set(["7", "9", "7-9", "7sus4", "+", "aug"]);
 const MINOR_LIKE = new Set(["m", "m7", "m6", "mM7", "m9"]);
 const DIM_LIKE = new Set(["dim", "dim7", "m7-5"]);
@@ -237,9 +261,11 @@ const rootChangingFallback = (name: string, minor: boolean): string[] => {
 	const m = /^([A-G][#b]?)([^/]*)/.exec(name);
 	if (!m) return [];
 	const [, root, suffix] = m;
-	const pc = NOTE_NAMES.indexOf(root) >= 0 ? NOTE_NAMES.indexOf(root) : rootPcOf(root);
+	const pc =
+		NOTE_NAMES.indexOf(root) >= 0 ? NOTE_NAMES.indexOf(root) : rootPcOf(root);
 	const at = (d: number, sfx: string): string =>
-		(sfx === "dim" && (pc + d) % 12 === 8 ? "G#" : NOTE_NAMES[(pc + d) % 12]) + sfx;
+		(sfx === "dim" && (pc + d) % 12 === 8 ? "G#" : NOTE_NAMES[(pc + d) % 12]) +
+		sfx;
 	if (DOMINANT_LIKE.has(suffix)) return [at(6, "7")].filter(parses);
 	if (DIM_LIKE.has(suffix)) return [at(8, "7")].filter(parses);
 	const diatonic = MAJOR_LIKE.has(suffix)
@@ -288,7 +314,8 @@ const pcSetKey = (name: string): string => {
  * 強制置換の起きない曲の乱数列（以降の donor・旋律）が動かない。
  */
 const positionRandom = (src: number, at: number): (() => number) => {
-	let h = (Math.imul(src + 1, 0x9e3779b1) ^ Math.imul(at + 1, 0x85ebca6b)) >>> 0;
+	let h =
+		(Math.imul(src + 1, 0x9e3779b1) ^ Math.imul(at + 1, 0x85ebca6b)) >>> 0;
 	return () => {
 		h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0;
 		h = Math.imul(h ^ (h >>> 12), 0x297a2d39) >>> 0;
@@ -413,7 +440,11 @@ type SplicedSection = {
 export const composeSplice = (
 	options: ComposeOptions,
 	template: StructureTemplate,
+	bank: SectionBank,
+	phrases: CorpusPhrase[],
 ): ComposeResult => {
+	const FORM_BANK = bank.forms;
+	const SECTION_BANK = bank.sections;
 	if (FORM_BANK.length === 0 || SECTION_BANK.length === 0)
 		throw new Error("composeSplice: 抽象骨格バンクが空");
 	const rnd = options.random ?? Math.random;
@@ -609,9 +640,13 @@ export const composeSplice = (
 					),
 					...genericSubstitutes(name),
 				].filter(changes);
-				if (cands.length === 0) cands = rootChangingFallback(name, minor).filter(changes);
+				if (cands.length === 0)
+					cands = rootChangingFallback(name, minor).filter(changes);
 				if (cands.length === 0) continue;
-				const chosen = pick(cands, positionRandom(donor.src, tk.bar * 2 + tk.half));
+				const chosen = pick(
+					cands,
+					positionRandom(donor.src, tk.bar * 2 + tk.half),
+				);
 				if (typeof chosen === "string") chords[tk.bar][tk.half] = chosen;
 				else {
 					chords[tk.bar][0] = chosen[0];
@@ -785,7 +820,14 @@ export const composeSplice = (
 		);
 		return centerFinal - shiftAt(b);
 	};
-	const absDeg = fitPhrases(fitBars, scale, centerBasisAt, chordAt, rnd);
+	const absDeg = fitPhrases(
+		fitBars,
+		scale,
+		centerBasisAt,
+		chordAt,
+		rnd,
+		phrases,
+	);
 	const { melody, melodyDurations, restSteps, sungBars } = renderFittedMelody(
 		fitBars,
 		absDeg,

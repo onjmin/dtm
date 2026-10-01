@@ -45,7 +45,8 @@ import {
 	type TensionFeatures,
 	tensionFeatures,
 } from "./compose-metrics";
-import { CORPUS_PHRASES, type CorpusPhrase } from "./compose-phrases";
+import type { CorpusPhrase } from "./phrase-types";
+import type { SectionBank } from "./section-bank-types";
 import {
 	type ComposeScale,
 	type ComposeScaleId,
@@ -1011,6 +1012,99 @@ export const MOTIF_CELLS: RhythmCell[] = [
 	...HAND_MOTIF_CELLS,
 ];
 
+/**
+ * モチーフの原型（音階の度数差の列）。初版はここが「±1／±2 の乱数の累積」だったため、
+ * どの曲のモチーフも似た形の酔歩になっていた。**輪郭に名前が付く形**を並べておき、
+ * 曲ごとに1本引く。
+ */
+const MOTIF_ARCHETYPES: number[][] = [
+	// --- 順次進行主体（歌いやすく滑らかな旋律。参考曲の順次進行 50% を支える） ---
+	[0, 1, 2, 3, 4], // スケール上行
+	[0, 1, 2, 3, 4],
+	[4, 3, 2, 1, 0], // スケール下降
+	[4, 3, 2, 1, 0],
+	[0, 1, 2, 1, 2], // 順次上行・揺れ
+	[0, -1, -2, -1, -2], // 順次下降・揺れ
+	[0, 1, 2, 3, 2], // 上行して一歩戻る
+	[0, 1, 2, 3, 2],
+	[0, -1, -2, -3, -2], // 下行して一歩戻る
+	[0, 1, 2, 1, 0], // 順次アーチ
+	[0, -1, -2, -1, 0], // 順次谷型
+	[0, 1, 0, -1, 0], // 軸音まわりの揺れ
+	[2, 1, 0, 1, 2], // 折り返し
+	[0, 1, 2, 0, 1], // 波型
+	[0, 0, 1, 2, 3], // 連打から上行
+	[0, 0, -1, -2, -1], // 連打から下降
+	[0, 2, 1, 2, 3], // 軽い跳躍からの順次上行
+	[0, -2, -1, 0, 1], // 軽い沈み込みからの順次上行
+	[0, 1, 2, 2, 3], // 順次進行に同音を挟む
+	[0, -1, -2, -2, -3],
+	[0, 3, 2, 1, 0], // 跳躍からの順次下降（gap fill の教科書形）
+	[0, -3, -2, -1, 0], // 下跳躍からの順次上行
+	[0, 1, 3, 2, 1], // アーチ
+	[0, 2, 1, 0, -1], // 跳ねてから埋める
+	[0, 4, 3, 2, 1], // 5度上へ跳んで順次下降
+	[0, -4, -3, -2, -1], // 下へ跳んで順次上行
+	// --- 同音連打を含む形（語りかけ・疾走感） ---
+	[0, 0, 0, 1, 2],
+	[0, 0, 2, 2, 1],
+	[0, 0, -1, -1, -2],
+	[0, 1, 1, 0, 0],
+	[0, 0, 1, 2, 1],
+	// --- 跳躍・オクターブを含む形（フック・ドラマ性） ---
+	[0, 5, 4, 3, 2], // オクターブ上へ跳んで降りてくる
+	[0, 5, 0, 5, 0], // オクターブを行き来する
+	[0, -5, 0, 1, 2], // 一度下へ落としてから戻る
+	[0, 1, 5, 4, 3],
+	[0, 2, 4, 3, 2], // 分散和音風の上行
+	[0, 3, 2, 4, 3], // 二段跳び
+	[0, -1, 1, -2, 0], // ジグザグ
+	[0, 5, 4, 2, 0], // 6度跳躍からの大きな下降
+];
+
+/** 原型を往復させて n 音の度数列にする（0,1,2,3,4,3,2,1,0,1…の順で原型を読む）。 */
+const contourOf = (archetype: number[], n: number): number[] => {
+	const last = archetype.length - 1;
+	const out: number[] = [];
+	for (let i = 0; i < n; i++) {
+		const k = i % (last * 2);
+		out.push(archetype[k <= last ? k : last * 2 - k] - archetype[0]);
+	}
+	return out;
+};
+
+/**
+ * 歌メロの2小節素材。モチーフのリズム型（{@link MOTIF_CELLS}）を1小節目に、同じ型か句末の型
+ * （{@link PHRASE_END_CELLS}）を2小節目に置き、輪郭の原型（{@link MOTIF_ARCHETYPES}）を当てる。
+ * 以前は耳コピから抜いた2小節フレーズを使っていたが、他人の曲の断片がそのまま出るので外した
+ * （2026-10-01）。手書きの素材だけから決定的に組むので、どの曲の断片でもない。
+ */
+export const SYNTH_PHRASES: CorpusPhrase[] = (() => {
+	const seen = new Set<string>();
+	const cells = MOTIF_CELLS.filter((c) => {
+		const key = c.value.join(",");
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+	const out: CorpusPhrase[] = [];
+	const A = MOTIF_ARCHETYPES.length;
+	cells.forEach((c, i) => {
+		const endCell = PHRASE_END_CELLS[i % PHRASE_END_CELLS.length];
+		for (const second of [c, endCell]) {
+			const rhythm = [...c.value, ...second.value];
+			const n = rhythm.filter((v) => v > 0).length;
+			for (const k of [i % A, (i * 7 + 3) % A])
+				out.push({
+					rhythm,
+					degrees: contourOf(MOTIF_ARCHETYPES[k], n),
+					weight: 1,
+				});
+		}
+	});
+	return out;
+})();
+
 for (const c of [...MOTIF_CELLS, ...RHYTHM_CELLS]) {
 	const key = onsetKeyOf(c.value);
 	cellEntryCount.set(key, (cellEntryCount.get(key) ?? 0) + 1);
@@ -1375,6 +1469,13 @@ export type ComposeOptions = {
 	 * データで、実験（scripts/）からだけ渡す。無ければ骨格借用は失敗する。
 	 */
 	skeletons?: Skeleton[];
+	/**
+	 * 骨格借用・継ぎ合わせの歌メロに当てる2小節素材。耳コピから抜いたフレーズ集は他人の曲の断片なので
+	 * バンドルに入れず、実験（scripts/）からだけ渡す。無ければ {@link SYNTH_PHRASES}。通常の作曲は読まない。
+	 */
+	phrases?: CorpusPhrase[];
+	/** 継ぎ合わせが読むバンク。骨格と同じく scripts/ から渡す（`compose-section-bank.ts`、git に入れない）。 */
+	sectionBank?: SectionBank;
 };
 
 export type ComposeResult = {
@@ -3914,14 +4015,8 @@ const draw = (
 	const densityC = densityOf(-0.1);
 
 	/**
-	 * 人間が書いた2小節フレーズを1つ引く。ここが今の作曲の要。
-	 *
-	 * 統計を目標にする方式は、分布を参考コーパスと一致させたうえで1曲もキャッチーにならなかった。
-	 * 差は分布ではなく並び順にあり、距離を目標にする限りその情報は入らない。だから並び順は作らず
-	 * に借りてくる。リズムと音高を対にしたまま引くのが肝。
-	 *
-	 * 引き方はコーパスでの出現回数（`weight`）× 狙いの密度への近さ。密度から離れたフレーズを
-	 * 引くと緩急の設計が崩れる。
+	 * 2小節の素材（{@link SYNTH_PHRASES}）を1つ引く。引き方は `weight` × 狙いの密度への近さ。
+	 * 密度から離れた素材を引くと緩急の設計が崩れる。
 	 */
 	const pickPhrase = (
 		densityMul: number,
@@ -3936,7 +4031,7 @@ const draw = (
 			form === "chant"
 				? Math.min(6, Math.max(4.5, targetNotesPerBar * densityMul)) * 2
 				: targetNotesPerBar * densityMul * 2;
-		const pool = CORPUS_PHRASES.filter(
+		const pool = SYNTH_PHRASES.filter(
 			(x) =>
 				!exclude.includes(x) &&
 				(banRhythm === undefined || x.rhythm.join(",") !== banRhythm),
@@ -3953,12 +4048,13 @@ const draw = (
 				w /= 1 + (phraseLeapShare(x) * 6) ** 2;
 				w *= 0.2 + 0.8 * phraseEighthShare(x);
 				// 8分のグルーヴなら16分入りの素材を引きにくくする（界隈曲コーパスの主旋律の
-				// 16分間隔は中央 0.027・p75 0.095——皆無ではないので、外さずに軽くする）。
+				// 16分間隔は中央 0.027・p75 0.095——皆無ではないので、外さずに軽くする）。手書きの素材は
+				// 16分入りの型が多いので 0.3 では詠唱の16分間隔が 0.163 になった。
 				if (
 					style.groove === "eighth" &&
 					x.rhythm.some((v) => Math.abs(v) <= SIXTEENTH)
 				)
-					w *= 0.3;
+					w *= 0.1;
 			}
 			total += w;
 			return w;
@@ -3986,16 +4082,10 @@ const draw = (
 		];
 	};
 
-	// --- モチーフの素材は、人間が書いたフレーズから借りる ---
+	// --- モチーフの素材 ---
 	//
-	// リズム型と音高の輪郭を別々に引いて掛け合わせる方式は、17指標も隣接音程のヒストグラムも
-	// コーパスと一致させたうえで**1曲もキャッチーにならなかった**。分布が一致して知覚が完全に
-	// 分離するなら差は並び順にあるので、並び順は作らずに借りる。リズムと音高を**対のまま**引く
-	// のが肝で、別々に持って掛け合わせた時点で人間が選んだ情報が消える。
-	//
-	// セクションごとに別のフレーズを引く（A / Bメロ / サビ / Cメロ）。展開・息継ぎ・ビルド
-	// アップの型は合成の語彙から引く——フレーズは「顔」を作る場所で、つなぎまで借りると曲が
-	// コーパスの継ぎ接ぎになる。
+	// セクションごとに別の素材を引く（A / Bメロ / サビ / Cメロ）。展開・息継ぎ・ビルド
+	// アップの型は合成の語彙から引く。
 	const drawnPhrases: CorpusPhrase[] = [];
 	const drawPhrase = (mul: number, banRhythm?: string): CorpusPhrase => {
 		const got = pickPhrase(mul, drawnPhrases, banRhythm);
@@ -4589,7 +4679,7 @@ const draw = (
 		if (isMotifBar) {
 			// 同じ度数の並びを置いた小節どうしは、同じ移調量で置く（{@link fitMotif}）。
 			const shiftKey = degrees.join(",");
-			// **楽句の2小節は同じ移調量で置く。** 素材は2小節でひとまとまり（{@link CORPUS_PHRASES}）
+			// **楽句の2小節は同じ移調量で置く。** 素材は2小節でひとまとまり（{@link SYNTH_PHRASES}）
 			// なので、度数の並びをキーにすると前半と後半が別々に移調され、借りてきたフレーズが小節線で
 			// 割れて継ぎ目に大跳躍が出る。`preferShift` は「和音の当たりが大きく悪化しないかぎり使う」
 			// という柔らかい指定なので、和音が変わる小節では必要なぶんだけずれる。
@@ -6034,10 +6124,26 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			throw new Error(
 				"骨格借用には options.skeletons が要る（scripts/ から compose-skeletons.ts を渡す。バンドルには入れない）",
 			);
-		return composeSkeleton(options, template, options.skeletons);
+		return composeSkeleton(
+			options,
+			template,
+			options.skeletons,
+			options.phrases ?? SYNTH_PHRASES,
+		);
 	}
-	// 継ぎ合わせも同じ場所で分岐する。バンクはバンドルに入っているので options は要らない。
-	if (template?.engine === "splice") return composeSplice(options, template);
+	// 継ぎ合わせも同じ場所で分岐する。バンクは骨格と同じく scripts/ から渡す。
+	if (template?.engine === "splice") {
+		if (!options.sectionBank?.sections.length)
+			throw new Error(
+				"継ぎ合わせには options.sectionBank が要る（scripts/ から compose-section-bank.ts を渡す。バンドルには入れない）",
+			);
+		return composeSplice(
+			options,
+			template,
+			options.sectionBank,
+			options.phrases ?? SYNTH_PHRASES,
+		);
+	}
 	// UI の調が "any" のときだけテンプレートの既定（長短）に倒す。抽選回数は "any" と同じ1回。
 	const baseKey =
 		(options.baseKey?.trim() || "any") === "any"

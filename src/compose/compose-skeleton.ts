@@ -1,7 +1,7 @@
 /**
  * 骨格借用の生成エンジン。所有者の耳コピ MIDI から抜いた設計図（{@link Skeleton}）を1つ引き、
  * 調だけ変えて、和音・ベース・ドラム・層の配置は骨格どおりに置く。歌メロは骨格のリズムと
- * 反復の地図（sameAs / rhythmSameAs）に沿って、**他の曲の実在フレーズ**（{@link CORPUS_PHRASES}）
+ * 反復の地図（sameAs / rhythmSameAs）に沿って、**2小節素材**（options.phrases。実験では耳コピのフレーズ集）
  * の音を当てる。元曲の旋律の音そのものは既定では使わない（`melodySource: "original"` は対照用）。
  *
  * `composeSong` の共通経路とは乱数を共有しない——テンプレートの `engine: "skeleton"` で
@@ -46,6 +46,7 @@ import {
 	type SectionKind,
 	type StructureTemplate,
 } from "./compose-sections";
+import type { CorpusPhrase } from "./phrase-types";
 import { type Skeleton, usableSkeletons } from "./skeleton-types";
 
 /** 骨格の1小節のステップ数（skeleton-types.ts の基準）。compose.ts の値をここで読むと循環 import の初期化順で落ちる。 */
@@ -68,6 +69,7 @@ export const composeSkeleton = (
 	options: ComposeOptions,
 	template: StructureTemplate,
 	skeletons: Skeleton[],
+	phrases: CorpusPhrase[],
 ): ComposeResult => {
 	const pool = usableSkeletons(skeletons);
 	if (pool.length === 0)
@@ -233,7 +235,14 @@ export const composeSkeleton = (
 			absDeg[b] = degs;
 		}
 	} else {
-		absDeg = fitPhrases(fitBars, scale, () => centerBasis, chordAt, rnd);
+		absDeg = fitPhrases(
+			fitBars,
+			scale,
+			() => centerBasis,
+			chordAt,
+			rnd,
+			phrases,
+		);
 	}
 
 	const { melody, melodyDurations, restSteps, sungBars } = renderFittedMelody(

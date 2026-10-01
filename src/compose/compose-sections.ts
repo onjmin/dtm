@@ -31,8 +31,6 @@
  */
 
 import type { ChordPatternType } from "../chord/chords";
-import { FORM_BANK } from "./compose-section-bank";
-import { bankSectionBarChoices } from "./section-bank-types";
 
 /** セクションの種類。 */
 export type SectionKind =
@@ -645,9 +643,8 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 		lyricWords: KAIWAI_LYRIC_WORDS,
 	},
 
-	// 界隈曲（継ぎ合わせ）。抽象骨格バンク（曲名・度数・実音を持たない）からセクションごとに別々の曲の
-	// 設計図を引いて継ぎ、和音は機能を保った置換、ベースは型の種類だけ借りて実音は和音ルートから作る。
-	// 構成・長さは FORM_BANK から引くので plan は UI の長さ表示の代表。
+	// 界隈曲（継ぎ合わせ、実験用）。セクションごとに別々の曲の設計図を継ぐ。バンク（compose-section-bank.ts）
+	// は耳コピから作るので git にもバンドルにも入れず、scripts/ から options.sectionBank で渡す。UI には出さない。
 	{
 		name: "kaiwai_splice",
 		label: "界隈曲（継ぎ合わせ）",
@@ -792,28 +789,8 @@ export const sectionPlanBarRange = (
 	// 骨格借用は plan を読まず、引いた骨格の小節数がそのまま曲の長さになる。骨格データはバンドルに
 	// 入れない（scripts/ から渡す）ので、ここは抽出時の実測（62本: 12〜146、中央 49）を定数で返す。
 	if (tmpl?.engine === "skeleton") return { min: 12, max: 146, typical: 49 };
-	// 継ぎ合わせは FORM_BANK の構成に揺らぎ（生成と同じ bankSectionBarChoices の min/max）。
-	if (tmpl?.engine === "splice") {
-		const totals: number[] = [];
-		let lo = Number.POSITIVE_INFINITY;
-		let hi = 0;
-		for (const f of FORM_BANK) {
-			let a = 0;
-			let b = 0;
-			let t = 0;
-			for (let i = 0; i < f.kinds.length; i++) {
-				const choices = bankSectionBarChoices(f.kinds[i], f.bars[i]);
-				a += Math.min(...choices);
-				b += Math.max(...choices);
-				t += f.bars[i];
-			}
-			lo = Math.min(lo, a);
-			hi = Math.max(hi, b);
-			totals.push(t);
-		}
-		totals.sort((x, y) => x - y);
-		return { min: lo, max: hi, typical: totals[totals.length >> 1] ?? 0 };
-	}
+	// 継ぎ合わせのバンクも骨格と同じくバンドルに入れないので、生成の実測（300 seed: 16〜168、中央 56）。
+	if (tmpl?.engine === "splice") return { min: 16, max: 168, typical: 56 };
 	const typicalKinds = orderedKinds(kinds, templateName);
 	// 構成を seed ごとに引くテンプレートは、全候補の最短・最長を取る。代表値は `plan`。
 	const plans = tmpl?.plans?.length ? tmpl.plans : [typicalKinds];

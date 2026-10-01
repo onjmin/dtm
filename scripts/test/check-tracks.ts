@@ -24,9 +24,10 @@ import {
 	INSTRUMENT_PRESETS,
 	type InstrumentPreset,
 } from "../../src/instruments/instrument-presets";
-import { loadSkeletons } from "../corpus/skeleton-data";
+import { loadSkeletons, localExperimentData } from "../corpus/skeleton-data";
 
 const KAIWAI_SKELETONS = loadSkeletons();
+const LOCAL = localExperimentData();
 const STEPS_PER_BAR = 192;
 const SONGS = Number.parseInt(process.argv[2] ?? "200", 10);
 
@@ -52,8 +53,8 @@ let sameInstDupes = 0;
 const TEMPLATES: (string | undefined)[] = [
 	undefined,
 	"kaiwai",
-	"kaiwai_splice",
-	// 骨格データは git に入れないので、手元に無ければ骨格借用は回さない
+	// 骨格データと継ぎ合わせのバンクは git に入れないので、手元に無ければ回さない
+	...(LOCAL.sectionBank ? ["kaiwai_splice"] : []),
 	...(KAIWAI_SKELETONS.length > 0 ? ["kaiwai_skeleton"] : []),
 ];
 
@@ -63,6 +64,7 @@ for (let i = 0; i < SONGS; i++) {
 		stepsPerBar: STEPS_PER_BAR,
 		template,
 		skeletons: KAIWAI_SKELETONS,
+		...LOCAL,
 	});
 	const preset: InstrumentPreset =
 		INSTRUMENT_PRESETS[song.instrument] ?? INSTRUMENT_PRESETS.piano;
