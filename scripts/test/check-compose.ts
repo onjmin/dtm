@@ -1848,6 +1848,14 @@ console.log("● 界隈曲の流派テンプレート");
 				n.startStep < toBar * STEPS_PER_BAR,
 		).length;
 	const PENTA = new Set([9, 0, 2, 4, 7]);
+	// 2号は全体の作り（音階・ドラムの組・ベース）を曲ごとに引き直す（compose-kaiwai.ts の varyNigo）。
+	const NIGO_SCALES = ["penta_minor", "yonuki_minor", "minyo"];
+	const NIGO_DRUMS = [
+		"four_clap",
+		"four_clap_pedal",
+		"four_clap_16hat",
+		"four_clap_16hat_snare",
+	];
 
 	for (const name of [
 		"kaiwai_kaisen",
@@ -1900,6 +1908,10 @@ console.log("● 界隈曲の流派テンプレート");
 			repeatPrev: [] as number[],
 			/** 2小節前と同一の小節の割合（Speder2 の楽器リードの小節の再出現）。 */
 			form2: [] as number[],
+			/** 2号: ⅣM7 のある曲・8分オクターブか3:3:2 のベースの曲・ハモリと重ねの無い曲。 */
+			fm7: [] as number[],
+			bassCore: [] as number[],
+			plain: [] as number[],
 		};
 		let threw = 0;
 		for (let seed = 1; seed <= N; seed++) {
@@ -1924,14 +1936,17 @@ console.log("● 界隈曲の流派テンプレート");
 				`${song.bpm}`,
 			);
 			check(`${tag} 短調`, song.keyName.endsWith("m"), song.keyName);
+			const nigo = lineage === "kaiwai_2go";
 			check(
 				`${tag} 音階がテンプレートの候補`,
-				(tmpl.scales ?? []).includes(song.scaleId),
+				(nigo ? NIGO_SCALES : (tmpl.scales ?? [])).includes(song.scaleId),
 				song.scaleId,
 			);
 			check(
 				`${tag} ドラムがテンプレートの候補`,
-				(tmpl.drums?.pool ?? []).includes(song.drum),
+				[...(tmpl.drums?.pool ?? []), ...(nigo ? NIGO_DRUMS : [])].includes(
+					song.drum,
+				),
 				song.drum,
 			);
 			check(
@@ -1994,11 +2009,11 @@ console.log("● 界隈曲の流派テンプレート");
 			}
 			if (lineage === "kaiwai_2go") {
 				check(
-					`${tag} セブンスが拍の8割以上`,
-					seventh >= 0.8,
+					`${tag} セブンスが拍の半分以上`,
+					seventh >= 0.5,
 					seventh.toFixed(2),
 				);
-				check(`${tag} ⅣM7（FM7）がある`, slots.includes("FM7"), "無い");
+				m.fm7.push(slots.includes("FM7") ? 1 : 0);
 			}
 			if (lineage === "kaiwai_speder2") {
 				check(`${tag} 7th 以上が9割以上`, seventh >= 0.9, seventh.toFixed(2));
@@ -2027,11 +2042,16 @@ console.log("● 界隈曲の流派テンプレート");
 				if (Math.abs(bassSemis[i] - bassSemis[i - 1]) === 12) oct++;
 			}
 			// Speder2 の原曲はオクターブ跳躍が曲で 1〜5割（規則は3割以上）。他の流派は8分オクターブが主。
-			if (song.stats.bassStyle !== "tresillo")
+			if (
+				song.stats.bassStyle !== "tresillo" &&
+				(!nigo || /^octave/.test(song.stats.bassStyle))
+			)
 				check(
 					`${tag} ベースがオクターブ往復`,
 					pairs > 0 &&
-						oct / pairs >= (lineage === "kaiwai_speder2" ? 0.3 : 0.6),
+						// 2号は骨格の差し替え小節が根音刻みになる曲がある。
+						oct / pairs >=
+							(lineage === "kaiwai_speder2" ? 0.3 : nigo ? 0.2 : 0.6),
 					`${oct}/${pairs}`,
 				);
 			const onsetsByBar = new Map<number, number[]>();
@@ -2062,7 +2082,11 @@ console.log("● 界隈曲の流派テンプレート");
 					onBeat / Math.max(1, bass.length) <= 0.2,
 					`${onBeat}/${bass.length}`,
 				);
-			} else
+			} else if (nigo)
+				m.bassCore.push(
+					["octave-eighth", "tresillo"].includes(song.stats.bassStyle) ? 1 : 0,
+				);
+			else
 				check(
 					`${tag} ベースが8分オクターブか3:3:2`,
 					["octave-eighth", "tresillo"].includes(song.stats.bassStyle),
@@ -2267,10 +2291,8 @@ console.log("● 界隈曲の流派テンプレート");
 						.reduce((a, n) => a + n.durationSteps, 0);
 				}
 				m.occupancy.push(sounding / Math.max(1, span));
-				check(
-					`${tag} ハモリ・オクターブ重ねが無い（楽器リード）`,
-					song.harmony.length === 0 && song.octave.length === 0,
-					`${song.harmony.length}/${song.octave.length}`,
+				m.plain.push(
+					song.harmony.length === 0 && song.octave.length === 0 ? 1 : 0,
 				);
 			}
 			if (name === "kaiwai_2go_lead") {
@@ -2344,7 +2366,18 @@ console.log("● 界隈曲の流派テンプレート");
 				f(m.four),
 			);
 		if (lineage === "kaiwai_2go") {
-			check("2号: 旋律がドレミソラ 9割以上", avg(m.penta) >= 0.9, f(m.penta));
+			check("2号: 旋律がドレミソラ 7割以上", avg(m.penta) >= 0.7, f(m.penta));
+			check(
+				"2号: セブンスが拍の8割以上（平均）",
+				avg(m.seventh) >= 0.8,
+				f(m.seventh),
+			);
+			check("2号: ⅣM7（FM7）のある曲が 7割以上", avg(m.fm7) >= 0.7, f(m.fm7));
+			check(
+				"2号: ベースが8分オクターブか3:3:2 の曲が 4割以上（全曲ではない）",
+				avg(m.bassCore) >= 0.4 && avg(m.bassCore) < 1,
+				f(m.bassCore),
+			);
 			check(
 				"2号: 2-5 が和音の変わり目の 5% 以上ある曲が 7割以上",
 				m.twoFive.filter((x) => x >= 0.05).length >= m.twoFive.length * 0.7,
@@ -2358,6 +2391,11 @@ console.log("● 界隈曲の流派テンプレート");
 			);
 			if (name.endsWith("_lead")) {
 				check("2号（楽器リード）: 3連が出る", avg(m.triplet) > 0, f(m.triplet));
+				check(
+					"2号（楽器リード）: ハモリ・オクターブ重ねの無い曲が 3割以上（全曲ではない）",
+					avg(m.plain) >= 0.3 && avg(m.plain) < 1,
+					f(m.plain),
+				);
 				// 原曲のリードの占有は 77〜93%（平均 87%）。句末で息を継ぐ。
 				check(
 					"2号（楽器リード）: リードがほぼ鳴り続ける（占有 8割以上）",

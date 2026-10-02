@@ -31,7 +31,11 @@
  */
 
 import type { ChordPatternType } from "../chord/chords";
-import { grammarPlan, type KaiwaiGrammar } from "./compose-kaiwai";
+import {
+	grammarPlan,
+	type KaiwaiGrammar,
+	type NigoFeel,
+} from "./compose-kaiwai";
 
 /** セクションの種類。 */
 export type SectionKind =
@@ -380,6 +384,8 @@ export type StructureTemplate = {
 	 * （{@link file://./compose-splice.ts}）へ渡す。共通経路の乱数は消費しない。
 	 */
 	engine?: "skeleton" | "splice";
+	/** 2号兄貴の曲ごとの作り（{@link file://./compose-kaiwai.ts} の `varyNigo` が埋める）。 */
+	nigo?: NigoFeel;
 };
 
 /**

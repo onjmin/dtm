@@ -5,7 +5,8 @@
  */
 
 import { parseChord } from "@onjmin/chord-parser";
-import type { SectionKind } from "./compose-sections";
+import type { ChordPatternType } from "../chord/chords";
+import type { SectionKind, StructureTemplate } from "./compose-sections";
 
 export type KaiwaiGrammar = "kaisen" | "nigo" | "speder";
 
@@ -140,7 +141,7 @@ const descend = (cur: string, rnd: () => number): string[] | null => {
 };
 
 const nigoMoves =
-	(rnd: () => number, loopTo: string | null) =>
+	(rnd: () => number, loopTo: string | null, feel?: NigoFeel) =>
 	(cur: string, room: number): [string[], number][] => {
 		// ブロックの末尾は頭へ戻る 2-5（ブロックを回すとそのまま解決する）。
 		if (loopTo && room === 2 && cur !== loopTo)
@@ -157,25 +158,58 @@ const nigoMoves =
 		if (cur === "CM7") m.push([["Am7"], 1], [["E7"], 1]);
 		for (const [target, w] of NIGO_TARGETS)
 			if (target !== cur)
-				m.push([[iiOf(target, rnd), vOf(target), target], w * 0.8]);
+				m.push([
+					[iiOf(target, rnd), vOf(target), target],
+					w * 0.8 * (target === "Am7" ? 1 + (feel?.minor ?? 0) * 3 : 1),
+				]);
+		if (feel?.minor && cur !== "E7") m.push([["E7", "Am7"], feel.minor * 2]);
 		const chain = descend(cur, rnd);
 		if (chain) m.push([chain, 1.5]);
 		const leave = loopTo ? 2 : 0;
 		return m.filter(([chunk]) => chunk.length <= room - leave || room <= 2);
 	};
 
-const nigoBlock = (head: string, rnd: () => number): Block => {
+const nigoBlock = (head: string, rnd: () => number, feel?: NigoFeel): Block => {
 	const loop = rnd() < 0.6 ? head : null;
-	return toBlock(
-		grow(
-			head,
-			8,
-			nigoMoves(rnd, loop),
-			(cur) => NIGO_FOURTH[cur] ?? "FM7",
-			rnd,
-		),
+	// 1小節1和音の曲（混在の曲はブロックごとに引く）は4つの枠をそのまま小節にする。
+	const perBar =
+		feel?.perBar === "mix" ? (rnd() < 0.5 ? 1 : 2) : (feel?.perBar ?? 2);
+	const slots = grow(
+		head,
+		perBar === 1 ? 4 : 8,
+		nigoMoves(rnd, loop, feel),
+		(cur) => NIGO_FOURTH[cur] ?? "FM7",
+		rnd,
 	);
+	return perBar === 1 ? slots : toBlock(slots);
 };
+
+/**
+ * 2号兄貴の曲ごとの作り。`perBar` は和声リズム、`triads` は M7・m7 を三和音へ落とす割合、
+ * `minor` は Ⅵm（イ短調の主和音）へ引き戻す強さ。
+ */
+export type NigoFeel = {
+	perBar: 1 | 2 | "mix";
+	triads: number;
+	minor: number;
+	/** 楽器リードのサビに3度下の重ね（ハモリ）を付ける。 */
+	third: boolean;
+	/** 旋律の無いイントロで、ベース・地の伴奏が入る位置（イントロの4分の1単位）。 */
+	introEntry: { bass: number; backing: number };
+};
+
+/** 属7・m7♭5 は落とさない（2-5 とセブンス中心の核を残す）。 */
+const triadOf = (c: string): string =>
+	c.replace(/^([A-G][b#]?)(M7|m7)$/, (_, r, q) => (q === "M7" ? r : `${r}m`));
+const thin = (block: Block, feel: NigoFeel | undefined, rnd: () => number) =>
+	!feel?.triads
+		? block
+		: block.map((bar) =>
+				bar
+					.split(" ")
+					.map((c) => (rnd() < feel.triads ? triadOf(c) : c))
+					.join(" "),
+			);
 
 const slotsOf = (block: Block): string[] => block.flatMap((b) => b.split(" "));
 /** 規則上の 2-5（m7 から4度上の属7）を含むか。 */
@@ -191,11 +225,15 @@ const hasTwoFive = (block: Block): boolean => {
 	);
 };
 
-const nigo = (rnd: () => number): GrammarProgressions => {
+const nigo = (rnd: () => number, feel?: NigoFeel): GrammarProgressions => {
 	const core = (heads: [string, number][]) => () =>
-		until(
-			() => nigoBlock(weighted(heads, rnd), rnd),
-			(b) => slotsOf(b).includes("FM7") && hasTwoFive(b),
+		thin(
+			until(
+				() => nigoBlock(weighted(heads, rnd), rnd, feel),
+				(b) => slotsOf(b).includes("FM7") && hasTwoFive(b),
+			),
+			feel,
+			rnd,
 		);
 	const four = (make: () => Block): Block[] => [make(), make(), make(), make()];
 	const approach = (): string => pick(["Bm7-5 E7", "Dm7 E7", "FM7 E7"], rnd);
@@ -207,19 +245,25 @@ const nigo = (rnd: () => number): GrammarProgressions => {
 				["Dm7", 1],
 				["Em7", 1],
 				["CM7", 1],
+				["Am7", (feel?.minor ?? 0) * 3],
 			]),
 		),
 		c: four(() =>
-			nigoBlock(
-				weighted(
-					[
-						["Dm7", 1],
-						["Gm7", 1],
-						["FM7", 1],
-						["Em7", 1],
-					],
+			thin(
+				nigoBlock(
+					weighted(
+						[
+							["Dm7", 1],
+							["Gm7", 1],
+							["FM7", 1],
+							["Em7", 1],
+						],
+						rnd,
+					),
 					rnd,
+					feel,
 				),
+				feel,
 				rnd,
 			),
 		),
@@ -423,9 +467,10 @@ const speder = (rnd: () => number): GrammarProgressions => {
 export const grammarProgressions = (
 	grammar: KaiwaiGrammar,
 	rnd: () => number,
+	feel?: NigoFeel,
 ): GrammarProgressions =>
 	grammar === "nigo"
-		? nigo(rnd)
+		? nigo(rnd, feel)
 		: grammar === "kaisen"
 			? kaisen(rnd)
 			: speder(rnd);
@@ -447,6 +492,9 @@ export type RunStyle = {
 	same: number;
 	/** 裏拍の8分を16分の長さで切る曲（原曲は16分の長さの音 47% に対し、16分の間隔は 21%）。 */
 	staccato: boolean;
+	/** 歩く範囲（主音からの歩数）。 */
+	lo: number;
+	hi: number;
 };
 
 export const runStyle = (rnd: () => number): RunStyle => {
@@ -454,23 +502,29 @@ export const runStyle = (rnd: () => number): RunStyle => {
 	const busy = rnd();
 	// 3連は原曲8曲のうち2曲だけ（他は 0）。
 	const triplet = rnd() < 0.35 ? 0.6 + rnd() * 1.4 : 0.05;
+	// 4分・休符の多い疎な曲と16分で埋める密な曲を両端に置く（密度が1つの値へ寄らない）。
+	const sparse = rnd() < 0.4;
 	return {
 		stepShare: 0.6 + rnd() * 0.25,
-		same: rnd() < 0.4 ? rnd() * 0.15 : 0,
+		same: rnd() < 0.75 ? 0.08 + rnd() * 0.22 : 0,
 		staccato: rnd() < 0.6,
 		cells: [
-			[[1, 1, 1, 1], 0.15 + busy * 1.2],
+			[[1, 1, 1, 1], sparse ? 0.1 : 0.1 + busy * busy * 3],
+			[[2, -2], sparse ? 0.8 + rnd() : 0.02],
+			[[-2, 2], sparse ? 0.4 + rnd() * 0.6 : 0.02],
 			[[4 / 3, 4 / 3, 4 / 3], triplet],
 			[[3, 1], 0.3 + rnd() * 0.6],
 			[[2, 1, 1], 0.3 + rnd() * 0.5],
 			[[1, 1, 2], 0.15 + rnd() * 0.5],
 			[[1, 2, 1], 0.1 + rnd() * 0.3],
 			[[2, 2], 1.5 + (1 - busy) * 3],
-			[[4], 0.1 + (1 - busy) * 0.8],
+			[[4], sparse ? 1 + rnd() : 0.1 + (1 - busy) * 0.8],
 			[[2, -1, 1], 0.1 + rnd() * 0.5],
 		],
-		maxLeap: 2 + Math.floor(rnd() * 3),
+		maxLeap: 1 + Math.floor(rnd() * 5),
 		turn: 0.15 + rnd() * 0.25,
+		lo: -1 - Math.floor(rnd() * 4),
+		hi: 2 + Math.floor(rnd() * 5),
 	};
 };
 
@@ -489,7 +543,7 @@ export type RunPlan = {
 export const runPlan = (rnd: () => number): RunPlan => ({
 	xyxz: rnd() < 0.15,
 	rep: rnd() * 0.8,
-	breath: 0.3 + rnd() * 0.5,
+	breath: 0.05 + rnd() * 0.9,
 	lift: rnd() < 0.55,
 });
 
@@ -589,9 +643,9 @@ const fillBeats = (cells: BeatCell[], next: () => number): LeadNote[] =>
 export const runBar = (rnd: () => number, style: RunStyle): LeadNote[] => {
 	const next = walker(
 		rnd,
-		Math.floor(rnd() * 4),
-		-3,
-		5,
+		Math.floor(rnd() * Math.min(4, style.hi)),
+		style.lo,
+		style.hi,
 		style.maxLeap,
 		style.turn,
 		style.stepShare,
@@ -878,6 +932,25 @@ export const bassFigure = (style: string, rnd: () => number): BassHit[][] => {
 				return r >= 0.38 && r <= 0.6;
 			},
 		);
+	}
+	// 根音中心の刻み（2号兄貴だけが引く）。オクターブ往復は曲ごとに 0〜4割。
+	const roots: Record<string, [number[], number]> = {
+		"root-eighth": [[0, 2, 4, 6, 8, 10, 12, 14], 0.1],
+		driving: [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], 0.3],
+		quarter: [[0, 4, 8, 12], 0],
+		syncopated: [[0, 3, 6, 8, 10, 14], 0.1],
+	};
+	if (roots[style]) {
+		const [on, drop] = roots[style];
+		const pOct = rnd() < 0.4 ? 0 : rnd() * 0.4;
+		const bar = (): BassHit[] => {
+			const xs = on.filter((_, i) => i === 0 || rnd() >= drop);
+			return hits(
+				xs,
+				xs.map((_, i) => (i > 0 && rnd() < pOct ? "o" : "r")),
+			);
+		};
+		return [bar(), bar(), bar(), bar()];
 	}
 	if (style === "tresillo") {
 		const on = [0, 3, 6, 8, 11, 14];
@@ -1430,3 +1503,166 @@ export const grammarPlan = (
 		: grammar === "kaisen"
 			? kaisenPlan(rnd)
 			: spederPlan(rnd);
+
+// ============================================================
+// 2号兄貴: 曲ごとの全体の作り
+// ============================================================
+
+/**
+ * 2号兄貴の規則のうち、全曲で同じだったもの（音階・和声リズム・セブンス率・ベース・層の積み方・
+ * サビの重ね・イントロの入り）を曲ごとに引いたテンプレートを返す。核（4つ打ち中心のドラム・
+ * セブンス中心の和声・16分と3連の走句・テンポ 140〜180）は動かさない。
+ */
+export const varyNigo = (
+	t: StructureTemplate,
+	rnd: () => number,
+): StructureTemplate => {
+	const all: SectionKind[] = ["intro", "verse", "chorus", "bridge"];
+	const perBar = weighted<NigoFeel["perBar"]>(
+		[
+			[2, 4],
+			[1, 3],
+			["mix", 3],
+		],
+		rnd,
+	);
+	const nigo: NigoFeel = {
+		perBar,
+		triads: rnd() < 0.35 ? 0 : 0.05 + rnd() * 0.3,
+		minor: rnd() < 0.2 ? 0 : 0.4 + rnd() * 1.2,
+		third: rnd() < 0.4,
+		introEntry: weighted(
+			[
+				[{ bass: 0, backing: 0 }, 3],
+				[{ bass: 2, backing: 0 }, 2],
+				[{ bass: 0, backing: 2 }, 1],
+				[{ bass: 2, backing: 1 }, 2],
+				[{ bass: 1, backing: 3 }, 1],
+			],
+			rnd,
+		),
+	};
+	const pad = weighted<SectionKind[]>(
+		[
+			[all, 3],
+			[["chorus", "bridge"], 2],
+			[["verse", "chorus", "bridge"], 2],
+			[[], 3],
+		],
+		rnd,
+	);
+	type Layer = { pattern: ChordPatternType; sections: SectionKind[] | null };
+	const pool: Layer[] = [
+		{ pattern: "stab-quarter", sections: ["chorus", "bridge"] },
+		{ pattern: "offbeat", sections: ["verse"] },
+		{ pattern: "stab-eighth", sections: ["chorus"] },
+		{ pattern: "arpeggio", sections: ["chorus", "bridge"] },
+		{ pattern: "offbeat", sections: null },
+		{ pattern: "stab-sixteenth", sections: ["chorus"] },
+	];
+	const backing: Layer[] = [];
+	const extra = weighted(
+		[
+			[0, 2],
+			[1, 2],
+			[2, 2],
+		],
+		rnd,
+	);
+	while (backing.length < extra) {
+		const l = pick(pool, rnd);
+		if (!backing.some((b) => b.pattern === l.pattern)) backing.push(l);
+	}
+	const sparkle =
+		rnd() < 0.45
+			? {
+					pattern: pick<ChordPatternType>(
+						["arpeggio", "alternating", "stab-sixteenth"],
+						rnd,
+					),
+					sections: pick<SectionKind[]>(
+						[["chorus"], ["chorus", "bridge"], ["verse", "chorus"]],
+						rnd,
+					),
+				}
+			: null;
+	const lead = weighted<{ sections: SectionKind[]; octave: number } | null>(
+		[
+			[{ sections: ["chorus"], octave: 1 }, 3],
+			[{ sections: ["chorus"], octave: 0 }, 2],
+			[{ sections: ["chorus", "bridge"], octave: 1 }, 1.5],
+			[{ sections: ["verse", "chorus"], octave: 0 }, 1],
+			[null, 2.5],
+		],
+		rnd,
+	);
+	const bassStyles = weighted<string[]>(
+		[
+			[["octave-eighth", "octave-eighth", "tresillo"], 2],
+			[["root-eighth"], 1],
+			[["octave-fifth"], 1],
+			[["driving"], 1],
+			[["octave-offbeat16"], 1],
+			[["tresillo"], 1.5],
+			[["syncopated"], 1],
+			[["quarter", "octave-eighth"], 1],
+		],
+		rnd,
+	);
+	return {
+		...t,
+		// 主音ラで進行プールを差し替えない（center を持たない）音階だけ。差し替えると文法の進行が消える。
+		scales: [
+			weighted(
+				[
+					["penta_minor", 3],
+					["yonuki_minor", 2],
+					["minyo", 2],
+				],
+				rnd,
+			),
+		],
+		form: weighted(
+			[
+				["motif", 3],
+				["through", 2],
+				["ostinato", 1.5],
+				["chant", 1.5],
+			],
+			rnd,
+		),
+		harmonicRhythms: [perBar === 2 ? "half" : "bar"],
+		bass: {
+			styles: bassStyles,
+			skeletons: weighted(
+				[
+					[["per-bar"], 1],
+					[["fourth-bar"], 2],
+					[["two-bar"], 1.5],
+					[["approach"], 1.5],
+				],
+				rnd,
+			),
+			alt: ["tresillo", "root-eighth", "octave-fifth"],
+			sustainCadence: false,
+		},
+		vocal: rnd() < 0.4 ? { duetStyles: ["none"], octave: true } : t.vocal,
+		// 4つ打ちのまま、ハットとクラップの組み方だけ替える曲。
+		drums: weighted(
+			[
+				[t.drums ?? { pool: ["four_openhat"] }, 4],
+				[{ pool: ["four_clap", "four_clap_pedal", "break_openhat"] }, 2],
+				[
+					{
+						pool: ["four_clap_16hat", "four_clap_16hat_snare", "break_openhat"],
+					},
+					2.5,
+				],
+			],
+			rnd,
+		),
+		padKinds: rnd() < 0.7 ? pad : all,
+		arrange: { backing, sparkle, pad, lead },
+		nigo,
+	};
+};

@@ -49,6 +49,7 @@ import {
 	type UpperFigure,
 	type UpperGrain,
 	upperFigure,
+	varyNigo,
 } from "./compose-kaiwai";
 import { type ResolvedComposeKey, resolveComposeKey } from "./compose-keys";
 import {
@@ -3061,6 +3062,8 @@ const draw = (
 	/** 曲の音階。40本引く候補すべてで同じものを使う。 */
 	scale: ComposeScale,
 	rnd: () => number,
+	/** 曲ごとに引き直した流派テンプレート（{@link varyNigo}）。 */
+	template: StructureTemplate | undefined,
 ): Draw => {
 	/**
 	 * 主音がドでもラでもない曲は、進行プールごと差し替える。既存のプールは全部ハ長調／イ短調の
@@ -3104,9 +3107,6 @@ const draw = (
 	//
 	// **テンポは設計図より先に引く。** イントロの長さは小節数ではなく秒で決める
 	// （{@link SectionSpec.seconds}）ので、BPM が分からないうちには小節数を選べない。
-	const template = STRUCTURE_TEMPLATES.find(
-		(tm) => tm.name === options.template,
-	);
 	const bpm = pick(template?.bpmChoices ?? BPM_CHOICES, rnd);
 	const bassOverride = (template?.bassByScale?.[scale.id] ??
 		(template?.bass ? pick(template.bass.styles, rnd) : undefined)) as
@@ -3323,7 +3323,7 @@ const draw = (
 	// テンプレートの進行プールは短調のときだけ。利用者が長調を手で指定したら従来プールへ退避する。
 	const grammarProg =
 		resolvedKey.mode === "minor" && template?.grammar
-			? grammarProgressions(template.grammar, rnd)
+			? grammarProgressions(template.grammar, rnd, template.nigo)
 			: undefined;
 	const tmplProg =
 		resolvedKey.mode === "minor"
@@ -5977,6 +5977,20 @@ const draw = (
 					),
 					velocity: Math.abs(at % 4) < 1e-6 ? 100 : 82,
 				});
+				// サビに音階の3度下を重ねる曲（拍頭の音だけ。走句全部を重ねると団子になる）。
+				if (template?.nigo?.third && side === "b" && Math.abs(at % 4) < 1e-6) {
+					const low = pitchOf(n.step + lift - 2);
+					harmony.push({
+						startStep: start,
+						pitchUnits: spelledToUnits(
+							low.semi + k,
+							low.fifth + fifthShift,
+							edo,
+						),
+						durationSteps: Math.max(1, end - start),
+						velocity: 74,
+					});
+				}
 				at += n.len;
 			}
 		}
@@ -6416,6 +6430,20 @@ const draw = (
 		dropBefore(bass, entry(1));
 		dropBefore(pad, entry(2));
 		dropBefore(submelody, entry(3));
+	} else if (template?.nigo && intro?.kind === "intro" && !intro.spec.melody) {
+		const entry = (k: number): number =>
+			(intro.startBar + Math.round((intro.bars * k) / 4)) * stepsPerBar;
+		const { bass: b, backing: c } = template.nigo.introEntry;
+		const late = (n: ComposedNote, k: number): boolean =>
+			n.startStep >= intro.startBar * stepsPerBar && n.startStep < entry(k);
+		for (const [list, k] of [
+			[bass, b],
+			[pad, c],
+		] as const) {
+			const kept = list.filter((n) => !late(n, k));
+			list.length = 0;
+			list.push(...kept);
+		}
 	}
 
 	// 曲全体を同じ量だけずらす。units は絶対音高なので、綴りの関係は保たれたまま動く。
@@ -6688,36 +6716,36 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	const rnd = options.random ?? Math.random;
 	const recent = options.recent ?? [];
 	const count = Math.max(1, options.drawCount ?? DRAW_COUNT);
-	const template = STRUCTURE_TEMPLATES.find(
-		(tm) => tm.name === options.template,
-	);
+	const found = STRUCTURE_TEMPLATES.find((tm) => tm.name === options.template);
 	// 骨格借用は共通経路の乱数を1つも消費する前に分岐する（既存テンプレートの #seed を守る）。
 	// 骨格が空なら composeSkeleton が投げる（通常経路へ倒すと進行・ベースの無い別物の曲になる）。
-	if (template?.engine === "skeleton") {
+	if (found?.engine === "skeleton") {
 		if (!options.skeletons?.length)
 			throw new Error(
 				"骨格借用には options.skeletons が要る（scripts/ から compose-skeletons.ts を渡す。バンドルには入れない）",
 			);
 		return composeSkeleton(
 			options,
-			template,
+			found,
 			options.skeletons,
 			options.phrases ?? SYNTH_PHRASES,
 		);
 	}
 	// 継ぎ合わせも同じ場所で分岐する。バンクは骨格と同じく scripts/ から渡す。
-	if (template?.engine === "splice") {
+	if (found?.engine === "splice") {
 		if (!options.sectionBank?.sections.length)
 			throw new Error(
 				"継ぎ合わせには options.sectionBank が要る（scripts/ から compose-section-bank.ts を渡す。バンドルには入れない）",
 			);
 		return composeSplice(
 			options,
-			template,
+			found,
 			options.sectionBank,
 			options.phrases ?? SYNTH_PHRASES,
 		);
 	}
+	// 2号兄貴は全体の作りを曲ごとに引き直す（他のテンプレートは乱数を消費しない）。
+	const template = found?.grammar === "nigo" ? varyNigo(found, rnd) : found;
 	// UI の調が "any" のときだけテンプレートの既定（長短）に倒す。抽選回数は "any" と同じ1回。
 	const baseKey =
 		(options.baseKey?.trim() || "any") === "any"
@@ -6740,7 +6768,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	let rejected = 0;
 
 	for (let attempt = 1; attempt <= count; attempt++) {
-		const d = draw(options, resolvedKey, scale, rnd);
+		const d = draw(options, resolvedKey, scale, rnd, template);
 		const { stats, ok } = evaluate(d, recent);
 		if (ok) valid.push({ d, stats });
 		else {
@@ -6815,6 +6843,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 				result,
 				template.arrange,
 				template.grammar ? rnd : undefined,
+				template.nigo?.introEntry.backing,
 			)
 		: buildArrangePlan(result, rnd, template?.chordPatterns);
 	return result;
@@ -7033,8 +7062,11 @@ const templateArrangePlan = (
 	song: ComposeResult,
 	plan: NonNullable<StructureTemplate["arrange"]>,
 	rnd?: () => number,
+	/** 旋律の無いイントロで地の伴奏が入る位置（イントロの4分の1単位）。 */
+	introEntry?: number,
 ): ArrangePlan => {
 	const present = new Set(song.sections.map((s) => s.kind));
+	const intro = song.sections[0];
 	const narrow = (kinds: SectionKind[]): SectionKind[] =>
 		kinds.filter((k) => present.has(k));
 	const base: ArrangeLayer = {
@@ -7074,9 +7106,12 @@ const templateArrangePlan = (
 		rnd && !keeps(plan.pad) && plan.pad.includes("chorus") && rnd() < 0.25
 			? narrow(["chorus"])
 			: narrow(plan.pad);
+	const ground = shape(base);
+	if (introEntry && intro?.kind === "intro" && !intro.spec.melody)
+		ground.fromBar = intro.startBar + Math.round((intro.bars * introEntry) / 4);
 	return {
 		// 地は simple モードの伴奏と同じ奏法のまま、上級者モードでは刻みと積み方だけ曲ごとに替える。
-		backing: [shape(base), ...extra],
+		backing: [ground, ...extra],
 		sparkle: plan.sparkle
 			? shape({
 					pattern: plan.sparkle.pattern,
