@@ -31,6 +31,7 @@
  */
 
 import type { ChordPatternType } from "../chord/chords";
+import { grammarPlan, type KaiwaiGrammar } from "./compose-kaiwai";
 
 /** セクションの種類。 */
 export type SectionKind =
@@ -309,6 +310,11 @@ export type StructureTemplate = {
 	 * テンプレートは必ず自前のプールを持つ。
 	 */
 	progressions?: { a: string[][]; b: string[][]; c: string[][] };
+	/**
+	 * 流派の文法（compose-kaiwai.ts）。構成は `plan`/`plans` の代わりに曲ごとに組む。進行は
+	 * `progressions` より優先して文法から組み（短調のときだけ）、締めの候補も文法が出す。
+	 */
+	grammar?: KaiwaiGrammar;
 	/** 旋律の「歌の制約」を緩める値。 */
 	melody?: {
 		wideLeapBudget?: number;
@@ -317,7 +323,7 @@ export type StructureTemplate = {
 		groove?: string;
 		/** 詠唱の素材を2度寄りに引く（同音連打を減らし、拍内の付点だけは16分でも通す）。 */
 		smooth?: true;
-		/** 詠唱を1小節の型の繰り返しにする（セクション内の全小節が最初の小節を写す）。 */
+		/** 詠唱を1小節の型の繰り返しにする曲を引く（半分の曲。セクション内の全小節が最初の小節を写す）。 */
 		barLoop?: true;
 		/** 主旋律から抜く度数（`omit`）と、拍の裏の短い音にだけ残す度数（`weakOnly`）。ハ長調の度数。 */
 		snap?: { omit: number[]; weakOnly: number[] };
@@ -333,7 +339,7 @@ export type StructureTemplate = {
 	 * 主旋律の書き方。`"riff"` は歌メロの代わりに楽器の16分リフを回す。
 	 * 手本2曲の上声は16分間隔が35〜67%あり、歌メロ（1〜13%）とは別物だった。
 	 * `"riff16"` は16分と3連の走句を4小節ブロックで回し続け、サビでオクターブ上へ移る。
-	 * `"riff-bar"` は1小節の型をセクションの全小節でそのまま繰り返す。
+	 * `"riff-bar"` は曲ごとに作る1小節の型をセクションの全小節で繰り返す（半分の曲は4小節ブロック）。
 	 */
 	lead?: "riff" | "riff16" | "riff-bar";
 	/**
@@ -346,12 +352,9 @@ export type StructureTemplate = {
 	/** コードパッドを書くセクション。省略時は Bメロ・サビ・Cメロ・落ちサビ。 */
 	padKinds?: SectionKind[];
 	/**
-	 * セクションの締め（最後の4小節の後ろ2小節）。`"loop"` は締めずに進行をそのまま回す。
-	 * 表は半終止・全終止・偽終止の候補で、要素は進行と同じ綴り。
+	 * `"loop"` はセクションを締めず（最後の4小節を締めの進行に差し替えず）に進行をそのまま回す。
 	 */
-	cadences?:
-		| "loop"
-		| { half: string[][]; full: string[][]; deceptive: string[][] };
+	cadences?: "loop";
 	/** `false` で平行調・同主調・曲中転調・借用和音・トニック回避を掛けない。 */
 	tonalMoves?: false;
 	/** 旋律の無いイントロで、ベース→パッド→サブメロの順に4分の1ずつ遅らせて入れる。 */
@@ -464,106 +467,7 @@ const KAIWAI_LYRIC_WORDS: string[] = [
 	"あかい",
 ];
 
-// 以下3流派の進行は docs/kaiwai-lineages.md の度数の規則から手で書いたもの（どの曲の写しでもない）。
-// 要素は1小節に2和音（2拍ごと）か1和音。A は全行 Am 始まり（主和音の判定が A の1和音目を見る）。
-
-/** 海鮮: Ⅵm 中心・4度上への根音進行・属7（E7）で短調Ⅰへ引き戻す。 */
-const KAISEN_A: string[][] = [
-	["Am Dm", "G C", "F Bm7-5", "E7 Am"],
-	["Am7 Dm7", "Am7 Dm7", "FM7 E7", "Am7 E7"],
-	["Am Em", "Am Dm", "FM7 E7", "Am Am7"],
-	["Am7 A7", "Dm7 G7", "CM7 FM7", "Bm7-5 E7"],
-	["Am Am7", "Dm7 E7", "Am Am7", "FM7 E7"],
-	["Am7 Em7", "Am7 Dm7", "G7 CM7", "Dm7 E7"],
-];
-const KAISEN_B: string[][] = [
-	["FM7 E7", "Am7 A7", "Dm7 G7", "CM7 E7"],
-	["Dm7 E7", "Am7 A7", "Dm7 E7", "Am Am7"],
-	["FM7 G7", "Em7 Am7", "Dm7 E7", "Am7 A7"],
-	["Am7 Dm7", "G7 CM7", "FM7 E7", "Am7 E7"],
-	["Dm7 Am7", "Dm7 E7", "FM7 Am7", "Bm7-5 E7"],
-];
-const KAISEN_C: string[][] = [
-	["FM7 Em7", "Dm7 Am7", "FM7 G7", "Bm7-5 E7"],
-	["Dm7 G7", "CM7 Am7", "Dm7 E7", "Am Am7"],
-	["FM7 G7", "Am7 Dm7", "FM7 G7", "E7 Am7"],
-];
-const KAISEN_CADENCES = {
-	half: [
-		["Dm7 G7", "FM7 E7"],
-		["FM7 Dm7", "Bm7-5 E7"],
-	],
-	full: [
-		["Dm7 E7", "Am Am7"],
-		["FM7 E7", "Am7 Am"],
-	],
-	deceptive: [
-		["Dm7 E7", "FM7 E7"],
-		["Bm7-5 E7", "FM7 G7"],
-	],
-};
-
-/**
- * 2号兄貴: ほぼ全部セブンス・ⅣM7 多め・Ⅱm7→Ⅴ7・副次の2-5（Gm7→C7→FM7）・Ⅶm7♭5→Ⅲ7→Ⅵm7・
- * ⅣM7⇄Ⅲm7 の往復・根が半音ずつ下がる列に2-5を挟む。
- */
-const NIGO_A: string[][] = [
-	["Am7 Em7", "FM7 Em7", "Dm7 G7", "CM7 E7"],
-	["Am7 Dm7", "Gm7 C7", "FM7 Em7", "Bm7-5 E7"],
-	["Am7 Abm7", "Gm7 C7", "FM7 Em7", "Dm7 E7"],
-	["Am7 Bm7-5", "E7 Am7", "FM7 Em7", "Dm7 G7"],
-	["Am7 FM7", "Em7 Am7", "Dm7 G7", "CM7 A7"],
-];
-const NIGO_B: string[][] = [
-	["FM7 Em7", "FM7 Em7", "Dm7 G7", "Em7 Am7"],
-	["FM7 E7", "Am7 Gm7", "C7 FM7", "Bm7-5 E7"],
-	["Dm7 G7", "CM7 FM7", "Bm7-5 E7", "Am7 A7"],
-	["FM7 Em7", "Ebm7 Ab7", "Dm7 G7", "CM7 E7"],
-	["FM7 Fm7", "Em7 A7", "Dm7 G7", "CM7 E7"],
-];
-const NIGO_C: string[][] = [
-	["Dm7 Em7", "FM7 G7", "Em7 Am7", "Dm7 E7"],
-	["FM7 Em7", "Dm7 CM7", "Bm7-5 E7", "Am7 A7"],
-	["Gm7 C7", "FM7 Em7", "Dm7 G7", "Bm7-5 E7"],
-];
-const NIGO_CADENCES = {
-	half: [
-		["Dm7 G7", "Bm7-5 E7"],
-		["FM7 Em7", "Dm7 E7"],
-	],
-	full: [
-		["Bm7-5 E7", "Am7 Am9"],
-		["Dm7 G7", "CM7 Am7"],
-	],
-	deceptive: [
-		["Dm7 G7", "CM7 E7"],
-		["Bm7-5 E7", "FM7 E7"],
-	],
-};
-
-/**
- * Speder2: 7th 以上の和音を少数でループ。A は1〜2和音（セクションがそのまま8小節以上の
- * 1〜2和音区間になる）。2-5（m7→4度上の属7）は置かない——G7・Bm7-5・Gm7 を持たない。
- */
-const SPEDER_A: string[][] = [
-	["Am7", "Am7", "Am7", "Am7"],
-	["Am7", "FM7", "Am7", "FM7"],
-	["Am7", "Am7", "Dm7", "Dm7"],
-	["Am7", "Em7", "Am7", "Em7"],
-	["Am9", "Am9", "FM7", "FM7"],
-];
-const SPEDER_B: string[][] = [
-	["FM7", "Em7", "FM7", "Em7"],
-	["FM7", "E7", "Am7", "Am7"],
-	["Dm7", "Em7", "FM7", "Em7"],
-	["CM7", "FM7", "CM7", "FM7"],
-	["FM7", "Am7", "FM7", "C7"],
-];
-const SPEDER_C: string[][] = [
-	["Dm7", "Dm7", "Em7", "Em7"],
-	["FM7", "FM7", "Em7", "Em7"],
-	["CM7", "CM7", "Dm7", "Dm7"],
-];
+// 3流派の進行は compose-kaiwai.ts の文法から曲ごとに組む（どの曲の写しでもない）。
 
 /** 海鮮リスペクト。歌入り（UTAU）前提で、歌を2本重ねる。 */
 const KAIWAI_KAISEN: StructureTemplate = {
@@ -579,31 +483,7 @@ const KAIWAI_KAISEN: StructureTemplate = {
 		"chorus",
 		"outro",
 	],
-	// 旋律なしイントロ8小節 → 歌 → いちばん厚い8小節（間奏）で歌が引っ込む → 楽器だけのアウトロ。
-	plans: [
-		[
-			"intro",
-			"verse",
-			"chorus",
-			"verse",
-			"chorus",
-			"interlude",
-			"chorus",
-			"outro",
-		],
-		["intro", "verse", "chorus", "interlude", "chorus", "outro"],
-		[
-			"intro",
-			"verse",
-			"chorus",
-			"verse",
-			"chorus",
-			"interlude",
-			"chorus",
-			"chorus",
-			"outro",
-		],
-	],
+	// 構成は grammar（compose-kaiwai.ts）が曲ごとに組む。ここの長さは UI の代表値。
 	sectionSpecs: {
 		intro: { bars: 8, barChoices: [8], seconds: { min: 1, max: 30 } },
 		chorus: { barChoices: [8] },
@@ -624,7 +504,14 @@ const KAIWAI_KAISEN: StructureTemplate = {
 	bpmChoices: [130, 131, 132, 133, 134, 135],
 	baseKey: "minor",
 	scales: ["yonuki_penta"],
-	drums: { pool: ["four_clap_pedal", "dance"] },
+	drums: {
+		pool: [
+			"four_clap_pedal",
+			"dance",
+			"four_clap_pedal_open",
+			"four_clap_snare_closed",
+		],
+	},
 	instruments: ["retro_game", "synth_pop", "chip_pop"],
 	chordPatterns: ["block", "offbeat"],
 	harmonicRhythms: ["half"],
@@ -634,8 +521,7 @@ const KAIWAI_KAISEN: StructureTemplate = {
 		alt: ["tresillo"],
 		sustainCadence: false,
 	},
-	progressions: { a: KAISEN_A, b: KAISEN_B, c: KAISEN_C },
-	cadences: KAISEN_CADENCES,
+	grammar: "kaisen",
 	tonalMoves: false,
 	melody: {
 		wideLeapBudget: 2,
@@ -664,12 +550,6 @@ const KAIWAI_NIGO: StructureTemplate = {
 	name: "kaiwai_2go",
 	label: "界隈曲・2号兄貴リスペクト（歌入り）",
 	plan: ["intro", "verse", "chorus", "verse", "chorus", "chorus"],
-	// 4小節ブロックの使い回し。歌が引っ込むサビは置かない。
-	plans: [
-		["intro", "verse", "chorus", "verse", "chorus", "chorus"],
-		["intro", "verse", "chorus", "bridge", "chorus", "chorus"],
-		["verse", "chorus", "verse", "chorus"],
-	],
 	sectionSpecs: {
 		intro: { barChoices: [4, 8], seconds: { min: 1, max: 20 } },
 		bridge: { barChoices: [8] },
@@ -678,7 +558,16 @@ const KAIWAI_NIGO: StructureTemplate = {
 	bpmChoices: [140, 142, 145, 145, 145, 145, 148, 150, 152, 155, 160, 170, 180],
 	baseKey: "minor",
 	scales: ["penta_minor"],
-	drums: { pool: ["four_openhat", "four_openhat", "dance"] },
+	drums: {
+		pool: [
+			"four_openhat",
+			"four_openhat",
+			"dance",
+			"four_openhat_double",
+			"four_openhat_snare",
+			"break_openhat",
+		],
+	},
 	instruments: ["synth_pop", "synth_pop", "retro_game"],
 	chordPatterns: ["block", "block", "stab-eighth"],
 	harmonicRhythms: ["half"],
@@ -687,8 +576,7 @@ const KAIWAI_NIGO: StructureTemplate = {
 		skeletons: ["per-bar"],
 		sustainCadence: false,
 	},
-	progressions: { a: NIGO_A, b: NIGO_B, c: NIGO_C },
-	cadences: NIGO_CADENCES,
+	grammar: "nigo",
 	tonalMoves: false,
 	padKinds: ["intro", "verse", "chorus", "bridge"],
 	melody: {
@@ -720,12 +608,6 @@ const KAIWAI_SPEDER: StructureTemplate = {
 	name: "kaiwai_speder2",
 	label: "界隈曲・Speder2リスペクト（歌入り）",
 	plan: ["intro", "verse", "chorus", "verse", "chorus"],
-	// 旋律なし16小節イントロ（層を足していく）→ 4小節ブロックの使い回し。
-	plans: [
-		["intro", "verse", "chorus", "verse", "chorus"],
-		["intro", "verse", "chorus", "bridge", "chorus"],
-		["intro", "chorus", "verse", "chorus", "chorus"],
-	],
 	sectionSpecs: {
 		intro: {
 			bars: 16,
@@ -736,16 +618,29 @@ const KAIWAI_SPEDER: StructureTemplate = {
 		verse: { barChoices: [8, 16] },
 		chorus: { barChoices: [8, 16] },
 		bridge: { barChoices: [8] },
+		// 層が抜ける区間と薄いアウトロは、旋律なしでループを回し続ける。
+		interlude: { progression: "a" },
+		outro: { melody: false, landing: null, progression: "a" },
 	},
 	form: "chant",
 	sub: "arpeggio",
 	arpeggioKinds: ["intro", "chorus"],
 	padKinds: ["intro", "verse", "chorus", "bridge"],
 	introBuild: true,
-	bpmChoices: [110, 112, 115, 118, 120, 122, 125, 128, 130, 132, 135],
+	bpmChoices: [
+		100, 104, 108, 110, 112, 115, 118, 120, 122, 125, 128, 130, 132, 135,
+	],
 	baseKey: "minor",
 	scales: ["penta_minor", "yonuki_penta"],
-	drums: { pool: ["four_clap_16hat"] },
+	drums: {
+		pool: [
+			"four_clap_16hat",
+			"four_clap_16hat_sparse",
+			"four_clap_16hat_run",
+			"four_clap_16hat_snare",
+			"dance",
+		],
+	},
 	instruments: ["ep_celesta", "ep_celesta", "chip_pop"],
 	chordPatterns: ["block"],
 	harmonicRhythms: ["bar", "bar", "slow"],
@@ -754,7 +649,7 @@ const KAIWAI_SPEDER: StructureTemplate = {
 		skeletons: ["per-bar"],
 		sustainCadence: false,
 	},
-	progressions: { a: SPEDER_A, b: SPEDER_B, c: SPEDER_C },
+	grammar: "speder",
 	cadences: "loop",
 	tonalMoves: false,
 	melody: { barLoop: true },
@@ -770,7 +665,7 @@ const KAIWAI_SPEDER: StructureTemplate = {
 		lead: null,
 	},
 };
-/** Speder2 リスペクト（楽器リード）。原曲どおりインストで、1小節の型を楽器で回す。 */
+/** Speder2 リスペクト（楽器リード）。原曲どおりインストで、短い型を楽器で回す。 */
 const KAIWAI_SPEDER_LEAD: StructureTemplate = {
 	...KAIWAI_SPEDER,
 	name: "kaiwai_speder2_lead",
@@ -1087,13 +982,20 @@ export const buildSectionPlan = (
 	bpm?: number,
 ): PlacedSection[] => {
 	const tmpl = findTemplate(templateName);
-	const ordered = orderedKinds(kinds, templateName, rnd);
+	const byGrammar =
+		tmpl?.grammar && rnd ? grammarPlan(tmpl.grammar, rnd) : undefined;
+	const ordered = byGrammar?.kinds ?? orderedKinds(kinds, templateName, rnd);
 
 	/** 種別ごとの長さ。同じ種別は曲中で同じ長さに揃える。 */
 	const barsOf = new Map<SectionKind, number>();
 	for (const kind of ordered) {
 		if (barsOf.has(kind)) continue;
 		const spec = specOf(kind, tmpl);
+		const fixed = byGrammar?.bars[kind];
+		if (fixed) {
+			barsOf.set(kind, fixed);
+			continue;
+		}
 		const choices = spec.barChoices ?? [];
 		if (!rnd || choices.length === 0) {
 			barsOf.set(kind, spec.bars);
@@ -1135,6 +1037,10 @@ export const buildSectionPlan = (
 		seen.set(kind, count + 1);
 		bar += bars;
 	}
+	const shift = byGrammar?.shift;
+	if (shift)
+		for (let i = shift.from; i <= shift.to && i < plan.length; i++)
+			plan[i].keyShift = shift.semitones;
 	return plan;
 };
 
@@ -1154,6 +1060,19 @@ export const sectionPlanBarRange = (
 	if (tmpl?.engine === "skeleton") return { min: 12, max: 146, typical: 49 };
 	// 継ぎ合わせのバンクも骨格と同じくバンドルに入れないので、生成の実測（300 seed: 16〜168、中央 56）。
 	if (tmpl?.engine === "splice") return { min: 16, max: 168, typical: 56 };
+	if (tmpl?.grammar) {
+		// 構成を規則から組む流派は、固定の種で引いた構成の幅を返す。
+		let seed = 1;
+		const lcg = (): number => {
+			seed = (seed * 1103515245 + 12345) % 2147483648;
+			return seed / 2147483648;
+		};
+		const totals = Array.from({ length: 64 }, () =>
+			buildSectionPlan([], templateName, lcg).reduce((a, s) => a + s.bars, 0),
+		);
+		const typical = tmpl.plan.reduce((a, k) => a + specOf(k, tmpl).bars, 0);
+		return { min: Math.min(...totals), max: Math.max(...totals), typical };
+	}
 	const typicalKinds = orderedKinds(kinds, templateName);
 	// 構成を seed ごとに引くテンプレートは、全候補の最短・最長を取る。代表値は `plan`。
 	const plans = tmpl?.plans?.length ? tmpl.plans : [typicalKinds];

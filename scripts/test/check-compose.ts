@@ -1802,13 +1802,21 @@ console.log("● 界隈曲の流派テンプレート");
 	const KICK = [36];
 	const CLAP = [39];
 	const HAT = [42, 44, 46];
-	/** 主旋律の音を曲の主音ラ＝9 の枠（ハ長調／イ短調）へ戻したピッチクラス。 */
+	/** 主旋律の音を曲の主音ラ＝9 の枠（ハ長調／イ短調）へ戻したピッチクラス（曲中の転調も戻す）。 */
 	const melPcs = (song: ReturnType<typeof composeSong>): number[] =>
 		[...song.melody]
 			.sort((a, b) => a.startStep - b.startStep)
-			.map((n) =>
-				pc(Math.round(n.pitchUnits / UNITS_PER_SEMITONE) - song.rootShift),
-			);
+			.map((n) => {
+				const at = Math.floor(n.startStep / STEPS_PER_BAR);
+				const sec = song.sections.find(
+					(s) => at >= s.startBar && at < s.startBar + s.bars,
+				);
+				return pc(
+					Math.round(n.pitchUnits / UNITS_PER_SEMITONE) -
+						song.rootShift -
+						(sec?.keyShift ?? 0),
+				);
+			});
 	const sectionsLayers = (
 		song: ReturnType<typeof composeSong>,
 	): Map<number, number> => {
@@ -1857,7 +1865,7 @@ console.log("● 界隈曲の流派テンプレート");
 				? [130, 135]
 				: lineage === "kaiwai_2go"
 					? [140, 180]
-					: [110, 135];
+					: [100, 135];
 		const m = {
 			step: [] as number[],
 			same: [] as number[],
@@ -1876,6 +1884,16 @@ console.log("● 界隈曲の流派テンプレート");
 			barLoop: [] as number[],
 			occupancy: [] as number[],
 			lift: [] as number[],
+			/** 4つ打ちの曲。 */
+			four: [] as number[],
+			/** 16分裏のハットが1小節2打以上の曲。 */
+			hat16: [] as number[],
+			/** 規則どおりのイントロ（海鮮 8小節・Speder2 16小節）を置いた曲。 */
+			form: [] as number[],
+			/** 歌が引っ込む間奏を置いた曲（海鮮）。 */
+			quiet: [] as number[],
+			/** 楽器だけのアウトロで終わる曲（海鮮）。 */
+			outro: [] as number[],
 		};
 		let threw = 0;
 		for (let seed = 1; seed <= N; seed++) {
@@ -1915,15 +1933,19 @@ console.log("● 界隈曲の流派テンプレート");
 				(tmpl.instruments ?? []).includes(song.instrument),
 				song.instrument,
 			);
-			// --- ドラム: 4つ打ち＋裏8分のハット（海鮮・Speder2 は2・4拍クラップ、Speder2 は16分裏の閉じハット） ---
+			// --- ドラム: 裏8分のハット・4つ打ち（2号は4つ打ちでない曲も出る）・2・4拍クラップ（海鮮・Speder2）・
+			//     16分裏の閉じハット（Speder2 の多く） ---
 			const kick = drumHits(song.drum, KICK);
 			const hat = drumHits(song.drum, HAT);
 			check(
-				`${tag} ドラムが4つ打ち＋裏8分ハット`,
-				[0, 48, 96, 144].every((s) => kick.includes(s)) &&
-					[24, 72, 120, 168].every((s) => hat.includes(s)),
+				`${tag} ドラムが裏8分ハット`,
+				[24, 72, 120, 168].every((s) => hat.includes(s)),
 				song.drum,
 			);
+			const four = [0, 48, 96, 144].every((s) => kick.includes(s));
+			m.four.push(four ? 1 : 0);
+			if (lineage !== "kaiwai_2go")
+				check(`${tag} ドラムが4つ打ち`, four, song.drum);
 			if (lineage !== "kaiwai_2go") {
 				const clap = drumHits(song.drum, CLAP);
 				check(
@@ -1932,12 +1954,7 @@ console.log("● 界隈曲の流派テンプレート");
 					song.drum,
 				);
 			}
-			if (lineage === "kaiwai_speder2")
-				check(
-					`${tag} 16分裏のハットが1小節2打以上`,
-					hat.filter((s) => s % 24 === 12).length >= 2,
-					song.drum,
-				);
+			m.hat16.push(hat.filter((s) => s % 24 === 12).length >= 2 ? 1 : 0);
 
 			// --- 和音 ---
 			const slots = slotsOf(song.chordProgression);
@@ -2101,39 +2118,48 @@ console.log("● 界隈曲の流派テンプレート");
 			// --- 構成 ---
 			const first = song.sections[0];
 			const layers = sectionsLayers(song);
+			// 構成の規則は確率で入る（原曲が数曲しかないので全曲には入れない）。曲ごとには
+			// 「置いたならその形」を見て、置いた割合は 30 曲の集計で見る。
+			const intro = first.kind === "intro" ? first : null;
 			if (lineage === "kaiwai_kaisen") {
-				check(
-					`${tag} 旋律なしの8小節イントロ`,
-					first.kind === "intro" &&
-						first.bars === 8 &&
-						notesIn(song.melody, 0, 8) === 0,
-					`${first.kind}${first.bars}`,
-				);
+				if (intro)
+					check(
+						`${tag} イントロに旋律が無い`,
+						notesIn(song.melody, 0, intro.bars) === 0,
+						`${intro.bars}`,
+					);
+				m.form.push(intro?.bars === 8 ? 1 : 0);
 				const inter = song.sections.findIndex((s) => s.kind === "interlude");
 				const sec = song.sections[inter];
-				check(
-					`${tag} 8小節の間奏で歌が引っ込む`,
-					inter >= 0 &&
+				m.quiet.push(inter >= 0 ? 1 : 0);
+				if (sec) {
+					check(
+						`${tag} 8小節の間奏で歌が引っ込む`,
 						sec.bars === 8 &&
-						notesIn(song.melody, sec.startBar, sec.startBar + 8) === 0,
-					song.sections.map((s) => s.kind).join("-"),
-				);
-				const maxLayers = Math.max(...layers.values());
-				check(
-					`${tag} 間奏が一番厚い（イントロ ≤3 層・間奏 ≥7 層）`,
-					inter >= 0 &&
-						layers.get(inter) === maxLayers &&
-						(layers.get(inter) ?? 0) >= 7 &&
+							notesIn(song.melody, sec.startBar, sec.startBar + 8) === 0,
+						song.sections.map((s) => s.kind).join("-"),
+					);
+					const maxLayers = Math.max(...layers.values());
+					check(
+						`${tag} 間奏が一番厚い（間奏 ≥7 層）`,
+						layers.get(inter) === maxLayers && (layers.get(inter) ?? 0) >= 7,
+						[...layers.values()].join(","),
+					);
+				}
+				if (intro)
+					check(
+						`${tag} イントロが薄い（≤3 層）`,
 						(layers.get(0) ?? 9) <= 3,
-					[...layers.values()].join(","),
-				);
+						[...layers.values()].join(","),
+					);
 				const last = song.sections.at(-1);
-				check(
-					`${tag} 楽器だけのアウトロ`,
-					last?.kind === "outro" &&
+				m.outro.push(last?.kind === "outro" ? 1 : 0);
+				if (last?.kind === "outro")
+					check(
+						`${tag} 楽器だけのアウトロ`,
 						notesIn(song.melody, last.startBar, song.bars) === 0,
-					`${last?.kind}`,
-				);
+						`${last.bars}`,
+					);
 				check(
 					`${tag} 歌を2本重ねる（オクターブ下の全音重ね）`,
 					song.octave.length === song.melody.length && song.melody.length > 0,
@@ -2153,22 +2179,20 @@ console.log("● 界隈曲の流派テンプレート");
 				);
 			}
 			if (lineage === "kaiwai_speder2") {
-				check(
-					`${tag} 旋律なしの16小節イントロ`,
-					first.kind === "intro" &&
-						first.bars === 16 &&
-						notesIn(song.melody, 0, 16) === 0,
-					`${first.kind}${first.bars}`,
-				);
-				check(
-					`${tag} イントロで層を足していく（ベース5小節目・サブメロ13小節目から）`,
-					notesIn(song.bass, 0, 4) === 0 &&
-						notesIn(song.bass, 4, 16) > 0 &&
-						notesIn(song.pad, 0, 8) === 0 &&
-						notesIn(song.submelody, 0, 12) === 0 &&
-						notesIn(song.submelody, 12, 16) > 0,
-					`bass ${notesIn(song.bass, 0, 4)}/${notesIn(song.bass, 4, 16)} sub ${notesIn(song.submelody, 0, 12)}/${notesIn(song.submelody, 12, 16)}`,
-				);
+				m.form.push(intro?.bars === 16 ? 1 : 0);
+				if (intro) {
+					const at = (k: number): number => Math.round((intro.bars * k) / 4);
+					check(
+						`${tag} 旋律なしのイントロで層を足していく（ベース・サブメロが4分の1・4分の3から）`,
+						notesIn(song.melody, 0, intro.bars) === 0 &&
+							notesIn(song.bass, 0, at(1)) === 0 &&
+							notesIn(song.bass, at(1), intro.bars) > 0 &&
+							notesIn(song.pad, 0, at(2)) === 0 &&
+							notesIn(song.submelody, 0, at(3)) === 0 &&
+							notesIn(song.submelody, at(3), intro.bars) > 0,
+						`intro${intro.bars} bass ${notesIn(song.bass, 0, at(1))}/${notesIn(song.bass, at(1), intro.bars)} sub ${notesIn(song.submelody, 0, at(3))}/${notesIn(song.submelody, at(3), intro.bars)}`,
+					);
+				}
 				// 1小節の型の繰り返し：歌のあるセクションの小節が、そのセクションの1小節目と同じリズム
 				const keyOf = (bar: number, withPitch: boolean): string =>
 					song.melody
@@ -2193,7 +2217,7 @@ console.log("● 界隈曲の流派テンプレート");
 						if (keyOf(b, name.endsWith("_lead")) === head) same1++;
 					}
 				}
-				m.barLoop.push(same1 / Math.max(1, total1));
+				m.barLoop.push(same1 / Math.max(1, total1) >= 0.8 ? 1 : 0);
 			}
 			if (name.endsWith("_lead")) {
 				let sounding = 0;
@@ -2255,11 +2279,32 @@ console.log("● 界隈曲の流派テンプレート");
 				f(m.fourthUp),
 			);
 			check(
+				"海鮮: 旋律なし8小節イントロの曲が 6割以上（全曲ではない）",
+				avg(m.form) >= 0.6 && avg(m.form) < 1,
+				f(m.form),
+			);
+			check(
+				"海鮮: 歌が引っ込む間奏の曲が 4割5分以上（全曲ではない）",
+				avg(m.quiet) >= 0.45 && avg(m.quiet) < 1,
+				f(m.quiet),
+			);
+			check(
+				"海鮮: 楽器だけのアウトロの曲が 5割5分以上（全曲ではない）",
+				avg(m.outro) >= 0.55 && avg(m.outro) < 1,
+				f(m.outro),
+			);
+			check(
 				"海鮮: 3:3:2 の小節が 15% 以上の曲が出る",
 				m.tresilloBars.some((x) => x >= 0.15),
 				m.tresilloBars.map((x) => x.toFixed(2)).join(" "),
 			);
 		}
+		if (lineage === "kaiwai_2go")
+			check(
+				"2号: 4つ打ちの曲が 6割以上（全曲ではない）",
+				avg(m.four) >= 0.6 && avg(m.four) < 1,
+				f(m.four),
+			);
 		if (lineage === "kaiwai_2go") {
 			check("2号: 旋律がドレミソラ 9割以上", avg(m.penta) >= 0.9, f(m.penta));
 			check(
@@ -2295,14 +2340,102 @@ console.log("● 界隈曲の流派テンプレート");
 		if (lineage === "kaiwai_speder2") {
 			check("Speder2: 旋律の上位5音が9割以上", avg(m.top5) >= 0.9, f(m.top5));
 			check(
-				"Speder2: 1小節の型をそのまま繰り返す（8割以上）",
-				avg(m.barLoop) >= 0.8,
+				"Speder2: 旋律なし16小節イントロの曲が 4割以上（全曲ではない）",
+				avg(m.form) >= 0.4 && avg(m.form) < 1,
+				f(m.form),
+			);
+			check(
+				"Speder2: 1小節の型をそのまま繰り返す曲が 3割以上（全曲ではない）",
+				avg(m.barLoop) >= 0.3 && avg(m.barLoop) < 1,
 				f(m.barLoop),
+			);
+			check(
+				"Speder2: 16分裏のハットが1小節2打以上の曲が 6割以上",
+				avg(m.hat16) >= 0.6,
+				f(m.hat16),
 			);
 		}
 		console.log(
-			`  ${name.padEnd(20)} 2度 ${f(m.step)} / 同音 ${f(m.same)} / 16分 ${f(m.six)} / 付点 ${f(m.dotted)} / 3連 ${f(m.triplet)} / 5音 ${f(m.penta)} / ファ ${f(m.fa)} / 音域 ${avg(m.range).toFixed(1)} / Am ${f(m.amShare)} / 4度上 ${f(m.fourthUp)} / 7th ${f(m.seventh)} / 2-5 ${f(m.twoFive)} / 3:3:2小節 ${f(m.tresilloBars)} / 1小節反復 ${f(m.barLoop)} / 占有 ${f(m.occupancy)} / サビ上げ ${avg(m.lift).toFixed(1)}`,
+			`  ${name.padEnd(20)} 2度 ${f(m.step)} / 同音 ${f(m.same)} / 16分 ${f(m.six)} / 付点 ${f(m.dotted)} / 3連 ${f(m.triplet)} / 5音 ${f(m.penta)} / ファ ${f(m.fa)} / 音域 ${avg(m.range).toFixed(1)} / Am ${f(m.amShare)} / 4度上 ${f(m.fourthUp)} / 7th ${f(m.seventh)} / 2-5 ${f(m.twoFive)} / 3:3:2小節 ${f(m.tresilloBars)} / 1小節反復の曲 ${f(m.barLoop)} / 占有 ${f(m.occupancy)} / サビ上げ ${avg(m.lift).toFixed(1)} / 規則のイントロ ${f(m.form)} / 引っ込む間奏 ${f(m.quiet)} / アウトロ ${f(m.outro)} / 4つ打ち ${f(m.four)} / 16分裏ハット ${f(m.hat16)}`,
 		);
+	}
+}
+
+// ============================================================
+// 2.96 界隈曲の流派テンプレートの幅
+//     規則を満たす範囲で曲ごとに違うものが出るか（scratch/_variety.ts と同じ数え方・同じ種）。
+//     リードの半小節の形は、発音位置と音程の列（移調に依らない）。1音だけ・同音だけの形は数えない。
+// ============================================================
+
+console.log("● 界隈曲の流派テンプレートの幅");
+{
+	const N = 100;
+	const LIMITS: Record<string, { prog: number; shapes?: number }> = {
+		kaiwai_kaisen: { prog: 60 },
+		kaiwai_2go: { prog: 60 },
+		kaiwai_2go_lead: { prog: 60, shapes: 300 },
+		kaiwai_speder2: { prog: 25 },
+		kaiwai_speder2_lead: { prog: 25, shapes: 150 },
+	};
+	for (const [name, lim] of Object.entries(LIMITS)) {
+		const prog = new Set<string>();
+		const drums = new Set<string>();
+		const forms = new Set<string>();
+		const shapes = new Map<string, Set<number>>();
+		for (let seed = 1; seed <= N; seed++) {
+			const song = composeSong({
+				stepsPerBar: STEPS_PER_BAR,
+				edo: 12,
+				template: name,
+				baseKey: "any",
+				scale: "auto",
+				random: appSeededRandom(seed),
+			});
+			prog.add(song.chordProgression.split("|").slice(0, 8).join("|"));
+			drums.add(song.drum);
+			forms.add(song.sections.map((x) => `${x.kind}${x.bars}`).join("-"));
+			if (!lim.shapes) continue;
+			const half = STEPS_PER_BAR / 2;
+			const byHalf = new Map<number, typeof song.melody>();
+			for (const n of [...song.melody].sort(
+				(a, b) => a.startStep - b.startStep,
+			)) {
+				const h = Math.floor(n.startStep / half);
+				byHalf.set(h, [...(byHalf.get(h) ?? []), n]);
+			}
+			for (const ns of byHalf.values()) {
+				const p = ns.map((n) => Math.round(n.pitchUnits / UNITS_PER_SEMITONE));
+				if (p.every((x) => x === p[0])) continue;
+				const key = ns
+					.map((n, i) => `${n.startStep % half}:${i ? p[i] - p[i - 1] : 0}`)
+					.join(",");
+				if (!shapes.has(key)) shapes.set(key, new Set());
+				shapes.get(key)?.add(seed);
+			}
+		}
+		check(
+			`${name}: 冒頭8小節の進行が ${lim.prog} 種以上（${N}曲）`,
+			prog.size >= lim.prog,
+			`${prog.size}`,
+		);
+		check(`${name}: ドラムの型が3種以上`, drums.size >= 3, `${drums.size}`);
+		check(
+			`${name}: 構成が30種以上（${N}曲）`,
+			forms.size >= 30,
+			`${forms.size}`,
+		);
+		let line = `  ${name.padEnd(20)} 進行 ${prog.size} / ドラム ${drums.size} / 構成 ${forms.size}`;
+		if (lim.shapes) {
+			const most = Math.max(0, ...[...shapes.values()].map((x) => x.size));
+			check(
+				`${name}: リードの半小節の形が ${lim.shapes} 種以上`,
+				shapes.size >= lim.shapes,
+				`${shapes.size}`,
+			);
+			check(`${name}: どの形も ${N}曲中 50曲未満`, most < 50, `${most}`);
+			line += ` / 半小節の形 ${shapes.size}（最多 ${most}曲）`;
+		}
+		console.log(line);
 	}
 }
 

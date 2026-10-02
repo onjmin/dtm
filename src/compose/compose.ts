@@ -30,6 +30,16 @@ import {
 	CORPUS_DEVIATION_BUDGET,
 	CORPUS_PROFILE_KEYS,
 } from "./compose-corpus";
+import {
+	grammarProgressions,
+	type LoopStyle,
+	loopBar,
+	loopStyle,
+	type RunStyle,
+	runBar,
+	runStyle,
+	thinToEighths,
+} from "./compose-kaiwai";
 import { type ResolvedComposeKey, resolveComposeKey } from "./compose-keys";
 import {
 	type Band,
@@ -3031,48 +3041,6 @@ const RIFF_FIGURES: ((a: number, rnd: () => number) => RiffNote[])[] = [
 const makeRiffHalf = (rnd: () => number, lo: number, hi: number): RiffNote[] =>
 	pick(RIFF_FIGURES, rnd)(lo + Math.floor(rnd() * (hi - lo + 1)), rnd);
 
-const riffNote = (step: number, len: number): RiffNote => ({
-	step,
-	chrom: false,
-	len,
-});
-
-/** 走句リード（`lead: "riff16"`）の半小節。16分・3連（len 4/3）・拍内の付点。合計は16分8つ。 */
-const LINE_FIGURES: ((a: number) => RiffNote[])[] = [
-	(a) => [0, 1, 2, 3, 4, 3, 2, 1].map((d) => riffNote(a + d, 1)),
-	(a) => [0, -1, -2, -3, -2, -1, 0, 1].map((d) => riffNote(a + d, 1)),
-	(a) => [
-		riffNote(a, 4 / 3),
-		riffNote(a + 1, 4 / 3),
-		riffNote(a, 4 / 3),
-		riffNote(a - 1, 1),
-		riffNote(a - 2, 1),
-		riffNote(a - 1, 1),
-		riffNote(a, 1),
-	],
-	(a) => [
-		riffNote(a, 3),
-		riffNote(a + 1, 1),
-		riffNote(a + 2, 3),
-		riffNote(a + 1, 1),
-	],
-	(a) => [
-		riffNote(a, 2),
-		riffNote(a + 1, 1),
-		riffNote(a + 2, 1),
-		riffNote(a + 1, 2),
-		riffNote(a, 1),
-		riffNote(a - 1, 1),
-	],
-	(a) => [0, 2, 1, 3, 2, 4].map((d) => riffNote(a + d, 4 / 3)),
-];
-
-/** 走句リードの1小節。前半は主音の上（0〜3歩）、後半は下寄り（-1〜2歩）から始める。 */
-const makeLineBar = (rnd: () => number): RiffNote[] => [
-	...pick(LINE_FIGURES, rnd)(Math.floor(rnd() * 4)),
-	...pick(LINE_FIGURES, rnd)(Math.floor(rnd() * 4) - 1),
-];
-
 const draw = (
 	options: ComposeOptions,
 	resolvedKey: ResolvedComposeKey,
@@ -3339,8 +3307,14 @@ const draw = (
 	// で始まるのは「曲の顔を先に見せる」定石で、間奏も同じ理由でサビ側を使う。ベース調が
 	// 長調／短調に指定されている場合は進行をそれに合わせる。
 	// テンプレートの進行プールは短調のときだけ。利用者が長調を手で指定したら従来プールへ退避する。
+	const grammarProg =
+		resolvedKey.mode === "minor" && template?.grammar
+			? grammarProgressions(template.grammar, rnd)
+			: undefined;
 	const tmplProg =
-		resolvedKey.mode === "minor" ? template?.progressions : undefined;
+		resolvedKey.mode === "minor"
+			? (grammarProg ?? template?.progressions)
+			: undefined;
 	const progAPool = center
 		? center.a
 		: (tmplProg?.a ??
@@ -3410,9 +3384,8 @@ const draw = (
 		rnd,
 	);
 	const tonic = center ? center.tonic : progA[0].startsWith("Am") ? "Am" : "C";
-	/** テンプレートの締めの表（{@link StructureTemplate.cadences}）。 */
-	const cadenceTable =
-		typeof template?.cadences === "object" ? template.cadences : undefined;
+	/** 流派の文法が出した締めの候補。 */
+	const cadenceTable = grammarProg?.cadences;
 	const loopCadence = template?.cadences === "loop";
 	/** ドミナントで終わる4小節（Bメロの末尾＝サビへの助走に使う）。 */
 	const progHalf = cadenceTable
@@ -3688,7 +3661,9 @@ const draw = (
 	/** 詠唱が唯一着地する場所＝歌のある最後のセクション。 */
 	const lastSungSection =
 		sectionPlan.filter((s) => s.spec.melody).at(-1) ?? null;
-	const barLoop = form === "chant" && template?.melody?.barLoop === true;
+	// 1小節の型の繰り返しは原曲4曲中2曲。曲ごとに引く。
+	const barLoop =
+		form === "chant" && template?.melody?.barLoop === true && rnd() < 0.5;
 	for (const section of sectionPlan) {
 		const unitCount = Math.max(1, Math.round(section.bars / 2));
 		const src = sourceOf(section.kind);
@@ -5885,7 +5860,7 @@ const draw = (
 
 	// --- 流派テンプレートの楽器リード（{@link StructureTemplate.lead} の riff16 / riff-bar） ---
 	// 和音に付いて動かない型を回す。riff16 は4小節ブロック [x y x z] でサビだけ1オクターブ上、
-	// riff-bar は1小節の型をセクションの全小節で繰り返す。パッドは残す。
+	// riff-bar は1小節の型（半分の曲は4小節ブロック）を繰り返す。パッドは残す。
 	const lineLead =
 		template?.lead === "riff16" || template?.lead === "riff-bar"
 			? template.lead
@@ -5903,27 +5878,26 @@ const draw = (
 			const d = degreeToPitch(scale, coreToDegree(scale, tonicStep + step));
 			return { semi: d.semi + octave, fifth: d.fifth };
 		};
-		const thinBar = (cell: RiffNote[]): RiffNote[] => {
-			const out: RiffNote[] = [];
-			let acc = 0;
-			for (const n of cell) {
-				if (acc % 2 === 0) out.push({ ...n, chrom: false });
-				else if (out.length > 0) out[out.length - 1].len += n.len;
-				acc += n.len;
-			}
-			return out;
-		};
+		let runFeel: RunStyle | undefined;
+		let loopFeel: LoopStyle | undefined;
 		const blocks = new Map<string, RiffNote[][]>();
 		const blockOf = (side: string): RiffNote[][] => {
 			const hit = blocks.get(side);
 			if (hit) return hit;
 			let made: RiffNote[][];
 			if (lineLead === "riff-bar") {
-				const cell = [...makeRiffHalf(rnd, 1, 3), ...makeRiffHalf(rnd, -1, 1)];
-				made = [side === "a" ? thinBar(cell) : cell];
+				loopFeel ??= loopStyle(rnd);
+				const feel = loopFeel;
+				const make = (): RiffNote[] => {
+					const cell = loopBar(rnd, feel);
+					return side === "a" ? thinToEighths(cell) : cell;
+				};
+				const x = make();
+				made = feel.oneBar ? [x] : [x, make(), x, make()];
 			} else {
-				const x = makeLineBar(rnd);
-				made = [x, makeLineBar(rnd), x, makeLineBar(rnd)];
+				runFeel ??= runStyle(rnd);
+				const x = runBar(rnd, runFeel);
+				made = [x, runBar(rnd, runFeel), x, runBar(rnd, runFeel)];
 			}
 			blocks.set(side, made);
 			return made;
