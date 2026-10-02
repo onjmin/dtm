@@ -343,6 +343,11 @@ export type StructureTemplate = {
 	 */
 	lead?: "riff" | "riff16" | "riff-bar";
 	/**
+	 * 歌メロの書き方。`"sentence"` は8小節の文を2小節の句4つで組み（同じリズムの家族・句ごとの息継ぎ）、
+	 * サビに2本目の声（4〜5度下が主）を曲によって付ける。歌う高さは原曲の歌の帯へ置く。
+	 */
+	vocalLine?: "sentence";
+	/**
 	 * サブメロの書き方。`"arpeggio"` はハモリ／対旋律の代わりに、進行の構成音を16分で回す
 	 * アルペジオ（1オクターブ上）を全小節に置く。ハモリ2声は空になる。
 	 */
@@ -469,7 +474,7 @@ const KAIWAI_LYRIC_WORDS: string[] = [
 
 // 3流派の進行は compose-kaiwai.ts の文法から曲ごとに組む（どの曲の写しでもない）。
 
-/** 海鮮リスペクト。歌入り（UTAU）前提で、歌を2本重ねる。 */
+/** 海鮮リスペクト。歌入り（UTAU）前提。2本目の声はサビで4〜5度下に重ねる（曲による）。 */
 const KAIWAI_KAISEN: StructureTemplate = {
 	name: "kaiwai_kaisen",
 	label: "界隈曲・海鮮リスペクト",
@@ -530,7 +535,8 @@ const KAIWAI_KAISEN: StructureTemplate = {
 		smooth: true,
 		snap: { omit: [3], weakOnly: [6] },
 	},
-	vocal: { duetStyles: ["none"], octave: true },
+	vocal: { duetStyles: ["none"] },
+	vocalLine: "sentence",
 	lyricWords: KAIWAI_LYRIC_WORDS,
 	// イントロ 2〜3層 → サビ 7層前後 → 間奏 8〜9層。
 	arrange: {
@@ -565,6 +571,7 @@ const KAIWAI_NIGO: StructureTemplate = {
 			"dance",
 			"four_openhat_double",
 			"four_openhat_snare",
+			"break_openhat",
 			"break_openhat",
 		],
 	},

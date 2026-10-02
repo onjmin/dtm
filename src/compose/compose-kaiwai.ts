@@ -391,7 +391,8 @@ const speder = (rnd: () => number): GrammarProgressions => {
 				[[x, x, x, x], 1],
 				[[x, y, x, y], 2],
 				[[x, x, y, y], 2],
-				[[x, x, x, y], 1],
+				// 4小節目だけ動く型は試聴の当たり（2201471562 の Aメロ）。
+				[[x, x, x, y], 2],
 			],
 			rnd,
 		);
@@ -441,21 +442,101 @@ export type RunStyle = {
 	cells: [BeatCell, number][];
 	maxLeap: number;
 	turn: number;
+	stepShare: number;
+	/** 同じ音を続ける割合（原曲は曲で 0〜19%）。 */
+	same: number;
+	/** 裏拍の8分を16分の長さで切る曲（原曲は16分の長さの音 47% に対し、16分の間隔は 21%）。 */
+	staccato: boolean;
 };
 
-export const runStyle = (rnd: () => number): RunStyle => ({
-	cells: [
-		[[1, 1, 1, 1], 4],
-		[[4 / 3, 4 / 3, 4 / 3], 0.6 + rnd() * 1.4],
-		[[3, 1], 0.6 + rnd() * 1.2],
-		[[2, 1, 1], 0.6 + rnd()],
-		[[1, 1, 2], 0.3 + rnd()],
-		[[1, 2, 1], 0.2 + rnd() * 0.6],
-		[[2, 2], 0.2 + rnd() * 0.4],
-	],
-	maxLeap: 2 + Math.floor(rnd() * 3),
-	turn: 0.15 + rnd() * 0.25,
+export const runStyle = (rnd: () => number): RunStyle => {
+	// 16分の音価は原曲で曲ごとに 30〜64%。`busy` が曲ごとの密度で、8分の部品の重みを動かす。
+	const busy = rnd();
+	// 3連は原曲8曲のうち2曲だけ（他は 0）。
+	const triplet = rnd() < 0.35 ? 0.6 + rnd() * 1.4 : 0.05;
+	return {
+		stepShare: 0.6 + rnd() * 0.25,
+		same: rnd() < 0.4 ? rnd() * 0.15 : 0,
+		staccato: rnd() < 0.6,
+		cells: [
+			[[1, 1, 1, 1], 0.15 + busy * 1.2],
+			[[4 / 3, 4 / 3, 4 / 3], triplet],
+			[[3, 1], 0.3 + rnd() * 0.6],
+			[[2, 1, 1], 0.3 + rnd() * 0.5],
+			[[1, 1, 2], 0.15 + rnd() * 0.5],
+			[[1, 2, 1], 0.1 + rnd() * 0.3],
+			[[2, 2], 1.5 + (1 - busy) * 3],
+			[[4], 0.1 + (1 - busy) * 0.8],
+			[[2, -1, 1], 0.1 + rnd() * 0.5],
+		],
+		maxLeap: 2 + Math.floor(rnd() * 3),
+		turn: 0.15 + rnd() * 0.25,
+	};
+};
+
+/**
+ * 走句リードのセクションの小節割り（4小節ブロックの添字の列）。原曲では2小節前と同じ小節は
+ * ほぼ出ず（8曲平均 5%）、4小節前の繰り返しは曲で 0〜80% と割れる。`rep` は曲ごとの繰り返し率。
+ */
+export type RunPlan = {
+	xyxz: boolean;
+	rep: number;
+	breath: number;
+	/** サビでリードを1オクターブ上へ移すか（移さない曲はサビの重ねの層が上を受け持つ）。 */
+	lift: boolean;
+};
+
+export const runPlan = (rnd: () => number): RunPlan => ({
+	xyxz: rnd() < 0.15,
+	rep: rnd() * 0.8,
+	breath: 0.3 + rnd() * 0.5,
+	lift: rnd() < 0.55,
 });
+
+/** セクション1つぶんの小節（`bars` 本）。4小節ごとに、前のブロックを繰り返すか・後ろを答えるか・新しく作るか。 */
+export const runSection = (
+	rnd: () => number,
+	style: RunStyle,
+	plan: RunPlan,
+	bars: number,
+): LeadNote[][] => {
+	const block = (): LeadNote[][] => {
+		const x = runBar(rnd, style);
+		return plan.xyxz
+			? [x, runBar(rnd, style), x, runBar(rnd, style)]
+			: [x, runBar(rnd, style), runBar(rnd, style), runBar(rnd, style)];
+	};
+	const first = block();
+	const out: LeadNote[][] = [...first];
+	while (out.length < bars) {
+		const r = rnd();
+		out.push(
+			...(r < plan.rep
+				? first
+				: r < plan.rep + (1 - plan.rep) * 0.4
+					? [first[0], first[1], runBar(rnd, style), runBar(rnd, style)]
+					: block()),
+		);
+	}
+	// 2・4小節の句末で息を継ぐ（原曲のリードの占有は 77〜93%）。後ろの1〜2拍を伸ばすか休む。
+	return out.slice(0, bars).map((cell, i) => {
+		if (i % 2 !== 1 || rnd() >= plan.breath * (i % 4 === 3 ? 1 : 0.5))
+			return cell;
+		const keep = rnd() < 0.4 ? 8 : 12;
+		const kept: LeadNote[] = [];
+		let at = 0;
+		for (const n of cell) {
+			if (at + Math.abs(n.len) > keep + 1e-6) break;
+			kept.push({ ...n });
+			at += Math.abs(n.len);
+		}
+		const last = kept.at(-1);
+		const tail = 16 - at;
+		if (last && last.len > 0 && rnd() < 0.25) last.len += tail;
+		else kept.push({ step: 0, chrom: false, len: -tail });
+		return kept;
+	});
+};
 
 /** 輪郭: 音階を歩き、跳躍は `maxLeap` 歩まで。範囲の端で折り返す。同音は打たない。 */
 const walker = (
@@ -466,6 +547,7 @@ const walker = (
 	maxLeap: number,
 	turn: number,
 	stepShare: number,
+	same = 0,
 ) => {
 	let pos = start;
 	let dir = rnd() < 0.5 ? -1 : 1;
@@ -475,6 +557,7 @@ const walker = (
 			first = false;
 			return pos;
 		}
+		if (same > 0 && rnd() < same) return pos;
 		if (rnd() < turn) dir = -dir;
 		const r = rnd();
 		const size =
@@ -511,7 +594,8 @@ export const runBar = (rnd: () => number, style: RunStyle): LeadNote[] => {
 		5,
 		style.maxLeap,
 		style.turn,
-		0.6,
+		style.stepShare,
+		style.same,
 	);
 	const beats = [0, 1, 2, 3].map(() => weighted(style.cells, rnd));
 	return fillBeats(beats, next);
@@ -519,18 +603,19 @@ export const runBar = (rnd: () => number, style: RunStyle): LeadNote[] => {
 
 /**
  * 1小節ループ（riff-bar）の曲ごとの癖。2度で歩く曲と3度以上で跳ぶ曲の両方がある。
- * `oneBar` が偽の曲は1小節の型でなく4小節ブロック [x y x z] で回す。
+ * 型は4小節ブロック [x y x z] で回す。原曲4曲とも同じ小節を続けては鳴らさない（前の小節と同一 0〜15%）。
  */
 export type LoopStyle = {
 	cells: [BeatCell, number][];
 	stepShare: number;
 	maxLeap: number;
-	oneBar: boolean;
+	/** 旧版で1小節ループを引いた曲。足す小節は別の乱数列から作り、曲の乱数列を変えない。 */
+	spare: boolean;
 };
 
 export const loopStyle = (rnd: () => number): LoopStyle => {
 	const busy = rnd();
-	return {
+	const style: LoopStyle = {
 		cells: [
 			[[1, 1, 1, 1], 0.4 + busy * 2],
 			[[2, 2], 1.6 - busy],
@@ -545,8 +630,10 @@ export const loopStyle = (rnd: () => number): LoopStyle => {
 		],
 		stepShare: rnd() < 0.5 ? 0.75 : 0.25,
 		maxLeap: 2 + Math.floor(rnd() * 2),
-		oneBar: rnd() < 0.5,
+		spare: false,
 	};
+	style.spare = rnd() < 0.5;
+	return style;
 };
 
 /** 1小節ループの型を1つ作る（セクションの全小節がこれを繰り返す）。 */
@@ -581,6 +668,555 @@ export const thinToEighths = (cell: LeadNote[]): LeadNote[] => {
 		at += len;
 	}
 	return out;
+};
+
+// ============================================================
+// 上物（伴奏の刻み・アルペジオ）の曲ごとの型
+// ============================================================
+
+/** 上物の1発（16分単位）。`tone` は和音の構成音の添字（下から）。省略で和音まるごと。 */
+export type UpperHit = { at: number; len: number; tone?: number };
+/**
+ * 上物の刻み（`bars` を小節ごとに回す）と和音の積み方（0=そのまま・1=最低音を抜く・
+ * 2=最低音を1オクターブ上へ・3=最高音を1オクターブ下へ）。
+ */
+export type UpperFigure = { bars: UpperHit[][]; voicing: number };
+export type UpperGrain =
+	| "block"
+	| "quarter"
+	| "eighth"
+	| "sixteenth"
+	| "offbeat"
+	| "arpeggio";
+
+/** 発音位置の列を1手だけ崩す（ずらす・抜く・足す・前へ食う）。 */
+const nudge = (on: number[], grid: number, rnd: () => number): number[] => {
+	const xs = [...on];
+	const r = rnd();
+	const i = 1 + Math.floor(rnd() * Math.max(1, xs.length - 1));
+	if (r < 0.3 && xs.length > 2) xs.splice(i, 1);
+	else if (r < 0.55)
+		xs[i % xs.length] = Math.min(15, xs[i % xs.length] + grid / 2);
+	else if (r < 0.75) xs[i % xs.length] = Math.max(1, xs[i % xs.length] - 1);
+	else xs.push(Math.floor(rnd() * (16 / grid)) * grid + grid / 2);
+	return [...new Set(xs.filter((x) => x >= 0 && x < 16))].sort((a, b) => a - b);
+};
+
+/**
+ * 上物の型を曲ごとに作る。原曲どうしで共通する上物の1小節の形は 8〜11%（リズムだけで 25〜40%）
+ * なので、刻みの長さ（規則）だけ守り、位置・長さ・積み方は曲ごとに引く。
+ */
+export const upperFigure = (
+	grain: UpperGrain,
+	rnd: () => number,
+): UpperFigure => {
+	if (grain === "arpeggio") {
+		const step = rnd() < 0.7 ? 1 : 2;
+		const cycle = [0];
+		const n = pick([4, 6, 8], rnd);
+		while (cycle.length < n) {
+			const prev = cycle[cycle.length - 1];
+			const opts = [0, 1, 2, 3].filter((t) => t !== prev);
+			cycle.push(pick(opts, rnd));
+		}
+		// 抜く16分（0〜3か所）も曲ごと。全部の16分を鳴らす型だけだと曲をまたいで同じリズムになる。
+		const skip = new Set<number>();
+		const holes = pick([0, 1, 2, 3], rnd);
+		while (skip.size < holes) skip.add(pick([3, 7, 11, 15, 5, 13], rnd));
+		const hits: UpperHit[] = [];
+		for (let at = 0, i = 0; at < 16; at += step, i++)
+			if (!skip.has(at))
+				hits.push({ at, len: step, tone: cycle[i % cycle.length] });
+		return { bars: [hits], voicing: Math.floor(rnd() * 3) };
+	}
+	let on: number[];
+	let grid: number;
+	if (grain === "block") {
+		// 地の和音: 2拍ごとに置き直すのが元。曲によって8分の食い・付点のずらしを1つ入れ、積み方も替える。
+		const legato = pick(
+			[
+				[0, 8],
+				[0, 6, 8, 14],
+				[0, 3, 8, 11],
+				[0, 8, 14],
+				[0, 4, 8, 12],
+			],
+			rnd,
+		);
+		const hits = legato.map((at, i) => ({
+			at,
+			len: (legato[i + 1] ?? 16) - at,
+		}));
+		return { bars: [hits], voicing: Math.floor(rnd() * 4) };
+	}
+	if (grain === "quarter") {
+		on = [0, 4, 8, 12];
+		grid = 4;
+	} else if (grain === "eighth") {
+		on = rnd() < 0.3 ? [0, 3, 6, 8, 11, 14] : [0, 2, 4, 6, 8, 10, 12, 14];
+		grid = 2;
+	} else if (grain === "offbeat") {
+		on = [2, 6, 10, 14];
+		grid = 4;
+	} else {
+		// 16分: 拍の中の抜き方（x.xx・xx.x など）を曲ごとに引き、拍ごとに少し変える。
+		const masks = [
+			[0, 1, 2, 3],
+			[0, 2, 3],
+			[0, 1, 3],
+			[0, 1, 2],
+			[0, 2],
+			[0, 3],
+		];
+		const base = pick(masks, rnd);
+		on = [0, 1, 2, 3].flatMap((b) =>
+			(rnd() < 0.3 ? pick(masks, rnd) : base).map((x) => b * 4 + x),
+		);
+		grid = 1;
+	}
+	const ops = 1 + Math.floor(rnd() * 3);
+	for (let k = 0; k < ops; k++) on = nudge(on, Math.max(2, grid), rnd);
+	const second = rnd() < 0.5 ? nudge(on, Math.max(2, grid), rnd) : on;
+	const gate = pick(["legato", "half", "short"] as const, rnd);
+	const lens = (xs: number[]): UpperHit[] =>
+		xs.map((at, i) => {
+			const gap = (xs[i + 1] ?? 16) - at;
+			const len =
+				gate === "legato"
+					? gap
+					: gate === "half"
+						? Math.max(1, Math.floor(gap / 2))
+						: Math.min(gap, 1);
+			return { at, len };
+		});
+	return {
+		bars: second === on ? [lens(on)] : [lens(on), lens(second)],
+		voicing: Math.floor(rnd() * 4),
+	};
+};
+
+// ============================================================
+// ベースの曲ごとの型
+// ============================================================
+
+/** ベースの1発（16分単位）。r=根音・o=1オクターブ上・f=5度上・a=次の根音へ半音で入る音。 */
+export type BassHit = { at: number; len: number; tone: "r" | "o" | "f" | "a" };
+
+/**
+ * 流派の奏法（8分オクターブ・3:3:2・付点8分・拍頭を抜いた16分）を元に、2小節の型を曲ごとに作る。
+ * 原曲どうしでベースの1小節の形が重なるのは 5〜25%（リズムだけで 33〜68%）。
+ */
+export const bassFigure = (style: string, rnd: () => number): BassHit[][] => {
+	type T = BassHit["tone"];
+	const legato = rnd() < 0.6;
+	const hits = (on: number[], tones: T[]): BassHit[] =>
+		on.map((at, i) => {
+			const gap = (on[i + 1] ?? 16) - at;
+			return {
+				at,
+				len: legato ? gap : Math.max(1, Math.ceil(gap * 0.6)),
+				tone: tones[i],
+			};
+		});
+	const rawOct = (bar: BassHit[]): number =>
+		bar
+			.slice(1)
+			.filter(
+				(h, i) =>
+					(h.tone === "o") !== (bar[i].tone === "o") &&
+					h.tone !== "f" &&
+					bar[i].tone !== "f",
+			).length / Math.max(1, bar.length - 1);
+	/** 4小節の型 [x y x z]。y・z は半分強が新しい小節。 */
+	const four = (bar: () => BassHit[]): BassHit[][] => {
+		const x = bar();
+		const alt = (): BassHit[] => (rnd() < 0.4 ? x : bar());
+		return [x, alt(), x, alt()];
+	};
+	/** 小節の中のオクターブ往復の割合（和音が変わる拍3をまたぐ対は往復にならないとして数える）。 */
+	const octShare = (bar: BassHit[]): number => {
+		let n = 0;
+		let o = 0;
+		for (let i = 1; i < bar.length; i++) {
+			n++;
+			const a = bar[i - 1].tone;
+			const b = bar[i].tone;
+			if (bar[i - 1].at < 8 !== bar[i].at < 8) continue;
+			if ((a === "r" && b === "o") || (a === "o" && b === "r")) o++;
+		}
+		return n ? o / n : 1;
+	};
+	if (style === "octave-dotted" || style === "octave-offbeat16") {
+		// 拍頭（2〜4拍）を避けた位置から、オクターブ往復を曲ごとの割合（3〜5割強）で混ぜる。
+		const base =
+			style === "octave-dotted"
+				? [0, 3, 6, 9, 11, 14]
+				: [0, 2, 3, 6, 7, 10, 11, 14, 15];
+		const pOct = 0.35 + rnd() * 0.3;
+		const bar = (): BassHit[] => {
+			const on = base.filter((_, i) => i === 0 || rnd() > 0.15);
+			if (rnd() < 0.4) on.push(pick([1, 5, 13], rnd));
+			const sorted = [...new Set(on)].sort((a, b) => a - b);
+			const tones: T[] = ["r"];
+			for (let i = 1; i < sorted.length; i++) {
+				const prev = tones[i - 1];
+				tones.push(
+					rnd() < pOct
+						? prev === "o"
+							? "r"
+							: "o"
+						: pick<T>(prev === "f" ? ["r", "o"] : ["f", prev, "r"], rnd),
+				);
+			}
+			return hits(sorted, tones);
+		};
+		// 原曲のオクターブ跳躍は曲で 1〜5割（doc の規則は 3割以上）。
+		return until(
+			() => four(bar),
+			(f) => {
+				const r = f.reduce((a, x) => a + rawOct(x), 0) / f.length;
+				return r >= 0.38 && r <= 0.6;
+			},
+		);
+	}
+	if (style === "tresillo") {
+		const on = [0, 3, 6, 8, 11, 14];
+		const bar = (): BassHit[] =>
+			hits(
+				on,
+				on.map((_, i) =>
+					i % 3 === 2
+						? "o"
+						: i % 3 === 1 && rnd() < 0.35
+							? pick<T>(["o", "f"], rnd)
+							: "r",
+				),
+			);
+		return four(bar);
+	}
+	// 8分オクターブ: 往復を崩しすぎない範囲で、5度・16分の刻み・小節末の経過音を曲ごとに入れる。
+	const busy = rnd() * 0.9;
+	const bar = (): BassHit[] => {
+		const on = [0, 2, 4, 6, 8, 10, 12, 14];
+		const tones: T[] = on.map((_, i) => (i % 2 === 0 ? "r" : "o"));
+		if (rnd() < 0.5) tones[pick([3, 5, 7], rnd)] = "f";
+		for (const i of [6, 3, 1]) {
+			if (rnd() >= busy) continue;
+			on.splice(i + 1, 0, on[i] + 1);
+			tones.splice(i + 1, 0, tones[i] === "o" ? "r" : "o");
+		}
+		if (rnd() < 0.35) tones[tones.length - 1] = "a";
+		return hits(on, tones);
+	};
+	return until(
+		() => four(bar),
+		(f) => f.reduce((a, x) => a + octShare(x), 0) / f.length >= 0.74,
+	);
+};
+
+// ============================================================
+// 海鮮の歌メロ（docs/kaiwai-lineages.md「海鮮の歌メロ」）
+// ============================================================
+
+/**
+ * 8小節の文を2小節の句4つ（a b c d）で組む。句はどれも小節頭から入り、句末で8分〜4分息を継ぐ。
+ * 4つの句は同じリズムの家族（共通の発音位置が3分の2前後）で、音の並びは毎回違う。
+ */
+export type SentenceStyle = {
+	/** 句のリズムの元（拍ごとの部品。最後の2拍は句末）。 */
+	motif: BeatCell[];
+	stepShare: number;
+	/** 音域の幅（中核音の歩数）。 */
+	span: number;
+	/** サビの音域を Aメロからずらす量（歩数）。 */
+	lift: number;
+};
+
+const SENTENCE_CELLS: [BeatCell, number][] = [
+	[[2, 2], 6],
+	[[4], 2],
+	[[3, 1], 2],
+	[[2, 1, 1], 0.25],
+	[[1, 1, 2], 0.2],
+];
+const SENTENCE_WIDE: [BeatCell, number][] = [
+	[[6, 2], 1],
+	[[8], 0.6],
+	[[2, 4, 2], 0.8],
+];
+// 句末の2拍。半分強は4拍目が次の句の弱起（原曲の句頭は小節頭が 0〜47%、裏拍は 0〜32%）。
+const SENTENCE_ENDS: [BeatCell, number][] = [
+	[[6, -2], 1],
+	[[4, -4], 0.5],
+	[[2, 4, -2], 0.5],
+	[[4, -2, 2], 1.5],
+	[[2, -2, 4], 3],
+	[[2, -2, 2, 2], 2.5],
+	// 息を継がずに次の句へつなぐ（原曲は句の4分の1が2小節を超える）。
+	[[4, 2, 2], 1],
+	[[2, 2, 4], 0.6],
+];
+
+/** 6拍ぶんの部品（1拍か2拍）。 */
+const sentenceBody = (rnd: () => number): BeatCell[] => {
+	const out: BeatCell[] = [];
+	let beats = 0;
+	while (beats < 6) {
+		const wide = beats <= 4 && rnd() < 0.18;
+		const cell = weighted(wide ? SENTENCE_WIDE : SENTENCE_CELLS, rnd);
+		out.push(cell);
+		beats += wide ? 2 : 1;
+	}
+	return out;
+};
+
+export const sentenceStyle = (rnd: () => number): SentenceStyle => ({
+	motif: [...sentenceBody(rnd), weighted(SENTENCE_ENDS, rnd)],
+	stepShare: 0.8 + rnd() * 0.12,
+	span: 6 + Math.floor(rnd() * 2),
+	lift: pick([-1, 0, 1, 1, 2], rnd),
+});
+
+/** 別のセクションの句の元（同じ家族の親戚。部品を2〜4つ替える）。 */
+export const relatedMotif = (
+	motif: BeatCell[],
+	rnd: () => number,
+): BeatCell[] => variant(variant(motif, rnd), rnd);
+
+/** 元の句から1〜2部品を差し替えた変奏（同じ家族）。句末も時々替える。 */
+const variant = (motif: BeatCell[], rnd: () => number): BeatCell[] => {
+	const out = motif.map((c) => [...c]);
+	const body = out.length - 1;
+	const n = 2 + (rnd() < 0.4 ? 1 : 0);
+	const other = (pool: [BeatCell, number][], cur: BeatCell): BeatCell =>
+		until(
+			() => weighted(pool, rnd),
+			(c) => c.join() !== cur.join(),
+		);
+	for (let k = 0; k < n; k++) {
+		const i = Math.floor(rnd() * body);
+		const width = out[i].reduce((a, x) => a + Math.abs(x), 0);
+		out[i] = other(width === 4 ? SENTENCE_CELLS : SENTENCE_WIDE, out[i]);
+	}
+	if (rnd() < 0.35) out[body] = other(SENTENCE_ENDS, out[body]);
+	return out;
+};
+
+/** 歌メロを組むときの外の条件。`fits` は強拍・長い音に和音の構成音を選ぶ判定、`semi` は歩数の半音。 */
+export type SentenceEnv = {
+	fits: (bar: number, at: number, step: number) => boolean;
+	semi: (step: number) => number;
+};
+
+/**
+ * 1文（8小節）の句 `from`〜3 を作る（`bar` は文の頭からの小節）。句の音は前の句の終わりから続け、
+ * `cadence` なら最後の句を主音か第3音で終える。ラとドの間は弱拍の短い音でシを経過させる。
+ */
+const sentence = (
+	rnd: () => number,
+	style: SentenceStyle,
+	motif: BeatCell[],
+	lo: number,
+	hi: number,
+	start: number,
+	env: SentenceEnv,
+	cadence: boolean,
+	from = 0,
+): { bars: LeadNote[][]; end: number } => {
+	const units = [
+		motif,
+		variant(motif, rnd),
+		variant(motif, rnd),
+		variant(motif, rnd),
+	];
+	if (rnd() < 0.15) units[0] = [[-2, 2], ...units[0].slice(1)];
+	// 息継ぎ無しでつなげるのは句 a→b・c→d だけ（4小節ごとに必ず息を継ぐ）。
+	for (const u of [1, 3]) {
+		const end = units[u].length - 1;
+		if (!units[u][end].some((x) => x < 0))
+			units[u][end] = weighted(
+				SENTENCE_ENDS.filter(([c]) => c.some((x) => x < 0)),
+				rnd,
+			);
+	}
+	const bars: LeadNote[][] = [];
+	const mod5 = (x: number): number => ((x % 5) + 5) % 5;
+	const gap = (x: number, y: number): number =>
+		Math.abs(env.semi(x) - env.semi(y));
+	let pos = start;
+	let dir = rnd() < 0.5 ? 1 : -1;
+	let afterSi: number[] | null = null;
+	for (let u = from; u < 4; u++) {
+		const notes: { at: number; n: LeadNote }[] = [];
+		let at = 0;
+		const flat = units[u].flat();
+		const sounding = flat.filter((x) => x > 0).length;
+		let k = 0;
+		for (const len of flat) {
+			if (len < 0) {
+				notes.push({ at, n: { step: 0, chrom: false, len } });
+				at -= len;
+				continue;
+			}
+			k++;
+			const strong = at % 8 === 0 || len >= 4;
+			const end = cadence && u === 3 && k === sounding;
+			const want = (x: number): boolean =>
+				!end || mod5(x) === 0 || mod5(x) === 3;
+			let chrom = false;
+			if (!(u === 0 && k === 1 && from === 0)) {
+				if (rnd() < 0.3 || pos >= hi - 1 || pos <= lo + 1)
+					dir = pos >= hi - 1 ? -1 : pos <= lo + 1 ? 1 : -dir;
+				const size =
+					rnd() < 0.05 ? 0 : rnd() < style.stepShare ? 1 : rnd() < 0.8 ? 2 : 3;
+				// 1歩が短3度になる向き（ラ↔ド・ミ↔ソ）は、半分は2度になる逆向きへ替える。
+				if (
+					size === 1 &&
+					gap(pos, pos + dir) > 2 &&
+					gap(pos, pos - dir) <= 2 &&
+					rnd() < 0.5
+				)
+					dir = -dir;
+				const cands = (
+					afterSi ?? [
+						pos + dir * size,
+						pos + dir,
+						pos - dir,
+						pos + dir * 2,
+						pos - dir * 2,
+						pos,
+					]
+				).filter((x) => x >= lo && x <= hi);
+				afterSi = null;
+				const bar = u * 2 + Math.floor(at / 16);
+				const next =
+					cands.find(
+						(x) => want(x) && (!strong || env.fits(bar, at % 16, x)),
+					) ??
+					cands.find(want) ??
+					Math.max(lo, Math.min(hi, Math.round(pos / 5) * 5));
+				const si = !strong && len <= 2 && !end && rnd() < 0.7;
+				if (si && mod5(pos) === 0 && next === pos + 1) {
+					chrom = true;
+					afterSi = [pos + 1, pos];
+				} else if (si && mod5(pos) === 1 && next === pos - 1) {
+					chrom = true;
+					afterSi = [pos - 1, pos];
+				}
+				pos = chrom && next === pos - 1 ? pos : next;
+			}
+			notes.push({ at, n: { step: pos, chrom, len } });
+			at += len;
+		}
+		// 2小節へ切り分ける。小節をまたぐ音は頭の小節で伸ばしきり、次の小節はその分を休符で埋める。
+		for (let b = 0; b < 2; b++) {
+			const out: LeadNote[] = [];
+			for (const { at: a, n } of notes) {
+				const e = a + Math.abs(n.len);
+				if (a >= b * 16 && a < (b + 1) * 16)
+					out.push({
+						...n,
+						len: n.len > 0 ? n.len : -(Math.min(e, (b + 1) * 16) - a),
+					});
+				else if (a < b * 16 && e > b * 16)
+					out.push({
+						step: 0,
+						chrom: false,
+						len: -(Math.min(e, (b + 1) * 16) - b * 16),
+					});
+			}
+			bars.push(out);
+		}
+	}
+	return { bars, end: pos };
+};
+
+const lastStep = (bar: LeadNote[] | undefined, fallback: number): number =>
+	bar?.findLast((n) => n.len > 0)?.step ?? fallback;
+
+/**
+ * セクション1つぶんの歌メロ（`bars` 小節）。16小節は後半を前半の答え（最後の句だけ替える）か
+ * 新しい文にする。`center` は音域の中心（歩数）。
+ */
+export const sentenceSection = (
+	rnd: () => number,
+	style: SentenceStyle,
+	motif: BeatCell[],
+	bars: number,
+	center: number,
+	env: SentenceEnv,
+): LeadNote[][] => {
+	const lo = center - Math.floor(style.span / 2);
+	const hi = lo + style.span;
+	const out: LeadNote[][] = [];
+	let start = center - 1 + Math.floor(rnd() * 3);
+	let first: LeadNote[][] | null = null;
+	while (out.length < bars) {
+		const base = out.length;
+		const local: SentenceEnv = {
+			...env,
+			fits: (bar, a, x) => env.fits(base + bar, a, x),
+		};
+		const cadence = base + 8 >= bars;
+		if (first && rnd() < 0.5) {
+			const tail = sentence(
+				rnd,
+				style,
+				motif,
+				lo,
+				hi,
+				lastStep(first[5], start),
+				local,
+				cadence,
+				3,
+			);
+			out.push(...first.slice(0, 6), ...tail.bars);
+			start = tail.end;
+		} else {
+			const s = sentence(rnd, style, motif, lo, hi, start, local, cadence);
+			first ??= s.bars;
+			out.push(...s.bars);
+			start = s.end;
+		}
+	}
+	return out.slice(0, bars);
+};
+
+/** 歌い直し（2番など）の版。8小節ごとに最後の句だけ答えに替える。 */
+export const sentenceAnswer = (
+	rnd: () => number,
+	style: SentenceStyle,
+	motif: BeatCell[],
+	line: LeadNote[][],
+	center: number,
+	env: SentenceEnv,
+): LeadNote[][] => {
+	const lo = center - Math.floor(style.span / 2);
+	const hi = lo + style.span;
+	const out: LeadNote[][] = [];
+	for (let base = 0; base < line.length; base += 8) {
+		const head = line.slice(base, base + 6);
+		const local: SentenceEnv = {
+			...env,
+			fits: (bar, a, x) => env.fits(base + bar, a, x),
+		};
+		const tail = sentence(
+			rnd,
+			style,
+			motif,
+			lo,
+			hi,
+			lastStep(head[5], center),
+			local,
+			base + 8 >= line.length,
+			3,
+		);
+		out.push(
+			...head,
+			...tail.bars.slice(0, Math.max(0, line.length - base - 6)),
+		);
+	}
+	return out.slice(0, line.length);
 };
 
 // ============================================================

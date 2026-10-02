@@ -1894,6 +1894,12 @@ console.log("● 界隈曲の流派テンプレート");
 			quiet: [] as number[],
 			/** 楽器だけのアウトロで終わる曲（海鮮）。 */
 			outro: [] as number[],
+			/** 2本目の声を付けた曲（海鮮）。 */
+			second: [] as number[],
+			/** 前の小節と同一の小節の割合（Speder2 の楽器リード）。 */
+			repeatPrev: [] as number[],
+			/** 2小節前と同一の小節の割合（Speder2 の楽器リードの小節の再出現）。 */
+			form2: [] as number[],
 		};
 		let threw = 0;
 		for (let seed = 1; seed <= N; seed++) {
@@ -2020,10 +2026,12 @@ console.log("● 界隈曲の流派テンプレート");
 				pairs++;
 				if (Math.abs(bassSemis[i] - bassSemis[i - 1]) === 12) oct++;
 			}
+			// Speder2 の原曲はオクターブ跳躍が曲で 1〜5割（規則は3割以上）。他の流派は8分オクターブが主。
 			if (song.stats.bassStyle !== "tresillo")
 				check(
 					`${tag} ベースがオクターブ往復`,
-					pairs > 0 && oct / pairs >= 0.6,
+					pairs > 0 &&
+						oct / pairs >= (lineage === "kaiwai_speder2" ? 0.3 : 0.6),
 					`${oct}/${pairs}`,
 				);
 			const onsetsByBar = new Map<number, number[]>();
@@ -2160,11 +2168,29 @@ console.log("● 界隈曲の流派テンプレート");
 						notesIn(song.melody, last.startBar, song.bars) === 0,
 						`${last.bars}`,
 					);
+				// 原曲の歌の重ねはオクターブ 4.5%・4〜5度 35%・3〜6度 27%・同音 18%。オクターブ下の全音重ねはしない。
 				check(
-					`${tag} 歌を2本重ねる（オクターブ下の全音重ね）`,
-					song.octave.length === song.melody.length && song.melody.length > 0,
-					`${song.octave.length}/${song.melody.length}`,
+					`${tag} オクターブ下の重ねが無い`,
+					song.octave.length === 0,
+					`${song.octave.length}`,
 				);
+				m.second.push(song.harmony.length > 0 ? 1 : 0);
+				if (song.harmony.length > 0) {
+					const at = new Map(
+						song.melody.map((n) => [n.startStep, n.pitchUnits] as const),
+					);
+					const gaps = song.harmony.map((h) =>
+						Math.round(
+							((at.get(h.startStep) ?? h.pitchUnits) - h.pitchUnits) /
+								UNITS_PER_SEMITONE,
+						),
+					);
+					check(
+						`${tag} 2本目の声は同時の音の同音〜5度下（オクターブで重ねない）`,
+						gaps.every((g) => g >= 0 && g <= 7),
+						gaps.slice(0, 12).join(","),
+					);
+				}
 			}
 			if (lineage === "kaiwai_2go") {
 				const quiet = song.sections.filter(
@@ -2208,16 +2234,23 @@ console.log("● 界隈曲の流派テンプレート");
 						.join(",");
 				let same1 = 0;
 				let total1 = 0;
+				let prev1 = 0;
+				let recur = 0;
 				for (const s of song.sections) {
 					if (!s.spec.melody) continue;
 					const head = keyOf(s.startBar, name.endsWith("_lead"));
 					for (let b = s.startBar + 1; b < s.startBar + s.bars; b++) {
 						if (b === song.bars - 1) continue;
 						total1++;
-						if (keyOf(b, name.endsWith("_lead")) === head) same1++;
+						const k = keyOf(b, name.endsWith("_lead"));
+						if (k === head) same1++;
+						if (k === keyOf(b - 1, true)) prev1++;
+						if (b - 2 >= s.startBar && k === keyOf(b - 2, true)) recur++;
 					}
 				}
 				m.barLoop.push(same1 / Math.max(1, total1) >= 0.8 ? 1 : 0);
+				m.repeatPrev.push(prev1 / Math.max(1, total1));
+				m.form2.push(recur / Math.max(1, total1));
 			}
 			if (name.endsWith("_lead")) {
 				let sounding = 0;
@@ -2294,6 +2327,11 @@ console.log("● 界隈曲の流派テンプレート");
 				f(m.outro),
 			);
 			check(
+				"海鮮: 2本目の声を付ける曲が 4割以上（全曲ではない）",
+				avg(m.second) >= 0.4 && avg(m.second) < 1,
+				f(m.second),
+			);
+			check(
 				"海鮮: 3:3:2 の小節が 15% 以上の曲が出る",
 				m.tresilloBars.some((x) => x >= 0.15),
 				m.tresilloBars.map((x) => x.toFixed(2)).join(" "),
@@ -2320,15 +2358,18 @@ console.log("● 界隈曲の流派テンプレート");
 			);
 			if (name.endsWith("_lead")) {
 				check("2号（楽器リード）: 3連が出る", avg(m.triplet) > 0, f(m.triplet));
+				// 原曲のリードの占有は 77〜93%（平均 87%）。句末で息を継ぐ。
 				check(
-					"2号（楽器リード）: リードが鳴り続ける（占有 9割以上）",
-					avg(m.occupancy) >= 0.9,
+					"2号（楽器リード）: リードがほぼ鳴り続ける（占有 8割以上）",
+					avg(m.occupancy) >= 0.8,
 					f(m.occupancy),
 				);
+				// リードはサビで交代するかオクターブ上へ移る（原曲のリードの音域は 13〜22 半音で、全曲で上げると超える）。
+				const lifted = m.lift.filter((x) => x >= 9).length / m.lift.length;
 				check(
-					"2号（楽器リード）: サビでオクターブ上へ移る（平均 9 半音以上）",
-					avg(m.lift) >= 9,
-					f(m.lift),
+					"2号（楽器リード）: サビでオクターブ上へ移る曲が 3〜8割（全曲ではない）",
+					lifted >= 0.3 && lifted <= 0.8,
+					lifted.toFixed(2),
 				);
 				check(
 					"2号（楽器リード）: 音域が広い（平均 20 半音以上）",
@@ -2344,11 +2385,25 @@ console.log("● 界隈曲の流派テンプレート");
 				avg(m.form) >= 0.4 && avg(m.form) < 1,
 				f(m.form),
 			);
-			check(
-				"Speder2: 1小節の型をそのまま繰り返す曲が 3割以上（全曲ではない）",
-				avg(m.barLoop) >= 0.3 && avg(m.barLoop) < 1,
-				f(m.barLoop),
-			);
+			// 歌の版は詠唱を1小節の型で回す曲がある。楽器リードは原曲4曲とも同じ小節を続けて鳴らさない
+			// （前の小節と同一 0〜15%）が、小節は再び出る（4小節ブロック [x y x z]）。
+			if (name.endsWith("_lead")) {
+				check(
+					"Speder2（楽器リード）: 前の小節と同一の小節が 2割以下",
+					avg(m.repeatPrev) <= 0.2,
+					f(m.repeatPrev),
+				);
+				check(
+					"Speder2（楽器リード）: 2小節前の小節が再び出る（平均 3割以上）",
+					avg(m.form2) >= 0.3,
+					f(m.form2),
+				);
+			} else
+				check(
+					"Speder2: 1小節の型をそのまま繰り返す曲が 3割以上（全曲ではない）",
+					avg(m.barLoop) >= 0.3 && avg(m.barLoop) < 1,
+					f(m.barLoop),
+				);
 			check(
 				"Speder2: 16分裏のハットが1小節2打以上の曲が 6割以上",
 				avg(m.hat16) >= 0.6,
@@ -2365,6 +2420,8 @@ console.log("● 界隈曲の流派テンプレート");
 // 2.96 界隈曲の流派テンプレートの幅
 //     規則を満たす範囲で曲ごとに違うものが出るか（scratch/_variety.ts と同じ数え方・同じ種）。
 //     リードの半小節の形は、発音位置と音程の列（移調に依らない）。1音だけ・同音だけの形は数えない。
+//     上物（上級者モードの t3・t6〜t10・t12・t14）の1小節の形は、層・発音位置・最低音からの半音差。
+//     原曲どうしで共通する上物の形は 1〜4%（試聴で「前の曲の上物が次の曲にも出る」と言われた版は 12〜33%）。
 // ============================================================
 
 console.log("● 界隈曲の流派テンプレートの幅");
@@ -2382,6 +2439,7 @@ console.log("● 界隈曲の流派テンプレートの幅");
 		const drums = new Set<string>();
 		const forms = new Set<string>();
 		const shapes = new Map<string, Set<number>>();
+		const uppers: Set<string>[] = [];
 		for (let seed = 1; seed <= N; seed++) {
 			const song = composeSong({
 				stepsPerBar: STEPS_PER_BAR,
@@ -2394,6 +2452,32 @@ console.log("● 界隈曲の流派テンプレートの幅");
 			prog.add(song.chordProgression.split("|").slice(0, 8).join("|"));
 			drums.add(song.drum);
 			forms.add(song.sections.map((x) => `${x.kind}${x.bars}`).join("-"));
+			const upper = new Set<string>();
+			for (const l of buildAdvancedLayers(song, {
+				stepsPerBar: STEPS_PER_BAR,
+				preset: INSTRUMENT_PRESETS[song.instrument],
+			})) {
+				if (![3, 6, 7, 8, 9, 10, 12, 14].includes(l.index)) continue;
+				const byBar = new Map<number, typeof l.notes>();
+				for (const n of l.notes) {
+					const b = Math.floor(n.startStep / STEPS_PER_BAR);
+					byBar.set(b, [...(byBar.get(b) ?? []), n]);
+				}
+				for (const ns of byBar.values()) {
+					if (ns.length < 2) continue;
+					const lo = Math.min(...ns.map((n) => n.pitchUnits));
+					upper.add(
+						`${l.index}|${ns
+							.map(
+								(n) =>
+									`${n.startStep % STEPS_PER_BAR}:${Math.round((n.pitchUnits - lo) / UNITS_PER_SEMITONE)}`,
+							)
+							.sort()
+							.join(",")}`,
+					);
+				}
+			}
+			uppers.push(upper);
 			if (!lim.shapes) continue;
 			const half = STEPS_PER_BAR / 2;
 			const byHalf = new Map<number, typeof song.melody>();
@@ -2424,7 +2508,32 @@ console.log("● 界隈曲の流派テンプレートの幅");
 			forms.size >= 30,
 			`${forms.size}`,
 		);
-		let line = `  ${name.padEnd(20)} 進行 ${prog.size} / ドラム ${drums.size} / 構成 ${forms.size}`;
+		const upperCount = new Map<string, number>();
+		for (const u of uppers)
+			for (const k of u) upperCount.set(k, (upperCount.get(k) ?? 0) + 1);
+		let pairShare = 0;
+		let pairs = 0;
+		for (let i = 0; i < uppers.length; i++)
+			for (let j = i + 1; j < uppers.length; j++) {
+				let common = 0;
+				for (const k of uppers[i]) if (uppers[j].has(k)) common++;
+				pairShare +=
+					common / Math.max(1, Math.min(uppers[i].size, uppers[j].size));
+				pairs++;
+			}
+		pairShare /= Math.max(1, pairs);
+		const upperTop = Math.max(0, ...upperCount.values());
+		check(
+			`${name}: 上物の1小節の形が曲の対で共有される割合が平均 5% 未満`,
+			pairShare < 0.05,
+			pairShare.toFixed(3),
+		);
+		check(
+			`${name}: どの上物の形も ${N}曲中 25曲未満`,
+			upperTop < 25,
+			`${upperTop}`,
+		);
+		let line = `  ${name.padEnd(20)} 進行 ${prog.size} / ドラム ${drums.size} / 構成 ${forms.size} / 上物の形 ${upperCount.size}（2曲以上 ${((100 * [...upperCount.values()].filter((v) => v >= 2).length) / Math.max(1, upperCount.size)).toFixed(1)}%・対の共有 ${(pairShare * 100).toFixed(1)}%・最多 ${upperTop}曲）`;
 		if (lim.shapes) {
 			const most = Math.max(0, ...[...shapes.values()].map((x) => x.size));
 			check(

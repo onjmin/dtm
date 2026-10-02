@@ -32,6 +32,7 @@
 | :--- | :--- | :--- |
 | `ab-listen.ts` | 目隠し A/B/C の作成器。出荷版・和声付け直し・人間の旋律を同じ手続きで出す | `npx tsx scripts/compose/ab-listen.ts --pdmx tmp/pdmx.jsonl --release --out tmp/abc-release` |
 | `export-samples.ts` | 生成曲を .mid（伴奏主体モードは .mml）で書き出す。`--app-seed` と `--compose` でアプリの曲を再現 | `npx tsx scripts/compose/export-samples.ts --app-seed 3842857959 --compose style:fb.v1:any:0` |
+| `audit-lineage.ts` | 所有者が聴く前の点検。曲をまたいだ使い回し・全曲で一定の特徴・歌の音域と重ね・原曲との近さを、流派の原曲（耳コピ）と同じ物差しで並べ、直すべき候補を重大度順に出す | `npx tsx scripts/compose/audit-lineage.ts --template kaiwai_2go_lead --count 100 --out tmp/audit/2go_lead.md` |
 | `compose-audition.ts` | 作曲オーディションの入口。大量生成→一次選抜→覆面譜面→審査指示文までを1コマンドで | `npx tsx scripts/compose/compose-audition.ts --count 200 --top 6` |
 | `screen-compose.ts` | 一次選抜。聴かなくても分かる欠点を数えて落とし、欠点の出現数も出す | `npx tsx scripts/compose/screen-compose.ts 200 5000 8` |
 | `compose-lab.ts` | 種を指定して `composeSong` を回し、取り込める MML と譜面シートを出す | `npx tsx scripts/compose/compose-lab.ts 24 2001 tmp/compose` |

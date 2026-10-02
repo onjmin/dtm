@@ -31,14 +31,24 @@ import {
 	CORPUS_PROFILE_KEYS,
 } from "./compose-corpus";
 import {
+	bassFigure,
 	grammarProgressions,
 	type LoopStyle,
 	loopBar,
 	loopStyle,
+	type RunPlan,
 	type RunStyle,
-	runBar,
+	relatedMotif,
+	runPlan,
+	runSection,
 	runStyle,
+	sentenceAnswer,
+	sentenceSection,
+	sentenceStyle,
 	thinToEighths,
+	type UpperFigure,
+	type UpperGrain,
+	upperFigure,
 } from "./compose-kaiwai";
 import { type ResolvedComposeKey, resolveComposeKey } from "./compose-keys";
 import {
@@ -2908,6 +2918,10 @@ export type ArrangeLayer = {
 	pattern: ChordPatternType;
 	sections: SectionKind[] | null;
 	octave: number;
+	/** 曲ごとに作った刻み（流派テンプレート）。あれば `pattern` の代わりにこれで和音を刻む。 */
+	figure?: UpperFigure;
+	/** この小節から鳴らす（同じ種別の2回目から足す、など）。 */
+	fromBar?: number;
 };
 
 /**
@@ -5879,25 +5893,36 @@ const draw = (
 			return { semi: d.semi + octave, fifth: d.fifth };
 		};
 		let runFeel: RunStyle | undefined;
+		let runShape: RunPlan | undefined;
 		let loopFeel: LoopStyle | undefined;
 		const blocks = new Map<string, RiffNote[][]>();
-		const blockOf = (side: string): RiffNote[][] => {
+		const blockOf = (side: string, bars: number): RiffNote[][] => {
 			const hit = blocks.get(side);
 			if (hit) return hit;
 			let made: RiffNote[][];
 			if (lineLead === "riff-bar") {
 				loopFeel ??= loopStyle(rnd);
 				const feel = loopFeel;
-				const make = (): RiffNote[] => {
-					const cell = loopBar(rnd, feel);
+				const make = (r: () => number): RiffNote[] => {
+					const cell = loopBar(r, feel);
 					return side === "a" ? thinToEighths(cell) : cell;
 				};
-				const x = make();
-				made = feel.oneBar ? [x] : [x, make(), x, make()];
+				const x = make(rnd);
+				// 旧版の1小節ループの候補は、足す2小節を x から決まる別の列で作る（他の候補・曲の抽選を動かさない）。
+				const extra = feel.spare
+					? seededRandom(
+							x.reduce(
+								(h, n) =>
+									Math.imul(h ^ (n.step * 97 + n.len * 7), 16777619) >>> 0,
+								2166136261,
+							),
+						)
+					: rnd;
+				made = [x, make(extra), x, make(extra)];
 			} else {
 				runFeel ??= runStyle(rnd);
-				const x = runBar(rnd, runFeel);
-				made = [x, runBar(rnd, runFeel), x, runBar(rnd, runFeel)];
+				runShape ??= runPlan(rnd);
+				made = runSection(rnd, runFeel, runShape, bars);
 			}
 			blocks.set(side, made);
 			return made;
@@ -5911,10 +5936,10 @@ const draw = (
 					: sec.kind === "bridge"
 						? "c"
 						: "a";
-			const block = blockOf(side);
+			const block = blockOf(side, sec.bars);
 			let cell = block[(bar - sec.startBar) % block.length];
 			const lift =
-				lineLead === "riff16" && side === "b"
+				lineLead === "riff16" && side === "b" && runShape?.lift !== false
 					? scale.core.length
 					: side === "c"
 						? 1
@@ -5944,11 +5969,167 @@ const draw = (
 						base.fifth + (n.chrom ? 5 : 0) + fifthShift,
 						edo,
 					),
-					durationSteps: Math.max(1, end - start),
+					durationSteps: Math.max(
+						1,
+						runFeel?.staccato && n.len === 2 && Math.abs(at % 4) === 2
+							? Math.round(sixteenth)
+							: end - start,
+					),
 					velocity: Math.abs(at % 4) < 1e-6 ? 100 : 82,
 				});
 				at += n.len;
 			}
+		}
+	}
+
+	// --- 規則から組む歌メロ（{@link StructureTemplate.vocalLine}）と2本目の声 ---
+	// 歌う高さ（歌入り作曲は1オクターブ下で歌う）の中心を原曲の歌の帯（61〜66）へ置く。
+	let secondVoice: (() => ComposedNote[]) | null = null;
+	if (template?.vocalLine === "sentence") {
+		melody.length = 0;
+		const sixteenth = scaleStep(SIXTEENTH);
+		const tonicStep = degreeToCore(scale, scale.tonic);
+		const pitchOf = (step: number): ScaleDegree =>
+			degreeToPitch(scale, coreToDegree(scale, tonicStep + step));
+		const chordSpans = buildChordPlacements({
+			edo: 12,
+			chordStr: chordProgression,
+			patternType: "block",
+			rootShift: 0,
+			bpm: 120,
+			stepsPerBar,
+		});
+		const pcsAt = (step: number): Set<number> =>
+			new Set(
+				chordSpans
+					.filter(
+						(p) => p.startStep <= step && step < p.startStep + p.durationSteps,
+					)
+					.map((p) => Math.round(p.pitchUnits / UNITS_PER_SEMITONE) % 12),
+			);
+		const style = sentenceStyle(rnd);
+		// 歌い直しは曲ごとに、そのまま（原曲の多く）か8小節ごとの最後の句だけ替えるか。
+		const answerRepeats = rnd() < 0.5;
+		const lines = new Map<SectionKind, ReturnType<typeof sentenceSection>>();
+		const motifs = new Map<SectionKind, number[][]>();
+		const seen = new Map<SectionKind, number>();
+		const placed: ReturnType<typeof sentenceSection>[] = [];
+		for (const sec of sectionPlan) {
+			if (!sec.spec.melody) {
+				placed.push([]);
+				continue;
+			}
+			const chorus = sec.kind === "chorus" || sec.kind === "drop_chorus";
+			const center = 3 + (chorus ? style.lift : 0);
+			const env = {
+				fits: (bar: number, at: number, step: number): boolean =>
+					pcsAt(
+						(sec.startBar + bar) * stepsPerBar + Math.round(at * sixteenth),
+					).has(((pitchOf(step).semi % 12) + 12) % 12),
+				semi: (step: number): number => pitchOf(step).semi,
+			};
+			// 同じ種別は同じ句の元。最初の種別は曲の元の句、ほかはその親戚（同じリズムの家族）。
+			const motif =
+				motifs.get(sec.kind) ??
+				(motifs.size === 0 ? style.motif : relatedMotif(style.motif, rnd));
+			motifs.set(sec.kind, motif);
+			const count = seen.get(sec.kind) ?? 0;
+			seen.set(sec.kind, count + 1);
+			const line =
+				lines.get(sec.kind) ??
+				sentenceSection(rnd, style, motif, sec.bars, center, env);
+			lines.set(sec.kind, line);
+			placed.push(
+				count > 0 && answerRepeats
+					? sentenceAnswer(rnd, style, motif, line, center, env)
+					: line,
+			);
+		}
+		sectionPlan.forEach((sec, si) => {
+			const line = placed[si];
+			if (!line.length) return;
+			for (let i = 0; i < sec.bars; i++) {
+				const bar = sec.startBar + i;
+				const k = barKeyShift[bar];
+				const fifthShift =
+					k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
+				let at = 0;
+				for (const n of line[i] ?? []) {
+					if (n.len > 0) {
+						const p = pitchOf(n.step);
+						const start = bar * stepsPerBar + Math.round(at * sixteenth);
+						melody.push({
+							startStep: start,
+							pitchUnits: spelledToUnits(
+								p.semi - (n.chrom ? 1 : 0) + k,
+								p.fifth + (n.chrom ? 5 : 0) + fifthShift,
+								edo,
+							),
+							durationSteps: Math.max(
+								1,
+								bar * stepsPerBar +
+									Math.round((at + n.len) * sixteenth) -
+									start,
+							),
+							velocity: Math.abs(at % 4) < 1e-6 ? 100 : 84,
+						});
+					}
+					at += Math.abs(n.len);
+				}
+			}
+		});
+		const octaveUnits = semitonesToUnits(12, edo);
+		const meanSemi = (): number =>
+			melody.reduce((a, n) => a + n.pitchUnits, 0) /
+				Math.max(1, melody.length) /
+				UNITS_PER_SEMITONE +
+			rootShift;
+		while (melody.length > 0 && meanSemi() > 75 + 6)
+			for (const n of melody)
+				n.pitchUnits = (n.pitchUnits - octaveUnits) as Units;
+		while (melody.length > 0 && meanSemi() < 75 - 6)
+			for (const n of melody)
+				n.pitchUnits = (n.pitchUnits + octaveUnits) as Units;
+		// 2本目の声（原曲 3/5 曲）。サビだけ、同時の音の4度・5度下を主に3度・同音も混ぜる
+		// （原曲の重ねはオクターブ 4.5%・4〜5度 35%・3〜6度 27%・同音 18%）。歌の帯より下へは出さない。
+		if (rnd() < 0.6) {
+			const floor = 55 + 12 - rootShift;
+			const prefer = pick(
+				[
+					[5, 7, 3, 4],
+					[3, 4, 5, 0],
+					[5, 3, 7, 0],
+				],
+				rnd,
+			);
+			// 主旋律の音を抜く度数の処理（下）が済んでから重ねる。
+			secondVoice = () =>
+				melody.flatMap((n): ComposedNote[] => {
+					const sec = sectionAt(
+						sectionPlan,
+						Math.floor(n.startStep / stepsPerBar),
+					);
+					if (sec.kind !== "chorus" || n.durationSteps < sixteenth * 2)
+						return [];
+					const semi = Math.round(n.pitchUnits / UNITS_PER_SEMITONE);
+					const pcs = pcsAt(n.startStep);
+					const inScale = (x: number): boolean =>
+						pcs.has(((x % 12) + 12) % 12) &&
+						semitoneToDegree(scale, x) !== undefined &&
+						degreeToPitch(scale, semitoneToDegree(scale, x)).semi % 12 ===
+							((x % 12) + 12) % 12;
+					const below = prefer
+						.map((d) => semi - d)
+						.find((x) => (x === semi || inScale(x)) && x >= floor);
+					if (below === undefined) return [];
+					return [
+						{
+							...n,
+							pitchUnits: semitonesToUnits(below, edo) as Units,
+							velocity: Math.max(40, n.velocity - 18),
+						},
+					];
+				});
 		}
 	}
 
@@ -5968,6 +6149,19 @@ const draw = (
 			rnd,
 		);
 		const arpVelocity = 60 + Math.round(rnd() * 18);
+		// 流派テンプレートは回し方も曲ごとに作る（上行・往復の3種だけだと曲をまたいで同じ上物になる）。
+		// 曲の乱数は使わない（候補の乱数列を動かさず、リード・進行はそのまま残す）。
+		const arpFigure = template?.grammar
+			? upperFigure(
+					"arpeggio",
+					seededRandom(
+						[...`${chordProgression}|${bpm}|${melody.length}`].reduce(
+							(h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0,
+							2166136261,
+						),
+					),
+				)
+			: null;
 		// **最後のサビだけに置く。** 全小節に回すと「アルペジオを多用しすぎ、ラスサビぐらいの
 		// イメージ」（所有者、第3版の試聴）。コーパスでもアルペジオ小節は中央 2%。サビが無い構成では
 		// 歌のある最後のセクション。
@@ -6013,6 +6207,9 @@ const draw = (
 			groups.set(p.startStep, g);
 		}
 		const sixteenth = scaleStep(SIXTEENTH);
+		const arpAt = arpFigure
+			? new Set(arpFigure.bars[0].map((h) => h.at))
+			: null;
 		for (const [start, g] of [...groups].sort((a, b) => a[0] - b[0])) {
 			if (!arpBars.has(Math.floor(start / stepsPerBar))) continue;
 			// 構成音は最低音から1オクターブ内へ畳み、下から4音まで（block の声部は1オクターブを
@@ -6040,11 +6237,17 @@ const draw = (
 			if (arpShape === "updown")
 				for (let i = len - 2; i >= 1; i--) cycle.push(i);
 			if (arpShape === "down") cycle.reverse();
+			if (arpFigure) {
+				cycle.length = 0;
+				for (const h of arpFigure.bars[0]) cycle.push(h.tone ?? 0);
+			}
 			for (
 				let at = start, i = 0;
 				at + sixteenth <= g.end;
 				at += sixteenth, i++
 			) {
+				if (arpAt && !arpAt.has(Math.round((at % stepsPerBar) / sixteenth)))
+					continue;
 				const idx = cycle[i % cycle.length];
 				submelody.push({
 					startStep: at,
@@ -6111,6 +6314,91 @@ const draw = (
 			melody.push(...kept);
 		}
 	}
+
+	// --- 流派テンプレートのベースを曲ごとの型で刻み直す（{@link bassFigure}） ---
+	// 根音は書いたベースの和音区間ごとの最低音から取る。型は曲の乱数を使わずに引く（候補の乱数列を動かさない）。
+	if (template?.grammar && bass.length > 0) {
+		const figRnd = seededRandom(
+			[...`${chordProgression}|${bpm}|${bass.length}|${melody.length}`].reduce(
+				(h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0,
+				2166136261,
+			),
+		);
+		const mainFigure = bassFigure(style.bassStyle, figRnd);
+		const altFigure = bassFigure(style.bassStyleAlt, figRnd);
+		const altBar = (bar: number): boolean =>
+			(style.bassSkeleton === "two-bar" && bar % 2 === 1) ||
+			(style.bassSkeleton === "fourth-bar" && bar % 4 === 3);
+		const spans: { start: number; end: number; root: Units | null }[] = [];
+		for (const p of buildChordPlacements({
+			edo: 12,
+			chordStr: chordProgression,
+			patternType: "block",
+			rootShift: 0,
+			bpm: 120,
+			stepsPerBar,
+		})) {
+			if (spans.at(-1)?.start === p.startStep) continue;
+			spans.push({
+				start: p.startStep,
+				end: p.startStep + p.durationSteps,
+				root: null,
+			});
+		}
+		for (const sp of spans)
+			for (const n of bass)
+				if (
+					n.startStep >= sp.start &&
+					n.startStep < sp.end &&
+					(sp.root === null || n.pitchUnits < sp.root)
+				)
+					sp.root = n.pitchUnits;
+		const sixteenth = scaleStep(SIXTEENTH);
+		const octave = semitonesToUnits(12, edo);
+		const fifthUp = semitonesToUnits(7, edo);
+		const semitone = semitonesToUnits(1, edo);
+		const rebuilt: ComposedNote[] = [];
+		for (let bar = 0; bar < totalBars; bar++) {
+			const figure = altBar(bar) ? altFigure : mainFigure;
+			const row = figure[bar % figure.length];
+			row.forEach((h, i) => {
+				const at = bar * stepsPerBar + Math.round(h.at * sixteenth);
+				const si = spans.findIndex((x) => x.start <= at && at < x.end);
+				const sp = spans[si];
+				if (!sp || sp.root === null) return;
+				const nextAt =
+					i + 1 < row.length
+						? bar * stepsPerBar + Math.round(row[i + 1].at * sixteenth)
+						: (bar + 1) * stepsPerBar;
+				const next = spans[si + 1];
+				const pitch =
+					h.tone === "o"
+						? sp.root + octave
+						: h.tone === "f"
+							? sp.root + fifthUp
+							: h.tone === "a"
+								? next?.root != null &&
+									next.root !== sp.root &&
+									nextAt >= sp.end
+									? next.root - semitone
+									: sp.root + octave
+								: sp.root;
+				rebuilt.push({
+					startStep: at,
+					pitchUnits: pitch as Units,
+					durationSteps: Math.max(
+						1,
+						Math.min(Math.round(h.len * sixteenth), sp.end - at, nextAt - at),
+					),
+					velocity: at % quarterSteps === 0 ? 96 : 82,
+				});
+			});
+		}
+		bass.length = 0;
+		bass.push(...rebuilt);
+	}
+
+	if (secondVoice) harmony.push(...secondVoice());
 
 	// 旋律の無いイントロは、ベース→パッド→サブメロの順に4分の1ずつ遅れて入る。
 	const intro = sectionPlan[0];
@@ -6523,7 +6811,11 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 		? pick(template.instruments, rnd)
 		: pickBuiltinInstrument(result, rnd);
 	result.arrange = template?.arrange
-		? templateArrangePlan(result, template.arrange)
+		? templateArrangePlan(
+				result,
+				template.arrange,
+				template.grammar ? rnd : undefined,
+			)
 		: buildArrangePlan(result, rnd, template?.chordPatterns);
 	return result;
 };
@@ -6720,10 +7012,27 @@ const buildArrangePlan = (
 	return { backing, sparkle, padSections, lead, bassLayer };
 };
 
-/** テンプレートが指定した層の割り当て（{@link StructureTemplate.arrange}）。抽選しない。 */
+/** 奏法の名前から、曲ごとに作る刻みの細かさ（{@link upperFigure}）。 */
+const GRAIN_OF: Partial<Record<ChordPatternType, UpperGrain>> = {
+	block: "block",
+	"stab-quarter": "quarter",
+	"stab-eighth": "eighth",
+	"stab-sixteenth": "sixteenth",
+	offbeat: "offbeat",
+	yatsume: "eighth",
+	arpeggio: "arpeggio",
+	"arpeggio-fast": "arpeggio",
+	alternating: "arpeggio",
+};
+
+/**
+ * テンプレートが指定した層の割り当て（{@link StructureTemplate.arrange}）。`rnd` を渡すと（流派テンプレート）
+ * 足す層の刻みを曲ごとに作り、半分の層は同じ種別の2回目から入れる（原曲は層を足していく）。
+ */
 const templateArrangePlan = (
 	song: ComposeResult,
 	plan: NonNullable<StructureTemplate["arrange"]>,
+	rnd?: () => number,
 ): ArrangePlan => {
 	const present = new Set(song.sections.map((s) => s.kind));
 	const narrow = (kinds: SectionKind[]): SectionKind[] =>
@@ -6733,26 +7042,49 @@ const templateArrangePlan = (
 		sections: null,
 		octave: 0,
 	};
+	const shape = (layer: ArrangeLayer): ArrangeLayer => {
+		if (!rnd) return layer;
+		const grain = GRAIN_OF[layer.pattern];
+		if (grain) layer.figure = upperFigure(grain, rnd);
+		const kinds = layer.sections;
+		const again = kinds
+			? song.sections.filter((s) => kinds.includes(s.kind))
+			: [];
+		if (again.length >= 2 && rnd() < 0.5) layer.fromBar = again[1].startBar;
+		return layer;
+	};
 	const extra = plan.backing
 		.filter((l) => l.pattern !== base.pattern)
 		.slice(0, 2)
 		.map(
-			(l): ArrangeLayer => ({
-				pattern: l.pattern,
-				sections: l.sections && narrow(l.sections),
-				octave: 0,
-			}),
+			(l): ArrangeLayer =>
+				shape({
+					pattern: l.pattern,
+					sections: l.sections && narrow(l.sections),
+					octave: 0,
+				}),
 		);
+	// 層の数も曲ごとに（原曲の同時の層の最大は曲で 4種）。足す層を1本減らす曲・パッドをサビだけにする曲。
+	// 間奏をいちばん厚くする流派（海鮮）の間奏の層は減らさない。
+	const keeps = (kinds: SectionKind[] | null): boolean =>
+		kinds?.includes("interlude") ?? true;
+	if (rnd && extra.length > 1 && !keeps(extra[1].sections) && rnd() < 0.25)
+		extra.pop();
+	const pad =
+		rnd && !keeps(plan.pad) && plan.pad.includes("chorus") && rnd() < 0.25
+			? narrow(["chorus"])
+			: narrow(plan.pad);
 	return {
-		backing: [base, ...extra],
+		// 地は simple モードの伴奏と同じ奏法のまま、上級者モードでは刻みと積み方だけ曲ごとに替える。
+		backing: [shape(base), ...extra],
 		sparkle: plan.sparkle
-			? {
+			? shape({
 					pattern: plan.sparkle.pattern,
 					sections: narrow(plan.sparkle.sections),
 					octave: 1,
-				}
+				})
 			: null,
-		padSections: narrow(plan.pad),
+		padSections: pad,
 		lead: plan.lead
 			? { sections: narrow(plan.lead.sections), octave: plan.lead.octave }
 			: null,

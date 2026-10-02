@@ -14,7 +14,7 @@ import {
 	fitInstrumentOctave,
 	type InstrumentPreset,
 } from "../instruments/instrument-presets";
-import type { ComposedNote, ComposeResult } from "./compose";
+import type { ArrangeLayer, ComposedNote, ComposeResult } from "./compose";
 import type { SectionKind } from "./compose-sections";
 
 /** 音色を引く役割。{@link INSTRUMENT_PRESETS} のキーに対応する。 */
@@ -116,6 +116,71 @@ export const buildAdvancedLayers = (
 			durationSteps: p.durationSteps,
 			velocity: Math.max(30, p.velocity + velocityShift),
 		}));
+
+	/**
+	 * 曲ごとに作った刻み（{@link ArrangeLayer.figure}）で和音を刻み直す。和音の区間と構成音は
+	 * block の展開から取り、`fromBar` より前は鳴らさない。
+	 */
+	const layerNotes = (
+		layer: ArrangeLayer,
+		velocityShift = 0,
+	): ComposedNote[] => {
+		const from = (layer.fromBar ?? 0) * stepsPerBar;
+		const figure = layer.figure;
+		if (!figure)
+			return chordNotes(layer.pattern, velocityShift).filter(
+				(n) => n.startStep >= from,
+			);
+		const octaveUnits = UNITS_PER_SEMITONE * 12;
+		const spans = new Map<
+			number,
+			{ end: number; velocity: number; tones: number[] }
+		>();
+		for (const n of chordNotes("block", velocityShift)) {
+			const g = spans.get(n.startStep) ?? {
+				end: n.startStep + n.durationSteps,
+				velocity: n.velocity,
+				tones: [],
+			};
+			g.tones.push(n.pitchUnits);
+			spans.set(n.startStep, g);
+		}
+		const groups = [...spans]
+			.map(([start, g]) => {
+				const t = [...g.tones].sort((a, b) => a - b);
+				if (figure.voicing === 1 && t.length >= 3) t.shift();
+				else if (figure.voicing === 2 && t.length >= 2)
+					t.push((t.shift() as number) + octaveUnits);
+				else if (figure.voicing === 3 && t.length >= 3)
+					t.unshift((t.pop() as number) - octaveUnits);
+				return { start, ...g, tones: t.sort((a, b) => a - b) };
+			})
+			.sort((a, b) => a.start - b.start);
+		const sixteenth = stepsPerBar / 16;
+		const out: ComposedNote[] = [];
+		for (let bar = 0; bar < song.bars; bar++) {
+			for (const h of figure.bars[bar % figure.bars.length]) {
+				const at = bar * stepsPerBar + Math.round(h.at * sixteenth);
+				if (at < from) continue;
+				const g = groups.find((x) => x.start <= at && at < x.end);
+				if (!g) continue;
+				const len = Math.min(Math.round(h.len * sixteenth), g.end - at);
+				const n = g.tones.length;
+				const tones =
+					h.tone === undefined
+						? g.tones
+						: [g.tones[h.tone % n] + Math.floor(h.tone / n) * octaveUnits];
+				for (const p of tones)
+					out.push({
+						startStep: at,
+						pitchUnits: p as ComposedNote["pitchUnits"],
+						durationSteps: Math.max(1, len),
+						velocity: Math.max(30, g.velocity + (h.at % 4 === 0 ? 6 : -4)),
+					});
+			}
+		}
+		return out;
+	};
 
 	const plan = song.arrange;
 
@@ -237,7 +302,7 @@ export const buildAdvancedLayers = (
 		const layer = plan.backing[i];
 		layers.push({
 			index: 7 + i,
-			notes: layer ? onlyIn(chordNotes(layer.pattern), layer.sections) : [],
+			notes: layer ? onlyIn(layerNotes(layer), layer.sections) : [],
 			octave: layer?.octave ?? 0,
 			volume: backingVolumes[i],
 			slot: i % 2 === 0 ? "chordAlt" : "chord",
@@ -245,7 +310,7 @@ export const buildAdvancedLayers = (
 	}
 
 	const sparkleNotes = plan.sparkle
-		? onlyIn(chordNotes(plan.sparkle.pattern, -14), plan.sparkle.sections)
+		? onlyIn(layerNotes(plan.sparkle, -14), plan.sparkle.sections)
 		: [];
 	layers.push(
 		{
