@@ -63,8 +63,10 @@
 
 | ファイル名 | 役割 | コマンド例 |
 | :--- | :--- | :--- |
-| `eval_transcription.py` | 耳コピ MIDI を正解に、音声→採譜（Demucs＋Basic Pitch）の精度を測る。結果は [docs/transcription-eval.md](../docs/transcription-eval.md) | `python scripts/transcribe/eval_transcription.py run --pairs tmp/transcribe-eval/pairs.json --out tmp/transcribe-eval` |
-| `midi-to-embed.ts` | MIDI を MML にして公開デモの埋め込み URL にする | `npx tsx scripts/transcribe/midi-to-embed.ts tmp/transcribe-eval/yatsume-ana/transcribed.mid --out tmp/embed --mode simple --inst synth_pop` |
+| `transcribe_audio.py` | 音声 1 本を耳コピ MIDI にする（Demucs＋Basic Pitch）。分離・採譜の本体と方式（`PRESETS`）はここ | `python scripts/transcribe/transcribe_audio.py song.mp3 --out tmp/transcribe/song` |
+| `eval_transcription.py` | 耳コピ MIDI を正解に、`transcribe_audio.py` の精度を測る。結果は [docs/transcription-eval.md](../docs/transcription-eval.md) | `python scripts/transcribe/eval_transcription.py run --pairs tmp/transcribe-eval/pairs.json --out tmp/transcribe-eval --preset v2` |
+| `yourmt3_runner.py` | YourMT3+（多楽器採譜）で音声を採譜し JSON にする比較用。専用 venv で動かす。界隈曲では v2 に負けたので本体には繋いでいない | `<venv>/python scripts/transcribe/yourmt3_runner.py --ymt3 <space> --out tmp/ymt3/all.json a.wav` |
+| `midi-to-embed.ts` | MIDI を MML にして公開デモの埋め込み URL にする | `npx tsx scripts/transcribe/midi-to-embed.ts tmp/transcribe/song/transcribed.mid --out tmp/embed --mode simple --inst synth_pop` |
 
 ### misc/ — リリース補助・その他
 

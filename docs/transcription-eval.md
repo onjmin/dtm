@@ -2,7 +2,7 @@
 
 2026-09-30。「wav/mp3 を入れて MML に書き起こす耳コピ機能は高精度で実装可能か」に、
 手元の対になったデータで答えるための実験。道具は `scripts/transcribe/eval_transcription.py`、
-結果は `tmp/transcribe-eval/summary.md`（gitignore。本書に写してある）。
+結果は `tmp/transcribe-eval/summary-<preset>.md`（gitignore。本書に写してある）。
 
 ## 1行でいうと
 
@@ -99,12 +99,48 @@
 2. 曲数を 21組全部に広げる（`candidates.json` の complete）。1曲 60秒なので 20分。
 3. 作者が .ptcop を公開している曲はプロジェクトを直接読む（無損失）。
 
+## v2（2026-10-02）: 分離モデル・しきい値・小音量ゲート
+
+評価器と正解は変えず、`scripts/transcribe/transcribe_audio.py` の `PRESETS` に v1（上の表）と v2 を並べた。
+v2 は Demucs `htdemucs_ft`、Basic Pitch のしきい値(onset, frame)を歌 0.6/0.4・ベース 0.7/0.4・伴奏 0.7/0.3、
+系統の最大から -40dB 未満で鳴る音を捨てる。上の5曲で選び、**選ぶのに使っていない別の作者の5曲**（`pairs-holdout.json`、
+`candidates.json` の完成品から作者1曲ずつ）で確かめた。
+
+| 音符 F1 平均 | 声もの全部 | リード歌 | ベース | ベース(クロマ) | 楽器 | 全打点 |
+|---|---|---|---|---|---|---|
+| 調整用5曲 v1 → v2 | 0.48 → **0.56** | 0.47 → **0.59** | 0.44 → **0.58** | 0.49 → 0.64 | 0.36 → **0.40** | 0.64 → 0.67 |
+| 別の5曲 v1 → v2 | 0.40 → **0.46** | 0.26 → 0.30 | 0.42 → 0.46 | 0.52 → 0.66 | 0.25 → **0.28** | 0.59 → 0.62 |
+
+- 寄与はしきい値が最大（ベース +0.10、歌 +0.03）、次に分離モデル（各 +0.03）、ゲートは歌で +0.02。ゲートは -50〜-30dB のどこでも同じ値。
+- **しきい値を下げると悪くなる**。0.3/0.2 にすると歌 0.48→0.36・ベース 0.44→0.29・伴奏 0.36→0.26（幻の音が増えるだけ）。
+- 別の5曲の1曲目はベースが 0.29→0.12 に見えるが、正解がベースを1オクターブ上に書いている（中央値 48 対 実音 36）。
+  正解を1オクターブ下げると v1 0.45 → v2 0.62。別の5曲のうち3曲はリード歌の正解の選び方が外れている（0.05〜0.14）ので「声もの全部」で読む。
+- 試して捨てたもの: CREPE の f0 で音高を直す（+0.01 でゲートと同じ分。合成ベースは周期性が低く使えない）、
+  Basic Pitch の音量でのゲート（効かない）。ミックス直接の採譜は v2 で 0.41→0.40（診断用の列なので据え置き）。
+
+## YourMT3+ との比較（2026-10-02、不採用）
+
+公開モデルで最も強い多楽器採譜 YourMT3+（YPTF.MoE+Multi noPS）を、ミックスと v2 の分離音の両方に掛けて同じ評価器で測った
+（`scripts/transcribe/yourmt3_runner.py`。専用 venv で動かす）。ベースは正解のオクターブ書き違いを許した値。
+
+| 平均 F1（調整用5曲 / 別の5曲） | 声もの全部 | ベース | 楽器 | 全打点 | キック |
+|---|---|---|---|---|---|
+| v2 | **0.56** / 0.46 | **0.58** / **0.56** | **0.40** / **0.28** | **0.68** / **0.62** | **0.93** / **0.86** |
+| YourMT3+ ミックス | 0.16 / 0.26 | 0.05 / 0.14 | 0.20 / 0.16 | 0.62 / 0.62 | 0.89 / 0.85 |
+| YourMT3+ 分離音 | 0.43 / **0.49** | 0.27 / 0.29 | 0.25 / 0.18 | 0.63 / 0.61 | 0.80 / 0.60 |
+
+- どのパートも v2 を超えない。楽器の割り当て（ベース＝program 32〜39 等）が矩形波・UTAU に合わず、ミックスでは特に崩れる。
+- v2 と組み合わせても上がらない。両方が出した音だけ残すと再現率が落ち、和を取ると幻の音が増える（声 0.56→0.42 / 0.55、ベース 0.58→0.29 / 0.53）。
+- **結論: 既製モデルの差し替え・組み合わせでは人力並みに届かない。** 界隈曲の音色（矩形波の多声・UTAU）を学習していないため。
+  上げるには、この音色で鳴らした「音声と MIDI の対」を作ってモデルを学習させる必要がある。
+
 ## 再現
 
 ```
 PYTHONIOENCODING=utf-8 python scripts/transcribe/eval_transcription.py inventory --audio "C:/Users/frgk2/Music/_own/他作/界隈曲" --midi "C:/Users/frgk2/Music/_own/自作/界隈曲" --out tmp/transcribe-eval
-PYTHONIOENCODING=utf-8 python scripts/transcribe/eval_transcription.py run --pairs tmp/transcribe-eval/pairs.json --out tmp/transcribe-eval
+PYTHONIOENCODING=utf-8 python scripts/transcribe/eval_transcription.py run --pairs tmp/transcribe-eval/pairs.json --out tmp/transcribe-eval --preset v2
+PYTHONIOENCODING=utf-8 python scripts/transcribe/eval_transcription.py run --pairs tmp/transcribe-eval/pairs-holdout.json --out tmp/transcribe-holdout --preset v2
 ```
 
-`pairs.json` は `[{"name", "title", "audio", "midi"}, ...]`。各曲の `transcribed.mid`（歌・ベース・その他・ドラムの4トラック）は
+`pairs.json` は `[{"name", "title", "audio", "midi"}, ...]`。各曲の `transcribed-<preset>.mid`（歌・ベース・その他・ドラムの4トラック）は
 DAW の MIDI 読み込みでそのまま聴ける。

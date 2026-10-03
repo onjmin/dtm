@@ -2,7 +2,7 @@
 """
 自動採譜（耳コピ）の評価実験。
 
-音声（mp3/wav）を 音源分離（Demucs htdemucs）→ 採譜（Basic Pitch。ドラムはオンセット検出＋帯域分類）に
+音声（mp3/wav）を transcribe_audio.py の分離・採譜（Demucs → Basic Pitch。ドラムはオンセット検出＋帯域分類）に
 掛け、**人力の耳コピ MIDI を正解**にしてパートごとの音符一致率（F1）を出す。
 
     # 1. 音声と耳コピ MIDI の対応表を作り、完成度（長さの比・音数・ドラムの有無）で並べる
@@ -12,6 +12,9 @@
 
     # 2. 対応表（JSON。inventory が書く candidates.json から選ぶ）で評価を回す
     python scripts/transcribe/eval_transcription.py run --pairs tmp/transcribe-eval/pairs.json --out tmp/transcribe-eval
+
+    # 3. 方式（transcribe_audio.PRESETS）を変えて同じ曲で比べる。結果は summary-<preset>.md に分かれる
+    python scripts/transcribe/eval_transcription.py run --pairs tmp/transcribe-eval/pairs.json --out tmp/transcribe-eval --preset v1
 
 ## 正解側の扱い
 
@@ -51,22 +54,19 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).parent))
+from transcribe_audio import DEFAULT_PRESET, HOP, PRESETS, SR, log, transcribe  # noqa: E402
+
 # ============================================================
 # 共通
 # ============================================================
 
-SR = 22050
-HOP = 256  # 11.6ms @ 22050
 ONSET_TOL = 0.05
 PITCH_TOL_CENTS = 50.0
 
 KICK = {35, 36}
 SNARE = {37, 38, 40, 39}  # 界隈曲はクラップがスネアの代わりに置かれるので同じ組に入れる
 HAT = {42, 44, 46}
-
-
-def log(*a: object) -> None:
-    print(*a, flush=True)
 
 
 def norm_title(s: str) -> str:
@@ -373,97 +373,6 @@ def refine_offset(onsets_scaled: np.ndarray, env: np.ndarray, sr: int, hop: int,
 
 
 # ============================================================
-# 分離と採譜
-# ============================================================
-
-
-def separate(audio: str, out_dir: Path, device: str, force: bool) -> dict[str, Path]:
-    stems = {k: out_dir / f"{k}.wav" for k in ("vocals", "drums", "bass", "other")}
-    if not force and all(p.exists() for p in stems.values()):
-        return stems
-    import random
-
-    import torch
-    from demucs.api import Separator, save_audio
-
-    # shifts=1 は乱数でずらすので、固定しないと --force のたびに小数3桁が動く
-    random.seed(0)
-    torch.manual_seed(0)
-    sep = Separator(model="htdemucs", device=device, shifts=1, overlap=0.25, progress=False)
-    _, separated = sep.separate_audio_file(Path(audio))
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for name, src in separated.items():
-        save_audio(src, str(stems[name]), samplerate=sep.samplerate)
-    return stems
-
-
-def transcribe_pitched(path: Path, kind: str, cache: Path, force: bool) -> list[tuple[float, float, int]]:
-    """Basic Pitch。戻り値は (開始秒, 終了秒, MIDI音高)。"""
-    if cache.exists() and not force:
-        return [tuple(x) for x in json.load(open(cache, encoding="utf-8"))]
-    from basic_pitch import ICASSP_2022_MODEL_PATH
-    from basic_pitch.inference import predict
-
-    kw: dict = {"onset_threshold": 0.5, "frame_threshold": 0.3, "minimum_note_length": 58.0}
-    if kind == "vocals":
-        kw.update(minimum_frequency=80.0, maximum_frequency=1600.0, melodia_trick=True)
-    elif kind == "bass":
-        kw.update(minimum_frequency=30.0, maximum_frequency=500.0, melodia_trick=True)
-    else:
-        kw.update(melodia_trick=True)
-    _, _, events = predict(str(path), ICASSP_2022_MODEL_PATH, **kw)
-    notes = sorted((float(s), float(e), int(p)) for s, e, p, _amp, _bends in events)
-    json.dump(notes, open(cache, "w", encoding="utf-8"))
-    return notes
-
-
-def transcribe_drums(path: Path, cache: Path, force: bool) -> dict[str, np.ndarray]:
-    """ドラム系統のオンセットを検出し、帯域のエネルギー比でキック／スネア／ハイハットに分ける。"""
-    if cache.exists() and not force:
-        d = json.load(open(cache, encoding="utf-8"))
-        return {k: np.array(v) for k, v in d.items()}
-    import librosa
-    from scipy.signal import butter, sosfiltfilt
-
-    y, sr = librosa.load(str(path), sr=SR, mono=True)
-    env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=HOP)
-    frames = librosa.onset.onset_detect(
-        onset_envelope=env, sr=sr, hop_length=HOP, backtrack=False, delta=0.07, wait=2
-    )
-    times = librosa.frames_to_time(frames, sr=sr, hop_length=HOP)
-    lo = sosfiltfilt(butter(4, 150, "lowpass", fs=sr, output="sos"), y)
-    mid = sosfiltfilt(butter(4, [200, 3000], "bandpass", fs=sr, output="sos"), y)
-    hi = sosfiltfilt(butter(4, 6000, "highpass", fs=sr, output="sos"), y)
-    win = int(0.03 * sr)
-
-    def energies(t: float) -> tuple[float, float, float]:
-        i = int(t * sr)
-        seg = slice(i, i + win)
-        return (
-            float(np.sum(lo[seg] ** 2)) + 1e-12,
-            float(np.sum(mid[seg] ** 2)) + 1e-12,
-            float(np.sum(hi[seg] ** 2)) + 1e-12,
-        )
-
-    # **打点は元の音で取り、分類は多重ラベルにする。** 4つ打ちではクラップ・ハットがキックと同時に鳴るので、
-    # 1つの打点に1つの分類を付ける方式だと同時打ちの片方が必ず落ちる。帯域ごとに打点を取り直すと
-    # 低域の包絡がなまってタイミングが 50ms 以上ずれる（実測でキック F1 0.96→0.71）ので、打点は共通にする。
-    # 低域が中高域の 3 割以上あればキック、中域が低域より大きければスネア／クラップ、高域が中域の 6 割以上ならハイハット。
-    kick, snare, hat = [], [], []
-    for t in times:
-        e_lo, e_mid, e_hi = energies(t)
-        if e_lo > 0.3 * (e_mid + e_hi):
-            kick.append(t)
-        if e_mid > e_lo:
-            snare.append(t)
-        if e_hi > 0.6 * e_mid:
-            hat.append(t)
-    d = {"all": times, "kick": np.array(kick), "snare": np.array(snare), "hat": np.array(hat)}
-    json.dump({k: [float(x) for x in v] for k, v in d.items()}, open(cache, "w", encoding="utf-8"))
-    return d
-
-
-# ============================================================
 # 指標
 # ============================================================
 
@@ -622,7 +531,7 @@ def cmd_inventory(args: argparse.Namespace) -> None:
 # ============================================================
 
 
-def evaluate_pair(pair: dict, out_root: Path, device: str, force: bool) -> dict:
+def evaluate_pair(pair: dict, out_root: Path, device: str, force: bool, preset: str) -> dict:
     import librosa
     import pretty_midi
 
@@ -663,17 +572,14 @@ def evaluate_pair(pair: dict, out_root: Path, device: str, force: bool) -> dict:
     gt_hat = np.array([t for t, p in gt_drums if p in HAT])
 
     # --- 分離・採譜 ---
-    stems = separate(pair["audio"], out / "stems", device, force)
-    est = {}
-    for kind in ("vocals", "bass", "other"):
-        est[kind] = transcribe_pitched(stems[kind], kind, out / f"bp_{kind}.json", force)
-    est["mix"] = transcribe_pitched(Path(pair["audio"]), "mix", out / "bp_mix.json", force)
+    est = transcribe(pair["audio"], out, device, force, preset, with_mix=True)
+    stems, dr = est["stems"], est["drums"]
     est["stems_union"] = sorted(est["vocals"] + est["bass"] + est["other"])
-    dr = transcribe_drums(stems["drums"], out / "drums.json", force)
 
     # --- 指標 ---
     res: dict = {
         "name": name,
+        "preset": preset,
         "audio": pair["audio"],
         "midi": pair["midi"],
         "align": al,
@@ -814,9 +720,9 @@ def evaluate_pair(pair: dict, out_root: Path, device: str, force: bool) -> dict:
         for t in dr[cls]:
             dinst.notes.append(pretty_midi.Note(velocity=100, pitch=pitch, start=float(t), end=float(t) + 0.05))
     pm.instruments.append(dinst)
-    pm.write(str(out / "transcribed.mid"))
+    pm.write(str(out / f"transcribed-{preset}.mid"))
 
-    json.dump(res, open(out / "result.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    json.dump(res, open(out / f"result-{preset}.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     log(f"  melody GT={gt['melodyHow']} {gt['melodyCandidates'][:1]}; by stem {res['melodyByStem']}; vocals best track {best_track}; transpose {res['transpose']}")
     log(f"  drums per pitch: {per_pitch}; chance={res['drumsAllChance']} metronome={res['drumsAllMetronome']} ceiling={res['drumsAllCeiling']} kick+1beat={res['kickShifted']['F']}")
     log(
@@ -827,7 +733,7 @@ def evaluate_pair(pair: dict, out_root: Path, device: str, force: bool) -> dict:
     return res
 
 
-def write_summary(results: list[dict], out_root: Path) -> None:
+def write_summary(results: list[dict], out_root: Path, preset: str) -> None:
     cols = [
         ("声もの全部", "voiceGroup"),
         ("リード歌", "melody"),
@@ -838,7 +744,10 @@ def write_summary(results: list[dict], out_root: Path) -> None:
         ("全音符(分離)", "allStems"),
         ("全音符(ミックス)", "allMix"),
     ]
-    lines = ["# 自動採譜の評価（人力の耳コピ MIDI を正解、音符 F1）", ""]
+    cfg = PRESETS[preset]
+    lines = [f"# 自動採譜の評価（人力の耳コピ MIDI を正解、音符 F1）— {preset}", ""]
+    lines.append(f"方式 {preset}: 分離 {cfg['model']}、しきい値(onset, frame) {cfg['th']}、小音量ゲート {cfg['gate_db']} dB。")
+    lines.append("")
     lines.append("オンセット ±50ms・音高 ±50セント・オフセット無視。クロマ＝オクターブを無視。歌は「声もの全部」（ハモリ・コーラス込み）を主に読む（ヤツメ穴は歌が2トラックに割れている）。")
     lines.append("")
     lines.append("| 曲 | " + " | ".join(c for c, _ in cols) + " | テンポ誤差 | 音高クラス相関 | 調(KS) | 三和音(半小節) |")
@@ -899,24 +808,24 @@ def write_summary(results: list[dict], out_root: Path) -> None:
     lines.append("")
     for r in results:
         lines.append(f"- {r['name']}: lead {r['melody']['nRef']}/{r['melody']['nEst']}, voiceGroup {r['voiceGroup']['nRef']}/{r['voiceGroup']['nEst']}, bass {r['bass']['nRef']}/{r['bass']['nEst']}, inst {r['other']['nRef']}/{r['other']['nEst']}, drums {r['drumsAll']['nRef']}/{r['drumsAll']['nEst']} (kick {r['kick']['nRef']}/{r['kick']['nEst']}, snare {r['snare']['nRef']}/{r['snare']['nEst']}, hat {r['hat']['nRef']}/{r['hat']['nEst']})")
-    (out_root / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    json.dump(results, open(out_root / "results.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    log(f"wrote {out_root / 'summary.md'}")
+    (out_root / f"summary-{preset}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    json.dump(results, open(out_root / f"results-{preset}.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    log(f"wrote {out_root / f'summary-{preset}.md'}")
 
 
 def cmd_run(args: argparse.Namespace) -> None:
     pairs = json.load(open(args.pairs, encoding="utf-8"))
     out_root = Path(args.out)
     out_root.mkdir(parents=True, exist_ok=True)
-    prev_path = out_root / "results.json"
+    prev_path = out_root / f"results-{args.preset}.json"
     prev = {r["name"]: r for r in json.load(open(prev_path, encoding="utf-8"))} if prev_path.exists() else {}
     for pair in pairs:
         if args.only and pair["name"] not in args.only:
             continue
-        prev[pair["name"]] = evaluate_pair(pair, out_root, args.device, args.force)
+        prev[pair["name"]] = evaluate_pair(pair, out_root, args.device, args.force, args.preset)
     # pairs.json の順に並べる。--only で絞っても他の曲の結果は残す
     results = [prev[p["name"]] for p in pairs if p["name"] in prev]
-    write_summary(results, out_root)
+    write_summary(results, out_root, args.preset)
 
 
 def main() -> None:
@@ -932,6 +841,7 @@ def main() -> None:
     run.add_argument("--device", default="cuda")
     run.add_argument("--force", action="store_true")
     run.add_argument("--only", nargs="*")
+    run.add_argument("--preset", default=DEFAULT_PRESET, choices=list(PRESETS))
     args = ap.parse_args()
     if args.cmd == "inventory":
         cmd_inventory(args)
