@@ -81,6 +81,53 @@ console.log("--- 句の長さ ---");
 	);
 }
 
+console.log("--- 報告体の語り手 ---");
+{
+	// 報告体の曲は「〜ので／〜から」で異変を受ける文と、主語のない語り手の動きを持つ（§17）。
+	let reportSongs = 0;
+	let withCause = 0;
+	let withAct = 0;
+	let plainLeak = 0;
+	for (let seed = 1; seed <= 200; seed++) {
+		const writer = createLyricWriter({
+			random: seededRandom(seed * 104729),
+			vocab: "kaiwai",
+		});
+		const text = [12, 14, 10, 16, 9, 13, 15, 11]
+			.map((m) => writer.write(m))
+			.join("");
+		if (writer.register !== "report") {
+			if (/(ので|から)(かえり|いき|はしり|まち|ねむり|ね)ました/.test(text))
+				plainLeak++;
+			continue;
+		}
+		reportSongs++;
+		if (/[たいだ](ので|から)/.test(text)) withCause++;
+		if (
+			/(かえり|いき|はしり|いそぎ|にげ|あるき|もどり|まち|ねむり|かくれ|ね|すわり)ました/.test(
+				text,
+			)
+		)
+			withAct++;
+	}
+	check(
+		reportSongs > 0 && withCause / reportSongs >= 0.5,
+		`理由でつなぐ文（${withCause}/${reportSongs}曲）`,
+		"報告体の曲の半分以上に「〜たので」「〜たから」が出る",
+	);
+	check(
+		reportSongs > 0 && withAct / reportSongs >= 0.8,
+		`語り手の動き（${withAct}/${reportSongs}曲）`,
+		"報告体の曲のほとんどに、主語のない「帰りました」「待ちました」の類が出る",
+	);
+	check(
+		plainLeak === 0,
+		"言い切りの曲には混ざらない",
+		"語り手の型は報告体の曲だけ（文末の形を曲の中で混ぜない）",
+		plainLeak ? `${plainLeak}曲` : "",
+	);
+}
+
 console.log("--- 曲に載せる ---");
 {
 	const mismatched: string[] = [];

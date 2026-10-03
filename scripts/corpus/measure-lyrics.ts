@@ -270,6 +270,16 @@ const VOCAB: [string, string[]][] = [
 	],
 ];
 
+/**
+ * 語りの形。句末に限らず本文のどこに出るかを数える（文の切れ目を休符で代用しているので、
+ * 「〜ので〜ました」は途中で切れて句末の表に出てこない）。
+ */
+const NARRATION: [string, RegExp][] = [
+	["〜ました（文中も含む）", /ました/g],
+	["〜ので（理由でつなぐ）", /[たいだ]ので/g],
+	["〜たから（理由でつなぐ）", /[たいだ]から/g],
+];
+
 /** かな1文字の母音。歌える歌詞かどうかは、伸びる音にどの母音が来るかで決まる。 */
 const VOWEL_OF = ((): Map<string, string> => {
 	const map = new Map<string, string>();
@@ -386,6 +396,10 @@ const rowOf = (key: string, files: number, parts: Note[][]): Row => {
 	for (const [label, words] of VOCAB) {
 		let hit = 0;
 		for (const w of words) hit += text.split(w).length - 1;
+		if (hit) vocab.set(label, hit);
+	}
+	for (const [label, re] of NARRATION) {
+		const hit = text.match(re)?.length ?? 0;
 		if (hit) vocab.set(label, hit);
 	}
 
@@ -656,6 +670,16 @@ const report = (title: string, rows: Row[], detail: boolean): void => {
 	say("| まとまり | 出た曲数 | 出現数 |");
 	say("| :-- | --: | --: |");
 	for (const [label] of VOCAB) {
+		const songsHit = songsWith((r) => (r.vocab.get(label) ?? 0) > 0);
+		const hits = rows.reduce((a, r) => a + (r.vocab.get(label) ?? 0), 0);
+		say(`| ${label} | ${songsHit}/${n} | ${hits} |`);
+	}
+	say();
+	say("語りの形（本文のどこでも）:");
+	say();
+	say("| 形 | 出た曲数 | 出現数 |");
+	say("| :-- | --: | --: |");
+	for (const [label] of NARRATION) {
 		const songsHit = songsWith((r) => (r.vocab.get(label) ?? 0) > 0);
 		const hits = rows.reduce((a, r) => a + (r.vocab.get(label) ?? 0), 0);
 		say(`| ${label} | ${songsHit}/${n} | ${hits} |`);

@@ -239,6 +239,76 @@ const KAIWAI_VERBS: Record<LyricRegister, string[]> = {
 		"とべない",
 	],
 };
+/**
+ * 報告体の語り手の型に使う語（docs/lyric-design.md §17）。異変を「〜ので」で受けて、
+ * 語り手が暮らしの動作で受け流す。主語は書かない（日記と同じく語り手は省く）。
+ *  - causes: 「〜ので／〜から」の前に置く過去形
+ *  - moves: 語り手が移る（場所は「へ」「から」）
+ *  - stays: 語り手がとどまる（場所は「で」「に」）
+ *  - objActs: 「〜を」を取る語り手の動作
+ */
+type Narration = {
+	causes: string[];
+	moves: string[];
+	stays: string[];
+	objActs: string[];
+};
+const KAIWAI_NARRATION: Narration = {
+	causes: [
+		"ふってきた",
+		"はえてきた",
+		"おちてきた",
+		"ながれてきた",
+		"のぼってきた",
+		"きえた",
+		"しずんだ",
+		"とけた",
+		"ゆれた",
+		"ひかった",
+		"ふえた",
+		"ならんだ",
+	],
+	moves: [
+		"かえりました",
+		"いきました",
+		"はしりました",
+		"いそぎました",
+		"にげました",
+		"あるきました",
+		"もどりました",
+	],
+	stays: [
+		"まちました",
+		"ねむりました",
+		"かくれました",
+		"ねました",
+		"すわりました",
+	],
+	objActs: [
+		"みました",
+		"ひろいました",
+		"かぞえました",
+		"さがしました",
+		"よけました",
+		"しまいました",
+		"あつめました",
+		"うめました",
+	],
+};
+const POP_NARRATION: Narration = {
+	causes: [
+		"ひかった",
+		"きえた",
+		"とどいた",
+		"かさなった",
+		"つづいた",
+		"ふった",
+	],
+	moves: ["あるきました", "かえりました", "はしりました"],
+	stays: ["まちました", "うたいました", "ねむりました"],
+	objActs: ["みました", "さがしました", "おもいだしました", "かぞえました"],
+};
+
 const POP_VERBS: Record<LyricRegister, string[]> = {
 	report: [
 		"とどきました",
@@ -286,6 +356,7 @@ type Base = {
 	/** 「〜の〜が」の後ろに置く語。 */
 	bodies: string[];
 	verbs: Record<LyricRegister, string[]>;
+	narration: Narration;
 };
 
 const BASES: Record<LyricVocabName, Base> = {
@@ -295,6 +366,7 @@ const BASES: Record<LyricVocabName, Base> = {
 		times: TIME,
 		bodies: BODY,
 		verbs: KAIWAI_VERBS,
+		narration: KAIWAI_NARRATION,
 	},
 	pop: {
 		heads: POP_SUBJECT,
@@ -302,11 +374,22 @@ const BASES: Record<LyricVocabName, Base> = {
 		times: POP_TIME,
 		bodies: ["こえ", "ゆめ", "なみだ", "ことば"],
 		verbs: POP_VERBS,
+		narration: POP_NARRATION,
 	},
 };
 
 /** 曲ごとの登場物の数。原曲は少ない登場物が何度も戻ってくる（docs/lyric-design.md の層⑤）。 */
-const CAST = { heads: 6, places: 3, times: 3, bodies: 3, verbs: 8 } as const;
+const CAST = {
+	heads: 6,
+	places: 3,
+	times: 3,
+	bodies: 3,
+	verbs: 8,
+	causes: 4,
+	moves: 2,
+	stays: 2,
+	objActs: 3,
+} as const;
 
 /** 重複なく n 個引く。引く順も曲ごとに変わる。 */
 const sample = <T>(xs: readonly T[], n: number, rnd: () => number): T[] => {
@@ -331,6 +414,16 @@ const castOf = (
 		plain: [],
 		[register]: sample(base.verbs[register], CAST.verbs, rnd),
 	} as Record<LyricRegister, string[]>,
+	// 語り手の語は報告体の曲だけで引く（言い切りの曲の乱数の進みを変えない）。
+	narration:
+		register === "report"
+			? {
+					causes: sample(base.narration.causes, CAST.causes, rnd),
+					moves: sample(base.narration.moves, CAST.moves, rnd),
+					stays: sample(base.narration.stays, CAST.stays, rnd),
+					objActs: sample(base.narration.objActs, CAST.objActs, rnd),
+				}
+			: { causes: [], moves: [], stays: [], objActs: [] },
 });
 
 // ============================================================
@@ -349,6 +442,17 @@ type Vocab = {
 	/** 断片を埋める素の名詞。 */
 	nouns: string[];
 	verbs: string[];
+	/** 「〜が〜たので」「〜が〜たから」。報告体の曲だけ中身を持つ。 */
+	causes: string[];
+	/** 語り手が移る・とどまる（主語を書かない）。場所は動きに合う助詞の形を別に持つ。 */
+	moves: string[];
+	stays: string[];
+	movePlaces: string[];
+	stayPlaces: string[];
+	/** 「〜を」の形。 */
+	objects: string[];
+	/** 「〜を」に続く語り手の動作。 */
+	objActs: string[];
 };
 
 /**
@@ -382,6 +486,22 @@ const formsOf = (cast: Base, register: LyricRegister): Vocab => ({
 	],
 	nouns: [...cast.heads, ...cast.places, ...cast.times, ...ONE_MORA],
 	verbs: cast.verbs[register],
+	causes: cross(
+		[...cross(cast.heads, ["が"]), ...cross(cross(ADJ, cast.heads), ["が"])],
+		cross(cast.narration.causes, ["ので", "から"]),
+	),
+	moves: cast.narration.moves,
+	stays: cast.narration.stays,
+	movePlaces: cross(cast.places, ["へ", "から"]),
+	stayPlaces: [
+		...cross(cast.places, ["で", "に"]),
+		...cross(cross(cast.places, ["の"]), cross(SIDES, ["で", "に"])),
+	],
+	objects: cross(
+		[...cast.heads, ...cross(cross(cast.heads, ["の"]), cast.bodies)],
+		["を"],
+	),
+	objActs: cast.narration.objActs,
 });
 
 /**
@@ -406,6 +526,31 @@ const shapesOf = (vocab: Vocab): Slot[][] => {
 		[place, nounEnd],
 	];
 };
+
+/**
+ * 報告体の語り手の型（docs/lyric-design.md §17）。異変を「〜ので」で受けて帰る・逃げる、
+ * どこかへ行く、何かを拾う・数える。主語は書かない。言い切りの曲では空。
+ */
+const narrationShapesOf = (vocab: Vocab): Slot[][] => {
+	if (vocab.moves.length === 0) return [];
+	const slot = (words: string[], optional = false): Slot => ({
+		chunks: words.map(chunk),
+		optional,
+	});
+	const time = slot(vocab.times, true);
+	return [
+		[slot(vocab.causes), slot([...vocab.moves, ...vocab.stays])],
+		[time, slot(vocab.movePlaces, true), slot(vocab.moves)],
+		[time, slot(vocab.stayPlaces, true), slot(vocab.stays)],
+		[time, slot(vocab.objects), slot(vocab.objActs)],
+	];
+};
+
+/**
+ * 報告体の曲で、句を語り手の型から組む割合。残りは光景の報告（主語＋〜ました）と名詞止め。
+ * 原曲の報告体の曲は「〜ました」が1曲に数回で、光景の文と混ざる（§17）。
+ */
+const NARRATION_SHARE = 0.5;
 
 /** 残り m モーラを、スロット 0〜i でぴったり使い切れるか。 */
 const feasible = (
@@ -505,7 +650,7 @@ const lyricPhrase = (
 	rnd: () => number,
 ): string => {
 	if (mora <= 0) return "";
-	// 型は長い順（時間＋場所つき）から試す。短い句では自然に後ろの型へ落ちる。
+	// 型は渡された順に試す（長い順＝時間＋場所つきから）。短い句では自然に後ろの型へ落ちる。
 	let text: string | null = null;
 	for (const shape of shapes) {
 		text = buildSentence(shape, mora, rnd);
@@ -597,6 +742,22 @@ export const createLyricWriter = (options: {
 	const cast = castOf(BASES[options.vocab ?? "pop"], register, rnd);
 	const vocab = formsOf(cast, register);
 	const shapes = shapesOf(vocab);
+	const narrationShapes = narrationShapesOf(vocab);
+
+	/** 句ごとの型の試し順。報告体の曲は半分の句で語り手の型を先に試す。 */
+	const shapesForPhrase = (): Slot[][] => {
+		if (narrationShapes.length === 0 || rnd() >= NARRATION_SHARE) return shapes;
+		// 「〜ので」の型（先頭）は長い句でしか組めないので、半分はこれを先に試す。
+		const rest = narrationShapes.length - 1;
+		const first = rnd() < 0.5 ? 0 : 1 + (Math.floor(rnd() * rest) % rest);
+		return [
+			narrationShapes[first],
+			...narrationShapes.filter((_, i) => i !== first),
+			...shapes,
+		];
+	};
+	const phrase = (mora: number): string =>
+		lyricPhrase(shapesForPhrase(), vocab, mora, rnd);
 
 	/** 息継ぎの間（4小節）は音符が20を超えることもあるので、文に区切って埋める。 */
 	const spanOnce = (mora: number): string => {
@@ -604,16 +765,16 @@ export const createLyricWriter = (options: {
 		let left = mora;
 		while (left > 0) {
 			if (left <= SENTENCE_MAX) {
-				out.push(lyricPhrase(shapes, vocab, left, rnd));
+				out.push(phrase(left));
 				break;
 			}
 			const take = 8 + Math.floor(rnd() * 7);
 			// 端切れ（4モーラ未満）を残さない。残るなら全部まとめて1文にする。
 			if (left - take < SENTENCE_MIN) {
-				out.push(lyricPhrase(shapes, vocab, left, rnd));
+				out.push(phrase(left));
 				break;
 			}
-			out.push(lyricPhrase(shapes, vocab, take, rnd));
+			out.push(phrase(take));
 			left -= take;
 		}
 		return out.join("");
