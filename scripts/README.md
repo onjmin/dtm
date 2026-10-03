@@ -47,6 +47,7 @@
 | `calibrate-corpus.ts` | 参考 MIDI コーパスから目標帯（`src/compose/compose-corpus.ts`）を算出する | `npx tsx scripts/corpus/calibrate-corpus.ts --dir "<path>" --out src/compose/compose-corpus.ts` |
 | `check-evaluator.ts` | 評価機の検算。人間の曲が生成物と同等以上の点を取るかを見る | `npx tsx scripts/corpus/check-evaluator.ts --dir "<path>"` |
 | `measure-arrangement.ts` | 旋律の外側（テンポ・和声・ベース・ドラム・構成等）をコーパスと生成物で同じ物差しで測る | `npx tsx scripts/corpus/measure-arrangement.ts --dir "<path>" --generate kaiwai --count 40 --seed 1 --out tmp/kaiwai` |
+| `measure-lyrics.ts` | 耳コピ UST の歌詞を測る（表記・音符との対応・母音・句末の形・反復・層）。歌詞の本文は出さない。まとめは [docs/lyric-design.md](../docs/lyric-design.md) | `npx tsx scripts/corpus/measure-lyrics.ts --dir "<path>"` |
 | `extract-skeletons.ts` | 耳コピ MIDI から曲ごとの骨格を抜き `src/compose/compose-skeletons.ts` を生成する（git に入れない） | `npx tsx scripts/corpus/extract-skeletons.ts --dir "<path>" --out src/compose/compose-skeletons.ts` |
 | `build-section-bank.ts` | 骨格データからセクション単位のバンク `src/compose/compose-section-bank.ts` を生成する（git に入れない） | `npx tsx scripts/corpus/build-section-bank.ts` |
 | `check-splice-closeness.ts` | `kaiwai_splice` の生成物が元曲に近すぎないか検査し、上限超えで exit 1 | `npx tsx scripts/corpus/check-splice-closeness.ts --count 200 --seed 1` |
