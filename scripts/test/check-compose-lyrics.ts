@@ -84,7 +84,9 @@ console.log("--- 句の長さ ---");
 console.log("--- 報告体の語り手 ---");
 {
 	// 報告体の曲は「〜ので／〜から」で異変を受ける文と、主語のない語り手の動きを持つ（§17）。
+	// 「〜ました」は詰めすぎない（§18）。1曲ぶん（約300字）の長さで測る——短いと出る・出ないが揺れる。
 	let reportSongs = 0;
+	const density: number[] = [];
 	let withCause = 0;
 	let withAct = 0;
 	let plainLeak = 0;
@@ -93,7 +95,8 @@ console.log("--- 報告体の語り手 ---");
 			random: seededRandom(seed * 104729),
 			vocab: "kaiwai",
 		});
-		const text = [12, 14, 10, 16, 9, 13, 15, 11]
+		const lengths = [12, 14, 10, 16, 9, 13, 15, 11];
+		const text = [...lengths, ...lengths, ...lengths]
 			.map((m) => writer.write(m))
 			.join("");
 		if (writer.register !== "report") {
@@ -102,6 +105,7 @@ console.log("--- 報告体の語り手 ---");
 			continue;
 		}
 		reportSongs++;
+		density.push(((text.match(/ました/g)?.length ?? 0) / [...text].length) * 1000);
 		if (/[たいだ](ので|から)/.test(text)) withCause++;
 		if (
 			/(かえり|いき|はしり|いそぎ|にげ|あるき|もどり|まち|ねむり|かくれ|ね|すわり)ました/.test(
@@ -119,6 +123,12 @@ console.log("--- 報告体の語り手 ---");
 		reportSongs > 0 && withAct / reportSongs >= 0.8,
 		`語り手の動き（${withAct}/${reportSongs}曲）`,
 		"報告体の曲のほとんどに、主語のない「帰りました」「待ちました」の類が出る",
+	);
+	const mid = [...density].sort((a, b) => a - b)[Math.floor(density.length / 2)] ?? 0;
+	check(
+		mid >= 15 && mid <= 45,
+		`「〜ました」の密度（中央 ${mid.toFixed(0)}／1000字）`,
+		"報告体の曲でも光景の文は普通体が多い。耳コピの報告型は1000字あたり12〜42（§18）",
 	);
 	check(
 		plainLeak === 0,

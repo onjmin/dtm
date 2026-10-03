@@ -684,6 +684,14 @@ const report = (title: string, rows: Row[], detail: boolean): void => {
 		const hits = rows.reduce((a, r) => a + (r.vocab.get(label) ?? 0), 0);
 		say(`| ${label} | ${songsHit}/${n} | ${hits} |`);
 	}
+	// 報告体の曲の中で「〜ました」がどれだけ詰まっているか。原曲は普通体の動詞と混ざる。
+	const density = rows
+		.map((r) => ((r.vocab.get(NARRATION[0][0]) ?? 0) / r.notes) * 1000)
+		.filter((d) => d > 0);
+	if (density.length)
+		say(
+			`\n「〜ました」が出る曲の密度（かな1000字あたり）: 中央 ${quantile(density, 0.5).toFixed(0)}・範囲 ${Math.min(...density).toFixed(0)}〜${Math.max(...density).toFixed(0)}（${density.length}曲）`,
+		);
 	say();
 };
 

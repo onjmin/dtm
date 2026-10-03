@@ -6,7 +6,8 @@
  *  - ひらがなだけ。小書きかな（ゃゅょ）は使わない——アプリは歌詞を**1文字＝1音符**で読むので、
  *    小書きかなを入れると文字数とモーラ数（`normalizeLyrics`）がずれる。
  *  - 伸ばし（`ー`）は使わない（原曲は16曲中15曲で2%以下）。
- *  - 文末は曲ごとにひとつの形へ寄せる（報告体と言い切りを混ぜない）。
+ *  - 報告体か言い切りかは曲ごとに決める。ただし報告体の曲でも光景の文は普通体が多く、
+ *    「〜ました」は主に語り手の型が受け持つ（docs/lyric-design.md §18）。
  */
 
 /**
@@ -391,6 +392,9 @@ const CAST = {
 	objActs: 3,
 } as const;
 
+/** 報告体の曲で、光景の文の動詞 {@link CAST}.verbs 個のうち「〜ました」にする数。 */
+const REPORT_SCENE_VERBS = 1;
+
 /** 重複なく n 個引く。引く順も曲ごとに変わる。 */
 const sample = <T>(xs: readonly T[], n: number, rnd: () => number): T[] => {
 	const pool = [...xs];
@@ -412,7 +416,15 @@ const castOf = (
 	verbs: {
 		report: [],
 		plain: [],
-		[register]: sample(base.verbs[register], CAST.verbs, rnd),
+		// 報告体の曲でも光景の文は普通体が多い（§18。原曲は普通体の動詞が「〜ました」の2倍前後）。
+		// 「〜ました」は主に語り手の型が受け持つ。
+		[register]:
+			register === "report"
+				? [
+						...sample(base.verbs.report, REPORT_SCENE_VERBS, rnd),
+						...sample(base.verbs.plain, CAST.verbs - REPORT_SCENE_VERBS, rnd),
+					]
+				: sample(base.verbs[register], CAST.verbs, rnd),
 	} as Record<LyricRegister, string[]>,
 	// 語り手の語は報告体の曲だけで引く（言い切りの曲の乱数の進みを変えない）。
 	narration:
@@ -550,7 +562,7 @@ const narrationShapesOf = (vocab: Vocab): Slot[][] => {
  * 報告体の曲で、句を語り手の型から組む割合。残りは光景の報告（主語＋〜ました）と名詞止め。
  * 原曲の報告体の曲は「〜ました」が1曲に数回で、光景の文と混ざる（§17）。
  */
-const NARRATION_SHARE = 0.5;
+const NARRATION_SHARE = 0.2;
 
 /** 残り m モーラを、スロット 0〜i でぴったり使い切れるか。 */
 const feasible = (
