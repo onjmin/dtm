@@ -53,7 +53,6 @@ import {
 	mountChordPlayer,
 } from "../chord/chord-player";
 import { buildChordPlacements, type ChordPatternType } from "../chord/chords";
-import { DEFAULT_ACCOMP_STYLE } from "../compose/accomp-styles/index";
 import {
 	type AdvancedLayer,
 	type AutoRole,
@@ -67,17 +66,11 @@ import {
 	composeSong,
 	seededRandom,
 } from "../compose/compose";
-import {
-	type AccompMix,
-	accompMeta,
-	accompMixToRelease,
-	accompPresetSlots,
-	composeAccomp,
-} from "../compose/compose-accomp";
+import { accompMixToRelease } from "../compose/compose-accomp";
 import { getComposeKeyDescription } from "../compose/compose-keys";
 import { getComposeScaleDescription } from "../compose/compose-scales";
 import {
-	DEFAULT_SECTIONS,
+	SECTION_ORDER,
 	type SectionKind,
 	STRUCTURE_TEMPLATES,
 	sectionPlanBarRange,
@@ -184,9 +177,7 @@ import {
 } from "../voice/lyrics";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "../voice/voice-images";
 import {
-	COMPOSE_SHAPES,
 	type ComposeGenre,
-	DEFAULT_COMPOSE_SHAPE,
 	findComposeGenre,
 	genreFromTemplate,
 } from "./compose-genres";
@@ -198,10 +189,8 @@ import {
 	type KeptSong,
 	newKeptId,
 	readKeptSongs,
-	readMacroSections,
 	readMacroSetting,
 	writeKeptSongs,
-	writeMacroSections,
 	writeMacroSetting,
 } from "./state/macro-state";
 import { readPanelOpen, writePanelOpen } from "./state/panel-state";
@@ -552,9 +541,7 @@ const COMPOSE_INFO_HTML = `
   <h4>作曲とは</h4>
   <p>コード進行・メロディ・サブメロ・ベース・伴奏・ドラムをまとめて自動で作るボタンです。押すたびに違う曲ができます。できあがった曲はそのまま編集できるので、気に入らないところだけ後から直すこともできますし、もう一度押して作り直すこともできます。</p>
   <h4>ジャンルと歌</h4>
-  <p>「何を作る？」で選んだジャンルに合わせて、曲の形・テンポ・楽器・ドラムが決まります。<strong>歌あり</strong>はメロディに歌詞を付けて歌わせ、<strong>インスト</strong>は歌なしで作ります。<strong>BGM</strong>は旋律をほとんど置かない伴奏主体のループ曲（約2分半〜3分・ドラムなし）です。楽器プリセットを自分で選んだ後は、その楽器を使います。</p>
-  <h4>作る部分を選べます</h4>
-  <p>J-POPでは「詳しく」の<strong>曲の形</strong>で「作る部分を自分で選ぶ」にすると、<strong>イントロ・Aメロ・Bメロ・サビ・間奏・アウトロ</strong>のどれを作るかを選べます。選んだぶんだけ曲が長くなり、何小節になるかが出ます。「サビだけ作り直したい」「間奏を足したい」といった使い方ができます。</p>
+  <p>「何を作る？」で選んだジャンルに合わせて、曲の形・テンポ・楽器・ドラムが決まります。ジャンルはどれも手本のある狭い作風です。<strong>歌あり</strong>はメロディに歌詞を付けて歌わせ、<strong>インスト</strong>は歌なしで作ります。楽器プリセットを自分で選んだ後は、その楽器を使います。</p>
   <p>セクションごとに作り分けている中身は次のとおりです。</p>
   <table class="dtm-info-table">
     <tr><th>　</th><th>メロディ</th><th>音域</th><th>ドラム</th><th>終わり方</th></tr>
@@ -626,14 +613,6 @@ const COMPOSE_INFO_HTML = `
   <p>実物の音域に収まっていても痛くなる音色があります。グロッケンは実物の音域がG5〜C8なので、旋律の音域（〜C6）は「余裕で範囲内」ですが、金属体の倍音は人の耳がいちばん敏感な2〜4kHzに集まるため、その高さで鳴らし続けると刺さります。こういう音色には音域とは別に<strong>明るさの上限</strong>を持たせてあり、グロッケンならC5より上で鳴らないところまで下げます。<strong>候補から外すのではなく置き場所を変えます</strong>——外すと音色の幅がそのぶん減るだけで、低く鳴らしたグロッケンはポップスで普通に使われる柔らかい音です。</p>
   <p><strong>オクターブの重ねを主役にしていません。</strong>「既にあるトラックを1オクターブ動かして別トラックへ写す」層は、音楽的な価値が高くありません。人の耳はオクターブ違いを<strong>同じ音</strong>として聞くので（オクターブ等価）、写した層は新しい声部にならず、音量と音色がわずかに変わるだけです。強調としての意味はあるので使いはしますが、常設にはしません。ベースのオクターブ下の重ねは特に、30Hz前後まで落ちて輪郭が濁るので既定では出しません（出すときも上のオクターブへ、盛り上がる場所だけに置きます）。</p>
   <p>「作曲」が決めたこれらの楽器は、おまかせマスタリングの役割推定より優先されます（演奏内容だけを見ると、間奏のソロもサビの重ねも「音の少ない単旋律」で、主旋律と区別が付かないためです）。楽器を手で選び直したトラックは、以後どちらにも上書きされません。</p>
-  <h4>伴奏主体</h4>
-  <p>「伴奏主体」は、歌メロが主役の「作曲」とは別の作り方です。<strong>旋律をほとんど置かず、分散和音が主役</strong>になり、低音と短い和音が区間ごとに密度を変えます。1〜4本目のトラックへ、ごく少ない色の音・分散和音・低音・和音の順に書きます（上級者モードでも同じ4本で、5本目から先は空にします）。約2分半〜3分で、<strong>ドラムは無し、残響とディレイ付きのループ曲</strong>です。区間は「家 → 短調側に長く留まる → 借用和音 → 家の近く → 借用和音（強弱の山）→ 薄く明るく → 家へ戻る」の順に並び、最後はそのまま頭へつながります。頭から聴くものなので、再生は1小節目から始まります。</p>
-  <p>楽器・パン・EQ・送り・リバーブ・ディレイはこの作り方に合わせた値を当て、<strong>おまかせマスタリングは通しません</strong>（後から自分で押すのは自由です。押すとミックスが上書きされます）。使う設定は「ベース調」だけで、構成・作る部分・音階は使いません。</p>
-  <ul>
-    <li><strong>短調を選んだとき</strong>は、同じ調号の長調（平行長調）を家にして、選んだ短調の側に長く留まる曲にします（例: ホ短調を選ぶとト長調が家）。</li>
-    <li>シンプルモードでは、伴奏トラックの和音欄に進行が出ますが、表示だけです。<strong>伴奏トラックで「適用」を押すと、奏法1つで上書きされて</strong>、区間ごとの打ち方の違い（借用和音だけ長く伸ばす等）が消えます。</li>
-    <li>出力の「生成上限」（小節数）が曲より短いと、書き出し・共有では<strong>末尾が切れます</strong>（切れるときは、ベース調の横にその旨を出します）。</li>
-  </ul>
   <h4>そのほか</h4>
   <ul>
     <li><strong>曲の途中で転調します</strong>（およそ半分の曲）。五度圏で近い属調・下属調へは共通する和音（ピボットコード）か新しい調のドミナントで橋渡しし、ラスサビの半音上げは準備なしの直接転調にします。調号を変えずに明暗だけ入れ替える<strong>平行調</strong>（ハ長調↔イ短調）と、主音を保ったまま暗くする<strong>同主調</strong>（ハ長調→ハ短調）も引きます。1割強の曲は主和音を避けて「明るいのか暗いのか分からない」浮遊感で通します。</li>
@@ -1736,20 +1715,6 @@ export const mountDAW = (
 	 * {@link ComposeOptions.recent} へ渡し、似た曲が続けて出ないようにする。
 	 */
 	const recentComposeFingerprints: number[][] = [];
-	/**
-	 * 直近に「伴奏主体」で作った曲の planSignature（スタイル id ごとに最大5）。次の作曲で
-	 * {@link composeAccomp} の `recent` へ渡し、同じ計画の曲が続けて出ないようにする。
-	 * 歌もの用の {@link recentComposeFingerprints} とは物差しが違うので別に持つ。スタイルごとに
-	 * 分けるのは、スタイルどうしで邪魔しないため（`docs/accomp-style-engine.md` §2.4）。キーは曲の
-	 * 計画のスタイル id（`song.plan.style`）。
-	 */
-	const recentAccompSignatures = new Map<string, string[]>();
-	/**
-	 * 直前に「伴奏主体」で作った曲の `#compose` とミックス（作った時点の `song.mix`）。
-	 * {@link accompMixToRelease} が、ディレイとループがまだ伴奏主体の値のままかをこれと比べる
-	 * （`docs/accomp-style-engine.md` §2.4。スタイルの表を DAW が直接見ないため）。
-	 */
-	let composedAccompMix: { compose: string; mix: AccompMix } | null = null;
 	/**
 	 * 直前の「歌入り作曲」が自動で当てたボーカルのモデル名。ユーザーが自分で選んだ声を
 	 * 上書きしないための目印で、`lyricModel` がこの値のままなら（＝ユーザーは触っていない）
@@ -5284,8 +5249,7 @@ export const mountDAW = (
 	 * トラックごとの設定（楽器・音源バンク・音圧強化・ステレオ幅・リバーブ送り・EQ・パン・ディレイ送り）を
 	 * MML のメタから当てる。**書かれていない項目は既定値へ戻す**（前の曲の値を持ち越さない）。
 	 *
-	 * MML の全体読み込み（{@link loadMML}）と「伴奏主体」（`runComposeAccomp`。`accompMeta` の値）が
-	 * 共通で通る。`activeOnly` なら選択中のトラックだけに当てる（「現在のトラックのみ対象とする」）。
+	 * MML の全体読み込み（{@link loadMML}）が通る。`activeOnly` なら選択中のトラックだけに当てる（「現在のトラックのみ対象とする」）。
 	 * マスタの設定・音律・伴奏音源は触らない（それぞれ呼び出し側で当てる）。
 	 */
 	const applyTrackStripMeta = (
@@ -5411,9 +5375,6 @@ export const mountDAW = (
 			// 自動作曲の由来。宣言が無い MML（手打ち・古い書き出し）なら消す。
 			composeSeed = meta.seed ?? null;
 			composeSetting = meta.compose ?? null;
-			// 読み込んだ曲は、直前に「伴奏主体」で作った曲とは限らない（`#compose` は種を含まないので、
-			// 別の曲でも同じ文字列になる）。ミックスの解放は、その曲のスタイルのミックスと比べる
-			composedAccompMix = null;
 			if (meta.instrument && INSTRUMENT_PRESETS[meta.instrument]) {
 				currentInstrument = meta.instrument;
 				options.onInstrumentChange?.(meta.instrument);
@@ -6601,10 +6562,10 @@ export const mountDAW = (
 			showModal("作曲の解説", COMPOSE_INFO_HTML);
 		});
 
-		// --- 何を作る？（ジャンルのカード）・歌・曲の形 ---
+		// --- 何を作る？（ジャンルのカード）・歌 ---
 		//
-		// カードは既存テンプレートへの入口を並べ替えただけ（対応表は compose-genres.ts）。「曲の形」は
-		// J-POP カードのときだけ効き、他のジャンルは形がテンプレートで決まっている。
+		// カードは既存テンプレートへの入口を並べ替えただけ（対応表は compose-genres.ts）。曲の形は
+		// テンプレートで決まっている。
 		const savedGenre = readMacroSetting("genre");
 		const migratedGenre = genreFromTemplate(readMacroSetting("template"));
 		let genre: ComposeGenre = findComposeGenre(
@@ -6619,41 +6580,27 @@ export const mountDAW = (
 					: savedGenre
 						? genre.vocalDefault
 						: (migratedGenre.vocal ?? genre.vocalDefault);
-		if (genre.engine === "accomp") vocalOn = false;
-		if (refs.composeTemplate) {
-			const shape = savedGenre
-				? readMacroSetting("template")
-				: migratedGenre.shape;
-			refs.composeTemplate.value =
-				shape && (COMPOSE_SHAPES as readonly string[]).includes(shape)
-					? shape
-					: DEFAULT_COMPOSE_SHAPE;
-		}
-		const composeShape = (): string =>
-			refs.composeTemplate?.value ?? DEFAULT_COMPOSE_SHAPE;
 		const selectedComposeTemplate = (): string | undefined =>
-			genre.template(vocalOn, composeShape());
+			genre.template(vocalOn);
 
-		/** チェックの入っているセクション。全部外れていたら既定の構成に戻す。 */
+		/**
+		 * 作曲に渡す `sections`。テンプレートの構成に出る種別を {@link SECTION_ORDER} の順に並べる
+		 * （旧 UI の「作る部分」の箱を読んだのと同じ値。`#compose=` の第4項を変えないため）。
+		 */
 		const selectedComposeSections = (): SectionKind[] => {
-			const boxes = [
-				...refs.composeSections.querySelectorAll<HTMLInputElement>(
-					'input[type="checkbox"]',
-				),
-			];
-			const picked = boxes
-				.filter((b) => b.checked)
-				.map((b) => b.value as SectionKind);
-			return picked.length > 0 ? picked : DEFAULT_SECTIONS;
+			const plan =
+				STRUCTURE_TEMPLATES.find((t) => t.name === selectedComposeTemplate())
+					?.plan ?? [];
+			return SECTION_ORDER.filter((k) => plan.includes(k));
 		};
 		/**
-		 * 選んだセクションで曲が何小節になるかを、押す前に表示する。
+		 * 曲が何小節になるかを、押す前に表示する。
 		 *
 		 * セクション長は作曲のたびに引き直す（{@link SectionSpec.barChoices}）ので、
 		 * ここは1つの数ではなく**幅**を出す。押す前の表示と実際の曲の長さが違うと、
 		 * 「表示が壊れている」としか受け取れない。
 		 */
-		/** 別エンジン（骨格借用・継ぎ合わせ）のテンプレートか。曲の長さもセクションも引いた設計図が決めるので、箱は効かない。 */
+		/** 別エンジン（骨格借用・継ぎ合わせ）のテンプレートか。曲の長さは引いた設計図が決める。 */
 		const engineOf = (name?: string): string | undefined =>
 			STRUCTURE_TEMPLATES.find((t) => t.name === name)?.engine;
 		const composeBarsLabel = (): string => {
@@ -6671,38 +6618,8 @@ export const mountDAW = (
 					: text;
 		};
 		const updateComposeSectionsLen = (): void => {
-			refs.composeSectionsLen.textContent =
-				genre.engine === "accomp"
-					? "長さ：約2分半〜3分のループ（ドラムなし）"
-					: `長さ：${composeBarsLabel()}`;
+			refs.composeSectionsLen.textContent = `長さ：${composeBarsLabel()}`;
 		};
-		const setSectionBoxes = (kinds: Set<string>): void => {
-			for (const box of refs.composeSections.querySelectorAll<HTMLInputElement>(
-				'input[type="checkbox"]',
-			))
-				box.checked = kinds.has(box.value);
-		};
-		/**
-		 * 作る部分の箱をテンプレートの構成へ合わせる（旧 UI で構成を選んだときと同じ）。作曲に渡す
-		 * `sections` は箱から読むので、同じテンプレートなら旧 UI と同じ値が渡る（`#compose=` も同じ）。
-		 * テンプレートの無い「作る部分を自分で選ぶ」は、保存してある選択へ戻す。
-		 */
-		const syncSectionsToTemplate = (): void => {
-			const tmplName = selectedComposeTemplate();
-			const tmpl = tmplName
-				? STRUCTURE_TEMPLATES.find((t) => t.name === tmplName)
-				: undefined;
-			if (tmpl) {
-				setSectionBoxes(new Set(tmpl.plan));
-				return;
-			}
-			const saved = readMacroSections();
-			if (saved) setSectionBoxes(new Set(saved));
-		};
-		const savedSections = readMacroSections();
-		if (savedSections) setSectionBoxes(new Set(savedSections));
-		syncSectionsToTemplate();
-
 		/** 歌う声の選択肢（「おまかせ」＋トラックの歌唱モデルと同じもの）。 */
 		const fillComposeVoiceOptions = (): void => {
 			const sel = refs.composeVoice;
@@ -6761,45 +6678,26 @@ export const mountDAW = (
 				card.setAttribute("aria-checked", on ? "true" : "false");
 				card.tabIndex = on ? 0 : -1;
 			}
-			const accomp = genre.engine === "accomp";
 			for (const b of refs.composeVocal.querySelectorAll<HTMLButtonElement>(
 				"[data-vocal]",
 			)) {
 				const on = (b.dataset.vocal === "on") === vocalOn;
 				b.setAttribute("aria-checked", on ? "true" : "false");
 				b.tabIndex = on ? 0 : -1;
-				b.disabled = accomp;
 			}
 			refs.composeVoice.classList.toggle("dtm-hidden", !vocalOn);
-			refs.composeVocalHint.textContent = accomp ? "BGMは歌なしで作ります" : "";
-			refs.composeTemplate?.classList.toggle(
-				"dtm-hidden",
-				!genre.shapeSelectable,
-			);
-			refs.composeTemplateHint.textContent = genre.shapeSelectable
-				? ""
-				: "このジャンルは形が決まっています";
-			refs.composeSectionsRow.classList.toggle(
-				"dtm-hidden",
-				!(genre.shapeSelectable && composeShape() === "custom"),
-			);
-			// 伴奏主体はベース調だけ使う（音階は使わない）
-			refs.composeScale.disabled = accomp;
 			updateComposeSectionsLen();
 		};
 		const selectGenre = (next: ComposeGenre): void => {
 			genre = next;
-			vocalOn = next.engine === "accomp" ? false : next.vocalDefault;
+			vocalOn = next.vocalDefault;
 			writeMacroSetting("genre", next.id);
 			writeMacroSetting("vocal", vocalOn ? "on" : "off");
-			syncSectionsToTemplate();
 			renderComposeControls();
 		};
 		const setVocal = (on: boolean): void => {
-			if (genre.engine === "accomp") return;
 			vocalOn = on;
 			writeMacroSetting("vocal", on ? "on" : "off");
-			syncSectionsToTemplate();
 			renderComposeControls();
 		};
 		/** ラジオの並び（role="radio"）を矢印・Home・End で動かす。 */
@@ -6904,25 +6802,6 @@ export const mountDAW = (
 			}
 		}
 
-		refs.composeSections.addEventListener("change", () => {
-			if (refs.composeTemplate) {
-				refs.composeTemplate.value = "custom";
-				writeMacroSetting("template", "custom");
-			}
-			writeMacroSections(selectedComposeSections());
-			renderComposeControls();
-		});
-		const composeTemplate = refs.composeTemplate;
-		if (composeTemplate) {
-			composeTemplate.addEventListener("change", () => {
-				writeMacroSetting("template", composeTemplate.value);
-				if (selectedComposeTemplate()) {
-					syncSectionsToTemplate();
-					writeMacroSections(selectedComposeSections());
-				}
-				renderComposeControls();
-			});
-		}
 		renderComposeControls();
 
 		const updateComposeKeyHint = (): void => {
@@ -6995,7 +6874,7 @@ export const mountDAW = (
 		/**
 		 * 自動作曲のノートをトラックへそのまま書き込む（前の中身は消す）。
 		 * 履歴の残し方は applyChord と揃えてあり、実行後に Undo で戻せる（Undo はトラックごと）。
-		 * 「作曲」「歌入り作曲」「伴奏主体」が共通で使う。
+		 * 「作曲」「歌入り作曲」が共通で使う。
 		 */
 		const writeTrackAt = (index: number, notes: ComposedNote[]): void => {
 			const track = trackStates[index];
@@ -7028,26 +6907,20 @@ export const mountDAW = (
 		};
 
 		/**
-		 * 画面の曲が「伴奏主体」から作ったもの（`#compose=style:…`。旧書式 `accomp:…` も同じ扱い。
-		 * 作った直後も、キープから入れ替えで戻した後も同じ）で、マスタディレイとループがまだ伴奏主体の
-		 * 値のままなら、DAW の初期値へ戻す。
+		 * 画面の曲が「伴奏主体」で作られたもの（読み込んだ MML の `#compose=style:…`。旧書式 `accomp:…`
+		 * も同じ扱い）で、マスタディレイとループがまだそのスタイルの値のままなら、DAW の初期値へ戻す。
 		 *
 		 * 歌ものの「作曲」「歌入り作曲」が当てるおまかせマスタリングは、この2つを触らない。戻さないと、
-		 * 伴奏主体を一度押しただけで、その後の歌ものがループ・付点8分ディレイ付きで作られ続ける
-		 * （おまかせはメロディ系のトラックにディレイを送るので、実際に鳴る）。利用者が値を変えていれば
-		 * 意図した設定なので残す。マスタ音量は戻さない——おまかせのゲインステージングが今の音量と
-		 * 実測ピークから決め直すので、戻すとその計算がずれる（曲の読み込みで音量が変わるのと同じ扱い）。
-		 *
-		 * 比べる相手は、作った時点の `song.mix`（{@link composedAccompMix}）。キープや読み込みで戻した
-		 * 曲なら、その曲のスタイルのミックス（判定は {@link accompMixToRelease}。DAW はスタイルの表を
-		 * 直接見ない。`docs/accomp-style-engine.md` §2.4）。
+		 * 伴奏主体の曲を一度読み込んだだけで、その後の歌ものがループ・付点8分ディレイ付きで作られ続ける。
+		 * 利用者が値を変えていれば意図した設定なので残す。マスタ音量は戻さない——おまかせの
+		 * ゲインステージングが今の音量と実測ピークから決め直すので、戻すとその計算がずれる。
 		 */
 		const releaseAccompMix = (): void => {
-			const release = accompMixToRelease(
-				composeSetting,
-				{ delayAmount, delayDivision, loop: loopEnabled },
-				composedAccompMix,
-			);
+			const release = accompMixToRelease(composeSetting, {
+				delayAmount,
+				delayDivision,
+				loop: loopEnabled,
+			});
 			if (release.delay)
 				setMasterFx({
 					...currentMasterFx(),
@@ -7358,133 +7231,6 @@ export const mountDAW = (
 		};
 
 		/**
-		 * 「伴奏主体」本体（`docs/accomp-compose.md` §9.3）。確認を挟むかどうかは呼び出し側で決める。
-		 *
-		 * 旋律をほとんど置かず、分散和音・低音・和音で約2分半〜3分のループ曲を作る（{@link composeAccomp}）。
-		 * **ノートは生成したものをトラック 0〜3 へ直接書き、ミックスは曲が持つ値を自前で当てる。
-		 * おまかせマスタリングは通さない**（通すとリバーブ 50%・Decay 3.0s・ディレイ・コンプ 0・
-		 * フェード 0・楽器・パン・EQ・送りが丸ごと上書きされる。§9.4）。モードによらず同じ index 0〜3 に
-		 * 書き、上級者モードの 4〜14 は空にするので、同じ種から同じ MML が出る。
-		 *
-		 * {@link loadMML} のメタの反映をまるごと通さないのは、伴奏音源（`#audio` が無ければ外す）と
-		 * 音律（`#edo` が無ければ 12 へ戻す）まで巻き込むため。トラック設定（{@link applyTrackStripMeta}）と
-		 * マスタ（setMasterFx・{@link applyMasterDynamics}）を分けて当てる。
-		 */
-		const runComposeAccomp = (): void => {
-			stop();
-			overlayDuring(() => {
-				const baseKey = refs.composeKey?.value ?? "any";
-				// 種を引いてから作る（runCompose と同じ。`#seed` と `#compose=style:<id>.v<版>:<baseKey>:<k>`
-				// で再現できる）
-				const seed = (Math.random() * 0x100000000) >>> 0;
-				// スタイルの選択（プルダウン）はまだ無いので既定のスタイル（§9.1.1-8。登録表が2つ以上になったら置く）
-				const styleId = DEFAULT_ACCOMP_STYLE.id;
-				const recent = recentAccompSignatures.get(styleId) ?? [];
-				const song = composeAccomp({
-					style: styleId,
-					stepsPerBar: renderConfig.stepsPerBar,
-					edo: renderConfig.edo === 31 ? 31 : 12,
-					baseKey,
-					random: seededRandom(seed),
-					recent,
-				});
-				recent.push(song.planSignature);
-				if (recent.length > 5) recent.shift();
-				recentAccompSignatures.set(song.plan.style ?? styleId, recent);
-				composeSeed = seed;
-				composeSetting = song.compose;
-				// 作った時点のミックスを覚えておく（後の「作曲」で releaseAccompMix が比べる）
-				composedAccompMix = { compose: song.compose, mix: song.mix };
-
-				// 楽器プリセット。自分で選んだプリセットは尊重する（runCompose と同じ判定）。
-				// トラック 0〜3 はトラック個別の楽器（下の applyTrackStripMeta）で鳴るので、プリセットが
-				// 効くのは書き出しの `#inst=` と、後でおまかせを押したときの割り当てだけ。
-				applyComposeInstrument(song.mix.instrument);
-
-				// 伴奏主体の曲のトラックを、おまかせマスタリングの音色スロットへ対応づける（上級者モード）。
-				// 後で手動でおまかせを押したとき、分散がプリセットの melody を引くようにする。対応はスタイルの
-				// 層の定義（LayerDef.presetSlot）から作る
-				const presetSlots = accompPresetSlots(song);
-				trackStates.forEach((t, i) => {
-					const at = song.tracks[i];
-					writeTrackAt(i, at?.notes ?? []);
-					// 前の作曲の残りを消す。上級者モードの「作曲」はトラックのオクターブを層ごとに動かすので、
-					// 残ると分散が1オクターブずれて鳴る。
-					t.trackOctave = 0;
-					t.trackOctaveUnison = "none";
-					if (at) {
-						// 読み込み直後と同じ形（トラック音量 T と、相対 velocity）で書いてあるので、
-						// 作った直後・キープして戻した後・投稿した後で音量も SoundFont の明るさも一致する。
-						t.volume = at.volume;
-						t.core.setVolume(at.volume);
-					}
-					t.composeSlot =
-						isAdvanced && at && at.notes.length > 0
-							? (presetSlots[at.slot] ?? null)
-							: null;
-				});
-				if (!isAdvanced) {
-					// 和音の入力欄は表示だけ。applyChord は呼ばない（呼ぶと区間ごとの長さが奏法1つで上書きされる）。
-					// 進行はハ長調で書かれていて、調は rootShift で表す（runCompose の simple 分岐と同じ形）。
-					const chordTrack = trackStates.find((t) => t.config.id === "chord");
-					if (chordTrack) {
-						chordTrack.savedChordInput = song.chordProgression;
-						chordTrack.savedChordRoot = song.rootShift;
-					}
-				}
-				// トラック設定。0〜3 以外のトラックは既定値（楽器なし・パン中央・送り0 等）へ戻る。
-				const meta = accompMeta(song);
-				applyTrackStripMeta(meta);
-				const songBpm = composeTempo() ?? song.bpm;
-				setBpm(songBpm);
-				// ドラムは曲のミックスのもの（fb は none）
-				currentDrumPattern = song.mix.drum;
-				refs.drumSelect.value = song.mix.drum;
-				options.onDrumChange?.(song.mix.drum);
-				applyDrumPatternFont(song.mix.drum);
-				setMasterFx(song.mix.masterFx);
-				applyMasterVolume(song.mix.volume);
-				// 前の「おまかせ」のフェードアウト 1.5 秒・コンプ 25 を消す（ループ曲にフェードは付けない）
-				applyMasterDynamics({
-					masterCompression: song.mix.masterCompression,
-					fadeInSec: song.mix.fadeIn / 10,
-					fadeOutSec: song.mix.fadeOut / 10,
-				});
-				applyLoop(song.mix.loop);
-				releaseAutoVocals();
-				// applyAutoMastering() は呼ばない（上の説明）。
-
-				if (refs.composeKeyHint) {
-					const barLimit = Number(refs.barLimitSelect.value);
-					const notes = [
-						`${song.keyLabel} で作成（伴奏主体・${song.bars}小節）`,
-						song.homeFromMinor ?? "",
-						barLimit > 0 && barLimit < song.bars
-							? `生成上限${barLimit}小節のため書き出しでは末尾が切れます`
-							: "",
-					].filter((s) => s.length > 0);
-					refs.composeKeyHint.textContent = notes.join("・");
-					refs.composeKeyHint.title = notes.join("\n");
-				}
-
-				// **頭から鳴らす。** 旅程（家→短調側→借用→…→家）は頭から聴くもので、テーマは冒頭の家。
-				playStartStep = 0;
-				redrawAll();
-				updateTrackPanel(); // 和音の入力欄・トラックの設定へ反映する
-				updateUndoRedo();
-				composedSignature = trackSignature();
-				showComposeResult({
-					bpm: songBpm,
-					keyLabel: song.keyLabel,
-					bars: song.bars,
-					genreInstrument: song.mix.instrument,
-				});
-				// 作曲したらそのまま鳴らす（runCompose と同じ）
-				void play();
-			});
-		};
-
-		/**
 		 * 既にノートがあるときだけ確認する。空の状態（初心者が最初に押す場面）で毎回警告を出すと、
 		 * 一番押してほしいボタンが押しにくくなる。確認はアプリ内のモーダルで出す
 		 * （{@link showConfirm} に理由）。
@@ -7492,7 +7238,7 @@ export const mountDAW = (
 		 * **直前に作った曲へ一度も手を入れていないなら確認しない。** 自動作曲は「気に入るまで引き直す」
 		 * 使い方になるので、引き直すたびにダイアログが出ると1回が3タップになる。手を入れたかどうかは
 		 * 書き込んだ直後のノートと今のノートを比べて判定する（{@link trackSignature}）。
-		 * 「作曲」「歌入り作曲」「伴奏主体」で共通（「次回から表示しない」も共通）。
+		 * 「作曲」「歌入り作曲」で共通（「次回から表示しない」も共通）。
 		 */
 		const composeWithConfirm = (
 			title: string,
@@ -7537,22 +7283,16 @@ export const mountDAW = (
 		/** 大きな「作る」ボタン・「もう1回」。選んだジャンルと歌で1曲作る。 */
 		const composeSelected = (): void => {
 			const g = genre;
-			const vocal = g.engine === "song" && vocalOn;
-			const title =
-				g.engine === "accomp"
-					? g.label
-					: `${g.label}・${vocal ? "歌あり" : "インスト"}`;
+			const vocal = vocalOn;
+			const title = `${g.label}・${vocal ? "歌あり" : "インスト"}`;
 			const run = (): void => {
 				composing = { title, vocal };
 				if (!vocal) clearAllVocals();
-				if (g.engine === "accomp") runComposeAccomp();
-				else runCompose(vocal);
+				runCompose(vocal);
 			};
 			composeWithConfirm(
 				"作る",
-				g.engine === "accomp"
-					? "今あるノートをすべて消して、BGM（伴奏主体のループ曲・約2分半〜3分・ドラムなし）を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）"
-					: `今あるノートをすべて消して、${g.label}の曲（${composeBarsLabel()}）を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
+				`今あるノートをすべて消して、${g.label}の曲（${composeBarsLabel()}）を新しく作ります。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
 				run,
 			);
 		};
@@ -7560,7 +7300,7 @@ export const mountDAW = (
 		refs.composeAgain.addEventListener("click", composeSelected);
 
 		/**
-		 * 作り終えたら結果カードを出す（runCompose / runComposeAccomp の最後から呼ぶ）。
+		 * 作り終えたら結果カードを出す（runCompose の最後から呼ぶ）。
 		 * 楽器は利用者が自分で選んだプリセットを使ったときだけ、その旨と「ジャンルに任せる」を出す。
 		 */
 		const showComposeResult = (r: {

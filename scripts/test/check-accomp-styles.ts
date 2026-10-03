@@ -497,19 +497,13 @@ section("DAW のミックス解放（§2.4）");
 	};
 	const release = fn("releaseAccompMix");
 	const runCompose = fn("runCompose");
-	const runAccomp = fn("runComposeAccomp");
 	const problems: string[] = [];
 	if (/compose-accomp-tables/.test(daw))
 		problems.push("compose-accomp-tables を import している");
 	if (/ACCOMP_MIX|ACCOMP_COMPOSE_SLOT|Record<AccompSlot/.test(daw))
 		problems.push("ACCOMP_MIX か4枠の固定の対応を持っている");
-	if (
-		!/accompMixToRelease\(/.test(release) ||
-		!/composedAccompMix/.test(release)
-	)
-		problems.push(
-			"releaseAccompMix が accompMixToRelease と覚えた song.mix を使っていない",
-		);
+	if (!/accompMixToRelease\(/.test(release))
+		problems.push("releaseAccompMix が accompMixToRelease を使っていない");
 	if (
 		!(
 			runCompose.indexOf("releaseAccompMix()") >= 0 &&
@@ -520,29 +514,11 @@ section("DAW のミックス解放（§2.4）");
 		problems.push(
 			"runCompose が composeSetting を書き換える前に releaseAccompMix を呼んでいない",
 		);
-	if (
-		!/composedAccompMix = \{ compose: song\.compose, mix: song\.mix \}/.test(
-			runAccomp,
-		)
-	)
-		problems.push("runComposeAccomp が作った時点の song.mix を覚えていない");
-	// MML を読み込んだら覚えた song.mix を捨てる（#compose は種を含まず、別の曲でも同じ文字列になる）
-	if (
-		!/composeSetting = meta\.compose \?\? null;\n(?:\s*\/\/[^\n]*\n)*\s*composedAccompMix = null;/.test(
-			daw,
-		)
-	)
-		problems.push(
-			"MML の読み込みで、覚えた song.mix を捨てていない（#compose が同じ別の曲と比べてしまう）",
-		);
-	if (!/accompPresetSlots\(song\)/.test(runAccomp))
-		problems.push("runComposeAccomp が層の定義から枠を引いていない");
-	if (!/song\.mix\.drum/.test(runAccomp) || /NO_DRUM_PATTERN/.test(runAccomp))
-		problems.push("runComposeAccomp のドラムが曲のミックスでない");
-	if (!/recentAccompSignatures\.set\(song\.plan\.style/.test(runAccomp))
-		problems.push("直近の計画をスタイル id ごとに持っていない");
+	// DAW の入口（BGM カード）は 2026-10-03 に外した（docs/handover-compose.md §0）
+	if (/composeAccomp\(/.test(daw))
+		problems.push("daw.ts が composeAccomp を呼んでいる（入口は外した）");
 	ok(
-		"daw.ts: スタイルの表を直接見ず（ACCOMP_MIX・4枠の固定の対応が無い）、作った時点の song.mix を覚えて比べ（MML を読み込んだら捨てる）、層の定義から枠を引き、ドラムは曲のミックス、直近の計画はスタイルごと。歌ものの作曲は composeSetting を書き換える前に解放する",
+		"daw.ts: スタイルの表を直接見ず（ACCOMP_MIX・4枠の固定の対応が無い）、読み込んだ伴奏主体の曲のミックスは歌ものの作曲で composeSetting を書き換える前に解放する。伴奏主体の入口は持たない",
 		problems.length === 0,
 		problems,
 	);

@@ -131,7 +131,6 @@ export type DawUIRefs = {
 	composeGenres: HTMLElement;
 	composeVocal: HTMLElement;
 	composeVoice: HTMLSelectElement;
-	composeVocalHint: HTMLElement;
 	composeResult: HTMLElement;
 	composeResultFacts: HTMLElement;
 	composeResultNote: HTMLElement;
@@ -142,12 +141,7 @@ export type DawUIRefs = {
 	composeSavedTitle: HTMLElement;
 	composeSavedList: HTMLElement;
 	composeMore: HTMLDetailsElement;
-	/** 「曲の形」（J-POP カードのときだけ効く）。値は既存のテンプレート名か `custom`。 */
-	composeTemplate: HTMLSelectElement | null;
-	composeTemplateHint: HTMLElement;
-	composeSectionsRow: HTMLElement;
 	composeTempo: HTMLInputElement;
-	composeSections: HTMLElement;
 	composeSectionsLen: HTMLElement;
 	composeKey: HTMLSelectElement;
 	composeKeyHint: HTMLElement;
@@ -562,7 +556,6 @@ export const buildUI = (
           <button type="button" class="dtm-seg-btn" role="radio" aria-checked="false" data-vocal="off">インスト</button>
         </div>
         <select class="dtm-select dtm-compose-voice" data-dtm="compose-voice" aria-label="歌う声" title="メロディを歌う声。トラックの「歌唱モデル」と同じものです"></select>
-        <span class="dtm-hint" data-dtm="compose-vocal-hint"></span>
       </div>
       <button class="dtm-btn dtm-btn--success dtm-compose-go" data-dtm="macro-compose">${icon("play", 14)} 作る</button>
       <p class="dtm-hint dtm-compose-len" data-dtm="compose-sections-len"></p>
@@ -586,30 +579,6 @@ export const buildUI = (
       <details class="dtm-compose-sub" data-dtm="compose-more">
         <summary>詳しく</summary>
         <div class="dtm-compose-more-body">
-      <div class="dtm-row" data-dtm="compose-template-row">
-        <span class="dtm-label">曲の形</span>
-        <select class="dtm-select" data-dtm="compose-template" title="J-POPの曲の並びを選びます">
-          <option value="jpop_standard">王道（2番・Cメロ・ラスサビ）</option>
-          <option value="1chorus">1コーラス（短め）</option>
-          <option value="jpop_drop">落ちサビ入り</option>
-          <option value="verse_chorus">Bメロなし（洋楽風）</option>
-          <option value="custom">作る部分を自分で選ぶ</option>
-        </select>
-        <span class="dtm-hint" data-dtm="compose-template-hint"></span>
-      </div>
-      <div class="dtm-row" data-dtm="compose-sections-row">
-        <span class="dtm-label">作る部分</span>
-        <div class="dtm-checks" data-dtm="compose-sections">
-          <label class="dtm-check"><input type="checkbox" value="intro" checked>イントロ</label>
-          <label class="dtm-check"><input type="checkbox" value="verse" checked>Aメロ</label>
-          <label class="dtm-check"><input type="checkbox" value="prechorus" checked>Bメロ</label>
-          <label class="dtm-check"><input type="checkbox" value="chorus" checked>サビ</label>
-          <label class="dtm-check"><input type="checkbox" value="bridge">Cメロ</label>
-          <label class="dtm-check"><input type="checkbox" value="drop_chorus">落ちサビ</label>
-          <label class="dtm-check"><input type="checkbox" value="interlude">間奏</label>
-          <label class="dtm-check"><input type="checkbox" value="outro">アウトロ</label>
-        </div>
-      </div>
       <div class="dtm-row" data-dtm="compose-tempo-row">
         <span class="dtm-label">テンポ</span>
         <input type="number" class="dtm-input dtm-compose-tempo" data-dtm="compose-tempo" min="40" max="300" step="1" inputmode="numeric" placeholder="おまかせ" aria-label="テンポ（空ならジャンルに合わせる）" title="空ならジャンルに合わせて決めます">
@@ -941,7 +910,6 @@ export const buildUI = (
 		composeGenres: sel("compose-genres"),
 		composeVocal: sel("compose-vocal"),
 		composeVoice: sel<HTMLSelectElement>("compose-voice"),
-		composeVocalHint: sel("compose-vocal-hint"),
 		composeResult: sel("compose-result"),
 		composeResultFacts: sel("compose-result-facts"),
 		composeResultNote: sel("compose-result-note"),
@@ -951,11 +919,7 @@ export const buildUI = (
 		composeSavedTitle: sel("compose-saved-title"),
 		composeSavedList: sel("compose-saved-list"),
 		composeMore: sel<HTMLDetailsElement>("compose-more"),
-		composeTemplate: sel("compose-template") as HTMLSelectElement | null,
-		composeTemplateHint: sel("compose-template-hint"),
-		composeSectionsRow: sel("compose-sections-row"),
 		composeTempo: sel<HTMLInputElement>("compose-tempo"),
-		composeSections: sel("compose-sections"),
 		composeSectionsLen: sel("compose-sections-len"),
 		composeKey: sel("compose-key"),
 		composeKeyHint: sel("compose-key-hint"),

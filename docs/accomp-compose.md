@@ -3,6 +3,10 @@
 2026-09-28 作成、2026-10-01 に要約。経緯・検討して捨てた案・実測の詳細表・工数は git 履歴（この版より前）にある。
 作業の前に `docs/handover-compose.md` を読むこと（handover から本書へリンク済み）。後継の設計は `docs/accomp-style-engine.md`（以下「後継書」）。
 
+**2026-10-03: DAW の入口（「BGM」カード）は外した。** 狙いは「0次元のような曲」だったが、1曲の模倣にずれた
+（表は fb・fa・backing の小節を写した句）。生成器・`#compose=style:…` の読み込み・`releaseAccompMix` は残す。
+作り直すなら handover「0. ジャンルに載せてよい基準」に沿って、複数の曲から規則を測るところからやり直す。
+
 **読み替え（後継書の S0・S1 で変わった点）**
 - `#compose` の書式は `accomp:<baseKey>:<k>` から `style:fb.v1:<baseKey>:<k>` に変わった（旧書式も読める）。本書の `accomp:…` は旧書式。
 - 表は `src/compose/compose-accomp-tables.ts` から `src/compose/accomp-styles/fb.ts` へ移った。`compose-accomp-tables.ts` は読み直すだけの互換の口。

@@ -572,7 +572,7 @@ const COMPOSE_STEPS: TourStep[] = [
 	{
 		target: '[data-dtm="compose-genres"]',
 		title: "① 何を作るか選ぶ",
-		body: `<p>J-POP・ボカロ・ゲームBGM・界隈曲・BGM などから<b>ジャンル</b>を選びます。</p>
+		body: `<p>界隈曲のリスペクト系・ゲームBGM から<b>ジャンル</b>を選びます。</p>
 <p>楽器・テンポ・曲の長さはジャンルに合わせて決まります。下の <b>歌あり／インスト</b> で歌わせるかも選べます。</p>`,
 	},
 	{
@@ -584,7 +584,7 @@ const COMPOSE_STEPS: TourStep[] = [
 	{
 		target: '[data-dtm="compose-more"] > summary',
 		title: "③ こだわるなら「詳しく」",
-		body: `<p>曲の形・テンポ・調（<b>喜ばしい</b>・<b>物悲しい</b> などの雰囲気）・音階を指定できます。</p>
+		body: `<p>テンポ・調（<b>喜ばしい</b>・<b>物悲しい</b> などの雰囲気）・音階を指定できます。</p>
 <p>こだわりが無ければ触らなくてOK。押すたびに違う曲ができます。</p>`,
 	},
 	PLAY_STEP,

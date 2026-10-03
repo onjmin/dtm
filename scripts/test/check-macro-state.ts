@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { STRUCTURE_TEMPLATES } from "../../src/compose/compose-sections";
 import {
 	COMPOSE_GENRES,
-	COMPOSE_SHAPES,
+	DEFAULT_COMPOSE_GENRE,
 	genreFromTemplate,
 } from "../../src/ui/compose-genres";
 import {
@@ -10,11 +10,9 @@ import {
 	MACRO_STORAGE_KEYS,
 	readKeptSong,
 	readKeptSongs,
-	readMacroSections,
 	readMacroSetting,
 	writeKeptSong,
 	writeKeptSongs,
-	writeMacroSections,
 	writeMacroSetting,
 } from "../../src/ui/state/macro-state";
 
@@ -69,39 +67,6 @@ assert.equal(readMacroSetting("shift"), "48");
 writeMacroSetting("transpose", "2");
 assert.equal(readMacroSetting("transpose"), "2");
 
-// 3. セクション（配列）の読み書きテスト
-mockStorage.clear();
-assert.equal(readMacroSections(), null, "未設定時は null");
-
-const testSections = ["intro", "verse", "chorus", "outro"];
-writeMacroSections(testSections);
-assert.deepEqual(
-	readMacroSections(),
-	testSections,
-	"配列がシリアライズ・デシリアライズされること",
-);
-
-// 不正な JSON または不正な型のテスト
-mockStorage.setItem(MACRO_STORAGE_KEYS.sections, "invalid-json");
-assert.equal(readMacroSections(), null, "不正な JSON の場合は null を返すこと");
-
-mockStorage.setItem(
-	MACRO_STORAGE_KEYS.sections,
-	JSON.stringify({ not: "an array" }),
-);
-assert.equal(
-	readMacroSections(),
-	null,
-	"オブジェクト等の場合は null を返すこと",
-);
-
-mockStorage.setItem(MACRO_STORAGE_KEYS.sections, JSON.stringify([1, 2, 3]));
-assert.equal(
-	readMacroSections(),
-	null,
-	"文字列以外の配列が含まれる場合は null を返すこと",
-);
-
 // 4. localStorage がアクセス例外を投げる環境（クォータ超過やプライベートブラウズ）での安全性テスト
 const throwingStorage = {
 	getItem() {
@@ -118,14 +83,8 @@ assert.equal(
 	null,
 	"例外発生時でもクラッシュせず null を返すこと",
 );
-assert.equal(
-	readMacroSections(),
-	null,
-	"例外発生時でもクラッシュせず null を返すこと",
-);
 assert.doesNotThrow(() => {
 	writeMacroSetting("template", "custom");
-	writeMacroSections(["verse"]);
 }, "書き込み時の例外でもクラッシュしないこと");
 
 // 5. localStorage が未定義の環境
@@ -135,10 +94,8 @@ assert.equal(
 	null,
 	"localStorage 未定義でも null",
 );
-assert.equal(readMacroSections(), null, "localStorage 未定義でも null");
 assert.doesNotThrow(() => {
 	writeMacroSetting("template", "custom");
-	writeMacroSections(["verse"]);
 }, "localStorage 未定義でも書き込みでクラッシュしないこと");
 
 console.log("✓ すべてのテストに合格しました！");
@@ -229,22 +186,14 @@ console.log("✓ すべてのテストに合格しました！");
 {
 	const names = new Set(STRUCTURE_TEMPLATES.map((t) => t.name));
 	for (const g of COMPOSE_GENRES) {
-		for (const vocal of [true, false])
-			for (const shape of COMPOSE_SHAPES) {
-				const t = g.template(vocal, shape);
-				if (t !== undefined)
-					assert.ok(names.has(t), `${g.id} → ${t} は既存テンプレート`);
-			}
+		for (const vocal of [true, false]) {
+			const t = g.template(vocal);
+			assert.ok(names.has(t), `${g.id} → ${t} は既存テンプレート`);
+		}
 	}
-	// 旧「構成」の保存値はすべてカードへ戻せる（往復でテンプレート名が変わらない）
+	// 残したカードの旧「構成」の保存値は、そのカードへ戻せる（往復でテンプレート名が変わらない）
 	for (const old of [
-		"1chorus",
-		"jpop_standard",
-		"jpop_drop",
-		"vocaloid",
-		"verse_chorus",
 		"game_loop",
-		"kaiwai",
 		"kaiwai_kaisen",
 		"kaiwai_2go_lead",
 		"kaiwai_2go",
@@ -254,18 +203,10 @@ console.log("✓ すべてのテストに合格しました！");
 		const m = genreFromTemplate(old);
 		const g = COMPOSE_GENRES.find((x) => x.id === m.genre);
 		assert.ok(g, old);
-		assert.equal(
-			g.template(m.vocal ?? g.vocalDefault, m.shape),
-			old,
-			`${old} の移行`,
-		);
+		assert.equal(g.template(m.vocal ?? g.vocalDefault), old, `${old} の移行`);
 	}
-	const custom = genreFromTemplate("custom");
-	assert.equal(custom.genre, "jpop");
-	assert.equal(custom.shape, "custom");
-	assert.equal(
-		COMPOSE_GENRES.find((x) => x.id === "jpop")?.template(true, "custom"),
-		undefined,
-	);
+	// 外したジャンルの保存値は既定のカードへ落ちる
+	for (const old of ["jpop_standard", "vocaloid", "kaiwai", "custom"])
+		assert.equal(genreFromTemplate(old).genre, DEFAULT_COMPOSE_GENRE, old);
 	console.log("  ✓ ジャンルのカードとテンプレートの対応");
 }
