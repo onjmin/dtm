@@ -21,8 +21,10 @@ loader._load = (request, ...rest) =>
 
 const { normalizeLyrics } =
 	require("../../src/voice/lyrics") as typeof import("../../src/voice/lyrics");
-const { composeLyrics, composeSong } =
+const { composeLyrics, composeSong, isMonophonic } =
 	require("../../src/compose/compose") as typeof import("../../src/compose/compose");
+const { MMLCore } =
+	require("../../src/mml/mml-core") as typeof import("../../src/mml/mml-core");
 const { createLyricWriter } =
 	require("../../src/compose/compose-lyrics") as typeof import("../../src/compose/compose-lyrics");
 
@@ -214,6 +216,101 @@ console.log("--- 曲に載せる ---");
 		castRecurs >= songs / 2,
 		`登場物が戻ってくる（${castRecurs}/${songs}曲）`,
 		"曲ごとに引いた登場物のどれかが3回以上出る（層⑤）",
+	);
+}
+
+console.log("--- 和音のトラック ---");
+{
+	// 既にある曲のトラックへ歌詞を当てるとき（DAW の「自動で作る」）、和音は非対応と出す。
+	const n = (startStep: number, durationSteps: number) => ({
+		startStep,
+		durationSteps,
+	});
+	check(
+		isMonophonic([n(0, 48), n(48, 48), n(96, 96)]),
+		"隙間なく続く単音は対象",
+		"開始が直前の音の終わりと同じ（レガート）なら重なっていない",
+	);
+	check(
+		isMonophonic([n(0, 24), n(48, 48)]),
+		"休符をはさむ単音は対象",
+		"間が空くのはふつうの旋律",
+	);
+	check(
+		!isMonophonic([n(0, 48), n(0, 48)]),
+		"同時に始まる2音は非対応",
+		"和音は1音符1文字に割り当てられない",
+	);
+	check(
+		!isMonophonic([n(0, 96), n(48, 48)]),
+		"途中で重なる2音は非対応",
+		"並び順を入れ替えても同じ判定になる（startStep で並べ直す）",
+	);
+	check(
+		!isMonophonic([n(48, 48), n(0, 96)]),
+		"順番が逆でも重なりを見つける",
+		"渡された順に依らない",
+	);
+}
+
+console.log("--- 読み込んだ曲のトラックへ当てる ---");
+{
+	// DAW の「自動で作る」と同じ経路（トラックの音符 → isMonophonic → composeLyrics）を
+	// ヘッドレスで通す。音符は MMLCore に置いて、アプリと同じ形で取り出す。
+	const renderConfig: import("../../src/types").RenderConfig = {
+		stepsPerBar: STEPS_PER_BAR,
+		keyCount: 88,
+		pitchRangeStart: 0,
+		unitsPerRow: 31,
+		keyHeight: 12,
+		stepWidth: 2,
+		edo: 12,
+	};
+	const newCore = () =>
+		new MMLCore(
+			{ onMMLGenerated: () => {}, onNotesChanged: () => {} },
+			100,
+			() => renderConfig,
+		);
+	const core = newCore();
+	core.setLoadMode(true);
+	// 4小節ぶんの8分音符（単音）。
+	for (let i = 0; i < 32; i++)
+		core.addNote(i * (STEPS_PER_BAR / 8), 60 * 31 + (i % 5) * 31 * 2, {
+			noteLengthSteps: STEPS_PER_BAR / 8,
+		});
+	core.setLoadMode(false);
+	const notes = core.getNotes();
+	check(
+		notes.length === 32 && isMonophonic(notes),
+		`置いた音符を単音と判定（${notes.length}音）`,
+		"読み込んだ曲のトラックでも、重なりが無ければ歌詞を当てられる",
+	);
+	const text = composeLyrics(
+		notes.map((n) => ({
+			startStep: n.startStep,
+			pitchUnits: n.pitchUnits,
+			durationSteps: n.durationSteps,
+			velocity: n.velocity ?? 100,
+		})),
+		{ stepsPerBar: STEPS_PER_BAR, random: seededRandom(777), vocab: "kaiwai" },
+	);
+	const syllables = normalizeLyrics(text).length;
+	check(
+		syllables === notes.length,
+		`当てた歌詞の音節数（${syllables} / 音符 ${notes.length}）`,
+		"1音符に1音節。読点（ブレス）は音符を消費しない",
+	);
+
+	const chordCore = newCore();
+	chordCore.setLoadMode(true);
+	chordCore.addNote(0, 60 * 31, { noteLengthSteps: STEPS_PER_BAR / 4 });
+	chordCore.addNote(0, 64 * 31, { noteLengthSteps: STEPS_PER_BAR / 4 });
+	chordCore.setLoadMode(false);
+	check(
+		!isMonophonic(chordCore.getNotes()),
+		"和音を置いたトラックは非対応と判定",
+		"UI は「和音のトラックは非対応です」と出して何も書かない",
 	);
 }
 

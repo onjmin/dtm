@@ -64,6 +64,7 @@ import {
 	type ComposedNote,
 	composeLyrics,
 	composeSong,
+	isMonophonic,
 	seededRandom,
 } from "../compose/compose";
 import { accompMixToRelease } from "../compose/compose-accomp";
@@ -246,6 +247,10 @@ const LYRIC_INPUT_INFO_HTML = `
   <pre>ど れ み ふぁ そ   ← 5音節
 c  d  e  f   g    ← 音符5つ</pre>
   <p><small>右上の「◯音節」は、この歌詞が消費する音符の数です。音符の数と合っているか確認できます。</small></p>
+
+  <h4>自動で作る</h4>
+  <p>「自動で作る」を押すと、<strong>いま置いてある音符に合わせて仮歌詞を作ります</strong>（読み込んだ曲のトラックでも使えます）。音符の数とぴったり合い、伸びる音には歌いやすい母音が来ます。歌詞の意味は作っていないので、気に入らなければ押し直すか、そのまま書き換えてください。語彙は「何を作る？」で選んでいるジャンルに合わせます。</p>
+  <p><strong>和音のトラックは非対応です。</strong>1つの音符に1文字を当てるため、同時に鳴る音があるトラックには割り当てられません（押すと「非対応」と出ます）。主旋律のように音が重ならないトラックでお使いください。</p>
 
   <h4>特殊な文字</h4>
   <ul>
@@ -4268,6 +4273,7 @@ export const mountDAW = (
           <input type="range" class="dtm-range dtm-grow" data-dtm="lyric-vol" min="0" max="${MAX_VOCAL_VOLUME}" aria-label="歌唱の声量（100=等倍、100超でブースト、既定200）">
           <span class="dtm-label" data-dtm="lyric-vol-label"></span>
         </div>
+        <button class="dtm-btn dtm-btn--ghost" data-dtm="lyric-auto" title="このトラックに置いてある音符へ仮歌詞を当てる（和音のトラックは非対応）">歌詞を作る</button>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="lyric-terms" style="font-size:10px;gap:4px;color:var(--dtm-warn)">
         <span>使用時には</span>
@@ -4742,6 +4748,54 @@ export const mountDAW = (
 				active.lyrics = lyricInput.value;
 				updateLyricCount();
 				redrawAll(); // ノート上の歌詞表示を追従させる
+				fireLyricsChange(active);
+			});
+			const lyricAuto = lyricDiv.querySelector(
+				'[data-dtm="lyric-auto"]',
+			) as HTMLButtonElement;
+			lyricAuto.addEventListener("click", () => {
+				// すでに置いてある音符に歌詞を当てる（「歌入り作曲」と同じ生成器。
+				// docs/lyric-design.md）。語彙は「何を作る？」で選んでいるジャンルに合わせる。
+				const notes = [...active.core.getNotes()].sort(
+					(a, b) => a.startStep - b.startStep,
+				);
+				if (notes.length === 0) {
+					showModal(
+						"歌詞を自動で作る",
+						"<p>このトラックには音符がありません。先に音符を置くか、曲を読み込んでください。</p>",
+					);
+					return;
+				}
+				// 1音符に1文字を当てる作りなので、同時に鳴る音（和音）があるトラックは扱えない。
+				if (!isMonophonic(notes)) {
+					showModal(
+						"歌詞を自動で作る",
+						"<p><strong>和音のトラックは非対応です。</strong></p><p>歌詞は1つの音符に1文字を当てるので、同時に鳴る音があるトラックには割り当てられません。主旋律のように音が重ならないトラックを選んでください。</p>",
+					);
+					return;
+				}
+				const genre = findComposeGenre(readMacroSetting("genre"));
+				const vocab = STRUCTURE_TEMPLATES.find(
+					(t) => t.name === genre.template(true),
+				)?.lyricVocab;
+				active.lyrics = composeLyrics(
+					notes.map((n) => ({
+						startStep: n.startStep,
+						pitchUnits: n.pitchUnits,
+						durationSteps: n.durationSteps,
+						velocity: n.velocity ?? 100,
+					})),
+					{ stepsPerBar: renderConfig.stepsPerBar, vocab },
+				);
+				// 声が未選択だと書いても歌わないので、1つ配る（UST取り込みと同じ扱い。
+				// オクターブは触らない——置いてある音符の高さがそのまま歌う高さ）。
+				if (!active.lyricModel.trim()) {
+					active.lyricModel = pickComposeVocal();
+					reloadVoicesForModel(active.lyricModel);
+					onMelodyVoicePicked?.(active, active.lyricModel);
+				}
+				updateTrackPanel(); // 歌詞欄・音節数・声の表示をまとめて作り直す
+				redrawAll();
 				fireLyricsChange(active);
 			});
 			lyricVol.addEventListener("input", () => {

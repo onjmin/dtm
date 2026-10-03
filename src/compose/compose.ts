@@ -7218,6 +7218,23 @@ export const alignLyrics = (
 };
 
 /**
+ * 歌詞を当てられる並びか（同時に鳴る音が無いか）。
+ *
+ * 歌詞は音符1つに音節1つなので、和音のトラックには割り当てられない（UI は「非対応」と出す）。
+ * 隙間なく続くだけ（レガート）は重なりではないので、開始が直前の音の終わりと同じなら許す。
+ */
+export const isMonophonic = (
+	notes: readonly { startStep: number; durationSteps: number }[],
+): boolean => {
+	const sorted = [...notes].sort((a, b) => a.startStep - b.startStep);
+	return !sorted.some(
+		(n, i) =>
+			i > 0 &&
+			n.startStep < sorted[i - 1].startStep + sorted[i - 1].durationSteps,
+	);
+};
+
+/**
  * メロディに乗る歌詞を作る。語は [compose-lyrics.ts](compose-lyrics.ts) が文の型から組む。
  *
  * `lyrics.ts` の約束は音符1つ＝音節1つ。だから息継ぎの間（4小節）ごとに「音符の数ぴったり」の
