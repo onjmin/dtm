@@ -7089,9 +7089,12 @@ export const mountDAW = (
 							autoComposeVocal = melodyTrack.lyricModel;
 							writeMacroSetting("autoVoice", autoComposeVocal);
 						}
+						// 歌詞も種から引く（同じ #seed なら同じ歌詞になる）。曲の抽選とは別の
+						// 列を使うので、歌詞を作り直しても曲の再現は変わらない。
 						melodyTrack.lyrics = composeLyrics(song.melody, {
 							stepsPerBar: renderConfig.stepsPerBar,
-							words: song.lyricWords,
+							random: seededRandom((seed ^ 0x5bf03635) >>> 0),
+							vocab: song.lyricVocab,
 						});
 						autoComposeVocalTracks.set(melodyTrack, melodyTrack.lyrics);
 						fireLyricsChange(melodyTrack);

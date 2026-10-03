@@ -52,6 +52,7 @@ import {
 	varyNigo,
 } from "./compose-kaiwai";
 import { type ResolvedComposeKey, resolveComposeKey } from "./compose-keys";
+import { createLyricWriter, type LyricVocabName } from "./compose-lyrics";
 import {
 	type Band,
 	band,
@@ -1541,8 +1542,8 @@ export type ComposeResult = {
 	drum: string;
 	/** 曲に合わせて組み込みから自動選択された楽器プリセット名（INSTRUMENT_PRESETS のキー）。 */
 	instrument: string;
-	/** 仮歌詞の語彙（テンプレートが持つときだけ）。{@link composeLyrics} の `words`。 */
-	lyricWords?: string[];
+	/** 仮歌詞の語彙（テンプレートが持つときだけ）。{@link composeLyrics} の `vocab`。 */
+	lyricVocab?: LyricVocabName;
 	melody: ComposedNote[];
 	submelody: ComposedNote[];
 	bass: ComposedNote[];
@@ -6831,7 +6832,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	};
 	result.stats.attempts = count;
 	result.stats.rejected = rejected;
-	result.lyricWords = template?.lyricWords;
+	result.lyricVocab = template?.lyricVocab;
 	result.drum = template?.drums
 		? pickTemplateDrum(result, template.drums, rnd, options.stepsPerBar)
 		: pickBuiltinDrum(result, rnd);
@@ -7181,50 +7182,6 @@ export const pickBuiltinInstrument = (
 // ============================================================
 
 /**
- * 歌詞に使う語句の素。意味のある歌詞は作らない——ここが作るのは「メロディに正しく乗る、
- * 日本語として発音できる音の並び」で、詞そのものはユーザーが書き換える前提。母音で終わる
- * 開音節を主体にし、2〜3拍の語をまぜて単調な羅列にならないようにする。
- */
-const LYRIC_WORDS: string[] = [
-	"あさ",
-	"ひかり",
-	"そら",
-	"かぜ",
-	"ゆめ",
-	"こえ",
-	"みち",
-	"とおく",
-	"きみ",
-	"ぼく",
-	"ここ",
-	"いま",
-	"また",
-	"ずっと",
-	"そっと",
-	"きっと",
-	"あした",
-	"よる",
-	"ほし",
-	"うみ",
-	"はな",
-	"なみだ",
-	"わらう",
-	"あるく",
-	"さがす",
-	"とどく",
-	"うたう",
-	"めぐる",
-	"かさなる",
-	"つづく",
-	"ひとり",
-	"ふたり",
-	"しずか",
-	"まぶしい",
-	"せかい",
-	"きせつ",
-];
-
-/**
  * 主旋律に付いた歌詞を、同じ場所で歌う別のトラック（ハモリ）へ写す。`composeLyrics` を
  * もう一度呼ぶと2人が違う言葉を同時に歌うことになるので、発音位置で突き合わせて並べ直す。
  */
@@ -7261,51 +7218,77 @@ export const alignLyrics = (
 };
 
 /**
- * メロディに乗る歌詞を作る。`lyrics.ts` の約束は音符1つ＝音節1つ。伸ばし棒（`ー`）も
- * 1音節を占めるので、`ー` は音符を1つ消費する形でしか置かない（足して伸ばすと後半の歌詞が
- * 全部ずれる）。読点（`、`）だけは音符を消費せず、直前の音節に息継ぎフラグを立てる。
+ * メロディに乗る歌詞を作る。語は [compose-lyrics.ts](compose-lyrics.ts) が文の型から組む。
+ *
+ * `lyrics.ts` の約束は音符1つ＝音節1つ。だから息継ぎの間（4小節）ごとに「音符の数ぴったり」の
+ * 文を組み、1文字ずつ音符へ載せる。読点（`、`）だけは音符を消費せず、直前の音節に息継ぎを立てる。
+ *
+ * 実測（[docs/lyric-design.md](../../docs/lyric-design.md)）に合わせてあるところ:
+ *  - 伸ばし棒（`ー`）は置かない（原曲は16曲中15曲で2%以下）。
+ *  - 文は途中の休符をまたいでよい（原曲も「イワシが／つちから／はえて／くるんだ」と続ける）。
+ *  - 同じ形のまとまりには歌詞を使い回す。原曲の句の重複は23%、反復の単位は中央4句。
+ *  - 伸びる音（4分以上）には あ・い を寄せ、え・お・ん を避ける（原曲は あ 33→39%）。
+ *  - 登場物は曲ごとに固定する（{@link createLyricWriter}）。
  */
 export const composeLyrics = (
 	melody: ComposedNote[],
-	options: { stepsPerBar: number; random?: () => number; words?: string[] },
+	options: {
+		stepsPerBar: number;
+		random?: () => number;
+		vocab?: LyricVocabName;
+	},
 ): string => {
 	const rnd = options.random ?? Math.random;
 	const { stepsPerBar } = options;
 	const sorted = [...melody].sort((a, b) => a.startStep - b.startStep);
 	if (sorted.length === 0) return "";
+	const writer = createLyricWriter({ random: rnd, vocab: options.vocab });
 	const quarter = stepsPerBar / 4;
 
-	/** 語を1音節ずつ切り出して供給する。尽きたら次の語を引く。 */
-	let buffer: string[] = [];
-	const nextKana = (): string => {
-		if (buffer.length === 0)
-			buffer = [...pick(options.words ?? LYRIC_WORDS, rnd)];
-		return buffer.shift() as string;
-	};
-
-	const out: string[] = [];
+	// まとまりの切れ目は4小節ごと（息継ぎ）。その中では休符をまたいで文を続ける。
+	const groups: { notes: ComposedNote[]; breath: boolean }[] = [];
+	let current: ComposedNote[] = [];
 	for (let i = 0; i < sorted.length; i++) {
 		const note = sorted[i];
-		const prev = sorted[i - 1];
-		// 同じ高さへ短い音で続くところは母音を伸ばす（メリスマ）。語の途中では切らない。
-		const holds =
-			i > 0 &&
-			prev !== undefined &&
-			note.pitchUnits === prev.pitchUnits &&
-			note.durationSteps < quarter &&
-			buffer.length === 0 &&
-			rnd() < 0.5;
-		out.push(holds ? "ー" : nextKana());
-		// フレーズの切れ目（4小節ごと）で息継ぎ。`、` は音符を消費しない。
+		current.push(note);
 		const next = sorted[i + 1];
+		if (!next) break;
 		if (
-			next &&
 			Math.floor(note.startStep / (stepsPerBar * 4)) !==
-				Math.floor(next.startStep / (stepsPerBar * 4))
+			Math.floor(next.startStep / (stepsPerBar * 4))
 		) {
-			out.push("、");
-			buffer = []; // フレーズをまたいで語を割らない
+			groups.push({ notes: current, breath: true });
+			current = [];
 		}
+	}
+	if (current.length > 0) groups.push({ notes: current, breath: false });
+
+	/** まとまりの形（長さと音高の動き）。同じ形には同じ歌詞を載せる。 */
+	const shapeKey = (notes: ComposedNote[]): string =>
+		notes
+			.map((n, i) =>
+				i === 0
+					? `0:${n.durationSteps}`
+					: `${n.pitchUnits - notes[i - 1].pitchUnits}:${n.durationSteps}`,
+			)
+			.join(",");
+
+	const byShape = new Map<string, string>();
+	const out: string[] = [];
+	for (const group of groups) {
+		const key = shapeKey(group.notes);
+		const kept = byShape.get(key);
+		// 使い回すのは句として聞こえる長さ（5音以上）だけ。短い切れ端まで揃えると
+		// 全曲が同じ1文の繰り返しになる。3割だけ使い回すと実測の句の重複（23%）に乗る。
+		const text =
+			kept !== undefined && group.notes.length >= 5 && rnd() < 0.3
+				? kept
+				: writer.write(
+						group.notes.length,
+						group.notes.map((n) => n.durationSteps >= quarter),
+					);
+		if (kept === undefined) byShape.set(key, text);
+		out.push(group.breath ? `${text}、` : text);
 	}
 	return out.join("");
 };

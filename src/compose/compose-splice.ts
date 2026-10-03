@@ -956,7 +956,7 @@ export const composeSplice = (
 		...base,
 		drum,
 		instrument,
-		lyricWords: template.lyricWords,
+		lyricVocab: template.lyricVocab,
 		arrange: {
 			backing: [{ pattern: chordPattern, sections: null, octave: 0 }],
 			sparkle: null,

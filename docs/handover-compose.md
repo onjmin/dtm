@@ -38,6 +38,10 @@
   詠唱型の歌メロ（`form: "chant"`、1〜2小節の型を繰り返す）・4つ打ち・8分オクターブのベース・
   四抜き短音階 `yonuki_minor`・二次ドミナント入りの進行プール `KAIWAI_A/B/C`・
   アルペジオ層はラスサビだけ（`sub: "arpeggio"`）。
+- **仮歌詞は文で組む**（`src/compose/compose-lyrics.ts`）。曲ごとに登場物（キャスト）と文末の形を
+  決め、句のモーラ数ぴったりの文を当て、伸びる音には あ・い を寄せる。規則と実測は
+  [docs/lyric-design.md](lyric-design.md)、検算は `scripts/test/check-compose-lyrics.ts`。
+  テンプレートは `lyricVocab`（`"kaiwai"` / 既定は一般）で語彙を選ぶ。
 - **公開の歌メロ素材は `SYNTH_PHRASES`**（`src/compose/compose.ts`）。モチーフのリズム型 × 2小節目 ×
   輪郭の原型（`MOTIF_ARCHETYPES`、手書き）を決定的に組んだもので、どの曲の断片でもない。
   **音の良し悪しは未確認。** 9/18 以前の「合成の輪郭」に近いので、当時の「キャッチーでない」がまた出うる。

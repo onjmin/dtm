@@ -509,7 +509,7 @@ const generatedRows = (
 		const text = composeLyrics(song.melody, {
 			stepsPerBar: STEPS_PER_BAR,
 			random,
-			words: song.lyricWords,
+			vocab: song.lyricVocab,
 		});
 		const kana = [...text].filter((c) => c !== "、");
 		const notes: Note[] = [];

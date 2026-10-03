@@ -2,7 +2,7 @@
  * 伴奏主体モード（`composeAccomp`）の検算（`docs/accomp-compose.md` §12.2・§12.3）。
  *
  * 段階1-A の時点で確かめるのは、表と計画器まで。
- * - 依存: `compose-accomp*.ts` が koe・mml-parser・lyrics・daw を実行時に読まないこと
+ * - 依存: `compose-accomp*.ts` が koe・mml-parser・voice/lyrics・daw を実行時に読まないこと
  * - 表の健全性: 和音がすべて `romanToC` と `parseChord` を通る、借用の組が規則③⑤を満たす、
  *   セル・低音型・和音の打ち方の合計が16、音価が使える8種、ミックスが fb の宣言どおり
  * - `romanToC` の検算: fb のローマ数字をホ長調で鳴らすと gen-fb.mjs の和音名と同じ音になる
@@ -39,7 +39,9 @@ import Module from "node:module";
 type Loader = { _load: (request: string, ...rest: unknown[]) => unknown };
 const loader = Module as unknown as Loader;
 const originalLoad = loader._load;
-const FORBIDDEN = /(@onjmin\/koe|mml-parser|lyrics|(^|\/)daw(-ui)?$)/;
+// 歌詞は歌唱合成の `src/voice/lyrics.ts` を禁じる。`compose-lyrics.ts`（仮歌詞の文の型）は
+// 依存の無い文字列の表なので対象外。
+const FORBIDDEN = /(@onjmin\/koe|mml-parser|voice\/lyrics|(^|\/)daw(-ui)?$)/;
 const forbiddenHits: string[] = [];
 loader._load = (request, ...rest) => {
 	if (FORBIDDEN.test(request)) forbiddenHits.push(request);
@@ -173,7 +175,7 @@ const mod12 = (n: number): number => ((n % 12) + 12) % 12;
 // ============================================================
 section("依存");
 ok(
-	"compose-accomp・-tables・-plan・-realize・-check・accomp-styles は koe・mml-parser・lyrics・daw を読まない",
+	"compose-accomp・-tables・-plan・-realize・-check・accomp-styles は koe・mml-parser・voice/lyrics・daw を読まない",
 	forbiddenHits.length === 0,
 	forbiddenHits,
 );

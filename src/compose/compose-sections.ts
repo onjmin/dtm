@@ -36,6 +36,7 @@ import {
 	type KaiwaiGrammar,
 	type NigoFeel,
 } from "./compose-kaiwai";
+import type { LyricVocabName } from "./compose-lyrics";
 
 /** セクションの種類。 */
 export type SectionKind =
@@ -338,7 +339,7 @@ export type StructureTemplate = {
 	 */
 	vocal?: { duetStyles?: string[]; octave?: true };
 	/** 仮歌詞の語彙。 */
-	lyricWords?: string[];
+	lyricVocab?: LyricVocabName;
 	/**
 	 * 主旋律の書き方。`"riff"` は歌メロの代わりに楽器の16分リフを回す。
 	 * 手本2曲の上声は16分間隔が35〜67%あり、歌メロ（1〜13%）とは別物だった。
@@ -434,49 +435,6 @@ const KAIWAI_C: string[][] = [
 	["F", "G", "Ab", "Bb"],
 	["Dm7", "Em7", "FM7", "G7"],
 ];
-/** 界隈曲の仮歌詞。開音節・2〜3拍・海産物と断片。 */
-const KAIWAI_LYRIC_WORDS: string[] = [
-	"いわし",
-	"くらげ",
-	"さかな",
-	"うみ",
-	"しお",
-	"なみ",
-	"すな",
-	"つち",
-	"そら",
-	"あめ",
-	"かげ",
-	"ひかり",
-	"そこ",
-	"ふかく",
-	"はえる",
-	"とぶ",
-	"しずむ",
-	"ゆれる",
-	"きえる",
-	"とける",
-	"まわる",
-	"ながれる",
-	"こえ",
-	"みず",
-	"ほね",
-	"よる",
-	"あさ",
-	"まち",
-	"ゆび",
-	"くも",
-	"ほし",
-	"つき",
-	"そして",
-	"どこか",
-	"なにも",
-	"ない",
-	"もう",
-	"まだ",
-	"しろい",
-	"あかい",
-];
 
 // 3流派の進行は compose-kaiwai.ts の文法から曲ごとに組む（どの曲の写しでもない）。
 
@@ -543,7 +501,7 @@ const KAIWAI_KAISEN: StructureTemplate = {
 	},
 	vocal: { duetStyles: ["none"] },
 	vocalLine: "sentence",
-	lyricWords: KAIWAI_LYRIC_WORDS,
+	lyricVocab: "kaiwai",
 	// イントロ 2〜3層 → サビ 7層前後 → 間奏 8〜9層。
 	arrange: {
 		backing: [
@@ -561,6 +519,7 @@ const KAIWAI_KAISEN: StructureTemplate = {
 const KAIWAI_NIGO: StructureTemplate = {
 	name: "kaiwai_2go",
 	label: "界隈曲・2号兄貴リスペクト（歌入り）",
+	lyricVocab: "kaiwai",
 	plan: ["intro", "verse", "chorus", "verse", "chorus", "chorus"],
 	sectionSpecs: {
 		intro: { barChoices: [4, 8], seconds: { min: 1, max: 20 } },
@@ -620,6 +579,7 @@ const KAIWAI_NIGO_LEAD: StructureTemplate = {
 const KAIWAI_SPEDER: StructureTemplate = {
 	name: "kaiwai_speder2",
 	label: "界隈曲・Speder2リスペクト（歌入り）",
+	lyricVocab: "kaiwai",
 	plan: ["intro", "verse", "chorus", "verse", "chorus"],
 	sectionSpecs: {
 		intro: {
@@ -888,7 +848,7 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 		// 歌メロは8分で組む（コーパスの主旋律の16分間隔は中央 0.027・p75 0.095。16分で走る曲は例外）。
 		melody: { wideLeapBudget: 3, midBreath: 0.15, groove: "eighth" },
 		vocal: { duetStyles: ["none", "section", "phrase", "chorus", "verse"] },
-		lyricWords: KAIWAI_LYRIC_WORDS,
+		lyricVocab: "kaiwai",
 	},
 
 	// 界隈曲（骨格借用）。所有者の耳コピから抜いた設計図を1つ引き、調だけ変えて、和音・ベース・
@@ -904,7 +864,7 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 		scales: ["yonuki_minor"],
 		instruments: ["retro_game", "synth_pop", "chip_pop"],
 		vocal: { duetStyles: ["none", "section", "phrase", "chorus", "verse"] },
-		lyricWords: KAIWAI_LYRIC_WORDS,
+		lyricVocab: "kaiwai",
 	},
 
 	// 界隈曲（継ぎ合わせ、実験用）。セクションごとに別々の曲の設計図を継ぐ。バンク（compose-section-bank.ts）
@@ -927,7 +887,7 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 			"chip_pop",
 		],
 		vocal: { duetStyles: ["none", "section", "phrase", "chorus", "verse"] },
-		lyricWords: KAIWAI_LYRIC_WORDS,
+		lyricVocab: "kaiwai",
 	},
 
 	// 界隈曲の流派（docs/kaiwai-lineages.md の規則案）。

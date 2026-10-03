@@ -15,6 +15,7 @@
 | `check-compose-accomp.ts` | 伴奏主体モード（[docs/accomp-compose.md](../docs/accomp-compose.md)）の計画・実現・関門・MML 往復の検算。陽性・切除対照つき | `npx tsx scripts/test/check-compose-accomp.ts` |
 | `check-accomp-styles.ts` | 伴奏主体モードの全スタイルのスキーマと前提の検査（[docs/accomp-style-engine.md](../docs/accomp-style-engine.md) §7.1） | `npx tsx scripts/test/check-accomp-styles.ts` |
 | `check-accomp-golden.ts` | 伴奏主体モードの黄金値。計画 JSON と MML の sha256 を `test/fixtures/styles/<id>/golden.json` と照合 | `pnpm accomp:bless`（意図して出力を変えたときの取り直し） |
+| `check-compose-lyrics.ts` | 仮歌詞の検算。音符と歌詞が1対1か、伸ばし棒を置いていないか、文で終わるか（[docs/lyric-design.md](../docs/lyric-design.md)） | `npx tsx scripts/test/check-compose-lyrics.ts` |
 | `check-mml-velocity.ts` | 音符ごとの強弱（v）が MML・DAW・プレイヤー・MIDI 書き出しを通って保たれるか | `npx tsx scripts/test/check-mml-velocity.ts --file tmp/full/fb.space.mml` |
 | `check-speech-schedule.ts` | 単発の読み上げ（`speak`）のチャンク配置の検算。到着時刻を偽って音を出さずに確かめる | `npx tsx scripts/test/check-speech-schedule.ts` |
 | `check-fx-font-drum.ts` | 再生専用プレイヤーと DAW 全体読み込みで、宣言（`#reverb=` `#t<n>font=` `#drum` 等）が読まれ未記載は既定へ戻るか | `npx tsx scripts/test/check-fx-font-drum.ts` |
@@ -47,7 +48,7 @@
 | `calibrate-corpus.ts` | 参考 MIDI コーパスから目標帯（`src/compose/compose-corpus.ts`）を算出する | `npx tsx scripts/corpus/calibrate-corpus.ts --dir "<path>" --out src/compose/compose-corpus.ts` |
 | `check-evaluator.ts` | 評価機の検算。人間の曲が生成物と同等以上の点を取るかを見る | `npx tsx scripts/corpus/check-evaluator.ts --dir "<path>"` |
 | `measure-arrangement.ts` | 旋律の外側（テンポ・和声・ベース・ドラム・構成等）をコーパスと生成物で同じ物差しで測る | `npx tsx scripts/corpus/measure-arrangement.ts --dir "<path>" --generate kaiwai --count 40 --seed 1 --out tmp/kaiwai` |
-| `measure-lyrics.ts` | 耳コピ UST の歌詞を測る（表記・音符との対応・母音・句末の形・反復・層）。歌詞の本文は出さない。まとめは [docs/lyric-design.md](../docs/lyric-design.md) | `npx tsx scripts/corpus/measure-lyrics.ts --dir "<path>"` |
+| `measure-lyrics.ts` | 耳コピ UST の歌詞と生成の仮歌詞を同じ物差しで測る（表記・音符との対応・母音・句末の形・反復・層）。歌詞の本文は出さない。まとめは [docs/lyric-design.md](../docs/lyric-design.md) | `npx tsx scripts/corpus/measure-lyrics.ts --dir "<path>" --generate kaiwai` |
 | `extract-skeletons.ts` | 耳コピ MIDI から曲ごとの骨格を抜き `src/compose/compose-skeletons.ts` を生成する（git に入れない） | `npx tsx scripts/corpus/extract-skeletons.ts --dir "<path>" --out src/compose/compose-skeletons.ts` |
 | `build-section-bank.ts` | 骨格データからセクション単位のバンク `src/compose/compose-section-bank.ts` を生成する（git に入れない） | `npx tsx scripts/corpus/build-section-bank.ts` |
 | `check-splice-closeness.ts` | `kaiwai_splice` の生成物が元曲に近すぎないか検査し、上限超えで exit 1 | `npx tsx scripts/corpus/check-splice-closeness.ts --count 200 --seed 1` |

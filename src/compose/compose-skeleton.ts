@@ -351,7 +351,7 @@ export const composeSkeleton = (
 		tonal: EMPTY_TONAL,
 		drum,
 		instrument,
-		lyricWords: template.lyricWords,
+		lyricVocab: template.lyricVocab,
 		melody,
 		submelody,
 		bass,
