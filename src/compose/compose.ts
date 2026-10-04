@@ -7245,12 +7245,18 @@ export const isMonophonic = (
 export const lyricConstraintsOf = (
 	notes: ComposedNote[],
 	next: ComposedNote | undefined,
+	quarterSteps: number,
 ): LyricConstraints => {
 	const cuts: number[] = [];
+	const softCuts: number[] = [];
 	const badEnds: number[] = [];
+	// 4分以上の休符は必ず語の切れ目、8分〜4分はなるべく。16分の休符は見ない——原曲の歌に
+	// 16分の休符はほぼ無く（0〜1%）、生成の旋律のそれは息継ぎより音の切り方に近い（§19）。
 	for (let i = 1; i < notes.length; i++) {
 		const prev = notes[i - 1];
-		if (notes[i].startStep > prev.startStep + prev.durationSteps) cuts.push(i);
+		const gap = notes[i].startStep - (prev.startStep + prev.durationSteps);
+		if (gap >= quarterSteps) cuts.push(i);
+		else if (gap >= quarterSteps / 2) softCuts.push(i);
 	}
 	// 位置 e で語が終わると最後の音は notes[e-1]。直前の音からの間隔が次の音までの
 	// 間隔より長ければ、最後の音は後ろの語にくっついて聞こえる。
@@ -7263,7 +7269,7 @@ export const lyricConstraintsOf = (
 		)
 			badEnds.push(e);
 	}
-	return { cuts, badEnds };
+	return { cuts, softCuts, badEnds };
 };
 
 /**
@@ -7335,7 +7341,7 @@ export const composeLyrics = (
 				: writer.write(
 						group.notes.length,
 						group.notes.map((n) => n.durationSteps >= quarter),
-						lyricConstraintsOf(group.notes, groups[gi + 1]?.notes[0]),
+						lyricConstraintsOf(group.notes, groups[gi + 1]?.notes[0], quarter),
 					);
 		if (kept === undefined) byShape.set(key, text);
 		out.push(group.breath ? `${text}、` : text);

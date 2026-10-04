@@ -575,15 +575,22 @@ const NARRATION_SHARE = 0.3;
 
 /**
  * 旋律から来る語の置き方の制約（位置は文の頭からの音符の数。docs/lyric-design.md §19）。
- *  - cuts: 休符の位置。語（助詞まで含むまとまり）はここをまたがない
+ *  - cuts: 4分以上の休符の位置。語（助詞まで含むまとまり）は必ずここをまたがない
+ *  - softCuts: 8分〜4分の休符の位置。なるべくまたがない（文が組めないときだけ許す。
+ *    原曲も短い休符は語がまたぐことがある——休符またぎ 1%・17%）
  *  - badEnds: 2音以上の語がここで終わってはいけない位置。語の最後の音が、直前の音より
  *    次の語の頭に近いと、最後の音が後ろの語にくっついて聞こえる（「いえか~|らとおい」）
  */
 export type LyricConstraints = {
 	cuts: readonly number[];
+	softCuts: readonly number[];
 	badEnds: readonly number[];
 };
-const NO_CONSTRAINTS: LyricConstraints = { cuts: [], badEnds: [] };
+const NO_CONSTRAINTS: LyricConstraints = {
+	cuts: [],
+	softCuts: [],
+	badEnds: [],
+};
 
 /** [start, end) に語を置けるか。 */
 const placeable = (
@@ -592,7 +599,16 @@ const placeable = (
 	cons: LyricConstraints,
 ): boolean =>
 	!cons.cuts.some((k) => start < k && k < end) &&
+	!cons.softCuts.some((k) => start < k && k < end) &&
 	!(end - start >= 2 && cons.badEnds.includes(end));
+
+/** 緩める順。語末 → 短い休符の順に外す。4分以上の休符は外さない。 */
+const relaxations = (cons: LyricConstraints): LyricConstraints[] => [
+	cons,
+	{ ...cons, badEnds: [] },
+	{ ...cons, softCuts: [] },
+	{ ...cons, softCuts: [], badEnds: [] },
+];
 
 /** 残り m モーラを、スロット 0〜i でぴったり使い切れるか。 */
 const feasible = (
@@ -699,8 +715,8 @@ const buildFragment = (
 
 /**
  * ぴったり mora モーラの句。型に収まるなら文、収まらなければ断片。
- * 制約を全部守る文 → 休符だけ守る文 → 休符ごとの断片、の順に探す（語を休符で割るより、
- * 名詞の並びのほうがまし）。
+ * 制約を順に緩めながら文を探し（{@link relaxations}）、それでも組めなければ4分以上の休符で
+ * 区切った区間ごとに短い文か名詞の断片で埋める（長い休符で語を割るより、名詞の並びのほうがまし）。
  */
 const lyricPhrase = (
 	shapes: Slot[][],
@@ -712,18 +728,32 @@ const lyricPhrase = (
 	if (mora <= 0) return [];
 	// 型は渡された順に試す（長い順＝時間＋場所つきから）。短い句では自然に後ろの型へ落ちる。
 	let words: string[] | null = null;
-	for (const tier of [cons, { cuts: cons.cuts, badEnds: [] }]) {
+	for (const tier of relaxations(cons)) {
 		for (const shape of shapes) {
 			words = buildSentence(shape, mora, rnd, tier);
 			if (words) break;
 		}
-		if (words || tier.badEnds.length === 0) break;
+		if (words) break;
 	}
 	if (!words) {
+		// 長い休符で区切った区間ごとに、まず短い文を組む。名詞の断片はそれでも組めない区間だけ。
 		const bounds = [0, ...cons.cuts.filter((k) => k > 0 && k < mora), mora];
-		words = bounds
-			.slice(1)
-			.flatMap((end, i) => buildFragment(vocab, end - bounds[i], rnd));
+		words = bounds.slice(1).flatMap((end, i) => {
+			const start = bounds[i];
+			const inside = (xs: readonly number[]): number[] =>
+				xs.filter((k) => k > start && k <= end).map((k) => k - start);
+			const local: LyricConstraints = {
+				cuts: [],
+				softCuts: inside(cons.softCuts).filter((k) => k < end - start),
+				badEnds: inside(cons.badEnds),
+			};
+			for (const tier of relaxations(local))
+				for (const shape of shapes) {
+					const built = buildSentence(shape, end - start, rnd, tier);
+					if (built) return built;
+				}
+			return buildFragment(vocab, end - start, rnd);
+		});
 	}
 	// 歌詞と音符は1対1。ここがずれると以降の歌詞が全部ずれるので、長さは最後に必ず合わせる。
 	let total = words.reduce((a, w) => a + lyricMora(w), 0);
@@ -855,7 +885,7 @@ export const createLyricWriter = (options: {
 				e - pos >= SENTENCE_MIN &&
 				e - pos <= SENTENCE_MAX &&
 				(e === mora || mora - e >= SENTENCE_MIN);
-			const atRest = [...cons.cuts, mora].filter(fits);
+			const atRest = [...cons.cuts, ...cons.softCuts, mora].filter(fits);
 			let end: number;
 			if (atRest.length > 0)
 				end = atRest[Math.floor(rnd() * atRest.length) % atRest.length];
@@ -875,11 +905,14 @@ export const createLyricWriter = (options: {
 							: pos + take;
 			}
 			const local = (xs: readonly number[]): number[] =>
-				xs.filter((k) => k > pos && k <= end).map((k) => k - pos);
+				xs.filter((k) => k > pos && k < end).map((k) => k - pos);
 			out.push(
 				...phrase(end - pos, {
-					cuts: local(cons.cuts).filter((k) => k < end - pos),
-					badEnds: local(cons.badEnds),
+					cuts: local(cons.cuts),
+					softCuts: local(cons.softCuts),
+					badEnds: cons.badEnds
+						.filter((k) => k > pos && k <= end)
+						.map((k) => k - pos),
 				}),
 			);
 			pos = end;

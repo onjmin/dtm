@@ -145,9 +145,14 @@ console.log("--- 旋律の切れ目と語 ---");
 {
 	// 語（助詞まで含むまとまり）は休符をまたがず、語の最後の音は後ろの語に吸われない（§19）。
 	// 原曲（夏毛・カゲロウ）は休符またぎ 1%・17%、語末が後ろに近い 5%・2%。制約なしと比べる。
-	type Tally = { words: number; restCross: number; glued: number };
+	type Tally = {
+		words: number;
+		restCross: number;
+		longRestCross: number;
+		glued: number;
+	};
 	const tally = (useCons: boolean): Tally => {
-		const t: Tally = { words: 0, restCross: 0, glued: 0 };
+		const t: Tally = { words: 0, restCross: 0, longRestCross: 0, glued: 0 };
 		for (let i = 0; i < 12; i++) {
 			const random = seededRandom(3000 + i);
 			const song = composeSong({
@@ -168,7 +173,11 @@ console.log("--- 旋律の切れ目と語 ---");
 				else groups.push([n]);
 			}
 			groups.forEach((group, gi) => {
-				const cons = lyricConstraintsOf(group, groups[gi + 1]?.[0]);
+				const cons = lyricConstraintsOf(
+					group,
+					groups[gi + 1]?.[0],
+					STEPS_PER_BAR / 4,
+				);
 				const words = writer.writeWords(
 					group.length,
 					group.map((n) => n.durationSteps >= STEPS_PER_BAR / 4),
@@ -180,7 +189,10 @@ console.log("--- 旋律の切れ目と語 ---");
 					const end = at + len;
 					if (len >= 2) {
 						t.words++;
-						if (cons.cuts.some((k) => at < k && k < end)) t.restCross++;
+						const inside = (k: number) => at < k && k < end;
+						if (cons.cuts.some(inside)) t.longRestCross++;
+						if (cons.cuts.some(inside) || cons.softCuts.some(inside))
+							t.restCross++;
 						if (cons.badEnds.includes(end)) t.glued++;
 					}
 					at = end;
@@ -193,9 +205,14 @@ console.log("--- 旋律の切れ目と語 ---");
 	const after = tally(true);
 	const pc = (x: number, d: number) => `${((x / d) * 100).toFixed(0)}%`;
 	check(
-		after.restCross / after.words <= 0.05,
-		`休符をまたぐ語 ${pc(after.restCross, after.words)}（制約なし ${pc(before.restCross, before.words)}）`,
-		"休符は語の切れ目。原曲は 1%・17%",
+		after.longRestCross === 0,
+		`4分以上の休符をまたぐ語 ${pc(after.longRestCross, after.words)}（制約なし ${pc(before.longRestCross, before.words)}）`,
+		"長い休符は必ず語の切れ目",
+	);
+	check(
+		after.restCross / after.words <= 0.17,
+		`8分以上の休符をまたぐ語 ${pc(after.restCross, after.words)}（制約なし ${pc(before.restCross, before.words)}）`,
+		"短い休符は文が組めないときだけまたぐ。原曲は 1%・17%",
 	);
 	check(
 		after.glued / after.words <= 0.05,
