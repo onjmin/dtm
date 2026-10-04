@@ -13,9 +13,9 @@
 
 | 形式 | 埋まる場所 |
 |---|---|
-| MML | `#ver=2.1.31`（full / 共有リンク用の mini の両方） |
-| MIDI | テンポトラックのテキストメタ `dtm 2.1.31` |
-| MusicXML | `<identification><encoding><software>dtm 2.1.31` |
+| MML | `#ver=2.1.32`（full / 共有リンク用の mini の両方） |
+| MIDI | テンポトラックのテキストメタ `dtm 2.1.32` |
+| MusicXML | `<identification><encoding><software>dtm 2.1.32` |
 
 手元のファイルを見れば、この表を引いて素材の由来が分かる。
 
@@ -32,7 +32,7 @@
 
 | ライブラリ | 素材ファイル | 元データ | ライセンス | 取得日 |
 |---|---|---|---|---|
-| 〜 2.1.31 | `src/compose/compose-corpus.ts`<br>`src/compose/compose-phrases.ts` | `Music/_own/自作/界隈曲` 91本（**他の方の曲の耳コピ**。以前「所有者の自作」と書いていたのは誤り） | 元曲の作者に帰属 | — |
+| 〜 2.1.32 | `src/compose/compose-corpus.ts`<br>`src/compose/compose-phrases.ts` | `Music/_own/自作/界隈曲` 91本（**他の方の曲の耳コピ**。以前「所有者の自作」と書いていたのは誤り） | 元曲の作者に帰属 | — |
 | 2026-10-01（c7216742）〜 | `src/compose/compose-corpus.ts`（統計の帯だけ） | 同上 | 同上 | — |
 
 `compose-phrases.ts`（2小節の旋律断片）は c7216742 で git とバンドルから外した。歌メロ素材は手書きの `SYNTH_PHRASES`。
