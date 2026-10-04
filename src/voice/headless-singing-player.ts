@@ -172,9 +172,9 @@ export const playSingingMML = async (
 			return {
 				id: TRACK_ID_BY_INDEX[index] ?? `t${index}`,
 				model: lt.model,
-				volume:
-					vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME) *
-					masterGainScalar(),
+				// マスタ相当（#volume × options.volume）は startStream 直前の voices.setVolume で
+				// 掛かる。ここでも掛けると二乗になり、歌声だけ楽器より小さくなる（mml-player.ts と同じ）。
+				volume: vocalVolumeToGain(lt.volume ?? DEFAULT_VOCAL_VOLUME),
 				pan: panToStereo(lt.pan ?? DEFAULT_PAN),
 				vibrato: lt.vibrato,
 				reverbSend: (lt.reverb ?? 0) / 100,
