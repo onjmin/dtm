@@ -52,7 +52,11 @@ import {
 	varyNigo,
 } from "./compose-kaiwai";
 import { type ResolvedComposeKey, resolveComposeKey } from "./compose-keys";
-import { createLyricWriter, type LyricVocabName } from "./compose-lyrics";
+import {
+	createLyricWriter,
+	type LyricConstraints,
+	type LyricVocabName,
+} from "./compose-lyrics";
 import {
 	type Band,
 	band,
@@ -7235,6 +7239,34 @@ export const isMonophonic = (
 };
 
 /**
+ * 旋律から語の置き方の制約を作る（docs/lyric-design.md §19）。位置はまとまりの頭からの音符の数。
+ * `next` はまとまりの後ろの最初の音符（語末の判定に使う。無ければ曲の終わり）。
+ */
+export const lyricConstraintsOf = (
+	notes: ComposedNote[],
+	next: ComposedNote | undefined,
+): LyricConstraints => {
+	const cuts: number[] = [];
+	const badEnds: number[] = [];
+	for (let i = 1; i < notes.length; i++) {
+		const prev = notes[i - 1];
+		if (notes[i].startStep > prev.startStep + prev.durationSteps) cuts.push(i);
+	}
+	// 位置 e で語が終わると最後の音は notes[e-1]。直前の音からの間隔が次の音までの
+	// 間隔より長ければ、最後の音は後ろの語にくっついて聞こえる。
+	for (let e = 2; e <= notes.length; e++) {
+		const last = notes[e - 1];
+		const after = e < notes.length ? notes[e] : next;
+		if (
+			after &&
+			last.startStep - notes[e - 2].startStep > after.startStep - last.startStep
+		)
+			badEnds.push(e);
+	}
+	return { cuts, badEnds };
+};
+
+/**
  * メロディに乗る歌詞を作る。語は [compose-lyrics.ts](compose-lyrics.ts) が文の型から組む。
  *
  * `lyrics.ts` の約束は音符1つ＝音節1つ。だから息継ぎの間（4小節）ごとに「音符の数ぴったり」の
@@ -7292,7 +7324,7 @@ export const composeLyrics = (
 
 	const byShape = new Map<string, string>();
 	const out: string[] = [];
-	for (const group of groups) {
+	for (const [gi, group] of groups.entries()) {
 		const key = shapeKey(group.notes);
 		const kept = byShape.get(key);
 		// 使い回すのは句として聞こえる長さ（5音以上）だけ。短い切れ端まで揃えると
@@ -7303,6 +7335,7 @@ export const composeLyrics = (
 				: writer.write(
 						group.notes.length,
 						group.notes.map((n) => n.durationSteps >= quarter),
+						lyricConstraintsOf(group.notes, groups[gi + 1]?.notes[0]),
 					);
 		if (kept === undefined) byShape.set(key, text);
 		out.push(group.breath ? `${text}、` : text);

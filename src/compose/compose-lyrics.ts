@@ -454,7 +454,11 @@ type Vocab = {
 	/** 断片を埋める素の名詞。 */
 	nouns: string[];
 	verbs: string[];
-	/** 「〜が〜たので」「〜が〜たから」。報告体の曲だけ中身を持つ。 */
+	/**
+	 * 「〜が」と「〜たので／〜たから」。報告体の曲だけ中身を持つ。主語と分けて持つのは、
+	 * あいだに休符が来てもよいようにするため（1語にすると休符をまたげず、ほぼ組めない）。
+	 */
+	causeSubjects: string[];
 	causes: string[];
 	/** 語り手が移る・とどまる（主語を書かない）。場所は動きに合う助詞の形を別に持つ。 */
 	moves: string[];
@@ -498,10 +502,11 @@ const formsOf = (cast: Base, register: LyricRegister): Vocab => ({
 	],
 	nouns: [...cast.heads, ...cast.places, ...cast.times, ...ONE_MORA],
 	verbs: cast.verbs[register],
-	causes: cross(
-		[...cross(cast.heads, ["が"]), ...cross(cross(ADJ, cast.heads), ["が"])],
-		cross(cast.narration.causes, ["ので", "から"]),
-	),
+	causeSubjects: [
+		...cross(cast.heads, ["が"]),
+		...cross(cross(ADJ, cast.heads), ["が"]),
+	],
+	causes: cross(cast.narration.causes, ["ので", "から"]),
 	moves: cast.narration.moves,
 	stays: cast.narration.stays,
 	movePlaces: cross(cast.places, ["へ", "から"]),
@@ -551,7 +556,11 @@ const narrationShapesOf = (vocab: Vocab): Slot[][] => {
 	});
 	const time = slot(vocab.times, true);
 	return [
-		[slot(vocab.causes), slot([...vocab.moves, ...vocab.stays])],
+		[
+			slot(vocab.causeSubjects),
+			slot(vocab.causes),
+			slot([...vocab.moves, ...vocab.stays]),
+		],
 		[time, slot(vocab.movePlaces, true), slot(vocab.moves)],
 		[time, slot(vocab.stayPlaces, true), slot(vocab.stays)],
 		[time, slot(vocab.objects), slot(vocab.objActs)],
@@ -560,9 +569,30 @@ const narrationShapesOf = (vocab: Vocab): Slot[][] => {
 
 /**
  * 報告体の曲で、句を語り手の型から組む割合。残りは光景の報告（主語＋〜ました）と名詞止め。
- * 原曲の報告体の曲は「〜ました」が1曲に数回で、光景の文と混ざる（§17）。
+ * 原曲の報告体の曲は普通体の光景の文のほうが多い（§18）。
  */
-const NARRATION_SHARE = 0.2;
+const NARRATION_SHARE = 0.3;
+
+/**
+ * 旋律から来る語の置き方の制約（位置は文の頭からの音符の数。docs/lyric-design.md §19）。
+ *  - cuts: 休符の位置。語（助詞まで含むまとまり）はここをまたがない
+ *  - badEnds: 2音以上の語がここで終わってはいけない位置。語の最後の音が、直前の音より
+ *    次の語の頭に近いと、最後の音が後ろの語にくっついて聞こえる（「いえか~|らとおい」）
+ */
+export type LyricConstraints = {
+	cuts: readonly number[];
+	badEnds: readonly number[];
+};
+const NO_CONSTRAINTS: LyricConstraints = { cuts: [], badEnds: [] };
+
+/** [start, end) に語を置けるか。 */
+const placeable = (
+	start: number,
+	end: number,
+	cons: LyricConstraints,
+): boolean =>
+	!cons.cuts.some((k) => start < k && k < end) &&
+	!(end - start >= 2 && cons.badEnds.includes(end));
 
 /** 残り m モーラを、スロット 0〜i でぴったり使い切れるか。 */
 const feasible = (
@@ -570,16 +600,20 @@ const feasible = (
 	i: number,
 	m: number,
 	memo: Map<number, boolean>,
+	cons: LyricConstraints,
 ): boolean => {
 	if (i < 0) return m === 0;
 	const key = i * 4096 + m;
 	const hit = memo.get(key);
 	if (hit !== undefined) return hit;
 	let ok = false;
-	if (shape[i].optional && feasible(shape, i - 1, m, memo)) ok = true;
+	if (shape[i].optional && feasible(shape, i - 1, m, memo, cons)) ok = true;
 	if (!ok)
 		ok = shape[i].chunks.some(
-			(c) => c.mora <= m && feasible(shape, i - 1, m - c.mora, memo),
+			(c) =>
+				c.mora <= m &&
+				placeable(m - c.mora, m, cons) &&
+				feasible(shape, i - 1, m - c.mora, memo, cons),
 		);
 	memo.set(key, ok);
 	return ok;
@@ -596,36 +630,41 @@ const buildSentence = (
 	shape: Slot[],
 	mora: number,
 	rnd: () => number,
-): string | null => {
+	cons: LyricConstraints,
+): string[] | null => {
 	const memo = new Map<number, boolean>();
-	if (!feasible(shape, shape.length - 1, mora, memo)) return null;
+	if (!feasible(shape, shape.length - 1, mora, memo, cons)) return null;
 	const picks: string[] = new Array(shape.length).fill("");
 	let left = mora;
 	for (let i = shape.length - 1; i >= 0; i--) {
 		const slot = shape[i];
 		// 飛ばす手も1つの候補として同列に扱う（空文字のまとまり）。
 		const options: Chunk[] = [];
-		if (slot.optional && feasible(shape, i - 1, left, memo))
+		if (slot.optional && feasible(shape, i - 1, left, memo, cons))
 			options.push({ text: "", mora: 0 });
 		for (const c of slot.chunks)
-			if (c.mora <= left && feasible(shape, i - 1, left - c.mora, memo))
+			if (
+				c.mora <= left &&
+				placeable(left - c.mora, left, cons) &&
+				feasible(shape, i - 1, left - c.mora, memo, cons)
+			)
 				options.push(c);
 		if (options.length === 0) return null;
 		const picked = options[Math.floor(rnd() * options.length) % options.length];
 		picks[i] = picked.text;
 		left -= picked.mora;
 	}
-	return left === 0 ? picks.join("") : null;
+	return left === 0 ? picks.filter(Boolean) : null;
 };
 
-/** 文にならない長さ（1〜3モーラなど）は、名詞を「の」でつないだ断片で埋める。 */
+/** 文にならない長さ（1〜3モーラなど）は、名詞を「の」でつないだ断片で埋める。語ごとに返す。 */
 const buildFragment = (
 	vocab: Vocab,
 	mora: number,
 	rnd: () => number,
-): string => {
+): string[] => {
 	const pool = vocab.nouns.map(chunk);
-	let out = "";
+	const words: string[] = [];
 	let left = mora;
 	while (left > 0) {
 		// 残りをちょうど埋められる語を優先し、無ければ短い語から引く。
@@ -638,41 +677,61 @@ const buildFragment = (
 				? fits
 				: ONE_MORA.map(chunk);
 		const picked = options[Math.floor(rnd() * options.length) % options.length];
-		out += picked.text;
+		let word = picked.text;
 		left -= picked.mora;
 		if (left === 1) {
-			out += ONE_MORA[Math.floor(rnd() * ONE_MORA.length) % ONE_MORA.length];
+			words.push(word);
+			word = ONE_MORA[Math.floor(rnd() * ONE_MORA.length) % ONE_MORA.length];
 			left = 0;
 		} else if (left > 0) {
-			out += "の";
+			word += "の";
 			left -= 1;
 		}
+		words.push(word);
 	}
 	// 「の」で終わってしまったら最後の1モーラを名詞へ差し替える。
-	if (out.endsWith("の"))
-		out = `${out.slice(0, -1)}${ONE_MORA[Math.floor(rnd() * ONE_MORA.length) % ONE_MORA.length]}`;
-	return out;
+	const tail = words[words.length - 1];
+	if (tail?.endsWith("の"))
+		words[words.length - 1] =
+			`${tail.slice(0, -1)}${ONE_MORA[Math.floor(rnd() * ONE_MORA.length) % ONE_MORA.length]}`;
+	return words;
 };
 
-/** ぴったり mora モーラの句。型に収まるなら文、収まらなければ断片。 */
+/**
+ * ぴったり mora モーラの句。型に収まるなら文、収まらなければ断片。
+ * 制約を全部守る文 → 休符だけ守る文 → 休符ごとの断片、の順に探す（語を休符で割るより、
+ * 名詞の並びのほうがまし）。
+ */
 const lyricPhrase = (
 	shapes: Slot[][],
 	vocab: Vocab,
 	mora: number,
 	rnd: () => number,
-): string => {
-	if (mora <= 0) return "";
+	cons: LyricConstraints = NO_CONSTRAINTS,
+): string[] => {
+	if (mora <= 0) return [];
 	// 型は渡された順に試す（長い順＝時間＋場所つきから）。短い句では自然に後ろの型へ落ちる。
-	let text: string | null = null;
-	for (const shape of shapes) {
-		text = buildSentence(shape, mora, rnd);
-		if (text) break;
+	let words: string[] | null = null;
+	for (const tier of [cons, { cuts: cons.cuts, badEnds: [] }]) {
+		for (const shape of shapes) {
+			words = buildSentence(shape, mora, rnd, tier);
+			if (words) break;
+		}
+		if (words || tier.badEnds.length === 0) break;
 	}
-	if (!text) text = buildFragment(vocab, mora, rnd);
+	if (!words) {
+		const bounds = [0, ...cons.cuts.filter((k) => k > 0 && k < mora), mora];
+		words = bounds
+			.slice(1)
+			.flatMap((end, i) => buildFragment(vocab, end - bounds[i], rnd));
+	}
 	// 歌詞と音符は1対1。ここがずれると以降の歌詞が全部ずれるので、長さは最後に必ず合わせる。
-	while (lyricMora(text) < mora)
-		text += ONE_MORA[Math.floor(rnd() * ONE_MORA.length) % ONE_MORA.length];
-	return lyricMora(text) > mora ? [...text].slice(0, mora).join("") : text;
+	let total = words.reduce((a, w) => a + lyricMora(w), 0);
+	while (total < mora) {
+		words.push(ONE_MORA[Math.floor(rnd() * ONE_MORA.length) % ONE_MORA.length]);
+		total++;
+	}
+	return total > mora ? [[...words.join("")].slice(0, mora).join("")] : words;
 };
 
 /** 1つの文に収める長さの上限と下限。原曲の文はもっと長いが、1文で言い切れる範囲に区切る。 */
@@ -736,9 +795,20 @@ export type LyricWriter = {
 	cast: { heads: string[]; places: string[]; times: string[]; verbs: string[] };
 	/**
 	 * ぴったり mora モーラの歌詞。`isLong`（音符ごとに4分以上か）を渡すと、
-	 * 伸びる音に あ・い が来る候補を選ぶ。
+	 * 伸びる音に あ・い が来る候補を選ぶ。`cons`（旋律の休符と語末の制約）を渡すと、
+	 * 文の区切りを休符へ寄せ、語が休符をまたがず、語の最後の音が後ろの語に吸われないように組む。
 	 */
-	write: (mora: number, isLong?: readonly boolean[]) => string;
+	write: (
+		mora: number,
+		isLong?: readonly boolean[],
+		cons?: LyricConstraints,
+	) => string;
+	/** {@link write} と同じ歌詞を、語（助詞まで含むまとまり）ごとに返す。検算用。 */
+	writeWords: (
+		mora: number,
+		isLong?: readonly boolean[],
+		cons?: LyricConstraints,
+	) => string[];
 };
 
 /**
@@ -768,28 +838,74 @@ export const createLyricWriter = (options: {
 			...shapes,
 		];
 	};
-	const phrase = (mora: number): string =>
-		lyricPhrase(shapesForPhrase(), vocab, mora, rnd);
+	const phrase = (mora: number, cons: LyricConstraints): string[] =>
+		lyricPhrase(shapesForPhrase(), vocab, mora, rnd, cons);
 
-	/** 息継ぎの間（4小節）は音符が20を超えることもあるので、文に区切って埋める。 */
-	const spanOnce = (mora: number): string => {
+	/**
+	 * 息継ぎの間（4小節）は音符が20を超えることもあるので、文に区切って埋める。
+	 * 文の終わりは休符の位置から選ぶ（文や行の切れ目は休符の直後に来る。§19）。
+	 * 合う休符が無いときだけ長さで割り、そのときも語末にしてはいけない位置は避ける。
+	 */
+	const spanOnce = (mora: number, cons: LyricConstraints): string[] => {
 		const out: string[] = [];
-		let left = mora;
-		while (left > 0) {
-			if (left <= SENTENCE_MAX) {
-				out.push(phrase(left));
-				break;
+		let pos = 0;
+		while (pos < mora) {
+			const left = mora - pos;
+			const fits = (e: number): boolean =>
+				e - pos >= SENTENCE_MIN &&
+				e - pos <= SENTENCE_MAX &&
+				(e === mora || mora - e >= SENTENCE_MIN);
+			const atRest = [...cons.cuts, mora].filter(fits);
+			let end: number;
+			if (atRest.length > 0)
+				end = atRest[Math.floor(rnd() * atRest.length) % atRest.length];
+			else if (left <= SENTENCE_MAX) end = mora;
+			else {
+				// 端切れ（4モーラ未満）を残さない。残るなら全部まとめて1文にする。
+				const byLength: number[] = [];
+				for (let take = 8; take <= 14; take++)
+					if (left - take >= SENTENCE_MIN && !cons.badEnds.includes(pos + take))
+						byLength.push(pos + take);
+				const take = 8 + Math.floor(rnd() * 7);
+				end =
+					byLength.length > 0
+						? byLength[Math.floor(rnd() * byLength.length) % byLength.length]
+						: left - take < SENTENCE_MIN
+							? mora
+							: pos + take;
 			}
-			const take = 8 + Math.floor(rnd() * 7);
-			// 端切れ（4モーラ未満）を残さない。残るなら全部まとめて1文にする。
-			if (left - take < SENTENCE_MIN) {
-				out.push(phrase(left));
-				break;
-			}
-			out.push(phrase(take));
-			left -= take;
+			const local = (xs: readonly number[]): number[] =>
+				xs.filter((k) => k > pos && k <= end).map((k) => k - pos);
+			out.push(
+				...phrase(end - pos, {
+					cuts: local(cons.cuts).filter((k) => k < end - pos),
+					badEnds: local(cons.badEnds),
+				}),
+			);
+			pos = end;
 		}
-		return out.join("");
+		return out;
+	};
+
+	const writeWords = (
+		mora: number,
+		isLong?: readonly boolean[],
+		cons: LyricConstraints = NO_CONSTRAINTS,
+	): string[] => {
+		if (mora <= 0) return [];
+		if (!isLong || isLong.every((x) => !x)) return spanOnce(mora, cons);
+		// 候補をいくつか引いて、伸びる音に あ・い が来るものを採る。
+		let best: string[] = [];
+		let bestScore = Number.NEGATIVE_INFINITY;
+		for (let i = 0; i < VOWEL_TRIES; i++) {
+			const candidate = spanOnce(mora, cons);
+			const score = vowelFit(candidate.join(""), isLong);
+			if (score > bestScore) {
+				best = candidate;
+				bestScore = score;
+			}
+		}
+		return best;
 	};
 
 	return {
@@ -800,21 +916,7 @@ export const createLyricWriter = (options: {
 			times: cast.times,
 			verbs: vocab.verbs,
 		},
-		write: (mora, isLong) => {
-			if (mora <= 0) return "";
-			if (!isLong || isLong.every((x) => !x)) return spanOnce(mora);
-			// 候補をいくつか引いて、伸びる音に あ・い が来るものを採る。
-			let best = "";
-			let bestScore = Number.NEGATIVE_INFINITY;
-			for (let i = 0; i < VOWEL_TRIES; i++) {
-				const candidate = spanOnce(mora);
-				const score = vowelFit(candidate, isLong);
-				if (score > bestScore) {
-					best = candidate;
-					bestScore = score;
-				}
-			}
-			return best;
-		},
+		write: (mora, isLong, cons) => writeWords(mora, isLong, cons).join(""),
+		writeWords,
 	};
 };

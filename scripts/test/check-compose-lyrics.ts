@@ -21,7 +21,7 @@ loader._load = (request, ...rest) =>
 
 const { normalizeLyrics } =
 	require("../../src/voice/lyrics") as typeof import("../../src/voice/lyrics");
-const { composeLyrics, composeSong, isMonophonic } =
+const { composeLyrics, composeSong, isMonophonic, lyricConstraintsOf } =
 	require("../../src/compose/compose") as typeof import("../../src/compose/compose");
 const { MMLCore } =
 	require("../../src/mml/mml-core") as typeof import("../../src/mml/mml-core");
@@ -105,7 +105,9 @@ console.log("--- 報告体の語り手 ---");
 			continue;
 		}
 		reportSongs++;
-		density.push(((text.match(/ました/g)?.length ?? 0) / [...text].length) * 1000);
+		density.push(
+			((text.match(/ました/g)?.length ?? 0) / [...text].length) * 1000,
+		);
 		if (/[たいだ](ので|から)/.test(text)) withCause++;
 		if (
 			/(かえり|いき|はしり|いそぎ|にげ|あるき|もどり|まち|ねむり|かくれ|ね|すわり)ました/.test(
@@ -124,7 +126,8 @@ console.log("--- 報告体の語り手 ---");
 		`語り手の動き（${withAct}/${reportSongs}曲）`,
 		"報告体の曲のほとんどに、主語のない「帰りました」「待ちました」の類が出る",
 	);
-	const mid = [...density].sort((a, b) => a - b)[Math.floor(density.length / 2)] ?? 0;
+	const mid =
+		[...density].sort((a, b) => a - b)[Math.floor(density.length / 2)] ?? 0;
 	check(
 		mid >= 15 && mid <= 45,
 		`「〜ました」の密度（中央 ${mid.toFixed(0)}／1000字）`,
@@ -135,6 +138,69 @@ console.log("--- 報告体の語り手 ---");
 		"言い切りの曲には混ざらない",
 		"語り手の型は報告体の曲だけ（文末の形を曲の中で混ぜない）",
 		plainLeak ? `${plainLeak}曲` : "",
+	);
+}
+
+console.log("--- 旋律の切れ目と語 ---");
+{
+	// 語（助詞まで含むまとまり）は休符をまたがず、語の最後の音は後ろの語に吸われない（§19）。
+	// 原曲（夏毛・カゲロウ）は休符またぎ 1%・17%、語末が後ろに近い 5%・2%。制約なしと比べる。
+	type Tally = { words: number; restCross: number; glued: number };
+	const tally = (useCons: boolean): Tally => {
+		const t: Tally = { words: 0, restCross: 0, glued: 0 };
+		for (let i = 0; i < 12; i++) {
+			const random = seededRandom(3000 + i);
+			const song = composeSong({
+				stepsPerBar: STEPS_PER_BAR,
+				edo: 12,
+				random,
+				template: "kaiwai",
+			});
+			const notes = [...song.melody].sort((a, b) => a.startStep - b.startStep);
+			const writer = createLyricWriter({ random, vocab: "kaiwai" });
+			// composeLyrics と同じく4小節ごとに区切る。
+			const groups: (typeof notes)[] = [];
+			for (const n of notes) {
+				const g = Math.floor(n.startStep / (STEPS_PER_BAR * 4));
+				const last = groups[groups.length - 1];
+				if (last && Math.floor(last[0].startStep / (STEPS_PER_BAR * 4)) === g)
+					last.push(n);
+				else groups.push([n]);
+			}
+			groups.forEach((group, gi) => {
+				const cons = lyricConstraintsOf(group, groups[gi + 1]?.[0]);
+				const words = writer.writeWords(
+					group.length,
+					group.map((n) => n.durationSteps >= STEPS_PER_BAR / 4),
+					useCons ? cons : undefined,
+				);
+				let at = 0;
+				for (const w of words) {
+					const len = [...w].length;
+					const end = at + len;
+					if (len >= 2) {
+						t.words++;
+						if (cons.cuts.some((k) => at < k && k < end)) t.restCross++;
+						if (cons.badEnds.includes(end)) t.glued++;
+					}
+					at = end;
+				}
+			});
+		}
+		return t;
+	};
+	const before = tally(false);
+	const after = tally(true);
+	const pc = (x: number, d: number) => `${((x / d) * 100).toFixed(0)}%`;
+	check(
+		after.restCross / after.words <= 0.05,
+		`休符をまたぐ語 ${pc(after.restCross, after.words)}（制約なし ${pc(before.restCross, before.words)}）`,
+		"休符は語の切れ目。原曲は 1%・17%",
+	);
+	check(
+		after.glued / after.words <= 0.05,
+		`最後の音が後ろの語に近い語 ${pc(after.glued, after.words)}（制約なし ${pc(before.glued, before.words)}）`,
+		"「いえか~|らとおい」の形を作らない。原曲は 5%・2%",
 	);
 }
 
