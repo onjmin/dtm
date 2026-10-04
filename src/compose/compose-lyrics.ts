@@ -1,3 +1,27 @@
+import {
+	ADJS,
+	BODY,
+	CREATURES,
+	kaiwaiNarration,
+	type LyricRegister,
+	NATURE,
+	type Narration,
+	ONE_MORA,
+	PLACES,
+	PLANTS,
+	POP_BODY,
+	POP_PLACE,
+	POP_SUBJECT,
+	POP_TIME,
+	popNarration,
+	popVerbs,
+	SEA,
+	SIDES,
+	sceneVerbs,
+	THINGS,
+	TIMES,
+} from "./compose-lyric-vocab";
+
 /**
  * 仮歌詞の文を組む。くじ引きで単語を並べるのではなく、**文の型に語を当てて、句のモーラ数
  * ぴったりに詰める**。規則と実測は [docs/lyric-design.md](../../docs/lyric-design.md)。
@@ -19,8 +43,7 @@ const lyricMora = (text: string): number => [...text].length;
 
 /** 語の並べ方。`kaiwai` は海鮮系の報告型、`pop` は一般の歌もの。 */
 export type LyricVocabName = "kaiwai" | "pop";
-/** 文末の寄せ方。曲ごとにどちらかへ決める。 */
-export type LyricRegister = "report" | "plain";
+export type { LyricRegister };
 
 type Chunk = { text: string; mora: number };
 /** 文の型のひとこま。`optional` は飛ばせる。 */
@@ -31,316 +54,13 @@ const cross = (heads: string[], tails: string[]): string[] =>
 	heads.flatMap((h) => tails.map((t) => h + t));
 
 // ============================================================
-// 語彙
+// 語彙（中身は compose-lyric-vocab.ts。原曲から取るのは種類だけ。§20）
 // ============================================================
 
-/** 海のもの。暮らしの場へ方向違いで入ってくる側（実測: 9/16曲）。 */
-const SEA = [
-	"いわし",
-	"くらげ",
-	"さかな",
-	"まぐろ",
-	"くじら",
-	"うろこ",
-	"えび",
-	"たこ",
-	"いか",
-	"すなめり",
-];
-/** 自然・天（実測: 14/16曲）。 */
-const NATURE = [
-	"そら",
-	"つち",
-	"うみ",
-	"あめ",
-	"ゆき",
-	"くも",
-	"ひかり",
-	"つき",
-	"ほし",
-	"かぜ",
-	"みず",
-	"しお",
-	"なみ",
-	"すな",
-	"かげ",
-];
-/** 暮らしの場（実測: 13/16曲）。 */
-const PLACE = [
-	"こうえん",
-	"えき",
-	"かいだん",
-	"やね",
-	"まど",
-	"へや",
-	"いえ",
-	"ばすてい",
-	"まち",
-	"がっこう",
-	"とおり",
-	"こうさてん",
-	"ほこら",
-	"ろうか",
-	"だいどころ",
-	"ふとん",
-	"しんぶん",
-	"せんろ",
-	"のりば",
-	"かわら",
-];
-/** 体（実測: 8/16曲）。 */
-const BODY = [
-	"ゆび",
-	"からだ",
-	"こえ",
-	"ほね",
-	"あたま",
-	"せなか",
-	"むね",
-	"かお",
-];
-/** 時間（実測: 13/16曲）。 */
-const TIME = [
-	"あした",
-	"きのう",
-	"こんや",
-	"あさ",
-	"よる",
-	"ゆうべ",
-	"まいにち",
-	"ゆうがた",
-	"そのひ",
-	"ひるま",
-];
-/** 1モーラの句（実測: 句のモーラ数は p10 が 1）を埋める語。 */
-const ONE_MORA = ["ひ", "て", "め", "き", "よ", "ち"];
-/** 位置のことば。場所の語に重ねて長さを稼ぐ。 */
-const SIDES = [
-	"なか",
-	"そと",
-	"うえ",
-	"した",
-	"すみ",
-	"おく",
-	"まえ",
-	"うら",
-	"そば",
-];
-/** 飾り。長さの刻みを増やすために置く（意味は足さない）。 */
-const ADJ = [
-	"しろい",
-	"くろい",
-	"つめたい",
-	"ちいさな",
-	"おおきな",
-	"ふるい",
-	"とおい",
-];
-
-/** 一般の歌ものの語（旧 `LYRIC_WORDS` の素）。 */
-const POP_SUBJECT = [
-	"きみ",
-	"ぼく",
-	"こえ",
-	"ゆめ",
-	"かぜ",
-	"ひかり",
-	"なみだ",
-	"あさ",
-	"そら",
-	"ほし",
-	"はな",
-	"きせつ",
-	"せかい",
-	"ことば",
-	"おもいで",
-];
-const POP_PLACE = [
-	"まち",
-	"みち",
-	"そら",
-	"うみ",
-	"へや",
-	"えき",
-	"おか",
-	"まど",
-	"こうえん",
-	"かわ",
-];
-const POP_TIME = [
-	"いま",
-	"あした",
-	"きのう",
-	"あさ",
-	"よる",
-	"ゆうがた",
-	"なつ",
-	"ふゆ",
-	"はる",
-	"あき",
-];
-
-/**
- * 動詞句。報告体（〜ました）と言い切り（〜る・〜た）で別に持つ。
- * 自動詞だけを置く——目的語（「〜を」）を組む型が無いので、他動詞を入れると文が壊れる。
- */
-const KAIWAI_VERBS: Record<LyricRegister, string[]> = {
-	report: [
-		"はえてきました",
-		"ふってきました",
-		"ながれてきました",
-		"しずんでいきました",
-		"きえていきました",
-		"とんでいきました",
-		"ならんでいました",
-		"ゆれていました",
-		"あふれていました",
-		"とけていきました",
-		"まわっていました",
-		"のぼってきました",
-		"おちてきました",
-		"ひかっていました",
-		"みえなくなりました",
-		"うごかなくなりました",
-		"とまりました",
-		"ありました",
-		"いました",
-		"きました",
-		"おちました",
-		"はえました",
-		"ふえました",
-		"きませんでした",
-		"みえませんでした",
-	],
-	plain: [
-		"はえてくる",
-		"ふってくる",
-		"ながれてくる",
-		"しずんでいく",
-		"きえていく",
-		"とんでいく",
-		"ならんでいる",
-		"ゆれている",
-		"あふれていく",
-		"とけていく",
-		"のぼってくる",
-		"おちてくる",
-		"まわっている",
-		"ひかっている",
-		"はえた",
-		"ふった",
-		"しずんだ",
-		"きえた",
-		"とんだ",
-		"ゆれた",
-		"とけた",
-		"まわった",
-		"おちた",
-		"みえない",
-		"とべない",
-	],
-};
-/**
- * 報告体の語り手の型に使う語（docs/lyric-design.md §17）。異変を「〜ので」で受けて、
- * 語り手が暮らしの動作で受け流す。主語は書かない（日記と同じく語り手は省く）。
- *  - causes: 「〜ので／〜から」の前に置く過去形
- *  - moves: 語り手が移る（場所は「へ」「から」）
- *  - stays: 語り手がとどまる（場所は「で」「に」）
- *  - objActs: 「〜を」を取る語り手の動作
- */
-type Narration = {
-	causes: string[];
-	moves: string[];
-	stays: string[];
-	objActs: string[];
-};
-const KAIWAI_NARRATION: Narration = {
-	causes: [
-		"ふってきた",
-		"はえてきた",
-		"おちてきた",
-		"ながれてきた",
-		"のぼってきた",
-		"きえた",
-		"しずんだ",
-		"とけた",
-		"ゆれた",
-		"ひかった",
-		"ふえた",
-		"ならんだ",
-	],
-	moves: [
-		"かえりました",
-		"いきました",
-		"はしりました",
-		"いそぎました",
-		"にげました",
-		"あるきました",
-		"もどりました",
-	],
-	stays: [
-		"まちました",
-		"ねむりました",
-		"かくれました",
-		"ねました",
-		"すわりました",
-	],
-	objActs: [
-		"みました",
-		"ひろいました",
-		"かぞえました",
-		"さがしました",
-		"よけました",
-		"しまいました",
-		"あつめました",
-		"うめました",
-	],
-};
-const POP_NARRATION: Narration = {
-	causes: [
-		"ひかった",
-		"きえた",
-		"とどいた",
-		"かさなった",
-		"つづいた",
-		"ふった",
-	],
-	moves: ["あるきました", "かえりました", "はしりました"],
-	stays: ["まちました", "うたいました", "ねむりました"],
-	objActs: ["みました", "さがしました", "おもいだしました", "かぞえました"],
-};
-
-const POP_VERBS: Record<LyricRegister, string[]> = {
-	report: [
-		"とどきました",
-		"わらいました",
-		"めぐりました",
-		"かさなりました",
-		"つづきました",
-		"ひかりました",
-		"きえました",
-		"あるきました",
-		"まちました",
-	],
-	plain: [
-		"とどく",
-		"わらう",
-		"めぐる",
-		"かさなる",
-		"つづく",
-		"ひかる",
-		"きえる",
-		"あるく",
-		"まつ",
-		"とどいた",
-		"わらった",
-		"きえた",
-		"つづいた",
-		"まぶしい",
-		"しずか",
-		"とおい",
-	],
-};
+const KAIWAI_VERBS = sceneVerbs();
+const POP_VERBS = popVerbs();
+const KAIWAI_NARRATION = kaiwaiNarration();
+const POP_NARRATION = popNarration();
 
 // ============================================================
 // 曲ごとの登場物（キャスト）
@@ -356,16 +76,28 @@ type Base = {
 	times: string[];
 	/** 「〜の〜が」の後ろに置く語。 */
 	bodies: string[];
+	/** 飾りの語。 */
+	adjs: string[];
 	verbs: Record<LyricRegister, string[]>;
 	narration: Narration;
 };
 
 const BASES: Record<LyricVocabName, Base> = {
 	kaiwai: {
-		heads: [...SEA, ...NATURE, ...BODY],
-		places: PLACE,
-		times: TIME,
+		// 海のものを2倍入れて、登場物に1つは入りやすくする（原曲は 9/16曲に出る）。
+		heads: [
+			...SEA,
+			...SEA,
+			...CREATURES,
+			...PLANTS,
+			...THINGS,
+			...NATURE,
+			...BODY,
+		],
+		places: PLACES,
+		times: TIMES,
 		bodies: BODY,
+		adjs: ADJS,
 		verbs: KAIWAI_VERBS,
 		narration: KAIWAI_NARRATION,
 	},
@@ -373,7 +105,8 @@ const BASES: Record<LyricVocabName, Base> = {
 		heads: POP_SUBJECT,
 		places: POP_PLACE,
 		times: POP_TIME,
-		bodies: ["こえ", "ゆめ", "なみだ", "ことば"],
+		bodies: POP_BODY,
+		adjs: ADJS,
 		verbs: POP_VERBS,
 		narration: POP_NARRATION,
 	},
@@ -381,11 +114,12 @@ const BASES: Record<LyricVocabName, Base> = {
 
 /** 曲ごとの登場物の数。原曲は少ない登場物が何度も戻ってくる（docs/lyric-design.md の層⑤）。 */
 const CAST = {
-	heads: 6,
-	places: 3,
+	heads: 8,
+	places: 4,
 	times: 3,
 	bodies: 3,
-	verbs: 8,
+	adjs: 4,
+	verbs: 10,
 	causes: 4,
 	moves: 2,
 	stays: 2,
@@ -409,10 +143,14 @@ const castOf = (
 	register: LyricRegister,
 	rnd: () => number,
 ): Base => ({
-	heads: sample(base.heads, CAST.heads, rnd),
+	heads: [...new Set(sample(base.heads, CAST.heads * 2, rnd))].slice(
+		0,
+		CAST.heads,
+	),
 	places: sample(base.places, CAST.places, rnd),
 	times: sample(base.times, CAST.times, rnd),
 	bodies: sample(base.bodies, CAST.bodies, rnd),
+	adjs: sample(base.adjs, CAST.adjs, rnd),
 	verbs: {
 		report: [],
 		plain: [],
@@ -486,7 +224,7 @@ const subjectForms = (heads: string[]): string[] => [
 const formsOf = (cast: Base, register: LyricRegister): Vocab => ({
 	subjects: [
 		...subjectForms(cast.heads),
-		...cross(cross(ADJ, cast.heads), ["が"]),
+		...cross(cross(cast.adjs, cast.heads), ["が"]),
 		...cross(cross(cast.heads, ["の"]), cross(cast.bodies, ["が"])),
 	],
 	places: [
@@ -497,14 +235,14 @@ const formsOf = (cast: Base, register: LyricRegister): Vocab => ({
 	nounEnds: [
 		...cast.heads,
 		...cast.places,
-		...cross(ADJ, cast.heads),
+		...cross(cast.adjs, cast.heads),
 		...cross(cross(cast.heads, ["の"]), [...cast.heads, ...cast.places]),
 	],
 	nouns: [...cast.heads, ...cast.places, ...cast.times, ...ONE_MORA],
 	verbs: cast.verbs[register],
 	causeSubjects: [
 		...cross(cast.heads, ["が"]),
-		...cross(cross(ADJ, cast.heads), ["が"]),
+		...cross(cross(cast.adjs, cast.heads), ["が"]),
 	],
 	causes: cross(cast.narration.causes, ["ので", "から"]),
 	moves: cast.narration.moves,
