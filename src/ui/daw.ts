@@ -2120,10 +2120,9 @@ export const mountDAW = (
 	};
 
 	/** アクティブトラックの歌詞をノート表示用のかな列にする（歌わない設定なら空） */
-	const getActiveLyricKana = (): string[] => {
-		getActiveLyricSyllables();
-		return lyricKanaCache;
-	};
+	const getActiveLyricKana = (): string[] =>
+		// 歌わないトラックでは空を返し、キャッシュ（前に見た歌唱トラックのかな）を使わない
+		getActiveLyricSyllables().length > 0 ? lyricKanaCache : [];
 
 	// 語り（「…」）のプレビュー: 読み上げが実際に占める長さをロール上の帯にする。
 	// 長さは計画（読み・韻律）を作らないと分からないので、歌詞に語りが現れたら
