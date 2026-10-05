@@ -5794,7 +5794,7 @@ const draw = (
 	// 歌メロを捨てて、2小節周期の16分リフで置き換える。**リフは和音に付いて動かない。**
 	// 手本2曲とも上声の型は固定で、下でベースが動く（Pepper Steak は A#→C#→G#、
 	// Ghost Fight は半音下降）。和音ごとに移すと分散和音になり、リフに聞こえない。
-	// サブメロは中核音で1つ下を重ねた2音（Ghost Fight の平行3度）。ハモリ・パッドは外す。
+	// サブメロは3度下を重ねた2音（Ghost Fight の平行3度）。ハモリ・パッドは外す。
 	if (template?.lead === "riff") {
 		melody.length = 0;
 		submelody.length = 0;
@@ -5823,6 +5823,22 @@ const draw = (
 		const pitchOf = (step: number): ScaleDegree => {
 			const d = degreeToPitch(scale, coreToDegree(scale, tonicStep + step));
 			return { semi: d.semi + octave, fifth: d.fifth };
+		};
+		// 中核音の1つ下は2度になりやすい（和声的短音階では主音の下に導音が半音で付く）ので、
+		// 音階を下りて3度を探す。3度の無い音（ブルースのラ・レ）は4度。2度は重ねない。
+		const underOf = (step: number): ScaleDegree | null => {
+			const deg = coreToDegree(scale, tonicStep + step);
+			const top = degreeToPitch(scale, deg).semi;
+			let fourth: ScaleDegree | null = null;
+			for (let d = 1; d <= 3; d++) {
+				const p = degreeToPitch(scale, deg - d);
+				const iv = top - p.semi;
+				if (iv === 3 || iv === 4)
+					return { semi: p.semi + octave, fifth: p.fifth };
+				if (iv === 5 && !fourth)
+					fourth = { semi: p.semi + octave, fifth: p.fifth };
+			}
+			return fourth;
 		};
 		for (let bar = 0; bar < totalBars; bar++) {
 			const sec = sectionAt(sectionPlan, bar);
@@ -5859,8 +5875,8 @@ const draw = (
 					durationSteps: dur,
 					velocity: accent ? 100 : 82,
 				});
-				if (!n.chrom) {
-					const under = pitchOf(n.step + lift - 1);
+				const under = n.chrom ? null : underOf(n.step + lift);
+				if (under) {
 					submelody.push({
 						startStep: start,
 						pitchUnits: spelledToUnits(
