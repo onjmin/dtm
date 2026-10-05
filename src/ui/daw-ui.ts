@@ -4,6 +4,7 @@
  */
 
 import { DELAY_DIVISIONS } from "../audio/delay";
+import { SECTION_LABELS, SECTION_ORDER } from "../compose/compose-sections";
 import type { TrackConfig } from "../types";
 import { COMPOSE_GENRES } from "./compose-genres";
 import { icon } from "./icons";
@@ -141,6 +142,16 @@ export type DawUIRefs = {
 	composeSavedTitle: HTMLElement;
 	composeSavedList: HTMLElement;
 	composeMore: HTMLDetailsElement;
+	composeFill: HTMLDetailsElement;
+	fillKind: HTMLSelectElement;
+	fillStart: HTMLInputElement;
+	fillBars: HTMLInputElement;
+	fillPickEmpty: HTMLElement;
+	fillPickEnd: HTMLElement;
+	fillPickCursor: HTMLElement;
+	fillRun: HTMLElement;
+	fillClear: HTMLElement;
+	fillHint: HTMLElement;
 	composeTempo: HTMLInputElement;
 	composeSectionsLen: HTMLElement;
 	composeKey: HTMLSelectElement;
@@ -576,6 +587,41 @@ export const buildUI = (
         <summary data-dtm="compose-saved-title">残した曲</summary>
         <ol class="dtm-kept-list" data-dtm="compose-saved-list"></ol>
       </details>
+      <!--
+        範囲補完。いまの曲の「ある小節範囲」だけを、選んだスタイルで埋める（続き・間奏・作り直し）。
+        曲全体を引き直す「作る」とは別の入口。調は曲から取り、スタイルからは作りだけ借りる。
+      -->
+      <details class="dtm-compose-sub" data-dtm="compose-fill">
+        <summary>範囲を作る（続き・間奏・作り直し）</summary>
+        <div class="dtm-compose-more-body">
+          <div class="dtm-row">
+            <span class="dtm-label">種別</span>
+            <select class="dtm-select" data-dtm="fill-kind" aria-label="埋める部分の種別" title="範囲をどの部分として作るか。選んだスタイルがその部分を持たないときは近い部分で代えます">
+              ${SECTION_ORDER.map(
+								(k) =>
+									`<option value="${k}"${k === "interlude" ? " selected" : ""}>${SECTION_LABELS[k]}</option>`,
+							).join("")}
+            </select>
+          </div>
+          <div class="dtm-row">
+            <span class="dtm-label">範囲</span>
+            <input type="number" class="dtm-input dtm-input--num" data-dtm="fill-start" min="1" step="1" value="1" inputmode="numeric" aria-label="開始小節（1始まり）" title="開始小節（1始まり）">
+            <span class="dtm-hint">小節目から</span>
+            <input type="number" class="dtm-input dtm-input--num" data-dtm="fill-bars" min="1" max="64" step="1" value="4" inputmode="numeric" aria-label="小節数" title="小節数">
+            <span class="dtm-hint">小節</span>
+          </div>
+          <div class="dtm-row">
+            <button class="dtm-btn" data-dtm="fill-pick-empty" title="全トラックが空いている最初の小節の並びを範囲にします（間奏だけ抜けている曲など）">空いている所</button>
+            <button class="dtm-btn" data-dtm="fill-pick-end" title="曲の終わりの次の小節から範囲にします（続きを作る）">曲の末尾</button>
+            <button class="dtm-btn" data-dtm="fill-pick-cursor" title="再生位置の小節から範囲にします">再生位置</button>
+          </div>
+          <div class="dtm-row">
+            <button class="dtm-btn dtm-btn--success" data-dtm="fill-run" title="範囲の中身を全トラック消して、選んだスタイルで作り直します（元に戻すはトラックごと）">${icon("play", 14)} この範囲を作る</button>
+            <button class="dtm-btn dtm-btn--danger" data-dtm="fill-clear" title="範囲の中身を全トラック消します">この範囲を空にする</button>
+          </div>
+          <p class="dtm-hint" data-dtm="fill-hint"></p>
+        </div>
+      </details>
       <details class="dtm-compose-sub" data-dtm="compose-more">
         <summary>詳しく</summary>
         <div class="dtm-compose-more-body">
@@ -919,6 +965,16 @@ export const buildUI = (
 		composeSavedTitle: sel("compose-saved-title"),
 		composeSavedList: sel("compose-saved-list"),
 		composeMore: sel<HTMLDetailsElement>("compose-more"),
+		composeFill: sel<HTMLDetailsElement>("compose-fill"),
+		fillKind: sel<HTMLSelectElement>("fill-kind"),
+		fillStart: sel<HTMLInputElement>("fill-start"),
+		fillBars: sel<HTMLInputElement>("fill-bars"),
+		fillPickEmpty: sel("fill-pick-empty"),
+		fillPickEnd: sel("fill-pick-end"),
+		fillPickCursor: sel("fill-pick-cursor"),
+		fillRun: sel("fill-run"),
+		fillClear: sel("fill-clear"),
+		fillHint: sel("fill-hint"),
 		composeTempo: sel<HTMLInputElement>("compose-tempo"),
 		composeSectionsLen: sel("compose-sections-len"),
 		composeKey: sel("compose-key"),

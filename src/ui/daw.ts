@@ -52,7 +52,11 @@ import {
 	type ChordPlayerInstance,
 	mountChordPlayer,
 } from "../chord/chord-player";
-import { buildChordPlacements, type ChordPatternType } from "../chord/chords";
+import {
+	buildChordPlacements,
+	type ChordPatternType,
+	semitonesToUnits,
+} from "../chord/chords";
 import {
 	type AdvancedLayer,
 	type AutoRole,
@@ -68,9 +72,19 @@ import {
 	seededRandom,
 } from "../compose/compose";
 import { accompMixToRelease } from "../compose/compose-accomp";
+import {
+	type DetectedSongKey,
+	detectSongKey,
+	type FillResult,
+	fillRange,
+	findEmptyBars,
+	songEndBar,
+	spliceLyrics,
+} from "../compose/compose-fill";
 import { getComposeKeyDescription } from "../compose/compose-keys";
 import { getComposeScaleDescription } from "../compose/compose-scales";
 import {
+	SECTION_LABELS,
 	SECTION_ORDER,
 	type SectionKind,
 	STRUCTURE_TEMPLATES,
@@ -625,6 +639,14 @@ const COMPOSE_INFO_HTML = `
     <li>31平均律の曲でも使えます。和音・メロディとも31平均律の格子に乗せて生成します。</li>
     <li><strong>ドラムは曲に合う固定パターンから選びます</strong>。テンポとメロディの刻みから8ビート／16ビート／4つ打ち／シャッフル／バラード／ロックなどの候補を絞って1つ引きます（テンプレートは専用の候補を持ちます）。気に入らなければ「ドラム設定」から他のリズムへ切り替えられます。</li>
     <li>実行後は「元に戻す」で作曲前の状態へ戻せます。元に戻すはトラックごとに効くので、4トラックすべてを戻したいときはトラックを切り替えながら1回ずつ押してください。</li>
+  </ul>
+  <h4>範囲を作る（続き・間奏・作り直し）</h4>
+  <p>いまの曲の<strong>ある小節範囲だけ</strong>を、選んだスタイルで作ります。曲の末尾を範囲にすれば<strong>続き</strong>、空いている小節を範囲にすれば<strong>間奏の補完</strong>、気に入らない小節を範囲にすれば<strong>部分的な作り直し</strong>になります。範囲の中身は全トラック消して書き直します（「元に戻す」はトラックごと）。</p>
+  <ul>
+    <li><strong>調は曲から取ります</strong>。全トラックの音から調を推定し、スタイルの素材をその調へ移調します（長調の曲には平行短調で合わせます）。テンポ・ドラム・楽器・トラックの設定は触りません。</li>
+    <li>スタイルで<strong>借用曲を1曲作り</strong>、選んだ種別（間奏・サビなど）のセクションを切り出して範囲へ写します。スタイルがその種別を持たないときは近い種別で代え、歌わない種別に歌のあるセクションを使うときは歌メロをソロ（上級者モードは間奏ソロのトラック、シンプルモードは主旋律かサブメロのトラック）へ回します。</li>
+    <li>範囲が切り出したセクションより長いときは素材を回します。前後とのつながりは調を合わせるだけなので、境目は手で直す前提です。</li>
+    <li>歌っているトラックは、範囲ぶんの歌詞だけ差し替えます（主旋律は新しく作り、ハモリは主旋律の歌詞を写します）。</li>
   </ul>
 </div>
 `;
@@ -7354,6 +7376,302 @@ export const mountDAW = (
 		};
 		refs.macroCompose.addEventListener("click", composeSelected);
 		refs.composeAgain.addEventListener("click", composeSelected);
+
+		// --- 範囲補完（続き・間奏・作り直し）---
+		// 選んだスタイルで借用曲を1曲作り、要る種別のセクションを切り出して曲の調へ移調し、範囲へ写す
+		// （`compose-fill.ts`）。調は曲から取り、テンポ・ドラム・楽器・トラック設定は触らない。
+		const allNotes = (): Note[] =>
+			trackStates.flatMap((t) => t.core.getNotes());
+		const fillKindOf = (): SectionKind => {
+			const v = refs.fillKind.value as SectionKind;
+			return SECTION_ORDER.includes(v) ? v : "interlude";
+		};
+		{
+			const savedKind = readMacroSetting("fillKind");
+			if (savedKind && SECTION_ORDER.includes(savedKind as SectionKind))
+				refs.fillKind.value = savedKind;
+			const savedBars = readMacroSetting("fillBars");
+			if (savedBars) refs.fillBars.value = savedBars;
+		}
+		refs.fillKind.addEventListener("change", () =>
+			writeMacroSetting("fillKind", refs.fillKind.value),
+		);
+		refs.fillBars.addEventListener("change", () =>
+			writeMacroSetting("fillBars", refs.fillBars.value),
+		);
+		/** 入力欄の範囲（0始まりの小節と小節数）。 */
+		const fillRangeOf = (): { startBar: number; bars: number } => {
+			const start = Math.max(1, Number.parseInt(refs.fillStart.value, 10) || 1);
+			const bars = Math.min(
+				64,
+				Math.max(1, Number.parseInt(refs.fillBars.value, 10) || 4),
+			);
+			return { startBar: start - 1, bars };
+		};
+		const setFillRange = (r: { startBar: number; bars: number }): void => {
+			refs.fillStart.value = String(r.startBar + 1);
+			refs.fillBars.value = String(r.bars);
+			writeMacroSetting("fillBars", refs.fillBars.value);
+		};
+		const KEY_NAMES = [
+			"C",
+			"C#",
+			"D",
+			"Eb",
+			"E",
+			"F",
+			"F#",
+			"G",
+			"Ab",
+			"A",
+			"Bb",
+			"B",
+		];
+		/** 推定した調と、実際に合わせる短調（長調の曲は平行短調。公開スタイルは全部短調）。 */
+		const fillKeyLabel = (key: DetectedSongKey | null): string =>
+			key
+				? key.mode === "minor"
+					? `${KEY_NAMES[key.tonicPc]}m`
+					: `${KEY_NAMES[key.tonicPc]}（平行短調 ${KEY_NAMES[(key.tonicPc + 9) % 12]}m に合わせる）`
+				: "イ短調（曲に音が無い）";
+		const updateFillHint = (): void => {
+			const key = detectSongKey(allNotes());
+			refs.fillHint.textContent = key
+				? `曲の調：${fillKeyLabel(key)}。この調に合わせて、選んだスタイルで作ります`
+				: "曲に音が無いので、イ短調で作ります";
+		};
+		refs.composeFill.addEventListener("toggle", () => {
+			if (refs.composeFill.open) updateFillHint();
+		});
+		refs.fillPickEmpty.addEventListener("click", () => {
+			const r = findEmptyBars(allNotes(), renderConfig.stepsPerBar);
+			if (!r) {
+				refs.fillHint.textContent =
+					"全トラックが空いている小節は見つかりませんでした";
+				return;
+			}
+			setFillRange(r);
+			refs.fillHint.textContent = `${r.startBar + 1}小節目から${r.bars}小節が空いています`;
+		});
+		refs.fillPickEnd.addEventListener("click", () => {
+			const end = songEndBar(allNotes(), renderConfig.stepsPerBar);
+			setFillRange({ startBar: end, bars: fillRangeOf().bars });
+			refs.fillHint.textContent = `曲は${end}小節。${end + 1}小節目から続きを作ります`;
+		});
+		refs.fillPickCursor.addEventListener("click", () => {
+			setFillRange({
+				startBar: Math.floor(playStartStep / renderConfig.stepsPerBar),
+				bars: fillRangeOf().bars,
+			});
+		});
+
+		/** 範囲の中身を消す（範囲へ食い込む音は範囲の頭で切る）。消した音の数を返す。 */
+		const clearRangeOn = (
+			track: TrackState,
+			fromStep: number,
+			toStep: number,
+		): number => {
+			let removed = 0;
+			for (const n of [...track.core.getNotes()]) {
+				if (n.startStep >= fromStep && n.startStep < toStep) {
+					track.core.deleteNoteById(n.id);
+					removed++;
+				} else if (
+					n.startStep < fromStep &&
+					n.startStep + n.durationSteps > fromStep
+				)
+					track.core.resizeNote(n.id, fromStep - n.startStep);
+			}
+			return removed;
+		};
+		const tokenizeLyrics = (text: string): string[] =>
+			normalizeLyrics(text).map(displayKana);
+		/** 歌っているトラックか（歌詞か歌唱モデルがある）。 */
+		const sings = (track: TrackState): boolean =>
+			track.lyricModel.trim() !== "" || track.lyrics.trim() !== "";
+		/** 歌っているトラックの歌詞を範囲ぶん差し替える。歌詞は音符順の一列なので、前後は残す。 */
+		const spliceTrackLyrics = (
+			track: TrackState,
+			before: number,
+			removed: number,
+			text: string,
+		): void => {
+			track.lyrics = spliceLyrics(
+				track.lyrics,
+				tokenizeLyrics,
+				before,
+				removed,
+				text,
+			);
+			if (autoComposeVocalTracks.has(track))
+				autoComposeVocalTracks.set(track, track.lyrics);
+			fireLyricsChange(track);
+		};
+		/**
+		 * 範囲を消して書く。トラックごとに履歴1つ（消す＋書く）で、「元に戻す」が1回で戻る。
+		 * `notesByTrack` に無いトラックは消すだけ。歌うトラックは歌詞も継ぐ。
+		 */
+		const rewriteRange = (
+			fromStep: number,
+			toStep: number,
+			notesByTrack: Map<TrackState, ComposedNote[]>,
+			lyricsFor: (track: TrackState, notes: ComposedNote[]) => string,
+		): void => {
+			for (const track of trackStates) {
+				const notes = notesByTrack.get(track) ?? [];
+				const before = track.core
+					.getNotes()
+					.filter((n) => n.startStep < fromStep).length;
+				track.core.beginBatch();
+				const removed = clearRangeOn(track, fromStep, toStep);
+				for (const n of notes)
+					track.core.addNote(n.startStep, n.pitchUnits, {
+						noteLengthSteps: Math.max(1, n.durationSteps),
+						velocity: n.velocity,
+					});
+				track.core.endBatch();
+				if (sings(track))
+					spliceTrackLyrics(track, before, removed, lyricsFor(track, notes));
+			}
+		};
+		const runFill = (): void => {
+			stop();
+			overlayDuring(() => {
+				const spb = renderConfig.stepsPerBar;
+				const edo = renderConfig.edo === 31 ? 31 : 12;
+				const { startBar, bars } = fillRangeOf();
+				const kind = fillKindOf();
+				const template = selectedComposeTemplate();
+				if (!template) return;
+				const key = detectSongKey(allNotes());
+				const seed = (Math.random() * 0x100000000) >>> 0;
+				let fill: FillResult;
+				try {
+					fill = fillRange({
+						stepsPerBar: spb,
+						edo,
+						template,
+						kind,
+						startBar,
+						bars,
+						key,
+						random: seededRandom(seed),
+					});
+				} catch (e) {
+					refs.fillHint.textContent =
+						e instanceof Error ? e.message : String(e);
+					return;
+				}
+				const from = startBar * spb;
+				const to = (startBar + bars) * spb;
+				const notesByTrack = new Map<TrackState, ComposedNote[]>();
+				const melodyTrack = composeMelodyTrack();
+				if (isAdvanced) {
+					// 15トラックは借用曲の編曲プランをそのまま写す。層のオクターブは**ノートへ焼き込む**
+					// （読み込んだ曲のトラック設定を動かすと、範囲の外の音まで動く）。
+					const layers = fill.advancedLayers(
+						INSTRUMENT_PRESETS[currentInstrument] ?? INSTRUMENT_PRESETS.piano,
+					);
+					for (const layer of layers) {
+						const track = trackStates[layer.index];
+						if (!track) continue;
+						const shift = semitonesToUnits(
+							(layer.octave - track.trackOctave) * 12,
+							edo,
+						);
+						notesByTrack.set(
+							track,
+							layer.notes.map((n) => ({
+								...n,
+								pitchUnits: (n.pitchUnits + shift) as Units,
+							})),
+						);
+					}
+				} else {
+					const byId = (id: string): TrackState | undefined =>
+						trackStates.find((t) => t.config.id === id);
+					const melody = byId("melody");
+					const submelody = byId("submelody");
+					// ソロ（間奏）は4トラックに置き場が無いので主旋律のトラックへ。主旋律が歌っているなら
+					// 歌わせずにサブメロのトラックへ回す。
+					const soloTo = melody && sings(melody) ? submelody : melody;
+					const put = (
+						track: TrackState | undefined,
+						notes: ComposedNote[],
+					): void => {
+						if (!track) return;
+						notesByTrack.set(track, [
+							...(notesByTrack.get(track) ?? []),
+							...notes,
+						]);
+					};
+					put(melody, fill.roles.melody);
+					put(soloTo, fill.roles.solo);
+					put(submelody, fill.roles.submelody);
+					put(byId("bass"), fill.roles.bass);
+					put(byId("chord"), fill.chordNotes);
+				}
+				// 歌詞: 主旋律は新しく作り、ほかの歌うトラック（ハモリ等）は主旋律の歌詞を発音位置で写す。
+				const melodyNotes = melodyTrack
+					? (notesByTrack.get(melodyTrack) ?? [])
+					: [];
+				const melodyText =
+					melodyTrack && sings(melodyTrack) && melodyNotes.length > 0
+						? composeLyrics(melodyNotes, {
+								stepsPerBar: spb,
+								random: seededRandom((seed ^ 0x5bf03635) >>> 0),
+								vocab: fill.donor.lyricVocab,
+							})
+						: "";
+				rewriteRange(from, to, notesByTrack, (track, notes) =>
+					track === melodyTrack
+						? melodyText
+						: notes.length > 0 && melodyNotes.length > 0
+							? alignLyrics(melodyNotes, melodyText, notes, {
+									stepsPerBar: spb,
+								})
+							: "",
+				);
+				// 作曲直後の「手を入れていない」判定からは外れる（部分的に別の曲になった）
+				composedSignature = null;
+				playStartStep = from;
+				redrawAll();
+				updateTrackPanel();
+				const used =
+					fill.usedKind !== kind
+						? `（スタイルに${SECTION_LABELS[kind]}が無いので${SECTION_LABELS[fill.usedKind]}で代用）`
+						: "";
+				refs.fillHint.textContent = `${startBar + 1}小節目から${bars}小節を${SECTION_LABELS[kind]}として作りました${used}。調：${fillKeyLabel(key)}`;
+			});
+		};
+		refs.fillRun.addEventListener("click", () => {
+			const { startBar, bars } = fillRangeOf();
+			const from = startBar * renderConfig.stepsPerBar;
+			const to = (startBar + bars) * renderConfig.stepsPerBar;
+			const hasNotes = trackStates.some((t) =>
+				t.core.getNotes().some((n) => n.startStep >= from && n.startStep < to),
+			);
+			if (!hasNotes) {
+				runFill();
+				return;
+			}
+			showConfirm(
+				"範囲を作る",
+				`${startBar + 1}小節目から${bars}小節の中身を全トラック消して、${genre.label}の${SECTION_LABELS[fillKindOf()]}として作り直します。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
+				runFill,
+				"fill",
+			);
+		});
+		refs.fillClear.addEventListener("click", () => {
+			const { startBar, bars } = fillRangeOf();
+			overlayDuring(() => {
+				const from = startBar * renderConfig.stepsPerBar;
+				const to = (startBar + bars) * renderConfig.stepsPerBar;
+				rewriteRange(from, to, new Map(), () => "");
+				redrawAll();
+				refs.fillHint.textContent = `${startBar + 1}小節目から${bars}小節を空にしました`;
+			});
+		});
 
 		/**
 		 * 作り終えたら結果カードを出す（runCompose の最後から呼ぶ）。

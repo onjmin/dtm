@@ -22,6 +22,9 @@ export const MACRO_STORAGE_KEYS = {
 	userInstrument: "dtm-macro:user-instrument",
 	/** 歌入り作曲が自動で当てた声。声はトラック設定に残るので、読み込み直しても自分で選んだ声と区別する。 */
 	autoVoice: "dtm-macro:auto-voice",
+	/** 範囲補完（続き・間奏・作り直し）で埋める種別と小節数。 */
+	fillKind: "dtm-macro:fill-kind",
+	fillBars: "dtm-macro:fill-bars",
 } as const;
 
 export type MacroStorageKey = keyof typeof MACRO_STORAGE_KEYS;

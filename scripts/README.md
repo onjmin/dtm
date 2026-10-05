@@ -16,6 +16,7 @@
 | `check-accomp-styles.ts` | 伴奏主体モードの全スタイルのスキーマと前提の検査（[docs/accomp-style-engine.md](../docs/accomp-style-engine.md) §7.1） | `npx tsx scripts/test/check-accomp-styles.ts` |
 | `check-accomp-golden.ts` | 伴奏主体モードの黄金値。計画 JSON と MML の sha256 を `test/fixtures/styles/<id>/golden.json` と照合 | `pnpm accomp:bless`（意図して出力を変えたときの取り直し） |
 | `check-compose-lyrics.ts` | 仮歌詞の検算。音符と歌詞が1対1か、伸ばし棒を置いていないか、文で終わるか（[docs/lyric-design.md](../docs/lyric-design.md)） | `npx tsx scripts/test/check-compose-lyrics.ts` |
+| `check-compose-fill.ts` | 範囲補完（続き・間奏・作り直し、`src/compose/compose-fill.ts`）の検算。全スタイル×全種別で音が範囲に収まるか、移調・代用・歌詞の継ぎ | `npx tsx scripts/test/check-compose-fill.ts` |
 | `check-mml-velocity.ts` | 音符ごとの強弱（v）が MML・DAW・プレイヤー・MIDI 書き出しを通って保たれるか | `npx tsx scripts/test/check-mml-velocity.ts --file tmp/full/fb.space.mml` |
 | `check-speech-schedule.ts` | 単発の読み上げ（`speak`）のチャンク配置の検算。到着時刻を偽って音を出さずに確かめる | `npx tsx scripts/test/check-speech-schedule.ts` |
 | `check-fx-font-drum.ts` | 再生専用プレイヤーと DAW 全体読み込みで、宣言（`#reverb=` `#t<n>font=` `#drum` 等）が読まれ未記載は既定へ戻るか | `npx tsx scripts/test/check-fx-font-drum.ts` |
