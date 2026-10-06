@@ -641,7 +641,7 @@ const COMPOSE_INFO_HTML = `
     <li>実行後は「元に戻す」で作曲前の状態へ戻せます。元に戻すはトラックごとに効くので、4トラックすべてを戻したいときはトラックを切り替えながら1回ずつ押してください。</li>
   </ul>
   <h4>範囲を作る（続き・間奏・作り直し）</h4>
-  <p>いまの曲の<strong>ある小節範囲だけ</strong>を、選んだスタイルで作ります。曲の末尾を範囲にすれば<strong>続き</strong>、空いている小節を範囲にすれば<strong>間奏の補完</strong>、気に入らない小節を範囲にすれば<strong>部分的な作り直し</strong>になります。範囲の中身は全トラック消して書き直します（「元に戻す」はトラックごと）。</p>
+  <p>いまの曲の<strong>ある小節範囲だけ</strong>を、選んだスタイルで作ります。曲の末尾を範囲にすれば<strong>続き</strong>、空いている小節を範囲にすれば<strong>間奏の補完</strong>、気に入らない小節を範囲にすれば<strong>部分的な作り直し</strong>になります。範囲は<strong>開始〜終了の小節目</strong>で指定し、終了の小節も含みます（5〜12 なら 8小節）。範囲の中身は全トラック消して書き直します（「元に戻す」はトラックごと）。</p>
   <ul>
     <li><strong>調は曲から取ります</strong>。全トラックの音から調を推定し、スタイルの素材をその調へ移調します（長調の曲には平行短調で合わせます）。テンポ・ドラム・楽器・トラックの設定は触りません。</li>
     <li>スタイルで<strong>借用曲を1曲作り</strong>、選んだ種別（間奏・サビなど）のセクションを切り出して範囲へ写します。スタイルがその種別を持たないときは近い種別で代え、歌わない種別に歌のあるセクションを使うときは歌メロをソロ（上級者モードは間奏ソロのトラック、シンプルモードは主旋律かサブメロのトラック）へ回します。</li>
@@ -7390,29 +7390,44 @@ export const mountDAW = (
 			const savedKind = readMacroSetting("fillKind");
 			if (savedKind && SECTION_ORDER.includes(savedKind as SectionKind))
 				refs.fillKind.value = savedKind;
-			const savedBars = readMacroSetting("fillBars");
-			if (savedBars) refs.fillBars.value = savedBars;
+			// 保存するのは小節数（「曲の末尾」で続きを作るときの長さの好み）。欄は開始〜終了で見せる
+			const savedBars = Number.parseInt(readMacroSetting("fillBars") ?? "", 10);
+			if (savedBars >= 1) refs.fillEnd.value = String(savedBars);
 		}
 		refs.fillKind.addEventListener("change", () =>
 			writeMacroSetting("fillKind", refs.fillKind.value),
 		);
-		refs.fillBars.addEventListener("change", () =>
-			writeMacroSetting("fillBars", refs.fillBars.value),
-		);
-		/** 入力欄の範囲（0始まりの小節と小節数）。 */
-		const fillRangeOf = (): { startBar: number; bars: number } => {
+		/** 欄の読み取り。終了は開始を下回らないように欄も直す。 */
+		const readFillInputs = (): { start: number; end: number } => {
 			const start = Math.max(1, Number.parseInt(refs.fillStart.value, 10) || 1);
-			const bars = Math.min(
-				64,
-				Math.max(1, Number.parseInt(refs.fillBars.value, 10) || 4),
+			const end = Math.max(
+				start,
+				Number.parseInt(refs.fillEnd.value, 10) || start,
 			);
-			return { startBar: start - 1, bars };
+			if (refs.fillEnd.value !== String(end)) refs.fillEnd.value = String(end);
+			return { start, end };
+		};
+		const saveFillBars = (): void => {
+			const { start, end } = readFillInputs();
+			writeMacroSetting("fillBars", String(end - start + 1));
+		};
+		refs.fillStart.addEventListener("change", saveFillBars);
+		refs.fillEnd.addEventListener("change", saveFillBars);
+		/** 入力欄の範囲（0始まりの小節と小節数）。欄の終了小節は含む（5〜12 なら 8小節）。 */
+		const fillRangeOf = (): { startBar: number; bars: number } => {
+			const { start, end } = readFillInputs();
+			return { startBar: start - 1, bars: Math.min(64, end - start + 1) };
 		};
 		const setFillRange = (r: { startBar: number; bars: number }): void => {
 			refs.fillStart.value = String(r.startBar + 1);
-			refs.fillBars.value = String(r.bars);
-			writeMacroSetting("fillBars", refs.fillBars.value);
+			refs.fillEnd.value = String(r.startBar + r.bars);
+			writeMacroSetting("fillBars", String(r.bars));
 		};
+		/** 「5〜12小節目」（1小節なら「5小節目」）。 */
+		const fillRangeLabel = (startBar: number, bars: number): string =>
+			bars === 1
+				? `${startBar + 1}小節目`
+				: `${startBar + 1}〜${startBar + bars}小節目`;
 		const KEY_NAMES = [
 			"C",
 			"C#",
@@ -7451,7 +7466,7 @@ export const mountDAW = (
 				return;
 			}
 			setFillRange(r);
-			refs.fillHint.textContent = `${r.startBar + 1}小節目から${r.bars}小節が空いています`;
+			refs.fillHint.textContent = `${fillRangeLabel(r.startBar, r.bars)}が空いています`;
 		});
 		refs.fillPickEnd.addEventListener("click", () => {
 			const end = songEndBar(allNotes(), renderConfig.stepsPerBar);
@@ -7641,7 +7656,7 @@ export const mountDAW = (
 					fill.usedKind !== kind
 						? `（スタイルに${SECTION_LABELS[kind]}が無いので${SECTION_LABELS[fill.usedKind]}で代用）`
 						: "";
-				refs.fillHint.textContent = `${startBar + 1}小節目から${bars}小節を${SECTION_LABELS[kind]}として作りました${used}。調：${fillKeyLabel(key)}`;
+				refs.fillHint.textContent = `${fillRangeLabel(startBar, bars)}を${SECTION_LABELS[kind]}として作りました${used}。調：${fillKeyLabel(key)}`;
 			});
 		};
 		refs.fillRun.addEventListener("click", () => {
@@ -7657,7 +7672,7 @@ export const mountDAW = (
 			}
 			showConfirm(
 				"範囲を作る",
-				`${startBar + 1}小節目から${bars}小節の中身を全トラック消して、${genre.label}の${SECTION_LABELS[fillKindOf()]}として作り直します。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
+				`${fillRangeLabel(startBar, bars)}の中身を全トラック消して、${genre.label}の${SECTION_LABELS[fillKindOf()]}として作り直します。よろしいですか？（「元に戻す」はトラックごとに効きます）`,
 				runFill,
 				"fill",
 			);
@@ -7669,7 +7684,7 @@ export const mountDAW = (
 				const to = (startBar + bars) * renderConfig.stepsPerBar;
 				rewriteRange(from, to, new Map(), () => "");
 				redrawAll();
-				refs.fillHint.textContent = `${startBar + 1}小節目から${bars}小節を空にしました`;
+				refs.fillHint.textContent = `${fillRangeLabel(startBar, bars)}を空にしました`;
 			});
 		});
 

@@ -145,7 +145,7 @@ export type DawUIRefs = {
 	composeFill: HTMLDetailsElement;
 	fillKind: HTMLSelectElement;
 	fillStart: HTMLInputElement;
-	fillBars: HTMLInputElement;
+	fillEnd: HTMLInputElement;
 	fillPickEmpty: HTMLElement;
 	fillPickEnd: HTMLElement;
 	fillPickCursor: HTMLElement;
@@ -606,9 +606,9 @@ export const buildUI = (
           <div class="dtm-row">
             <span class="dtm-label">範囲</span>
             <input type="number" class="dtm-input dtm-input--num" data-dtm="fill-start" min="1" step="1" value="1" inputmode="numeric" aria-label="開始小節（1始まり）" title="開始小節（1始まり）">
-            <span class="dtm-hint">小節目から</span>
-            <input type="number" class="dtm-input dtm-input--num" data-dtm="fill-bars" min="1" max="64" step="1" value="4" inputmode="numeric" aria-label="小節数" title="小節数">
-            <span class="dtm-hint">小節</span>
+            <span class="dtm-hint">〜</span>
+            <input type="number" class="dtm-input dtm-input--num" data-dtm="fill-end" min="1" step="1" value="4" inputmode="numeric" aria-label="終了小節（この小節まで含む）" title="終了小節（この小節まで含む。5〜12 なら 5小節目から12小節目までの8小節）">
+            <span class="dtm-hint">小節目</span>
           </div>
           <div class="dtm-row">
             <button class="dtm-btn" data-dtm="fill-pick-empty" title="全トラックが空いている最初の小節の並びを範囲にします（間奏だけ抜けている曲など）">空いている所</button>
@@ -968,7 +968,7 @@ export const buildUI = (
 		composeFill: sel<HTMLDetailsElement>("compose-fill"),
 		fillKind: sel<HTMLSelectElement>("fill-kind"),
 		fillStart: sel<HTMLInputElement>("fill-start"),
-		fillBars: sel<HTMLInputElement>("fill-bars"),
+		fillEnd: sel<HTMLInputElement>("fill-end"),
 		fillPickEmpty: sel("fill-pick-empty"),
 		fillPickEnd: sel("fill-pick-end"),
 		fillPickCursor: sel("fill-pick-cursor"),
