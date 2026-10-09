@@ -5,6 +5,7 @@ import { pitchV1ToUnits, type Units, unitsToMidiDetune } from "../audio/tuning";
 import { DRUM_KEYS } from "../instruments/drum-config";
 import { SoundFont } from "../instruments/sf/SoundFont";
 import { DEFAULT_SOUNDFONT_BANK } from "../instruments/soundfont-banks";
+import { lookupTable } from "../lookup-table";
 import {
 	type MmlPlayback,
 	type PlayPlacementsOptions,
@@ -40,7 +41,7 @@ const SOUNDFONT_NAME = DEFAULT_SOUNDFONT_BANK;
 const WAF_TONE_PRESETS: Record<
 	string,
 	{ label: string; gmName: string | null }
-> = {
+> = lookupTable({
 	square: { label: "SQUARE", gmName: null },
 	piano: { label: "PIANO", gmName: "Acoustic Grand Piano" },
 	epiano: { label: "E.PIANO", gmName: "Electric Piano 1" },
@@ -53,7 +54,7 @@ const WAF_TONE_PRESETS: Record<
 	choir: { label: "CHOIR", gmName: "Choir Aahs" },
 	harp: { label: "HARP", gmName: "Orchestral Harp" },
 	flute: { label: "FLUTE", gmName: "Flute" },
-};
+});
 
 /**
  * 入力文字列から `#tone=<名前>` または `#instrument=<名前>` メタ行を読み取る。

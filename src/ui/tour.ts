@@ -27,7 +27,7 @@ export type TourStep = {
 	target?: string | (() => Element | null | undefined);
 	/** 吹き出しの見出し。 */
 	title: string;
-	/** 吹き出しの本文。HTMLを書ける。 */
+	/** 吹き出しの本文。HTMLとして入れるので、固定の文言だけを渡す（利用者の入力を混ぜない）。 */
 	body: string;
 	/**
 	 * 吹き出しを対象の上下どちらに出すか。既定 `"auto"`（入る方を選ぶ）。

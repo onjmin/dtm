@@ -1,3 +1,5 @@
+import { lookupTable } from "../lookup-table";
+
 /**
  * 楽器プリセット定義
  * FluidR3_GM Instrument Presets
@@ -55,7 +57,7 @@ export type InstrumentPreset = {
 	harmonyAlt: string;
 };
 
-export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
+export const INSTRUMENT_PRESETS = lookupTable<InstrumentPreset>({
 	// --- STANDARD: 汎用性と完成度重視 ---
 	piano: {
 		displayName: "グランドピアノ",
@@ -268,7 +270,7 @@ export const INSTRUMENT_PRESETS: Record<string, InstrumentPreset> = {
 		bassAlt: "Synth Bass 2",
 		harmonyAlt: "Synth Choir",
 	},
-};
+});
 
 /**
  * 実物の楽器の音域（実音・MIDIノート番号、C4=60）。

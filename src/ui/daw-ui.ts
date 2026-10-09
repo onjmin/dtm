@@ -7,6 +7,7 @@ import { DELAY_DIVISIONS } from "../audio/delay";
 import { SECTION_LABELS, SECTION_ORDER } from "../compose/compose-sections";
 import type { TrackConfig } from "../types";
 import { COMPOSE_GENRES } from "./compose-genres";
+import { escapeHtml } from "./html";
 import { icon } from "./icons";
 import { persistPanels } from "./state/panel-state";
 
@@ -236,7 +237,7 @@ export const buildUI = (
 		.concat(
 			drumPatterns.map(
 				(p) =>
-					`<option value="${p.value}" ${p.value === defaultDrumPattern ? "selected" : ""}>${p.label}</option>`,
+					`<option value="${escapeHtml(p.value)}" ${p.value === defaultDrumPattern ? "selected" : ""}>${escapeHtml(p.label)}</option>`,
 			),
 		)
 		.join("");
@@ -258,7 +259,7 @@ export const buildUI = (
       <span class="dtm-grow"></span>
       <button class="dtm-iconbtn${showHelp ? "" : " dtm-hidden"}" data-dtm="help" title="使い方・ガイドツアー" aria-label="使い方・ガイドツアー">${icon("help")}</button>
       <span class="dtm-label">BPM</span>
-      <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${defaultBpm}" min="20" max="300">
+      <input type="number" class="dtm-input dtm-input--num" data-dtm="bpm" value="${Number(defaultBpm)}" min="20" max="300">
     </div>
     <div class="dtm-tracks" data-dtm="track-tabs"></div>
   </div>

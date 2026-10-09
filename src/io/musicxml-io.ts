@@ -45,11 +45,13 @@
  */
 
 import { UNITS_PER_SEMITONE, type Units } from "../audio/tuning";
-import type { Note } from "../types";
+import { MAX_SONG_BARS, type Note } from "../types";
 import { DTM_VERSION } from "../version";
 
 /** 4分音符あたりのステップ数。このライブラリの内部表現。 */
 const STEPS_PER_BEAT = 48;
+/** 読み込む位置の上限（ステップ）。桁外れの duration で配置が際限なく伸びるのを防ぐ。 */
+const MAX_STEPS = MAX_SONG_BARS * 4 * STEPS_PER_BEAT;
 
 /** 取り込んだ1音。 */
 export type MusicXmlNotePlacement = {
@@ -262,6 +264,7 @@ export const parseMusicXML = (xml: string): MusicXmlExtraction => {
 		for (const measure of Array.from(partEl.getElementsByTagName("measure"))) {
 			measureStart += cursor;
 			cursor = 0;
+			if (!Number.isFinite(measureStart) || measureStart > MAX_STEPS) break;
 			for (const child of Array.from(measure.children)) {
 				const tag = child.tagName.toLowerCase();
 
@@ -287,6 +290,7 @@ export const parseMusicXML = (xml: string): MusicXmlExtraction => {
 				if (tag === "backup" || tag === "forward") {
 					const steps =
 						(numOf(child, "duration", 0) / divisions) * STEPS_PER_BEAT;
+					if (!Number.isFinite(steps)) continue;
 					cursor += tag === "backup" ? -steps : steps;
 					continue;
 				}
@@ -295,6 +299,7 @@ export const parseMusicXML = (xml: string): MusicXmlExtraction => {
 				const durSteps = Math.round(
 					(numOf(child, "duration", 0) / divisions) * STEPS_PER_BEAT,
 				);
+				if (!Number.isFinite(durSteps)) continue;
 				const isChord = child.getElementsByTagName("chord").length > 0;
 				const isRest = child.getElementsByTagName("rest").length > 0;
 				// **和音の2音目以降は時間を進めない。** `<chord>` は「直前の音と

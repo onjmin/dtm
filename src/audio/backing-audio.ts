@@ -626,6 +626,41 @@ const driveExternalMedia = (
 	};
 };
 
+/**
+ * デコード用に丸ごと読む音源の上限（バイト）。URL は曲データ由来なので、終わらない応答や
+ * 巨大なファイルでタブのメモリを使い切らないよう、超えたら `<audio>` 直再生（逐次読み）へ落とす。
+ */
+const MAX_BACKING_FETCH_BYTES = 200 * 1024 * 1024;
+
+const readCapped = async (
+	res: Response,
+	maxBytes: number,
+): Promise<ArrayBuffer> => {
+	const declared = Number(res.headers.get("Content-Length"));
+	if (declared > maxBytes) throw new Error("backing audio too large");
+	if (!res.body) return res.arrayBuffer();
+	const reader = res.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		total += value.byteLength;
+		if (total > maxBytes) {
+			await reader.cancel();
+			throw new Error("backing audio too large");
+		}
+		chunks.push(value);
+	}
+	const out = new Uint8Array(total);
+	let offset = 0;
+	for (const c of chunks) {
+		out.set(c, offset);
+		offset += c.byteLength;
+	}
+	return out.buffer;
+};
+
 // ============================================================
 // 本体
 // ============================================================
@@ -808,9 +843,11 @@ export const createBackingAudio = (
 			// 録音・WAV書き出しにも乗る。CORSヘッダの無い配布URLはここで失敗するので
 			// `<audio>` 直再生へ落とす（合わせ方は実測ベースになる）。
 			try {
-				const res = await fetch(src, { mode: "cors" });
+				const res = await fetch(src, { mode: "cors", credentials: "omit" });
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);
-				buffer = await audioContext.decodeAudioData(await res.arrayBuffer());
+				buffer = await audioContext.decodeAudioData(
+					await readCapped(res, MAX_BACKING_FETCH_BYTES),
+				);
 				loaded = {
 					mode: "buffer",
 					durationSec: buffer.duration,

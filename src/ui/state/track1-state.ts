@@ -43,10 +43,41 @@ export type Track1Settings = {
 	vocalOctaveUnison: string;
 };
 
+const FIELD_TYPES: Record<
+	keyof Track1Settings,
+	"number" | "string" | "boolean"
+> = {
+	volume: "number",
+	trackInstrument: "string",
+	trackOctave: "number",
+	trackOctaveUnison: "string",
+	trackCompression: "number",
+	trackWidth: "number",
+	trackReverbSend: "number",
+	trackEqLow: "number",
+	trackEqMid: "number",
+	trackEqHigh: "number",
+	trackPan: "number",
+	trackDelaySend: "number",
+	lyricModel: "string",
+	vocalVolume: "number",
+	vocalGate: "number",
+	vocalPan: "number",
+	vocalOctave: "number",
+	vocalVibrato: "boolean",
+	vocalReverb: "number",
+	vocalDelay: "number",
+	vocalGender: "number",
+	vocalBreathiness: "number",
+	vocalTension: "number",
+	vocalOctaveUnison: "string",
+};
+
 /**
  * トラック1の設定を localStorage から読み出す。未保存・壊れたJSON・localStorage
  * にアクセスできない環境では null を返し、呼び出し側の既定値をそのまま使わせる。
  * 型が壊れている個別フィールドは無視する（部分的な復元を許す）。
+ * 値はパネルの描画へそのまま渡るので、型の違うものは必ずここで落とす。
  */
 export const readTrack1Settings = (): Partial<Track1Settings> | null => {
 	try {
@@ -55,7 +86,14 @@ export const readTrack1Settings = (): Partial<Track1Settings> | null => {
 		if (!raw) return null;
 		const parsed = JSON.parse(raw);
 		if (!parsed || typeof parsed !== "object") return null;
-		return parsed as Partial<Track1Settings>;
+		const out: Record<string, unknown> = {};
+		for (const [key, type] of Object.entries(FIELD_TYPES)) {
+			const v = parsed[key];
+			if (typeof v !== type) continue;
+			if (type === "number" && !Number.isFinite(v)) continue;
+			out[key] = v;
+		}
+		return out as Partial<Track1Settings>;
 	} catch (_) {
 		return null;
 	}

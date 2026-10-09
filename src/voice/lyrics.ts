@@ -28,6 +28,7 @@ import {
 } from "@onjmin/koe";
 import { UNITS_PER_SEMITONE, type Units, units } from "../audio/tuning";
 import { VIBRATO_MIN_SEC } from "../audio/vibrato";
+import { lookupTable } from "../lookup-table";
 import type {
 	CustomVocalDef,
 	FadeStop,
@@ -531,7 +532,8 @@ const normalizeLyricLines = (
 		const part = normalizeLyrics(line);
 		if (part.length === 0) continue; // 空行・かな無しの行は改行として数えない
 		if (syllables.length > 0) lineBreaks.push(syllables.length);
-		syllables.push(...part);
+		// push(...part) は十数万音節でスタックが溢れる（共有リンクの長い1行で再現）
+		for (const s of part) syllables.push(s);
 	}
 	return { syllables, lineBreaks };
 };
@@ -1491,7 +1493,7 @@ export const KOE_VOICEBANKS: Record<string, string> = {
  * 内蔵koe音源の表示名（キーワード → 音源名）。音源選択 UI のラベル用。
  * MML中の値はキーワード（{@link KOE_VOICEBANKS} のキー）のまま、表示だけ和名にする。
  */
-export const KOE_VOICEBANK_NAMES: Record<string, string> = {
+export const KOE_VOICEBANK_NAMES: Record<string, string> = lookupTable({
 	tsukuyomi: "つくよみちゃん",
 	rino: "春音リノ",
 	rino121: "春音リノv1.2.1",
@@ -1507,7 +1509,7 @@ export const KOE_VOICEBANK_NAMES: Record<string, string> = {
 	uc: "蓄音キリコ",
 	hibika_aru: "響化アル",
 	uta: "デフォ子",
-};
+});
 
 /**
  * 音源プルダウンの大分類（optgroup）。歌唱モデルの選択 UI（mountDAW）と、
@@ -1566,7 +1568,7 @@ export const groupVoiceModels = (
  * モデルキーワード → 内蔵キャラクター画像キー（voice-images.ts の VOICE_IMAGES キー）。
  * klatt合成は "puyuyu"、koe音源は音源名に対応する画像キーを返す。
  */
-export const VOICE_IMAGE_KEY: Record<string, string> = {
+export const VOICE_IMAGE_KEY: Record<string, string> = lookupTable({
 	klatt: "puyuyu",
 	tsukuyomi: "tsukuyomi",
 	rino: "rino",
@@ -1583,12 +1585,12 @@ export const VOICE_IMAGE_KEY: Record<string, string> = {
 	uc: "uc",
 	hibika_aru: "hibika_aru",
 	uta: "uta",
-};
+});
 
 /**
  * UTAU音源キーワード → 利用規約URL。
  */
-export const KOE_VOICEBANK_TERMS: Record<string, string> = {
+export const KOE_VOICEBANK_TERMS: Record<string, string> = lookupTable({
 	tsukuyomi: "https://tyc.rei-yumesaki.net/material/utau/terms/",
 	rino: "https://hatenakun1.github.io/halunelino/",
 	rino121: "https://harunerino.vercel.app/",
@@ -1605,7 +1607,7 @@ export const KOE_VOICEBANK_TERMS: Record<string, string> = {
 	hibika_aru:
 		"https://hibikaaru.wixsite.com/aruofficial/%E5%88%A9%E7%94%A8%E8%A6%8F%E7%B4%84",
 	uta: "https://utaneuta.utau-synth.com/please.html",
-};
+});
 
 /** ファイル名（日本語可）を encodeURIComponent して .koe のフルURLにする */
 export const koeUrl = (name: string, base: string = KOE_BASE_URL): string =>

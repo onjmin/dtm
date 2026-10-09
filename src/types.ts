@@ -12,6 +12,11 @@ export const DEFAULT_PAN = 64;
 export const DEFAULT_VELOCITY = 100;
 export const DEFAULT_PLAYBACK_VELOCITY = 127;
 export const DEFAULT_STEPS_PER_BAR = 192;
+/**
+ * 曲の長さの上限（小節）。これより後ろのノートは読み込まない。共有リンクや取り込んだ
+ * ファイルの桁外れの値で、ステップ単位の配列や休符埋めが際限なく伸びるのを防ぐ。
+ */
+export const MAX_SONG_BARS = 2000;
 export const MML_END_MARKER = "#end;";
 
 /**

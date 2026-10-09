@@ -15,13 +15,15 @@
  */
 
 import { unitsToMidiDetune } from "../audio/tuning";
-import { DEFAULT_VELOCITY, type Note } from "../types";
+import { DEFAULT_VELOCITY, MAX_SONG_BARS, type Note } from "../types";
 import { pinyinToMoras } from "../voice/pinyin";
 
 /** このアプリの内部ステップ解像度（4分音符あたり）。 */
 const STEPS_PER_BEAT = 48;
 /** USTの音価の解像度（4分音符あたり）。UTAUでは480固定。 */
 export const UST_TICKS_PER_BEAT = 480;
+/** 読み込む位置の上限（UST tick）。曲の長さの上限（4/4拍子換算）に合わせる。 */
+const MAX_UST_TICKS = MAX_SONG_BARS * 4 * UST_TICKS_PER_BEAT;
 /** UST tick → 内部ステップの倍率（480tick = 48step）。 */
 const TICKS_TO_STEPS = STEPS_PER_BEAT / UST_TICKS_PER_BEAT;
 /** 内部ステップ → UST tick の倍率。 */
@@ -555,6 +557,7 @@ const bendSlots = (
 ): { startStep: number; durationSteps: number; semitones: number }[] => {
 	if (points.length < 2) return [];
 	const total = endStep - startStep;
+	if (!Number.isFinite(total)) return [];
 	const minSteps = mmlStepsAtLeast(Math.round(BEND_MIN_MS / msPerStep));
 	if (total < minSteps * 2) return [];
 	// 入りのポルタメント（前のノートの高さから基準へ滑り込む区間）は読み飛ばす。
@@ -623,6 +626,8 @@ export const parseUst = (
 	for (const fields of sections) {
 		const length = Number.parseFloat(fields.length ?? "");
 		if (!Number.isFinite(length) || length <= 0) continue;
+		// 桁外れの Length が積み重なると位置が Infinity になり、ピッチ線の区切りが止まらない
+		if (tickPos + length > MAX_UST_TICKS) break;
 		const startTick = tickPos;
 		tickPos += length;
 		const noteNum = Number.parseInt(fields.noteNum ?? "", 10);

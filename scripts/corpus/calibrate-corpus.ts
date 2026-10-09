@@ -32,6 +32,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { durationEntropy } from "../../src/compose/compose";
 import {
 	type Band,
@@ -594,23 +595,23 @@ export const collectFromDir = (dir: string): Buffer[] => {
 const API_BASE = "https://rpgen-search.pages.dev/api";
 
 /**
- * APIトークン。**このファイルに直接書かない**——`AGENTS.md` が唯一の出どころで、
- * トークンが更新されたときに2箇所直す必要が出ないようにしている。
- * 環境変数 `RPGEN_SEARCH_TOKEN` があればそちらを優先する。
+ * APIトークン。**このファイルにも AGENTS.md にも書かない**——`.env`（gitignore 済み）の
+ * `RPGEN_SEARCH_TOKEN` が唯一の出どころ。環境変数が既にあればそちらを優先する。
  */
 const apiToken = (): string => {
-	const fromEnv = process.env.RPGEN_SEARCH_TOKEN;
-	if (fromEnv) return fromEnv;
-	const agents = readFileSync(
-		new URL("../../AGENTS.md", import.meta.url),
-		"utf-8",
-	);
-	const found = agents.match(/Authorization:\s*Bearer\s+(\S+?)`/);
-	if (!found)
+	if (!process.env.RPGEN_SEARCH_TOKEN) {
+		try {
+			process.loadEnvFile(
+				fileURLToPath(new URL("../../.env", import.meta.url)),
+			);
+		} catch {}
+	}
+	const token = process.env.RPGEN_SEARCH_TOKEN;
+	if (!token)
 		throw new Error(
-			"AGENTS.md からAPIトークンを読めませんでした。RPGEN_SEARCH_TOKEN を設定してください。",
+			"APIトークンがありません。.env に RPGEN_SEARCH_TOKEN を書いてください。",
 		);
-	return found[1];
+	return token;
 };
 
 /** ダウンロードしたMIDIの置き場。tmp/ は gitignore 済み。 */

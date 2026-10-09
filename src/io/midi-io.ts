@@ -110,16 +110,23 @@ export const analyzeMidiTracks = (midi: unknown): MidiTrackAnalysis[] => {
 	return result;
 };
 
-/** MIDIメタイベントからBPMを取得（無ければ120）。 */
+/**
+ * 1拍のティック数。0 や SMPTE 形式（最上位ビットが立つ）では拍の長さが決まらず、
+ * ノート位置が Infinity になって読み込みが止まらなくなるので、既定値で読む。
+ */
+const ticksPerBeatOf = (midi: MidiData): number =>
+	Number.isInteger(midi.division) && midi.division > 0 && midi.division < 0x8000
+		? midi.division
+		: 480;
+
+/** MIDIメタイベントからBPMを取得（無ければ120）。テンポ欄の範囲 20〜300 に収める。 */
 export const getMidiBPM = (midi: unknown): number => {
 	const { tracks } = midi as MidiData;
 	for (const track of tracks) {
 		for (const event of track) {
-			if (
-				event.setTempo &&
-				typeof event.setTempo.microsecondsPerQuarter === "number"
-			) {
-				return 60000000 / event.setTempo.microsecondsPerQuarter;
+			const usPerQuarter = event.setTempo?.microsecondsPerQuarter;
+			if (typeof usPerQuarter === "number" && usPerQuarter > 0) {
+				return Math.min(300, Math.max(20, 60000000 / usPerQuarter));
 			}
 		}
 	}
@@ -134,8 +141,8 @@ export const extractMidiPlacements = (
 	midi: unknown,
 	selectedTrackIndices: number[],
 ): MidiExtraction => {
-	const { tracks, division } = midi as MidiData;
-	const ticksPerBeat = division;
+	const { tracks } = midi as MidiData;
+	const ticksPerBeat = ticksPerBeatOf(midi as MidiData);
 	const bpm = getMidiBPM(midi);
 
 	type RawNote = {
@@ -218,10 +225,10 @@ export const extractMidiPlacements = (
 		const sortedNotes = [...validNotes].sort((a, b) => a.start - b.start);
 		for (let i = 0; i < sortedNotes.length; i++) {
 			let simultaneous = 1;
+			// 開始順に並んでいるので、重ならない音が出たら以降も重ならない
 			for (let j = i + 1; j < sortedNotes.length; j++) {
-				if (sortedNotes[j].start < (sortedNotes[i].end as number)) {
-					simultaneous++;
-				}
+				if (sortedNotes[j].start >= (sortedNotes[i].end as number)) break;
+				simultaneous++;
 			}
 			maxSimultaneous = Math.max(maxSimultaneous, simultaneous);
 		}
@@ -323,7 +330,10 @@ export const extractMidiPlacements = (
 	}
 
 	if (placements.length > 0) {
-		const minStartStep = Math.min(...placements.map((p) => p.startStep));
+		const minStartStep = placements.reduce(
+			(min, p) => Math.min(min, p.startStep),
+			Number.POSITIVE_INFINITY,
+		);
 		const stepsPerBar = STEPS_PER_BEAT * 4;
 		const emptyBars = Math.floor(minStartStep / stepsPerBar);
 		if (emptyBars > 0) {
@@ -376,8 +386,8 @@ export const extractMidiPlacementsByTrack = (
 	selectedIndices: number[],
 	trackIds: string[],
 ): MidiExtraction => {
-	const { tracks, division } = midi as MidiData;
-	const ticksPerBeat = division;
+	const { tracks } = midi as MidiData;
+	const ticksPerBeat = ticksPerBeatOf(midi as MidiData);
 	const bpm = getMidiBPM(midi);
 	const ticksPerStep = ticksPerBeat / STEPS_PER_BEAT;
 
@@ -440,7 +450,10 @@ export const extractMidiPlacementsByTrack = (
 		}
 	});
 	if (placements.length > 0) {
-		const minStartStep = Math.min(...placements.map((p) => p.startStep));
+		const minStartStep = placements.reduce(
+			(min, p) => Math.min(min, p.startStep),
+			Number.POSITIVE_INFINITY,
+		);
 		const stepsPerBar = STEPS_PER_BEAT * 4;
 		const emptyBars = Math.floor(minStartStep / stepsPerBar);
 		if (emptyBars > 0) {
@@ -485,7 +498,8 @@ const trackChunks = (arr: number[], func: (a: number[]) => void): void => {
 	a.push(...deltaTime(0));
 	a.push(0xff, 0x2f, 0x00);
 	arr.push(...to4byte(a.length));
-	arr.push(...a);
+	// トラック本体は曲の長さに比例するので、展開して渡すと長い曲でスタックが溢れる
+	for (const b of a) arr.push(b);
 };
 
 export type ExportMidiTrack = {
@@ -642,7 +656,10 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 		...tracks
 			.filter((t) => t.notes.length > 0)
 			.map((t) =>
-				Math.max(...t.notes.map((n) => n.startStep + n.durationSteps)),
+				t.notes.reduce(
+					(max, n) => Math.max(max, n.startStep + n.durationSteps),
+					0,
+				),
 			),
 		stepsPerBar,
 	);
@@ -853,8 +870,8 @@ export const extractMidiDrumPattern = (
 	json: string;
 	patternDef: import("../instruments/drum-config").DrumPatternDef;
 } => {
-	const { tracks, division } = midi as MidiData;
-	const ticksPerBeat = division;
+	const { tracks } = midi as MidiData;
+	const ticksPerBeat = ticksPerBeatOf(midi as MidiData);
 	const rawNotes: { step: number; pitch: number; velocity: number }[] = [];
 
 	for (const track of tracks) {

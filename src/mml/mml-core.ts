@@ -6,7 +6,7 @@ import type {
 	Note,
 	RenderConfig,
 } from "../types";
-import { DEFAULT_VELOCITY } from "../types";
+import { DEFAULT_VELOCITY, MAX_SONG_BARS } from "../types";
 import { chordVelocity, effectiveVelocity } from "./mml-velocity";
 
 /**
@@ -134,8 +134,8 @@ export class MMLCore {
 		if (notes === null) return false;
 		this.isUndoRedo = true;
 		this.notes = JSON.parse(JSON.stringify(notes));
-		this.nextNoteId =
-			this.notes.length > 0 ? Math.max(...this.notes.map((n) => n.id)) + 1 : 0;
+		this.loadKeys = null;
+		this.nextNoteId = this.notes.reduce((max, n) => Math.max(max, n.id + 1), 0);
 		this.lastHistorySnapshot = JSON.stringify(this.notes);
 		this.generateAndNotify();
 		this.isUndoRedo = false;
@@ -189,12 +189,35 @@ export class MMLCore {
 
 	public clearNotesWithoutHistory(): void {
 		this.notes = [];
+		this.loadKeys = null;
 		this.nextNoteId = 0;
 		this.lastHistorySnapshot = "[]";
 	}
 
+	/**
+	 * 読み込み中は addNote ごとの並べ替えと MML 再生成を止め、終了時に1回だけ行う
+	 * （ノートごとに全体を作り直すと二乗時間になり、大きな曲でタブが固まる）。
+	 */
 	public setLoadMode(mode: boolean): void {
 		this.isUndoRedo = mode;
+		this.loading = mode;
+		this.loadKeys = null;
+		if (!mode && this.loadDirty) {
+			this.loadDirty = false;
+			this.generateAndNotify();
+		}
+	}
+
+	private loading = false;
+	private loadDirty = false;
+	/** 読み込み中の重複判定用（startStep:pitchUnits）。他の編集が入ったら作り直す。 */
+	private loadKeys: Set<string> | null = null;
+	private unsorted = false;
+
+	private sortIfNeeded(): void {
+		if (!this.unsorted) return;
+		this.unsorted = false;
+		this.notes.sort((a, b) => a.startStep - b.startStep);
 	}
 
 	// ============== ノート編集 (外部API) ==============
@@ -206,11 +229,33 @@ export class MMLCore {
 	 * @param options ノート長などの設定
 	 */
 	public addNote(step: number, pitch: Units, options: AddNoteOptions): void {
-		const existingIndex = this.notes.findIndex(
-			(n) => n.startStep === step && n.pitchUnits === pitch,
-		);
+		// 取り込んだファイルや共有リンクの壊れた値（Infinity・桁外れの位置）で、
+		// MML 生成の休符埋めが止まらなくなるのを防ぐ。
+		const maxSteps = MAX_SONG_BARS * this.getConfig().stepsPerBar;
+		if (
+			!Number.isFinite(step) ||
+			!Number.isFinite(options.noteLengthSteps) ||
+			step + options.noteLengthSteps > maxSteps
+		) {
+			return;
+		}
 
-		if (existingIndex === -1) {
+		const key = `${step}:${pitch}`;
+		let exists: boolean;
+		if (this.loading) {
+			if (!this.loadKeys) {
+				this.loadKeys = new Set(
+					this.notes.map((n) => `${n.startStep}:${n.pitchUnits}`),
+				);
+			}
+			exists = this.loadKeys.has(key);
+		} else {
+			exists = this.notes.some(
+				(n) => n.startStep === step && n.pitchUnits === pitch,
+			);
+		}
+
+		if (!exists) {
 			const newNote: Note = {
 				id: this.nextNoteId++,
 				startStep: step,
@@ -219,6 +264,13 @@ export class MMLCore {
 				velocity: options.velocity ?? DEFAULT_VELOCITY,
 			};
 			this.notes.push(newNote);
+			this.loadKeys?.add(key);
+		}
+
+		if (this.loading) {
+			this.unsorted = true;
+			this.loadDirty = true;
+			return;
 		}
 
 		this.notes.sort((a, b) => a.startStep - b.startStep);
@@ -231,6 +283,7 @@ export class MMLCore {
 		const index = this.notes.findIndex((n) => n.id === noteId);
 		if (index !== -1) {
 			this.notes.splice(index, 1);
+			this.loadKeys = null;
 			this.saveHistory();
 			this.generateAndNotify();
 		}
@@ -240,8 +293,9 @@ export class MMLCore {
 		if (this.notes.length === 0) return 0;
 		// 16分音符グリッドにスナップ
 		const stepsPer16th = 12;
-		const maxRaw = Math.max(
-			...this.notes.map((n) => n.startStep + n.durationSteps),
+		const maxRaw = this.notes.reduce(
+			(max, n) => Math.max(max, n.startStep + n.durationSteps),
+			0,
 		);
 		return Math.ceil(maxRaw / stepsPer16th) * stepsPer16th;
 	}
@@ -267,6 +321,7 @@ export class MMLCore {
 
 		note.startStep = clampedStart;
 		note.pitchUnits = clampedPitch;
+		this.loadKeys = null;
 		this.notes.sort((a, b) => a.startStep - b.startStep);
 
 		this.generateAndNotify();
@@ -309,6 +364,7 @@ export class MMLCore {
 			kept.push(note);
 		}
 		this.notes = kept;
+		this.loadKeys = null;
 		this.notes.sort((a, b) => a.startStep - b.startStep);
 		// シフト全体で1操作。ここで確定しないとUndoが直前の編集まで巻き戻る。
 		this.saveHistory();
@@ -318,10 +374,12 @@ export class MMLCore {
 	// ============== 状態取得 (外部API) ==============
 
 	public getNotes(): Note[] {
+		this.sortIfNeeded();
 		return this.notes;
 	}
 
 	public getMML(volumeOverride?: number): string {
+		this.sortIfNeeded();
 		return this.generateMML(volumeOverride);
 	}
 
@@ -340,6 +398,7 @@ export class MMLCore {
 	// ============== 内部処理 ==============
 
 	private generateAndNotify(): void {
+		this.sortIfNeeded();
 		this.handlers.onNotesChanged([...this.notes]); // 変更されたノートデータを通知
 		const mml = this.generateMML();
 		this.handlers.onMMLGenerated(mml); // MML文字列を通知

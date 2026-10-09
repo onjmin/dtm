@@ -36,6 +36,7 @@ import {
 	resolveDrumPattern,
 } from "../instruments/drum-config";
 import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
+import { lookupTable } from "../lookup-table";
 import type {
 	FadeScheduleParams,
 	Note,
@@ -178,10 +179,10 @@ let activePlayer: MmlPlayerInstance | null = null;
 
 const agreedModelsInSession = new Set<string>();
 
-const LYRIC_MODEL_LABELS: Record<string, string> = {
+const LYRIC_MODEL_LABELS: Record<string, string> = lookupTable({
 	klatt: "軽量ロボ声",
 	...KOE_VOICEBANK_NAMES,
-};
+});
 
 /** 現在表示中の吹き出し要素とその自動非表示タイマー */
 let activeBalloonEl: HTMLElement | null = null;
@@ -398,23 +399,44 @@ const customDecode = (bytes: Uint8Array): string => {
 	return str;
 };
 
-const gunzipCustom = async (bytes: Uint8Array): Promise<string> => {
+/**
+ * 共有リンクを展開した後の上限（バイト）。gzip は千倍近く膨らむので、
+ * 上限なしだと長めの URL 1本でタブのメモリを使い切れる。
+ */
+const MAX_DECODED_BYTES = 4 * 1024 * 1024;
+
+const gunzipBytes = async (bytes: Uint8Array): Promise<Uint8Array> => {
 	const ds = new DecompressionStream("gzip");
 	const writer = ds.writable.getWriter();
-	writer.write(bytes as Uint8Array<ArrayBuffer>);
-	writer.close();
-	const buf = await new Response(ds.readable).arrayBuffer();
-	return customDecode(new Uint8Array(buf));
+	writer.write(bytes as Uint8Array<ArrayBuffer>).catch(() => {});
+	writer.close().catch(() => {});
+	const reader = ds.readable.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		total += value.byteLength;
+		if (total > MAX_DECODED_BYTES) {
+			await reader.cancel();
+			throw new Error("MML payload too large");
+		}
+		chunks.push(value);
+	}
+	const out = new Uint8Array(total);
+	let offset = 0;
+	for (const c of chunks) {
+		out.set(c, offset);
+		offset += c.byteLength;
+	}
+	return out;
 };
 
-const gunzip = async (bytes: Uint8Array): Promise<string> => {
-	const ds = new DecompressionStream("gzip");
-	const writer = ds.writable.getWriter();
-	writer.write(bytes as Uint8Array<ArrayBuffer>);
-	writer.close();
-	const buf = await new Response(ds.readable).arrayBuffer();
-	return new TextDecoder().decode(buf);
-};
+const gunzipCustom = async (bytes: Uint8Array): Promise<string> =>
+	customDecode(await gunzipBytes(bytes));
+
+const gunzip = async (bytes: Uint8Array): Promise<string> =>
+	new TextDecoder().decode(await gunzipBytes(bytes));
 
 export const decodeMml = async (payload: string): Promise<string> => {
 	if (!payload) return "";

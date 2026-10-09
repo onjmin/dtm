@@ -156,7 +156,7 @@ const FONT_NAME_SURIKOV = `0000 Acoustic Grand Piano
  * 楽器名からキーへのマッピングを構築（静的データから生成、外部fetchなし）
  */
 export async function buildNameToKeyMapping(): Promise<Record<string, string>> {
-	const nameToKey: Record<string, string> = {};
+	const nameToKey: Record<string, string> = Object.create(null);
 	for (const line of FONT_NAME_SURIKOV.trim().split("\n")) {
 		const spaceIdx = line.indexOf(" ");
 		if (spaceIdx === -1) continue;

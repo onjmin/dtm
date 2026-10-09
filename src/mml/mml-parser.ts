@@ -15,7 +15,7 @@ import {
 	trackSoundFontValue,
 } from "../instruments/soundfont-banks";
 import type { LyricTrack } from "../types";
-import { DEFAULT_STEPS_PER_BAR, MML_END_MARKER } from "../types";
+import { DEFAULT_STEPS_PER_BAR, MAX_SONG_BARS, MML_END_MARKER } from "../types";
 import { parseLyrics, stripCustomVocals, stripLyrics } from "../voice/lyrics";
 
 /**
@@ -592,6 +592,9 @@ export type ParseMMLOptions = {
 	clampTrackCount?: number;
 };
 
+/** 1つの音長に効かせる付点の上限。 */
+const MAX_DOTS = 3;
+
 /**
  * MML文字列を解析してノート配置とBPMを返す。
  */
@@ -600,6 +603,7 @@ export const parseMML = (
 	options: ParseMMLOptions = {},
 ): ParsedMML => {
 	const stepsPerBar = options.stepsPerBar ?? DEFAULT_STEPS_PER_BAR;
+	const maxSteps = MAX_SONG_BARS * stepsPerBar;
 	const collectTokens = options.collectTokens ?? false;
 	const collectLyrics = options.collectLyrics ?? false;
 	const clampTrackCount = options.clampTrackCount;
@@ -702,6 +706,8 @@ export const parseMML = (
 
 		const body = part.replace(/\s+/g, "").toLowerCase();
 		let j = 0;
+		// 閉じ `}` の有無を `{` ごとに後ろまで探すと、閉じの無い `{` の連続で二乗時間になる
+		const lastBrace = body.lastIndexOf("}");
 
 		const pushTok = (
 			type: MMLDisplayToken["type"],
@@ -760,14 +766,18 @@ export const parseMML = (
 				? clamp(Number.parseInt(numStr, 10), 1, 64)
 				: baseLength;
 			let steps = Math.round(stepsPerBar / len);
+			// 付点は1つごとに1.5倍なので、上限が無いと短い文字列で桁外れの長さになる。
+			// MAX_DOTS を超えた分は読み飛ばす。
+			let dots = 0;
 			while (j < body.length && body[j] === ".") {
-				steps = Math.round(steps * 1.5);
+				if (dots < MAX_DOTS) steps = Math.round(steps * 1.5);
+				dots++;
 				j++;
 			}
 			return steps;
 		};
 
-		while (j < body.length) {
+		while (j < body.length && currentStep < maxSteps) {
 			const ch = body[j];
 			const tokStart = j;
 
@@ -879,7 +889,7 @@ export const parseMML = (
 				pushTok("chord", currentStep, Math.max(1, steps), tokStart);
 				currentStep += steps;
 				octave = savedOctave;
-			} else if (ch === "{" && body.indexOf("}", j + 1) !== -1) {
+			} else if (ch === "{" && lastBrace > j) {
 				// 連符（FlMML系の `{音程データ群}音長`）。囲みの後ろの音長が**合計**になるよう、
 				// 中の音符へ配分する。中の音符に音長が書かれていればその比で（`{g2e4e4}2` は
 				// 2:1:1）、書かれていなければ均等に割れる（`{ceg}4` は12分音符×3）。

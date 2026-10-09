@@ -125,6 +125,7 @@ import {
 	parseMusicXML,
 } from "../io/musicxml-io";
 import { buildUst, parseUst, type UstTrackData } from "../io/ust-io";
+import { lookupTable } from "../lookup-table";
 import {
 	applyHarmonicFilter,
 	applyMonophonic,
@@ -197,6 +198,7 @@ import {
 	genreFromTemplate,
 } from "./compose-genres";
 import { buildUI } from "./daw-ui";
+import { escapeHtml } from "./html";
 import { icon } from "./icons";
 import { createRenderer, type Renderer } from "./renderer";
 import {
@@ -1105,10 +1107,10 @@ const pickComposeVocal = (exclude?: string | null): string => {
 };
 
 /** 内蔵モデルキーワード → プルダウン表示名 */
-const BASE_LYRIC_MODEL_LABELS: Record<string, string> = {
+const BASE_LYRIC_MODEL_LABELS: Record<string, string> = lookupTable({
 	klatt: "軽量ロボ声",
 	...KOE_VOICEBANK_NAMES,
-};
+});
 
 /** モデルキーワードのUI表示名を返す（カスタムボーカル辞書を参照し、未登録はキーワードそのまま） */
 const lyricModelLabel = (
@@ -3349,6 +3351,15 @@ export const mountDAW = (
 		refs.audioStatus.classList.toggle("dtm-audio-note--warn", warn);
 	};
 
+	/** 状態表示用に、音源 URL の取得先ホストだけを返す。 */
+	const backingHostOf = (url: string): string => {
+		try {
+			return new URL(url).host;
+		} catch {
+			return url;
+		}
+	};
+
 	/** 読み込み結果を「何ができて何ができないか」まで含めて1行で伝える。 */
 	const describeBacking = (
 		info: import("../audio/backing-audio").BackingLoaded,
@@ -3470,10 +3481,22 @@ export const mountDAW = (
 		);
 	};
 
+	/**
+	 * 曲データ（`#audio=`）の音源をまだ取りに行っていない。共有リンクを開いただけで
+	 * 第三者の URL へ要求が飛ばないよう、最初の再生まで待つ（埋め込みプレイヤーと同じ）。
+	 */
+	let backingPending = false;
+
 	/** 音源を読み込む（URL文字列 or アップロードされたファイル）。 */
 	const loadBackingSource = async (src: string | File): Promise<void> => {
-		if (!backingAudio) return;
 		stop();
+		await fetchBackingSource(src);
+	};
+
+	/** 再生を止めずに音源を読み込む（再生開始時の遅延読み込みでも使う）。 */
+	const fetchBackingSource = async (src: string | File): Promise<void> => {
+		if (!backingAudio) return;
+		backingPending = false;
 		const fromFile = typeof src !== "string";
 		const youtube = !fromFile && isYoutubeUrl(src);
 		// YouTubeはプレイヤーを枠の中に作るので、読み込む前に枠を見せておく。
@@ -3507,6 +3530,7 @@ export const mountDAW = (
 	/** 音源を外す（設定そのものは残さない＝MMLからも消える）。 */
 	const clearBacking = (): void => {
 		backingAudio?.clear();
+		backingPending = false;
 		backing.url = "";
 		setYoutubeThumbnail(null);
 		refs.audioFileInput.value = "";
@@ -3581,6 +3605,10 @@ export const mountDAW = (
 		// sequencer.start すると resume 完了の瞬間に先読み予約が一斉発音され、冒頭で
 		// 「ピチュ」という潰れた音が鳴る。resume の完了を待ってからスケジュールを始める。
 		await options.onResumeAudio?.();
+		if (backingPending) {
+			await fetchBackingSource(backing.url);
+			if (playGeneration !== generation) return; // 読み込み中に停止された
+		}
 
 		const fromStep =
 			playbackState === "paused" ? pausedPlayStep : playStartStep;
@@ -3888,8 +3916,8 @@ export const mountDAW = (
 		refs.trackBody.innerHTML = `
       <div class="dtm-row" data-dtm="track-vol-row">
         <span class="dtm-label">ベロシティ</span>
-        <input type="range" class="dtm-range dtm-grow" data-dtm="track-vol" min="0" max="127" value="${active.volume}">
-        <span class="dtm-label" data-dtm="track-vol-label">${active.volume}</span>
+        <input type="range" class="dtm-range dtm-grow" data-dtm="track-vol" min="0" max="127">
+        <span class="dtm-label" data-dtm="track-vol-label"></span>
       </div>
       <div class="dtm-row" data-dtm="track-octave-row">
         <span class="dtm-label">オクターブ</span>
@@ -3975,6 +4003,8 @@ export const mountDAW = (
 		const volLabel = refs.trackBody.querySelector(
 			'[data-dtm="track-vol-label"]',
 		) as HTMLElement;
+		volInput.value = String(active.volume);
+		volLabel.textContent = String(active.volume);
 		volInput.addEventListener("input", () => {
 			active.volume = Number.parseInt(volInput.value, 10);
 			active.core.setVolume(active.volume);
@@ -4894,7 +4924,7 @@ export const mountDAW = (
           </select>
         </div>
         <div class="dtm-row">
-          <textarea class="dtm-textarea dtm-grow" data-dtm="chord-input" placeholder="例: C|G|Am|Em|F|C|F|G">${active.savedChordInput}</textarea>
+          <textarea class="dtm-textarea dtm-grow" data-dtm="chord-input" placeholder="例: C|G|Am|Em|F|C|F|G"></textarea>
           <button class="dtm-btn dtm-btn--primary" data-dtm="chord-apply">適用</button>
         </div>`;
 			refs.trackBody.appendChild(div);
@@ -4905,6 +4935,8 @@ export const mountDAW = (
 				'[data-dtm="chord-input"]',
 			) as HTMLTextAreaElement;
 			patternSel.value = active.savedChordPattern;
+			// 検索結果や貼り付けの文字列が入るので、HTML に混ぜずプロパティで入れる
+			input.value = active.savedChordInput;
 			const save = (): void => {
 				active.savedChordInput = input.value;
 				active.savedChordPattern = patternSel.value as ChordPatternType;
@@ -5512,10 +5544,17 @@ export const mountDAW = (
 							: 0);
 					updateBackingInputs();
 					if (meta.audio !== backing.url) {
+						stop();
+						backingAudio.clear();
+						backing.url = meta.audio;
+						backingPending = true;
 						refs.audioUrlInput.value = meta.audio;
-						void loadBackingSource(meta.audio);
+						setYoutubeThumbnail(parseYoutubeId(meta.audio));
+						setBackingStatus(
+							`再生すると読み込みます（${backingHostOf(meta.audio)}）`,
+						);
 					}
-				} else if (backingAudio.isLoaded()) {
+				} else if (backingAudio.isLoaded() || backingPending) {
 					clearBacking();
 				}
 			}
@@ -6027,6 +6066,8 @@ export const mountDAW = (
 	};
 
 	const setBpm = (value: number): void => {
+		// 取り込んだファイルのテンポ 0 や Infinity で再生間隔が壊れないよう捨てる
+		if (!Number.isFinite(value) || value <= 0) return;
 		bpm = value;
 		refs.bpmInput.value = String(value);
 		for (const t of trackStates) t.core.setTempo(value);
@@ -6090,27 +6131,31 @@ export const mountDAW = (
 	};
 
 	// Promise で yes/no を返す確認ダイアログ（wireEvents/wireMidi の両方から使う）
+	/** `messageHtml` は HTML として入れるので、固定の文言だけを渡す（曲名などを混ぜない）。 */
 	const showConfirmModal = (
-		message: string,
+		messageHtml: string,
 		opts?: { title?: string; yes?: string; no?: string },
 	): Promise<boolean> =>
 		new Promise((resolve) => {
-			const title = opts?.title ?? "モードの確認";
-			const yes = opts?.yes ?? "はい（上級者モードに切り替える）";
-			const no = opts?.no ?? "いいえ（このまま読み込む）";
 			const overlay = document.createElement("div");
 			overlay.className = "dtm-modal-overlay";
 			overlay.innerHTML = `
 				<div class="dtm-modal">
 					<div class="dtm-modal-header">
-						<span class="dtm-modal-title">${title}</span>
+						<span class="dtm-modal-title"></span>
 					</div>
-					<div class="dtm-modal-body"><p>${message}</p></div>
+					<div class="dtm-modal-body"><p>${messageHtml}</p></div>
 					<div class="dtm-confirm-footer">
-						<button class="dtm-btn dtm-btn--ghost dtm-confirm-no">${no}</button>
-						<button class="dtm-btn dtm-btn--primary dtm-confirm-yes">${yes}</button>
+						<button class="dtm-btn dtm-btn--ghost dtm-confirm-no"></button>
+						<button class="dtm-btn dtm-btn--primary dtm-confirm-yes"></button>
 					</div>
 				</div>`;
+			(overlay.querySelector(".dtm-modal-title") as HTMLElement).textContent =
+				opts?.title ?? "モードの確認";
+			(overlay.querySelector(".dtm-confirm-yes") as HTMLElement).textContent =
+				opts?.yes ?? "はい（上級者モードに切り替える）";
+			(overlay.querySelector(".dtm-confirm-no") as HTMLElement).textContent =
+				opts?.no ?? "いいえ（このまま読み込む）";
 			const close = (result: boolean): void => {
 				overlay.remove();
 				resolve(result);
@@ -8060,7 +8105,8 @@ export const mountDAW = (
 			}
 		};
 
-		// 解説モーダル初期化とイベントハンドラ
+		// 解説モーダル初期化とイベントハンドラ。
+		// bodyHTML は HTML として入れるので、固定の文言だけを渡す（曲名・検索結果などは showConfirm へ）。
 		showModal = (title: string, bodyHTML: string): void => {
 			collapseActiveSample();
 			collapseSearchPreview();
@@ -8185,10 +8231,7 @@ export const mountDAW = (
 				onConfirm();
 				return;
 			}
-			const escaped = message
-				.replace(/&/g, "&amp;")
-				.replace(/</g, "&lt;")
-				.replace(/>/g, "&gt;");
+			const escaped = escapeHtml(message);
 			const skipRow = suppressKey
 				? `<label class="dtm-row" style="gap:6px;margin-top:12px;cursor:pointer;">
     <input type="checkbox" data-dtm-confirm="skip" />

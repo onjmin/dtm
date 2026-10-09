@@ -74,6 +74,11 @@ export class MidiSearchClient {
 	}
 
 	async fetchMidi(fileName: string): Promise<ArrayBuffer> {
+		// 検索結果の file 名は外部 API の値。`.` `..` は encodeURIComponent を素通りし、
+		// トークン付きのまま別のパスへ届いてしまう。
+		if (fileName === "." || fileName === "..") {
+			throw new Error(`invalid picotune file name: ${fileName}`);
+		}
 		const url = `${this.baseUrl}/picotune/songs/${encodeURIComponent(fileName)}`;
 		const res = await fetch(url, { headers: this.headers() });
 		if (!res.ok) throw new Error(`picotune fetch failed: ${res.status}`);
