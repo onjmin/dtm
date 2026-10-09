@@ -46,7 +46,6 @@
       }
     }
     </script>
-    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @font-face {
             font-family: 'k8x12';
@@ -152,25 +151,8 @@
             padding-right: 28px !important;
         }
     </style>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { pixel: ['k8x12', 'ui-monospace', 'monospace'] },
-                    colors: {
-                        pico: {
-                            black: '#000000', navy: '#1d2b53', purple: '#7e2553',
-                            dkgrn: '#008751', brown: '#ab5236', gray: '#5f574f',
-                            silver: '#c2c3c7', white: '#fff1e8', red: '#ff004d',
-                            orange: '#ffa300', yellow: '#ffec27', green: '#00e436',
-                            cyan: '#29adff', lavend: '#83769c', pink: '#ff77a8',
-                            peach: '#ffccaa',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+    <!-- tailwind.config.cjs から生成。上の <style> より後ろに置く（同じ詳細度なら Tailwind 側が勝つ順で見た目を合わせてある） -->
+    <link rel="stylesheet" href="./tailwind.css" />
 </head>
 
 <body class="font-pixel">
@@ -549,44 +531,40 @@ playMML(mmlString, {
             cueList.forEach((c, idx) => {
                 const item = document.createElement("div");
                 item.className = "flex items-center gap-2 border border-pico-gray/20 p-1.5 bg-black/40 text-[10px]";
-                item.innerHTML = `
-                    <input type="text" value="${c.id}" data-idx="${idx}" class="cue-id-input w-20 bg-pico-black text-pico-white px-1">
-                    <select data-idx="${idx}" class="cue-type-select bg-pico-black text-pico-cyan border-0 focus:outline-none">
-                        <option value="bar" ${c.type === 'bar' ? 'selected' : ''}>BAR</option>
-                        <option value="step" ${c.type === 'step' ? 'selected' : ''}>STEP</option>
-                        <option value="seconds" ${c.type === 'seconds' ? 'selected' : ''}>SEC</option>
-                    </select>
-                    <input type="number" value="${c.val}" data-idx="${idx}" class="cue-val-input w-10 bg-pico-black text-pico-white text-center">
-                    <button class="cue-del-btn text-pico-red ml-auto hover:text-pico-white" data-idx="${idx}">✕</button>
-                `;
-                container.appendChild(item);
-            });
 
-            // Bind events
-            container.querySelectorAll(".cue-id-input").forEach(input => {
-                input.addEventListener("input", (e) => {
-                    const idx = parseInt(e.target.dataset.idx);
-                    cueList[idx].id = e.target.value;
-                });
-            });
-            container.querySelectorAll(".cue-type-select").forEach(sel => {
-                sel.addEventListener("change", (e) => {
-                    const idx = parseInt(e.target.dataset.idx);
-                    cueList[idx].type = e.target.value;
-                });
-            });
-            container.querySelectorAll(".cue-val-input").forEach(input => {
-                input.addEventListener("input", (e) => {
-                    const idx = parseInt(e.target.dataset.idx);
-                    cueList[idx].val = parseFloat(e.target.value) || 0;
-                });
-            });
-            container.querySelectorAll(".cue-del-btn").forEach(btn => {
-                btn.addEventListener("click", (e) => {
-                    const idx = parseInt(e.target.dataset.idx);
+                const idInput = document.createElement("input");
+                idInput.type = "text";
+                idInput.value = c.id;
+                idInput.className = "cue-id-input w-20 bg-pico-black text-pico-white px-1";
+                idInput.addEventListener("input", () => { cueList[idx].id = idInput.value; });
+
+                const typeSelect = document.createElement("select");
+                typeSelect.className = "cue-type-select bg-pico-black text-pico-cyan border-0 focus:outline-none";
+                for (const [value, label] of [["bar", "BAR"], ["step", "STEP"], ["seconds", "SEC"]]) {
+                    const option = document.createElement("option");
+                    option.value = value;
+                    option.textContent = label;
+                    option.selected = c.type === value;
+                    typeSelect.appendChild(option);
+                }
+                typeSelect.addEventListener("change", () => { cueList[idx].type = typeSelect.value; });
+
+                const valInput = document.createElement("input");
+                valInput.type = "number";
+                valInput.value = String(c.val);
+                valInput.className = "cue-val-input w-10 bg-pico-black text-pico-white text-center";
+                valInput.addEventListener("input", () => { cueList[idx].val = parseFloat(valInput.value) || 0; });
+
+                const delBtn = document.createElement("button");
+                delBtn.className = "cue-del-btn text-pico-red ml-auto hover:text-pico-white";
+                delBtn.textContent = "✕";
+                delBtn.addEventListener("click", () => {
                     cueList.splice(idx, 1);
                     renderCuesList();
                 });
+
+                item.append(idInput, typeSelect, valInput, delBtn);
+                container.appendChild(item);
             });
         };
 

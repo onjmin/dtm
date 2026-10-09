@@ -133,79 +133,6 @@
     <div class="credit"><a href="https://github.com/onjmin/dtm" target="_blank" rel="noopener">♪ @onjmin/dtm</a></div>
 
     <script type="module">
-        // ── URLペイロードの復号 ──
-        const fromBase64Url = (s) => {
-            let normalized = s.replace(/-/g, '+').replace(/_/g, '/');
-            while (normalized.length % 4 !== 0) {
-                normalized += '=';
-            }
-            const bin = atob(normalized);
-            const bytes = new Uint8Array(bin.length);
-            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-            return bytes;
-        };
-        const HIRAGANA_START = 0x3041;
-        const PROLONGED_MARK = 0x30fc;
-        const SHIFT_KATAKANA = 255;
-        const VALUE_PROLONGED = 223;
-
-        const customDecode = (bytes) => {
-            let str = "";
-            let i = 0;
-            while (i < bytes.length) {
-                const byte = bytes[i];
-                if (byte <= 127) {
-                    str += String.fromCharCode(byte);
-                    i++;
-                } else if (byte === VALUE_PROLONGED) {
-                    str += String.fromCharCode(PROLONGED_MARK);
-                    i++;
-                } else if (byte >= 128 && byte <= 222) {
-                    str += String.fromCharCode(HIRAGANA_START + (byte - 128));
-                    i++;
-                } else if (byte === SHIFT_KATAKANA) {
-                    if (i + 1 < bytes.length) {
-                        const nextByte = bytes[i + 1];
-                        if (nextByte >= 128 && nextByte <= 222) {
-                            str += String.fromCharCode(HIRAGANA_START + 0x60 + (nextByte - 128));
-                        }
-                        i += 2;
-                    } else {
-                        i++;
-                    }
-                } else {
-                    i++;
-                }
-            }
-            return str;
-        };
-
-        const gunzipCustom = async (bytes) => {
-            const ds = new DecompressionStream('gzip');
-            const writer = ds.writable.getWriter();
-            writer.write(bytes);
-            writer.close();
-            const buf = await new Response(ds.readable).arrayBuffer();
-            return customDecode(new Uint8Array(buf));
-        };
-
-        const gunzip = async (bytes) => {
-            const ds = new DecompressionStream('gzip');
-            const writer = ds.writable.getWriter();
-            writer.write(bytes);
-            writer.close();
-            const buf = await new Response(ds.readable).arrayBuffer();
-            return new TextDecoder().decode(buf);
-        };
-
-        const decodeMml = async (payload) => {
-            if (!payload) return '';
-            if (payload.startsWith('z.')) return await gunzipCustom(fromBase64Url(payload.slice(2)));
-            if (payload.startsWith('g.')) return await gunzip(fromBase64Url(payload.slice(2)));
-            if (payload.startsWith('u.')) return decodeURIComponent(payload.slice(2));
-            return decodeURIComponent(payload);
-        };
-
         const bootEl = document.getElementById('boot');
         const errEl = document.getElementById('err');
         const playerEl = document.getElementById('player');
@@ -217,15 +144,15 @@
         };
 
         try {
-            const payload = location.hash.slice(1);
-            const chords = await decodeMml(payload);
+            const isLocal = location.hostname === 'localhost';
+            const DTM = await import(isLocal
+                ? 'http://localhost:40298/dist/index.mjs'
+                : './index.mjs');
+            // コード進行も encodeMml で詰めてある。展開後の上限・壊れたデータの "" はライブラリ側が持つ
+            const chords = await DTM.decodeMml(location.hash.slice(1));
             if (!chords) {
                 fail('再生するコード進行データがURLにありません（#... が空です）。');
             } else {
-                const isLocal = location.hostname === 'localhost';
-                const DTM = await import(isLocal
-                    ? 'http://localhost:40298/dist/index.mjs'
-                    : './index.mjs');
                 const { createDtmStudio } = DTM;
 
                 const studio = await createDtmStudio();

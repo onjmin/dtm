@@ -49,7 +49,6 @@
       "description": "ブラウザから無料で使えるMML中間言語を使用したWebベースのピアノロール打ち込み・DTMデモ。UTAU音声による歌声合成に対応。"
     }
     </script>
-    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @font-face {
             font-family: 'k8x12';
@@ -212,25 +211,8 @@
             padding-right: 28px !important;
         }
     </style>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { pixel: ['k8x12', 'ui-monospace', 'monospace'] },
-                    colors: {
-                        pico: {
-                            black: '#000000', navy: '#1d2b53', purple: '#7e2553',
-                            dkgrn: '#008751', brown: '#ab5236', gray: '#5f574f',
-                            silver: '#c2c3c7', white: '#fff1e8', red: '#ff004d',
-                            orange: '#ffa300', yellow: '#ffec27', green: '#00e436',
-                            cyan: '#29adff', lavend: '#83769c', pink: '#ff77a8',
-                            peach: '#ffccaa',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+    <!-- tailwind.config.cjs から生成。上の <style> より後ろに置く（同じ詳細度なら Tailwind 側が勝つ順で見た目を合わせてある） -->
+    <link rel="stylesheet" href="./tailwind.css" />
 </head>
 
 <body class="font-pixel">
@@ -408,7 +390,9 @@
 
     <!-- 作業履歴（スナップショット）の永続化用。localStorage(5〜10MB/オリジン)は容量が
          枯渇すると保存が無音で失敗するため、IndexedDBをlocalforage経由で使う。 -->
-    <script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"
+        integrity="sha384-MTDrIlFOzEqpmOxY6UIA/1Zkh0a64UlmJ6R0UrZXqXCPx99siPGi8EmtQjIeCcTH"
+        crossorigin="anonymous"></script>
     <script type="module">
         // location.hostname 自体がローカルか、またはプライベートIPのレンジか
         const isLocal =
@@ -710,6 +694,16 @@
             overlay.classList.remove('hidden');
         };
 
+        // ── 共有リンクモーダルの閉じる・全選択 ──
+        const shareModalOverlay = document.getElementById('share-link-modal-overlay');
+        shareModalOverlay.addEventListener('click', (e) => {
+            if (e.target === shareModalOverlay) shareModalOverlay.classList.add('hidden');
+        });
+        document.getElementById('share-link-modal-close').addEventListener('click', () => {
+            shareModalOverlay.classList.add('hidden');
+        });
+        shareModalOverlay.querySelector('textarea').addEventListener('click', (e) => e.currentTarget.select());
+
         // ── 共有リンクコピー機能 ──
         const shareBtn = document.getElementById('share-link-copy');
 
@@ -979,7 +973,10 @@
                 leftContainer.appendChild(iconContainer);
 
                 const rightSpan = document.createElement('span');
-                rightSpan.innerHTML = `<span class="text-pico-yellow">${item.mml.length}</span>文字`;
+                const lengthSpan = document.createElement('span');
+                lengthSpan.className = 'text-pico-yellow';
+                lengthSpan.textContent = String(item.mml.length);
+                rightSpan.append(lengthSpan, '文字');
                 rightSpan.className = 'text-pico-cyan text-sm font-bold';
 
                 meta.appendChild(leftContainer);
@@ -1167,20 +1164,19 @@
 
     <!-- ════ 共有リンクモーダル ════ -->
     <div id="share-link-modal-overlay"
-        class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden"
-        onclick="if(event.target===this)this.classList.add('hidden')">
+        class="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 backdrop-blur-[2px] hidden">
         <div
             class="game-win bg-pico-navy max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden text-pico-white font-pixel">
             <div class="flex items-center justify-between bg-black/40 px-4 py-2 border-b-2 border-black">
                 <span class="text-pico-yellow text-sm font-bold">共有リンク</span>
-                <button class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none"
-                    onclick="document.getElementById('share-link-modal-overlay').classList.add('hidden')">&times;</button>
+                <button id="share-link-modal-close"
+                    class="text-pico-white hover:text-pico-red text-xl cursor-pointer font-sans leading-none">&times;</button>
             </div>
             <div class="p-4 flex flex-col gap-3 text-xs">
                 <p class="text-pico-lavend leading-relaxed">このURLをコピーして共有すると、同じ曲を他の人が開けます。</p>
                 <textarea readonly
                     class="w-full bg-pico-black border-2 border-pico-cyan text-pico-cyan font-pixel text-xs p-2 resize-none leading-relaxed cursor-pointer"
-                    rows="4" onclick="this.select()" style="word-break:break-all"></textarea>
+                    rows="4" style="word-break:break-all"></textarea>
                 <div class="flex items-center gap-3">
                     <button
                         class="share-modal-copy-btn min-h-[36px] px-4 border-2 border-pico-cyan bg-pico-black text-pico-cyan

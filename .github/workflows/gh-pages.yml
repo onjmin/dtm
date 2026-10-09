@@ -6,21 +6,25 @@ on:
     branches:
       - main
 
+# 既定は読み取りだけ。書き込みが要る deploy ジョブだけ下で個別に足す
+permissions:
+  contents: read
+
 jobs:
   # 1. ビルドジョブ：ファイルの生成とアップロードを行う
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 10.11.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
           cache: "pnpm"
@@ -41,14 +45,19 @@ jobs:
           cp demo/embed.html docs/demo/embed.html
           cp demo/embed-chord.html docs/demo/embed-chord.html
           cp demo/bgm.html docs/demo/bgm.html
+          cp demo/tailwind.css docs/demo/tailwind.css
           cp dist/index.mjs docs/demo/index.mjs
           cp dist/voice-worker.js docs/demo/voice-worker.js
+
+      # インライン script のハッシュは公開する HTML から取るので、コピーの後でかける
+      - name: Inject CSP into demo pages
+        run: pnpm exec tsx scripts/misc/inject-csp.ts docs/demo/*.html
 
       - name: Add .nojekyll
         run: touch ./docs/.nojekyll
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: ./docs
 
@@ -65,4 +74,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4 # v5でエラーが出る場合は安定したv4に下げるのも手です（必要に応じて使い分けてください）
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5（v5 でエラーが出るなら v4 系のまま）
