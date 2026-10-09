@@ -492,7 +492,7 @@ playMML(mmlString, {
             ? new URL('./dist/index.mjs', location.origin).href
             : './index.mjs');
 
-        const { createDtmStudio, playMML, playSingingMML, playNote, playChords, mountChordPlayer } = DTM;
+        const { createDtmStudio, playMML, playSingingMML, playNote, playChords, mountChordPlayer, midiToUnits } = DTM;
 
         const studio = await createDtmStudio();
         window.studio = studio;
@@ -638,6 +638,18 @@ playMML(mmlString, {
             }
         };
 
+        // NOTE/CHORDS は最後に押した PLAY 列の音源で鳴らす（既定は内蔵シンセ）。
+        let useSoundFont = false;
+        const isSoundFont = () => useSoundFont;
+        for (const [id, sf] of [
+            ["btn-play-mml-synth", false],
+            ["btn-play-singing-synth", false],
+            ["btn-play-mml-sf", true],
+            ["btn-play-singing-sf", true],
+        ]) {
+            document.getElementById(id).addEventListener("click", () => { useSoundFont = sf; });
+        }
+
         // 1. Built-in Lightweight Synth - BGM
         document.getElementById("btn-play-mml-synth").addEventListener("click", async () => {
             stopActivePlayback();
@@ -744,14 +756,15 @@ playMML(mmlString, {
 
         document.getElementById("headless-note-btn").addEventListener("click", async () => {
             const useSF = isSoundFont();
-            const pitch = 60; // C4
+            const pitchUnits = midiToUnits(60); // C4
             consoleLog(`Playing single note (C4) using ${useSF ? 'SoundFont' : 'Internal Synth'}`);
             try {
                 if (useSF) {
-                    await studio.playNote({ pitch, duration: 0.8 });
+                    await studio.playNote({ pitchUnits, duration: 0.8 });
                 } else {
                     const audioContext = studio.audioContext;
-                    playNote({ pitch, duration: 0.8, audioContext });
+                    if (audioContext.state === "suspended") await audioContext.resume();
+                    playNote({ pitchUnits, duration: 0.8, audioContext });
                 }
             } catch (err) {
                 consoleLog(`Error playing note: ${err.message}`, "text-pico-red");
