@@ -42,7 +42,7 @@ export const COMPOSE_GENRES: ComposeGenre[] = [
 	},
 	{
 		id: "game",
-		label: "ゲームBGM・Ghost Fight / Pepper Steak風",
+		label: "ゲームBGM・Toby Fox / Coldwood風",
 		desc: "16分のリフで回るループ",
 		// 主旋律が楽器の16分リフ（template.lead = "riff"）なので、歌わせると早口になる。
 		vocalDefault: false,

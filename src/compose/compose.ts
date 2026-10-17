@@ -3114,8 +3114,14 @@ const draw = (
 	//
 	// **テンポは設計図より先に引く。** イントロの長さは小節数ではなく秒で決める
 	// （{@link SectionSpec.seconds}）ので、BPM が分からないうちには小節数を選べない。
-	const bpm = pick(template?.bpmChoices ?? BPM_CHOICES, rnd);
-	const bassOverride = (template?.bassByScale?.[scale.id] ??
+	const bpm = pick(
+		template?.bpmByScale?.[scale.id] ?? template?.bpmChoices ?? BPM_CHOICES,
+		rnd,
+	);
+	const byScale = template?.bassByScale?.[scale.id];
+	const bassOverride = ((Array.isArray(byScale)
+		? pick(byScale, rnd)
+		: byScale) ??
 		(template?.bass ? pick(template.bass.styles, rnd) : undefined)) as
 		| BassStyle
 		| undefined;
@@ -5806,6 +5812,25 @@ const draw = (
 		const first = makeRiffHalf(rnd, 1, 3);
 		const cellA = [...first, ...makeRiffHalf(rnd, -1, 1)];
 		const cellB = [...first, ...makeRiffHalf(rnd, -1, 1)];
+		// Toby Fox 型（riffBlockScales）: セクションの種類ごとに4小節ブロック x y x z を作り、
+		// 後半の4小節は z だけ替える。1小節の型は回さない。サビは曲によって1オクターブ上げる。
+		// 下の抽選はこの型の曲でだけ引く（2小節の型の曲の乱数列は動かさない）。
+		const blockMode = template.riffBlockScales?.includes(scale.id) ?? false;
+		const riffBar = (): RiffNote[] => [
+			...makeRiffHalf(rnd, 0, 4),
+			...makeRiffHalf(rnd, -2, 1),
+		];
+		const riffBlocks = new Map<string, RiffNote[][]>();
+		const riffBlockOf = (kind: string): RiffNote[][] => {
+			const hit = riffBlocks.get(kind);
+			if (hit) return hit;
+			const x = riffBar();
+			const made = [x, riffBar(), x, riffBar(), x, riffBar(), x, riffBar()];
+			made[5] = made[1];
+			riffBlocks.set(kind, made);
+			return made;
+		};
+		const chorusLift = blockMode && rnd() < 0.8 ? scale.core.length : 0;
 		// 対比のセクション（Aメロ）は8分へ間引く。ずっと同じ密度だとループの一周が区切れない。
 		const thin = (cell: RiffNote[]): RiffNote[] => {
 			const out: RiffNote[] = [];
@@ -5847,10 +5872,15 @@ const draw = (
 			if (!sec?.spec.melody) continue;
 			const barStart = bar * stepsPerBar;
 			const inSec = bar - sec.startBar;
-			let cell = inSec % 2 === 0 ? cellA : cellB;
+			let cell = blockMode
+				? riffBlockOf(sec.kind)[inSec % 8]
+				: inSec % 2 === 0
+					? cellA
+					: cellB;
 			if (sec.kind === "verse") cell = thin(cell);
 			// Cメロは型ごと1歩上げて、同じリフの別の顔にする。
-			const lift = sec.kind === "bridge" ? 1 : 0;
+			const lift =
+				sec.kind === "bridge" ? 1 : sec.kind === "chorus" ? chorusLift : 0;
 			if (bar === totalBars - 1)
 				cell = [
 					{ step: 0, chrom: false, len: 8 },
