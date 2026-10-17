@@ -133,6 +133,7 @@ export type DawUIRefs = {
 	composeGenres: HTMLElement;
 	composeVocal: HTMLElement;
 	composeVoice: HTMLSelectElement;
+	composeFrom: HTMLElement;
 	composeResult: HTMLElement;
 	composeResultFacts: HTMLElement;
 	composeResultNote: HTMLElement;
@@ -569,6 +570,13 @@ export const buildUI = (
         </div>
         <select class="dtm-select dtm-compose-voice" data-dtm="compose-voice" aria-label="歌う声" title="メロディを歌う声。トラックの「歌唱モデル」と同じものです"></select>
       </div>
+      <div class="dtm-row" data-dtm="compose-from-row">
+        <span class="dtm-label" id="dtm-compose-from-label">再生</span>
+        <div class="dtm-seg" role="radiogroup" aria-labelledby="dtm-compose-from-label" data-dtm="compose-from" title="「作る」のあと、どこから鳴らし始めるか">
+          <button type="button" class="dtm-seg-btn" role="radio" aria-checked="false" data-from="intro">イントロから</button>
+          <button type="button" class="dtm-seg-btn" role="radio" aria-checked="true" data-from="chorus">サビから</button>
+        </div>
+      </div>
       <button class="dtm-btn dtm-btn--success dtm-compose-go" data-dtm="macro-compose">${icon("play", 14)} 作る</button>
       <p class="dtm-hint dtm-compose-len" data-dtm="compose-sections-len"></p>
       <!--
@@ -957,6 +965,7 @@ export const buildUI = (
 		composeGenres: sel("compose-genres"),
 		composeVocal: sel("compose-vocal"),
 		composeVoice: sel<HTMLSelectElement>("compose-voice"),
+		composeFrom: sel("compose-from"),
 		composeResult: sel("compose-result"),
 		composeResultFacts: sel("compose-result-facts"),
 		composeResultNote: sel("compose-result-note"),

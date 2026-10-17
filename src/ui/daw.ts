@@ -6864,6 +6864,31 @@ export const mountDAW = (
 			setVocal(el.dataset.vocal === "on"),
 		);
 
+		/** 「作る」のあとサビの頭から鳴らすか（false ならイントロ＝曲頭から）。既定はサビ。 */
+		let playFromChorus = readMacroSetting("playFrom") !== "intro";
+		const renderComposeFrom = (): void => {
+			for (const b of refs.composeFrom.querySelectorAll<HTMLButtonElement>(
+				"[data-from]",
+			)) {
+				const on = (b.dataset.from === "chorus") === playFromChorus;
+				b.setAttribute("aria-checked", on ? "true" : "false");
+				b.tabIndex = on ? 0 : -1;
+			}
+		};
+		const setPlayFrom = (from: string | undefined): void => {
+			playFromChorus = from !== "intro";
+			writeMacroSetting("playFrom", playFromChorus ? "chorus" : "intro");
+			renderComposeFrom();
+		};
+		renderComposeFrom();
+		refs.composeFrom.addEventListener("click", (e) => {
+			const b = (e.target as HTMLElement).closest<HTMLElement>("[data-from]");
+			if (b) setPlayFrom(b.dataset.from);
+		});
+		radioKeys(refs.composeFrom, "[data-from]", (el) =>
+			setPlayFrom(el.dataset.from),
+		);
+
 		/** 詳しくのテンポ。空・範囲外ならジャンルに任せる（undefined）。 */
 		const composeTempo = (): number | undefined => {
 			const v = Number.parseInt(refs.composeTempo.value, 10);
@@ -7326,10 +7351,12 @@ export const mountDAW = (
 					refs.composeKeyHint.title = `${song.keyLabel}${song.moodLabel ? `（${song.moodLabel}）` : ""}`;
 				}
 
-				// **再生位置をサビの頭に置く。** 自動作曲は「気に入るまで引き直す」使い方になる。judge するのは
-				// サビなので、毎回イントロから聴かせると1曲1〜2分かかって引き直す気が失せる。頭から聴きたい
-				// ときは再生位置をドラッグすれば戻せる。
-				const chorus = song.sections.find((x) => x.kind === "chorus");
+				// **既定は再生位置をサビの頭に置く。** 自動作曲は「気に入るまで引き直す」使い方になり、judge
+				// するのはサビなので、毎回イントロから聴かせると引き直す気が失せる。パネルの「再生」で
+				// イントロからも選べる。サビの無い曲は曲頭から。
+				const chorus = playFromChorus
+					? song.sections.find((x) => x.kind === "chorus")
+					: undefined;
 				playStartStep = (chorus?.startBar ?? 0) * renderConfig.stepsPerBar;
 				redrawAll();
 				updateTrackPanel(); // 和音の入力欄・歌詞欄へ生成結果を反映する

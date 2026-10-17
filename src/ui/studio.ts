@@ -1354,6 +1354,17 @@ export const createDtmStudio = async (
 		 * 各トラックの音源（楽器×音源バンク）を読み込む。読み込み済みのものは即座に済む。
 		 * 音源バンクを指定したトラックは、プリセットの読み込み（FluidR3）だけでは足りないため。
 		 */
+		/**
+		 * 楽器・音源バンクの変更で走り出した読み込み。再生はこれを待ってから始める
+		 * （作曲直後の自動再生で、読み込み前のトラックが無音になっていた）。
+		 */
+		const pendingSoundLoads = new Set<Promise<unknown>>();
+		const trackSoundLoad = <T>(p: Promise<T>): Promise<T> => {
+			pendingSoundLoads.add(p);
+			void p.finally(() => pendingSoundLoads.delete(p));
+			return p;
+		};
+
 		const loadEditorTrackSounds = async (): Promise<void> => {
 			await listReady;
 			await Promise.all(
@@ -1404,10 +1415,12 @@ export const createDtmStudio = async (
 				const wasPlaying = daw?.getPlaybackState() === "playing";
 				if (wasPlaying) daw.pause();
 				daw?.setLoading?.(true);
-				void Promise.all([
-					loadPreset(key, trackIds, editorMode),
-					loadEditorTrackSounds(),
-				]).finally(() => {
+				void trackSoundLoad(
+					Promise.all([
+						loadPreset(key, trackIds, editorMode),
+						loadEditorTrackSounds(),
+					]),
+				).finally(() => {
 					daw?.setLoading?.(false);
 					if (wasPlaying) daw?.play();
 				});
@@ -1467,8 +1480,16 @@ export const createDtmStudio = async (
 			onResumeAudio: async () => {
 				applyMasterFx(masterFxTarget, editorFx, editorBpm);
 				await resumeAudio();
-				if (daw) {
-					await loadRequiredDrums(daw.getUsedDrumKeys(), daw.getDrumFont());
+				const loading = pendingSoundLoads.size > 0;
+				if (loading) daw?.setLoading?.(true);
+				try {
+					await Promise.all([...pendingSoundLoads]);
+					await loadEditorTrackSounds();
+					if (daw) {
+						await loadRequiredDrums(daw.getUsedDrumKeys(), daw.getDrumFont());
+					}
+				} finally {
+					if (loading) daw?.setLoading?.(false);
 				}
 				await dawOverrides.onResumeAudio?.();
 			},
@@ -1503,11 +1524,11 @@ export const createDtmStudio = async (
 			parseMidi,
 			onInstrumentChange: handleInstrumentChange,
 			onTrackInstrumentChange: (idx, name) => {
-				void handleTrackInstrumentChange(idx, name);
+				void trackSoundLoad(handleTrackInstrumentChange(idx, name));
 				externalOnTrackInstrumentChange?.(idx, name);
 			},
 			onTrackFontChange: (idx, font) => {
-				void handleTrackFontChange(idx, font);
+				void trackSoundLoad(handleTrackFontChange(idx, font));
 				externalOnTrackFontChange?.(idx, font);
 			},
 			reverbAmount: options.reverbAmount,
