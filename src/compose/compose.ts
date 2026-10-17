@@ -2993,6 +2993,8 @@ export type Draw = Omit<
 	chromaticRatio: number;
 	melodyRange: number;
 	submelodyRange: number;
+	/** 楽器リフ（riff）の半音下の刺繍音の発音位置。 */
+	riffChromSteps?: number[];
 	/** 小節ごとの緊張度（0〜1）。{@link tensionFeatures} の材料。 */
 	barTension: number[];
 	stepsPerBar: number;
@@ -5777,9 +5779,11 @@ const draw = (
 
 	// --- 楽器リフの主旋律（{@link StructureTemplate.lead}） ---
 	// 歌メロを捨てて、16分リフで置き換える。**リフは和音に付いて動かない**（和音ごとに移すと
-	// 分散和音になり、リフに聞こえない）。セクションの種類ごとに4小節ブロック x y x z を作り、
+	// 分散和音になり、リフに聞こえない。こする音だけ後で {@link fitRunToChords} がずらす）。セクションの種類ごとに4小節ブロック x y x z を作り、
 	// 後半の4小節は z だけ替える。1小節の型は回さない。サビは曲によって1オクターブ上げる
 	// （docs/game-bgm-toby-fox.md）。サブメロは3度下を重ねた2音。ハモリ・パッドは外す。
+	/** リフの半音下の刺繍音の発音位置。{@link fitRunToChords} が動かさずに残す。 */
+	const riffChromSteps: number[] = [];
 	if (template?.lead === "riff") {
 		melody.length = 0;
 		submelody.length = 0;
@@ -5867,6 +5871,7 @@ const draw = (
 				const start = barStart + at * sixteenth;
 				const dur = n.len * sixteenth;
 				const accent = at % 4 === 0;
+				if (n.chrom) riffChromSteps.push(start);
 				melody.push({
 					startStep: start,
 					pitchUnits: spelledToUnits(semi + k, fifth + fifthShift, edo),
@@ -6567,6 +6572,7 @@ const draw = (
 		chromaticRatio: melody.length === 0 ? 0 : chromaticNotes / melody.length,
 		melodyRange: range(melody),
 		submelodyRange: range(submelody),
+		riffChromSteps,
 		barTension,
 		stepsPerBar,
 	};
@@ -6581,9 +6587,17 @@ const draw = (
  * 所有者が「伴奏と調和」と言った手書きは 3%、原曲は 4〜39%）。こする音だけを、拍頭と4分以上は和音の音へ、
  * 裏は和音の音か和音の音から全音以上離れた音階の音へ、いちばん近い所へずらす。
  * 候補を選んだ後（移調済みの音高）に掛けるので、seed の曲（テンポ・進行・リズム）は変わらない。
+ * 楽器リフ（riff）も同じ（直す前 34%、Toby Fox の手本 13曲は 0〜19%・中央 4%）。リフの半音下の
+ * 刺繍音は動かさず、直した次の音の半音下へ付け直す。`under` はリードの3度下の重ね。
  */
-const fitRunToChords = (d: Draw, scale: ComposeScale, edo: 12 | 31): void => {
-	const { melody, harmony, stepsPerBar } = d;
+const fitRunToChords = (
+	d: Draw,
+	scale: ComposeScale,
+	edo: 12 | 31,
+	under: ComposedNote[],
+): void => {
+	const { melody, stepsPerBar } = d;
+	const chromAt = new Set(d.riffChromSteps);
 	const spans = buildChordPlacements({
 		edo,
 		chordStr: d.chordProgression,
@@ -6616,7 +6630,9 @@ const fitRunToChords = (d: Draw, scale: ComposeScale, edo: 12 | 31): void => {
 		(h, n) => Math.imul(h ^ (n.pitchUnits + n.startStep * 7), 16777619) >>> 0,
 		2166136261,
 	);
-	const tolerance = pick([0, 0.3, 0.6, 0.9], seededRandom(salt));
+	// リフは刺繍音だけで 4〜16% こするので、裏のこすれは残さない（残すと手本の上限 19% を超える曲が出る）。
+	const tolerance =
+		chromAt.size > 0 ? 0 : pick([0, 0.3, 0.6, 0.9], seededRandom(salt));
 	// 残すかは音・小節内の位置・和音だけで決める。同じ和音の上で繰り返す小節は同じに直る。
 	const keepDraw = (u: number, step: number, chord: number[]): number =>
 		seededRandom(
@@ -6625,6 +6641,7 @@ const fitRunToChords = (d: Draw, scale: ComposeScale, edo: 12 | 31): void => {
 				salt,
 			),
 		)();
+	const origUnits = new Map(melody.map((n) => [n, n.pitchUnits]));
 	let prevOld = Number.NaN;
 	let prevNew = Number.NaN;
 	melody.forEach((n, i) => {
@@ -6636,7 +6653,12 @@ const fitRunToChords = (d: Draw, scale: ComposeScale, edo: 12 | 31): void => {
 			return pcs.has((p + 1) % 12) || pcs.has((p + 11) % 12);
 		};
 		// 和音の音から全音以上離れた音（9th など）は拍頭でも残す。
-		if (chord.length > 0 && !pcs.has(pitchClass(semiOf(old))) && rubs(old)) {
+		if (
+			!chromAt.has(n.startStep) &&
+			chord.length > 0 &&
+			!pcs.has(pitchClass(semiOf(old))) &&
+			rubs(old)
+		) {
 			const strong = n.durationSteps >= beat || n.startStep % beat === 0;
 			const next = melody[i + 1]?.pitchUnits ?? old;
 			// 16分の経過音・刺繍音（前後とも2半音以内）は原曲にもあるので残す。
@@ -6683,8 +6705,14 @@ const fitRunToChords = (d: Draw, scale: ComposeScale, edo: 12 | 31): void => {
 		prevOld = old;
 		prevNew = n.pitchUnits;
 	});
-	// サビの3度下の重ねは、直したリードの下で一番近い和音の音（3〜9半音下）へ置き直す。
-	for (const h of harmony) {
+	melody.forEach((n, i) => {
+		const next = melody[i + 1];
+		if (!chromAt.has(n.startStep) || !next) return;
+		n.pitchUnits = (next.pitchUnits -
+			((origUnits.get(next) ?? 0) - (origUnits.get(n) ?? 0))) as Units;
+	});
+	// 3度下の重ねは、直したリードの下で一番近い和音の音（3〜9半音下）へ置き直す。
+	for (const h of under) {
 		const top = melody.find((n) => n.startStep === h.startStep);
 		const chord = chordAt(h.startStep + 1);
 		if (!top || chord.length === 0) continue;
@@ -6965,8 +6993,13 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	}
 
 	const d = chosen.d;
-	if (template?.lead === "riff16")
-		fitRunToChords(d, scale, options.edo === 31 ? 31 : 12);
+	if (template?.lead === "riff16" || template?.lead === "riff")
+		fitRunToChords(
+			d,
+			scale,
+			options.edo === 31 ? 31 : 12,
+			template.lead === "riff" ? d.submelody : d.harmony,
+		);
 	const result: ComposeResult = {
 		// ドラム・楽器・編曲プランは勝った候補にだけ後から付ける（メロディに
 		// 依存しないので候補ごとに引いても採点は動かず、候補数ぶん無駄になる）。
