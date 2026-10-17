@@ -2074,12 +2074,23 @@ console.log("● 界隈曲の流派テンプレート");
 			).length;
 			if (lineage !== "kaiwai_speder2")
 				m.tresilloBars.push(tresillo / Math.max(1, onsetsByBar.size));
-			if (song.stats.bassStyle === "tresillo")
+			// 2小節の型（8分と3:3:2 の交互）はちょうど半分になるので、2小節ずつ数える。
+			// 小節単位だと、イントロでベースが遅れて入る曲は偶奇がずれて半分を割る。
+			if (song.stats.bassStyle === "tresillo") {
+				const pairs = new Map<number, boolean>();
+				for (const [b, on] of onsetsByBar)
+					pairs.set(
+						b >> 1,
+						(pairs.get(b >> 1) ?? false) ||
+							(on.includes(36) && on.includes(132)),
+					);
+				const hit = [...pairs.values()].filter(Boolean).length;
 				check(
-					`${tag} 3:3:2 のベースが小節の半分以上`,
-					tresillo / Math.max(1, onsetsByBar.size) >= 0.5,
-					`${tresillo}/${onsetsByBar.size}`,
+					`${tag} 3:3:2 のベースが2小節単位で半分以上`,
+					hit / Math.max(1, pairs.size) >= 0.5,
+					`${hit}/${pairs.size}`,
 				);
+			}
 			if (lineage === "kaiwai_speder2") {
 				const onBeat = bass.filter(
 					(n) => n.startStep % 48 === 0 && n.startStep % STEPS_PER_BAR !== 0,
