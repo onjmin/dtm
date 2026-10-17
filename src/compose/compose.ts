@@ -1297,8 +1297,6 @@ type BassStyle =
 	// --- 以下、テンプレートが指名したときだけ使う（{@link BASS_STYLES} に入れない） ---
 	/** ルートから半音ずつ4つ下がる。減七の上で鳴らす Ghost Fight 型。 */
 	| "chromatic-descent"
-	/** ルートと5度を16分のシンコペーションで刻む一発リフ。Pepper Steak 型。 */
-	| "power-riff"
 	/** 8分でルートとオクターブ上を往復。界隈曲コーパスの主流（交互 0.44〜0.53・音価24）。 */
 	| "octave-eighth"
 	/** 8分のルート刻み。 */
@@ -3008,9 +3006,8 @@ export type Draw = Omit<
 type RiffNote = { step: number; chrom: boolean; len: number };
 
 /**
- * リフの部品。どれも半小節（16分8つ）で、`a` は起点の歩数。手本2曲の上声は
- * この3種の組み合わせだった——刺繍音で回る・隣の中核音と往復する・同じ音を刻む。
- * 分散和音（和音の構成音を上下する）は手本に無く、入れると伴奏に聞こえる。
+ * リフの部品。どれも半小節（16分8つ）で、`a` は起点の歩数。刺繍音で回る・隣の中核音と
+ * 往復する・同じ音を刻む・下りて戻る。分散和音（和音の構成音を上下する）は入れると伴奏に聞こえる。
  */
 const RIFF_FIGURES: ((a: number, rnd: () => number) => RiffNote[])[] = [
 	// 回る: a, 半音下, a, 上へ抜けて、隣と往復
@@ -3057,8 +3054,7 @@ const RIFF_FIGURES: ((a: number, rnd: () => number) => RiffNote[])[] = [
 ];
 
 /**
- * リフ1小節（前半・後半）。起点は主音の周り（主音から -1〜+3 歩）から引き、後半は前半より
- * 低い所から始める。手本はどちらも「上で回って、下で往復する」形だった。
+ * リフの半小節。起点の歩数を lo〜hi から引く。
  */
 const makeRiffHalf = (rnd: () => number, lo: number, hi: number): RiffNote[] =>
 	pick(RIFF_FIGURES, rnd)(lo + Math.floor(rnd() * (hi - lo + 1)), rnd);
@@ -3114,10 +3110,7 @@ const draw = (
 	//
 	// **テンポは設計図より先に引く。** イントロの長さは小節数ではなく秒で決める
 	// （{@link SectionSpec.seconds}）ので、BPM が分からないうちには小節数を選べない。
-	const bpm = pick(
-		template?.bpmByScale?.[scale.id] ?? template?.bpmChoices ?? BPM_CHOICES,
-		rnd,
-	);
+	const bpm = pick(template?.bpmChoices ?? BPM_CHOICES, rnd);
 	const byScale = template?.bassByScale?.[scale.id];
 	const bassOverride = ((Array.isArray(byScale)
 		? pick(byScale, rnd)
@@ -5355,22 +5348,6 @@ const draw = (
 				[R, EIGHTH],
 				[A, EIGHTH],
 			],
-			"power-riff": [
-				[R, EIGHTH],
-				[R, SIXTEENTH],
-				[R, -SIXTEENTH],
-				[F, SIXTEENTH],
-				[R, -SIXTEENTH],
-				// ♭5。5度から半音下へ掠める、この型の顔。
-				[F - 1, SIXTEENTH, (fifthTone?.fifth ?? rootTone.fifth + 1) - 7],
-				[R, -SIXTEENTH],
-				[R, EIGHTH],
-				[R, SIXTEENTH],
-				[R, -SIXTEENTH],
-				[F, SIXTEENTH],
-				[R, -SIXTEENTH],
-				[T, EIGHTH],
-			],
 			"octave-eighth": [
 				[RL, EIGHTH],
 				[RL + 12, EIGHTH],
@@ -5799,23 +5776,16 @@ const draw = (
 	};
 
 	// --- 楽器リフの主旋律（{@link StructureTemplate.lead}） ---
-	// 歌メロを捨てて、2小節周期の16分リフで置き換える。**リフは和音に付いて動かない。**
-	// 手本2曲とも上声の型は固定で、下でベースが動く（Pepper Steak は A#→C#→G#、
-	// Ghost Fight は半音下降）。和音ごとに移すと分散和音になり、リフに聞こえない。
-	// サブメロは3度下を重ねた2音（Ghost Fight の平行3度）。ハモリ・パッドは外す。
+	// 歌メロを捨てて、16分リフで置き換える。**リフは和音に付いて動かない**（和音ごとに移すと
+	// 分散和音になり、リフに聞こえない）。セクションの種類ごとに4小節ブロック x y x z を作り、
+	// 後半の4小節は z だけ替える。1小節の型は回さない。サビは曲によって1オクターブ上げる
+	// （docs/game-bgm-toby-fox.md）。サブメロは3度下を重ねた2音。ハモリ・パッドは外す。
 	if (template?.lead === "riff") {
 		melody.length = 0;
 		submelody.length = 0;
 		harmony.length = 0;
 		harmony2.length = 0;
 		pad.length = 0;
-		const first = makeRiffHalf(rnd, 1, 3);
-		const cellA = [...first, ...makeRiffHalf(rnd, -1, 1)];
-		const cellB = [...first, ...makeRiffHalf(rnd, -1, 1)];
-		// Toby Fox 型（riffBlockScales）: セクションの種類ごとに4小節ブロック x y x z を作り、
-		// 後半の4小節は z だけ替える。1小節の型は回さない。サビは曲によって1オクターブ上げる。
-		// 下の抽選はこの型の曲でだけ引く（2小節の型の曲の乱数列は動かさない）。
-		const blockMode = template.riffBlockScales?.includes(scale.id) ?? false;
 		const riffBar = (): RiffNote[] => [
 			...makeRiffHalf(rnd, 0, 4),
 			...makeRiffHalf(rnd, -2, 1),
@@ -5830,7 +5800,7 @@ const draw = (
 			riffBlocks.set(kind, made);
 			return made;
 		};
-		const chorusLift = blockMode && rnd() < 0.8 ? scale.core.length : 0;
+		const chorusLift = rnd() < 0.8 ? scale.core.length : 0;
 		// 対比のセクション（Aメロ）は8分へ間引く。ずっと同じ密度だとループの一周が区切れない。
 		const thin = (cell: RiffNote[]): RiffNote[] => {
 			const out: RiffNote[] = [];
@@ -5872,11 +5842,7 @@ const draw = (
 			if (!sec?.spec.melody) continue;
 			const barStart = bar * stepsPerBar;
 			const inSec = bar - sec.startBar;
-			let cell = blockMode
-				? riffBlockOf(sec.kind)[inSec % 8]
-				: inSec % 2 === 0
-					? cellA
-					: cellB;
+			let cell = riffBlockOf(sec.kind)[inSec % 8];
 			if (sec.kind === "verse") cell = thin(cell);
 			// Cメロは型ごと1歩上げて、同じリフの別の顔にする。
 			const lift =

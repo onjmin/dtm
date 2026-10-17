@@ -21,7 +21,7 @@
 | カード | 判定 | 理由 |
 |---|---|---|
 | 界隈曲・2号兄貴／Speder2／海鮮リスペクト | 許す | 8曲／4曲／3曲＋断片を比較群 59 曲と比べて規則にした。音符は写していない |
-| ゲームBGM・Toby Fox / Coldwood風（10-17 改名） | 許す | Toby Fox の戦闘曲 13 曲と Pepper Steak を測り、共通の規則（16分の旋律・調外の音）と作者ごとの型（Toby の4小節ブロック・広い音域／Pepper Steak のパワーリフ）を半々で出す。Coldwood は手本1曲（[game-bgm-toby-fox.md](game-bgm-toby-fox.md)） |
+| ゲームBGM・Toby Fox風（戦闘曲、10-17 改名） | 許す | Toby Fox の戦闘曲 13 曲を比較群と比べ、16分の旋律・調外の音・広い音域・4小節ブロックを規則にした。Pepper Steak 型は手本1曲なので削除（[game-bgm-toby-fox.md](game-bgm-toby-fox.md)） |
 | J-POP・ボカロ・界隈曲（汎用） | 外した | 広すぎて手本が無い。当たりが出ない |
 | BGM（伴奏主体 `composeAccomp`） | 外した | 「0次元のような曲」を狙ったが1曲の模倣にずれた。表は fb・fa・backing の小節を出どころ付きで写した句で、家の冒頭は backing とほぼ同じ進行になる。生成器はライブラリに残し、UI の入口だけ外した |
 | 骨格借用・継ぎ合わせ（`kaiwai_skeleton`・`kaiwai_splice`） | 外した（10-01） | 耳コピの骨格・句を写すので元曲に戻る |

@@ -120,7 +120,7 @@ export const BLUES_SCALE: ScaleDegree[] = [
  * 短調の主音へ移した形。
  *
  * ブルース音階との違いは伴奏で、こちらは短三和音を鳴らす。旋律の♭5（ミ♭）が
- * 短調の上を半音で掠めるのが顔（OFF の Pepper Steak 型）。
+ * 短調の上を半音で掠めるのが顔。
  */
 export const MINOR_BLUES_SCALE: ScaleDegree[] = [
 	{ semi: 0, fifth: 0 }, // C

@@ -342,18 +342,11 @@ export type StructureTemplate = {
 	lyricVocab?: LyricVocabName;
 	/**
 	 * 主旋律の書き方。`"riff"` は歌メロの代わりに楽器の16分リフを回す。
-	 * 手本2曲の上声は16分間隔が35〜67%あり、歌メロ（1〜13%）とは別物だった。
+	 * Toby Fox の戦闘曲は旋律の16分が 13 曲中 10 曲で 30% 以上あり、歌メロとは別物だった。
 	 * `"riff16"` は16分と3連の走句を4小節ブロックで回し続け、サビでオクターブ上へ移る。
 	 * `"riff-bar"` は曲ごとに作る1小節の型をセクションの全小節で繰り返す（半分の曲は4小節ブロック）。
 	 */
 	lead?: "riff" | "riff16" | "riff-bar";
-	/**
-	 * `lead: "riff"` を4小節ブロック（x y x z）で組む音階。サビは曲によって1オクターブ上げる。
-	 * 載っていない音階は2小節の型を交互に回す（1小節のリフのループ）。
-	 */
-	riffBlockScales?: string[];
-	/** 音階ごとの BPM の候補。無い音階は `bpmChoices`。 */
-	bpmByScale?: Record<string, number[]>;
 	/**
 	 * 歌メロの書き方。`"sentence"` は8小節の文を2小節の句4つで組み（同じリズムの家族・句ごとの息継ぎ）、
 	 * サビに2本目の声（4〜5度下が主）を曲によって付ける。歌う高さは原曲の歌の帯へ置く。
@@ -756,19 +749,11 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 		name: "game_loop",
 		label: "ゲームBGM（ループ）",
 		plan: ["intro", "chorus", "verse", "chorus", "bridge", "chorus"],
-		bpmChoices: [105, 108, 110, 112, 115, 118, 120],
+		// Toby Fox の戦闘曲 13 曲の実測（docs/game-bgm-toby-fox.md）。112〜170、中央 120・140 以上 4/13。
+		bpmChoices: [112, 115, 118, 120, 120, 126, 135, 145, 150, 170],
 		form: "ostinato",
-		// 2系統を半々（docs/game-bgm-toby-fox.md）。Toby Fox の戦闘曲 13 曲（和声的短音階）と
-		// Coldwood の Pepper Steak（短調ブルース・パワーリフ・1小節のリフを回す）。
 		lead: "riff",
-		scales: ["harmonic_minor", "minor_blues"],
-		// Toby Fox は 4小節ブロックで回し、音域は中央 28 半音（1小節のリフは 2/13 曲だけ）。
-		riffBlockScales: ["harmonic_minor"],
-		// Toby Fox は 112〜170（中央 120・140 以上 4/13）。Pepper Steak は 109。
-		bpmByScale: {
-			harmonic_minor: [112, 115, 118, 120, 120, 126, 135, 145, 150, 170],
-			minor_blues: [105, 108, 110, 112],
-		},
+		scales: ["harmonic_minor"],
 		bassByScale: {
 			// 半音で動くベースは 5/13 曲。
 			harmonic_minor: [
@@ -778,7 +763,6 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 				"eighth",
 				"driving",
 			],
-			minor_blues: "power-riff",
 		},
 	},
 
