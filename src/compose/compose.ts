@@ -33,8 +33,10 @@ import {
 import {
 	bassFigure,
 	grammarProgressions,
+	type LoopShape,
 	type LoopStyle,
 	loopBar,
+	loopShape,
 	loopStyle,
 	type RunPlan,
 	type RunStyle,
@@ -5195,7 +5197,7 @@ const draw = (
 					barSec.kind === "drop_chorus"
 		) {
 			const padTone = nearestChordTone(
-				MELODY_HIGH + 2, // メロディの上の音域
+				template?.nigo?.padTarget ?? MELODY_HIGH + 2, // メロディの上の音域
 				tones,
 				2,
 			);
@@ -5948,6 +5950,10 @@ const draw = (
 			blocks.set(side, made);
 			return made;
 		};
+		// riff-bar のセクションをまたぐ動き。最初の型から決まる別の列で引く（曲の乱数列・他の層を動かさない）。
+		let shape: LoopShape | undefined;
+		const spans = new Map<string, number>();
+		const entry = sectionPlan.find((x) => x.spec.melody)?.startBar ?? 0;
 		for (let bar = 0; bar < totalBars; bar++) {
 			const sec = sectionAt(sectionPlan, bar);
 			if (!sec?.spec.melody) continue;
@@ -5958,13 +5964,35 @@ const draw = (
 						? "c"
 						: "a";
 			const block = blockOf(side, sec.bars);
-			let cell = block[(bar - sec.startBar) % block.length];
+			const i = bar - sec.startBar;
+			let cell = block[i % block.length];
+			if (lineLead === "riff-bar") {
+				shape ??= loopShape(
+					seededRandom(
+						block[0].reduce(
+							(h, n) =>
+								Math.imul(h ^ (n.step * 31 + n.len * 5 + 1), 16777619) >>> 0,
+							374761393,
+						),
+					),
+					scale.core.length,
+				);
+				if (i % 8 === 0) spans.set(side, (spans.get(side) ?? -1) + 1);
+				const sparse =
+					shape.sparse?.sides.includes(side) &&
+					(spans.get(side) ?? 0) % 2 === 1 &&
+					i % 8 >= shape.sparse.keep;
+				const late = shape.lateEntry && bar - entry < 4;
+				if ((sparse || late) && bar !== totalBars - 1) continue;
+			}
 			const lift =
 				lineLead === "riff16" && side === "b" && runShape?.lift !== false
 					? scale.core.length
 					: side === "c"
 						? 1
-						: 0;
+						: lineLead === "riff-bar" && side === "b"
+							? (shape?.lift ?? 0)
+							: 0;
 			if (bar === totalBars - 1)
 				cell = [
 					{ step: 0, chrom: false, len: 8 },
@@ -5994,7 +6022,7 @@ const draw = (
 						1,
 						runFeel?.staccato && n.len === 2 && Math.abs(at % 4) === 2
 							? Math.round(sixteenth)
-							: end - start,
+							: Math.round((end - start) * (shape?.gate ?? 1)),
 					),
 					velocity: Math.abs(at % 4) < 1e-6 ? 100 : 82,
 				});

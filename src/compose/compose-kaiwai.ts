@@ -196,6 +196,11 @@ export type NigoFeel = {
 	third: boolean;
 	/** 旋律の無いイントロで、ベース・地の伴奏が入る位置（イントロの4分の1単位）。 */
 	introEntry: { bass: number; backing: number };
+	/**
+	 * パッドの持続音を寄せる高さ（MIDI）。固定（MELODY_HIGH+2）だと短調の枠で毎小節ド・レに落ち、
+	 * 調の推定が平行長調へ引っ張られた（2026-10-17）。曲ごとに1オクターブの幅から引く。
+	 */
+	padTarget: number;
 };
 
 /** 属7・m7♭5 は落とさない（2-5 とセブンス中心の核を残す）。 */
@@ -705,6 +710,47 @@ export const loopBar = (rnd: () => number, style: LoopStyle): LeadNote[] => {
 		[0, 1, 2, 3].map(() => weighted(style.cells, rnd)),
 		next,
 	);
+};
+
+/**
+ * 1小節ループのリードのセクションをまたいだ動き。原曲4曲はサビで音域を上げ（3曲は +6〜13 半音）、
+ * 8小節のうち2〜4小節しか鳴らさないブロックや遅れた入りがある（休符率 0.3〜0.5）。
+ * `lift` はサビの持ち上げ（音階の段数）、`sparse` は種別ごとの8小節目ごとに奇数番目で鳴らす小節数。
+ */
+export type LoopShape = {
+	lift: number;
+	sparse: { sides: string[]; keep: number } | null;
+	lateEntry: boolean;
+	/** 音の長さの割合（1=次の音まで伸ばす。原曲の2曲は16分を短く切る）。 */
+	gate: number;
+};
+
+export const loopShape = (
+	rnd: () => number,
+	octaveSteps: number,
+): LoopShape => {
+	const lift = weighted(
+		[
+			[0, 1],
+			[3, 1],
+			[octaveSteps, 2],
+		],
+		rnd,
+	);
+	const sparse =
+		rnd() < 0.85
+			? {
+					sides: pick([["a"], ["b"], ["a", "b"]], rnd),
+					keep: pick([0, 2, 4], rnd),
+				}
+			: null;
+	const lateEntry = rnd() < 0.4;
+	return {
+		lift,
+		sparse,
+		lateEntry,
+		gate: rnd() < 0.5 ? 1 : 0.7 + rnd() * 0.15,
+	};
 };
 
 /** 8分の格子に乗らない音を前の音（休符）へ吸収して、8分刻みに間引く。 */
@@ -1526,7 +1572,7 @@ export const varyNigo = (
 		],
 		rnd,
 	);
-	const nigo: NigoFeel = {
+	const nigo: Omit<NigoFeel, "padTarget"> = {
 		perBar,
 		triads: rnd() < 0.35 ? 0 : 0.05 + rnd() * 0.3,
 		minor: rnd() < 0.2 ? 0 : 0.4 + rnd() * 1.2,
@@ -1663,6 +1709,7 @@ export const varyNigo = (
 		),
 		padKinds: rnd() < 0.7 ? pad : all,
 		arrange: { backing, sparkle, pad, lead },
-		nigo,
+		// 既定のパッドの窓（MELODY_HIGH=83 の −4〜+7）から。乱数列の末尾で引く（上の抽選はそのまま）。
+		nigo: { ...nigo, padTarget: 79 + Math.floor(rnd() * 12) },
 	};
 };
