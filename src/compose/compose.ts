@@ -6576,6 +6576,127 @@ const draw = (
 // 採点
 // ============================================================
 
+/**
+ * 走句リード（riff16）は和音を見ずに音階を歩くので、層の和音と半音でこすれる（直す前は長さで 24%。
+ * 所有者が「伴奏と調和」と言った手書きは 3%、原曲は 4〜39%）。こする音だけを、拍頭と4分以上は和音の音へ、
+ * 裏は和音の音か和音の音から全音以上離れた音階の音へ、いちばん近い所へずらす。
+ * 候補を選んだ後（移調済みの音高）に掛けるので、seed の曲（テンポ・進行・リズム）は変わらない。
+ */
+const fitRunToChords = (d: Draw, scale: ComposeScale, edo: 12 | 31): void => {
+	const { melody, harmony, stepsPerBar } = d;
+	const spans = buildChordPlacements({
+		edo,
+		chordStr: d.chordProgression,
+		patternType: "block",
+		rootShift: d.rootShift,
+		bpm: 120,
+		stepsPerBar,
+	});
+	const shiftUnits = semitonesToUnits(d.rootShift, edo);
+	const semiOf = (u: number): number => Math.round(u / UNITS_PER_SEMITONE);
+	const octaveUnits = semitonesToUnits(12, edo);
+	const chordAt = (step: number): number[] =>
+		spans
+			.filter(
+				(p) => p.startStep <= step && step < p.startStep + p.durationSteps,
+			)
+			.map((p) => p.pitchUnits);
+	const near = (bases: number[], u: number): number[] =>
+		bases.flatMap((b) => {
+			const m = Math.round((u - b) / octaveUnits);
+			return [m - 1, m, m + 1].map((k) => b + k * octaveUnits);
+		});
+	const keyShiftAt = (bar: number): number =>
+		d.sections.find(
+			(sec) => bar >= sec.startBar && bar < sec.startBar + sec.bars,
+		)?.keyShift ?? 0;
+	const beat = stepsPerBar / 4;
+	// 裏のこすれをどれだけ残すかは曲ごと（原曲は曲で 4〜39%）。リードから決まる別の列で引く。
+	const salt = melody.reduce(
+		(h, n) => Math.imul(h ^ (n.pitchUnits + n.startStep * 7), 16777619) >>> 0,
+		2166136261,
+	);
+	const tolerance = pick([0, 0.3, 0.6, 0.9], seededRandom(salt));
+	// 残すかは音・小節内の位置・和音だけで決める。同じ和音の上で繰り返す小節は同じに直る。
+	const keepDraw = (u: number, step: number, chord: number[]): number =>
+		seededRandom(
+			[u, step % stepsPerBar, ...chord].reduce(
+				(h, x) => Math.imul(h ^ x, 16777619) >>> 0,
+				salt,
+			),
+		)();
+	let prevOld = Number.NaN;
+	let prevNew = Number.NaN;
+	melody.forEach((n, i) => {
+		const old = n.pitchUnits;
+		const chord = chordAt(n.startStep + 1);
+		const pcs = new Set(chord.map((u) => pitchClass(semiOf(u))));
+		const rubs = (u: number): boolean => {
+			const p = pitchClass(semiOf(u));
+			return pcs.has((p + 1) % 12) || pcs.has((p + 11) % 12);
+		};
+		// 和音の音から全音以上離れた音（9th など）は拍頭でも残す。
+		if (chord.length > 0 && !pcs.has(pitchClass(semiOf(old))) && rubs(old)) {
+			const strong = n.durationSteps >= beat || n.startStep % beat === 0;
+			const next = melody[i + 1]?.pitchUnits ?? old;
+			// 16分の経過音・刺繍音（前後とも2半音以内）は原曲にもあるので残す。
+			const passing =
+				n.durationSteps < stepsPerBar / 8 &&
+				Math.abs(old - prevNew) <= 2 * UNITS_PER_SEMITONE &&
+				Math.abs(next - old) <= 2 * UNITS_PER_SEMITONE &&
+				old !== next &&
+				old !== prevNew;
+			let bases = chord;
+			if (!strong) {
+				const k = keyShiftAt(Math.floor(n.startStep / stepsPerBar));
+				const fifthShift =
+					k === 0 ? 0 : SEMITONE_TO_FIFTH_SHIFT[((k % 12) + 12) % 12];
+				const safe = scale.core
+					.map((_, s) => {
+						const p = degreeToPitch(scale, coreToDegree(scale, s));
+						return (
+							spelledToUnits(p.semi + k, p.fifth + fifthShift, edo) + shiftUnits
+						);
+					})
+					.filter((u) => !rubs(u));
+				bases = [...chord, ...safe];
+			}
+			if (
+				!passing &&
+				(strong || keepDraw(old, n.startStep, chord) >= tolerance)
+			) {
+				const cost = (u: number): number =>
+					Math.abs(u - old) +
+					// 元が2度で動いていたら2度のまま（3度へ化けると走句が分散和音になる）。
+					(Math.abs(old - prevOld) <= 2 * UNITS_PER_SEMITONE &&
+					Math.abs(u - prevNew) > 2 * UNITS_PER_SEMITONE
+						? UNITS_PER_SEMITONE
+						: 0) +
+					// 元が同音でないのに前の音と同じ高さへ寄ると、走句が止まる。
+					(u === prevNew && old !== prevOld ? UNITS_PER_SEMITONE * 1.5 : 0) +
+					(Math.sign(u - old) !== Math.sign(next - old) ? 1 : 0);
+				n.pitchUnits = near(bases, old).reduce((a, b) =>
+					cost(b) < cost(a) ? b : a,
+				) as Units;
+			}
+		}
+		prevOld = old;
+		prevNew = n.pitchUnits;
+	});
+	// サビの3度下の重ねは、直したリードの下で一番近い和音の音（3〜9半音下）へ置き直す。
+	for (const h of harmony) {
+		const top = melody.find((n) => n.startStep === h.startStep);
+		const chord = chordAt(h.startStep + 1);
+		if (!top || chord.length === 0) continue;
+		const below = near(chord, top.pitchUnits).filter(
+			(u) =>
+				u <= top.pitchUnits - 3 * UNITS_PER_SEMITONE &&
+				u >= top.pitchUnits - 9 * UNITS_PER_SEMITONE,
+		);
+		if (below.length) h.pitchUnits = Math.max(...below) as Units;
+	}
+};
+
 /** ノート列を指標モジュールが読める形（半音・ステップ）へ落とす。 */
 const toMetricNotes = (notes: ComposedNote[]): MetricNote[] =>
 	notes
@@ -6844,6 +6965,8 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	}
 
 	const d = chosen.d;
+	if (template?.lead === "riff16")
+		fitRunToChords(d, scale, options.edo === 31 ? 31 : 12);
 	const result: ComposeResult = {
 		// ドラム・楽器・編曲プランは勝った候補にだけ後から付ける（メロディに
 		// 依存しないので候補ごとに引いても採点は動かず、候補数ぶん無駄になる）。

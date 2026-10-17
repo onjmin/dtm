@@ -83,6 +83,8 @@ type SongData = {
 	drums: N[];
 	lead: N[];
 	bass: N[];
+	/** リード・その重ね・歌以外の音（ドラムは除く）。リードとのこすれを測る相手。 */
+	accomp: N[];
 	vocals: VocalPart[];
 	/** 歌の絶対音高が信用できるか（他人の耳コピは記譜オクターブが写譜者で違う）。 */
 	vocalAbs: boolean;
@@ -253,6 +255,9 @@ const generate = (template: string, seed: number, sing: boolean): SongData => {
 		drums: drumNotes(song.drum, song.bars),
 		lead: toN(song.melody),
 		bass: toN(song.bass),
+		accomp: layers
+			.filter((l) => ![0, 1, 11, 13].includes(l.index))
+			.flatMap((l) => toN(l.notes, 12 * l.octave)),
 		vocals: sing ? sungParts(song) : [],
 		vocalAbs: true,
 		gen: { song, layers, seed },
@@ -467,6 +472,9 @@ const loadRef = (file: string, title: string): SongData | null => {
 			bassTr.flatMap((t) => t.notes),
 			true,
 		),
+		accomp: tracks
+			.filter((t) => !leadTr.includes(t) && !vocTr.includes(t))
+			.flatMap((t) => t.notes),
 		vocals: vocTr.map((t) => ({ label: t.label, notes: mono(t.notes) })),
 		vocalAbs: roles?.vocalAbs !== false,
 	};
@@ -772,6 +780,29 @@ const L = (sd: SongData): N[] => {
 	}
 	return m;
 };
+/**
+ * リードの音の長さのうち、発音時に鳴っている伴奏の音名の半音上下にあり、同じ音名は鳴っていないもの。
+ * 伴奏が黙っている音は数えない。
+ */
+const leadRub = (sd: SongData): number | null => {
+	const acc = [...sd.accomp].sort((a, b) => a.s - b.s);
+	let tot = 0;
+	let rub = 0;
+	let from = 0;
+	for (const n of L(sd)) {
+		const at = n.s + 1;
+		while (from < acc.length && acc[from].s + BAR * 16 < at) from++;
+		const pcs = new Set<number>();
+		for (let i = from; i < acc.length && acc[i].s <= at; i++)
+			if (acc[i].s + acc[i].d > at) pcs.add(acc[i].p % 12);
+		if (!pcs.size) continue;
+		const p = n.p % 12;
+		tot += n.d;
+		if (!pcs.has(p) && (pcs.has((p + 1) % 12) || pcs.has((p + 11) % 12)))
+			rub += n.d;
+	}
+	return tot ? rub / tot : null;
+};
 const ints = (ns: N[]): number[] => ns.slice(1).map((n, i) => n.p - ns[i].p);
 const keyOfSong = new WeakMap<SongData, { tonic: number; minor: boolean }>();
 const songKey = (sd: SongData): { tonic: number; minor: boolean } => {
@@ -903,6 +934,13 @@ const FEATURES: Feature[] = [
 			const sound = m.reduce((a, n) => a + n.d, 0);
 			return Math.max(0, 1 - sound / span);
 		},
+	},
+	{
+		key: "leadRub",
+		label: "リードが伴奏と半音でこすれる長さ",
+		bucket: 0.05,
+		common: true,
+		get: (s) => leadRub(s),
 	},
 	{
 		key: "lead16",
