@@ -11,7 +11,7 @@ import {
 	toneForProgram,
 } from "../../audio/amp-sim";
 import { getScript } from "./import";
-import { levelGain, loopGainMultiplier, zoneLevel } from "./level";
+import { levelGain, loopGainMultiplier, zoneGains, zoneLevel } from "./level";
 
 type Zone = {
 	keyRangeLow: number;
@@ -27,6 +27,8 @@ type Zone = {
 	sustain: number;
 	delay: number;
 	buffer?: AudioBuffer;
+	/** 音域ごとのレベル補正倍率（{@link SoundFont.levelZoneSpreadDb}）。読み込み時に入る。 */
+	levelGain?: number;
 	_param?: {
 		playbackRate: number;
 		src: { loop: boolean; loopStart?: number; loopEnd?: number };
@@ -163,12 +165,14 @@ export class SoundFont {
 	/** ロングトーンビブラートのフェードイン秒数。発音直後は素直な音程を保つ。 */
 	static vibratoFadeSec = 0.2;
 
-	// ── 楽器間のサンプルレベル揃え ──
+	// ── 楽器間・音域間のサンプルレベル揃え ──
 	// FluidR3 は楽器ごとに収録レベルがばらばらで（Lead 1 (square) は全ゾーン −3 dB RMS、
 	// ノコギリ・エレピは −8〜−12 dB）、音量は trackVolume×velocity しか掛からないため、
-	// 矩形波リード1本でリミッターが常時働いていた。読み込み時にゾーン RMS の中央値を
-	// 目標へ寄せる倍率を求め、再生時の音量に掛ける。ドラムは対象外。
-	/** 正規化の目標（ゾーン RMS の中央値, dBFS）。 */
+	// 矩形波リード1本でリミッターが常時働いていた。読み込み時に K 特性（BS.1770）で重み付けした
+	// ゾーン RMS を測り、楽器の中央値を目標へ寄せる倍率と、ゾーンごとの残りの倍率を求めて
+	// 再生時の音量に掛ける（level.ts）。素の RMS で揃えた版（2026-10-17）は聴感が揃わなかった:
+	// 矩形波リードはベース・伴奏より 1〜2 dB 大きいままで、高い音域ほど目立った。ドラムは対象外。
+	/** 正規化の目標（ゾーンの K 特性 RMS の中央値, dBFS）。 */
 	static levelTargetDb = -10;
 	/** 持ち上げる上限(dB)。既存曲の聴感を大きく変えないため。 */
 	static levelMaxBoostDb = 8;
@@ -176,6 +180,11 @@ export class SoundFont {
 	static levelMaxCutDb = 8;
 	/** 持ち上げるときにピークの中央値がこれを越えない所で止める（線形）。 */
 	static levelPeakCeiling = 1;
+	/**
+	 * ゾーンごとの残りの補正の幅(±dB)。楽器の倍率を掛けた後、音域ごとにここまで寄せる。
+	 * 実測ではエレピの最上段（MIDI 76〜81）が中央より 8 dB 大きく、6 では 2 dB 残った。
+	 */
+	static levelZoneSpreadDb = 9;
 
 	static toURL(fontName: string): string {
 		return `https://surikov.github.io/webaudiofontdata/sound/${fontName}.js`;
@@ -245,7 +254,10 @@ export class SoundFont {
 		public style: PlayStyle = DEFAULT_PLAY_STYLE,
 	) {}
 
-	/** 楽器間のサンプルレベルを揃える倍率（{@link SoundFont.levelTargetDb}）。ドラムは 1。 */
+	/**
+	 * 楽器間のサンプルレベルを揃える倍率（{@link SoundFont.levelTargetDb}）。ドラムは 1。
+	 * 音域ごとの残りは各ゾーンの `levelGain`（{@link SoundFont.levelZoneSpreadDb}）。
+	 */
 	levelGain = 1;
 
 	play({
@@ -307,7 +319,8 @@ export class SoundFont {
 					? SoundFont.drumHumanizeGainRatio
 					: SoundFont.humanizeGainRatio);
 		src.detune.setValueAtTime(humanizeCents + detuneCents, 0);
-		const effectiveVolume = volume * humanizeGainMul * this.levelGain;
+		const effectiveVolume =
+			volume * humanizeGainMul * this.levelGain * (zone.levelGain ?? 1);
 		// 開始位置のずれ。長さもそのぶん縮むので、終端の計算にも同じ値を使う。
 		const startOffsetSec = isDrum
 			? Math.random() * SoundFont.drumRoundRobinOffsetSec
@@ -680,14 +693,15 @@ const measureLevelGain = (
 	fontName: string,
 ): number => {
 	const decay = isDecayInstrument(fontName);
-	const seen = new Set<string | AudioBuffer>();
+	const seen = new Map<string | AudioBuffer, number>();
 	const levels: { rms: number; peak: number }[] = [];
+	const keyOf = (zone: Zone) => zone.file ?? zone.sample ?? zone.buffer;
 	for (const zone of zones.values()) {
 		const { buffer } = zone;
 		if (!buffer) continue;
-		const key = zone.file ?? zone.sample ?? buffer;
+		const key = keyOf(zone) ?? buffer;
 		if (seen.has(key)) continue;
-		seen.add(key);
+		seen.set(key, levels.length);
 		const rateRatio = buffer.sampleRate / zone.sampleRate;
 		const channels = Array.from({ length: buffer.numberOfChannels }, (_, ch) =>
 			buffer.getChannelData(ch),
@@ -702,12 +716,23 @@ const measureLevelGain = (
 			),
 		);
 	}
-	return levelGain(levels, {
+	const gain = levelGain(levels, {
 		targetDb: SoundFont.levelTargetDb,
 		maxBoostDb: SoundFont.levelMaxBoostDb,
 		maxCutDb: SoundFont.levelMaxCutDb,
 		peakCeiling: SoundFont.levelPeakCeiling,
 	});
+	// 同じサンプルから複製されたゾーン（ピッチごとの写し）には同じ倍率を書く。
+	const perZone = zoneGains(levels, gain, {
+		targetDb: SoundFont.levelTargetDb,
+		spreadDb: SoundFont.levelZoneSpreadDb,
+		peakCeiling: SoundFont.levelPeakCeiling,
+	});
+	for (const zone of zones.values()) {
+		const i = seen.get(keyOf(zone) ?? zone.buffer ?? "");
+		if (i !== undefined) zone.levelGain = perZone[i];
+	}
+	return gain;
 };
 
 const addParam = (zone: Zone, pitch: number): void => {

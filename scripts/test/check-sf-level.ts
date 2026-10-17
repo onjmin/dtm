@@ -2,7 +2,8 @@
  * SoundFont（FluidR3 GM）の楽器間レベル揃え（`SoundFont.levelGain`）を検算する。
  *
  * 代表の楽器について、読み込み時と同じ計算（`src/instruments/sf/level.ts`）で
- * ゾーン RMS の中央値と補正倍率を求め、補正後が目標 ±2 dB に入ることを確かめる。
+ * ゾーンの K 特性 RMS の中央値と補正倍率を求め、補正後の中央値が目標 ±2 dB に入り、
+ * ゾーンごとの補正を掛けた後は各ゾーン（MIDI 40〜96）が目標 +3／−6 dB に入ることを確かめる。
  *
  * 配信元からフォントの .js を取り、ゾーンの MP3（base64）を ffmpeg で復号するので、
  * ネットワークと ffmpeg が要る。そのため `pnpm test` には入れていない。
@@ -23,6 +24,7 @@ import {
 	loopGainMultiplier,
 	median,
 	toDb,
+	zoneGains,
 	zoneLevel,
 } from "../../src/instruments/sf/level";
 import { SoundFont } from "../../src/instruments/sf/SoundFont";
@@ -54,10 +56,16 @@ const fetchFont = async (program: number): Promise<RawZone[]> => {
 	return (sandbox[`_tone_${name}`] as { zones: RawZone[] }).zones;
 };
 
-/** SoundFont.ts の findZone と同じ選び方: 各キーは範囲を含む最後のゾーン。 */
+/**
+ * SoundFont.ts の findZone と同じ選び方: 各キーは範囲を含む最後のゾーン。
+ * 測るのは曲で使う音域（MIDI 40〜96）だけ。両端のゾーン（エレピの MIDI 0〜39 は −23〜−40 dB で
+ * ほぼ無音）は補正の幅を越えて外れたままでよい。
+ */
+const PLAYABLE_LOW = 40;
+const PLAYABLE_HIGH = 96;
 const reachableZones = (zones: RawZone[]): RawZone[] => {
 	const picked = new Set<RawZone>();
-	for (let p = 0; p < 128; p++) {
+	for (let p = PLAYABLE_LOW; p <= PLAYABLE_HIGH; p++) {
 		for (let i = zones.length - 1; i >= 0; i--) {
 			const z = zones[i];
 			if (p >= z.keyRangeLow && p <= z.keyRangeHigh) {
@@ -127,12 +135,22 @@ const measure = async (program: number) => {
 		peakCeiling: SoundFont.levelPeakCeiling,
 	});
 	const mid = toDb(median(levels.map((l) => l.rms)));
+	const perZone = zoneGains(levels, gain, {
+		targetDb: SoundFont.levelTargetDb,
+		spreadDb: SoundFont.levelZoneSpreadDb,
+		peakCeiling: SoundFont.levelPeakCeiling,
+	});
+	const afterZones = levels.map((l, i) =>
+		l.rms > 0 ? toDb(l.rms) + toDb(gain) + toDb(perZone[i]) : Number.NaN,
+	);
 	return {
 		zones: levels.length,
 		min: rmsDbs[0],
 		max: rmsDbs.at(-1) ?? 0,
 		mid,
 		gainDb: toDb(gain),
+		zoneMin: Math.min(...afterZones.filter(Number.isFinite)),
+		zoneMax: Math.max(...afterZones.filter(Number.isFinite)),
 	};
 };
 
@@ -162,10 +180,16 @@ const main = async () => {
 	for (const [program, label] of CASES) {
 		const m = await measure(program);
 		const after = m.mid + m.gainDb;
-		const ok = Math.abs(after - SoundFont.levelTargetDb) <= TOL_DB;
+		// 大きい側は厳しく（痛さの苦情はこちら）、小さい側は収録が静かな低音域を許す。
+		const ZONE_OVER_DB = 3;
+		const ZONE_UNDER_DB = 6;
+		const ok =
+			Math.abs(after - SoundFont.levelTargetDb) <= TOL_DB &&
+			m.zoneMin >= SoundFont.levelTargetDb - ZONE_UNDER_DB &&
+			m.zoneMax <= SoundFont.levelTargetDb + ZONE_OVER_DB;
 		if (!ok) failed++;
 		console.log(
-			`${ok ? "ok  " : "FAIL"} ${label.padEnd(20)} zones ${m.zones}  RMS ${fmt(m.min)}〜${fmt(m.max)} (中央 ${fmt(m.mid)})  補正 ${fmt(m.gainDb)} dB → ${fmt(after)} dB`,
+			`${ok ? "ok  " : "FAIL"} ${label.padEnd(20)} zones ${m.zones}  K-RMS ${fmt(m.min)}〜${fmt(m.max)} (中央 ${fmt(m.mid)})  楽器 ${fmt(m.gainDb)} dB → 中央 ${fmt(after)} dB, ゾーン後 ${fmt(m.zoneMin)}〜${fmt(m.zoneMax)} dB`,
 		);
 	}
 	if (failed) {
