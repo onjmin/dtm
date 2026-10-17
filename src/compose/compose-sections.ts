@@ -473,19 +473,33 @@ const KAIWAI_KAISEN: StructureTemplate = {
 	bpmChoices: [130, 131, 132, 133, 134, 135],
 	baseKey: "minor",
 	scales: ["yonuki_penta"],
+	// ハットとベースは耳コピ者で割れる。どちらも原曲の写像とみて、耳コピ 8 本の比で両方を出す
+	// （ハット: 裏8分だけ 5／16分裏を足す 3。ベース: 8分オクターブ 3／3:3:2 2／16分の往復 2）。
 	drums: {
 		pool: [
+			"four_clap_pedal",
 			"four_clap_pedal",
 			"dance",
 			"four_clap_pedal_open",
 			"four_clap_snare_closed",
+			"four_clap_16hat",
+			"four_clap_16hat_sparse",
+			"four_clap_16hat_run",
 		],
 	},
 	instruments: ["retro_game", "synth_pop", "chip_pop"],
 	chordPatterns: ["block", "offbeat"],
 	harmonicRhythms: ["half"],
 	bass: {
-		styles: ["octave-eighth"],
+		styles: [
+			"octave-eighth",
+			"octave-eighth",
+			"octave-eighth",
+			"tresillo",
+			"tresillo",
+			"octave-offbeat16",
+			"octave-offbeat16",
+		],
 		skeletons: ["fourth-bar", "fourth-bar", "per-bar"],
 		alt: ["tresillo"],
 		sustainCadence: false,

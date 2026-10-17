@@ -20,12 +20,12 @@ import {
 	seededRandom as appSeededRandom,
 	BASE_STEPS_PER_BAR,
 	composeSong,
-	SYNTH_PHRASES,
 	durationEntropy,
 	MELODY_HIGH,
 	MELODY_LOW,
 	MOTIF_CELLS,
 	RHYTHM_CELLS,
+	SYNTH_PHRASES,
 	transposeChordName,
 } from "../../src/compose/compose";
 import {
@@ -2051,7 +2051,14 @@ console.log("● 界隈曲の流派テンプレート");
 					pairs > 0 &&
 						// 2号は骨格の差し替え小節が根音刻みになる曲がある。
 						oct / pairs >=
-							(lineage === "kaiwai_speder2" ? 0.3 : nigo ? 0.2 : 0.6),
+							(lineage === "kaiwai_speder2"
+								? 0.3
+								: nigo
+									? 0.2
+									: // 海鮮の16分の往復は骨格の差し替え小節と経過音でオクターブが薄まる。
+										song.stats.bassStyle === "octave-offbeat16"
+										? 0.15
+										: 0.6),
 					`${oct}/${pairs}`,
 				);
 			const onsetsByBar = new Map<number, number[]>();
@@ -2086,10 +2093,13 @@ console.log("● 界隈曲の流派テンプレート");
 				m.bassCore.push(
 					["octave-eighth", "tresillo"].includes(song.stats.bassStyle) ? 1 : 0,
 				);
+			// 海鮮は耳コピ者で割れるので16分の往復も許す。
 			else
 				check(
-					`${tag} ベースが8分オクターブか3:3:2`,
-					["octave-eighth", "tresillo"].includes(song.stats.bassStyle),
+					`${tag} ベースが8分オクターブ・3:3:2・16分の往復のどれか`,
+					["octave-eighth", "tresillo", "octave-offbeat16"].includes(
+						song.stats.bassStyle,
+					),
 					song.stats.bassStyle,
 				);
 
