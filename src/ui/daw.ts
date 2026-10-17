@@ -193,6 +193,14 @@ import {
 } from "../voice/lyrics";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "../voice/voice-images";
 import {
+	AUTO_ROLE_BASS_UNITS,
+	type AutoRoleStats,
+	classifyTrackRole,
+	computeAutoRoleStats,
+	pickTopSingleVoice,
+	roleOfSlot,
+} from "./auto-role";
+import {
 	type ComposeGenre,
 	findComposeGenre,
 	genreFromTemplate,
@@ -633,7 +641,7 @@ const COMPOSE_INFO_HTML = `
   <p><strong>楽器の音域に合わせてオクターブを下げます。</strong>1トラック1楽器で、しかも層ごとにオクターブを変えるので、決めたオクターブがその楽器の出せない高さになることがあります。実測すると、サビの重ねを1オクターブ上げる指定はミュートトランペットやトランペットで14半音ぶん、コードパッド（実音77〜93）はナイロンギターで10半音・カリンバで9半音ぶん音域を突き抜けていました。サンプルが引き伸ばされて<strong>金切り音</strong>になり、聴き手には「耳が痛い」としか感じられません。そこで、鳴らす音域がその楽器の実用上限に収まるところまで<strong>オクターブを下げてから</strong>置きます（トラックのオクターブ設定は、まさにこういう「得意な音域が偏った音源」を使えるようにするために在るものです）。<strong>下げる方向にしか動かしません</strong>——上げる側が痛みを作る側なので。</p>
   <p>実物の音域に収まっていても痛くなる音色があります。グロッケンは実物の音域がG5〜C8なので、旋律の音域（〜C6）は「余裕で範囲内」ですが、金属体の倍音は人の耳がいちばん敏感な2〜4kHzに集まるため、その高さで鳴らし続けると刺さります。こういう音色には音域とは別に<strong>明るさの上限</strong>を持たせてあり、グロッケンならC5より上で鳴らないところまで下げます。<strong>候補から外すのではなく置き場所を変えます</strong>——外すと音色の幅がそのぶん減るだけで、低く鳴らしたグロッケンはポップスで普通に使われる柔らかい音です。</p>
   <p><strong>オクターブの重ねを主役にしていません。</strong>「既にあるトラックを1オクターブ動かして別トラックへ写す」層は、音楽的な価値が高くありません。人の耳はオクターブ違いを<strong>同じ音</strong>として聞くので（オクターブ等価）、写した層は新しい声部にならず、音量と音色がわずかに変わるだけです。強調としての意味はあるので使いはしますが、常設にはしません。ベースのオクターブ下の重ねは特に、30Hz前後まで落ちて輪郭が濁るので既定では出しません（出すときも上のオクターブへ、盛り上がる場所だけに置きます）。</p>
-  <p>「作曲」が決めたこれらの楽器は、おまかせマスタリングの役割推定より優先されます（演奏内容だけを見ると、間奏のソロもサビの重ねも「音の少ない単旋律」で、主旋律と区別が付かないためです）。楽器を手で選び直したトラックは、以後どちらにも上書きされません。</p>
+  <p>「作曲」が決めたこれらの楽器と層ごとの音量は、おまかせマスタリングの役割推定より優先されます（演奏内容だけを見ると、間奏のソロもサビの重ねも「音の少ない単旋律」で、主旋律と区別が付かないためです。役割そのものも層の種類から引くので、刻みやアルペジオが主旋律と同じ音量になることはありません）。楽器を手で選び直したトラックは、以後どちらにも上書きされません。</p>
   <h4>そのほか</h4>
   <ul>
     <li><strong>曲の途中で転調します</strong>（およそ半分の曲）。五度圏で近い属調・下属調へは共通する和音（ピボットコード）か新しい調のドミナントで橋渡しし、ラスサビの半音上げは準備なしの直接転調にします。調号を変えずに明暗だけ入れ替える<strong>平行調</strong>（ハ長調↔イ短調）と、主音を保ったまま暗くする<strong>同主調</strong>（ハ長調→ハ短調）も引きます。1割強の曲は主和音を避けて「明るいのか暗いのか分からない」浮遊感で通します。</li>
@@ -1170,9 +1178,6 @@ const normalizeInstrumentName = (name: string): string => {
 	);
 };
 
-/** ピアノロールのステップ解像度（1拍=48ステップ、他ファイルのSTEPS_PER_BEATと同じ）。 */
-const AUTO_ROLE_STEPS_PER_BEAT = 48;
-
 /** 役割ごとの基準音量（ベロシティ、0-127）。TRACKS_SIMPLE の既定値に合わせた「前に出す順」の目安。 */
 const AUTO_ROLE_BASE_VOLUME: Record<AutoRole, number> = {
 	melody: 100,
@@ -1181,69 +1186,14 @@ const AUTO_ROLE_BASE_VOLUME: Record<AutoRole, number> = {
 	chord: 72,
 };
 
-/** classifyTrackRole が役割判定と音量計算の両方に使う、ノート列から算出した統計値。 */
-type AutoRoleStats = {
-	avgPitch: number;
-	avgDur: number;
-	/** 同一startStepの平均同時発音数（和音の厚み。単音のみなら1）。 */
-	avgPoly: number;
-	maxPoly: number;
-};
-
-const computeAutoRoleStats = (
-	notes: Pick<Note, "pitchUnits" | "startStep" | "durationSteps">[],
-): AutoRoleStats => {
-	const avgPitch = notes.reduce((s, n) => s + n.pitchUnits, 0) / notes.length;
-	const avgDur = notes.reduce((s, n) => s + n.durationSteps, 0) / notes.length;
-
-	// 同一startStepの同時発音数（和音の厚み）
-	const byStart = new Map<number, number>();
-	for (const n of notes)
-		byStart.set(n.startStep, (byStart.get(n.startStep) ?? 0) + 1);
-	let maxPoly = 0;
-	for (const c of byStart.values()) if (c > maxPoly) maxPoly = c;
-	const avgPoly = notes.length / byStart.size;
-
-	return { avgPitch, avgDur, avgPoly, maxPoly };
-};
-
-/** ベース判定の音高しきい値。C3 (MIDI 48) を units で表したもの。 */
-const AUTO_ROLE_BASS_UNITS = 48 * UNITS_PER_SEMITONE;
-
-/**
- * ノート列（ピッチ・タイミング）から、このトラックの役割を推定する。「おまかせ」で楽器・
- * 音量を自動選択するための判定で、ノートが無いトラックは呼び出し側でスキップする。
- *
- * - 平均音高が低い（C3未満）→ ベース
- * - 同時発音（和音）が多く、音価も長め → 伴奏（コード/パッド）
- * - 単音で音数が少なく音価が長い → サブメロ（オブリガート寄り）
- * - それ以外 → メロディ
- */
-const classifyTrackRole = (
-	stats: AutoRoleStats,
-	/**
-	 * このトラックが「単音トラックのうち最も平均音高が高いもの」か。
-	 *
-	 * 主旋律と対旋律を分けるのは絶対的な密度ではなく**トラックどうしの関係**（どちらが上を
-	 * 歌っているか）。密度と音価で定義すると密度の高いオブリガートを主旋律と取り違えるし、
-	 * 生成側が判定式を満たすためにサブメロを「単音・低密度・長音価」でしか書けなくなる。
-	 */
-	isTopSingleVoice: boolean,
-): AutoRole => {
-	// avgPitch は units（1/372オクターブ）。半音の数値と直接比べないこと。
-	if (stats.avgPitch < AUTO_ROLE_BASS_UNITS) return "bass"; // C3未満 = 低音域
-	if (stats.maxPoly >= 2 && stats.avgDur >= AUTO_ROLE_STEPS_PER_BEAT)
-		return "chord";
-	return isTopSingleVoice ? "melody" : "submelody";
-};
-
 /**
  * トラックIDから分かる役割。**simpleモードはトラックそのものが役割**なので、ノートから推定
  * する必要がない。推定に通していると、役割が決まっているトラックの中身を推定式に合わせて
  * 書かねばならない、という逆転が起きる。
  *
- * {@link classifyTrackRole} は、**本当に役割が不明な経路**——advancedモードの15トラックと、
- * MIDI取り込みのトラック——のためだけに残してある。
+ * 作曲が置いた層も役割が分かっている（{@link roleOfSlot}）。{@link classifyTrackRole} は、
+ * **本当に役割が不明な経路**——advancedモードで手入力・読み込みした曲と、MIDI取り込みの
+ * トラック——のためだけに残してある（式は auto-role.ts）。
  */
 const DECLARED_ROLE: Record<string, AutoRole> = {
 	melody: "melody",
@@ -6513,37 +6463,40 @@ export const mountDAW = (
 				if (notes.length === 0) continue;
 				statsByTrackId.set(t.config.id, computeAutoRoleStats(notes));
 			}
-			// 単音（和音でない）かつベース音域より上のトラックのうち、最も平均音高が
-			// 高いものを主旋律とみなす。
-			let topSingleVoiceId: string | null = null;
-			let topSingleVoicePitch = Number.NEGATIVE_INFINITY;
-			for (const [id, st] of statsByTrackId) {
-				if (st.maxPoly >= 2 && st.avgDur >= AUTO_ROLE_STEPS_PER_BEAT) continue;
-				if (st.avgPitch < AUTO_ROLE_BASS_UNITS) continue;
-				if (st.avgPitch > topSingleVoicePitch) {
-					topSingleVoicePitch = st.avgPitch;
-					topSingleVoiceId = id;
-				}
-			}
+			// 役割の分かっているトラック（simple モードの ID・作曲のスロット）は主旋律の候補から外す。
+			// 残した単音トラックのうち、十分に鳴っていて最も高いものを主旋律とみなす。
+			const unknownStats = new Map(
+				[...statsByTrackId].filter(([id]) => {
+					const t = trackStates.find((s) => s.config.id === id);
+					return !DECLARED_ROLE[id] && !t?.composeSlot;
+				}),
+			);
+			const topSingleVoiceId = pickTopSingleVoice(unknownStats);
 			for (const t of trackStates) {
 				if (t.lyricModel) continue; // 歌声トラックは楽器を持たない
 				const stats = statsByTrackId.get(t.config.id);
 				if (!stats) continue; // 音が無いトラックは判定不能なのでそのまま
-				// 役割が分かっているトラック（simpleモード）は推定しない。
+				// 役割が分かっているトラック（simpleモードの ID・作曲が置いた層）は推定しない。
 				const role =
 					DECLARED_ROLE[t.config.id] ??
-					classifyTrackRole(stats, t.config.id === topSingleVoiceId);
+					(t.composeSlot
+						? roleOfSlot(t.composeSlot)
+						: classifyTrackRole(stats, t.config.id === topSingleVoiceId));
 				roleByTrackId.set(t.config.id, role);
-				// **「作曲」が決めた音色は推定より優先する。** 間奏のソロもサビ専用の重ねも、演奏内容だけ見れば
+				// **「作曲」が決めた音色と音量は推定より優先する。** 間奏のソロもサビ専用の重ねも、演奏内容だけ見れば
 				// 「音が少ない単旋律」で主旋律と区別できず、推定にまかせるとセクションごとに分けたトラックが
-				// 全部同じ楽器へ揃ってしまう。音量・定位・コンプは引き続き推定した役割で決める。
+				// 全部同じ楽器へ揃ってしまう。音量も同じで、advanced-layers.ts が層ごとに決めた値
+				// （重ねは引く・伴奏は下げる）を役割の基準音量で上書きすると、作曲の層の設計が耳に届かない
+				// （2026-10-17 まで刻み・アルペジオが主旋律と同じ 92 で鳴っていた）。定位・コンプ・EQ は役割で決める。
 				const instName = autoPreset[t.composeSlot ?? role] ?? autoPreset[role];
 				t.trackInstrument = instName;
 				const trackIndex = trackStates.indexOf(t);
 				options.onTrackInstrumentChange?.(trackIndex, instName);
-				const vol = computeAutoRoleVolume(role, stats);
-				t.volume = vol;
-				t.core.setVolume(vol);
+				if (!t.composeSlot) {
+					const vol = computeAutoRoleVolume(role, stats);
+					t.volume = vol;
+					t.core.setVolume(vol);
+				}
 			}
 
 			// 役割ごとのパン（左右定位）オフセット。同じ役割が複数あるときは配列を巡回して左右へ振り分ける。
