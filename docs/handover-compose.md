@@ -239,8 +239,12 @@ npx tsx scripts/test/check-compose.ts --bless    # 出力を意図して変え�
 既知の未決（所有者判断）: `kaiwai` のベース帯の閾値・ベース型の配分、伴奏を bpm 120 固定で刻む件
 （直すと全テンプレートの伴奏が変わる）、骨格のドラム無し 15 本をそのまま出すか。
 
+2号兄貴（楽器）の素の出力は原曲の帯を外れる曲がある（2026-10-17、seed 1〜20）: リードの16分 30% 未満 6/20、占有率 70% 未満 8/20
+（原曲は 8/8 が 16分 30% 以上、占有 77〜93%）。`scripts/compose/calibrate-arrangement-gates.ts` で測った（[compose-harness.md](compose-harness.md) G4 の較正）。
+
 ## 関連資料
 
+- 曲を作って渡す依頼（生成＋手直し）の手順と関門: [`docs/compose-harness.md`](compose-harness.md)
 - 伴奏主体モードの設計: [`docs/accomp-compose.md`](accomp-compose.md)
 - データの出自とライセンス: [`docs/dataset-provenance.md`](dataset-provenance.md)
 - 手書き譜面の記法: [`docs/handscore.md`](handscore.md)

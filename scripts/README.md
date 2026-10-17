@@ -36,6 +36,8 @@
 | :--- | :--- | :--- |
 | `ab-listen.ts` | 目隠し A/B/C の作成器。出荷版・和声付け直し・人間の旋律を同じ手続きで出す | `npx tsx scripts/compose/ab-listen.ts --pdmx tmp/pdmx.jsonl --release --out tmp/abc-release` |
 | `export-samples.ts` | 生成曲を .mid（伴奏主体モードは .mml）で書き出す。`--app-seed` と `--compose` でアプリの曲を再現 | `npx tsx scripts/compose/export-samples.ts --app-seed 3842857959 --compose style:fb.v1:any:0` |
+| `audit-arrangement.ts` | 手直しした曲を渡す前の点検（[docs/compose-harness.md](../docs/compose-harness.md) G4）。流派の規則の帯とぶつかりを関門（合否）、2曲比較から出た項目を仮説、伴奏の強さ・高い持続音を注意として出す | `npx tsx scripts/compose/audit-arrangement.ts song.mml --profile 2go --key Gm --sections intro:8,A:16,B:16,break:8,A:8,B:16,outro:8` |
+| `calibrate-arrangement-gates.ts` | `audit-arrangement.ts` の関門を生成器の素の出力に掛け、指標の分布と不合格の数を流派ごとに出す。関門の閾値を動かしたら回す | `npx tsx scripts/compose/calibrate-arrangement-gates.ts --count 20` |
 | `audit-lineage.ts` | 所有者が聴く前の点検。曲をまたいだ使い回し・全曲で一定の特徴・歌の音域と重ね・原曲との近さを、流派の原曲（耳コピ）と同じ物差しで並べ、直すべき候補を重大度順に出す | `npx tsx scripts/compose/audit-lineage.ts --template kaiwai_2go_lead --count 100 --out tmp/audit/2go_lead.md` |
 | `measure-fill-coherence.ts` | 範囲補完で埋めた旋律と前後の旋律のつながり（2小節モチーフの共有・歌う中心・句頭句末・境目の跳躍）を、補完前の composeSong の旋律と比べる | `npx tsx scripts/compose/measure-fill-coherence.ts --seeds 15` |
 | `compose-audition.ts` | 作曲オーディションの入口。大量生成→一次選抜→覆面譜面→審査指示文までを1コマンドで | `npx tsx scripts/compose/compose-audition.ts --count 200 --top 6` |
