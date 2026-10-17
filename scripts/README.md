@@ -20,6 +20,7 @@
 | `check-mml-velocity.ts` | 音符ごとの強弱（v）が MML・DAW・プレイヤー・MIDI 書き出しを通って保たれるか | `npx tsx scripts/test/check-mml-velocity.ts --file tmp/full/fb.space.mml` |
 | `check-speech-schedule.ts` | 単発の読み上げ（`speak`）のチャンク配置の検算。到着時刻を偽って音を出さずに確かめる | `npx tsx scripts/test/check-speech-schedule.ts` |
 | `check-fx-font-drum.ts` | 再生専用プレイヤーと DAW 全体読み込みで、宣言（`#reverb=` `#t<n>font=` `#drum` 等）が読まれ未記載は既定へ戻るか | `npx tsx scripts/test/check-fx-font-drum.ts` |
+| `check-sf-level.ts` | SoundFont の楽器間レベル揃え（`SoundFont.levelGain`）で代表5楽器が目標 ±2 dB に入るか。配信元のフォントと ffmpeg が要るので `pnpm test` には入れない。`--all` で GM 128 楽器の一覧 | `npx tsx scripts/test/check-sf-level.ts` |
 | `check-input-limits.ts` | 共有リンク・取り込みファイル・localStorage の壊れた値で固まらないか、HTML が入らないか（付点・曲の長さ・UST/MIDI の桁外れ・プロトタイプ名・展開の上限） | `npx tsx scripts/test/check-input-limits.ts` |
 
 ### accomp/ — 伴奏主体モードの試聴・監査（テスト外）

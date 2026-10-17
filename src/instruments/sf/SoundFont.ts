@@ -11,6 +11,7 @@ import {
 	toneForProgram,
 } from "../../audio/amp-sim";
 import { getScript } from "./import";
+import { levelGain, loopGainMultiplier, zoneLevel } from "./level";
 
 type Zone = {
 	keyRangeLow: number;
@@ -162,6 +163,20 @@ export class SoundFont {
 	/** ロングトーンビブラートのフェードイン秒数。発音直後は素直な音程を保つ。 */
 	static vibratoFadeSec = 0.2;
 
+	// ── 楽器間のサンプルレベル揃え ──
+	// FluidR3 は楽器ごとに収録レベルがばらばらで（Lead 1 (square) は全ゾーン −3 dB RMS、
+	// ノコギリ・エレピは −8〜−12 dB）、音量は trackVolume×velocity しか掛からないため、
+	// 矩形波リード1本でリミッターが常時働いていた。読み込み時にゾーン RMS の中央値を
+	// 目標へ寄せる倍率を求め、再生時の音量に掛ける。ドラムは対象外。
+	/** 正規化の目標（ゾーン RMS の中央値, dBFS）。 */
+	static levelTargetDb = -10;
+	/** 持ち上げる上限(dB)。既存曲の聴感を大きく変えないため。 */
+	static levelMaxBoostDb = 8;
+	/** 下げる上限(dB)。 */
+	static levelMaxCutDb = 8;
+	/** 持ち上げるときにピークの中央値がこれを越えない所で止める（線形）。 */
+	static levelPeakCeiling = 1;
+
 	static toURL(fontName: string): string {
 		return `https://surikov.github.io/webaudiofontdata/sound/${fontName}.js`;
 	}
@@ -198,10 +213,15 @@ export class SoundFont {
 				zones.set(Number(pitch), v);
 			}
 			if (SoundFont.ch < ch) SoundFont.ch = ch;
-			fonts.set(
-				fontName,
-				new SoundFont(zones, ch, isDrum, toneOf(fontName), styleOf(fontName)),
+			const sf = new SoundFont(
+				zones,
+				ch,
+				isDrum,
+				toneOf(fontName),
+				styleOf(fontName),
 			);
+			if (!isDrum) sf.levelGain = measureLevelGain(zones, fontName);
+			fonts.set(fontName, sf);
 		}
 		const result = fonts.get(fontName);
 		if (!result) throw new Error("SoundFont load failed.");
@@ -224,6 +244,9 @@ export class SoundFont {
 		 */
 		public style: PlayStyle = DEFAULT_PLAY_STYLE,
 	) {}
+
+	/** 楽器間のサンプルレベルを揃える倍率（{@link SoundFont.levelTargetDb}）。ドラムは 1。 */
+	levelGain = 1;
 
 	play({
 		ctx,
@@ -284,7 +307,7 @@ export class SoundFont {
 					? SoundFont.drumHumanizeGainRatio
 					: SoundFont.humanizeGainRatio);
 		src.detune.setValueAtTime(humanizeCents + detuneCents, 0);
-		const effectiveVolume = volume * humanizeGainMul;
+		const effectiveVolume = volume * humanizeGainMul * this.levelGain;
 		// 開始位置のずれ。長さもそのぶん縮むので、終端の計算にも同じ値を使う。
 		const startOffsetSec = isDrum
 			? Math.random() * SoundFont.drumRoundRobinOffsetSec
@@ -564,34 +587,16 @@ const adjustZone = async (
 				const releaseLength = Math.max(0, oldBuf.length - loopEndFrame);
 				const newLength =
 					attackLength + loopLengthFrame * repeatCount + releaseLength;
-				let totalPeak = 0;
-				let loopPeak = 0;
-				// 全チャンネルを見てピークを取る（ch0だけだとステレオでピークが
-				// 右chに寄っているサンプルの判定がずれるため）
-				for (let ch = 0; ch < oldBuf.numberOfChannels; ch++) {
-					const chData = oldBuf.getChannelData(ch);
-					for (let i = 0; i < chData.length; i++) {
-						const abs = Math.abs(chData[i]);
-						if (abs > totalPeak) totalPeak = abs;
-						if (i >= loopStartFrame && i < loopEndFrame) {
-							if (abs > loopPeak) loopPeak = abs;
-						}
-					}
-				}
-
-				// ゲイン補正倍率の計算
-				// 減衰系楽器（ピアノ・ギター・ベース等）はループ部分が静かいのが自然な
-				// 場合も多いため、完全に補正を切るのではなく控えめな目標値に留める。
-				// これにより「バグでたまたま無音に近いループ点を掴んだ」場合の
-				// 過度な音量低下は緩和しつつ、自然な減衰感は大きく損なわない。
-				const decay = isDecayInstrument(fontName);
-				const targetRatio = decay ? 0.4 : 0.75;
-				const maxMultiplier = decay ? 6.0 : 20.0;
-				let gainMultiplier = 1.0;
-				if (loopPeak > 0 && totalPeak > 0 && loopPeak < totalPeak * 0.8) {
-					gainMultiplier = (totalPeak * targetRatio) / loopPeak;
-					if (gainMultiplier > maxMultiplier) gainMultiplier = maxMultiplier; // 過剰増幅によるクリップ防止
-				}
+				const channels = Array.from(
+					{ length: oldBuf.numberOfChannels },
+					(_, ch) => oldBuf.getChannelData(ch),
+				);
+				const gainMultiplier = loopGainMultiplier(
+					channels,
+					loopStartFrame,
+					loopEndFrame,
+					isDecayInstrument(fontName),
+				);
 
 				try {
 					const newBuf = ctx.createBuffer(
@@ -663,6 +668,46 @@ const adjustZone = async (
 	] as [keyof Zone, number][]) {
 		if (Number.isNaN(Number(zone[k]))) (zone[k] as number) = v;
 	}
+};
+
+/**
+ * 読み込んだゾーンの大きさから楽器のレベル補正倍率を求める。ゾーンはピッチごとに
+ * 複製されているので、元サンプルが同じものは1つに数える。ループ区間は引き伸ばし
+ * （ゲイン補正込み）後のバッファで測る。
+ */
+const measureLevelGain = (
+	zones: Map<number, Zone>,
+	fontName: string,
+): number => {
+	const decay = isDecayInstrument(fontName);
+	const seen = new Set<string | AudioBuffer>();
+	const levels: { rms: number; peak: number }[] = [];
+	for (const zone of zones.values()) {
+		const { buffer } = zone;
+		if (!buffer) continue;
+		const key = zone.file ?? zone.sample ?? buffer;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		const rateRatio = buffer.sampleRate / zone.sampleRate;
+		const channels = Array.from({ length: buffer.numberOfChannels }, (_, ch) =>
+			buffer.getChannelData(ch),
+		);
+		levels.push(
+			zoneLevel(
+				channels,
+				buffer.sampleRate,
+				Math.round(zone.loopStart * rateRatio),
+				Math.round(zone.loopEnd * rateRatio),
+				decay,
+			),
+		);
+	}
+	return levelGain(levels, {
+		targetDb: SoundFont.levelTargetDb,
+		maxBoostDb: SoundFont.levelMaxBoostDb,
+		maxCutDb: SoundFont.levelMaxCutDb,
+		peakCeiling: SoundFont.levelPeakCeiling,
+	});
 };
 
 const addParam = (zone: Zone, pitch: number): void => {
