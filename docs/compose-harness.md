@@ -148,7 +148,8 @@ maj7 の上の根音（最低音と同じ音名のリード）と、属7（根�
 
 1. ブラウザのプレビュー（`.claude/launch.json` の `dtm-demo`）で編集画面に `#g.…` を開く。
    **同じページでハッシュだけ変えても読み直さないので、`navigate` の後に `location.reload()` する**（空の曲を測りかけた例がある）。
-2. `window.studio.startWavRecording()` → `await daw.play()` → 曲の長さだけ待つ → `await window.studio.stopWavRecording()`（WAV の Blob）。
+2. **先に `await studio.audioContext.setSinkId({ type: "none" })` でスピーカーへの出力を切る**（所有者の部屋で鳴らさない。処理と録音はそのまま実時間で進む。切り替えの瞬間に一度 suspended になるので、録音を始める前にする）。
+   `window.studio.startWavRecording()` → `await daw.play()` → 曲の長さだけ待つ → `await window.studio.stopWavRecording()`（WAV の Blob）。
    ブラウザの `javascript_tool` は 45 秒で切れるので、**録音〜解析は async で起動して結果を `window.__res` に入れ、別の呼び出しで取りに行く。**
 3. Blob を `studio.audioContext.decodeAudioData` で読み、小節ごとに RMS（素の値と K 特性の近似: 38 Hz ハイパス＋1.5 kHz 以上 +4 dB の棚）・2〜6 kHz 帯・ピークを出す。
 4. **全体だけでなくパート単独でも録る。** リードだけ（`@0`）・ベースだけ（`@4`/`@5`）・伴奏だけ（`@7`/`@8`/`@10` など）の MML を作って読み直し、同じ測定をする。
