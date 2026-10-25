@@ -2,8 +2,9 @@
  * 作った曲の棚（`tmp/songs/`、git 管理外）。曲ごとに「日本時間 タイトル」のフォルダを作り、作曲の手順を
  * 1段ずつ書きためて、仕上がった MML・試聴 URL・自動作曲と手書きの比率を置く。一覧は `tmp/songs/index.html`。
  *
- *   npx tsx scripts/misc/song-shelf.ts new --title <タイトル> [--model <モデル名>] [--at "2026-10-25 15:30" | "2026-10-25"]
- *       作り始めにフォルダを作る。出力はフォルダのパス。--at は日本時間（省略時は今）。日付だけなら時刻不明。
+ *   npx tsx scripts/misc/song-shelf.ts new [--title <タイトル>] [--model <モデル名>] [--at "2026-10-25 15:30" | "2026-10-25"]
+ *       作り始めにフォルダを作る。--title を省くとインスト用に岩石・鉱石の英名（scripts/compose/ore-names.ts、
+ *       棚で未使用のもの）を付ける。歌ものは --title で自分で付ける（海の生物に関係する語を含める）。出力はフォルダのパス。--at は日本時間（省略時は今）。日付だけなら時刻不明。
  *       フォルダ名は "YYYY-MM-DD HHmm - <モデル名> - <タイトル>"（--model 省略時は "YYYY-MM-DD HHmm <タイトル>"）。
  *   npx tsx scripts/misc/song-shelf.ts step <曲> --did <やったこと> [--saw <見たもの・数値>] [--why <判断と理由>] [--ref <参考資料との照合>] [--at ...]
  *       作曲の手順を1段足す（steps.md を書き直す）。
@@ -29,6 +30,7 @@ import {
 } from "node:fs";
 import Module from "node:module";
 import { basename, join, resolve } from "node:path";
+import { pickOreName } from "../compose/ore-names";
 import { mmlShareUrls } from "./embed-url";
 
 // mml-parser は lyrics → @onjmin/koe（ブラウザ専用）を読むので空のスタブを入れてから読む
@@ -283,8 +285,8 @@ const writeIndex = () => {
 
 switch (command) {
 	case "new": {
-		const title = opt("title");
-		if (!title) throw new Error("--title が要る");
+		const title =
+			opt("title") ?? pickOreName(existsSync(SHELF) ? readdirSync(SHELF) : []);
 		const model = opt("model");
 		const at = parseAt(opt("at"));
 		const dir = join(SHELF, folderName(at, title, model));

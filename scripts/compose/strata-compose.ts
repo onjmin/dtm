@@ -1,9 +1,10 @@
 /**
  * Strata（このPCのローカル LLM）に界隈曲を作らせる。判断は Strata がし、このスクリプトは道具を渡すだけ。
  *
- *   npx tsx scripts/compose/strata-compose.ts new --title <仮題> [--request <依頼文>] [--max-turns 80]
+ *   npx tsx scripts/compose/strata-compose.ts new [--title <曲名>] [--request <依頼文>] [--max-turns 80]
  *       棚（tmp/songs/）にフォルダを作り、Strata に依頼して会話を回す。Strata が finish を呼ぶか
- *       --max-turns に達したら止まる。会話・手直しの操作列は曲フォルダの strata-session.json に残る。
+ *       --max-turns に達したら止まる。曲名を省くと岩石・鉱石の英名（ore-names.ts、棚で未使用のもの）から選ぶ。
+ *       会話・手直しの操作列は曲フォルダの strata-session.json に残る。
  *   npx tsx scripts/compose/strata-compose.ts continue <曲> --say <追加の指示> [--max-turns 40]
  *       同じ会話の続きに指示を足して回す（試聴の感想・直してほしい所を渡す）。
  *   npx tsx scripts/compose/strata-compose.ts rebuild <曲>
@@ -26,6 +27,7 @@ import { MMLCore } from "../../src/mml/mml-core";
 import type { Note, RenderConfig } from "../../src/types";
 import { roleOfSlot } from "../../src/ui/auto-role";
 import { DTM_VERSION } from "../../src/version";
+import { pickOreName } from "./ore-names";
 
 const STRATA_URL = process.env.STRATA_URL ?? "http://127.0.0.1:8080/v1";
 const MODEL_LABEL = "Strata Qwen3.8-Flash-Next";
@@ -888,7 +890,7 @@ const TOOLS = [
 		"finish",
 		"仕上げる。MML を書き出して棚に置き、作業を終える",
 		{
-			title: { type: "string" },
+			title: { type: "string", description: "曲名（依頼文で指定したもの）" },
 			summary: { type: "string", description: "曲の一言紹介" },
 			self_review: {
 				type: "string",
@@ -1289,7 +1291,8 @@ const main = async (): Promise<void> => {
 			`Strata が応答しない（${STRATA_URL}）。strata launch --model iq2_xs --yes --no-tui で起動する`,
 		);
 	if (cmd === "new") {
-		const title = opt("title") ?? "界隈曲（Strata）";
+		const title =
+			opt("title") ?? pickOreName(existsSync(SHELF) ? readdirSync(SHELF) : []);
 		const out = shelf(["new", "--title", title, "--model", MODEL_LABEL])
 			.split("\n")
 			.map((l) => l.trim());
@@ -1297,9 +1300,10 @@ const main = async (): Promise<void> => {
 			(l) => l.startsWith(SHELF) && existsSync(l) && !l.endsWith(".html"),
 		);
 		if (!dir) throw new Error(`棚のフォルダが分からない: ${out.join(" / ")}`);
-		const request =
+		const request = `${
 			opt("request") ??
-			"自動作曲機能を土台に界隈曲を1曲作ってください。自分で品質を評価し、納得できるところまで手を入れてから finish してください。";
+			"自動作曲機能を土台に界隈曲を1曲作ってください。自分で品質を評価し、納得できるところまで手を入れてから finish してください。"
+		}\n\n曲名は「${title}」です。finish の title にはこれをそのまま書いてください。`;
 		const session: Session = {
 			messages: [
 				{ role: "system", content: SYSTEM },
@@ -1334,7 +1338,7 @@ const main = async (): Promise<void> => {
 		console.log(join(dir, "song.mml"));
 	} else {
 		console.log(
-			"使い方: strata-compose.ts new --title <仮題> | continue <曲> --say <指示> | rebuild <曲>",
+			"使い方: strata-compose.ts new [--title <曲名>] | continue <曲> --say <指示> | rebuild <曲>",
 		);
 		process.exitCode = 1;
 	}

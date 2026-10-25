@@ -27,13 +27,15 @@ LM Studio でモデルを読み込んでいたら先に解除する。`curl.exe 
 リポジトリ（`C:\_own\git\dtm`）で:
 
 ```
-npx tsx scripts/compose/strata-compose.ts new --title "界隈曲（Strata 作業名）"
+npx tsx scripts/compose/strata-compose.ts new
 ```
+
+- 曲名は岩石・鉱石の英名（Cinnabar・Obsidian・Rhyolite…。一覧は `scripts/compose/ore-names.ts`。2号兄貴の鉱石シリーズの曲名とそれを含む名前は除外）から、棚でまだ使っていないものを選ぶ。Strata はインストだけを作るので、歌ものの命名規則（海の生物に関係する語を含める。[scripts/README.md](../scripts/README.md)）はここでは使わない。自分で決めるなら `--title "曲名"`。
 
 - 依頼文を変えるなら `--request "…"`（既定は「自動作曲機能を土台に界隈曲を1曲作り、自分で品質を評価して納得できるところまで手を入れてから finish」）。
   例: `--request "Speder2 で、サビの主題がはっきりした曲を。"`
 - 画面には Strata の思考（点）・発言・道具の呼び出しが流れる。止まったように見えても思考中のことが多い。
-- `finish` を呼ぶか 80 回のやり取りで止まる。曲は棚 `tmp/songs/<日時> - Strata Qwen3.8-Flash-Next - <仮題>/` に置かれる。
+- `finish` を呼ぶか 80 回のやり取りで止まる。曲は棚 `tmp/songs/<日時> - Strata Qwen3.8-Flash-Next - <曲名>/` に置かれる。
 
 | ファイル | 中身 |
 |---|---|

@@ -36,7 +36,7 @@
 | :--- | :--- | :--- |
 | `ab-listen.ts` | 目隠し A/B/C の作成器。出荷版・和声付け直し・人間の旋律を同じ手続きで出す | `npx tsx scripts/compose/ab-listen.ts --pdmx tmp/pdmx.jsonl --release --out tmp/abc-release` |
 | `export-samples.ts` | 生成曲を .mid（伴奏主体モードは .mml）で書き出す。`--app-seed` と `--compose` でアプリの曲を再現 | `npx tsx scripts/compose/export-samples.ts --app-seed 3842857959 --compose style:fb.v1:any:0` |
-| `strata-compose.ts` | Strata（ローカル LLM）に界隈曲を作らせるエージェントループ。seed 選び・小節の読み・リードの手直しを Strata が判断し、棚へ置く。手順は [docs/strata-compose.md](../docs/strata-compose.md) | `npx tsx scripts/compose/strata-compose.ts new --title "界隈曲（Strata 作業名）"` |
+| `strata-compose.ts` | Strata（ローカル LLM）に界隈曲を作らせるエージェントループ。seed 選び・小節の読み・リードの手直しを Strata が判断し、棚へ置く。手順は [docs/strata-compose.md](../docs/strata-compose.md) | `npx tsx scripts/compose/strata-compose.ts new`（曲名は岩石・鉱石の英名から選ぶ） |
 | `measure-lead-harmony.ts` | 楽器リードが伴奏と同じ音名・半音でこすれる長さの割合を seed ごとに出す（こすれの相手が和音の層かベースかも） | `npx tsx scripts/compose/measure-lead-harmony.ts --template kaiwai_2go_lead --seeds 1-20` |
 | `audit-lineage.ts` | 所有者が聴く前の点検。曲をまたいだ使い回し・全曲で一定の特徴・歌の音域と重ね・原曲との近さを、流派の原曲（耳コピ）と同じ物差しで並べ、直すべき候補を重大度順に出す | `npx tsx scripts/compose/audit-lineage.ts --template kaiwai_2go_lead --count 100 --out tmp/audit/2go_lead.md` |
 | `measure-fill-coherence.ts` | 範囲補完で埋めた旋律と前後の旋律のつながり（2小節モチーフの共有・歌う中心・句頭句末・境目の跳躍）を、補完前の composeSong の旋律と比べる | `npx tsx scripts/compose/measure-fill-coherence.ts --seeds 15` |
@@ -96,12 +96,15 @@
 ## 曲を作って残す手順
 
 自動作曲・手書きで曲を作るときは、作り始めに棚へフォルダを作り、手順を1段ずつ書きためる（後からまとめて書くと、照合や判断の理由が抜ける）。
-フォルダは `tmp/songs/<日本時間> - <モデル名> - <タイトル>/`（例 `2026-10-25 1654 - Gemini 3.8 Flash - 界隈の残響`、`tmp` は git 管理外）。
+フォルダは `tmp/songs/<日本時間> - <モデル名> - <タイトル>/`（例 `2026-10-25 1654 - Gemini 3.8 Flash - Cinnabar`、`tmp` は git 管理外）。
 
 0. 先に読む: [docs/handover-compose.md](../docs/handover-compose.md) の §0（耳コピ由来の旋律・進行は使わない）・§2（やらないこと、試聴の頼み方、
    手直し曲の評価）と、流派の実測 [docs/kaiwai-lineages.md](../docs/kaiwai-lineages.md)（ゲームBGMは game-bgm-toby-fox.md）。
    棚の評価（`tmp/songs/index.html`）も見る。
-1. `npx tsx scripts/misc/song-shelf.ts new --title <タイトル> [--model <モデル名>]` — フォルダ・`meta.json`・`steps.md`・`notes.md` のひな形を作る。
+1. `npx tsx scripts/misc/song-shelf.ts new [--title <タイトル>] [--model <モデル名>]` — フォルダ・`meta.json`・`steps.md`・`notes.md` のひな形を作る。
+   タイトルの付け方:
+   - **インスト**: `--title` を省く。岩石・鉱石の英名（`scripts/compose/ore-names.ts`。2号兄貴の鉱石シリーズの曲名と、それを含む名前は除外済み）から、棚で未使用のものが付く。
+   - **歌もの**: 鉱石名は使わない。作る人（モデル）が自分で付け、**海の生物に関係する語を含める**（例: クラゲ・イワシ・ウミウシ）。
 2. 段ごとに `song-shelf.ts step <曲> --did <やったこと> --saw <見たもの・数値> --why <判断と理由> --ref <参考資料との照合>`。
    `<曲>` はフォルダ名の一部でよい。参考資料（前のセッションの記録など）に沿って進める依頼では、`--ref` に「そのまま使う／直す（理由）／不明」を書く。
 3. 曲の概要は `notes.md`（ひな形の見出し: 設計／確かめたこと／確かめていないこと／所有者に訊くこと）。作業用のスクリプトは `scratch/` に置いてよい。
