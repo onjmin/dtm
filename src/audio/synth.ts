@@ -32,6 +32,24 @@ export type Synth = {
 	playDrum: (e: PlayDrumEvent) => void;
 };
 
+/**
+ * volume=1 のときの波形ごとの振幅。SoundFont のレベル揃え（`SoundFont.levelTargetDb`、
+ * K 特性 RMS −10 dBFS）と同じ大きさで鳴るように、各波形の K 特性 RMS（MIDI 40〜96 の
+ * 中央値）から逆算し、内部コンプレッサーの自動メイクアップ（Chromium 実測 +1.9 dB）の分を
+ * 差し引いた値（2026-10-25、OfflineAudioContext で単音を描いて検算）。
+ * 旧値は波形によらず 0.09 で、メイクアップ込みでも square −16.8 / sine −18.9 dB と
+ * SoundFont より 7〜9 dB 小さかった。
+ */
+const WAVE_LEVEL = {
+	square: 0.28,
+	sawtooth: 0.47,
+	triangle: 0.44,
+	sine: 0.36,
+} satisfies Partial<Record<OscillatorType, number>>;
+const waveLevel = (wave: OscillatorType): number =>
+	(WAVE_LEVEL as Partial<Record<OscillatorType, number>>)[wave] ??
+	WAVE_LEVEL.square;
+
 /** createSynth の音色設定。省略時は従来どおりの square 持続音。 */
 export type SynthTone = {
 	/** オシレータ波形。既定 "square" */
@@ -62,13 +80,21 @@ export const createSynth = (
 	// 複数トラックが同時発音する際の合算クリッピングを防ぐ内部コンプレッサー。
 	// 全オシレータ／ノイズはここへ繋ぎ、compressor → destination へ出力する。
 	// 呼び出し側には見えない（API 変更なし）。
-	const compressor = ctx.createDynamicsCompressor();
-	compressor.threshold.value = -12; // dB: この水準を超えると圧縮開始
-	compressor.knee.value = 6; // dB: ソフトニーで自然な圧縮感
-	compressor.ratio.value = 8; // 8:1 で強めに抑制しクリップを防ぐ
-	compressor.attack.value = 0.003; // 3ms: トランジェントを逃さず捕捉
-	compressor.release.value = 0.15; // 150ms: 音符間で素早く回復
-	compressor.connect(destination);
+	const createCompressor = (thresholdDb: number): DynamicsCompressorNode => {
+		const c = ctx.createDynamicsCompressor();
+		c.threshold.value = thresholdDb; // dB: この水準を超えると圧縮開始
+		c.knee.value = 6; // dB: ソフトニーで自然な圧縮感
+		c.ratio.value = 8; // 8:1 で強めに抑制しクリップを防ぐ
+		c.attack.value = 0.003; // 3ms: トランジェントを逃さず捕捉
+		c.release.value = 0.15; // 150ms: 音符間で素早く回復
+		c.connect(destination);
+		return c;
+	};
+	// メロディックノートは SoundFont と同じ水準（単音のピーク約 −9 dBFS）で鳴るので、
+	// ドラムと同じ −12 dB だと単音から常に圧縮が掛かる。和音・重なりだけを抑える水準に置く。
+	// ドラム側は従来の閾値のまま（音色を変えない）。
+	const noteCompressor = createCompressor(-6);
+	const compressor = createCompressor(-12);
 
 	const playNote = (e: PlayNoteEvent): void => {
 		const osc = ctx.createOscillator();
@@ -76,7 +102,10 @@ export const createSynth = (
 		osc.type = wave;
 		osc.frequency.value = freqFromPitch(e.pitchUnits);
 		const t0 = ctx.currentTime + e.when;
-		const peak = Math.max(0.0001, 0.06 * e.volume * 1.5 * gainScale);
+		const peak = Math.max(
+			0.0001,
+			e.volume * waveLevel(wave) * gainScale,
+		);
 		// 指数減衰は 0 に到達できないので、到達点はピークからの比で決める。
 		// 絶対値（旧: 0.001）だと音量の小さい音ほど「ピークに対して大きな段差」が残る。
 		const tail = peak * TAIL_RATIO;
@@ -110,9 +139,9 @@ export const createSynth = (
 			panner = ctx.createStereoPanner();
 			panner.pan.value = Math.max(-1, Math.min(1, e.pan));
 			gain.connect(panner);
-			panner.connect(compressor);
+			panner.connect(noteCompressor);
 		} else {
-			gain.connect(compressor);
+			gain.connect(noteCompressor);
 		}
 		osc.start(t0);
 		osc.stop(stopAt);
