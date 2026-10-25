@@ -36,6 +36,7 @@
 | :--- | :--- | :--- |
 | `ab-listen.ts` | 目隠し A/B/C の作成器。出荷版・和声付け直し・人間の旋律を同じ手続きで出す | `npx tsx scripts/compose/ab-listen.ts --pdmx tmp/pdmx.jsonl --release --out tmp/abc-release` |
 | `export-samples.ts` | 生成曲を .mid（伴奏主体モードは .mml）で書き出す。`--app-seed` と `--compose` でアプリの曲を再現 | `npx tsx scripts/compose/export-samples.ts --app-seed 3842857959 --compose style:fb.v1:any:0` |
+| `strata-compose.ts` | Strata（ローカル LLM）に界隈曲を作らせるエージェントループ。seed 選び・小節の読み・リードの手直しを Strata が判断し、棚へ置く。手順は [docs/strata-compose.md](../docs/strata-compose.md) | `npx tsx scripts/compose/strata-compose.ts new --title "界隈曲（Strata 作業名）"` |
 | `measure-lead-harmony.ts` | 楽器リードが伴奏と同じ音名・半音でこすれる長さの割合を seed ごとに出す（こすれの相手が和音の層かベースかも） | `npx tsx scripts/compose/measure-lead-harmony.ts --template kaiwai_2go_lead --seeds 1-20` |
 | `audit-lineage.ts` | 所有者が聴く前の点検。曲をまたいだ使い回し・全曲で一定の特徴・歌の音域と重ね・原曲との近さを、流派の原曲（耳コピ）と同じ物差しで並べ、直すべき候補を重大度順に出す | `npx tsx scripts/compose/audit-lineage.ts --template kaiwai_2go_lead --count 100 --out tmp/audit/2go_lead.md` |
 | `measure-fill-coherence.ts` | 範囲補完で埋めた旋律と前後の旋律のつながり（2小節モチーフの共有・歌う中心・句頭句末・境目の跳躍）を、補完前の composeSong の旋律と比べる | `npx tsx scripts/compose/measure-fill-coherence.ts --seeds 15` |
