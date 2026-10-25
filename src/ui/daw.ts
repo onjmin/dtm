@@ -108,6 +108,7 @@ import {
 	soundFontBankShortName,
 	trackSoundFontValue,
 } from "../instruments/soundfont-banks";
+import { type AmkExportResult, exportAMK } from "../io/amk-io";
 import {
 	analyzeMidiTracks,
 	buildDrumPatternJson,
@@ -124,8 +125,8 @@ import {
 	musicXmlToNotes,
 	parseMusicXML,
 } from "../io/musicxml-io";
-import { buildUst, parseUst, type UstTrackData } from "../io/ust-io";
 import { exportPlayload } from "../io/playload-io";
+import { buildUst, parseUst, type UstTrackData } from "../io/ust-io";
 import { lookupTable } from "../lookup-table";
 import {
 	applyHarmonicFilter,
@@ -740,7 +741,7 @@ const MUSICXML_INFO_HTML = `
 
   <h4>3. 書き出し</h4>
   <ul>
-    <li>「MIDI / MusicXML / UST / MML 出力」の「MusicXML出力」で、全トラックを <code>score-partwise</code> 形式の MusicXML ファイルとして書き出せます。</li>
+    <li>「書き出し」パネルで形式に「MusicXML」を選んで「出力」を押すと、全トラックを <code>score-partwise</code> 形式の MusicXML ファイルとして書き出せます。</li>
     <li>音符やトラック名に加えて、設定された歌詞もそのまま楽譜の歌詞として出力されます。</li>
   </ul>
 
@@ -786,7 +787,7 @@ const UST_INFO_HTML = `
   </ul>
 
   <h4>5. 書き出し</h4>
-  <p>「MIDI / UST / MML 出力」の「UST出力」で、<strong>選択中のトラック1本だけ</strong>をUSTに書き出せます（USTは単旋律1パートのフォーマットなので、和音は上から1本に潰れます）。</p>
+  <p>「書き出し」パネルで形式に「UST」を選ぶと、<strong>選択中のトラック1本だけ</strong>をUSTに書き出せます（USTは単旋律1パートのフォーマットなので、和音は上から1本に潰れます）。</p>
 </div>
 `;
 
@@ -5987,6 +5988,32 @@ export const mountDAW = (
 		return new Blob([text], { type: "text/plain;charset=utf-8" });
 	};
 
+	/**
+	 * 全トラックを AddMusicK（SNES）の MML にする。
+	 *
+	 * オクターブ重ねは足さない（{@link playableNotes} は重ねた声も音符として返すが、
+	 * AMK はチャンネルが8本しかなく、重ねた声で旋律やベースが押し出されてしまう）。
+	 */
+	const exportAmkText = (): AmkExportResult =>
+		exportAMK(
+			trackStates.map((t) => {
+				const shift = t.trackOctave * UNITS_PER_OCTAVE;
+				return {
+					notes: t.core
+						.getNotes()
+						.map((n) => ({ ...n, pitchUnits: units(n.pitchUnits + shift) })),
+					volume: t.volume,
+					role: t.composeSlot ?? DECLARED_ROLE[t.config.id],
+					name: t.config.name,
+				};
+			}),
+			{
+				bpm,
+				stepsPerBar: renderConfig.stepsPerBar,
+				barLimit: Number(refs.barLimitSelect.value),
+			},
+		);
+
 	const exportMIDI = (): Blob => {
 		const autoPreset =
 			INSTRUMENT_PRESETS[currentInstrument] ?? INSTRUMENT_PRESETS.piano;
@@ -8001,7 +8028,6 @@ export const mountDAW = (
 		});
 
 		// 出力
-		refs.generateMmlBtn.addEventListener("click", showMML);
 		/** Blobを名前付きでダウンロードさせる（出力ボタン共通）。 */
 		const download = (blob: Blob, fileName: string): void => {
 			const url = URL.createObjectURL(blob);
@@ -8011,23 +8037,6 @@ export const mountDAW = (
 			a.click();
 			URL.revokeObjectURL(url);
 		};
-		refs.exportMidiBtn.addEventListener("click", () => {
-			download(exportMIDI(), "dtm.mid");
-		});
-		refs.exportMusicXmlBtn.addEventListener("click", () => {
-			download(exportMusicXML(), "dtm.musicxml");
-		});
-		refs.exportUstBtn.addEventListener("click", () => {
-			// USTは1パート1ファイル。どのトラックを書き出したか分かる名前にする。
-			const name = getActive().config.name.replace(/[/:*?"<>|\s]+/g, "_");
-			download(exportUST(), `dtm_${name}.ust`);
-		});
-		if (options.onExportWav) {
-			refs.exportWavBtn.classList.remove("dtm-hidden");
-			refs.exportWavBtn.addEventListener("click", () => {
-				void options.onExportWav?.();
-			});
-		}
 		const copy = (text: string, btn: HTMLButtonElement): void => {
 			navigator.clipboard?.writeText(text);
 			btn.classList.add("dtm-btn--success");
@@ -8039,7 +8048,7 @@ export const mountDAW = (
 		refs.copyMiniBtn.addEventListener("click", () =>
 			copy(refs.outputMini.textContent ?? "", refs.copyMiniBtn),
 		);
-		refs.exportPlayloadBtn.addEventListener("click", () => {
+		const showPlayload = (): void => {
 			const barLimit = Number(refs.barLimitSelect.value);
 			const tracks = trackStates.map((t) => t.core.getNotes());
 			const volumes = trackStates.map((t) => t.volume);
@@ -8057,9 +8066,105 @@ export const mountDAW = (
 			refs.playloadStatus.textContent = `Playload用コード ${ignoreMsg} - ${result.code.length}文字`;
 			refs.playloadOutput.classList.remove("dtm-hidden");
 			navigator.clipboard?.writeText(result.code);
-		});
+		};
 		refs.playloadCopyBtn.addEventListener("click", () => {
 			copy(refs.playloadText.textContent ?? "", refs.playloadCopyBtn);
+		});
+		const showAmk = (): void => {
+			const result = exportAmkText();
+			refs.amkText.textContent = result.text;
+			const notes = [
+				`${result.channelCount}チャンネル`,
+				`t${result.tempo}`,
+				result.droppedVoiceCount > 0
+					? `8チャンネルに収まらない${result.droppedVoiceCount}声部を省略`
+					: "",
+				result.octaveShiftedCount > 0
+					? `音域外の${result.octaveShiftedCount}音をオクターブ移動`
+					: "",
+				result.roundedPitchCount > 0
+					? `${result.roundedPitchCount}音を半音へ丸め`
+					: "",
+			].filter(Boolean);
+			refs.amkStatus.textContent = `AddMusicK MML（${notes.join(" / ")}）- ${result.text.length}文字`;
+			refs.amkOutput.classList.remove("dtm-hidden");
+			// 自動コピーはおまけ。フォーカスが無いなどで断られても、表示とコピーボタンは使える。
+			navigator.clipboard?.writeText(result.text).catch(() => {});
+		};
+		refs.amkCopyBtn.addEventListener("click", () => {
+			copy(refs.amkText.textContent ?? "", refs.amkCopyBtn);
+		});
+		refs.amkDownloadBtn.addEventListener("click", () => {
+			download(
+				new Blob([refs.amkText.textContent ?? ""], {
+					type: "text/plain;charset=utf-8",
+				}),
+				"dtm_amk.txt",
+			);
+		});
+
+		// 形式のプルダウン。形式ごとの実行・説明・関係する設定だけを見せる。
+		const textOutputs = [
+			refs.outputContainer,
+			refs.amkOutput,
+			refs.playloadOutput,
+			refs.drumJsonOutput,
+		];
+		const runExport: Record<string, () => void> = {
+			mml: showMML,
+			amk: showAmk,
+			playload: showPlayload,
+			"drum-json": exportDrumJson,
+			midi: () => download(exportMIDI(), "dtm.mid"),
+			musicxml: () => download(exportMusicXML(), "dtm.musicxml"),
+			ust: () => {
+				// USTは1パート1ファイル。どのトラックを書き出したか分かる名前にする。
+				const name = getActive().config.name.replace(/[/:*?"<>|\s]+/g, "_");
+				download(exportUST(), `dtm_${name}.ust`);
+			},
+			wav: () => {
+				void options.onExportWav?.();
+			},
+		};
+		if (!options.onExportWav) refs.exportFormatWavOption.remove();
+		const EXPORT_FORMAT_KEY = "dtm-export-format";
+		try {
+			const saved = localStorage.getItem(EXPORT_FORMAT_KEY);
+			if (
+				saved &&
+				refs.exportFormat.querySelector(`option[value="${saved}"]`)
+			) {
+				refs.exportFormat.value = saved;
+			}
+		} catch {}
+		const syncExportFormat = (): void => {
+			const opt = refs.exportFormat.selectedOptions[0];
+			const opts = (opt?.dataset.opts ?? "").split(" ");
+			refs.exportFormatHint.textContent = opt?.dataset.hint ?? "";
+			refs.exportOptMml.classList.toggle("dtm-hidden", !opts.includes("mml"));
+			refs.exportOptLimit.classList.toggle(
+				"dtm-hidden",
+				!opts.includes("limit"),
+			);
+		};
+		syncExportFormat();
+		refs.exportFormat.addEventListener("change", () => {
+			syncExportFormat();
+			try {
+				localStorage.setItem(EXPORT_FORMAT_KEY, refs.exportFormat.value);
+			} catch {}
+		});
+		refs.exportRunBtn.addEventListener("click", () => {
+			const run = runExport[refs.exportFormat.value];
+			if (!run) return;
+			// テキスト出力は最後に出したものだけを見せる（並ぶと、どれが今の結果か分からない）。
+			const isText = refs.exportFormat.selectedOptions[0]?.parentElement
+				?.getAttribute("label")
+				?.startsWith("テキスト");
+			if (isText) {
+				for (const el of textOutputs) el.classList.add("dtm-hidden");
+			}
+			run();
 		});
 
 		// MML/MIDI入力
@@ -8813,7 +8918,8 @@ export const mountDAW = (
 		renderResults: (container: HTMLElement) => void;
 	} | null = null;
 
-	refs.drumJsonExportBtn.addEventListener("click", () => {
+	/** 読み込んだMIDIのドラム定義をJSONで出す（書き出しパネルの「ドラムJSON」）。 */
+	const exportDrumJson = (): void => {
 		if (!extractedMidiDrum) {
 			alert("MIDIファイルを選択してください。");
 			return;
@@ -8822,7 +8928,7 @@ export const mountDAW = (
 		refs.drumJsonOutput.classList.remove("dtm-hidden");
 		refs.drumJsonText.textContent = json;
 		refs.drumJsonStatus.textContent = `出力: ${json.length}文字`;
-	});
+	};
 
 	refs.drumJsonCopyBtn.addEventListener("click", () => {
 		navigator.clipboard?.writeText(refs.drumJsonText.textContent ?? "");
@@ -9485,6 +9591,7 @@ export const mountDAW = (
 		exportMIDI,
 		exportMusicXML,
 		exportUST,
+		exportAMK: exportAmkText,
 		exportPlayload: () => {
 			const barLimit = Number(refs.barLimitSelect.value);
 			return exportPlayload(

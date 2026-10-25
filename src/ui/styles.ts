@@ -348,6 +348,7 @@ export const DAW_CSS = `
   color: var(--dtm-muted);
   white-space: nowrap;
 }
+.dtm-hint--wrap { white-space: normal; margin: 4px 0; }
 .dtm-checkbox-label--sub { margin-left: 20px; font-size: 10px; }
 .dtm-checkbox {
   width: 14px;
