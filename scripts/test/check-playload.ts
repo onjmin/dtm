@@ -113,6 +113,27 @@ console.log("Playload 出力テスト:");
 
 	// Ch 1 なので T はなく V12。O5N5c & g
 	check("休符挟み (C & G)", res, "V12O5N5c&g");
+
+	// 先頭が全音符休符の場合: V15 の後に N9& となる（V159 にならない）
+	const leadingRestNotes: Note[] = [
+		{
+			id: 1,
+			startStep: 192, // 1小節目は休符
+			durationSteps: 48,
+			pitchUnits: midiToUnits(60),
+		},
+	];
+	const resRest = exportPlayloadChannel(leadingRestNotes, 0, {
+		tempo: 120,
+		volume: 100,
+		stepsPerBar: 192,
+		limitSteps: Number.POSITIVE_INFINITY,
+	});
+	check(
+		"先頭休符で V15 直後に N9& が来る（V159 にならない）",
+		resRest,
+		"T120V15N9&O5N5c",
+	);
 }
 
 // 4. 複数トラック（3トラック制限）の確認

@@ -136,6 +136,19 @@ const findBestSingleDuration = (
 	return best;
 };
 
+const pushDuration = (
+	code: string,
+	state: { lastDuration: string; out: string[] },
+): void => {
+	const lastToken = state.out[state.out.length - 1] ?? "";
+	if (/\d$/.test(lastToken)) {
+		state.out.push(`N${code}`);
+	} else {
+		state.out.push(code);
+	}
+	state.lastDuration = code;
+};
+
 const fillRests = (
 	gapSteps: number,
 	candidates: DurationCandidate[],
@@ -153,8 +166,7 @@ const fillRests = (
 		}
 		if (!chosen) break;
 		if (state.lastDuration !== chosen.code) {
-			state.out.push(chosen.code);
-			state.lastDuration = chosen.code;
+			pushDuration(chosen.code, state);
 		}
 		state.out.push("&");
 		remaining -= chosen.steps;
@@ -211,13 +223,7 @@ export const exportPlayloadChannel = (
 
 		const bestDur = findBestSingleDuration(note.durationSteps, candidates);
 		if (state.lastDuration !== bestDur.code || octaveChanged) {
-			// オクターブ変更直後に数字が来ると O55 のように誤認されるためセパレータ N を挟む
-			if (octaveChanged) {
-				out.push(`N${bestDur.code}`);
-			} else {
-				out.push(bestDur.code);
-			}
-			state.lastDuration = bestDur.code;
+			pushDuration(bestDur.code, state);
 		}
 
 		out.push(noteName);
