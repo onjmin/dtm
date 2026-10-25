@@ -95,12 +95,12 @@
 ## 曲を作って残す手順
 
 自動作曲・手書きで曲を作るときは、作り始めに棚へフォルダを作り、手順を1段ずつ書きためる（後からまとめて書くと、照合や判断の理由が抜ける）。
-フォルダは `tmp/songs/<日本時間> <タイトル>/`（例 `2026-10-25 1437 seed 51 手直し（2号兄貴）`、`tmp` は git 管理外）。
+フォルダは `tmp/songs/<日本時間> - <モデル名> - <タイトル>/`（例 `2026-10-25 1654 - Gemini 3.8 Flash - 界隈の残響`、`tmp` は git 管理外）。
 
 0. 先に読む: [docs/handover-compose.md](../docs/handover-compose.md) の §0（耳コピ由来の旋律・進行は使わない）・§2（やらないこと、試聴の頼み方、
    手直し曲の評価）と、流派の実測 [docs/kaiwai-lineages.md](../docs/kaiwai-lineages.md)（ゲームBGMは game-bgm-toby-fox.md）。
    棚の評価（`tmp/songs/index.html`）も見る。
-1. `npx tsx scripts/misc/song-shelf.ts new --title <タイトル>` — フォルダ・`meta.json`・`steps.md`・`notes.md` のひな形を作る。
+1. `npx tsx scripts/misc/song-shelf.ts new --title <タイトル> [--model <モデル名>]` — フォルダ・`meta.json`・`steps.md`・`notes.md` のひな形を作る。
 2. 段ごとに `song-shelf.ts step <曲> --did <やったこと> --saw <見たもの・数値> --why <判断と理由> --ref <参考資料との照合>`。
    `<曲>` はフォルダ名の一部でよい。参考資料（前のセッションの記録など）に沿って進める依頼では、`--ref` に「そのまま使う／直す（理由）／不明」を書く。
 3. 曲の概要は `notes.md`（ひな形の見出し: 設計／確かめたこと／確かめていないこと／所有者に訊くこと）。作業用のスクリプトは `scratch/` に置いてよい。
@@ -111,6 +111,7 @@
 
 一覧は `tmp/songs/index.html`（どのコマンドも作り直す）。試聴は公開デモの埋め込みなので、公開版に無い機能を使う MML は先にデプロイする。
 **エージェントは一覧や公開デモのプレイヤーで再生ボタンを押さない**（スピーカーから鳴る）。
+**成果報告時にチャットへ長大なハッシュURLを直接貼らない**（MMLを埋め込んだURLは数千文字に及びトークンを著しく浪費するため、チャットには貼らず `tmp/songs/index.html` や曲フォルダの `notes.md` のファイルリンクのみを案内する）。
 
 ### 組み立てるときに落としやすいこと
 

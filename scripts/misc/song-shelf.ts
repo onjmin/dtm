@@ -2,8 +2,9 @@
  * 作った曲の棚（`tmp/songs/`、git 管理外）。曲ごとに「日本時間 タイトル」のフォルダを作り、作曲の手順を
  * 1段ずつ書きためて、仕上がった MML・試聴 URL・自動作曲と手書きの比率を置く。一覧は `tmp/songs/index.html`。
  *
- *   npx tsx scripts/misc/song-shelf.ts new --title <タイトル> [--at "2026-10-25 15:30" | "2026-10-25"]
+ *   npx tsx scripts/misc/song-shelf.ts new --title <タイトル> [--model <モデル名>] [--at "2026-10-25 15:30" | "2026-10-25"]
  *       作り始めにフォルダを作る。出力はフォルダのパス。--at は日本時間（省略時は今）。日付だけなら時刻不明。
+ *       フォルダ名は "YYYY-MM-DD HHmm - <モデル名> - <タイトル>"（--model 省略時は "YYYY-MM-DD HHmm <タイトル>"）。
  *   npx tsx scripts/misc/song-shelf.ts step <曲> --did <やったこと> [--saw <見たもの・数値>] [--why <判断と理由>] [--ref <参考資料との照合>] [--at ...]
  *       作曲の手順を1段足す（steps.md を書き直す）。
  *   npx tsx scripts/misc/song-shelf.ts publish <曲> <song.mml> --origin "4,5,6,7,12=auto;0,1=hand;8=derived" [--key Bbm] [--summary <一言>] [--with <file>...]
@@ -63,6 +64,8 @@ type Meta = {
 	title: string;
 	/** 日本時間。"2026-10-25 15:30" か、時刻不明なら "2026-10-25" */
 	at: string;
+	/** 作成した AI モデル名（例: "Gemini 3.8 Flash"） */
+	model?: string;
 	summary?: string;
 	key?: string;
 	song?: {
@@ -121,9 +124,13 @@ const parseAt = (s: string | undefined): string => {
 		`--at は "YYYY-MM-DD HH:mm" か "YYYY-MM-DD"（日本時間）: ${s}`,
 	);
 };
-const folderName = (at: string, title: string) => {
+const folderName = (at: string, title: string, model?: string) => {
 	const [date, time] = at.split(" ");
-	return `${date} ${time ? time.replace(":", "") : "----"} ${title.replace(/[\\/:*?"<>|]/g, "_").trim()}`;
+	const t = time ? time.replace(":", "") : "----";
+	const clean = (s: string) => s.replace(/[\\/:*?"<>|]/g, "_").trim();
+	return model
+		? `${date} ${t} - ${clean(model)} - ${clean(title)}`
+		: `${date} ${t} ${clean(title)}`;
 };
 
 const findSong = (q: string | undefined): string => {
@@ -156,6 +163,7 @@ const stepsMarkdown = (m: Meta): string => {
 		`# ${m.title} — 作曲の記録`,
 		"",
 		`作り始め: ${m.at}（日本時間）`,
+		...(m.model ? [`モデル: ${m.model}`] : []),
 		"",
 	];
 	m.steps.forEach((s, i) => {
@@ -196,8 +204,9 @@ const publish = (dir: string, mmlFile: string) => {
 		(a, n) => Math.max(a, n.startStep + n.durationSteps),
 		0,
 	);
-	// トラック行の先頭のテンポ（"@0 t145 …"）。ヘッダの "#t0inst=" に当てない
-	const bpm = p.bpm ?? Number(/^@\d+\s+t(\d+)/m.exec(mml)?.[1] ?? 120);
+	// トラック行の先頭のテンポ（"@0 t145 …"）。ヘッダの "#t1inst=" 等に parseMML が惑わされるのを避ける
+	const explicitBpm = Number(/^@\d+\s+t(\d+)/m.exec(mml)?.[1]);
+	const bpm = explicitBpm > 0 ? explicitBpm : (p.bpm ?? 120);
 	const bars = Math.ceil(end / BAR);
 	const header = (k: string) => new RegExp(`#${k}=(\\S+)`).exec(mml)?.[1];
 	const counts = new Map<number, number>();
@@ -276,11 +285,12 @@ switch (command) {
 	case "new": {
 		const title = opt("title");
 		if (!title) throw new Error("--title が要る");
+		const model = opt("model");
 		const at = parseAt(opt("at"));
-		const dir = join(SHELF, folderName(at, title));
+		const dir = join(SHELF, folderName(at, title, model));
 		if (existsSync(join(dir, "meta.json"))) throw new Error(`もうある: ${dir}`);
 		mkdirSync(dir, { recursive: true });
-		writeMeta(dir, { title, at, steps: [] });
+		writeMeta(dir, { title, at, ...(model ? { model } : {}), steps: [] });
 		if (!existsSync(join(dir, "notes.md")))
 			writeFileSync(
 				join(dir, "notes.md"),

@@ -94,6 +94,7 @@ document.getElementById("count").textContent = `${SONGS.length} 曲`;
 const buttons = SONGS.map((s, i) => {
 	const b = el("button", { class: "item", type: "button" },
 		el("span", { class: "when" }, short(s.at)), s.title,
+		s.model && el("span", { style: "font-size:11px;color:var(--auto);margin-left:6px;" }, `[${s.model}]`),
 		el("span", { class: "facts" }, [facts(s) || "制作中", s.verdict ? `　${s.verdict.value}` : ""].join("")));
 	b.addEventListener("click", () => show(i));
 	list.append(b);
@@ -107,7 +108,7 @@ function show(i) {
 	history.replaceState(null, "", `#${encodeURIComponent(s.dir)}`);
 	const kids = [
 		el("h2", {}, s.title),
-		el("p", { class: "sub" }, `${s.at}${s.at.includes(" ") ? "" : "（時刻不明）"}・日本時間`),
+		el("p", { class: "sub" }, `${s.at}${s.at.includes(" ") ? "" : "（時刻不明）"}・日本時間${s.model ? ` ・ 作成モデル: ${s.model}` : ""}`),
 	];
 	if (s.song) {
 		kids.push(el("p", { class: "facts-row" },
