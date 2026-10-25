@@ -31,6 +31,7 @@ import {
 import { createSafetyLimiter } from "../audio/safety-limiter";
 import { createSequencer, type SequencerTrack } from "../audio/sequencer";
 import { createSynth, type Synth } from "../audio/synth";
+import { synthToneForTrack } from "../audio/synth-tone";
 import type { Units } from "../audio/tuning";
 import { buildChordPlacements, type ChordPatternType } from "../chord/chords";
 import {
@@ -140,6 +141,12 @@ export type PlayPlacementsOptions = PlayMmlOptions & {
 	trackEqMid?: Record<number, number>;
 	/** トラック（trackIndex）ごとのEQ高域ゲイン -12〜+12dB。 */
 	trackEqHigh?: Record<number, number>;
+	/** 楽器プリセット名（`#inst=`）。内蔵synthの音色をトラックの楽器から決めるのに使う。 */
+	metaInstrument?: string;
+	/** トラック（trackIndex）ごとの個別楽器名（`#t<n>inst=`）。 */
+	trackInstruments?: Record<number, string>;
+	/** DAWの動作モード（`#mode=`）。プリセットのどの役割をトラックへ割り当てるかが変わる。 */
+	metaMode?: "simple" | "advanced";
 };
 
 /**
@@ -255,7 +262,18 @@ export const playPlacements = (
 	const getSynth = (index: number): Synth => {
 		let s = synths.get(index);
 		if (!s) {
-			s = createSynth(ctx, getChannelStrip(index).input);
+			s = createSynth(
+				ctx,
+				getChannelStrip(index).input,
+				synthToneForTrack(
+					{
+						instrument: options.metaInstrument,
+						trackInstruments: options.trackInstruments,
+						mode: options.metaMode,
+					},
+					index,
+				),
+			);
 			synths.set(index, s);
 		}
 		return s;
@@ -413,6 +431,9 @@ export const playMML = (
 		trackEqLow: meta.trackEqLow,
 		trackEqMid: meta.trackEqMid,
 		trackEqHigh: meta.trackEqHigh,
+		metaInstrument: meta.instrument,
+		trackInstruments: meta.trackInstruments,
+		metaMode: meta.mode,
 	});
 };
 

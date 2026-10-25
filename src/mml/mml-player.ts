@@ -27,6 +27,7 @@ import {
 	type SequencerTrack,
 } from "../audio/sequencer";
 import { createSynth, type Synth } from "../audio/synth";
+import { synthToneForTrack } from "../audio/synth-tone";
 import { UNITS_PER_OCTAVE, unitsToPitchV1 } from "../audio/tuning";
 import {
 	type AnyDrumPattern,
@@ -646,13 +647,19 @@ export const mountMmlPlayer = (
 		}
 		return limiterNode;
 	};
-	// 発音器は ctx と同様に遅延生成（synth.ts に切り出した共有ロジック）
-	let synthInstance: Synth | null = null;
-	const ensureSynth = (): Synth => {
-		if (!synthInstance) {
-			synthInstance = createSynth(ensureCtx(), ensureOutput());
+	// 発音器は ctx と同様に遅延生成（synth.ts に切り出した共有ロジック）。
+	// 音色はトラックの楽器（`#inst=` / `#t<n>inst=`）で変わるのでトラックごとに持つ。
+	// 楽器が決まらないトラックとドラムは、従来どおり既定の音色の1台（キー -1）を共有する。
+	const synths = new Map<number, Synth>();
+	const ensureSynth = (trackIdx = -1): Synth => {
+		const tone = trackIdx < 0 ? undefined : synthToneForTrack(meta, trackIdx);
+		const key = tone ? trackIdx : -1;
+		let s = synths.get(key);
+		if (!s) {
+			s = createSynth(ensureCtx(), ensureOutput(), tone);
+			synths.set(key, s);
 		}
-		return synthInstance;
+		return s;
 	};
 
 	// 歌詞付きノートを歌うための歌唱合成（klatt + koe音源。遅延生成）
@@ -1672,7 +1679,7 @@ export const mountMmlPlayer = (
 			if (lyricTracks.has(trackIdx) && !skipSinging) return;
 			const volume = e.volume * (masterVolume / 100);
 			options.onPlayNote?.({ ...e, volume });
-			if (useSynth) ensureSynth().playNote({ ...e, volume });
+			if (useSynth) ensureSynth(trackIdx).playNote({ ...e, volume });
 		},
 		onPlayDrum: (e) => {
 			// ドラムは曲全体に効くトップレベル宣言でトラックと1対1ではないため、
