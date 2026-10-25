@@ -6,7 +6,7 @@
  *       作り始めにフォルダを作る。--title を省くとインスト用に岩石・鉱石の英名（scripts/compose/ore-names.ts、
  *       棚で未使用のもの）を付ける。歌ものは --title で自分で付ける（海の生物に関係する語を含める）。出力はフォルダのパス。--at は日本時間（省略時は今）。日付だけなら時刻不明。
  *       フォルダ名は "YYYY-MM-DD HHmm - <モデル名> - <タイトル>"（--model 省略時は "YYYY-MM-DD HHmm <タイトル>"）。
- *   npx tsx scripts/misc/song-shelf.ts step <曲> --did <やったこと> [--saw <見たもの・数値>] [--why <判断と理由>] [--ref <参考資料との照合>] [--at ...]
+ *   npx tsx scripts/misc/song-shelf.ts step <曲> --did <やったこと> [--saw <見たもの・状況>] [--why <判断と理由>] [--ref <参考資料との照合>] [--at ...]
  *       作曲の手順を1段足す（steps.md を書き直す）。
  *   npx tsx scripts/misc/song-shelf.ts publish <曲> <song.mml> --origin "4,5,6,7,12=auto;0,1=hand;8=derived" [--key Bbm] [--summary <一言>] [--with <file>...]
  *       仕上がった MML を置き、試聴 URL と比率を出す。--origin はトラックの出どころ（auto＝自動作曲の出力を採用、
