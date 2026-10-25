@@ -102,10 +102,7 @@ export const createSynth = (
 		osc.type = wave;
 		osc.frequency.value = freqFromPitch(e.pitchUnits);
 		const t0 = ctx.currentTime + e.when;
-		const peak = Math.max(
-			0.0001,
-			e.volume * waveLevel(wave) * gainScale,
-		);
+		const peak = Math.max(0.0001, e.volume * waveLevel(wave) * gainScale);
 		// 指数減衰は 0 に到達できないので、到達点はピークからの比で決める。
 		// 絶対値（旧: 0.001）だと音量の小さい音ほど「ピークに対して大きな段差」が残る。
 		const tail = peak * TAIL_RATIO;
