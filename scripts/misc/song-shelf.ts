@@ -14,7 +14,7 @@
  *   npx tsx scripts/misc/song-shelf.ts index
  *
  * <曲> はフォルダのパスか、tmp/songs の中のフォルダ名の一部（1つに決まること）。どのコマンドも最後に index.html を作り直す。
- * 曲の概要（設計・判断・自己評価）は各フォルダの notes.md に自分で書く。比率は発音イベント数で、作業量の目安であって
+ * 曲の概要（設計・確かめたこと・確かめていないこと）は各フォルダの notes.md に自分で書く。音の確かめ方は scripts/README.md（スピーカーへ出さない）。比率は発音イベント数で、作業量の目安であって
  * 創作上の寄与の比ではない。ドラムは型の指定なので数えない。
  */
 
@@ -196,7 +196,8 @@ const publish = (dir: string, mmlFile: string) => {
 		(a, n) => Math.max(a, n.startStep + n.durationSteps),
 		0,
 	);
-	const bpm = p.bpm ?? Number(/\bt(\d+)/.exec(mml)?.[1] ?? 120);
+	// トラック行の先頭のテンポ（"@0 t145 …"）。ヘッダの "#t0inst=" に当てない
+	const bpm = p.bpm ?? Number(/^@\d+\s+t(\d+)/m.exec(mml)?.[1] ?? 120);
 	const bars = Math.ceil(end / BAR);
 	const header = (k: string) => new RegExp(`#${k}=(\\S+)`).exec(mml)?.[1];
 	const counts = new Map<number, number>();
@@ -283,7 +284,20 @@ switch (command) {
 		if (!existsSync(join(dir, "notes.md")))
 			writeFileSync(
 				join(dir, "notes.md"),
-				`# ${title}\n\n曲の概要（設計・判断・自己評価）をここに書く。手順の記録は steps.md。\n`,
+				[
+					`# ${title}`,
+					"",
+					"曲の概要。手順の記録は steps.md。",
+					"",
+					"## 設計（流派・素材・曲の形・終わり方と、その理由）",
+					"",
+					"## 確かめたこと（数値・測定）",
+					"",
+					"## 確かめていないこと（聴けていない・測れなかった所）",
+					"",
+					"## 所有者に訊くこと（出発点として使うか／最初に直す場所／理由を一言）",
+					"",
+				].join("\n"),
 				"utf8",
 			);
 		console.log(dir);

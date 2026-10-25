@@ -97,15 +97,44 @@
 自動作曲・手書きで曲を作るときは、作り始めに棚へフォルダを作り、手順を1段ずつ書きためる（後からまとめて書くと、照合や判断の理由が抜ける）。
 フォルダは `tmp/songs/<日本時間> <タイトル>/`（例 `2026-10-25 1437 seed 51 手直し（2号兄貴）`、`tmp` は git 管理外）。
 
+0. 先に読む: [docs/handover-compose.md](../docs/handover-compose.md) の §0（耳コピ由来の旋律・進行は使わない）・§2（やらないこと、試聴の頼み方、
+   手直し曲の評価）と、流派の実測 [docs/kaiwai-lineages.md](../docs/kaiwai-lineages.md)（ゲームBGMは game-bgm-toby-fox.md）。
+   棚の評価（`tmp/songs/index.html`）も見る。
 1. `npx tsx scripts/misc/song-shelf.ts new --title <タイトル>` — フォルダ・`meta.json`・`steps.md`・`notes.md` のひな形を作る。
 2. 段ごとに `song-shelf.ts step <曲> --did <やったこと> --saw <見たもの・数値> --why <判断と理由> --ref <参考資料との照合>`。
    `<曲>` はフォルダ名の一部でよい。参考資料（前のセッションの記録など）に沿って進める依頼では、`--ref` に「そのまま使う／直す（理由）／不明」を書く。
-3. 曲の概要（設計・判断・自己評価、聴けていないこと）は `notes.md` に書く。作業用のスクリプトは `scratch/` に置いてよい。
-4. `song-shelf.ts publish <曲> song.mml --origin "4,5,7=auto;0=hand;8=derived" --key Gm --summary <一言> --with build.ts`
+3. 曲の概要は `notes.md`（ひな形の見出し: 設計／確かめたこと／確かめていないこと／所有者に訊くこと）。作業用のスクリプトは `scratch/` に置いてよい。
+4. 音で確かめる（下）。測れなかったらそう書く。再生が動かないときは諦めずに原因を追う。
+5. `song-shelf.ts publish <曲> song.mml --origin "4,5,7=auto;0=hand;8=derived" --key Gm --summary <一言> --with build.ts`
    — MML を置き、公開デモの試聴 URL と、トラックの出どころごとの音数（自動作曲の出力／手書き／自動作曲の素材から組んだ層）を出す。
-5. 所有者の評価を受けたら `song-shelf.ts verdict <曲> --verdict 使う --note <理由>`。
+6. 所有者の評価を受けたら `song-shelf.ts verdict <曲> --verdict 使う --note <理由>`。
 
 一覧は `tmp/songs/index.html`（どのコマンドも作り直す）。試聴は公開デモの埋め込みなので、公開版に無い機能を使う MML は先にデプロイする。
+**エージェントは一覧や公開デモのプレイヤーで再生ボタンを押さない**（スピーカーから鳴る）。
+
+### 組み立てるときに落としやすいこと
+
+- 自動作曲の曲から小節を借りるときは、借りる小節の和音名（`chordProgression`）と設計表の和音名を照合し、違えば組み立てを止める。点検では拾えない。
+- 生成器の出した構造（セクションの並び・素材の少なさ）を、確かめずにそのまま曲の形にしない。小節ごとに全層（和音・リード・ベース・どの層が鳴るか）を読む。
+- 数値で出た濁り（リードが伴奏と半音でこする等）を理屈で許さない。直すか、残す理由を notes.md に書く。
+- 手で組んだ MML（作曲のスロットを持たない）は、おまかせマスタリングの役割推定に掛かる。単音のアルペジオや刻みは「サブメロ」（音量 92・Lead 6）と
+  推定されうるので、`#t<n>inst=`・音量・`#t<n>comp=` などのストリップを自分で書く（役割ごとの値は `src/ui/daw.ts` の `AUTO_ROLE_MIX`）。
+- `#ver=` は今の版（`src/version.ts`）にする。
+- アプリで作った曲を seed から再現するときは `scripts/compose/export-samples.ts --app-seed`。ブラウザで同じ曲を作るなら、`Math.random` の最初の1回だけを
+  差し替えてから「作る」を押し、MML 先頭の `#seed=` が狙った値かを確かめる。
+
+### 音で確かめる（スピーカーへ出さない）
+
+譜面で分からない音量・高域は、録音して測る。所有者の部屋で鳴らさないため、**再生の前に出力を切る**。
+
+1. `pnpm dev`（http://localhost:40298）の編集画面で曲を開く: `#g.…`（`mml-embed-url.ts` の `edit` の URL のハッシュ）へ移ってから `location.reload()`
+   （同じページでハッシュだけ変えても読み直さない）。`pnpm dev` は `biome format src --write` を走らせるので、`src/` の改行や整形が変わることがある。
+   コミットの前に `git diff --ignore-cr-at-eol -- src` で中身の変化を確かめ、自分の変更でないものは含めない。
+2. [misc/record-song.browser.js](misc/record-song.browser.js) の中身をブラウザで実行する。`__recordSong` は出力を `setSinkId({ type: "none" })` で切ってから再生し、
+   切れなければ再生しない。**この関数を通さずに `daw.play()` を呼ばない。**
+3. `__recordSong("full", <曲の秒数+数秒>)` で全体、`__recordVariant("lead", [0], false, 72)` などでパート単体・パート抜きを録る。
+   結果は `window.__rec`（小節ごとの RMS・K 特性の近似・2〜6 kHz 帯・ピーク、dB）。ブラウザ操作は 1 回 45 秒で切れるので、別の呼び出しで取りに行く。
+4. マスタのリミッターで全体の音量はほぼ一定になる。パートの前後関係は 2〜6 kHz 帯や「そのパートを抜いた版」との差で見る。
 
 ## 置き場所のルール
 
