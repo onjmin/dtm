@@ -169,12 +169,17 @@ export type DawUIRefs = {
 	exportMidiBtn: HTMLButtonElement;
 	exportMusicXmlBtn: HTMLButtonElement;
 	exportUstBtn: HTMLButtonElement;
+	exportPlayloadBtn: HTMLButtonElement;
 	exportWavBtn: HTMLButtonElement;
 	drumJsonExportBtn: HTMLButtonElement;
 	drumJsonOutput: HTMLElement;
 	drumJsonStatus: HTMLElement;
 	drumJsonText: HTMLElement;
 	drumJsonCopyBtn: HTMLButtonElement;
+	playloadOutput: HTMLElement;
+	playloadStatus: HTMLElement;
+	playloadText: HTMLElement;
+	playloadCopyBtn: HTMLButtonElement;
 	generateMmlBtn: HTMLButtonElement;
 	decomposeChordToggle: HTMLInputElement;
 	ignoreChordHeavyToggle: HTMLInputElement;
@@ -777,12 +782,13 @@ export const buildUI = (
   </details>
 
   <details class="dtm-panel" data-dtm-acc="io-out">
-    <summary>MIDI / MusicXML / UST / MML 出力</summary>
+    <summary>MIDI / MusicXML / UST / Playload / MML 出力</summary>
     <div class="dtm-panel-body">
       <div class="dtm-row">
         <button class="dtm-btn dtm-btn--accent" data-dtm="export-midi">MIDI出力</button>
         <button class="dtm-btn dtm-btn--accent" data-dtm="export-musicxml" title="全トラックをMusicXML（楽譜）形式で書き出します">MusicXML出力</button>
         <button class="dtm-btn dtm-btn--accent" data-dtm="export-ust" title="現在選択中のトラックだけをUSTで書き出します">UST出力</button>
+        <button class="dtm-btn dtm-btn--accent" data-dtm="export-playload" title="Playload用コード（ZX Spectrum 128 PLAY文、先頭3トラック）を出力します">Playload出力</button>
         <button class="dtm-btn dtm-btn--success" data-dtm="generate-mml">MML生成</button>
         <button class="dtm-btn dtm-btn--primary dtm-hidden" data-dtm="export-wav">WAV書き出し</button>
       </div>
@@ -808,6 +814,13 @@ export const buildUI = (
           <option value="64">64小節</option>
           <option value="128">128小節</option>
         </select>
+      </div>
+      <div class="dtm-output dtm-hidden" data-dtm="playload-output">
+        <p class="dtm-label" data-dtm="playload-status"></p>
+        <div class="dtm-output-row">
+          <pre class="dtm-output-scroll"><code data-dtm="playload-text"></code></pre>
+          <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="playload-copy" title="コピー">${icon("copy")}</button>
+        </div>
       </div>
       <div class="dtm-output dtm-hidden" data-dtm="drum-json-output">
         <p class="dtm-label" data-dtm="drum-json-status"></p>
@@ -999,12 +1012,17 @@ export const buildUI = (
 		exportMidiBtn: sel("export-midi"),
 		exportMusicXmlBtn: sel("export-musicxml"),
 		exportUstBtn: sel("export-ust"),
+		exportPlayloadBtn: sel("export-playload"),
 		exportWavBtn: sel("export-wav") as HTMLButtonElement,
 		drumJsonExportBtn: sel("drum-json-export"),
 		drumJsonOutput: sel("drum-json-output"),
 		drumJsonStatus: sel("drum-json-status"),
 		drumJsonText: sel("drum-json-text"),
 		drumJsonCopyBtn: sel("drum-json-copy") as HTMLButtonElement,
+		playloadOutput: sel("playload-output"),
+		playloadStatus: sel("playload-status"),
+		playloadText: sel("playload-text"),
+		playloadCopyBtn: sel("playload-copy") as HTMLButtonElement,
 		generateMmlBtn: sel("generate-mml"),
 		decomposeChordToggle: sel<HTMLInputElement>("decompose-chord"),
 		ignoreChordHeavyToggle: sel<HTMLInputElement>("ignore-chord-heavy"),

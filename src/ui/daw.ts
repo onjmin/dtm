@@ -125,6 +125,7 @@ import {
 	parseMusicXML,
 } from "../io/musicxml-io";
 import { buildUst, parseUst, type UstTrackData } from "../io/ust-io";
+import { exportPlayload } from "../io/playload-io";
 import { lookupTable } from "../lookup-table";
 import {
 	applyHarmonicFilter,
@@ -8038,6 +8039,28 @@ export const mountDAW = (
 		refs.copyMiniBtn.addEventListener("click", () =>
 			copy(refs.outputMini.textContent ?? "", refs.copyMiniBtn),
 		);
+		refs.exportPlayloadBtn.addEventListener("click", () => {
+			const barLimit = Number(refs.barLimitSelect.value);
+			const tracks = trackStates.map((t) => t.core.getNotes());
+			const volumes = trackStates.map((t) => t.volume);
+			const result = exportPlayload(tracks, {
+				tempo: bpm,
+				volumes,
+				stepsPerBar: renderConfig.stepsPerBar,
+				barLimit,
+			});
+			refs.playloadText.textContent = result.code;
+			const ignoreMsg =
+				result.ignoredTrackCount > 0
+					? `（全${result.totalTrackCount}トラック中、先頭3トラックのみ出力・4トラック以降の${result.ignoredTrackCount}トラックは無視されました）`
+					: `（${result.usedChannelCount}チャンネル出力）`;
+			refs.playloadStatus.textContent = `Playload用コード ${ignoreMsg} - ${result.code.length}文字`;
+			refs.playloadOutput.classList.remove("dtm-hidden");
+			navigator.clipboard?.writeText(result.code);
+		});
+		refs.playloadCopyBtn.addEventListener("click", () => {
+			copy(refs.playloadText.textContent ?? "", refs.playloadCopyBtn);
+		});
 
 		// MML/MIDI入力
 		refs.mmlLoadBtn.addEventListener("click", async () => {
@@ -9462,6 +9485,18 @@ export const mountDAW = (
 		exportMIDI,
 		exportMusicXML,
 		exportUST,
+		exportPlayload: () => {
+			const barLimit = Number(refs.barLimitSelect.value);
+			return exportPlayload(
+				trackStates.map((t) => t.core.getNotes()),
+				{
+					tempo: bpm,
+					volumes: trackStates.map((t) => t.volume),
+					stepsPerBar: renderConfig.stepsPerBar,
+					barLimit,
+				},
+			);
+		},
 		setBpm,
 		getLoop: () => loopEnabled,
 		setLoop: (loop: boolean) => applyLoop(loop),

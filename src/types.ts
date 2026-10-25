@@ -2,6 +2,7 @@ import type { ClipMeter } from "./audio/clip-meter";
 import type { DelayDivision } from "./audio/delay";
 import type { Units } from "./audio/tuning";
 import type { MidiSearchConfig } from "./io/midi-search";
+import type { PlayloadExportResult } from "./io/playload-io";
 import type { SingingVoices } from "./voice/lyrics";
 import type { PitchSegment } from "./voice/pitch-curve";
 
@@ -777,6 +778,8 @@ export type DawInstance = {
 	exportMusicXML: () => Blob;
 	/** 選択中のトラック1本をUST（UTAU）テキストのBlobで返す。 */
 	exportUST: () => Blob;
+	/** 先頭3トラックをPlayload用コード（ZX Spectrum 128 PLAY文）として返す。 */
+	exportPlayload?: () => PlayloadExportResult;
 	setBpm: (bpm: number) => void;
 	/** 現在のループ再生状態（ON/OFF）を返す */
 	getLoop: () => boolean;

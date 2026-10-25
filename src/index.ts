@@ -141,6 +141,8 @@ export {
 } from "./io/musicxml-io";
 // UST（UTAU）入出力 — 歌詞付きで読み込み、選択中のトラックを書き出す
 export * from "./io/ust-io";
+// Playload（ZX Spectrum 128 PLAY文）出力 — 先頭3トラックをブラウザゲームエンジン向けに出力
+export * from "./io/playload-io";
 export * from "./linked-list";
 // ヘッドレス再生（DOM非依存・BGM向け）＋ 内蔵synthプリミティブ
 export {
