@@ -166,12 +166,17 @@ export type DawUIRefs = {
 	macroHarmonic: HTMLButtonElement;
 	macroMono: HTMLButtonElement;
 	// output
-	exportMidiBtn: HTMLButtonElement;
-	exportMusicXmlBtn: HTMLButtonElement;
-	exportUstBtn: HTMLButtonElement;
-	exportPlayloadBtn: HTMLButtonElement;
-	exportWavBtn: HTMLButtonElement;
-	drumJsonExportBtn: HTMLButtonElement;
+	exportFormat: HTMLSelectElement;
+	exportFormatWavOption: HTMLOptionElement;
+	exportFormatHint: HTMLElement;
+	exportRunBtn: HTMLButtonElement;
+	exportOptMml: HTMLElement;
+	exportOptLimit: HTMLElement;
+	amkOutput: HTMLElement;
+	amkStatus: HTMLElement;
+	amkText: HTMLElement;
+	amkCopyBtn: HTMLButtonElement;
+	amkDownloadBtn: HTMLButtonElement;
 	drumJsonOutput: HTMLElement;
 	drumJsonStatus: HTMLElement;
 	drumJsonText: HTMLElement;
@@ -180,7 +185,6 @@ export type DawUIRefs = {
 	playloadStatus: HTMLElement;
 	playloadText: HTMLElement;
 	playloadCopyBtn: HTMLButtonElement;
-	generateMmlBtn: HTMLButtonElement;
 	decomposeChordToggle: HTMLInputElement;
 	ignoreChordHeavyToggle: HTMLInputElement;
 	barLimitSelect: HTMLSelectElement;
@@ -782,28 +786,39 @@ export const buildUI = (
   </details>
 
   <details class="dtm-panel" data-dtm-acc="io-out">
-    <summary>MIDI / MusicXML / UST / Playload / MML 出力</summary>
+    <summary>書き出し（MML / MIDI / MusicXML / UST / AMK ほか）</summary>
     <div class="dtm-panel-body">
-      <div class="dtm-row">
-        <button class="dtm-btn dtm-btn--accent" data-dtm="export-midi">MIDI出力</button>
-        <button class="dtm-btn dtm-btn--accent" data-dtm="export-musicxml" title="全トラックをMusicXML（楽譜）形式で書き出します">MusicXML出力</button>
-        <button class="dtm-btn dtm-btn--accent" data-dtm="export-ust" title="現在選択中のトラックだけをUSTで書き出します">UST出力</button>
-        <button class="dtm-btn dtm-btn--accent" data-dtm="export-playload" title="Playload用コード（ZX Spectrum 128 PLAY文、先頭3トラック）を出力します">Playload出力</button>
-        <button class="dtm-btn dtm-btn--success" data-dtm="generate-mml">MML生成</button>
-        <button class="dtm-btn dtm-btn--primary dtm-hidden" data-dtm="export-wav">WAV書き出し</button>
+      <!-- 形式が増えたのでボタンを並べず、形式を選んで1つのボタンで出力する。
+           data-opts は形式ごとに見せる設定（mml: 和音分解 / limit: 生成上限）。 -->
+      <div class="dtm-row" style="flex-wrap:nowrap">
+        <select class="dtm-select dtm-grow" data-dtm="export-format" style="min-width:0">
+          <optgroup label="テキスト（コピーして使う）">
+            <option value="mml" data-opts="mml limit" data-hint="dtmのMML。短いテキストなので、そのまま貼って人に渡せます。">MML（dtm）</option>
+            <option value="amk" data-opts="limit" data-hint="スーパーファミコン（SPC700）用のAddMusicK MML。和音は声部に分けて最大8チャンネルへ割り当てます。ドラム・音色・エフェクトは書き出しません。">AddMusicK MML（SNES）</option>
+            <option value="playload" data-opts="limit" data-hint="Playload用コード（ZX Spectrum 128 PLAY文）。先頭3トラックだけを出力します。">Playload（ZX Spectrum）</option>
+            <option value="drum-json" data-hint="読み込んだMIDIのドラム定義をJSONで出力します（MIDIを読み込んだときだけ使えます）。">ドラムJSON</option>
+          </optgroup>
+          <optgroup label="ファイル（ダウンロード）">
+            <option value="midi" data-hint="全トラックをMIDIファイルで書き出します。">MIDI（.mid）</option>
+            <option value="musicxml" data-hint="全トラックを楽譜（MusicXML）で書き出します。歌詞も入ります。">MusicXML（.musicxml）</option>
+            <option value="ust" data-hint="選択中のトラック1本だけをUTAUのUSTで書き出します。">UST（選択中のトラック）</option>
+            <option value="wav" data-dtm="export-format-wav" data-hint="ミックスした音声をWAVで書き出します。">WAV（.wav）</option>
+          </optgroup>
+        </select>
+        <button class="dtm-btn dtm-btn--success" data-dtm="export-run">出力</button>
       </div>
-      <div class="dtm-row">
-        <button class="dtm-btn dtm-btn--primary" data-dtm="drum-json-export" title="読み込んだMIDIのドラム定義をJSON出力">ドラムJSON出力</button>
+      <p class="dtm-hint dtm-hint--wrap" data-dtm="export-format-hint"></p>
+      <div data-dtm="export-opt-mml">
+        <label class="dtm-checkbox-label">
+          <input type="checkbox" class="dtm-checkbox" data-dtm="decompose-chord">
+          <span>和音分解モード（単音トラックに最適分割）</span>
+        </label>
+        <label class="dtm-checkbox-label dtm-checkbox-label--sub">
+          <input type="checkbox" class="dtm-checkbox" data-dtm="ignore-chord-heavy">
+          <span>和音伴奏トラックを無視（分解対象から除外）</span>
+        </label>
       </div>
-      <label class="dtm-checkbox-label">
-        <input type="checkbox" class="dtm-checkbox" data-dtm="decompose-chord">
-        <span>和音分解モード（単音トラックに最適分割）</span>
-      </label>
-      <label class="dtm-checkbox-label dtm-checkbox-label--sub">
-        <input type="checkbox" class="dtm-checkbox" data-dtm="ignore-chord-heavy">
-        <span>和音伴奏トラックを無視（分解対象から除外）</span>
-      </label>
-      <div class="dtm-row" style="margin-top:6px;align-items:center;gap:8px;">
+      <div class="dtm-row" data-dtm="export-opt-limit" style="margin-top:6px;align-items:center;gap:8px;">
         <span class="dtm-label">生成上限</span>
         <select class="dtm-select" data-dtm="bar-limit">
           <option value="0">制限なし</option>
@@ -820,6 +835,16 @@ export const buildUI = (
         <div class="dtm-output-row">
           <pre class="dtm-output-scroll"><code data-dtm="playload-text"></code></pre>
           <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="playload-copy" title="コピー">${icon("copy")}</button>
+        </div>
+      </div>
+      <div class="dtm-output dtm-hidden" data-dtm="amk-output">
+        <p class="dtm-label" data-dtm="amk-status"></p>
+        <div class="dtm-output-row">
+          <pre class="dtm-output-scroll"><code data-dtm="amk-text"></code></pre>
+          <button class="dtm-btn dtm-btn--primary dtm-btn--icon" data-dtm="amk-copy" title="コピー">${icon("copy")}</button>
+        </div>
+        <div class="dtm-row">
+          <button class="dtm-btn dtm-btn--accent" data-dtm="amk-download" title="AddMusicKのmusicフォルダに置ける.txtで保存します">.txtで保存</button>
         </div>
       </div>
       <div class="dtm-output dtm-hidden" data-dtm="drum-json-output">
@@ -1009,12 +1034,17 @@ export const buildUI = (
 		macroRandom: sel("macro-random"),
 		macroHarmonic: sel("macro-harmonic"),
 		macroMono: sel("macro-mono"),
-		exportMidiBtn: sel("export-midi"),
-		exportMusicXmlBtn: sel("export-musicxml"),
-		exportUstBtn: sel("export-ust"),
-		exportPlayloadBtn: sel("export-playload"),
-		exportWavBtn: sel("export-wav") as HTMLButtonElement,
-		drumJsonExportBtn: sel("drum-json-export"),
+		exportFormat: sel<HTMLSelectElement>("export-format"),
+		exportFormatWavOption: sel<HTMLOptionElement>("export-format-wav"),
+		exportFormatHint: sel("export-format-hint"),
+		exportRunBtn: sel("export-run"),
+		exportOptMml: sel("export-opt-mml"),
+		exportOptLimit: sel("export-opt-limit"),
+		amkOutput: sel("amk-output"),
+		amkStatus: sel("amk-status"),
+		amkText: sel("amk-text"),
+		amkCopyBtn: sel("amk-copy") as HTMLButtonElement,
+		amkDownloadBtn: sel("amk-download") as HTMLButtonElement,
 		drumJsonOutput: sel("drum-json-output"),
 		drumJsonStatus: sel("drum-json-status"),
 		drumJsonText: sel("drum-json-text"),
@@ -1023,7 +1053,6 @@ export const buildUI = (
 		playloadStatus: sel("playload-status"),
 		playloadText: sel("playload-text"),
 		playloadCopyBtn: sel("playload-copy") as HTMLButtonElement,
-		generateMmlBtn: sel("generate-mml"),
 		decomposeChordToggle: sel<HTMLInputElement>("decompose-chord"),
 		ignoreChordHeavyToggle: sel<HTMLInputElement>("ignore-chord-heavy"),
 		barLimitSelect: sel<HTMLSelectElement>("bar-limit"),

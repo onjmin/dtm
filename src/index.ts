@@ -121,6 +121,8 @@ export * from "./instruments/drum-config";
 export * from "./instruments/instrument-presets";
 // 旋律楽器の音源バンク（`#t<n>font=`）の一覧・正規化
 export * from "./instruments/soundfont-banks";
+// AddMusicK（SNES / SPC700）MML出力 — 声部を8チャンネルへ割り当て、繰り返しをループにまとめる
+export * from "./io/amk-io";
 export * from "./io/midi-io";
 export type {
 	MidiSearchConfig,
@@ -139,10 +141,10 @@ export {
 	musicXmlToNotes,
 	parseMusicXML,
 } from "./io/musicxml-io";
-// UST（UTAU）入出力 — 歌詞付きで読み込み、選択中のトラックを書き出す
-export * from "./io/ust-io";
 // Playload（ZX Spectrum 128 PLAY文）出力 — 先頭3トラックをブラウザゲームエンジン向けに出力
 export * from "./io/playload-io";
+// UST（UTAU）入出力 — 歌詞付きで読み込み、選択中のトラックを書き出す
+export * from "./io/ust-io";
 export * from "./linked-list";
 // ヘッドレス再生（DOM非依存・BGM向け）＋ 内蔵synthプリミティブ
 export {
