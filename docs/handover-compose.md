@@ -272,6 +272,7 @@ npx tsx scripts/test/check-compose.ts --bless    # 出力を意図して変え�
 
 ## 関連資料
 
+- 作った曲の残し方（作曲の記録・試聴 URL・自動作曲と手書きの比率、`tmp/songs/`）: [`scripts/README.md`](../scripts/README.md) の「曲を作って残す手順」
 - 伴奏主体モードの設計: [`docs/accomp-compose.md`](accomp-compose.md)
 - データの出自とライセンス: [`docs/dataset-provenance.md`](dataset-provenance.md)
 - 手書き譜面の記法: [`docs/handscore.md`](handscore.md)

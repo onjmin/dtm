@@ -80,7 +80,8 @@
 | ファイル名 | 役割 | コマンド例 |
 | :--- | :--- | :--- |
 | `test-chord.ts` | MML からの和音解析とカバレッジ測定 | `npx tsx scripts/misc/test-chord.ts` |
-| `mml-embed-url.ts` | .mml を公開デモの埋め込み URL（と編集画面の URL）にする | `npx tsx scripts/misc/mml-embed-url.ts tmp/kaiwai/audition/*.mml --json tmp/kaiwai/audition/urls.json` |
+| `mml-embed-url.ts` | .mml を公開デモの埋め込み URL（と編集画面の URL）にする。URL の組み立ては `embed-url.ts` | `npx tsx scripts/misc/mml-embed-url.ts tmp/kaiwai/audition/*.mml --json tmp/kaiwai/audition/urls.json` |
+| `song-shelf.ts` | 作った曲の棚（`tmp/songs/`）。曲ごとのフォルダに作曲の記録・MML・試聴 URL・自動作曲と手書きの比率を置き、一覧 `tmp/songs/index.html` を作る（ひな形は `song-shelf.html`）。下の「曲を作って残す手順」 | `npx tsx scripts/misc/song-shelf.ts new --title 終末カタストロフ` |
 | `downscale-assets.py` | アセット画像を縮小する | `python scripts/misc/downscale-assets.py` |
 | `sync-version.ts` | `package.json` のバージョンを `src/version.ts` 等へ写す（`pnpm version` から呼ぶ） | `pnpm patch` |
 | `inject-csp.ts` | 公開デモの HTML へ CSP の `<meta>`（インライン script は sha256）を差し込む。gh-pages.yml がデプロイ時に呼ぶ | `pnpm exec tsx scripts/misc/inject-csp.ts docs/demo/*.html` |
@@ -90,6 +91,21 @@
 [melody-model/README.md](melody-model/README.md) を参照。
 
 ---
+
+## 曲を作って残す手順
+
+自動作曲・手書きで曲を作るときは、作り始めに棚へフォルダを作り、手順を1段ずつ書きためる（後からまとめて書くと、照合や判断の理由が抜ける）。
+フォルダは `tmp/songs/<日本時間> <タイトル>/`（例 `2026-10-25 1437 seed 51 手直し（2号兄貴）`、`tmp` は git 管理外）。
+
+1. `npx tsx scripts/misc/song-shelf.ts new --title <タイトル>` — フォルダ・`meta.json`・`steps.md`・`notes.md` のひな形を作る。
+2. 段ごとに `song-shelf.ts step <曲> --did <やったこと> --saw <見たもの・数値> --why <判断と理由> --ref <参考資料との照合>`。
+   `<曲>` はフォルダ名の一部でよい。参考資料（前のセッションの記録など）に沿って進める依頼では、`--ref` に「そのまま使う／直す（理由）／不明」を書く。
+3. 曲の概要（設計・判断・自己評価、聴けていないこと）は `notes.md` に書く。作業用のスクリプトは `scratch/` に置いてよい。
+4. `song-shelf.ts publish <曲> song.mml --origin "4,5,7=auto;0=hand;8=derived" --key Gm --summary <一言> --with build.ts`
+   — MML を置き、公開デモの試聴 URL と、トラックの出どころごとの音数（自動作曲の出力／手書き／自動作曲の素材から組んだ層）を出す。
+5. 所有者の評価を受けたら `song-shelf.ts verdict <曲> --verdict 使う --note <理由>`。
+
+一覧は `tmp/songs/index.html`（どのコマンドも作り直す）。試聴は公開デモの埋め込みなので、公開版に無い機能を使う MML は先にデプロイする。
 
 ## 置き場所のルール
 
