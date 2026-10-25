@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>曲の一覧</title>
+<!-- scripts/misc/song-shelf.ts が tmp/songs/index.html へ書き出すひな形。曲のデータは下の SONGS に入る -->
+<style>
+:root {
+	--bg: #f6f5f2; --panel: #ffffff; --fg: #1c1b19; --muted: #6d6a64; --line: #e2dfd8; --hover: #efede8; --sel: #e7e4dc;
+	--auto: #4a6fa5; --hand: #c2873a; --derived: #4f8f84; --unknown: #a8a49c;
+	--mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #151514; --panel: #1d1c1b; --fg: #ebe9e4; --muted: #9c988f; --line: #33312e; --hover: #24231f; --sel: #2c2a26;
+		--auto: #7f9fd0; --hand: #d9a35c; --derived: #7bb5aa; --unknown: #6f6b64;
+	}
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.65 system-ui, "Yu Gothic UI", "Hiragino Sans", sans-serif; }
+a { color: inherit; }
+.wrap { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 100vh; }
+aside { border-right: 1px solid var(--line); padding: 20px 0; position: sticky; top: 0; height: 100vh; overflow: auto; }
+aside h1 { font-size: 15px; margin: 0 16px 12px; font-weight: 600; }
+aside h1 span { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.item { display: block; width: 100%; text-align: left; border: 0; background: none; color: inherit; font: inherit; padding: 8px 16px; cursor: pointer; }
+.item:hover { background: var(--hover); }
+.item[aria-current="true"] { background: var(--sel); }
+.item .when { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-right: 8px; }
+.item .facts { display: block; font-size: 12px; color: var(--muted); }
+main { padding: 28px 32px 64px; max-width: 860px; min-width: 0; overflow-wrap: anywhere; }
+h2 { font-size: 22px; margin: 0; font-weight: 600; }
+h3 { font-size: 14px; margin: 32px 0 10px; font-weight: 600; }
+.sub { color: var(--muted); margin: 2px 0 14px; }
+.facts-row { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0 0 14px; }
+.facts-row b { font-weight: 600; }
+.summary { margin: 0 0 16px; }
+iframe { width: 100%; height: 210px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); display: block; }
+.links { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0 0; font-size: 13px; }
+.pending { padding: 18px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); }
+.bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--line); }
+.bar span { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 8px 0 0; font-size: 13px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.note { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 12px; }
+th, td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 400; }
+td.num { font-family: var(--mono); text-align: right; padding-right: 16px; }
+ol.steps { margin: 0; padding-left: 22px; }
+ol.steps li { margin: 0 0 12px; }
+ol.steps .t { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: 8px; }
+ol.steps dl { margin: 2px 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 0 10px; font-size: 13px; }
+ol.steps dt { color: var(--muted); }
+ol.steps dd { margin: 0; }
+.empty { color: var(--muted); }
+@media (max-width: 760px) {
+	.wrap { grid-template-columns: minmax(0, 1fr); }
+	aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); max-height: 45vh; }
+	main { padding: 20px 16px 48px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+	<aside><h1>曲の一覧<span id="count"></span></h1><nav id="list"></nav></aside>
+	<main id="detail"></main>
+</div>
+<script>
+const SONGS = /*SONGS*/[];
+const ORIGIN = { auto: "自動作曲の出力", hand: "手書き", derived: "自動作曲の素材から組んだ層", unknown: "未申告" };
+const el = (tag, attrs = {}, ...kids) => {
+	const e = document.createElement(tag);
+	for (const [k, v] of Object.entries(attrs)) {
+		if (k === "class") e.className = v;
+		else if (k === "style") e.style.cssText = v;
+		else e.setAttribute(k, v);
+	}
+	for (const k of kids.flat(Infinity)) if (k != null && k !== false) e.append(k instanceof Node ? k : String(k));
+	return e;
+};
+const short = (at) => {
+	const [d, t] = at.split(" ");
+	return `${d.slice(5).replace("-", "/")} ${t ?? "--:--"}`;
+};
+const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const facts = (s) => [s.key, s.song && `${s.song.bpm} BPM`, s.song && mmss(s.song.seconds)].filter(Boolean).join("・");
+const href = (s, f) => encodeURI(`${s.dir}/${f}`).replace(/#/g, "%23");
+
+const list = document.getElementById("list");
+const detail = document.getElementById("detail");
+document.getElementById("count").textContent = `${SONGS.length} 曲`;
+const buttons = SONGS.map((s, i) => {
+	const b = el("button", { class: "item", type: "button" },
+		el("span", { class: "when" }, short(s.at)), s.title,
+		el("span", { class: "facts" }, [facts(s) || "制作中", s.verdict ? `　${s.verdict.value}` : ""].join("")));
+	b.addEventListener("click", () => show(i));
+	list.append(b);
+	return b;
+});
+
+function show(i) {
+	const s = SONGS[i];
+	if (!s) return;
+	buttons.forEach((b, j) => b.setAttribute("aria-current", String(j === i)));
+	history.replaceState(null, "", `#${encodeURIComponent(s.dir)}`);
+	const kids = [
+		el("h2", {}, s.title),
+		el("p", { class: "sub" }, `${s.at}${s.at.includes(" ") ? "" : "（時刻不明）"}・日本時間`),
+	];
+	if (s.song) {
+		kids.push(el("p", { class: "facts-row" },
+			s.key && el("span", {}, el("b", {}, s.key)),
+			el("span", {}, `${s.song.bpm} BPM`),
+			el("span", {}, `${s.song.bars} 小節・${mmss(s.song.seconds)}`),
+			el("span", {}, `${s.song.tracks} トラック`),
+			s.song.seed && el("span", {}, `seed ${s.song.seed}`)));
+	}
+	if (s.summary) kids.push(el("p", { class: "summary" }, s.summary));
+	if (s.song) {
+		kids.push(el("iframe", { src: s.song.embed, title: `${s.title} のプレイヤー`, loading: "lazy" }));
+		kids.push(el("p", { class: "links" },
+			el("a", { href: s.song.embed, target: "_blank", rel: "noopener" }, "新しいタブで聴く"),
+			el("a", { href: s.song.edit, target: "_blank", rel: "noopener" }, "編集画面で開く"),
+			el("a", { href: href(s, "song.mml") }, "song.mml"),
+			el("a", { href: href(s, "notes.md") }, "notes.md（概要）"),
+			el("a", { href: href(s, "steps.md") }, "steps.md（作曲の記録）"),
+			...(s.files ?? []).map((f) => el("a", { href: href(s, f) }, f))));
+	} else {
+		kids.push(el("p", { class: "pending" }, "制作中（MML はまだ置かれていない）"));
+	}
+
+	if (s.tracks?.length) {
+		const total = s.tracks.reduce((a, t) => a + t.notes, 0);
+		const order = ["auto", "derived", "hand", "unknown"].filter((k) => s.origins?.[k]);
+		kids.push(el("h3", {}, "自動作曲と手書きの比率"),
+			el("div", { class: "bar", role: "img", "aria-label": order.map((k) => `${ORIGIN[k]} ${Math.round(100 * s.origins[k] / total)}%`).join("、") },
+				order.map((k) => el("span", { style: `width:${100 * s.origins[k] / total}%;background:var(--${k})` }))),
+			el("p", { class: "legend" }, order.map((k) => el("span", {}, el("i", { style: `background:var(--${k})` }),
+				`${ORIGIN[k]} ${s.origins[k].toLocaleString()} 音（${Math.round(100 * s.origins[k] / total)}%）`))),
+			el("p", { class: "note" }, `最終 MML の発音イベント ${total.toLocaleString()} 件をトラックの出どころで分けた数。作業量の目安で、創作上の寄与の比ではない。ドラムは型の指定なので数えない。`),
+			el("table", {},
+				el("tr", {}, el("th", {}, "トラック"), el("th", {}, "音色"), el("th", {}, "出どころ"), el("th", { style: "text-align:right;padding-right:16px" }, "音数")),
+				s.tracks.map((t) => el("tr", {}, el("td", {}, `t${t.index}`), el("td", {}, t.instrument ?? ""), el("td", {}, ORIGIN[t.origin]), el("td", { class: "num" }, t.notes)))));
+	}
+
+	kids.push(el("h3", {}, "評価"),
+		s.verdict ? el("p", {}, el("b", {}, s.verdict.value), s.verdict.note ? `　${s.verdict.note}` : "", el("span", { class: "note" }, `　${s.verdict.at}`))
+			: el("p", { class: "empty" }, "まだ評価されていない"));
+
+	kids.push(el("h3", {}, `作曲の記録（${s.steps.length} 段）`));
+	kids.push(s.steps.length
+		? el("ol", { class: "steps" }, s.steps.map((st) => el("li", {}, st.did, el("span", { class: "t" }, short(st.at)),
+			el("dl", {}, [["見たもの", st.saw], ["判断", st.why], ["参考資料", st.ref]].filter(([, v]) => v).map(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])))))
+		: el("p", { class: "empty" }, "記録が無い"));
+
+	detail.replaceChildren(...kids.filter(Boolean));
+}
+
+const fromHash = SONGS.findIndex((s) => `#${encodeURIComponent(s.dir)}` === location.hash);
+if (SONGS.length) show(fromHash >= 0 ? fromHash : 0);
+else detail.append(el("p", { class: "empty" }, "まだ曲が無い。scripts/misc/song-shelf.ts new で作り始める。"));
+</script>
+</body>
+</html>

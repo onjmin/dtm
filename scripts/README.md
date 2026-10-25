@@ -36,8 +36,6 @@
 | :--- | :--- | :--- |
 | `ab-listen.ts` | 目隠し A/B/C の作成器。出荷版・和声付け直し・人間の旋律を同じ手続きで出す | `npx tsx scripts/compose/ab-listen.ts --pdmx tmp/pdmx.jsonl --release --out tmp/abc-release` |
 | `export-samples.ts` | 生成曲を .mid（伴奏主体モードは .mml）で書き出す。`--app-seed` と `--compose` でアプリの曲を再現 | `npx tsx scripts/compose/export-samples.ts --app-seed 3842857959 --compose style:fb.v1:any:0` |
-| `audit-arrangement.ts` | 手直しした曲を渡す前の点検（[docs/compose-harness.md](../docs/compose-harness.md) G4）。流派の規則の帯とぶつかりを関門（合否）、2曲比較から出た項目を仮説、伴奏の強さ・高い持続音を注意として出す | `npx tsx scripts/compose/audit-arrangement.ts song.mml --profile 2go --key Gm --sections intro:8,A:16,B:16,break:8,A:8,B:16,outro:8` |
-| `calibrate-arrangement-gates.ts` | `audit-arrangement.ts` の関門を生成器の素の出力に掛け、指標の分布と不合格の数を流派ごとに出す。関門の閾値を動かしたら回す | `npx tsx scripts/compose/calibrate-arrangement-gates.ts --count 20` |
 | `measure-lead-harmony.ts` | 楽器リードが伴奏と同じ音名・半音でこすれる長さの割合を seed ごとに出す（こすれの相手が和音の層かベースかも） | `npx tsx scripts/compose/measure-lead-harmony.ts --template kaiwai_2go_lead --seeds 1-20` |
 | `audit-lineage.ts` | 所有者が聴く前の点検。曲をまたいだ使い回し・全曲で一定の特徴・歌の音域と重ね・原曲との近さを、流派の原曲（耳コピ）と同じ物差しで並べ、直すべき候補を重大度順に出す | `npx tsx scripts/compose/audit-lineage.ts --template kaiwai_2go_lead --count 100 --out tmp/audit/2go_lead.md` |
 | `measure-fill-coherence.ts` | 範囲補完で埋めた旋律と前後の旋律のつながり（2小節モチーフの共有・歌う中心・句頭句末・境目の跳躍）を、補完前の composeSong の旋律と比べる | `npx tsx scripts/compose/measure-fill-coherence.ts --seeds 15` |
@@ -82,7 +80,8 @@
 | ファイル名 | 役割 | コマンド例 |
 | :--- | :--- | :--- |
 | `test-chord.ts` | MML からの和音解析とカバレッジ測定 | `npx tsx scripts/misc/test-chord.ts` |
-| `mml-embed-url.ts` | .mml を公開デモの埋め込み URL（と編集画面の URL）にする | `npx tsx scripts/misc/mml-embed-url.ts tmp/kaiwai/audition/*.mml --json tmp/kaiwai/audition/urls.json` |
+| `mml-embed-url.ts` | .mml を公開デモの埋め込み URL（と編集画面の URL）にする。URL の組み立ては `embed-url.ts` | `npx tsx scripts/misc/mml-embed-url.ts tmp/kaiwai/audition/*.mml --json tmp/kaiwai/audition/urls.json` |
+| `song-shelf.ts` | 作った曲の棚（`tmp/songs/`）。曲ごとのフォルダに作曲の記録・MML・試聴 URL・自動作曲と手書きの比率を置き、一覧 `tmp/songs/index.html` を作る（ひな形は `song-shelf.html`）。下の「曲を作って残す手順」 | `npx tsx scripts/misc/song-shelf.ts new --title 終末カタストロフ` |
 | `downscale-assets.py` | アセット画像を縮小する | `python scripts/misc/downscale-assets.py` |
 | `sync-version.ts` | `package.json` のバージョンを `src/version.ts` 等へ写す（`pnpm version` から呼ぶ） | `pnpm patch` |
 | `inject-csp.ts` | 公開デモの HTML へ CSP の `<meta>`（インライン script は sha256）を差し込む。gh-pages.yml がデプロイ時に呼ぶ | `pnpm exec tsx scripts/misc/inject-csp.ts docs/demo/*.html` |
@@ -92,6 +91,21 @@
 [melody-model/README.md](melody-model/README.md) を参照。
 
 ---
+
+## 曲を作って残す手順
+
+自動作曲・手書きで曲を作るときは、作り始めに棚へフォルダを作り、手順を1段ずつ書きためる（後からまとめて書くと、照合や判断の理由が抜ける）。
+フォルダは `tmp/songs/<日本時間> <タイトル>/`（例 `2026-10-25 1437 seed 51 手直し（2号兄貴）`、`tmp` は git 管理外）。
+
+1. `npx tsx scripts/misc/song-shelf.ts new --title <タイトル>` — フォルダ・`meta.json`・`steps.md`・`notes.md` のひな形を作る。
+2. 段ごとに `song-shelf.ts step <曲> --did <やったこと> --saw <見たもの・数値> --why <判断と理由> --ref <参考資料との照合>`。
+   `<曲>` はフォルダ名の一部でよい。参考資料（前のセッションの記録など）に沿って進める依頼では、`--ref` に「そのまま使う／直す（理由）／不明」を書く。
+3. 曲の概要（設計・判断・自己評価、聴けていないこと）は `notes.md` に書く。作業用のスクリプトは `scratch/` に置いてよい。
+4. `song-shelf.ts publish <曲> song.mml --origin "4,5,7=auto;0=hand;8=derived" --key Gm --summary <一言> --with build.ts`
+   — MML を置き、公開デモの試聴 URL と、トラックの出どころごとの音数（自動作曲の出力／手書き／自動作曲の素材から組んだ層）を出す。
+5. 所有者の評価を受けたら `song-shelf.ts verdict <曲> --verdict 使う --note <理由>`。
+
+一覧は `tmp/songs/index.html`（どのコマンドも作り直す）。試聴は公開デモの埋め込みなので、公開版に無い機能を使う MML は先にデプロイする。
 
 ## 置き場所のルール
 
