@@ -32,6 +32,7 @@ import {
 } from "./compose-corpus";
 import {
 	bassFigure,
+	developBar,
 	grammarProgressions,
 	type LoopShape,
 	type LoopStyle,
@@ -5942,7 +5943,19 @@ const draw = (
 							),
 						)
 					: rnd;
-				made = [x, make(extra), x, make(extra)];
+				// 2小節目・4小節目は半分強の曲で x の変奏にする（無関係な小節だと型が戻ってこない）。
+				const range = {
+					lo: -2,
+					hi: 5,
+					maxLeap: feel.maxLeap,
+					turn: 0.3,
+					stepShare: feel.stepShare,
+				};
+				const answer = (): RiffNote[] =>
+					extra() < 0.6
+						? developBar(extra, x, range, () => make(extra))
+						: make(extra);
+				made = [x, answer(), x, answer()];
 			} else {
 				runFeel ??= runStyle(rnd);
 				runShape ??= runPlan(rnd);
@@ -6078,7 +6091,44 @@ const draw = (
 		const motifs = new Map<SectionKind, number[][]>();
 		const seen = new Map<SectionKind, number>();
 		const placed: ReturnType<typeof sentenceSection>[] = [];
+		// 間奏で楽器が受け持つ句（セクションの添字 → 小節ごとの音。歌う小節は空）。
+		const answered = new Map<number, ReturnType<typeof sentenceSection>>();
 		for (const sec of sectionPlan) {
+			if (!sec.spec.melody && sec.kind === "interlude") {
+				// 間奏は歌が引っ込むが消えはしない（原曲の歌の休符 63〜89%）。サビと同じリズムの家族で
+				// 1つの文を作り、2小節の句の1〜2つだけ歌い、残りの句は楽器が続ける（呼びかけと答え）。
+				// 楽器の句も文の規則（強拍・長い音は和音の音）で作るので、汎用のソロのように和音とこすらない。
+				const env = {
+					fits: (bar: number, at: number, step: number): boolean =>
+						pcsAt(
+							(sec.startBar + bar) * stepsPerBar + Math.round(at * sixteenth),
+						).has(((pitchOf(step).semi % 12) + 12) % 12),
+					semi: (step: number): number => pitchOf(step).semi,
+				};
+				const motif = motifs.get("chorus") ?? style.motif;
+				const line = sentenceSection(
+					rnd,
+					style,
+					motif,
+					sec.bars,
+					3 + style.lift,
+					env,
+				);
+				const phrases = Math.floor(sec.bars / 2);
+				// 頭の句だけ 3／頭と3つ目 2／3つ目だけ 1／2つ目だけ 1。
+				const r = rnd() * 7;
+				const sung = (r < 3 ? [0] : r < 5 ? [0, 2] : r < 6 ? [2] : [1]).filter(
+					(p) => p < phrases,
+				);
+				const isSung = (bar: number): boolean =>
+					sung.includes(Math.floor(bar / 2));
+				placed.push(line.map((b, i) => (isSung(i) ? b : [])));
+				answered.set(
+					placed.length - 1,
+					line.map((b, i) => (isSung(i) ? [] : b)),
+				);
+				continue;
+			}
 			if (!sec.spec.melody) {
 				placed.push([]);
 				continue;
@@ -6109,9 +6159,12 @@ const draw = (
 					: line,
 			);
 		}
-		sectionPlan.forEach((sec, si) => {
-			const line = placed[si];
-			if (!line.length) return;
+		const answerNotes: ComposedNote[] = [];
+		const layOut = (
+			sec: PlacedSection,
+			line: ReturnType<typeof sentenceSection>,
+			into: ComposedNote[],
+		): void => {
 			for (let i = 0; i < sec.bars; i++) {
 				const bar = sec.startBar + i;
 				const k = barKeyShift[bar];
@@ -6122,7 +6175,7 @@ const draw = (
 					if (n.len > 0) {
 						const p = pitchOf(n.step);
 						const start = bar * stepsPerBar + Math.round(at * sixteenth);
-						melody.push({
+						into.push({
 							startStep: start,
 							pitchUnits: spelledToUnits(
 								p.semi - (n.chrom ? 1 : 0) + k,
@@ -6141,6 +6194,11 @@ const draw = (
 					at += Math.abs(n.len);
 				}
 			}
+		};
+		sectionPlan.forEach((sec, si) => {
+			if (placed[si].length) layOut(sec, placed[si], melody);
+			const answer = answered.get(si);
+			if (answer) layOut(sec, answer, answerNotes);
 		});
 		const octaveUnits = semitonesToUnits(12, edo);
 		const meanSemi = (): number =>
@@ -6148,12 +6206,23 @@ const draw = (
 				Math.max(1, melody.length) /
 				UNITS_PER_SEMITONE +
 			rootShift;
-		while (melody.length > 0 && meanSemi() > 75 + 6)
-			for (const n of melody)
-				n.pitchUnits = (n.pitchUnits - octaveUnits) as Units;
-		while (melody.length > 0 && meanSemi() < 75 - 6)
-			for (const n of melody)
-				n.pitchUnits = (n.pitchUnits + octaveUnits) as Units;
+		// 楽器の答えは歌と同じ高さで組んだので、歌と同じだけ移す（楽器の音域へは層の側で合わせる）。
+		const shiftAll = (units: number): void => {
+			for (const n of [...melody, ...answerNotes])
+				n.pitchUnits = (n.pitchUnits + units) as Units;
+		};
+		while (melody.length > 0 && meanSemi() > 75 + 6) shiftAll(-octaveUnits);
+		while (melody.length > 0 && meanSemi() < 75 - 6) shiftAll(octaveUnits);
+		if (answered.size > 0) {
+			// 汎用の作り方のソロ（和音を見ない走句で、半音のこすれが他の層の倍あった）を答えの句に替える。
+			solo.length = 0;
+			solo.push(
+				...answerNotes.map((n) => ({
+					...n,
+					velocity: n.velocity === 100 ? 110 : 96,
+				})),
+			);
+		}
 		// 2本目の声（原曲 3/5 曲）。サビだけ、同時の音の4度・5度下を主に3度・同音も混ぜる
 		// （原曲の重ねはオクターブ 4.5%・4〜5度 35%・3〜6度 27%・同音 18%）。歌の帯より下へは出さない。
 		if (rnd() < 0.6) {

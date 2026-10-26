@@ -543,6 +543,11 @@ export type RunPlan = {
 	breath: number;
 	/** サビでリードを1オクターブ上へ移すか（移さない曲はサビの重ねの層が上を受け持つ）。 */
 	lift: boolean;
+	/**
+	 * ブロックの2小節目以降を、頭の小節の変奏（{@link developBar}）にする割合。0 だと小節は
+	 * 写しか無関係な新しい小節のどちらかになり、戻ってくると分かる型（主題）が生まれない。
+	 */
+	develop: number;
 };
 
 export const runPlan = (rnd: () => number): RunPlan => ({
@@ -550,7 +555,89 @@ export const runPlan = (rnd: () => number): RunPlan => ({
 	rep: rnd() * 0.8,
 	breath: 0.05 + rnd() * 0.9,
 	lift: rnd() < 0.55,
+	develop: 0.35 + rnd() * 0.45,
 });
+
+/** 変奏で音を選び直すときの歩き方。 */
+export type DevelopRange = {
+	lo: number;
+	hi: number;
+	maxLeap: number;
+	turn: number;
+	stepShare: number;
+};
+
+/**
+ * 小節 `x` の変奏。写しでも無関係な小節でもなく、聴いて「同じ型が戻ってきた」と分かる形にする。
+ * - 移高（ゼクエンツ）: 同じリズム・同じ音程の並びを音階の1〜2段上下へ。
+ * - 音の入れ替え: リズムはそのまま、頭の音から音を選び直す。
+ * - 後ろだけ替える: 前の2拍は同じで、後ろの2拍を `fresh` から継ぐ（つなぎ目は2段以内へ寄せる）。
+ */
+export const developBar = (
+	rnd: () => number,
+	x: LeadNote[],
+	range: DevelopRange,
+	fresh: () => LeadNote[],
+): LeadNote[] => {
+	const sounding = x.filter((n) => n.len > 0);
+	if (sounding.length === 0) return x.map((n) => ({ ...n }));
+	const r = rnd();
+	if (r < 0.45) {
+		const steps = sounding.map((n) => n.step);
+		const top = Math.max(...steps);
+		const bottom = Math.min(...steps);
+		const size = rnd() < 0.7 ? 1 : 2;
+		const up = rnd() < 0.5;
+		// 範囲を1段まで越えるのは許す（走句は端で折り返すので、端に張り付いた型もある）。
+		const shift =
+			(up && top + size <= range.hi + 1) || bottom - size < range.lo - 1
+				? size
+				: -size;
+		return x.map((n) =>
+			n.len > 0 ? { ...n, step: n.step + shift } : { ...n },
+		);
+	}
+	if (r < 0.75) {
+		const next = walker(
+			rnd,
+			sounding[0].step,
+			range.lo,
+			range.hi,
+			range.maxLeap,
+			range.turn,
+			range.stepShare,
+		);
+		const out = x.map((n) => (n.len > 0 ? { ...n, step: next() } : { ...n }));
+		// 音の少ない小節は選び直しても元と同じになりやすい。写しにせず移高へ回す。
+		if (out.every((n, i) => n.step === x[i].step))
+			return developBar(() => 0, x, range, fresh);
+		return out;
+	}
+	const head: LeadNote[] = [];
+	let at = 0;
+	for (const n of x) {
+		if (at >= 8 - 1e-6) break;
+		head.push({ ...n });
+		at += Math.abs(n.len);
+	}
+	const f = fresh();
+	const tail: LeadNote[] = [];
+	let t = 0;
+	for (const n of f) {
+		if (t >= at - 1e-6) tail.push({ ...n });
+		t += Math.abs(n.len);
+	}
+	const last = [...head].reverse().find((n) => n.len > 0)?.step ?? 0;
+	const join = tail.find((n) => n.len > 0)?.step;
+	const delta =
+		join === undefined || Math.abs(join - last) <= 2
+			? 0
+			: last - join + (join > last ? 2 : -2);
+	return [
+		...head,
+		...tail.map((n) => (n.len > 0 ? { ...n, step: n.step + delta } : n)),
+	];
+};
 
 /** セクション1つぶんの小節（`bars` 本）。4小節ごとに、前のブロックを繰り返すか・後ろを答えるか・新しく作るか。 */
 export const runSection = (
@@ -559,11 +646,24 @@ export const runSection = (
 	plan: RunPlan,
 	bars: number,
 ): LeadNote[][] => {
+	const range: DevelopRange = {
+		lo: style.lo,
+		hi: style.hi,
+		maxLeap: style.maxLeap,
+		turn: style.turn,
+		stepShare: style.stepShare,
+	};
+	const fresh = () => runBar(rnd, style);
+	// 頭の小節 x の変奏か、新しい小節。4小節目は句の答えなので新しい小節に寄せる。
+	const grow = (x: LeadNote[], i: number): LeadNote[] =>
+		rnd() < plan.develop * (i === 3 ? 0.5 : 1)
+			? developBar(rnd, x, range, fresh)
+			: fresh();
 	const block = (): LeadNote[][] => {
 		const x = runBar(rnd, style);
 		return plan.xyxz
-			? [x, runBar(rnd, style), x, runBar(rnd, style)]
-			: [x, runBar(rnd, style), runBar(rnd, style), runBar(rnd, style)];
+			? [x, grow(x, 1), x, grow(x, 3)]
+			: [x, grow(x, 1), grow(x, 2), grow(x, 3)];
 	};
 	const first = block();
 	const out: LeadNote[][] = [...first];
@@ -573,8 +673,21 @@ export const runSection = (
 			...(r < plan.rep
 				? first
 				: r < plan.rep + (1 - plan.rep) * 0.4
-					? [first[0], first[1], runBar(rnd, style), runBar(rnd, style)]
-					: block()),
+					? [first[0], first[1], grow(first[0], 2), grow(first[0], 3)]
+					: r < plan.rep + (1 - plan.rep) * (0.4 + 0.3 * plan.develop)
+						? // 最初のブロックをまるごと移高して返す（主題が高さを変えて戻る）。
+							(() => {
+								const shifted = developBar(() => 0, first[0], range, fresh);
+								const shift =
+									(shifted.find((n) => n.len > 0)?.step ?? 0) -
+									(first[0].find((n) => n.len > 0)?.step ?? 0);
+								return first.map((bar) =>
+									bar.map((n) =>
+										n.len > 0 ? { ...n, step: n.step + shift } : { ...n },
+									),
+								);
+							})()
+						: block()),
 		);
 	}
 	// 2・4小節の句末で息を継ぐ（原曲のリードの占有は 77〜93%）。後ろの1〜2拍を伸ばすか休む。

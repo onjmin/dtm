@@ -2186,11 +2186,19 @@ console.log("● 界隈曲の流派テンプレート");
 				const sec = song.sections[inter];
 				m.quiet.push(inter >= 0 ? 1 : 0);
 				if (sec) {
+					// 原曲は歌の休符 63〜89%（消えはしない）。生成は2小節の句を1〜2つだけ歌う。
+					const sungBars = Array.from({ length: sec.bars }, (_, i) =>
+						notesIn(song.melody, sec.startBar + i, sec.startBar + i + 1),
+					).filter((n) => n > 0).length;
 					check(
-						`${tag} 8小節の間奏で歌が引っ込む`,
-						sec.bars === 8 &&
-							notesIn(song.melody, sec.startBar, sec.startBar + 8) === 0,
-						song.sections.map((s) => s.kind).join("-"),
+						`${tag} 8小節の間奏で歌が引っ込む（歌うのは 1〜4 小節）`,
+						sec.bars === 8 && sungBars >= 1 && sungBars <= 4,
+						`${song.sections.map((s) => s.kind).join("-")} 歌う小節 ${sungBars}`,
+					);
+					check(
+						`${tag} 間奏の歌わない句は楽器が受け持つ`,
+						notesIn(song.solo, sec.startBar, sec.startBar + 8) > 0,
+						"ソロが空",
 					);
 					const maxLayers = Math.max(...layers.values());
 					check(
@@ -2289,7 +2297,8 @@ console.log("● 界隈曲の流派テンプレート");
 						total1++;
 						const k = keyOf(b, name.endsWith("_lead"));
 						if (k === head) same1++;
-						if (k === keyOf(b - 1, true)) prev1++;
+						// 休む小節どうし（`loopShape` の休むブロック・遅れた入り）は「同じ小節を続けて鳴らす」に数えない。
+						if (k !== "" && k === keyOf(b - 1, true)) prev1++;
 						if (b - 2 >= s.startBar && k === keyOf(b - 2, true)) recur++;
 					}
 				}
