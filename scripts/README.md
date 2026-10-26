@@ -1,149 +1,56 @@
 # Scripts Directory
 
-測定・検証・分析・ビルド補助のスクリプト置き場。
+回帰テスト・曲の書き出しと棚・公開物のビルド補助だけを置く。一時的な測定は git 管理外の `scratch/` に使い捨てで書く。
+代理指標でコーパスへ寄せる測定・点検の道具は削除した（git 履歴にある。理由は [docs/handover-compose.md](../docs/handover-compose.md) §2）。
 
-耳コピ由来のデータ（`src/compose/compose-phrases.ts`・`compose-section-bank.ts`・`compose-skeletons.ts`）は git にもバンドルにも入れない。スクリプトへは `scripts/corpus/skeleton-data.ts` の `localExperimentData()` / `loadSkeletons()` で渡し、手元に無ければ該当の検査は skip する。
+耳コピ由来のデータ（`src/compose/compose-phrases.ts`・`compose-section-bank.ts`・`compose-skeletons.ts`）は git にもバンドルにも入れない。
+`scripts/corpus/skeleton-data.ts` が手元にあれば読み、無ければ該当の検査は skip する。
 
-## スクリプト一覧
+## test/ — 回帰テスト
 
-### test/ — 回帰テスト（`pnpm test` から呼ぶ。黄金値・対照は `test/fixtures/`）
+`pnpm test` が `package.json` に並べた `check-*.ts` を順に回す（最後に「全テスト成功！」）。黄金値・対照は `test/fixtures/`。
+黄金値は意図しない変化の検出だけに使う。出力を意図して変えたときは取り直す。
 
-| ファイル名 | 役割 | コマンド例 |
-| :--- | :--- | :--- |
-| `check-compose.ts` | 自動作曲の回帰テスト。既存テンプレートの黄金値（sha256）照合と `kaiwai` 系テンプレートの検算 | `npx tsx scripts/test/check-compose.ts`（取り直しは `--bless`） |
-| `check-tracks.ts` | 上級者モード15トラックの検算（音の消失・遊んでいるトラック・同音の重複） | `npx tsx scripts/test/check-tracks.ts` |
-| `check-compose-accomp.ts` | 伴奏主体モード（[docs/accomp-compose.md](../docs/accomp-compose.md)）の計画・実現・関門・MML 往復の検算。陽性・切除対照つき | `npx tsx scripts/test/check-compose-accomp.ts` |
-| `check-accomp-styles.ts` | 伴奏主体モードの全スタイルのスキーマと前提の検査（[docs/accomp-style-engine.md](../docs/accomp-style-engine.md) §7.1） | `npx tsx scripts/test/check-accomp-styles.ts` |
-| `check-accomp-golden.ts` | 伴奏主体モードの黄金値。計画 JSON と MML の sha256 を `test/fixtures/styles/<id>/golden.json` と照合 | `pnpm accomp:bless`（意図して出力を変えたときの取り直し） |
-| `check-compose-lyrics.ts` | 仮歌詞の検算。音符と歌詞が1対1か、伸ばし棒を置いていないか、文で終わるか（[docs/lyric-design.md](../docs/lyric-design.md)） | `npx tsx scripts/test/check-compose-lyrics.ts` |
-| `check-compose-fill.ts` | 範囲補完（続き・間奏・作り直し、`src/compose/compose-fill.ts`）の検算。全スタイル×全種別で音が範囲に収まるか、移調・代用・歌詞の継ぎ | `npx tsx scripts/test/check-compose-fill.ts` |
-| `check-mml-velocity.ts` | 音符ごとの強弱（v）が MML・DAW・プレイヤー・MIDI 書き出しを通って保たれるか | `npx tsx scripts/test/check-mml-velocity.ts --file tmp/full/fb.space.mml` |
-| `check-speech-schedule.ts` | 単発の読み上げ（`speak`）のチャンク配置の検算。到着時刻を偽って音を出さずに確かめる | `npx tsx scripts/test/check-speech-schedule.ts` |
-| `check-fx-font-drum.ts` | 再生専用プレイヤーと DAW 全体読み込みで、宣言（`#reverb=` `#t<n>font=` `#drum` 等）が読まれ未記載は既定へ戻るか | `npx tsx scripts/test/check-fx-font-drum.ts` |
-| `check-sf-level.ts` | SoundFont の楽器間レベル揃え（`SoundFont.levelGain`）で代表5楽器が目標 ±2 dB に入るか。配信元のフォントと ffmpeg が要るので `pnpm test` には入れない。`--all` で GM 128 楽器の一覧 | `npx tsx scripts/test/check-sf-level.ts` |
-| `check-input-limits.ts` | 共有リンク・取り込みファイル・localStorage の壊れた値で固まらないか、HTML が入らないか（付点・曲の長さ・UST/MIDI の桁外れ・プロトタイプ名・展開の上限） | `npx tsx scripts/test/check-input-limits.ts` |
+| コマンド | 用途 |
+| :--- | :--- |
+| `npx tsx scripts/test/check-compose.ts --bless` | 自動作曲の黄金値の取り直し |
+| `pnpm accomp:bless` | 伴奏主体モードの黄金値の取り直し |
 
-### accomp/ — 伴奏主体モードの試聴・監査（テスト外）
+## compose/ — 曲の書き出し
 
 | ファイル名 | 役割 | コマンド例 |
 | :--- | :--- | :--- |
-| `audit-accomp-variety.ts` | 生成曲どうし・手書き基準との類似度を次元ごとに出す監査。報告だけで、値で曲を選ばない | `npx tsx scripts/accomp/audit-accomp-variety.ts --count 20 --seed 777` |
-| `accomp-audition.ts` | 種を変えて試聴用の .mml と要約・聞き取りの質問を書き出す。ローカルの `pnpm dev` で聴く | `npx tsx scripts/accomp/accomp-audition.ts --count 3 --seed 20260929 --key major --fb-plan --out tmp/accomp` |
-
-### compose/ — 自動作曲の試作・選抜・試聴・書き出し
-
-| ファイル名 | 役割 | コマンド例 |
-| :--- | :--- | :--- |
-| `ab-listen.ts` | 目隠し A/B/C の作成器。出荷版・和声付け直し・人間の旋律を同じ手続きで出す | `npx tsx scripts/compose/ab-listen.ts --pdmx tmp/pdmx.jsonl --release --out tmp/abc-release` |
 | `export-samples.ts` | 生成曲を .mid（伴奏主体モードは .mml）で書き出す。`--app-seed` と `--compose` でアプリの曲を再現 | `npx tsx scripts/compose/export-samples.ts --app-seed 3842857959 --compose style:fb.v1:any:0` |
-| `strata-compose.ts` | Strata（ローカル LLM）に界隈曲を作らせるエージェントループ。seed 選び・小節の読み・リードの手直しを Strata が判断し、棚へ置く。手順は [docs/strata-compose.md](../docs/strata-compose.md) | `npx tsx scripts/compose/strata-compose.ts new`（曲名は岩石・鉱石の英名から選ぶ） |
-| `measure-lead-harmony.ts` | 楽器リードが伴奏と同じ音名・半音でこすれる長さの割合を seed ごとに出す（こすれの相手が和音の層かベースかも） | `npx tsx scripts/compose/measure-lead-harmony.ts --template kaiwai_2go_lead --seeds 1-20` |
-| `audit-lineage.ts` | 所有者が聴く前の点検。曲をまたいだ使い回し・全曲で一定の特徴・歌の音域と重ね・原曲との近さを、流派の原曲（耳コピ）と同じ物差しで並べ、直すべき候補を重大度順に出す | `npx tsx scripts/compose/audit-lineage.ts --template kaiwai_2go_lead --count 100 --out tmp/audit/2go_lead.md` |
-| `measure-fill-coherence.ts` | 範囲補完で埋めた旋律と前後の旋律のつながり（2小節モチーフの共有・歌う中心・句頭句末・境目の跳躍）を、補完前の composeSong の旋律と比べる | `npx tsx scripts/compose/measure-fill-coherence.ts --seeds 15` |
-| `compose-audition.ts` | 作曲オーディションの入口。大量生成→一次選抜→覆面譜面→審査指示文までを1コマンドで | `npx tsx scripts/compose/compose-audition.ts --count 200 --top 6` |
-| `screen-compose.ts` | 一次選抜。聴かなくても分かる欠点を数えて落とし、欠点の出現数も出す | `npx tsx scripts/compose/screen-compose.ts 200 5000 8` |
-| `compose-lab.ts` | 種を指定して `composeSong` を回し、取り込める MML と譜面シートを出す | `npx tsx scripts/compose/compose-lab.ts 24 2001 tmp/compose` |
-| `hand-compile.ts` | 手書き譜面（JSON、[docs/handscore.md](../docs/handscore.md)）を MML にする | `npx tsx scripts/compose/hand-compile.ts tmp/handscore/a.json tmp/handscore/a.mml` |
-| `screen-handscore.ts` | 手書き譜面を `screen-compose.ts` と同じ減点表に掛ける | `npx tsx scripts/compose/screen-handscore.ts tmp/handscore/a.json` |
-| `blind-sheet.ts` | 出自が分からない書式の覆面審査用譜面シートを出す | `npx tsx scripts/compose/blind-sheet.ts auto 5138 A tmp/blind/A.md` |
+| `strata-compose.ts` | Strata（ローカル LLM）に界隈曲を作らせて棚へ置く。手順は [docs/strata-compose.md](../docs/strata-compose.md) | `npx tsx scripts/compose/strata-compose.ts new` |
+| `ore-names.ts` | インスト曲の名前（岩石・鉱石の英名）。`song-shelf.ts`・`strata-compose.ts` が使う | — |
 
-### corpus/ — 参考コーパスの測定・校正・比較（`calibrate-corpus.ts` が共通の読み込み口）
+## misc/ — 棚・共有 URL・リリース補助
 
 | ファイル名 | 役割 | コマンド例 |
 | :--- | :--- | :--- |
-| `calibrate-corpus.ts` | 参考 MIDI コーパスから目標帯（`src/compose/compose-corpus.ts`）を算出する | `npx tsx scripts/corpus/calibrate-corpus.ts --dir "<path>" --out src/compose/compose-corpus.ts` |
-| `check-evaluator.ts` | 評価機の検算。人間の曲が生成物と同等以上の点を取るかを見る | `npx tsx scripts/corpus/check-evaluator.ts --dir "<path>"` |
-| `measure-arrangement.ts` | 旋律の外側（テンポ・和声・ベース・ドラム・構成等）をコーパスと生成物で同じ物差しで測る | `npx tsx scripts/corpus/measure-arrangement.ts --dir "<path>" --generate kaiwai --count 40 --seed 1 --out tmp/kaiwai` |
-| `measure-lyrics.ts` | 耳コピ UST の歌詞と生成の仮歌詞を同じ物差しで測る（表記・音符との対応・母音・句末の形・反復・層）。歌詞の本文は出さない。まとめは [docs/lyric-design.md](../docs/lyric-design.md) | `npx tsx scripts/corpus/measure-lyrics.ts --dir "<path>" --generate kaiwai` |
-| `extract-skeletons.ts` | 耳コピ MIDI から曲ごとの骨格を抜き `src/compose/compose-skeletons.ts` を生成する（git に入れない） | `npx tsx scripts/corpus/extract-skeletons.ts --dir "<path>" --out src/compose/compose-skeletons.ts` |
-| `build-section-bank.ts` | 骨格データからセクション単位のバンク `src/compose/compose-section-bank.ts` を生成する（git に入れない） | `npx tsx scripts/corpus/build-section-bank.ts` |
-| `check-splice-closeness.ts` | `kaiwai_splice` の生成物が元曲に近すぎないか検査し、上限超えで exit 1 | `npx tsx scripts/corpus/check-splice-closeness.ts --count 200 --seed 1` |
-| `check-skeleton-closeness.ts` | 骨格借用の生成物が元曲に近すぎないか検査し、上限超えで exit 1 | `npx tsx scripts/corpus/check-skeleton-closeness.ts --count 40 --seed 1` |
-| `compare-reach.ts` | 採点を切って引き、生成系が届かないコーパス曲とその原因の軸を出す | `npx tsx scripts/corpus/compare-reach.ts --dir "<path>" --songs 1500` |
-| `compare-corpus.ts` | 生成物とコーパスの特徴の分布・中央値を比べる | `npx tsx scripts/corpus/compare-corpus.ts --dir "<path>" --songs 80` |
-| `compare-bar-density.ts` | 小節ごとの音数の分布をコーパスと比べる | `npx tsx scripts/corpus/compare-bar-density.ts --dir "<path>" --profile` |
-| `compare-vocabulary.ts` | リズム型の語彙の被覆率・集中度をコーパスと比べる | `npx tsx scripts/corpus/compare-vocabulary.ts --dir "<path>"` |
-| `compare-pitch.ts` | 音程の分布・輪郭の集中度をコーパスと比べる | `npx tsx scripts/corpus/compare-pitch.ts --dir "<path>"` |
-| `compare-repetition.ts` | 小節のリズム・輪郭が完全一致で反復する割合をコーパスと比べる | `npx tsx scripts/corpus/compare-repetition.ts --dir "<path>"` |
-| `scratch-analyze.ts` | 生成曲の特徴量（音数・跳躍率・反復率・休符率等）をサンプリングで測る | `npx tsx scripts/corpus/scratch-analyze.ts` |
-
-### transcribe/ — 自動採譜の評価実験（テスト外）
-
-| ファイル名 | 役割 | コマンド例 |
-| :--- | :--- | :--- |
-| `transcribe_audio.py` | 音声 1 本を耳コピ MIDI にする（Demucs＋Basic Pitch）。分離・採譜の本体と方式（`PRESETS`）はここ | `python scripts/transcribe/transcribe_audio.py song.mp3 --out tmp/transcribe/song` |
-| `eval_transcription.py` | 耳コピ MIDI を正解に、`transcribe_audio.py` の精度を測る。結果は [docs/transcription-eval.md](../docs/transcription-eval.md) | `python scripts/transcribe/eval_transcription.py run --pairs tmp/transcribe-eval/pairs.json --out tmp/transcribe-eval --preset v2` |
-| `yourmt3_runner.py` | YourMT3+（多楽器採譜）で音声を採譜し JSON にする比較用。専用 venv で動かす。界隈曲では v2 に負けたので本体には繋いでいない | `<venv>/python scripts/transcribe/yourmt3_runner.py --ymt3 <space> --out tmp/ymt3/all.json a.wav` |
-| `midi-to-embed.ts` | MIDI を MML にして公開デモの埋め込み URL にする | `npx tsx scripts/transcribe/midi-to-embed.ts tmp/transcribe/song/transcribed.mid --out tmp/embed --mode simple --inst synth_pop` |
-
-### misc/ — リリース補助・その他
-
-| ファイル名 | 役割 | コマンド例 |
-| :--- | :--- | :--- |
-| `test-chord.ts` | MML からの和音解析とカバレッジ測定 | `npx tsx scripts/misc/test-chord.ts` |
-| `mml-embed-url.ts` | .mml を公開デモの埋め込み URL（と編集画面の URL）にする。URL の組み立ては `embed-url.ts` | `npx tsx scripts/misc/mml-embed-url.ts tmp/kaiwai/audition/*.mml --json tmp/kaiwai/audition/urls.json` |
-| `song-shelf.ts` | 作った曲の棚（`tmp/songs/`）。曲ごとのフォルダに作曲の記録・MML・試聴 URL・自動作曲と手書きの比率を置き、一覧 `tmp/songs/index.html` を作る（ひな形は `song-shelf.html`）。下の「曲を作って残す手順」 | `npx tsx scripts/misc/song-shelf.ts new --title 終末カタストロフ` |
+| `song-shelf.ts` | 作った曲の棚（`tmp/songs/`）。一覧 `tmp/songs/index.html`（ひな形 `song-shelf.html`）。下の手順 | `npx tsx scripts/misc/song-shelf.ts new --title 終末カタストロフ` |
+| `mml-embed-url.ts` | .mml を公開デモの埋め込み URL と編集画面の URL にする（組み立ては `embed-url.ts`） | `npx tsx scripts/misc/mml-embed-url.ts tmp/a.mml --json tmp/urls.json` |
+| `inject-csp.ts` | 公開デモの HTML へ CSP の `<meta>` を差し込む。gh-pages.yml が呼ぶ | `pnpm exec tsx scripts/misc/inject-csp.ts docs/demo/*.html` |
+| `sync-version.ts` | `package.json` の版を `src/version.ts` 等へ写す（`pnpm version` が呼ぶ） | `pnpm patch` |
 | `downscale-assets.py` | アセット画像を縮小する | `python scripts/misc/downscale-assets.py` |
-| `sync-version.ts` | `package.json` のバージョンを `src/version.ts` 等へ写す（`pnpm version` から呼ぶ） | `pnpm patch` |
-| `inject-csp.ts` | 公開デモの HTML へ CSP の `<meta>`（インライン script は sha256）を差し込む。gh-pages.yml がデプロイ時に呼ぶ | `pnpm exec tsx scripts/misc/inject-csp.ts docs/demo/*.html` |
-
-### melody-model/ — 旋律モデルの学習（打ち止め）
-
-[melody-model/README.md](melody-model/README.md) を参照。
 
 ---
 
 ## 曲を作って残す手順
 
-自動作曲・手書きで曲を作るときは、作り始めに棚へフォルダを作り、手順を1段ずつ書きためる（後からまとめて書くと、照合や判断の理由が抜ける）。
-フォルダは `tmp/songs/<日本時間> - <モデル名> - <タイトル>/`（例 `2026-10-25 1654 - Gemini 3.8 Flash - Cinnabar`、`tmp` は git 管理外）。
+先に [docs/handover-compose.md](../docs/handover-compose.md) の §0・§2 と流派の実測 [docs/kaiwai-lineages.md](../docs/kaiwai-lineages.md)（ゲームBGMは game-bgm-toby-fox.md）を読む。
+フォルダは `tmp/songs/<日本時間> - <モデル名> - <タイトル>/`。手順は1段ずつ書きためる。
 
-0. 先に読む: [docs/handover-compose.md](../docs/handover-compose.md) の §0（耳コピ由来の旋律・進行は使わない）・§2（やらないこと、試聴の頼み方、
-   手直し曲の評価）と、流派の実測 [docs/kaiwai-lineages.md](../docs/kaiwai-lineages.md)（ゲームBGMは game-bgm-toby-fox.md）。
-   棚の評価（`tmp/songs/index.html`）も見る。
-1. `npx tsx scripts/misc/song-shelf.ts new [--title <タイトル>] [--model <モデル名>]` — フォルダ・`meta.json`・`steps.md`・`notes.md` のひな形を作る。
-   タイトルの付け方:
-   - **インスト**: `--title` を省く。岩石・鉱石の英名（`scripts/compose/ore-names.ts`。2号兄貴の鉱石シリーズの曲名と、それを含む名前は除外済み）から、棚で未使用のものが付く。
-   - **歌もの**: 鉱石名は使わない。作る人（モデル）が自分で付け、**海の生物に関係する語を含める**（例: クラゲ・イワシ・ウミウシ）。
-2. 段ごとに `song-shelf.ts step <曲> --did <やったこと> --saw <見たもの・数値> --why <判断と理由> --ref <参考資料との照合>`。
-   `<曲>` はフォルダ名の一部でよい。参考資料（前のセッションの記録など）に沿って進める依頼では、`--ref` に「そのまま使う／直す（理由）／不明」を書く。
-3. 曲の概要は `notes.md`（ひな形の見出し: 設計／確かめたこと／確かめていないこと／所有者に訊くこと）。作業用のスクリプトは `scratch/` に置いてよい。
-4. 音で確かめる（下）。測れなかったらそう書く。再生が動かないときは諦めずに原因を追う。
-5. `song-shelf.ts publish <曲> song.mml --origin "4,5,7=auto;0=hand;8=derived" --key Gm --summary <一言> --with build.ts`
-   — MML を置き、公開デモの試聴 URL と、トラックの出どころごとの音数（自動作曲の出力／手書き／自動作曲の素材から組んだ層）を出す。
-6. 所有者の評価を受けたら `song-shelf.ts verdict <曲> --verdict 使う --note <理由>`。
+1. `song-shelf.ts new [--title <タイトル>] [--model <モデル名>]` — フォルダと `meta.json`・`steps.md`・`notes.md` のひな形を作る。
+   インストは `--title` を省くと未使用の鉱石名が付く。歌ものは鉱石名を使わず、海の生物に関係する語を含む名前を自分で付ける。
+2. 段ごとに `song-shelf.ts step <曲> --did <やったこと> --saw <見たもの> --why <判断と理由> --ref <参考資料との照合>`。
+3. 概要は `notes.md`（設計／確かめたこと／確かめていないこと／所有者に訊くこと）。作業用スクリプトは `scratch/`。
+4. `song-shelf.ts publish <曲> song.mml --origin "4,5,7=auto;0=hand;8=derived" --key Gm --summary <一言> --with build.ts`
+5. 所有者の評価を受けたら `song-shelf.ts verdict <曲> --verdict 使う --note <理由>`。
 
-一覧は `tmp/songs/index.html`（どのコマンドも作り直す）。試聴は公開デモの埋め込みなので、公開版に無い機能を使う MML は先にデプロイする。
-**エージェントは一覧や公開デモのプレイヤーで再生ボタンを押さない**（スピーカーから鳴る）。
-**成果報告時にチャットへ長大なハッシュURLを直接貼らない**（MMLを埋め込んだURLは数千文字に及びトークンを著しく浪費するため、チャットには貼らず `tmp/songs/index.html` や曲フォルダの `notes.md` のファイルリンクのみを案内する）。
-
-### 組み立てるときに落としやすいこと
-
-- 自動作曲の曲から小節を借りるときは、借りる小節の和音名（`chordProgression`）と設計表の和音名を照合し、違えば組み立てを止める。点検では拾えない。
-- 生成器の出した構造（セクションの並び・素材の少なさ）を、確かめずにそのまま曲の形にしない。小節ごとに全層（和音・リード・ベース・どの層が鳴るか）を読む。
-- 数値で出た濁り（リードが伴奏と半音でこする等）を理屈で許さない。直すか、残す理由を notes.md に書く。
-- 手で組んだ MML（作曲のスロットを持たない）は、おまかせマスタリングの役割推定に掛かる。単音のアルペジオや刻みは「サブメロ」（音量 92・Lead 6）と
-  推定されうるので、`#t<n>inst=`・音量・`#t<n>comp=` などのストリップを自分で書く（役割ごとの値は `src/ui/daw.ts` の `AUTO_ROLE_MIX`）。
-- `#ver=` は今の版（`src/version.ts`）にする。
-- アプリで作った曲を seed から再現するときは `scripts/compose/export-samples.ts --app-seed`。ブラウザで同じ曲を作るなら、`Math.random` の最初の1回だけを
-  差し替えてから「作る」を押し、MML 先頭の `#seed=` が狙った値かを確かめる。
-
-### 音で確かめる（スピーカーへ出さない）
-
-譜面で分からない音量・高域は、録音して測る。所有者の部屋で鳴らさないため、**再生の前に出力を切る**。
-
-1. `pnpm dev`（http://localhost:40298）の編集画面で曲を開く: `#g.…`（`mml-embed-url.ts` の `edit` の URL のハッシュ）へ移ってから `location.reload()`
-   （同じページでハッシュだけ変えても読み直さない）。`pnpm dev` は `biome format src --write` を走らせるので、`src/` の改行や整形が変わることがある。
-   コミットの前に `git diff --ignore-cr-at-eol -- src` で中身の変化を確かめ、自分の変更でないものは含めない。
-2. [misc/record-song.browser.js](misc/record-song.browser.js) の中身をブラウザで実行する。`__recordSong` は出力を `setSinkId({ type: "none" })` で切ってから再生し、
-   切れなければ再生しない。**この関数を通さずに `daw.play()` を呼ばない。**
-3. `__recordSong("full", <曲の秒数+数秒>)` で全体、`__recordVariant("lead", [0], false, 72)` などでパート単体・パート抜きを録る。
-   結果は `window.__rec`（小節ごとの RMS・K 特性の近似・2〜6 kHz 帯・ピーク、dB）。ブラウザ操作は 1 回 45 秒で切れるので、別の呼び出しで取りに行く。
-4. マスタのリミッターで全体の音量はほぼ一定になる。パートの前後関係は 2〜6 kHz 帯や「そのパートを抜いた版」との差で見る。
-
-## 置き場所のルール
-
-1. ルート直下にスクリプトを作らない。測定・検証・ユーティリティは `scripts/` に置き、コミットする。
-2. 使い捨ては `scratch/`（`.gitignore` 済み）に置く。
-3. 目標帯・重み・指標の定義を変えたら `check-evaluator.ts` で人間の曲と生成物を同じ物差しに載せて確かめる。
-4. 出てこない曲は、定数をいじる前に `compare-reach.ts` で採点と生成のどちらが原因か切り分ける。
+- **エージェントは一覧や公開デモのプレイヤーで再生ボタンを押さない**（スピーカーから鳴る）。
+- **チャットへ MML 埋め込みの長い URL を貼らない**。`tmp/songs/index.html` や `notes.md` へのリンクで案内する。
+- 公開版に無い機能を使う MML は、試聴の前にデプロイする。`#ver=` は今の版（`src/version.ts`）にする。
+- 自動作曲の曲から小節を借りるときは、借りる小節の和音名と設計表の和音名を照合する。
+- 手で組んだ MML はおまかせマスタリングの役割推定に掛かるので、`#t<n>inst=`・音量・`#t<n>comp=` を自分で書く（`src/ui/daw.ts` の `AUTO_ROLE_MIX`）。
+- アプリの曲を seed から書き出すときは `export-samples.ts --app-seed`。

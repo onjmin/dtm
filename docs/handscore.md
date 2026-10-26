@@ -1,8 +1,7 @@
 # 手書き譜面（HandScore）の書き方
 
 自動作曲マクロを使わずに曲を書くための入力形式。JSON を書いて
-`npx tsx scripts/compose/hand-compile.ts <score.json> <out.mml>` に通すと MML になる
-（作業ディレクトリは `C:\_own\git\_users\onjmin\dtm`）。
+コンパイラに通すと MML になっていた。**コンパイラ（`scripts/compose/` の手書き譜面コンパイラ）と減点表は削除済み（git 履歴にある）。** 記法の記録として残す。
 
 ## 記法（音の書き方）
 
@@ -63,7 +62,7 @@
 
 ```
 cd C:\_own\git\_users\onjmin\dtm
-npx tsx scripts/compose/hand-compile.ts tmp/handscore/<名前>.json tmp/handscore/<名前>.mml
+（削除済みのコンパイラ。git 履歴にある） tmp/handscore/<名前>.json → tmp/handscore/<名前>.mml
 ```
 
 エラーが出たら記法を直してもう一度通すこと。**通るまでが仕事。**
@@ -84,7 +83,7 @@ npx tsx scripts/compose/hand-compile.ts tmp/handscore/<名前>.json tmp/handscor
 ## 手順
 1. docs/handscore.md を読んで記法を把握する。
 2. 譜面 JSON を tmp/handscore/<名前>.json に書く。
-3. npx tsx scripts/compose/hand-compile.ts tmp/handscore/<名前>.json tmp/handscore/<名前>.mml
+3. （削除済みのコンパイラ。git 履歴にある） tmp/handscore/<名前>.json → tmp/handscore/<名前>.mml
    エラーが出たら直して、通るまで繰り返す。
 
 ## お題
@@ -112,5 +111,5 @@ npx tsx scripts/compose/hand-compile.ts tmp/handscore/<名前>.json tmp/handscor
 3. コンパイルが通ったこと（出力 MML のバイト数）を報告。
 ```
 
-書けたら `npx tsx scripts/compose/screen-handscore.ts <score.json>` に掛けて、自動作曲と同じ減点表で
-検算する。減点が出たら指示文ではなく**譜面の側**を直させる。
+書けたら、自動作曲と同じ減点表（削除済み、git 履歴にある）で
+検算していた。減点が出たら指示文ではなく**譜面の側**を直させる。

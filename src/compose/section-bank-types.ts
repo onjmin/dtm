@@ -2,7 +2,7 @@
  * 継ぎ合わせ（`compose-splice.ts`）が読む**抽象骨格バンク**の型と符号化。
  *
  * 骨格（`skeleton-types.ts`、耳コピの和音・ベース・旋律をそのまま持つ）から
- * `scripts/corpus/build-section-bank.ts` が作る。単位はセクションで、曲名・旋律の度数・ベースの実音は
+ * セクションバンクの生成スクリプト（削除済み、git 履歴にある） が作る。単位はセクションで、曲名・旋律の度数・ベースの実音は
  * 落とすが、和音進行と歌のリズムから元曲にたどれる。データ本体は `compose-section-bank.ts`（自動生成）で、
  * 骨格データと同じく **git にもバンドルにも入れない**（scripts/ から options.sectionBank で渡す）。
  */
@@ -41,7 +41,7 @@ export const bankSectionBarChoices = (
 
 /**
  * ベースの型の種類。実音は持たず、生成側が型テンプレートからその時点の和音ルートで作る。
- * 分類の規則は `build-section-bank.ts` の `classifyBass`。`offbeat`（裏打ち）は仕様の一覧に無かったが
+ * 分類の規則は セクションバンクの生成スクリプト（削除済み、git 履歴にある） の `classifyBass`。`offbeat`（裏打ち）は仕様の一覧に無かったが
  * 実データで 8分オクターブ・休みに次いで多い型なので足した。
  */
 export type BassFigure =

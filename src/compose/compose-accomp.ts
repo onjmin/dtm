@@ -106,7 +106,7 @@ export type AccompOptions = {
 		plan?: AccompPlan;
 	};
 	/**
-	 * 監査用（`scripts/accomp/audit-accomp-variety.ts`、`docs/accomp-style-engine.md` §5「退避の率を数える」）。
+	 * 監査用（伴奏の監査スクリプト（削除済み、git 履歴にある）、`docs/accomp-style-engine.md` §5「退避の率を数える」）。
 	 * 候補を1つ関門に掛けるたび、保険の計画を鳴らしたときに1回ずつ呼ぶ。**曲は変えない**（乱数の
 	 * 引き方も同じ）。選抜には使わない。
 	 */

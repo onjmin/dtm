@@ -580,7 +580,7 @@ export type SeamRecipe = {
 	color?: string;
 };
 
-/** 監査の軸の名前（`scripts/accomp/audit-accomp-variety.ts`）。 */
+/** 監査の軸の名前（伴奏の監査スクリプト（削除済み、git 履歴にある））。 */
 export type AuditAxis = string;
 
 /** スタイル（§3.1）。役割 id の型 `R` は、fb では `AccompRole`（S3g で文字列にする）。 */

@@ -172,7 +172,7 @@ const exportAccomp = (seed: number, compose: string): void => {
 		);
 	if (tag.pick === "plan")
 		throw new Error(
-			`--compose ${compose}: …:plan は計画を丸ごと与えた曲で、種からは再現できない（scripts/accomp/accomp-audition.ts --fb-plan を使う）`,
+			`--compose ${compose}: …:plan は計画を丸ごと与えた曲で、種からは再現できない（試聴スクリプトの --fb-plan で鳴らしていた。削除済み、git 履歴にある）`,
 		);
 	const { baseKey, pick } = tag;
 	const k = String(pick);

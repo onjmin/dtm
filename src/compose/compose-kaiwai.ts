@@ -548,6 +548,16 @@ export type RunPlan = {
 	 * 写しか無関係な新しい小節のどちらかになり、戻ってくると分かる型（主題）が生まれない。
 	 */
 	develop: number;
+	/**
+	 * 8小節を「4小節＋頭の2小節を返して別の2小節で閉じる」（a a′）で組む割合。主題として耳に残る
+	 * 一番素直な形で、残りは繰り返し・移高・新しいブロックを引く。
+	 */
+	period: number;
+	/**
+	 * サビのリードを音価の長いフックにするか。Aメロと同じ16分の歩きを1オクターブ上げただけだと、
+	 * サビが Aメロと同じ手触りで「テーマが無い」に聞こえる。高い所で音を伸ばし、間を16分で埋める。
+	 */
+	hook: boolean;
 };
 
 export const runPlan = (rnd: () => number): RunPlan => ({
@@ -556,7 +566,42 @@ export const runPlan = (rnd: () => number): RunPlan => ({
 	breath: 0.05 + rnd() * 0.9,
 	lift: rnd() < 0.55,
 	develop: 0.35 + rnd() * 0.45,
+	period: 0.5 + rnd() * 0.4,
+	hook: rnd() < 0.7,
 });
+
+/**
+ * サビのフックの癖: 16分で埋める部品を減らし、付点・4分を増やす。3連と密度の癖は Aメロのまま。
+ * 原曲の「16分の音価 30% 以上」は Aメロと間の埋めで保つ。
+ */
+const hookStyle = (style: RunStyle): RunStyle => ({
+	...style,
+	cells: style.cells.map(([cell, w]): [BeatCell, number] => {
+		const notes = cell.filter((x) => x > 0).length;
+		const long = cell.some((x) => x >= 3);
+		return [cell, w * (long ? 2 : notes >= 3 ? 0.7 : 1)];
+	}),
+	// 伸ばす音が同じ高さで続かないように、同音の連打は減らす。
+	same: style.same * 0.5,
+});
+
+/**
+ * 句末（4小節目・8小節目）を長い音で閉じる。後ろの `hold`（16分単位）を、直前の音の隣の高さの
+ * 1つの音で伸ばす。拍頭の長い音は後段（`fitRunToChords`）で和音の音へ寄る。
+ */
+const closePhrase = (cell: LeadNote[], hold: number): LeadNote[] => {
+	const keep = 16 - hold;
+	const kept: LeadNote[] = [];
+	let at = 0;
+	for (const n of cell) {
+		if (at + Math.abs(n.len) > keep + 1e-6) break;
+		kept.push({ ...n });
+		at += Math.abs(n.len);
+	}
+	const last = [...kept].reverse().find((n) => n.len > 0)?.step ?? 0;
+	kept.push({ step: last + (last > 1 ? -1 : 1), chrom: false, len: 16 - at });
+	return kept;
+};
 
 /** 変奏で音を選び直すときの歩き方。 */
 export type DevelopRange = {
@@ -645,7 +690,9 @@ export const runSection = (
 	style: RunStyle,
 	plan: RunPlan,
 	bars: number,
+	chorus = false,
 ): LeadNote[][] => {
+	if (chorus && plan.hook) style = hookStyle(style);
 	const range: DevelopRange = {
 		lo: style.lo,
 		hi: style.hi,
@@ -668,6 +715,11 @@ export const runSection = (
 	const first = block();
 	const out: LeadNote[][] = [...first];
 	while (out.length < bars) {
+		// 8小節の後半は、頭の2小節を返して別の2小節で閉じる（a a′）。
+		if (out.length % 8 === 4 && rnd() < plan.period) {
+			out.push(first[0], first[1], grow(first[0], 2), fresh());
+			continue;
+		}
 		const r = rnd();
 		out.push(
 			...(r < plan.rep
@@ -690,10 +742,20 @@ export const runSection = (
 						: block()),
 		);
 	}
-	// 2・4小節の句末で息を継ぐ（原曲のリードの占有は 77〜93%）。後ろの1〜2拍を伸ばすか休む。
+	// 4・8小節目の句末は長い音で閉じる（1拍、8小節目は2拍）。歩き続けるだけだと句の切れ目が無く、
+	// どこが主題の終わりか聞こえない。半分ほどは伸ばした音の後ろで8分だけ息を継ぐ。
+	// 2小節目は今までどおり、曲ごとの割合で後ろの1〜2拍を伸ばすか休む（原曲のリードの占有は 77〜93%）。
 	return out.slice(0, bars).map((cell, i) => {
-		if (i % 2 !== 1 || rnd() >= plan.breath * (i % 4 === 3 ? 1 : 0.5))
-			return cell;
+		if (i % 4 === 3) {
+			const closed = closePhrase(cell, i % 8 === 7 ? 8 : 4);
+			const last = closed[closed.length - 1];
+			if (rnd() < plan.breath * 0.6 && last.len > 2) {
+				last.len -= 2;
+				closed.push({ step: 0, chrom: false, len: -2 });
+			}
+			return closed;
+		}
+		if (i % 2 !== 1 || rnd() >= plan.breath * 0.5) return cell;
 		const keep = rnd() < 0.4 ? 8 : 12;
 		const kept: LeadNote[] = [];
 		let at = 0;
