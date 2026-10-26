@@ -13,6 +13,10 @@ import {
 	units,
 } from "../audio/tuning";
 
+/**
+ * コード進行の弾き方。`block` 構成音を同時に伸ばす・`arpeggio` 低い順に分散・`arpeggio-fast` 速い分散・
+ * `offbeat` 裏打ち（2・4拍）・`yatsume` 八つ目・`alternating` 交互に鳴らす。
+ */
 export type ChordPatternType =
 	| "block"
 	| "arpeggio"

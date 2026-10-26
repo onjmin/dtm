@@ -121,7 +121,7 @@ export const composeSkeleton = (
 		chordAt.push([first, second]);
 		prev = second;
 	}
-	// 進行は基準調（ハ長調 / A マイナー）のまま返す。DAW・export-samples・measure-arrangement は
+	// 進行は基準調（ハ長調 / A マイナー）のまま返す。DAW・export-samples は
 	// buildChordPlacements(chordProgression, rootShift) で移調するので、ここで移調すると二重になる。
 	const chordProgression = chordAt
 		.map(([a, b]) => (a === b ? a : `${a} ${b}`))

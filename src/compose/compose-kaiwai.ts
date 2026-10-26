@@ -543,6 +543,21 @@ export type RunPlan = {
 	breath: number;
 	/** サビでリードを1オクターブ上へ移すか（移さない曲はサビの重ねの層が上を受け持つ）。 */
 	lift: boolean;
+	/**
+	 * ブロックの2小節目以降を、頭の小節の変奏（{@link developBar}）にする割合。0 だと小節は
+	 * 写しか無関係な新しい小節のどちらかになり、戻ってくると分かる型（主題）が生まれない。
+	 */
+	develop: number;
+	/**
+	 * 8小節を「4小節＋頭の2小節を返して別の2小節で閉じる」（a a′）で組む割合。主題として耳に残る
+	 * 一番素直な形で、残りは繰り返し・移高・新しいブロックを引く。
+	 */
+	period: number;
+	/**
+	 * サビのリードを音価の長いフックにするか。Aメロと同じ16分の歩きを1オクターブ上げただけだと、
+	 * サビが Aメロと同じ手触りで「テーマが無い」に聞こえる。高い所で音を伸ばし、間を16分で埋める。
+	 */
+	hook: boolean;
 };
 
 export const runPlan = (rnd: () => number): RunPlan => ({
@@ -550,7 +565,124 @@ export const runPlan = (rnd: () => number): RunPlan => ({
 	rep: rnd() * 0.8,
 	breath: 0.05 + rnd() * 0.9,
 	lift: rnd() < 0.55,
+	develop: 0.35 + rnd() * 0.45,
+	period: 0.5 + rnd() * 0.4,
+	hook: rnd() < 0.7,
 });
+
+/**
+ * サビのフックの癖: 16分で埋める部品を減らし、付点・4分を増やす。3連と密度の癖は Aメロのまま。
+ * 原曲の「16分の音価 30% 以上」は Aメロと間の埋めで保つ。
+ */
+const hookStyle = (style: RunStyle): RunStyle => ({
+	...style,
+	cells: style.cells.map(([cell, w]): [BeatCell, number] => {
+		const notes = cell.filter((x) => x > 0).length;
+		const long = cell.some((x) => x >= 3);
+		return [cell, w * (long ? 2 : notes >= 3 ? 0.7 : 1)];
+	}),
+	// 伸ばす音が同じ高さで続かないように、同音の連打は減らす。
+	same: style.same * 0.5,
+});
+
+/**
+ * 句末（4小節目・8小節目）を長い音で閉じる。後ろの `hold`（16分単位）を、直前の音の隣の高さの
+ * 1つの音で伸ばす。拍頭の長い音は後段（`fitRunToChords`）で和音の音へ寄る。
+ */
+const closePhrase = (cell: LeadNote[], hold: number): LeadNote[] => {
+	const keep = 16 - hold;
+	const kept: LeadNote[] = [];
+	let at = 0;
+	for (const n of cell) {
+		if (at + Math.abs(n.len) > keep + 1e-6) break;
+		kept.push({ ...n });
+		at += Math.abs(n.len);
+	}
+	const last = [...kept].reverse().find((n) => n.len > 0)?.step ?? 0;
+	kept.push({ step: last + (last > 1 ? -1 : 1), chrom: false, len: 16 - at });
+	return kept;
+};
+
+/** 変奏で音を選び直すときの歩き方。 */
+export type DevelopRange = {
+	lo: number;
+	hi: number;
+	maxLeap: number;
+	turn: number;
+	stepShare: number;
+};
+
+/**
+ * 小節 `x` の変奏。写しでも無関係な小節でもなく、聴いて「同じ型が戻ってきた」と分かる形にする。
+ * - 移高（ゼクエンツ）: 同じリズム・同じ音程の並びを音階の1〜2段上下へ。
+ * - 音の入れ替え: リズムはそのまま、頭の音から音を選び直す。
+ * - 後ろだけ替える: 前の2拍は同じで、後ろの2拍を `fresh` から継ぐ（つなぎ目は2段以内へ寄せる）。
+ */
+export const developBar = (
+	rnd: () => number,
+	x: LeadNote[],
+	range: DevelopRange,
+	fresh: () => LeadNote[],
+): LeadNote[] => {
+	const sounding = x.filter((n) => n.len > 0);
+	if (sounding.length === 0) return x.map((n) => ({ ...n }));
+	const r = rnd();
+	if (r < 0.45) {
+		const steps = sounding.map((n) => n.step);
+		const top = Math.max(...steps);
+		const bottom = Math.min(...steps);
+		const size = rnd() < 0.7 ? 1 : 2;
+		const up = rnd() < 0.5;
+		// 範囲を1段まで越えるのは許す（走句は端で折り返すので、端に張り付いた型もある）。
+		const shift =
+			(up && top + size <= range.hi + 1) || bottom - size < range.lo - 1
+				? size
+				: -size;
+		return x.map((n) =>
+			n.len > 0 ? { ...n, step: n.step + shift } : { ...n },
+		);
+	}
+	if (r < 0.75) {
+		const next = walker(
+			rnd,
+			sounding[0].step,
+			range.lo,
+			range.hi,
+			range.maxLeap,
+			range.turn,
+			range.stepShare,
+		);
+		const out = x.map((n) => (n.len > 0 ? { ...n, step: next() } : { ...n }));
+		// 音の少ない小節は選び直しても元と同じになりやすい。写しにせず移高へ回す。
+		if (out.every((n, i) => n.step === x[i].step))
+			return developBar(() => 0, x, range, fresh);
+		return out;
+	}
+	const head: LeadNote[] = [];
+	let at = 0;
+	for (const n of x) {
+		if (at >= 8 - 1e-6) break;
+		head.push({ ...n });
+		at += Math.abs(n.len);
+	}
+	const f = fresh();
+	const tail: LeadNote[] = [];
+	let t = 0;
+	for (const n of f) {
+		if (t >= at - 1e-6) tail.push({ ...n });
+		t += Math.abs(n.len);
+	}
+	const last = [...head].reverse().find((n) => n.len > 0)?.step ?? 0;
+	const join = tail.find((n) => n.len > 0)?.step;
+	const delta =
+		join === undefined || Math.abs(join - last) <= 2
+			? 0
+			: last - join + (join > last ? 2 : -2);
+	return [
+		...head,
+		...tail.map((n) => (n.len > 0 ? { ...n, step: n.step + delta } : n)),
+	];
+};
 
 /** セクション1つぶんの小節（`bars` 本）。4小節ごとに、前のブロックを繰り返すか・後ろを答えるか・新しく作るか。 */
 export const runSection = (
@@ -558,29 +690,72 @@ export const runSection = (
 	style: RunStyle,
 	plan: RunPlan,
 	bars: number,
+	chorus = false,
 ): LeadNote[][] => {
+	if (chorus && plan.hook) style = hookStyle(style);
+	const range: DevelopRange = {
+		lo: style.lo,
+		hi: style.hi,
+		maxLeap: style.maxLeap,
+		turn: style.turn,
+		stepShare: style.stepShare,
+	};
+	const fresh = () => runBar(rnd, style);
+	// 頭の小節 x の変奏か、新しい小節。4小節目は句の答えなので新しい小節に寄せる。
+	const grow = (x: LeadNote[], i: number): LeadNote[] =>
+		rnd() < plan.develop * (i === 3 ? 0.5 : 1)
+			? developBar(rnd, x, range, fresh)
+			: fresh();
 	const block = (): LeadNote[][] => {
 		const x = runBar(rnd, style);
 		return plan.xyxz
-			? [x, runBar(rnd, style), x, runBar(rnd, style)]
-			: [x, runBar(rnd, style), runBar(rnd, style), runBar(rnd, style)];
+			? [x, grow(x, 1), x, grow(x, 3)]
+			: [x, grow(x, 1), grow(x, 2), grow(x, 3)];
 	};
 	const first = block();
 	const out: LeadNote[][] = [...first];
 	while (out.length < bars) {
+		// 8小節の後半は、頭の2小節を返して別の2小節で閉じる（a a′）。
+		if (out.length % 8 === 4 && rnd() < plan.period) {
+			out.push(first[0], first[1], grow(first[0], 2), fresh());
+			continue;
+		}
 		const r = rnd();
 		out.push(
 			...(r < plan.rep
 				? first
 				: r < plan.rep + (1 - plan.rep) * 0.4
-					? [first[0], first[1], runBar(rnd, style), runBar(rnd, style)]
-					: block()),
+					? [first[0], first[1], grow(first[0], 2), grow(first[0], 3)]
+					: r < plan.rep + (1 - plan.rep) * (0.4 + 0.3 * plan.develop)
+						? // 最初のブロックをまるごと移高して返す（主題が高さを変えて戻る）。
+							(() => {
+								const shifted = developBar(() => 0, first[0], range, fresh);
+								const shift =
+									(shifted.find((n) => n.len > 0)?.step ?? 0) -
+									(first[0].find((n) => n.len > 0)?.step ?? 0);
+								return first.map((bar) =>
+									bar.map((n) =>
+										n.len > 0 ? { ...n, step: n.step + shift } : { ...n },
+									),
+								);
+							})()
+						: block()),
 		);
 	}
-	// 2・4小節の句末で息を継ぐ（原曲のリードの占有は 77〜93%）。後ろの1〜2拍を伸ばすか休む。
+	// 4・8小節目の句末は長い音で閉じる（1拍、8小節目は2拍）。歩き続けるだけだと句の切れ目が無く、
+	// どこが主題の終わりか聞こえない。半分ほどは伸ばした音の後ろで8分だけ息を継ぐ。
+	// 2小節目は今までどおり、曲ごとの割合で後ろの1〜2拍を伸ばすか休む（原曲のリードの占有は 77〜93%）。
 	return out.slice(0, bars).map((cell, i) => {
-		if (i % 2 !== 1 || rnd() >= plan.breath * (i % 4 === 3 ? 1 : 0.5))
-			return cell;
+		if (i % 4 === 3) {
+			const closed = closePhrase(cell, i % 8 === 7 ? 8 : 4);
+			const last = closed[closed.length - 1];
+			if (rnd() < plan.breath * 0.6 && last.len > 2) {
+				last.len -= 2;
+				closed.push({ step: 0, chrom: false, len: -2 });
+			}
+			return closed;
+		}
+		if (i % 2 !== 1 || rnd() >= plan.breath * 0.5) return cell;
 		const keep = rnd() < 0.4 ? 8 : 12;
 		const kept: LeadNote[] = [];
 		let at = 0;
@@ -668,7 +843,7 @@ export type LoopStyle = {
 	cells: [BeatCell, number][];
 	stepShare: number;
 	maxLeap: number;
-	/** 旧版で1小節ループを引いた曲。足す小節は別の乱数列から作り、曲の乱数列を変えない。 */
+	/** 旧版で1小節ループを引いた曲。足す小節は別の乱数列から作る（乱数列を保っていた頃の名残）。 */
 	spare: boolean;
 };
 

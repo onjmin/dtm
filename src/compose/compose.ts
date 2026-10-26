@@ -8,8 +8,8 @@
  *
  * {@link DRAW_COUNT} 本の候補を引き、{@link HARD} に触れたものを捨て、残りから確率的に
  * 引く（{@link evaluate}・{@link SELECT_TEMPERATURE}）。目標帯（{@link CORPUS_BANDS}）は
- * 人間のMIDIからの実測で、較正は `scripts/corpus/calibrate-corpus.ts`。生成物とコーパスを同じ
- * 物差しで並べるのは `scripts/compare-*.ts`。
+ * 人間のMIDIからの実測で、較正は コーパス較正スクリプト（削除済み、git 履歴にある）。生成物とコーパスを同じ
+ * 物差しで並べるのは 比較スクリプト（削除済み、git 履歴にある）。
  */
 
 import { parseChord } from "@onjmin/chord-parser";
@@ -32,6 +32,7 @@ import {
 } from "./compose-corpus";
 import {
 	bassFigure,
+	developBar,
 	grammarProgressions,
 	type LoopShape,
 	type LoopStyle,
@@ -858,7 +859,7 @@ const HALF_BAR_FIGURES: number[][] = [
 	[-QUARTER, EIGHTH, EIGHTH], // 2拍目裏からのアウフタクト（タタ）
 	[QUARTER, -EIGHTH, EIGHTH], // ター・休タ（8分裏弱起）
 	// **3+3+2（トレシーヨ）。** 参考曲91本で最も多かった「語彙に無い形」で、
-	// 174小節ぶんの穴が空いていた（`scripts/corpus/compare-vocabulary.ts` の①）。
+	// 174小節ぶんの穴が空いていた（語彙の比較スクリプト（削除済み、git 履歴にある） の①）。
 	// 付点8分が `[DOT_EIGHTH, SIXTEENTH]` の対でしか入っておらず、
 	// 付点8分を2つ並べる形が作れなかった。界隈曲・ボカロの推進力の中心。
 	[DOT_EIGHTH, DOT_EIGHTH, EIGHTH],
@@ -3975,7 +3976,7 @@ const draw = (
 	};
 	if (form === "chant") {
 		// 詠唱は旋律側の装飾を掛けない（掛留・変化音・オクターブ跳躍は歌い上げの語彙）。
-		// 抽選は上で済ませてから潰す——他の型の乱数列を変えないため。
+		// 上で抽選してから潰すのは、乱数列を保っていた頃の名残（docs/handover-compose.md §3）。
 		style.headTension = 0;
 		style.chromaticAffinity = 0;
 		style.octaveAffinity = 0;
@@ -5932,7 +5933,7 @@ const draw = (
 					return side === "a" ? thinToEighths(cell) : cell;
 				};
 				const x = make(rnd);
-				// 旧版の1小節ループの候補は、足す2小節を x から決まる別の列で作る（他の候補・曲の抽選を動かさない）。
+				// 旧版の1小節ループの候補は、足す2小節を x から決まる別の列で作る（乱数列を保っていた頃の名残）。
 				const extra = feel.spare
 					? seededRandom(
 							x.reduce(
@@ -5942,16 +5943,28 @@ const draw = (
 							),
 						)
 					: rnd;
-				made = [x, make(extra), x, make(extra)];
+				// 2小節目・4小節目は半分強の曲で x の変奏にする（無関係な小節だと型が戻ってこない）。
+				const range = {
+					lo: -2,
+					hi: 5,
+					maxLeap: feel.maxLeap,
+					turn: 0.3,
+					stepShare: feel.stepShare,
+				};
+				const answer = (): RiffNote[] =>
+					extra() < 0.6
+						? developBar(extra, x, range, () => make(extra))
+						: make(extra);
+				made = [x, answer(), x, answer()];
 			} else {
 				runFeel ??= runStyle(rnd);
 				runShape ??= runPlan(rnd);
-				made = runSection(rnd, runFeel, runShape, bars);
+				made = runSection(rnd, runFeel, runShape, bars, side === "b");
 			}
 			blocks.set(side, made);
 			return made;
 		};
-		// riff-bar のセクションをまたぐ動き。最初の型から決まる別の列で引く（曲の乱数列・他の層を動かさない）。
+		// riff-bar のセクションをまたぐ動き。最初の型から決まる別の列で引く（乱数列を保っていた頃の名残）。
 		let shape: LoopShape | undefined;
 		const spans = new Map<string, number>();
 		const entry = sectionPlan.find((x) => x.spec.melody)?.startBar ?? 0;
@@ -6078,7 +6091,44 @@ const draw = (
 		const motifs = new Map<SectionKind, number[][]>();
 		const seen = new Map<SectionKind, number>();
 		const placed: ReturnType<typeof sentenceSection>[] = [];
+		// 間奏で楽器が受け持つ句（セクションの添字 → 小節ごとの音。歌う小節は空）。
+		const answered = new Map<number, ReturnType<typeof sentenceSection>>();
 		for (const sec of sectionPlan) {
+			if (!sec.spec.melody && sec.kind === "interlude") {
+				// 間奏は歌が引っ込むが消えはしない（原曲の歌の休符 63〜89%）。サビと同じリズムの家族で
+				// 1つの文を作り、2小節の句の1〜2つだけ歌い、残りの句は楽器が続ける（呼びかけと答え）。
+				// 楽器の句も文の規則（強拍・長い音は和音の音）で作るので、汎用のソロのように和音とこすらない。
+				const env = {
+					fits: (bar: number, at: number, step: number): boolean =>
+						pcsAt(
+							(sec.startBar + bar) * stepsPerBar + Math.round(at * sixteenth),
+						).has(((pitchOf(step).semi % 12) + 12) % 12),
+					semi: (step: number): number => pitchOf(step).semi,
+				};
+				const motif = motifs.get("chorus") ?? style.motif;
+				const line = sentenceSection(
+					rnd,
+					style,
+					motif,
+					sec.bars,
+					3 + style.lift,
+					env,
+				);
+				const phrases = Math.floor(sec.bars / 2);
+				// 頭の句だけ 3／頭と3つ目 2／3つ目だけ 1／2つ目だけ 1。
+				const r = rnd() * 7;
+				const sung = (r < 3 ? [0] : r < 5 ? [0, 2] : r < 6 ? [2] : [1]).filter(
+					(p) => p < phrases,
+				);
+				const isSung = (bar: number): boolean =>
+					sung.includes(Math.floor(bar / 2));
+				placed.push(line.map((b, i) => (isSung(i) ? b : [])));
+				answered.set(
+					placed.length - 1,
+					line.map((b, i) => (isSung(i) ? [] : b)),
+				);
+				continue;
+			}
 			if (!sec.spec.melody) {
 				placed.push([]);
 				continue;
@@ -6109,9 +6159,12 @@ const draw = (
 					: line,
 			);
 		}
-		sectionPlan.forEach((sec, si) => {
-			const line = placed[si];
-			if (!line.length) return;
+		const answerNotes: ComposedNote[] = [];
+		const layOut = (
+			sec: PlacedSection,
+			line: ReturnType<typeof sentenceSection>,
+			into: ComposedNote[],
+		): void => {
 			for (let i = 0; i < sec.bars; i++) {
 				const bar = sec.startBar + i;
 				const k = barKeyShift[bar];
@@ -6122,7 +6175,7 @@ const draw = (
 					if (n.len > 0) {
 						const p = pitchOf(n.step);
 						const start = bar * stepsPerBar + Math.round(at * sixteenth);
-						melody.push({
+						into.push({
 							startStep: start,
 							pitchUnits: spelledToUnits(
 								p.semi - (n.chrom ? 1 : 0) + k,
@@ -6141,6 +6194,11 @@ const draw = (
 					at += Math.abs(n.len);
 				}
 			}
+		};
+		sectionPlan.forEach((sec, si) => {
+			if (placed[si].length) layOut(sec, placed[si], melody);
+			const answer = answered.get(si);
+			if (answer) layOut(sec, answer, answerNotes);
 		});
 		const octaveUnits = semitonesToUnits(12, edo);
 		const meanSemi = (): number =>
@@ -6148,12 +6206,23 @@ const draw = (
 				Math.max(1, melody.length) /
 				UNITS_PER_SEMITONE +
 			rootShift;
-		while (melody.length > 0 && meanSemi() > 75 + 6)
-			for (const n of melody)
-				n.pitchUnits = (n.pitchUnits - octaveUnits) as Units;
-		while (melody.length > 0 && meanSemi() < 75 - 6)
-			for (const n of melody)
-				n.pitchUnits = (n.pitchUnits + octaveUnits) as Units;
+		// 楽器の答えは歌と同じ高さで組んだので、歌と同じだけ移す（楽器の音域へは層の側で合わせる）。
+		const shiftAll = (units: number): void => {
+			for (const n of [...melody, ...answerNotes])
+				n.pitchUnits = (n.pitchUnits + units) as Units;
+		};
+		while (melody.length > 0 && meanSemi() > 75 + 6) shiftAll(-octaveUnits);
+		while (melody.length > 0 && meanSemi() < 75 - 6) shiftAll(octaveUnits);
+		if (answered.size > 0) {
+			// 汎用の作り方のソロ（和音を見ない走句で、半音のこすれが他の層の倍あった）を答えの句に替える。
+			solo.length = 0;
+			solo.push(
+				...answerNotes.map((n) => ({
+					...n,
+					velocity: n.velocity === 100 ? 110 : 96,
+				})),
+			);
+		}
 		// 2本目の声（原曲 3/5 曲）。サビだけ、同時の音の4度・5度下を主に3度・同音も混ぜる
 		// （原曲の重ねはオクターブ 4.5%・4〜5度 35%・3〜6度 27%・同音 18%）。歌の帯より下へは出さない。
 		if (rnd() < 0.6) {
@@ -6207,7 +6276,6 @@ const draw = (
 		harmony.length = 0;
 		harmony2.length = 0;
 		// 形・密度・強さは曲ごとに引く——全曲が「上行4音・全小節・velocity 70」だと指紋になる。
-		// この分岐はテンプレートのフィールドで切るので、他の曲の乱数列は動かない。
 		const arpShape = pick<"up" | "updown" | "down">(
 			["up", "up", "updown", "down"],
 			rnd,
@@ -6586,7 +6654,7 @@ const draw = (
  * 走句リード（riff16）は和音を見ずに音階を歩くので、層の和音と半音でこすれる（直す前は長さで 24%。
  * 所有者が「伴奏と調和」と言った手書きは 3%、原曲は 4〜39%）。こする音だけを、拍頭と4分以上は和音の音へ、
  * 裏は和音の音か和音の音から全音以上離れた音階の音へ、いちばん近い所へずらす。
- * 候補を選んだ後（移調済みの音高）に掛けるので、seed の曲（テンポ・進行・リズム）は変わらない。
+ * 候補を選んだ後（移調済みの音高）に掛ける。
  * 楽器リフ（riff）も同じ（直す前 34%、Toby Fox の手本 13曲は 0〜19%・中央 4%）。リフの半音下の
  * 刺繍音は動かさず、直した次の音の半音下へ付け直す。`under` はリードの3度下の重ね。
  */
@@ -6745,7 +6813,7 @@ export const evaluate = (
 	const restRatio = d.restSteps / d.totalSteps;
 	// **メロディが歌い始めるところから測る。** イントロはメロディを書かないので、
 	// 曲頭から測ると休符率も密度もクライマックスの位置も「イントロの長さ」に
-	// 引きずられる。較正側（`scripts/corpus/calibrate-corpus.ts`）も主旋律の入りから
+	// 引きずられる。較正側（コーパス較正スクリプト（削除済み、git 履歴にある））も主旋律の入りから
 	// 測っているので、ここを揃えないと目標帯と別のものを比べることになる。
 	const melodyNotes = toMetricNotes(d.melody);
 	const offset =

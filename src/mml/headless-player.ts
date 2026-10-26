@@ -466,6 +466,7 @@ export const playNote = (options: PlayNoteOptions): void => {
 };
 
 export type PlayChordsOptions = PlayMmlOptions & {
+	/** 伴奏の弾き方（{@link ChordPatternType}）。既定 `"block"`。 */
 	patternType?: ChordPatternType;
 	rootShift?: number;
 	bpm?: number;

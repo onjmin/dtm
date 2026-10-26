@@ -18,9 +18,9 @@
 | 0 | 音符ごとの v を MML の読み書きで保つ（§8） | 実装済（`src/mml/mml-velocity.ts`、`check-mml-velocity.ts`） |
 | 1 | 生成器・関門・入口・MML 書き出し・検算・試聴スクリプト | 実装済（付録 C・D） |
 | 2 | DAW の「伴奏主体」ボタン（§9） | 実装済（付録 E） |
-| 3 | `export-samples.ts` の振り分け・`compose-lab.ts` のコメント・handover と `scripts/README.md` へのリンク | 実装済。publish と unj-reze の依存上げは所有者の作業 |
+| 3 | `export-samples.ts` の振り分け・選抜ラボのコメント（削除済み、git 履歴にある）・handover と `scripts/README.md` へのリンク | 実装済。publish と unj-reze の依存上げは所有者の作業 |
 | 4 | 耳による表の調整 | 継続中。後継書（スタイルエンジン）へ引き継いだ |
-| 5 | 拡張（§13） | 未着手。`scripts/accomp/calibrate-accomp.ts` と `docs/accomp-reviews.md` はまだ無い |
+| 5 | 拡張（§13） | 未着手 |
 
 ## 0.1 1ページで
 
@@ -80,9 +80,9 @@ fa（評価されなかった版）との差から「短調側の長い滞留・
 | `src/compose/compose-accomp-mml.ts` | `accompToMml`。mml-parser を読む（koe まで引く）ので入口からは import しない |
 | `scripts/test/check-mml-velocity.ts`・`check-compose-accomp.ts` | 検算（`pnpm test`） |
 | `scripts/test/fixtures/accomp-fb-plan.ts` | fb を手で `AccompPlan` に書き直した陽性対照。保険の計画を兼ねる |
-| `scripts/accomp/accomp-audition.ts` | 試聴用（テスト外） |
+| 試聴スクリプト（削除済み、git 履歴にある） | 試聴用（テスト外） |
 
-既存側の変更: `mml-core.ts`・`mml-player.ts`・`midi-io.ts`・`mml-parser.ts`（コメント）・`daw.ts`・`daw-ui.ts`・`master-fx.ts`・`index.ts`・`scripts/compose/export-samples.ts`・`compose-lab.ts`。
+既存側の変更: `mml-core.ts`・`mml-player.ts`・`midi-io.ts`・`mml-parser.ts`（コメント）・`daw.ts`・`daw-ui.ts`・`master-fx.ts`・`index.ts`・`scripts/compose/export-samples.ts`・選抜ラボ（削除済み、git 履歴にある）。
 
 ### 4.2 依存の制約（不変条件）
 - `compose-accomp*.ts`（`-mml` を除く）とスタイルの表は、**実行時に `mml-parser`・`lyrics`・`daw` を import しない**。Node から koe 無しで検算するため（前例 `advanced-layers.ts`）。`check-compose-accomp.ts` は koe のスタブより前に require して確かめる。
@@ -202,7 +202,7 @@ fa（評価されなかった版）との差から「短調側の長い滞留・
 - 切除対照: 計画や音を1点ずつ壊し、狙った関門だけが落ちるか（関門そのものの検算）。
 
 ### 12.5 スクリプト
-- `scripts/accomp/accomp-audition.ts`: `--count`・`--seed`・`--key`・`--edo 31`・`--no-color`・`--fb-plan`（陽性対照）・`--app-seed --compose`（アプリの出力の再現）。.mml と `_summary.md`・`_questions.md` を書く。試聴はローカルの `pnpm dev`（demo）に貼る。
+- 試聴スクリプト（削除済み、git 履歴にある）: `--count`・`--seed`・`--key`・`--edo 31`・`--no-color`・`--fb-plan`（陽性対照）・`--app-seed --compose`（アプリの出力の再現）。.mml と `_summary.md`・`_questions.md` を書く。試聴はローカルの `pnpm dev`（demo）に貼る。
 - `scripts/compose/export-samples.ts`: 伴奏主体の `#compose` を `composeAccomp`・`accompToMml` へ振り分けて .mml を書く。未知のテンプレート名はエラー。
 
 ### 12.7 耳による確認（採点ではなく仕様の聞き取り）

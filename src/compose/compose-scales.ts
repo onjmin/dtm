@@ -194,7 +194,7 @@ export type ComposeScale = {
 	 * 締めないのは次の2つ。
 	 *
 	 * - 陽・民謡 … ファ・シを自由に使うのはJ-POPの実際の書法で、参考曲の実測値も
-	 *   そちら（`compose.ts` の `applyPentatonic` 参照）。締めると従来の曲が変わる
+	 *   そちら（`compose.ts` の `applyPentatonic` 参照）
 	 * - モード・和声的短音階・ヒジャーズ・ハンガリアン … 7音音階なので、中核の5音は
 	 *   旋律の柱を選んだだけ。残りの2音も立派な音階の構成音で、締める理由が無い
 	 */
@@ -686,7 +686,6 @@ export const COMPOSE_SCALES: Record<ComposeScaleId, ComposeScale> = {
 
 /** 全音階の識別子。 */
 // minor_blues・yonuki_minor・yonuki_penta・penta_minor は「希望なし」の抽選に入れない（テンプレートか明示指定で使う）。
-// 増やすと `pick` の添字がずれ、既存の `scale: "any"` の曲が変わる。
 export const COMPOSE_SCALE_IDS = (
 	Object.keys(COMPOSE_SCALES) as ComposeScaleId[]
 ).filter(
@@ -999,8 +998,7 @@ export const degreeToCore = (scale: ComposeScale, degree: number): number => {
  * **`strict` な音階だけは実際の音名で見る。** 度数へ丸めてから見ると、ブルース音階の
  * 上に `F7` が鳴ったときのラが、いちばん近い度数（シ♭）へ丸められて「中核音だ」と
  * 判定されてしまう。丸めずに見れば、音階に無い音として弾かれる。
- * 緩い音階は従来どおり度数で見る——変化音は後段の `applyChromatic` の担当で、
- * ここで潰すと従来の曲が変わる。
+ * 緩い音階は度数で見る——変化音は後段の `applyChromatic` の担当。
  */
 export const isOutsideCore = (scale: ComposeScale, semi: number): boolean =>
 	scale.strict

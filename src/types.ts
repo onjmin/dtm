@@ -878,16 +878,19 @@ export type DawInstance = {
 // BGM ループ/キュー関連の型
 // ============================================================
 
+/** 曲中の位置。小節・ステップ・秒のどれか。 */
 export type LoopPoint =
 	| { bar: number }
 	| { step: number }
 	| { seconds: number };
 
+/** イントロ付きループの範囲。`start` から `end`（省略時は曲末）までを継ぎ目なく繰り返す。 */
 export type LoopConfig = {
 	start?: LoopPoint;
 	end?: LoopPoint;
 };
 
+/** 再生位置が `time` を通過したときに `onCue(id)` を呼ぶ印（ゲーム側の演出の同期用）。 */
 export type PlaybackCue = {
 	id: string;
 	time: LoopPoint;

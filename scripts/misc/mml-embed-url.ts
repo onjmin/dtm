@@ -4,7 +4,7 @@
  *   npx tsx scripts/misc/mml-embed-url.ts <file.mml> [...] [--json out.json]
  *
  * 形式は embed-url.ts（demo/embed.html の `decodeMml` が読む "g.<gzip+base64url>"）。編集画面（demo/#g...）の URL も出す。
- * 作った曲を見返せるように残すなら scripts/misc/song-shelf.ts。MIDI から作るときは scripts/transcribe/midi-to-embed.ts。
+ * 作った曲を見返せるように残すなら scripts/misc/song-shelf.ts。
  */
 
 import { readFileSync, writeFileSync } from "node:fs";

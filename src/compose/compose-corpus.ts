@@ -1,8 +1,7 @@
 /**
  * **自動生成ファイル。手で編集しないこと。**
  *
- *   npx tsx scripts/corpus/calibrate-corpus.ts --dir <MIDIのフォルダ>
- *   npx tsx scripts/corpus/calibrate-corpus.ts --api --limit 200
+ *   コーパス較正スクリプト（削除済み、git 履歴にある）が生成した。
  *
  * 人間が書いた曲 91本 から `src/compose/compose-metrics.ts` と同じ指標を抽出し、
  * その分布の中央50%（p25〜p75）を満点、p05〜p95 の外側を0点とする目標帯にしたもの。
@@ -490,7 +489,7 @@ export const CORPUS_DEVIATION_BUDGET = 4;
  *
  * リズム型の抽選を**人が実際に書く頻度**へ寄せるために使う。直積で作った語彙を
  * 一様に引くと、参考曲の上位10パターンが小節の57%を占めるのに対し生成物は25%
- * しか集中しない（scripts/corpus/compare-vocabulary.ts の③）。
+ * しか集中しない（語彙の比較スクリプト（削除済み、git 履歴にある） の③）。
  */
 export const CORPUS_CELL_WEIGHTS: Record<string, number> = {
 	"0,2,4,6,8,10,12,14": 620,

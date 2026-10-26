@@ -311,8 +311,7 @@ export type StructureTemplate = {
 	harmonicRhythms?: string[];
 	/**
 	 * 進行プールの差し替え（ハ長調／イ短調の綴り）。短調のときだけ効く——利用者が長調を
-	 * 手で指定したら従来プールへ退避する。既存プールへ要素を足すと `pick` の添字がずれるので、
-	 * テンプレートは必ず自前のプールを持つ。
+	 * 手で指定したら従来プールへ退避する。
 	 */
 	progressions?: { a: string[][]; b: string[][]; c: string[][] };
 	/**

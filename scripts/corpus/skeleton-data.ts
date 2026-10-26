@@ -1,11 +1,9 @@
 /**
  * 骨格データ（`src/compose/compose-skeletons.ts`）を、あれば読む。
  *
- * このファイルは耳コピ MIDI から `extract-skeletons.ts` が生成するもので、**git にもバンドルにも入れない**
+ * このファイルは耳コピ MIDI から生成したもので（抽出スクリプトは削除済み、git 履歴にある）、**git にもバンドルにも入れない**
  * （他人の曲の和音・ベース・構成をそのまま持つ）。手元に無いときは空配列を返し、骨格借用を使う検査や
  * 書き出しは skip する。
- *
- *   npx tsx scripts/corpus/extract-skeletons.ts --dir "<耳コピ MIDI のフォルダ>" --out src/compose/compose-skeletons.ts
  */
 
 import { existsSync } from "node:fs";
@@ -16,10 +14,7 @@ import type {
 	BankSection,
 	SectionBank,
 } from "../../src/compose/section-bank-types";
-import {
-	type Skeleton,
-	usableSkeletons,
-} from "../../src/compose/skeleton-types";
+import type { Skeleton } from "../../src/compose/skeleton-types";
 
 const FILE = join(__dirname, "../../src/compose/compose-skeletons.ts");
 
@@ -29,15 +24,6 @@ export const loadSkeletons = (): Skeleton[] => {
 	return (require(FILE) as { KAIWAI_SKELETONS: Skeleton[] }).KAIWAI_SKELETONS;
 };
 
-/**
- * 抽象骨格バンク（`build-section-bank.ts`）の `src` 番号の順。使える骨格を id 順に並べた添字が `src`。
- * 近さの検査（`check-splice-closeness.ts`）も同じ順で元曲を引く。
- */
-export const bankSourceOrder = (skeletons: Skeleton[]): Skeleton[] =>
-	usableSkeletons(skeletons).sort((a, b) =>
-		a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
-	);
-
 const PHRASES_FILE = join(__dirname, "../../src/compose/compose-phrases.ts");
 const SECTION_BANK_FILE = join(
 	__dirname,
@@ -45,7 +31,7 @@ const SECTION_BANK_FILE = join(
 );
 
 /**
- * 耳コピから抜いたフレーズ集（`calibrate-phrases.ts` が作る。git にもバンドルにも入れない）。
+ * 耳コピから抜いたフレーズ集（生成スクリプトは削除済み。git にもバンドルにも入れない）。
  * 骨格借用・継ぎ合わせの実験に options.phrases で渡す。無ければ undefined（生成側は SYNTH_PHRASES）。
  */
 export const loadCorpusPhrases = (): CorpusPhrase[] | undefined =>
@@ -54,7 +40,7 @@ export const loadCorpusPhrases = (): CorpusPhrase[] | undefined =>
 				.CORPUS_PHRASES
 		: undefined;
 
-/** 継ぎ合わせのバンク（`build-section-bank.ts` が作る。git にもバンドルにも入れない）。無ければ undefined。 */
+/** 継ぎ合わせのバンク（生成スクリプトは削除済み。git にもバンドルにも入れない）。無ければ undefined。 */
 export const loadSectionBank = (): SectionBank | undefined => {
 	if (!existsSync(SECTION_BANK_FILE)) return undefined;
 	const m = require(SECTION_BANK_FILE) as {

@@ -2186,11 +2186,19 @@ console.log("● 界隈曲の流派テンプレート");
 				const sec = song.sections[inter];
 				m.quiet.push(inter >= 0 ? 1 : 0);
 				if (sec) {
+					// 原曲は歌の休符 63〜89%（消えはしない）。生成は2小節の句を1〜2つだけ歌う。
+					const sungBars = Array.from({ length: sec.bars }, (_, i) =>
+						notesIn(song.melody, sec.startBar + i, sec.startBar + i + 1),
+					).filter((n) => n > 0).length;
 					check(
-						`${tag} 8小節の間奏で歌が引っ込む`,
-						sec.bars === 8 &&
-							notesIn(song.melody, sec.startBar, sec.startBar + 8) === 0,
-						song.sections.map((s) => s.kind).join("-"),
+						`${tag} 8小節の間奏で歌が引っ込む（歌うのは 1〜4 小節）`,
+						sec.bars === 8 && sungBars >= 1 && sungBars <= 4,
+						`${song.sections.map((s) => s.kind).join("-")} 歌う小節 ${sungBars}`,
+					);
+					check(
+						`${tag} 間奏の歌わない句は楽器が受け持つ`,
+						notesIn(song.solo, sec.startBar, sec.startBar + 8) > 0,
+						"ソロが空",
 					);
 					const maxLayers = Math.max(...layers.values());
 					check(
@@ -2289,7 +2297,8 @@ console.log("● 界隈曲の流派テンプレート");
 						total1++;
 						const k = keyOf(b, name.endsWith("_lead"));
 						if (k === head) same1++;
-						if (k === keyOf(b - 1, true)) prev1++;
+						// 休む小節どうし（`loopShape` の休むブロック・遅れた入り）は「同じ小節を続けて鳴らす」に数えない。
+						if (k !== "" && k === keyOf(b - 1, true)) prev1++;
 						if (b - 2 >= s.startBar && k === keyOf(b - 2, true)) recur++;
 					}
 				}
@@ -2380,10 +2389,12 @@ console.log("● 界隈曲の流派テンプレート");
 				m.tresilloBars.map((x) => x.toFixed(2)).join(" "),
 			);
 		}
+		// 原曲 6/8。テンプレートの期待値は約 0.69 で、30曲の標本は ±0.085 ほど揺れる（乱数列が変わるたびに
+		// 6割を割ることがある）。期待値から標本の揺れ2つ分ほど下を下限にする。
 		if (lineage === "kaiwai_2go")
 			check(
-				"2号: 4つ打ちの曲が 6割以上（全曲ではない）",
-				avg(m.four) >= 0.6 && avg(m.four) < 1,
+				"2号: 4つ打ちの曲が 5割以上（全曲ではない）",
+				avg(m.four) >= 0.5 && avg(m.four) < 1,
 				f(m.four),
 			);
 		if (lineage === "kaiwai_2go") {
@@ -2960,7 +2971,7 @@ console.log("● 音階");
 //     違う・DAW 経路の伴奏（chordProgression + rootShift）の構成音に小節頭のベース音が乗る
 //     （進行を移調済みで返すと二重移調になる。その検出）。
 //     共通経路に触れていないことは 1.7 の黄金値が見る（骨格借用の出力は同じファイルの skeleton
-//     キー）。元曲との近さの数値は scripts/corpus/check-skeleton-closeness.ts。
+//     キー）。元曲との近さの数値は 元曲との近さの検査スクリプト（削除済み、git 履歴にある）。
 // ============================================================
 
 console.log("● 骨格借用");
@@ -3304,7 +3315,7 @@ console.log("● 骨格借用");
 //     旋律が音階内と歌える帯・ベースが 28〜55（歌うセクションには必ずある）・決定性・アルペジオは
 //     ラスサビの小節だけ・ラスサビの再現は1番サビの各音 +3・donor の和音列との一致が 16 半小節以下
 //     （バンクだけで検算できる）・置換率・同じ src の連続なし・ラスサビ転調が 40 曲中 3 曲以上・
-//     バンクが 200 本以上。元曲との近さの数値は scripts/corpus/check-splice-closeness.ts（骨格データが要る）。
+//     バンクが 200 本以上。元曲との近さの数値は 元曲との近さの検査スクリプト（削除済み、git 履歴にある）（骨格データが要る）。
 // ============================================================
 
 console.log("● 継ぎ合わせ");

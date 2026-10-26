@@ -518,6 +518,8 @@ export type ExportMidiOptions = {
 
 /**
  * トラック群とドラムパターンから .mid バイナリ(Blob)を生成する。
+ * ドラムの ch10 を避け、TRACK 01〜09 → ch1〜9・TRACK 10〜15 → ch11〜16 に書く。
+ * 31平均律の曲はピッチベンドの多チャンネル方式（感度 ±2 半音）で書く。
  */
 export const exportMIDI = (options: ExportMidiOptions): Blob => {
 	const { tracks, getDrumPattern, drumVolume = 80, bpm, stepsPerBar } = options;

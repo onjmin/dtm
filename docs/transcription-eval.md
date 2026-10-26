@@ -1,7 +1,7 @@
 # 自動採譜（耳コピ）の評価実験
 
 2026-09-30。「wav/mp3 を入れて MML に書き起こす耳コピ機能は高精度で実装可能か」に、
-手元の対になったデータで答えるための実験。道具は `scripts/transcribe/eval_transcription.py`、
+手元の対になったデータで答えるための実験。道具は評価スクリプト（削除済み、git 履歴にある）、
 結果は `tmp/transcribe-eval/summary-<preset>.md`（gitignore。本書に写してある）。
 
 ## 1行でいうと
@@ -101,7 +101,7 @@
 
 ## v2（2026-10-02）: 分離モデル・しきい値・小音量ゲート
 
-評価器と正解は変えず、`scripts/transcribe/transcribe_audio.py` の `PRESETS` に v1（上の表）と v2 を並べた。
+評価器と正解は変えず、採譜スクリプトの `PRESETS` に v1（上の表）と v2 を並べた。
 v2 は Demucs `htdemucs_ft`、Basic Pitch のしきい値(onset, frame)を歌 0.6/0.4・ベース 0.7/0.4・伴奏 0.7/0.3、
 系統の最大から -40dB 未満で鳴る音を捨てる。上の5曲で選び、**選ぶのに使っていない別の作者の5曲**（`pairs-holdout.json`、
 `candidates.json` の完成品から作者1曲ずつ）で確かめた。
@@ -121,7 +121,7 @@ v2 は Demucs `htdemucs_ft`、Basic Pitch のしきい値(onset, frame)を歌 0.
 ## YourMT3+ との比較（2026-10-02、不採用）
 
 公開モデルで最も強い多楽器採譜 YourMT3+（YPTF.MoE+Multi noPS）を、ミックスと v2 の分離音の両方に掛けて同じ評価器で測った
-（`scripts/transcribe/yourmt3_runner.py`。専用 venv で動かす）。ベースは正解のオクターブ書き違いを許した値。
+（専用 venv で動かす比較用スクリプト。削除済み、git 履歴にある）。ベースは正解のオクターブ書き違いを許した値。
 
 | 平均 F1（調整用5曲 / 別の5曲） | 声もの全部 | ベース | 楽器 | 全打点 | キック |
 |---|---|---|---|---|---|
@@ -136,11 +136,7 @@ v2 は Demucs `htdemucs_ft`、Basic Pitch のしきい値(onset, frame)を歌 0.
 
 ## 再現
 
-```
-PYTHONIOENCODING=utf-8 python scripts/transcribe/eval_transcription.py inventory --audio "C:/Users/frgk2/Music/_own/他作/界隈曲" --midi "C:/Users/frgk2/Music/_own/自作/界隈曲" --out tmp/transcribe-eval
-PYTHONIOENCODING=utf-8 python scripts/transcribe/eval_transcription.py run --pairs tmp/transcribe-eval/pairs.json --out tmp/transcribe-eval --preset v2
-PYTHONIOENCODING=utf-8 python scripts/transcribe/eval_transcription.py run --pairs tmp/transcribe-eval/pairs-holdout.json --out tmp/transcribe-holdout --preset v2
-```
+評価・採譜のスクリプトは削除済み（git 履歴にある）。耳コピの元データもこの PC に無い。
 
 `pairs.json` は `[{"name", "title", "audio", "midi"}, ...]`。各曲の `transcribed-<preset>.mid`（歌・ベース・その他・ドラムの4トラック）は
 DAW の MIDI 読み込みでそのまま聴ける。

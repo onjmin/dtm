@@ -57,9 +57,9 @@
 
 | ファイル | 中身 | 作るスクリプト |
 |---|---|---|
-| `src/compose/compose-phrases.ts` | 耳コピから抜いた2小節フレーズ集（`CORPUS_PHRASES`） | `scripts/corpus/calibrate-phrases.ts` |
-| `src/compose/compose-skeletons.ts` | 曲ごとの骨格（和音・ベース・旋律リズム・反復の地図など） | `scripts/corpus/extract-skeletons.ts` |
-| `src/compose/compose-section-bank.ts` | 継ぎ合わせ用の抽象骨格バンク（セクション単位） | `scripts/corpus/build-section-bank.ts` |
+| `src/compose/compose-phrases.ts` | 耳コピから抜いた2小節フレーズ集（`CORPUS_PHRASES`） | 削除済み（git 履歴にある） |
+| `src/compose/compose-skeletons.ts` | 曲ごとの骨格（和音・ベース・旋律リズム・反復の地図など） | 削除済み（git 履歴にある） |
+| `src/compose/compose-section-bank.ts` | 継ぎ合わせ用の抽象骨格バンク（セクション単位） | 削除済み（git 履歴にある） |
 
 - `kaiwai_skeleton`（`engine: "skeleton"`、`compose-skeleton.ts`）と `kaiwai_splice`（`engine: "splice"`、
   `compose-splice.ts`）は**実験用で UI に無い**。`export-samples.ts --template kaiwai_splice` などで使う。
@@ -69,10 +69,8 @@
 
 ### 周辺の道具
 
-- `scripts/compose/`: `export-samples.ts`（書き出し・seed 再現）、`ab-listen.ts`（陽性対照・感度検査・
-  和声付け直し）、選抜ラボ（`compose-audition.ts` / `screen-compose.ts` / `hand-compile.ts` + `docs/handscore.md` /
-  `blind-sheet.ts`）。一覧は `scripts/README.md`。
-- `scripts/melody-model/`: PDMX で事前学習した旋律モデル。結論は否定的だが配線と実測値は揃っているので残す。
+- `scripts/compose/export-samples.ts`（書き出し・seed 再現）。一覧は `scripts/README.md`。
+- A/B 作成器・選抜ラボ・手書き譜面のコンパイラ・旋律モデル（PDMX で事前学習、結論は否定的）は削除済み（git 履歴にある）。
 - 種の埋め込み: アプリは作曲ごとに 32bit の種を引き `seededRandom(seed)` を渡し、MML 先頭に
   `#seed=<n> #compose=<テンプレート:調:音階:セクション>` を書く。所有者が貼る当たりは手元で再現できる。
 - **おまかせマスタリングの役割（2026-10-17 修正）**: 作曲の層は `composeSlot` から役割を引き（`src/ui/auto-role.ts`
@@ -86,7 +84,7 @@
   （持続音はループ区間、減衰音は先頭 0.5 秒）を測り、楽器の中央値を −10 dB へ寄せる倍率を `levelGain`、ゾーン＝音域ごとの
   残りを `zone.levelGain`（±9 dB）に持つ。上げ下げは ±8 dB・上げはピーク 0 dBFS までに止める。素の RMS で揃えた版は
   聴感が揃わず（矩形波リードがベース・伴奏より 1〜2 dB 大きいまま）、K 特性と音域ごとの補正で高い音域ほど下がるようにした。
-  ドラムは対象外。検算は `scripts/test/check-sf-level.ts`（要 ffmpeg・ネット）。
+  ドラムは対象外。検算スクリプトは削除済み（git 履歴にある）。
 
 ### 範囲補完（続き・間奏・作り直し、2026-10-06）
 
@@ -108,7 +106,7 @@
   検算は `scripts/test/check-compose-fill.ts`。
 - 所有者の試聴（2026-10-17）: 境目は不自然ではない。ただ、補完に採用できるほど筋の通った旋律かは疑問。
   借用曲の旋律は前後の旋律と無関係に作られる（合わせているのは調だけ）ので、その表れと見る。
-- **仮説は数値で成り立つ（10-17、`scripts/compose/measure-fill-coherence.ts --seeds 15`）。** 4カード×15曲の途中の
+- **仮説は数値で成り立つ（10-17、当時の測定スクリプトで15 seed。削除済み、git 履歴にある）。** 4カード×15曲の途中の
   歌うセクション 241 か所を同じ種別で補完し、補完前の旋律（同じ曲の別セクションとの関係）と比べた。
   | | 補完前 | 補完 |
   |---|---|---|
@@ -128,6 +126,8 @@
 ## 2. 決まったこと・やらないこと
 
 ### 決まったこと（所有者の判断）
+
+- **seed の再現性は守らない**（2026-10-26）。`#seed=` は作られ方をたどる記録。黄金値は変化の検出だけに使う（§3）。
 
 - **目標は「ヒット曲」ではなく「人が手を入れる出発点」**（2026-09-18）。判定は「ゼロから書くより速いか」。
 - **耳による旋律方式の採否は止め、旋律の外側へ**（2026-09-19）。→ その外側の入口として `kaiwai` を作った。
@@ -184,7 +184,7 @@
 - 評価用は**全トラック入り**で出す（歌単体では判断しづらい）。人間側の素材は**所有者が知らない曲**を使う。
 - 訊くのは採点ではなく仕様: 「出発点として使うか／最初に直す場所／理由を一言」。曲まるごとの聞き取りは
   3曲で明確な反応が出た（3/3「捨てる」、理由は「テーマが無い・耳に訴えるメロディラインが無い」、直す場所は挙げられない）。
-- 所有者の部屋で鳴らさない。録音・測定は出力を切ってから（`scripts/README.md`「音で確かめる」）。
+- 所有者の部屋で鳴らさない（エージェントは再生ボタンを押さない）。
 - 渡した曲と評価は `tmp/songs/` の棚に残す（`scripts/misc/song-shelf.ts verdict`）。
 
 ### 手直しした曲の評価（生成した伴奏を組み直し、リードを手で書いた曲）
@@ -209,18 +209,24 @@
 
 ## 3. 不変条件
 
-- **既存テンプレートの曲を1音も変えない。** 新しい挙動はテンプレートの省略可能フィールド（`template?.field`）の
-  有無で分岐し、無ければ従来の経路をそのまま通す。テンプレート名の文字列比較は書かない。
-- **共通経路に `rnd()` / `pick(` を足さない。** 乱数の消費順が変わると全 seed の曲が変わる。
-  - 新しい抽選は新しい分岐の中だけで行う。他の型の乱数列を変えたくないときは「抽選してから 0 に潰す」。
-  - 既存の進行プール配列に要素を足さない（`pick` の添字がずれる）。
-  - `engine === "skeleton"` / `"splice"` は `composeSong` の先頭で乱数を1つも消費せずに分岐する。
-  - 継ぎ合わせの「切る置換」の抽選は曲の乱数でなく `positionRandom(donor.src, 位置)`（他セクションの donor を動かさない）。
-- **黄金値**: `scripts/test/check-compose.ts` が既定＋6構成 × アプリの種 {1, 4022250974, 3842857959} の
-  生成物の sha256 を `scripts/test/fixtures/compose-golden.json` と照合する（21本。骨格データがあれば `skeleton` キーの
-  3本も）。**出力を意図して変えたときだけ** `--bless` で取り直す。src を触る前に採っておく。
-- **アプリ経路の .mid 一致**: 7構成 × 2種を変更前後で `export-samples.ts --app-seed` で書き出し、sha256 を比べる
-  （差分ファイルが空であること）。
+### seed と黄金値の扱い（2026-10-26 所有者の判断）
+
+- **過去の seed で同じ曲が出ることは守らない。** MML 先頭の `#seed=` / `#compose=` は、その MML がどう作られたかを
+  たどる記録で、作り直しの保証ではない。生成を良くするためなら、どのテンプレートの、どの seed の曲が変わってもよい。
+  「既存の曲が変わる」「乱数の消費順・`pick` の添字がずれる」は、変更をためらう理由にも、所有者に確認する理由にもならない。
+- 以前は「既存テンプレートの曲を1音も変えない」「共通経路に `rnd()` を足さない」を不変条件にしていた（2026-10-01、
+  AI が書いたもので所有者の要求ではない）。コードに残る次の書き方はその名残で、守る必要は無い。触るときは素直な形へ
+  直してよい: 「抽選してから 0 に潰す」、曲の乱数と別の列で引く（`spare`・`loopShape`・`positionRandom`）、
+  既存の進行プールへ要素を足さずにテンプレートごとにプールを持つ、乱数を消費しない分岐。
+- **黄金値は変化の検出器で、品質の物差しではない。** `scripts/test/check-compose.ts` が既定＋6構成 × アプリの種
+  {1, 4022250974, 3842857959} の生成物の sha256 を `scripts/test/fixtures/compose-golden.json` と照合する（21本。
+  骨格データがあれば `skeleton` キーの3本も）。落ちたら「出力が変わった」というだけの意味で、変えるつもりの変更なら
+  `--bless` で取り直す。変えるつもりの無い作り替え（リファクタリング）のときだけ、一致を確かめる道具として使う
+  （アプリ経路は `export-samples.ts --app-seed` で変更前後の .mid を比べられる）。
+
+### コードの約束
+
+- テンプレートごとの挙動はテンプレートのフィールドで持たせ、テンプレート名の文字列比較は書かない。
 - イントロ等のセクション長に奇数を置かない（楽句は2小節単位 `floor(bar/2)` で、以降が全部1小節ずれる）。
 - `chordProgression` は基準調（ハ長調 / A マイナー）のまま返し、調は `rootShift` で渡す（二重移調のバグがあった）。
 - 耳コピ由来のデータを src に import しない。scripts から options で渡す。
@@ -240,11 +246,6 @@ npx tsx scripts/test/check-compose.ts --bless    # 出力を意図して変え�
   `npx tsx scripts/compose/export-samples.ts --app-seed 3842857959 --compose custom:any:auto:intro-verse-prechorus-chorus`
 - 試聴用の書き出し: `npx tsx scripts/compose/export-samples.ts --template kaiwai --count 12 --seed 1 --out tmp/kaiwai/samples`
   （ファイル名から調・テンポ・楽器・ドラムの分布が一瞥できる）。
-- コーパスとの差（良否ではなく到達）: `npx tsx scripts/corpus/measure-arrangement.ts --generate kaiwai --count 40 --seed 1 --min-bars 40 --min-channels 6`
-- 元曲との近さ（手元データが要る。無ければ skip）:
-  `scripts/corpus/check-skeleton-closeness.ts --count 40 --seed 1`、`scripts/corpus/check-splice-closeness.ts --count 200 --seed 1`
-  （継ぎ合わせは和音列の最長一致・ベース実音・旋律の度数列・同 src 連続を上限で縛る）。
-- 形式の感度を測る: `npx tsx scripts/compose/ab-listen.ts --variant broken`（壊した側が負けるか）。
 - 未参照のコードを見つけたら、提案の前に `git log -S"<名前>"` で消された経緯を探す（一度入れて取り消した方式が
   散文だけ残っている例が複数ある）。
 
@@ -291,8 +292,28 @@ npx tsx scripts/test/check-compose.ts --bless    # 出力を意図して変え�
 - 直し方: `fitRunToChords` を riff にも掛ける。半音下の刺繍音（`RIFF_FIGURES` の chrom）は動かさず、直した次の音の半音下へ付け直す。3度下の重ね（サブメロ）は和音の音へ置き直す。
   刺繍音だけで 4〜16% こするので、riff16 と違って裏のこすれは残さない（残すと 5/20 曲が手本の上限 19% を超えた）。
 - 直した後（seed 1〜20）: 和音の音 45%→67%、半音 34%→11%（曲ごと 4〜16%、中央 12%）、8分以上 31%→2%。手本の幅には入るが中央は上（刺繍音の分）。
-- 流派の帯とぶつかりの点検（当時の `calibrate-arrangement-gates.ts --template game_loop`）: ぶつかりの不合格 2→0、clash 中央 0.15→0.08、ほかはほぼ同じ。`audit-lineage.ts` は game_loop の手本を持たないので帯の点検は無し。
+- 流派の帯とぶつかりの点検（当時の `calibrate-arrangement-gates.ts --template game_loop`）: ぶつかりの不合格 2→0、clash 中央 0.15→0.08、ほかはほぼ同じ。当時の流派点検（削除済み）は game_loop の手本を持たないので帯の点検は無し。
 - 変わるのはリードとサブメロの音高だけ（テンポ・進行・リズムは同じ、seed 1 でリードの 32% の音が動く）。小節の使い回しが少し減る（黄金値3曲で 82/58/67%→75/47/64%）。check-compose の game_loop の黄金値3つは --bless で取り直した。
+
+海鮮の間奏と、走句・ループのリードの変奏を直した（2026-10-26、未試聴）。測り方は `scratch/diag/`（git 外）。
+- 間奏: 歌が完全に消え（主旋律の占有 0、60曲中37曲）、間奏のソロは汎用の走句で他の層と半音でこする音が 36%（他の層は 12〜18%）だった。
+  簡易モードはソロを書かないので、間奏は伴奏だけになっていた。→ サビと同じリズムの家族で8小節の文を作り、2小節の句の1〜2つだけ歌い、
+  残りの句をソロ（楽器）が続ける。占有は中央 0.23（原曲の歌の休符 63〜89% の内側）、ソロのこすれは 16%。
+- リード: 小節が「写し」か「無関係な新しい小節」のどちらかで、変奏（リズムを保った音の入れ替え・移高）が 2号兄貴 4〜9%・Speder2 0〜1% しか無かった。
+  主題（戻ってくると分かる型）が生まれない形。→ `developBar`（compose-kaiwai.ts）で、ブロックの2小節目以降を頭の小節の変奏にする
+  （移高・音の入れ替え・後ろの2拍だけ替える。割合は曲ごとに 0.35〜0.8）。変奏は 2号兄貴 21〜30%・Speder2 10〜12% になり、リードのこすれは変わらない。
+  変奏の割合は目標値ではない。効いたかは試聴で決める。
+- 間奏の層の重なり（t7・t8・t9 の刻みが同じ音域に3本、chip_pop の t3 は Lead 6 (voice) の16分が中央 D#6）は触っていない。
+
+変奏を入れた後も「主旋律に魅力が無い」は残った（2026-10-26 所有者）。走句リード（riff16）を続けて直した（未試聴）。
+- 読み: 生成のリードは句の切れ目が無く（4小節目の終わりが伸ばす音 16〜21%）、サビは Aメロと同じ16分の歩きを1オクターブ上げただけ
+  （4分以上の音の時間 Aメロ 14%・サビ 11%）。AI が手で書いたリード（scratch/kw5。所有者の評価なし）は、主題を a a′ で返し、
+  サビで高い所の音を伸ばして間を16分で埋め、句末を長い音で閉じていた。
+- 直し方（`runSection`）: 4・8小節目の句末を長い音で閉じる（半分ほどは後ろで8分だけ息を継ぐ）／8小節の後半を、頭の2小節を返して
+  別の2小節で閉じる（曲ごとに 0.5〜0.9）／7割の曲でサビの部品を付点・4分寄りにする（`hookStyle`）。
+- 結果（40曲）: 句末が伸ばす音 50%、サビの4分以上の音の時間 28%、全体の16分以下の音 51%→44%（原曲は 8/8 が 30% 以上）、こすれは変わらない。
+  試聴用は棚の Schorl（seed 5）・Magnetite（seed 6）。Speder2 のループと海鮮の歌メロは触っていない。
+- 乱数列が変わり、check-compose の「2号: 4つ打ちの曲が 6割以上」が標本の揺れで落ちた（テンプレートの期待値は約 0.69、30曲の揺れ ±0.085）。下限を 5割にした。
 
 ## 関連資料
 
@@ -300,4 +321,4 @@ npx tsx scripts/test/check-compose.ts --bless    # 出力を意図して変え�
 - 伴奏主体モードの設計: [`docs/accomp-compose.md`](accomp-compose.md)
 - データの出自とライセンス: [`docs/dataset-provenance.md`](dataset-provenance.md)
 - 手書き譜面の記法: [`docs/handscore.md`](handscore.md)
-- scripts の一覧: `scripts/README.md`、旋律モデルの手順: `scripts/melody-model/README.md`
+- scripts の一覧: `scripts/README.md`

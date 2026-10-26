@@ -485,7 +485,7 @@ export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
 			{ step: 168, pitch: DRUM_KEYS.openHihat, velocity: 0.55 },
 		],
 	},
-	// --- 界隈曲の骨格のドラム型（scripts/corpus/extract-skeletons.ts が生成。ここから） ---
+	// --- 界隈曲の骨格のドラム型（骨格の抽出スクリプト（削除済み、git 履歴にある） が生成。ここから） ---
 	// 出自: Green wisteria/嵌り合う体は (240104.mid)
 	kaiwai_1: {
 		label: "界隈曲 骨格1",

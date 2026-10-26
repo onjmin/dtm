@@ -26,7 +26,7 @@
 
 ## 1. いま似る理由（計測の要点）
 
-生成48曲の組（GG）を手書きの基準（同じ曲の版違い H-ver・同じ参考曲の別模倣 H-ref・別の参考曲 H-diff）と比べた（数値は git 履歴と `pnpm audit:accomp`）。
+生成48曲の組（GG）を手書きの基準（同じ曲の版違い H-ver・同じ参考曲の別模倣 H-ref・別の参考曲 H-diff）と比べた（数値と監査スクリプトは git 履歴にある。スクリプトは削除済み）。
 
 - 低音・和音のリズム、強弱の曲線、楽器・ミックスは GG のほうが H-ver より似ている（0.9〜1.0）。分散の音高は GG 0.11 で別の曲並み。**似る原因は音高ではなく、セルのリズム・輪郭・音域・密度と固定した表**（関門はほぼ落とさない）。
 - 音色の 1.00 は設定値の比較で、耳への効き方は未計測（P-1）。同じ種からは baseKey を変えても同じ計画が出る（S5 で直す）。
@@ -59,7 +59,7 @@ src/accomp/          （S3 で引っ越し）schema · theory · plan · realize
 references/fb/       fb.mml · fa.mml · backing.mml · nagai-yorimichi.draft.mml · baseline.json · heard.json ✓（annotations.ts は未）
 scripts/test/        check-accomp-styles.ts ✓ · check-accomp-golden.ts ✓ · check-compose-accomp.ts ✓（check-accomp-engine.ts は未）
 scripts/test/fixtures/  accomp-fb-plan.ts ✓（fb の参照計画）· styles/fb/golden.json ✓（ablations.ts は未）
-scripts/accomp/      audit-accomp-variety.ts ✓（pnpm audit:accomp）· accomp-audition.ts ✓
+伴奏の監査・試聴のスクリプトは削除済み（git 履歴にある）
 ```
 
 - 入口は `composeAccomp({ style, baseKey, random, pick, recent })`。`style` を省くと `fb`。
@@ -139,7 +139,7 @@ L0 型 → L1 区間の長さ → L2 和声（句・借用の組・和声のリ�
 - いまの `recent` は `planSignature` の完全一致で、実際には働いていない。指紋: 型 id・ミックス id・借用の組・長さの区分・区間ごとの和音パターンの族・分散セルの族。直近5曲のどれかと型が同じで他が3つ以上同じなら候補を飛ばす。順位は付けないので `pick` の再現は変わらない。関門が優先、両方満たす候補が無ければ新しさを外す。
 - 試聴の束には、同じ型から引いた組を必ず1つ入れる（不満は「同じスタイルの曲どうしが似る」なので）。
 
-### 4.5 ばらつきの監査（`scripts/accomp/audit-accomp-variety.ts`、`pnpm audit:accomp`）
+### 4.5 ばらつきの監査（監査スクリプトは削除済み、git 履歴にある）
 
 - MML だけを読むので全スタイルに同じコードで使える。**報告だけ**（`pnpm test` に入れない）。
 - 語彙は発音位置の Jaccard で重み付けた重なり（貪欲な輸送）。形＝位置の Jaccard × 輪郭の一致。音色は音源バンク・EQ・パン・送りまで比べる。曲の頭（最初の16小節）と継ぎ目を別に測る。
@@ -159,7 +159,7 @@ L0 型 → L1 区間の長さ → L2 和声（句・借用の組・和声のリ�
 - **往復の下限**（参照計画を鳴らした MML と参照 MML、区間を揃えた値）: fb はリズム 分散1.00／低音0.98／和音1.00、音高 0.24／0.83／0.82（実測を切り下げ）。型ごとにその型で測った値を下限にする。
 - **切除対照**: 固有の制約を1つ外したら、その関門が改変した参照計画を捕まえること。スタイルのデータとして持つ（fb の16項目は S3 以降に `fixtures/styles/fb/ablations.ts` へ）。
 - **退避の率を数える**: 保険の計画は引いた型の参照計画そのものなので、退避が増える＝似る。候補が落ちた数と、計画の中の引き直し（`LENGTH_TRIES`・`TEXTURE_TRIES`・`OFFSET_TRIES`）の使い切りを、`composeAccomp` の `diagnostics` と `planAccomp` の `diag` で数え、監査が集計する（出力は変えない）。いまは600曲で退避0・k=0 通過 600/600・使い切り0。行を足して k=0 の通過が50%を下回ったら足した行を疑う。
-- **出所と試聴**: 行とミックスはすべて承認した手書き試作まで辿れること（採譜は統計にだけ使う）。スタイルの版を上げる前に所有者に聴いてもらう（`accomp-audition --style <id>`、1日3本まで）。
+- **出所と試聴**: 行とミックスはすべて承認した手書き試作まで辿れること（採譜は統計にだけ使う）。スタイルの版を上げる前に所有者に聴いてもらう（書き出しは `export-samples.ts --app-seed <n> --compose style:<id>.v<版>:<baseKey>:<k>`、1日3本まで）。
 
 ## 6. 新しい模倣を足す手順（見積もり）
 
