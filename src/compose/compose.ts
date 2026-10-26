@@ -34,17 +34,15 @@ import {
 	bassFigure,
 	developBar,
 	grammarProgressions,
+	type LineStyle,
 	type LoopShape,
 	type LoopStyle,
+	lineSection,
+	lineStyle,
 	loopBar,
 	loopShape,
 	loopStyle,
-	type RunPlan,
-	type RunStyle,
 	relatedMotif,
-	runPlan,
-	runSection,
-	runStyle,
 	sentenceAnswer,
 	sentenceSection,
 	sentenceStyle,
@@ -5917,11 +5915,34 @@ const draw = (
 			const d = degreeToPitch(scale, coreToDegree(scale, tonicStep + step));
 			return { semi: d.semi + octave, fifth: d.fifth };
 		};
-		let runFeel: RunStyle | undefined;
-		let runShape: RunPlan | undefined;
+		let lineFeel: LineStyle | undefined;
 		let loopFeel: LoopStyle | undefined;
 		const blocks = new Map<string, RiffNote[][]>();
-		const blockOf = (side: string, bars: number): RiffNote[][] => {
+		// 走句リードの着地点は、そのセクションの和音の音へ寄せる（同じ種別の2回目以降は後段の fitRunToChords が合わせる）。
+		const chordSpans =
+			lineLead === "riff16"
+				? buildChordPlacements({
+						edo: 12,
+						chordStr: chordProgression,
+						patternType: "block",
+						rootShift: 0,
+						bpm: 120,
+						stepsPerBar,
+					})
+				: [];
+		const pcsAt = (step: number): Set<number> =>
+			new Set(
+				chordSpans
+					.filter(
+						(p) => p.startStep <= step && step < p.startStep + p.durationSteps,
+					)
+					.map((p) => Math.round(p.pitchUnits / UNITS_PER_SEMITONE) % 12),
+			);
+		const blockOf = (
+			side: string,
+			bars: number,
+			startBar: number,
+		): RiffNote[][] => {
 			const hit = blocks.get(side);
 			if (hit) return hit;
 			let made: RiffNote[][];
@@ -5957,9 +5978,33 @@ const draw = (
 						: make(extra);
 				made = [x, answer(), x, answer()];
 			} else {
-				runFeel ??= runStyle(rnd);
-				runShape ??= runPlan(rnd);
-				made = runSection(rnd, runFeel, runShape, bars, side === "b");
+				lineFeel ??= lineStyle(rnd);
+				const sideLift = side === "c" ? 1 : 0;
+				made = lineSection(
+					rnd,
+					lineFeel,
+					bars,
+					{
+						fits: (bar, at, step) =>
+							pcsAt(
+								(startBar + bar) * stepsPerBar + Math.round(at * sixteenth),
+							).has(
+								(((pitchOf(step + sideLift).semi - octave) % 12) + 12) % 12,
+							),
+						clash: (bar, at, step) => {
+							const pcs = pcsAt(
+								(startBar + bar) * stepsPerBar + Math.round(at * sixteenth),
+							);
+							const pc =
+								(((pitchOf(step + sideLift).semi - octave) % 12) + 12) % 12;
+							return (
+								!pcs.has(pc) &&
+								(pcs.has((pc + 1) % 12) || pcs.has((pc + 11) % 12))
+							);
+						},
+					},
+					side === "b",
+				);
 			}
 			blocks.set(side, made);
 			return made;
@@ -5977,7 +6022,7 @@ const draw = (
 					: sec.kind === "bridge"
 						? "c"
 						: "a";
-			const block = blockOf(side, sec.bars);
+			const block = blockOf(side, sec.bars, sec.startBar);
 			const i = bar - sec.startBar;
 			let cell = block[i % block.length];
 			if (lineLead === "riff-bar") {
@@ -5999,8 +6044,9 @@ const draw = (
 				const late = shape.lateEntry && bar - entry < 4;
 				if ((sparse || late) && bar !== totalBars - 1) continue;
 			}
+			// 走句リードのサビは必ず1オクターブ上げる（上げない曲はサビが Aメロより低く聞こえた。2026-10-26）。
 			const lift =
-				lineLead === "riff16" && side === "b" && runShape?.lift !== false
+				lineLead === "riff16" && side === "b"
 					? scale.core.length
 					: side === "c"
 						? 1
@@ -6034,7 +6080,7 @@ const draw = (
 					),
 					durationSteps: Math.max(
 						1,
-						runFeel?.staccato && n.len === 2 && Math.abs(at % 4) === 2
+						lineFeel?.staccato && n.len === 2 && Math.abs(at % 4) === 2
 							? Math.round(sixteenth)
 							: Math.round((end - start) * (shape?.gate ?? 1)),
 					),
@@ -6651,7 +6697,8 @@ const draw = (
 // ============================================================
 
 /**
- * 走句リード（riff16）は和音を見ずに音階を歩くので、層の和音と半音でこすれる（直す前は長さで 24%。
+ * 今は楽器リフ（riff）だけに掛ける。走句リード（riff16）は 2026-10-26 から `lineSection` が道の段階でぶつかりを避ける。
+ * 以下は当時の記録: 走句リード（riff16）は和音を見ずに音階を歩くので、層の和音と半音でこすれる（直す前は長さで 24%。
  * 所有者が「伴奏と調和」と言った手書きは 3%、原曲は 4〜39%）。こする音だけを、拍頭と4分以上は和音の音へ、
  * 裏は和音の音か和音の音から全音以上離れた音階の音へ、いちばん近い所へずらす。
  * 候補を選んだ後（移調済みの音高）に掛ける。
@@ -7061,7 +7108,9 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 	}
 
 	const d = chosen.d;
-	if (template?.lead === "riff16" || template?.lead === "riff")
+	// 走句リード（riff16）は lineSection が道の段階で和音とのぶつかりを避けるので、ここでは直さない
+	// （直すと道の途中の音が遠くへ動き、駆け込みが跳躍になった。こすれも 11〜12% → 14〜17% と増えた）。
+	if (template?.lead === "riff")
 		fitRunToChords(
 			d,
 			scale,
