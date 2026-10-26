@@ -502,8 +502,10 @@ type BeatCell = number[];
 
 /**
  * 走句リード（riff16）の曲ごとの癖。旋律は1音ずつ歩かせず、半小節ごとの着地点（骨格）を先に決め、
- * 直前の音から着地点への道で間を埋める（2026-10-26）。手で書いて評価された曲（Fable の kw2）は、
- * Aメロを「16分で駆け上がって着地する」同じリズムで走らせ、サビを1オクターブ以上上げて付点・8分で歌わせていた。
+ * 直前の音から着地点への道で間を埋める（2026-10-26）。
+ * リズムは曲ごとの数種の半小節の型（家族）から2小節ずつ組む（2026-10-27）。2号系の手本9本（配布 MIDI 6・
+ * 採譜動画 3）は、8小節に半小節の型が 5〜13 種（中央 9）あり、2小節の単位のリズムは abcd・abac が多い。
+ * 1つの型で全部の半小節を走らせた版は 3〜5 種で、8小節の 82% が2小節の同じリズムの繰り返しだった。
  */
 export type LineStyle = {
 	/** Aメロの4小節の輪郭（着地点の高さの並び）。 */
@@ -512,12 +514,17 @@ export type LineStyle = {
 	hookContour: Contour;
 	/** 着地点の前の道の型（1〜2種）。曲の手癖になる。 */
 	figures: Figure[];
-	/** Aメロの半小節のリズム（16分単位、和は8）。全部の半小節で使い、句末だけ伸ばす。 */
-	verseRhythm: number[];
-	/** 小節の後ろ半分のリズム（3連の曲は後ろ半分だけ3連で駆け込む）。 */
-	verseRhythm2: number[];
-	/** サビの半小節のリズム2つ（交互に使う）。高い所で伸ばし、付点・8分で歌う。 */
-	hookRhythm: [number[], number[]];
+	/** Aメロの半小節の型の家族（16分単位、和は8）。2小節ごとに4つ選んで並べる。 */
+	cells: number[][];
+	/**
+	 * サビの半小節の型の家族。手本は一番高い8小節でも16分を減らさない（9本中 9本で減らない）ので、
+	 * 4分の3の曲は走る型、残りは付点・8分で歌う型（手で書いた kw2 の作り）にする。
+	 */
+	hookCells: number[][];
+	/** 8小節の3つ目の2小節を、1つ目と同じリズムの変奏（a a′）にする割合（手本 0〜0.78。写しは 9本とも 0）。 */
+	echo: number;
+	/** 4小節目・8小節目の句末を長い音で閉じる割合（手本の句末が伸ばす音 0〜0.71、中央 0.13）。 */
+	close: number;
 	/** 着地点に和音の外の音階の音（9度・11度など）も許す。 */
 	tension: boolean;
 	/** 歩く範囲（主音からの歩数）。 */
@@ -553,16 +560,28 @@ const CONTOURS: Record<Contour, number[]> = {
 	zigzag: [0.2, 0.8, 0.3, 0.85, 0.25, 0.9, 0.4, 0.6],
 };
 
-/** Aメロの走る半小節（16分単位）。着地点は一番長い音（同じ長さなら前）。 */
-const VERSE_RHYTHMS: [number[], number][] = [
-	[[1, 1, 1, 1, 2, 2], 4],
-	[[1, 1, 1, 1, 1, 1, 2], 2],
-	[[1, 1, 2, 1, 1, 2], 2],
-	[[2, 1, 1, 1, 1, 2], 1],
+/**
+ * 走る半小節（16分単位）。着地点は一番長い音（同じ長さなら前。全部16分なら半小節の頭）。
+ * 手本の上位の型（x.xxx.x.・x...x.x.・xxxxxxxx・x.x.x.x. など）を形として並べたもの。重みは手本の数ではない。
+ */
+const RUN_CELLS: [number[], number][] = [
+	[[2, 1, 1, 2, 2], 4],
+	[[1, 1, 1, 1, 1, 1, 1, 1], 3],
+	[[1, 1, 1, 1, 2, 2], 3],
+	[[2, 1, 1, 1, 1, 2], 2],
+	[[2, 1, 1, 1, 1, 1, 1], 2],
+	[[4, 2, 2], 2],
+	[[2, 2, 2, 2], 2],
+	[[1, 1, 2, 2, 2], 1],
+	[[2, 2, 1, 1, 2], 1],
 	[[1, 1, 1, 1, 4], 1],
 ];
-/** 3連で着地点へ駆け込む半小節。 */
-const VERSE_TRIPLET = [4 / 3, 4 / 3, 4 / 3, 2, 2];
+/** 3連を含む半小節（手本の配布 MIDI 6本中 5本で、3連の裏に来る音が 9〜43%）。 */
+const TRIPLET_CELLS: [number[], number][] = [
+	[[4 / 3, 4 / 3, 4 / 3, 2, 2], 2],
+	[[4 / 3, 4 / 3, 4 / 3, 4], 1],
+	[[2, 2, 4 / 3, 4 / 3, 4 / 3], 1],
+];
 /** サビの歌う半小節。 */
 const HOOK_RHYTHMS: [number[], number][] = [
 	[[3, 1, 2, 2], 3],
@@ -588,7 +607,36 @@ export const lineStyle = (rnd: () => number): LineStyle => {
 		const f = figure();
 		if (!figures.includes(f)) figures.push(f);
 	}
-	const verseRhythm = weighted(VERSE_RHYTHMS, rnd);
+	/** 家族を `n` 種引く（同じ型は1つだけ）。 */
+	const family = (pool: [number[], number][], n: number): number[][] => {
+		const out: number[][] = [];
+		for (let i = 0; i < 4 * n && out.length < n; i++) {
+			const c = weighted(pool, rnd);
+			if (!out.includes(c)) out.push(c);
+		}
+		return out;
+	};
+	const triplets =
+		rnd() < 0.6 ? family(TRIPLET_CELLS, 1 + Math.floor(rnd() * 2)) : [];
+	// 家族の半分以上を走る型（16分が4つ以上）にする（手本は 8/8 曲で16分の音価が 3割以上）
+	const dense = (c: number[]) => c.filter((x) => x === 1).length >= 4;
+	const runFamily = (): number[][] => {
+		const out = [...family(RUN_CELLS, 3 + Math.floor(rnd() * 3)), ...triplets];
+		for (let i = 0; i < 12 && out.filter(dense).length * 2 < out.length; i++) {
+			const c = weighted(
+				RUN_CELLS.filter(([x]) => dense(x)),
+				rnd,
+			);
+			if (!out.includes(c)) out.push(c);
+		}
+		return out;
+	};
+	const cells = runFamily();
+	// 歌うサビも走る型を1つ混ぜる（歌う型だけだと、サビの長い曲で16分の音価が 3割を割った）
+	const hookCells =
+		rnd() < 0.75
+			? runFamily()
+			: [...family(HOOK_RHYTHMS, 2), cells.filter(dense)[0]];
 	return {
 		contour: weighted<Contour>(
 			[
@@ -611,10 +659,10 @@ export const lineStyle = (rnd: () => number): LineStyle => {
 			rnd,
 		),
 		figures,
-		verseRhythm,
-		// 3連は原曲8曲のうち2曲で多い。3連の曲は小節の後ろ半分を3連で駆け込む。
-		verseRhythm2: rnd() < 0.3 ? VERSE_TRIPLET : verseRhythm,
-		hookRhythm: [weighted(HOOK_RHYTHMS, rnd), weighted(HOOK_RHYTHMS, rnd)],
+		cells,
+		hookCells,
+		echo: 0.1 + rnd() * 0.6,
+		close: 0.15 + rnd() * 0.75,
 		tension: rnd() < 0.3,
 		lo: -2 - Math.floor(rnd() * 2),
 		hi: 4 + Math.floor(rnd() * 3),
@@ -727,6 +775,12 @@ const pathTo = (
 	// 遠いときは1回だけ跳んで、そこから音階で着地点へ駆け込む（跳躍を道の途中に散らさない）
 	if (dist >= n + 1)
 		return Array.from({ length: n }, (_, i) => to - d * (n - i));
+	// ちょうど音の数だけ離れているときは、着地点を1段越えてから戻る（離れてから寄ると頭が直前の音と同じになった）
+	if (dist === n && n >= 2)
+		return [
+			...Array.from({ length: n - 1 }, (_, i) => from + d * (i + 1)),
+			to + d,
+		];
 	const away = Math.min(2, Math.ceil((n + 1 - dist) / 2));
 	const route: number[] = [];
 	for (let i = 1; i <= away; i++) route.push(from - d * i);
@@ -786,7 +840,7 @@ const realizeSlot = (
 				? Math.min(top, 2 * bottom - x)
 				: x,
 	);
-	// 道の音が和音と半音でぶつかるなら、隣の段へずらす（前後と同じ音にならない方を選ぶ）
+	// 道の音が和音と半音でぶつかるなら、隣の段へずらす（前後と同じ音にならない方を選ぶ。最後の音は次の着地点とも比べる）
 	let at = (k % 2) * 8;
 	return rhythm.map((len, i) => {
 		let s = steps[i];
@@ -796,7 +850,7 @@ const realizeSlot = (
 				if (
 					!env.clash(Math.floor(k / 2), at, c) &&
 					c !== steps[i - 1] &&
-					c !== steps[i + 1]
+					c !== (i + 1 < steps.length ? steps[i + 1] : next)
 				) {
 					s = c;
 					break;
@@ -810,10 +864,11 @@ const realizeSlot = (
 
 /**
  * 走句リードのセクション（`bars` 小節）。
- * 1. 輪郭から、4小節に8つの着地点（半小節ごと）を決め、和音の音へ寄せる（`tension` の曲は寄せないこともある）。
- * 2. Aメロは1つの走るリズムを全部の半小節で使い、サビは歌うリズム2つを交互に使う（リズムが主題になる）。
- *    着地点の前は直前の音からの道、後ろは次の着地点への道で埋める。
- * 3. 8小節は a a′（頭の2小節を返し、後ろの2小節を閉じる）。4小節目・8小節目の着地点は長く伸ばす。
+ * 1. 2小節ごとに、家族から半小節の型を4つ並べる。8小節の3つ目の2小節は `echo` の割合で1つ目と同じリズムにし（a a′）、
+ *    4小節目・8小節目の句末は `close` の割合で長い音で閉じる。
+ * 2. 輪郭から、4小節に8つの着地点（半小節ごと）を決め、和音の音へ寄せる（`tension` の曲は寄せないこともある）。
+ *    a′ の着地点は1つ目を音階の1〜2段ずらすか、後ろの2つだけ替える。音は写さない（手本は9本とも写しが 0）。
+ * 3. 着地点の前は直前の音からの道、後ろは次の着地点への道で埋める。
  */
 export const lineSection = (
 	rnd: () => number,
@@ -822,31 +877,62 @@ export const lineSection = (
 	env: LineEnv,
 	chorus = false,
 ): LeadNote[][] => {
-	const heights = CONTOURS[chorus ? style.hookContour : style.contour];
+	// サビは着地点を範囲の上寄りに置く。サビも走るようにしたら、オクターブ上げても Aメロとの平均の差が
+	// 9半音を割る曲が出た（サビで必ず上へ移るのは所有者の指示、2026-10-26）。
+	const heights = chorus
+		? CONTOURS[style.hookContour].map((h) => 0.3 + 0.7 * h)
+		: CONTOURS[style.contour];
 	const figures = [0, 1, 2, 3].map(() => pick(style.figures, rnd));
 	const slots = Math.ceil(bars / 4) * 8;
-	const rhythmOf = (k: number): number[] => {
-		if (k % 16 === 15) return [8];
-		if (k % 8 === 7) return chorus ? [2, 2, 4] : [1, 1, 1, 1, 4];
-		if (chorus) return style.hookRhythm[k % 2];
-		return k % 2 === 1 ? style.verseRhythm2 : style.verseRhythm;
+	const family = chorus ? style.hookCells : style.cells;
+	const singing = family.some((c) => HOOK_RHYTHMS.some(([h]) => h === c));
+	// 2小節の4つの型。すぐ前と同じ型は減らす（手本で前の半小節と同じ型は中央 0.1〜0.2）。
+	const unit = (): number[][] => {
+		const out: number[][] = [];
+		for (let i = 0; i < 4; i++) {
+			let c = pick(family, rnd);
+			if (c === out[i - 1] && rnd() < 0.75) c = pick(family, rnd);
+			out.push(c);
+		}
+		return out;
 	};
-	const snap = (k: number, raw: number): number => {
+	// 16小節の後半（9〜16小節目）を前半の写しにするか（手本も4小節のブロックを使い回す）
+	const again = rnd() < 0.6;
+	const rhythms: number[][] = [];
+	const echoed = new Set<number>();
+	for (let base = 0; base < slots; base += 16) {
+		if (base >= 16 && again) {
+			rhythms.push(...rhythms.slice(base - 16, base));
+			continue;
+		}
+		const a = unit();
+		const echo = rnd() < style.echo;
+		if (echo) echoed.add(base + 8);
+		const chunk = [...a, ...unit(), ...(echo ? a : unit()), ...unit()];
+		for (const k of [7, 15])
+			if (rnd() < style.close)
+				chunk[k] = k === 15 ? [8] : singing ? [2, 2, 4] : [1, 1, 1, 1, 4];
+		rhythms.push(...chunk);
+	}
+	const rhythmOf = (k: number): number[] => rhythms[k];
+	/** 着地点を和音の音へ寄せる。`avoid` は選ばない（a′ を1つ目と同じ音にしない）。 */
+	const snap = (k: number, raw: number, avoid?: number): number => {
 		const rhythm = rhythmOf(k);
 		const at =
 			(k % 2) * 8 +
 			rhythm.slice(0, landingOf(rhythm)).reduce((a, b) => a + b, 0);
-		if (style.tension && rnd() < 0.4) return raw;
+		if (style.tension && rnd() < 0.4 && raw !== avoid) return raw;
 		for (const dx of [0, -1, 1, -2, 2]) {
 			const s = raw + dx;
 			if (
+				s !== avoid &&
 				s >= style.lo - 1 &&
 				s <= style.hi + 1 &&
 				env.fits(Math.floor(k / 2), at, s)
 			)
 				return s;
 		}
-		return raw;
+		return raw === avoid ? raw + 1 : raw;
 	};
 	const span = style.hi - style.lo;
 	const fresh = (base: number): number[] =>
@@ -856,28 +942,37 @@ export const lineSection = (
 		});
 	// 着地点の並び（半小節ごと）
 	const targets: number[] = [];
-	const first = fresh(0);
-	// 16小節の後半（9〜16小節目）を前半の写しにするか
-	const again = rnd() < 0.6;
 	for (let base = 0; base < slots; base += 8) {
 		if (base >= 16 && again) {
 			targets.push(...targets.slice(base - 16, base - 8));
 			continue;
 		}
-		const phrase = base === 0 ? first : fresh(base);
-		if (base % 16 === 8) {
-			// a′: 頭の2小節は1つ目の句と同じ、後ろの2小節は別の着地点で閉じ、最後は主音へ寄せる
-			phrase.splice(0, 4, ...first.slice(0, 4));
-			phrase[7] = snap(base + 7, 0);
+		const phrase = fresh(base);
+		if (echoed.has(base)) {
+			// a′: 1つ目の句の頭の4つの着地点を1〜2段ずらすか、前の2つを残して後ろの2つを替える
+			const head = targets.slice(base - 8, base - 4);
+			if (rnd() < 0.5) {
+				const d = (rnd() < 0.5 ? 1 : -1) * (rnd() < 0.7 ? 1 : 2);
+				phrase.splice(0, 4, ...head.map((t, i) => snap(base + i, t + d, t)));
+			} else
+				phrase.splice(
+					0,
+					4,
+					head[0],
+					head[1],
+					snap(base + 2, phrase[2], head[2]),
+					snap(base + 3, phrase[3], head[3]),
+				);
 		}
+		// 8小節目は主音へ寄せて閉じる
+		if (base % 16 === 8) phrase[7] = snap(base + 7, 0);
 		targets.push(...phrase);
 	}
-	// 半小節を順に作る。a′ の頭の2小節と、写しにした後半は、前の音をそのまま写す（主題が戻ってくる）。
+	// 半小節を順に作る。写しにした後半は、前の音をそのまま写す（ブロックの使い回し）。
 	const made: LeadNote[][] = [];
 	let prev = targets[0] + (rnd() < 0.5 ? 2 : -2);
 	for (let k = 0; k < slots; k++) {
-		const copyFrom =
-			k >= 16 && again ? k - 16 : k % 16 >= 8 && k % 16 < 12 ? k - 8 : -1;
+		const copyFrom = k >= 16 && again ? k - 16 : -1;
 		let notes =
 			copyFrom >= 0 && made[copyFrom]
 				? made[copyFrom].map((n) => ({ ...n }))
