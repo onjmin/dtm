@@ -4,8 +4,7 @@
  * 両エンジンがここを呼ぶ。アルペジオ・パッドの層もここに置く。
  *
  * 乱数は `fitPhrases` が楽句ごとに（同率のフレーズの抽選・±1度ずらしの向き）、`buildArpLayer` が
- * 形と強さで引く。骨格借用の黄金値を変えないため、消費の順と回数は compose-skeleton.ts から
- * 切り出した時点のまま。
+ * 形と強さで引く。消費の順と回数は compose-skeleton.ts から切り出した時点のまま。
  */
 
 import { parseChord } from "@onjmin/chord-parser";

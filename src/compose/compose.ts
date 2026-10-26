@@ -3975,7 +3975,7 @@ const draw = (
 	};
 	if (form === "chant") {
 		// 詠唱は旋律側の装飾を掛けない（掛留・変化音・オクターブ跳躍は歌い上げの語彙）。
-		// 抽選は上で済ませてから潰す——他の型の乱数列を変えないため。
+		// 上で抽選してから潰すのは、乱数列を保っていた頃の名残（docs/handover-compose.md §3）。
 		style.headTension = 0;
 		style.chromaticAffinity = 0;
 		style.octaveAffinity = 0;
@@ -5932,7 +5932,7 @@ const draw = (
 					return side === "a" ? thinToEighths(cell) : cell;
 				};
 				const x = make(rnd);
-				// 旧版の1小節ループの候補は、足す2小節を x から決まる別の列で作る（他の候補・曲の抽選を動かさない）。
+				// 旧版の1小節ループの候補は、足す2小節を x から決まる別の列で作る（乱数列を保っていた頃の名残）。
 				const extra = feel.spare
 					? seededRandom(
 							x.reduce(
@@ -5951,7 +5951,7 @@ const draw = (
 			blocks.set(side, made);
 			return made;
 		};
-		// riff-bar のセクションをまたぐ動き。最初の型から決まる別の列で引く（曲の乱数列・他の層を動かさない）。
+		// riff-bar のセクションをまたぐ動き。最初の型から決まる別の列で引く（乱数列を保っていた頃の名残）。
 		let shape: LoopShape | undefined;
 		const spans = new Map<string, number>();
 		const entry = sectionPlan.find((x) => x.spec.melody)?.startBar ?? 0;
@@ -6207,7 +6207,6 @@ const draw = (
 		harmony.length = 0;
 		harmony2.length = 0;
 		// 形・密度・強さは曲ごとに引く——全曲が「上行4音・全小節・velocity 70」だと指紋になる。
-		// この分岐はテンプレートのフィールドで切るので、他の曲の乱数列は動かない。
 		const arpShape = pick<"up" | "updown" | "down">(
 			["up", "up", "updown", "down"],
 			rnd,
@@ -6586,7 +6585,7 @@ const draw = (
  * 走句リード（riff16）は和音を見ずに音階を歩くので、層の和音と半音でこすれる（直す前は長さで 24%。
  * 所有者が「伴奏と調和」と言った手書きは 3%、原曲は 4〜39%）。こする音だけを、拍頭と4分以上は和音の音へ、
  * 裏は和音の音か和音の音から全音以上離れた音階の音へ、いちばん近い所へずらす。
- * 候補を選んだ後（移調済みの音高）に掛けるので、seed の曲（テンポ・進行・リズム）は変わらない。
+ * 候補を選んだ後（移調済みの音高）に掛ける。
  * 楽器リフ（riff）も同じ（直す前 34%、Toby Fox の手本 13曲は 0〜19%・中央 4%）。リフの半音下の
  * 刺繍音は動かさず、直した次の音の半音下へ付け直す。`under` はリードの3度下の重ね。
  */

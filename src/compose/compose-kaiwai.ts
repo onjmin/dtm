@@ -668,7 +668,7 @@ export type LoopStyle = {
 	cells: [BeatCell, number][];
 	stepShare: number;
 	maxLeap: number;
-	/** 旧版で1小節ループを引いた曲。足す小節は別の乱数列から作り、曲の乱数列を変えない。 */
+	/** 旧版で1小節ループを引いた曲。足す小節は別の乱数列から作る（乱数列を保っていた頃の名残）。 */
 	spare: boolean;
 };
 

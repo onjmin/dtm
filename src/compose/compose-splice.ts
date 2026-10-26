@@ -310,8 +310,7 @@ const pcSetKey = (name: string): string => {
 };
 
 /**
- * 連続一致を切る置換の抽選は曲の乱数を使わず、donor と位置から決める。上限の規則を変えても
- * 強制置換の起きない曲の乱数列（以降の donor・旋律）が動かない。
+ * 連続一致を切る置換の抽選は曲の乱数を使わず、donor と位置から決める（乱数列を保っていた頃の名残）。
  */
 const positionRandom = (src: number, at: number): (() => number) => {
 	let h =
@@ -680,7 +679,7 @@ export const composeSplice = (
 		cursor += bars;
 	}
 	const totalBars = cursor;
-	// イントロとサビの両方がある曲だけ抽選する（無い曲の乱数列を変えない）。和音だけ写し、
+	// イントロとサビの両方がある曲だけ抽選する。和音だけ写し、
 	// リズム・ベースの型・層はイントロの donor のまま。
 	const introSec = spliced.get("intro");
 	const chorusSec = spliced.get("chorus");
