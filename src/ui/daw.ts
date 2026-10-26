@@ -110,6 +110,11 @@ import {
 } from "../instruments/soundfont-banks";
 import { type AmkExportResult, exportAMK } from "../io/amk-io";
 import {
+	detectImportFormat,
+	IMPORT_SNIFF_BYTES,
+	type ImportFormat,
+} from "../io/import-format";
+import {
 	analyzeMidiTracks,
 	buildDrumPatternJson,
 	exportMIDI as exportMIDIBlob,
@@ -8167,26 +8172,10 @@ export const mountDAW = (
 			run();
 		});
 
-		// MML/MIDI入力
-		refs.mmlLoadBtn.addEventListener("click", async () => {
-			const mml = refs.mmlInput.value;
-			if (!isAdvanced && options.onRequestAdvancedMode) {
-				const { mergedTrackCount, meta } = parseMML(mml, {
-					stepsPerBar: renderConfig.stepsPerBar,
-					clampTrackCount: trackStates.length,
-				});
-				if (mergedTrackCount > 0 || meta.mode === "advanced") {
-					const confirmed = await showConfirmModal(
-						"初心者モードで読み込むと、音が崩れる可能性があります。<br>上級者モードに切り替えますか？",
-					);
-					if (confirmed) {
-						options.onRequestAdvancedMode(mml);
-						return;
-					}
-				}
-			}
-			overlayDuring(() => loadMML(mml));
-		});
+		// MML入力（貼り付け欄）。ファイルからの MML は wireImport が同じ requestLoadMml へ回す。
+		refs.mmlLoadBtn.addEventListener("click", () =>
+			requestLoadMml(refs.mmlInput.value),
+		);
 
 		// サンプル再生用状態変数
 		let activeSamplePlayer:
@@ -8454,11 +8443,7 @@ export const mountDAW = (
 			showModal("移調の解説", TRANSPOSE_INFO_HTML);
 		});
 
-		if (showMidi) {
-			wireMidi();
-			wireMusicXml();
-			wireUst();
-		}
+		if (showMidi) wireImport();
 		if (showAudio) {
 			wireBackingAudio();
 			updateBackingInputs();
@@ -8517,72 +8502,99 @@ export const mountDAW = (
 			patternDef.pattern as import("../instruments/song-drum-config").SongDrumPattern;
 		installDrumPattern("_extracted_midi", patternDef);
 	};
-	const wireMidi = (): void => {
-		refs.midiInput.addEventListener("change", async () => {
-			const file = refs.midiInput.files?.[0];
-			if (!file || !options.parseMidi) return;
-			refs.overlay.hidden = false;
-			setLoading(true);
-			const buffer = new Uint8Array(await file.arrayBuffer());
-			pendingMidi = await options.parseMidi(buffer);
-			detectedTracks = analyzeMidiTracks(pendingMidi);
-			// MIDI選択時にドラムパターンを自動抽出し、自動選択する
-			try {
-				const { patternDef } = extractMidiDrumPattern(
-					pendingMidi,
-					currentDrumFont,
-				);
-				applyExtractedDrumPattern(patternDef);
-			} catch (e) {
-				console.error(e);
-			}
-			refs.midiTrackSelection.innerHTML = `<span class="dtm-label">トラック</span>`;
-			detectedTracks.forEach((t, i) => {
-				const btn = document.createElement("button");
-				btn.className = `dtm-btn ${t.selected ? "dtm-btn--primary" : "dtm-btn--ghost"}`;
-				btn.dataset.selected = String(t.selected);
-				btn.textContent = `${t.name} (${t.noteCount})`;
-				btn.addEventListener("click", () => {
-					const on = btn.dataset.selected !== "true";
-					btn.dataset.selected = String(on);
-					btn.classList.toggle("dtm-btn--primary", on);
-					btn.classList.toggle("dtm-btn--ghost", !on);
-				});
-				refs.midiTrackSelection.appendChild(btn);
-				if (i === 0) refs.midiTrackSelection.dataset.ready = "1";
+	/** MML を読み込む。初心者モードで崩れそうなら上級者モードへの切り替えを先に聞く。 */
+	const requestLoadMml = async (mml: string): Promise<void> => {
+		if (!isAdvanced && options.onRequestAdvancedMode) {
+			const { mergedTrackCount, meta } = parseMML(mml, {
+				stepsPerBar: renderConfig.stepsPerBar,
+				clampTrackCount: trackStates.length,
 			});
-			refs.midiTrackSelection.classList.remove("dtm-hidden");
-			refs.overlay.hidden = true;
-			setLoading(false);
-		});
-		refs.midiLoadBtn.addEventListener("click", async () => {
-			if (!pendingMidi) return;
-			const selected: number[] = [];
-			const btns = refs.midiTrackSelection.querySelectorAll("button");
-			btns.forEach((b, i) => {
-				if ((b as HTMLElement).dataset.selected === "true")
-					selected.push(detectedTracks[i].index);
-			});
-			if (selected.length === 0) return;
-			if (
-				!isAdvanced &&
-				options.onRequestAdvancedMode &&
-				selected.length > trackStates.length
-			) {
+			if (mergedTrackCount > 0 || meta.mode === "advanced") {
 				const confirmed = await showConfirmModal(
 					"初心者モードで読み込むと、音が崩れる可能性があります。<br>上級者モードに切り替えますか？",
 				);
 				if (confirmed) {
-					const midi = pendingMidi;
-					const sel = selected.slice();
-					options.onRequestAdvancedMode(undefined, (newDaw) => {
-						newDaw.applyMidiParsed?.(midi, sel);
-					});
+					options.onRequestAdvancedMode(mml);
 					return;
 				}
 			}
-			overlayDuring(() => applyMidiSelection(pendingMidi, selected));
+		}
+		overlayDuring(() => loadMML(mml));
+	};
+
+	/** MIDI を選んだとき: 解析してトラック選択ボタンを並べる（読み込みは「読込」で）。 */
+	const selectMidiFile = async (file: File): Promise<void> => {
+		if (!options.parseMidi) return;
+		refs.overlay.hidden = false;
+		setLoading(true);
+		try {
+			const buffer = new Uint8Array(await file.arrayBuffer());
+			pendingMidi = await options.parseMidi(buffer);
+		} catch (e) {
+			pendingMidi = null;
+			setImportNote("MIDIとして解析できませんでした");
+			console.error(e);
+			return;
+		} finally {
+			refs.overlay.hidden = true;
+			setLoading(false);
+		}
+		detectedTracks = analyzeMidiTracks(pendingMidi);
+		// MIDI選択時にドラムパターンを自動抽出し、自動選択する
+		try {
+			const { patternDef } = extractMidiDrumPattern(
+				pendingMidi,
+				currentDrumFont,
+			);
+			applyExtractedDrumPattern(patternDef);
+		} catch (e) {
+			console.error(e);
+		}
+		refs.midiTrackSelection.innerHTML = `<span class="dtm-label">トラック</span>`;
+		detectedTracks.forEach((t, i) => {
+			const btn = document.createElement("button");
+			btn.className = `dtm-btn ${t.selected ? "dtm-btn--primary" : "dtm-btn--ghost"}`;
+			btn.dataset.selected = String(t.selected);
+			btn.textContent = `${t.name} (${t.noteCount})`;
+			btn.addEventListener("click", () => {
+				const on = btn.dataset.selected !== "true";
+				btn.dataset.selected = String(on);
+				btn.classList.toggle("dtm-btn--primary", on);
+				btn.classList.toggle("dtm-btn--ghost", !on);
+			});
+			refs.midiTrackSelection.appendChild(btn);
+			if (i === 0) refs.midiTrackSelection.dataset.ready = "1";
 		});
+		refs.midiTrackSelection.classList.remove("dtm-hidden");
+	};
+	/** 選んだ MIDI のうち、トラック選択で残したものを読み込む。 */
+	const loadSelectedMidi = async (): Promise<void> => {
+		if (!pendingMidi) return;
+		const selected: number[] = [];
+		const btns = refs.midiTrackSelection.querySelectorAll("button");
+		btns.forEach((b, i) => {
+			if ((b as HTMLElement).dataset.selected === "true")
+				selected.push(detectedTracks[i].index);
+		});
+		if (selected.length === 0) return;
+		if (
+			!isAdvanced &&
+			options.onRequestAdvancedMode &&
+			selected.length > trackStates.length
+		) {
+			const confirmed = await showConfirmModal(
+				"初心者モードで読み込むと、音が崩れる可能性があります。<br>上級者モードに切り替えますか？",
+			);
+			if (confirmed) {
+				const midi = pendingMidi;
+				const sel = selected.slice();
+				options.onRequestAdvancedMode(undefined, (newDaw) => {
+					newDaw.applyMidiParsed?.(midi, sel);
+				});
+				return;
+			}
+		}
+		overlayDuring(() => applyMidiSelection(pendingMidi, selected));
 	};
 
 	/** 選択済みで、まだ「読込」を押されていないMusicXML。 */
@@ -8642,101 +8654,90 @@ export const mountDAW = (
 		);
 	};
 
-	const wireMusicXml = (): void => {
-		refs.musicXmlInfoBtn.addEventListener("click", () => {
-			showModal("MusicXMLの入出力解説", MUSICXML_INFO_HTML);
-		});
-		refs.musicXmlInput.addEventListener("change", async () => {
-			const file = refs.musicXmlInput.files?.[0];
-			pendingMusicXml = null;
-			refs.musicXmlPartSelection.innerHTML = "";
-			if (!file) {
-				setMusicXmlNote("");
+	/** MusicXML を選んだとき: 解析してパート選択ボタンを並べる（読み込みは「読込」で）。 */
+	const selectMusicXmlFile = async (file: File): Promise<void> => {
+		refs.overlay.hidden = false;
+		setLoading(true);
+		try {
+			const text = await file.text();
+			pendingMusicXml = parseMusicXML(text);
+			if (pendingMusicXml.parts.length === 0) {
+				setMusicXmlNote("パートが見つかりませんでした");
 				refs.musicXmlPartSelection.classList.add("dtm-hidden");
 				return;
 			}
-			refs.overlay.hidden = false;
-			setLoading(true);
-			try {
-				const text = await file.text();
-				pendingMusicXml = parseMusicXML(text);
-				if (pendingMusicXml.parts.length === 0) {
-					setMusicXmlNote("パートが見つかりませんでした");
-					refs.musicXmlPartSelection.classList.add("dtm-hidden");
-					return;
-				}
-				refs.musicXmlPartSelection.innerHTML = `<span class="dtm-label">パート</span>`;
-				pendingMusicXml.parts.forEach((p) => {
-					const btn = document.createElement("button");
-					btn.className = "dtm-btn dtm-btn--primary";
-					btn.dataset.selected = "true";
-					const lyricBadge = p.hasLyrics ? " 🎤" : "";
-					btn.textContent = `${p.name} (${p.noteCount}音${lyricBadge})`;
-					btn.title = `平均音高: MIDI ${Math.round(p.avgPitch)}${p.hasLyrics ? " / 歌詞あり" : ""}`;
-					btn.addEventListener("click", () => {
-						const on = btn.dataset.selected !== "true";
-						btn.dataset.selected = String(on);
-						btn.classList.toggle("dtm-btn--primary", on);
-						btn.classList.toggle("dtm-btn--ghost", !on);
-						updateMusicXmlAssignmentNote();
-					});
-					refs.musicXmlPartSelection.appendChild(btn);
+			refs.musicXmlPartSelection.innerHTML = `<span class="dtm-label">パート</span>`;
+			pendingMusicXml.parts.forEach((p) => {
+				const btn = document.createElement("button");
+				btn.className = "dtm-btn dtm-btn--primary";
+				btn.dataset.selected = "true";
+				const lyricBadge = p.hasLyrics ? " 🎤" : "";
+				btn.textContent = `${p.name} (${p.noteCount}音${lyricBadge})`;
+				btn.title = `平均音高: MIDI ${Math.round(p.avgPitch)}${p.hasLyrics ? " / 歌詞あり" : ""}`;
+				btn.addEventListener("click", () => {
+					const on = btn.dataset.selected !== "true";
+					btn.dataset.selected = String(on);
+					btn.classList.toggle("dtm-btn--primary", on);
+					btn.classList.toggle("dtm-btn--ghost", !on);
+					updateMusicXmlAssignmentNote();
 				});
-				refs.musicXmlPartSelection.classList.remove("dtm-hidden");
-				updateMusicXmlAssignmentNote();
-			} catch (e) {
-				setMusicXmlNote("MusicXMLとして解析できませんでした");
-				refs.musicXmlPartSelection.classList.add("dtm-hidden");
-				console.error(e);
-			} finally {
-				refs.overlay.hidden = true;
-				setLoading(false);
-			}
-		});
-
-		refs.musicXmlLoadBtn.addEventListener("click", async () => {
-			if (!pendingMusicXml) return;
-			const selected = getSelectedMusicXmlPartIndices();
-			if (selected.length === 0) return;
-
-			const applyActiveOnly = refs.applyActiveOnly?.checked ?? false;
-			const from = applyActiveOnly
-				? activeTrackIndexOf()
-				: selected.length > 1
-					? 0
-					: activeTrackIndexOf();
-			const maxCount = applyActiveOnly ? 1 : trackStates.length - from;
-
-			if (
-				!isAdvanced &&
-				options.onRequestAdvancedMode &&
-				!applyActiveOnly &&
-				selected.length > maxCount
-			) {
-				const confirmed = await showConfirmModal(
-					"初心者モードではトラックが足りず、一部のパートを読み込めません。<br>上級者モードに切り替えますか？",
-				);
-				if (confirmed) {
-					const xml = pendingMusicXml;
-					const sel = selected.slice();
-					options.onRequestAdvancedMode(undefined, (newDaw) => {
-						newDaw.applyMusicXmlParsed?.(xml, sel);
-					});
-					return;
-				}
-			}
-
-			overlayDuring(() => {
-				const { applied, dropped } = applyMusicXmlSelection(
-					pendingMusicXml!,
-					selected,
-				);
-				setMusicXmlNote(
-					dropped > 0
-						? `${applied}パートを読み込みました（${dropped}パートはトラック不足のため省略）`
-						: `${applied}パートを読み込みました`,
-				);
+				refs.musicXmlPartSelection.appendChild(btn);
 			});
+			refs.musicXmlPartSelection.classList.remove("dtm-hidden");
+			updateMusicXmlAssignmentNote();
+		} catch (e) {
+			setMusicXmlNote("MusicXMLとして解析できませんでした");
+			refs.musicXmlPartSelection.classList.add("dtm-hidden");
+			console.error(e);
+		} finally {
+			refs.overlay.hidden = true;
+			setLoading(false);
+		}
+	};
+
+	/** 選んだ MusicXML のうち、パート選択で残したものを読み込む。 */
+	const loadSelectedMusicXml = async (): Promise<void> => {
+		if (!pendingMusicXml) return;
+		const selected = getSelectedMusicXmlPartIndices();
+		if (selected.length === 0) return;
+
+		const applyActiveOnly = refs.applyActiveOnly?.checked ?? false;
+		const from = applyActiveOnly
+			? activeTrackIndexOf()
+			: selected.length > 1
+				? 0
+				: activeTrackIndexOf();
+		const maxCount = applyActiveOnly ? 1 : trackStates.length - from;
+
+		if (
+			!isAdvanced &&
+			options.onRequestAdvancedMode &&
+			!applyActiveOnly &&
+			selected.length > maxCount
+		) {
+			const confirmed = await showConfirmModal(
+				"初心者モードではトラックが足りず、一部のパートを読み込めません。<br>上級者モードに切り替えますか？",
+			);
+			if (confirmed) {
+				const xml = pendingMusicXml;
+				const sel = selected.slice();
+				options.onRequestAdvancedMode(undefined, (newDaw) => {
+					newDaw.applyMusicXmlParsed?.(xml, sel);
+				});
+				return;
+			}
+		}
+
+		overlayDuring(() => {
+			const { applied, dropped } = applyMusicXmlSelection(
+				pendingMusicXml!,
+				selected,
+			);
+			setMusicXmlNote(
+				dropped > 0
+					? `${applied}パートを読み込みました（${dropped}パートはトラック不足のため省略）`
+					: `${applied}パートを読み込みました`,
+			);
 		});
 	};
 
@@ -8766,76 +8767,148 @@ export const mountDAW = (
 			? `${names}（${ustDropReason()}${dropped}ファイルは読み込みません）`
 			: names;
 	};
-	const wireUst = (): void => {
-		refs.ustInfoBtn.addEventListener("click", () => {
-			showModal("USTの読み込み解説", UST_INFO_HTML);
-		});
-		refs.ustInput.addEventListener("change", async () => {
-			const files = [...(refs.ustInput.files ?? [])];
-			pendingUsts = [];
-			if (files.length === 0) {
-				setUstNote("");
-				return;
-			}
-			refs.overlay.hidden = false;
-			setLoading(true);
-			// 複数選択の並びはブラウザ任せなので、ファイル名順に固定する
-			// （`01_main.ust` `02_harmony.ust` のような番号付けが素直に効くように）。
-			files.sort((a, b) =>
-				a.name.localeCompare(b.name, "ja", { numeric: true }),
-			);
+	/** UST を選んだとき（複数可）: 解析して、どのトラックへ入るかを予告する。 */
+	const selectUstFiles = async (files: File[]): Promise<void> => {
+		refs.overlay.hidden = false;
+		setLoading(true);
+		// 複数選択の並びはブラウザ任せなので、ファイル名順に固定する
+		// （`01_main.ust` `02_harmony.ust` のような番号付けが素直に効くように）。
+		files.sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true }));
+		try {
 			for (const file of files) {
 				const bytes = new Uint8Array(await file.arrayBuffer());
 				pendingUsts.push(parseUst(bytes, file.name));
 			}
 			setUstNote(ustAssignmentNote(pendingUsts));
+		} catch (e) {
+			pendingUsts = [];
+			setImportNote("USTとして解析できませんでした");
+			console.error(e);
+		} finally {
 			refs.overlay.hidden = true;
 			setLoading(false);
-		});
-		refs.ustLoadBtn.addEventListener("click", async () => {
-			if (pendingUsts.length === 0) return;
-			const activeIndex = activeTrackIndexOf();
-			// 初心者モードは4トラックしかない。ハモリを全部入れるには足りないので、
-			// MIDI読込と同じように上級者モードへの切り替えを提案する
-			// （「現在のトラックのみ」が有効なら、そもそも1本しか入れないので聞かない）。
-			if (
-				!isAdvanced &&
-				options.onRequestAdvancedMode &&
-				!refs.applyActiveOnly?.checked &&
-				pendingUsts.length > trackStates.length - activeIndex
-			) {
-				const confirmed = await showConfirmModal(
-					"初心者モードではトラックが足りず、一部のUSTを読み込めません。<br>上級者モードに切り替えますか？",
-				);
-				if (confirmed) {
-					const ustTracks = pendingUsts.slice();
-					options.onRequestAdvancedMode(undefined, (newDaw) => {
-						newDaw.applyUstParsed?.(ustTracks, 0);
-					});
-					return;
-				}
+		}
+	};
+	/** 選んだ UST を、今のトラックから順に読み込む。 */
+	const loadSelectedUsts = async (): Promise<void> => {
+		if (pendingUsts.length === 0) return;
+		const activeIndex = activeTrackIndexOf();
+		// 初心者モードは4トラックしかない。ハモリを全部入れるには足りないので、
+		// MIDI読込と同じように上級者モードへの切り替えを提案する
+		// （「現在のトラックのみ」が有効なら、そもそも1本しか入れないので聞かない）。
+		if (
+			!isAdvanced &&
+			options.onRequestAdvancedMode &&
+			!refs.applyActiveOnly?.checked &&
+			pendingUsts.length > trackStates.length - activeIndex
+		) {
+			const confirmed = await showConfirmModal(
+				"初心者モードではトラックが足りず、一部のUSTを読み込めません。<br>上級者モードに切り替えますか？",
+			);
+			if (confirmed) {
+				const ustTracks = pendingUsts.slice();
+				options.onRequestAdvancedMode(undefined, (newDaw) => {
+					newDaw.applyUstParsed?.(ustTracks, 0);
+				});
+				return;
 			}
-			const ustTracks = pendingUsts.slice();
-			overlayDuring(() => {
-				const { applied, dropped } = applyUstTracks(ustTracks);
-				const loaded = ustTracks.slice(0, applied);
-				const unknown = loaded.reduce((sum, u) => sum + u.unknownLyricCount, 0);
-				setUstNote(
-					[
-						`${applied}ファイルを読み込みました`,
-						dropped > 0
-							? `（${ustDropReason()}${dropped}ファイルは未読込）`
-							: "",
-						// ピンイン判定は歌詞全体からの推測なので、そう読んだことを伝える。
-						loaded.some((u) => u.pinyin)
-							? "／中国語（ピンイン）としてかなに直しました"
-							: "",
-						unknown > 0
-							? `／読み取れない歌詞${unknown}音は継続記号にしました`
-							: "",
-					].join(""),
-				);
-			});
+		}
+		const ustTracks = pendingUsts.slice();
+		overlayDuring(() => {
+			const { applied, dropped } = applyUstTracks(ustTracks);
+			const loaded = ustTracks.slice(0, applied);
+			const unknown = loaded.reduce((sum, u) => sum + u.unknownLyricCount, 0);
+			setUstNote(
+				[
+					`${applied}ファイルを読み込みました`,
+					dropped > 0 ? `（${ustDropReason()}${dropped}ファイルは未読込）` : "",
+					// ピンイン判定は歌詞全体からの推測なので、そう読んだことを伝える。
+					loaded.some((u) => u.pinyin)
+						? "／中国語（ピンイン）としてかなに直しました"
+						: "",
+					unknown > 0
+						? `／読み取れない歌詞${unknown}音は継続記号にしました`
+						: "",
+				].join(""),
+			);
+		});
+	};
+
+	/** 選んだファイルの形式。「読込」はこれで読み込み先を決める。 */
+	let pendingImport: ImportFormat | null = null;
+	/** ファイルから読んだ MML（貼り付け欄にも写すが、読込はこちらを使う）。 */
+	let pendingMmlText = "";
+	/** ファイル欄の下に出す注意書き（形式が分からない等）。空文字なら隠す。 */
+	const setImportNote = (text: string): void => {
+		refs.importNote.textContent = text;
+		refs.importNote.classList.toggle("dtm-hidden", text === "");
+	};
+	/** 前に選んだファイルの選択欄・注意書きを片付ける。 */
+	const clearPendingImport = (): void => {
+		pendingImport = null;
+		pendingMidi = null;
+		pendingMusicXml = null;
+		pendingUsts = [];
+		pendingMmlText = "";
+		setImportNote("");
+		setMusicXmlNote("");
+		setUstNote("");
+		refs.midiTrackSelection.innerHTML = "";
+		refs.midiTrackSelection.classList.add("dtm-hidden");
+		refs.musicXmlPartSelection.innerHTML = "";
+		refs.musicXmlPartSelection.classList.add("dtm-hidden");
+	};
+	/** 選ばれたファイルの形式を決めて、その形式の「選んだとき」の処理へ回す。 */
+	const selectImportFiles = async (files: File[]): Promise<void> => {
+		clearPendingImport();
+		if (files.length === 0) return;
+		const formats = await Promise.all(
+			files.map(async (f) =>
+				detectImportFormat(
+					f.name,
+					new Uint8Array(await f.slice(0, IMPORT_SNIFF_BYTES).arrayBuffer()),
+				),
+			),
+		);
+		const unknown = files.filter((_, i) => formats[i] === null);
+		if (unknown.length > 0) {
+			setImportNote(
+				`読み込めない形式です: ${unknown.map((f) => f.name).join(", ")}（MIDI / MusicXML / UST / MML に対応）`,
+			);
+			return;
+		}
+		const format = formats[0] as ImportFormat;
+		// 複数まとめて読めるのは UST（ハモリを別トラックへ）だけ。
+		if (files.length > 1 && !formats.every((f) => f === "ust")) {
+			setImportNote(
+				"複数のファイルをまとめて読めるのは UST だけです。ほかの形式は1つずつ選んでください",
+			);
+			return;
+		}
+		pendingImport = format;
+		if (format === "midi") await selectMidiFile(files[0]);
+		else if (format === "musicxml") await selectMusicXmlFile(files[0]);
+		else if (format === "ust") await selectUstFiles(files);
+		else {
+			pendingMmlText = await files[0].text();
+			refs.mmlInput.value = pendingMmlText;
+		}
+	};
+	const wireImport = (): void => {
+		refs.musicXmlInfoBtn.addEventListener("click", () => {
+			showModal("MusicXMLの入出力解説", MUSICXML_INFO_HTML);
+		});
+		refs.ustInfoBtn.addEventListener("click", () => {
+			showModal("USTの読み込み解説", UST_INFO_HTML);
+		});
+		refs.importFileInput.addEventListener("change", () =>
+			selectImportFiles([...(refs.importFileInput.files ?? [])]),
+		);
+		refs.importLoadBtn.addEventListener("click", () => {
+			if (pendingImport === "midi") return loadSelectedMidi();
+			if (pendingImport === "musicxml") return loadSelectedMusicXml();
+			if (pendingImport === "ust") return loadSelectedUsts();
+			if (pendingImport === "mml") return requestLoadMml(pendingMmlText);
 		});
 	};
 

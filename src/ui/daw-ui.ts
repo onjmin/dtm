@@ -5,6 +5,7 @@
 
 import { DELAY_DIVISIONS } from "../audio/delay";
 import { SECTION_LABELS, SECTION_ORDER } from "../compose/compose-sections";
+import { IMPORT_ACCEPT } from "../io/import-format";
 import type { TrackConfig } from "../types";
 import { COMPOSE_GENRES } from "./compose-genres";
 import { escapeHtml } from "./html";
@@ -102,19 +103,16 @@ export type DawUIRefs = {
 	audioOffsetInput: HTMLInputElement;
 	audioOffsetTail: HTMLElement;
 	// io
-	midiInput: HTMLInputElement;
-	midiLoadBtn: HTMLButtonElement;
+	importFileInput: HTMLInputElement;
+	importLoadBtn: HTMLButtonElement;
+	importNote: HTMLElement;
 	midiInfoBtn: HTMLButtonElement;
 	midiTrackSelection: HTMLElement;
 	midiPanel: HTMLElement;
 	midiSearchOpenBtn: HTMLButtonElement;
-	musicXmlInput: HTMLInputElement;
-	musicXmlLoadBtn: HTMLButtonElement;
 	musicXmlInfoBtn: HTMLButtonElement;
 	musicXmlPartSelection: HTMLElement;
 	musicXmlLoadNote: HTMLElement;
-	ustInput: HTMLInputElement;
-	ustLoadBtn: HTMLButtonElement;
 	ustInfoBtn: HTMLButtonElement;
 	ustLoadNote: HTMLElement;
 	mmlInput: HTMLTextAreaElement;
@@ -509,33 +507,22 @@ export const buildUI = (
   <details class="dtm-panel ${showMidi ? "" : "dtm-hidden"}" data-dtm="midi-panel" data-dtm-acc="io-in">
     <summary>MIDI / MusicXML / UST / MML 入力</summary>
     <div class="dtm-panel-body">
+      <!-- ファイル入力は1本。選ばれたファイルの形式（中身の先頭と拡張子）で読み込み先を分ける（io/import-format.ts）。 -->
       <div class="dtm-row" style="flex-wrap:nowrap">
-        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
-          <span class="dtm-label" style="line-height: 1;">MIDI</span>
-          <button class="dtm-infobtn" data-dtm="midi-info" title="MIDIの読み込み解説">${icon("info", 12)}</button>
-        </div>
-        <input type="file" class="dtm-input dtm-grow" accept=".mid,.midi" data-dtm="midi-input" style="min-width:0">
-        <button class="dtm-btn dtm-btn--success" data-dtm="midi-load" style="flex-shrink:0">読込</button>
+        <span class="dtm-label" style="flex-shrink:0">ファイル</span>
+        <input type="file" class="dtm-input dtm-grow" accept="${IMPORT_ACCEPT}" multiple data-dtm="import-file" style="min-width:0">
+        <button class="dtm-btn dtm-btn--success" data-dtm="import-load" style="flex-shrink:0">読込</button>
       </div>
+      <div class="dtm-row" style="gap:4px 10px">
+        <span class="dtm-label" style="display:inline-flex;align-items:center;gap:4px">MIDI<button class="dtm-infobtn" data-dtm="midi-info" title="MIDIの読み込み解説">${icon("info", 12)}</button></span>
+        <span class="dtm-label" style="display:inline-flex;align-items:center;gap:4px">MusicXML<button class="dtm-infobtn" data-dtm="musicxml-info" title="MusicXMLの読み込み解説">${icon("info", 12)}</button></span>
+        <span class="dtm-label" style="display:inline-flex;align-items:center;gap:4px">UST<button class="dtm-infobtn" data-dtm="ust-info" title="USTの読み込み解説">${icon("info", 12)}</button></span>
+        <span class="dtm-label">MML（.mml / .txt）</span>
+      </div>
+      <p class="dtm-load-note dtm-hidden" data-dtm="import-note"></p>
       <div class="dtm-row dtm-hidden" data-dtm="midi-track-selection"></div>
-      <div class="dtm-row" style="flex-wrap:nowrap">
-        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
-          <span class="dtm-label" style="line-height: 1;">MusicXML</span>
-          <button class="dtm-infobtn" data-dtm="musicxml-info" title="MusicXMLの読み込み解説">${icon("info", 12)}</button>
-        </div>
-        <input type="file" class="dtm-input dtm-grow" accept=".musicxml,.xml" data-dtm="musicxml-input" style="min-width:0">
-        <button class="dtm-btn dtm-btn--success" data-dtm="musicxml-load" style="flex-shrink:0">読込</button>
-      </div>
       <div class="dtm-row dtm-hidden" data-dtm="musicxml-part-selection"></div>
       <p class="dtm-load-note dtm-hidden" data-dtm="musicxml-load-note"></p>
-      <div class="dtm-row" style="flex-wrap:nowrap">
-        <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
-          <span class="dtm-label" style="line-height: 1;">UST</span>
-          <button class="dtm-infobtn" data-dtm="ust-info" title="USTの読み込み解説">${icon("info", 12)}</button>
-        </div>
-        <input type="file" class="dtm-input dtm-grow" accept=".ust" multiple data-dtm="ust-input" style="min-width:0">
-        <button class="dtm-btn dtm-btn--success" data-dtm="ust-load" style="flex-shrink:0">読込</button>
-      </div>
       <p class="dtm-load-note dtm-hidden" data-dtm="ust-load-note"></p>
       <div class="dtm-row" style="flex-wrap:nowrap">
         <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center; flex-shrink:0;">
@@ -974,19 +961,16 @@ export const buildUI = (
 		audioLeadSelect: sel("audio-lead"),
 		audioOffsetInput: sel("audio-offset"),
 		audioOffsetTail: sel("audio-offset-tail"),
-		midiInput: sel("midi-input"),
-		midiLoadBtn: sel("midi-load"),
+		importFileInput: sel("import-file"),
+		importLoadBtn: sel("import-load"),
+		importNote: sel("import-note"),
 		midiInfoBtn: sel("midi-info"),
 		midiTrackSelection: sel("midi-track-selection"),
 		midiPanel: sel("midi-panel"),
 		midiSearchOpenBtn: sel("midi-search-open"),
-		musicXmlInput: sel("musicxml-input"),
-		musicXmlLoadBtn: sel("musicxml-load"),
 		musicXmlInfoBtn: sel("musicxml-info"),
 		musicXmlPartSelection: sel("musicxml-part-selection"),
 		musicXmlLoadNote: sel("musicxml-load-note"),
-		ustInput: sel("ust-input"),
-		ustLoadBtn: sel("ust-load"),
 		ustInfoBtn: sel("ust-info"),
 		ustLoadNote: sel("ust-load-note"),
 		mmlInput: sel("mml-input"),
