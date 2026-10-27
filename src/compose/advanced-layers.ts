@@ -203,8 +203,17 @@ export const buildAdvancedLayers = (
 	// サビの重ね。編曲は「オクターブ上」を引くことがあるが、その楽器が届かなければ
 	// ユニゾンへ落ちる。実測では、トランペットやブラス・合唱で12〜14半音ぶん
 	// 音域を突き抜けていた（＝金切り音）。
-	const leadNotes = plan.lead ? onlyIn(song.melody, plan.lead.sections) : [];
-	const leadOctave = fit(leadNotes, "chorusLead", plan.lead?.octave ?? 0);
+	// 走句リードの曲（`song.parts`）は、リードの写しの代わりにサビの合いの手を置く（音域はそのまま）。
+	const leadNotes = song.parts
+		? song.parts.answer
+		: plan.lead
+			? onlyIn(song.melody, plan.lead.sections)
+			: [];
+	const leadOctave = fit(
+		leadNotes,
+		"chorusLead",
+		song.parts ? 0 : (plan.lead?.octave ?? 0),
+	);
 	const leadLayer: AdvancedLayer = {
 		index: 1,
 		notes: leadNotes,
@@ -352,39 +361,56 @@ export const buildAdvancedLayers = (
 		// CHORUS/LOUD 側を持つので、こちらは静かな側——結果として**セクションの境目で主旋律に付く
 		// 音色が入れ替わる**。1トラック1楽器の制約下で「パートごとに楽器が変わる」を作れるのは、
 		// この書き分けだけ。
-		song.octave.length > 0
-			? {
-					index: 13,
-					notes: song.octave,
-					octave: -1,
-					volume: 56,
-					slot: "melody" as PresetSlot,
-				}
-			: (() => {
-					const leadKinds = new Set(plan.lead?.sections ?? []);
-					const quiet = song.sections
-						.filter((sec) => sec.spec.melody && !leadKinds.has(sec.kind))
-						.map((sec) => sec.kind);
-					const notes = quiet.length > 0 ? onlyIn(song.melody, quiet) : [];
-					// **主旋律とも伴奏とも同じ楽器になっては意味が無い。** プリセットによっては
-					// `solo` が `melody` と同じ（ハードロックはどちらも歪みギター）だったり、
-					// `chord` と同じ（和風はどちらも尺八）だったりする。そのまま使うと
-					// 「同じ音を同じ音色で重ねる」——直したはずの被りに戻る。
-					// 主旋律とも伴奏とも違う音色になる最初のスロットを採る。
+		// 走句リードの曲は、写しの代わりにアルペジオを置く（主旋律とも伴奏とも違う音色で）。
+		song.parts
+			? (() => {
+					const notes = song.parts?.arp ?? [];
 					const slot: PresetSlot =
-						(["solo", "chorusLead", "submelody", "chordAlt"] as const).find(
+						(["sparkle", "solo", "chordAlt", "submelody"] as const).find(
 							(k) => preset[k] !== preset.melody && preset[k] !== preset.chord,
-						) ?? "submelody";
+						) ?? "sparkle";
 					return {
 						index: 13,
 						notes,
-						// ユニゾンで置く。**音色だけを変えるのが狙い**なので、
-						// オクターブを動かすと「オクターブ写し」に戻ってしまう。
 						octave: fit(notes, slot, 0),
 						volume: 58,
 						slot,
 					};
-				})(),
+				})()
+			: song.octave.length > 0
+				? {
+						index: 13,
+						notes: song.octave,
+						octave: -1,
+						volume: 56,
+						slot: "melody" as PresetSlot,
+					}
+				: (() => {
+						const leadKinds = new Set(plan.lead?.sections ?? []);
+						const quiet = song.sections
+							.filter((sec) => sec.spec.melody && !leadKinds.has(sec.kind))
+							.map((sec) => sec.kind);
+						const notes = quiet.length > 0 ? onlyIn(song.melody, quiet) : [];
+						// **主旋律とも伴奏とも同じ楽器になっては意味が無い。** プリセットによっては
+						// `solo` が `melody` と同じ（ハードロックはどちらも歪みギター）だったり、
+						// `chord` と同じ（和風はどちらも尺八）だったりする。そのまま使うと
+						// 「同じ音を同じ音色で重ねる」——直したはずの被りに戻る。
+						// 主旋律とも伴奏とも違う音色になる最初のスロットを採る。
+						const slot: PresetSlot =
+							(["solo", "chorusLead", "submelody", "chordAlt"] as const).find(
+								(k) =>
+									preset[k] !== preset.melody && preset[k] !== preset.chord,
+							) ?? "submelody";
+						return {
+							index: 13,
+							notes,
+							// ユニゾンで置く。**音色だけを変えるのが狙い**なので、
+							// オクターブを動かすと「オクターブ写し」に戻ってしまう。
+							octave: fit(notes, slot, 0),
+							volume: 58,
+							slot,
+						};
+					})(),
 		// t14。**間奏のソロ。** 音が入るのは間奏の小節だけなので、この1本だけを別の楽器にしても
 		// 他のセクションの鳴りは変わらない。歌の音域をそのまま渡すと管楽器が上へ抜ける
 		// （テナーサックスで10半音）ので、ここも合わせる。

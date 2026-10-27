@@ -5,6 +5,7 @@
  */
 
 import { parseChord } from "@onjmin/chord-parser";
+import { UNITS_PER_SEMITONE } from "../audio/tuning";
 import type { ChordPatternType } from "../chord/chords";
 import type { SectionKind, StructureTemplate } from "./compose-sections";
 
@@ -528,6 +529,17 @@ export type LineStyle = {
 	staccato: boolean;
 	/** 句末で息を継ぐ割合（原曲のリードの占有は 77〜93%）。 */
 	breath: number;
+	/**
+	 * 音階で着地点へ駆け込むとき、直前の音を半音の経過音にする割合（全音の隙間だけ）。0 の曲は全音階のまま。
+	 * 手本の Granite は駆け下り・駆け上がりに半音を通す（2026-10-27）。
+	 */
+	chromatic: number;
+	/**
+	 * サビの句の切れ目（主題へ戻る直前の小節）を山場の駆け上がりにする形。`half` は伸ばした音から後ろ半分を
+	 * 16分で駆け上がる、`full` は1小節16分で1オクターブ駆け下りてから駆け上がる（Granite の15小節目の形）。
+	 * null の曲は今までどおり閉じる。
+	 */
+	climb: "half" | "full" | null;
 };
 
 export type Contour =
@@ -588,7 +600,8 @@ const HOOK_RHYTHMS: [number[], number][] = [
 	[[2, 2, 4], 1],
 ];
 
-export const lineStyle = (rnd: () => number): LineStyle => {
+/** `per` は1オクターブの段数（全音階 7、五音 5）。 */
+export const lineStyle = (rnd: () => number, per = 5): LineStyle => {
 	const figure = (): Figure =>
 		weighted<Figure>(
 			[
@@ -658,10 +671,20 @@ export const lineStyle = (rnd: () => number): LineStyle => {
 		cells,
 		hookCells,
 		tension: rnd() < 0.3,
-		lo: -2 - Math.floor(rnd() * 2),
-		hi: 4 + Math.floor(rnd() * 3),
+		// 全音階（1オクターブ7段）の曲は、五音の段の -2〜-3・4〜6 と同じ高さの幅を段で取り直す
+		lo: per === 7 ? -3 - Math.floor(rnd() * 2) : -2 - Math.floor(rnd() * 2),
+		hi: per === 7 ? 6 + Math.floor(rnd() * 4) : 4 + Math.floor(rnd() * 3),
 		staccato: rnd() < 0.4,
 		breath: 0.05 + rnd() * 0.9,
+		chromatic: rnd() < 0.6 ? 0.2 + rnd() * 0.4 : 0,
+		climb: weighted<"half" | "full" | null>(
+			[
+				["half", 2],
+				["full", 2],
+				[null, 1],
+			],
+			rnd,
+		),
 	};
 };
 
@@ -751,6 +774,8 @@ export type LineEnv = {
 	fits: (bar: number, at: number, step: number) => boolean;
 	/** 鳴っている和音の音と半音でぶつかるか。道の音はこれを避ける（後段で遠くへ動かされないように）。 */
 	clash: (bar: number, at: number, step: number) => boolean;
+	/** 段の高さ（半音。臨時記号は含まない）。全音の隙間に半音の経過音を入れるかを見る。 */
+	semi: (step: number) => number;
 };
 
 /**
@@ -868,7 +893,7 @@ const realizeSlot = (
 	// 道の音が和音と半音でぶつかるなら、隣の段へずらす（前後と同じ音にならない方を選ぶ。最後の音は次の着地点とも比べる）。
 	// 前の音に近づく向きを先に試す（離れる向きへずらすと4度の跳躍が増えた）
 	let at = (k % 2) * 8;
-	return rhythm.map((len, i) => {
+	const notes = rhythm.map((len, i) => {
 		let s = steps[i];
 		// 半小節の頭（1・3拍目）の音も和音の音へ寄せる（kw2 は1・3拍目の和音の音 76%。着地点だけ寄せた版は
 		// 16分で駆け込む型で頭が経過音になり、曲によって 3〜6割だった。2026-10-27）
@@ -900,6 +925,31 @@ const realizeSlot = (
 		at += len;
 		return { step: s, chrom: false, len };
 	});
+	return chromaticApproach(rnd, style, env, notes, ti);
+};
+
+/**
+ * 音階で着地点 `notes[ti]` へ駆け込む直前の音を、全音の隙間なら半音の経過音にする（`style.chromatic` の割合）。
+ * 上りは着地点の半音下、下りは上の段の半音下（＝着地点の半音上）。綴りは `chrom`（その段の半音下）で持つ。
+ */
+const chromaticApproach = (
+	rnd: () => number,
+	style: LineStyle,
+	env: LineEnv,
+	notes: LeadNote[],
+	ti: number,
+): LeadNote[] => {
+	if (style.chromatic <= 0 || ti < 2) return notes;
+	const [a, b, t] = [notes[ti - 2], notes[ti - 1], notes[ti]];
+	if (b.len > 2 || a.len <= 0 || b.len <= 0 || rnd() >= style.chromatic)
+		return notes;
+	const up = a.step === t.step - 2 && b.step === t.step - 1;
+	const down = a.step === t.step + 2 && b.step === t.step + 1;
+	if (up && env.semi(t.step) - env.semi(t.step - 1) === 2)
+		notes[ti - 1] = { ...b, step: t.step, chrom: true };
+	else if (down && env.semi(t.step + 1) - env.semi(t.step) === 2)
+		notes[ti - 1] = { ...b, step: t.step + 1, chrom: true };
+	return notes;
 };
 
 /**
@@ -1113,8 +1163,11 @@ export const lineSection = (
 	const answerOf = (bar: number): LeadNote[] => {
 		if (chorus && rnd() < 0.7) {
 			const first = motif.find((n) => n.len > 0)?.step ?? 0;
+			// 半音の経過音（段の半音下）は、返すと着地点の反対側へ回るので1段上の半音下に置き直す
 			const inv = motif.map((n) =>
-				n.len > 0 ? { ...n, step: 2 * first - n.step } : { ...n },
+				n.len > 0
+					? { ...n, step: 2 * first - n.step + (n.chrom ? 1 : 0) }
+					: { ...n },
 			);
 			const head = inv.find((n) => n.len > 0)?.step ?? 0;
 			const near = prev + (prev >= level(3) ? -2 : 2);
@@ -1174,6 +1227,42 @@ export const lineSection = (
 			level(0),
 			prev,
 		);
+	/**
+	 * 山場の駆け上がり: 主題へ戻る直前の小節を16分で駆け上がり、主題の頭の音の1段下から次の小節へ渡す。
+	 * 手本の Granite はサビの8小節目で駆け下りてから駆け上がり、主題をオクターブ上で返す（2026-10-27）。
+	 */
+	const climbTo = (bar: number): LeadNote[] => {
+		const target = motif.find((n) => n.len > 0)?.step ?? level(0);
+		let line: LeadNote[];
+		if (style.climb === "full") {
+			// 主題の頭の音から1オクターブ下りて、折り返して駆け上がる
+			const down = Array.from({ length: 8 }, (_, i) => target - i);
+			const up = Array.from({ length: 8 }, (_, i) => target - 8 + i);
+			line = [...down, ...up].map((step) => ({ step, chrom: false, len: 1 }));
+		} else {
+			// 和音の音で伸ばしてから、後ろ半分ほどを音階で駆け上がる
+			let h = target - 9;
+			for (const dx of [0, -1, 1, -2, 2])
+				if (env.fits(bar, 0, target - 9 + dx)) {
+					h = target - 9 + dx;
+					break;
+				}
+			const count = target - 1 - h;
+			line = [
+				{ step: h, chrom: false, len: 16 - count },
+				...Array.from({ length: count }, (_, i) => ({
+					step: h + 1 + i,
+					chrom: false,
+					len: 1,
+				})),
+			];
+		}
+		// 最後の音は、全音の隙間なら半音で主題へ入る
+		if (rnd() < 0.7 && env.semi(target) - env.semi(target - 1) === 2)
+			line[line.length - 1] = { step: target, chrom: true, len: 1 };
+		return line;
+	};
+	const climbing = chorus && style.climb !== null;
 	const block: LeadNote[][] = [];
 	block[0] = motif;
 	push(motif);
@@ -1181,7 +1270,8 @@ export const lineSection = (
 	push(block[1]);
 	block[2] = sequenceOf(2);
 	push(block[2]);
-	block[3] = cadence(3, false);
+	// 8小節のサビは4小節目、16小節以上は8小節目を駆け上がりにする（どちらも次の小節は主題）
+	block[3] = climbing && bars === 8 ? climbTo(3) : cadence(3, false);
 	push(block[3]);
 	// 5〜6小節目は頭の2小節を返す（kw2 は2回とも返す）。7小節目は3小節目のまま（サビ）か後ろを変える。
 	block[4] = block[0].map((n) => ({ ...n }));
@@ -1243,12 +1333,16 @@ export const lineSection = (
 						),
 					);
 	push(block[6]);
-	block[7] = cadence(7, true);
+	const climbAt8 = climbing && bars > 8;
+	block[7] = climbAt8 ? climbTo(7) : cadence(7, true);
 	push(block[7]);
-	// 8小節を超える分は、同じ8小節を返し、最後の2小節だけ作り直す（kw2 のサビは 4小節×4 で終わりだけ違う）
+	// 8小節を超える分は、同じ8小節を返し、最後の2小節だけ作り直す（kw2 のサビは 4小節×4 で終わりだけ違う）。
+	// 駆け上がりは主題へ戻るところだけに置き、セクションの最後は閉じる。
 	for (let b = 8; b < bars; b++) {
 		const i = b % 8;
-		if (i < 6 || rnd() < 0.3) push(block[i].map((n) => ({ ...n })));
+		if (climbAt8 && i === 7)
+			push(b === bars - 1 ? cadence(7, true) : block[7].map((n) => ({ ...n })));
+		else if (i < 6 || rnd() < 0.3) push(block[i].map((n) => ({ ...n })));
 		else push(i === 6 ? ornament(6, block[2]) : cadence(7, true));
 	}
 	// 句末で息を継ぐ（伸ばした着地点の後ろを8分だけ休む）
@@ -2365,4 +2459,297 @@ export const varyNigo = (
 		// 既定のパッドの窓（MELODY_HIGH=83 の −4〜+7）から。乱数列の末尾で引く（上の抽選はそのまま）。
 		nigo: { ...nigo, padTarget: 79 + Math.floor(rnd() * 12) },
 	};
+};
+
+// ============================================================
+// 2号兄貴（楽器リード）: リードの写しに代わる層
+// ============================================================
+
+/** 層の音。音高は units（{@link UNITS_PER_SEMITONE} 刻みの絶対音高）。 */
+export type PartNote = {
+	startStep: number;
+	durationSteps: number;
+	pitchUnits: number;
+	velocity: number;
+};
+
+export type PartContext = {
+	/** 走句リード（主旋律）の音。 */
+	lead: PartNote[];
+	/** 和音ごとの区間と構成音（units。オクターブはどこでもよい）。先頭が根音。 */
+	chords: { start: number; end: number; tones: number[] }[];
+	sections: { kind: SectionKind; start: number; end: number }[];
+	/** 16分音符1つのステップ数。 */
+	sixteenth: number;
+	/** 伴奏・飾りがもうアルペジオを持っているセクション（重ねない）。 */
+	arpTaken: SectionKind[];
+};
+
+export type NigoParts = {
+	/** 対旋律。和音の音を声部進行でつなぐ長い音（サブメロの枠）。 */
+	counter: PartNote[];
+	/** 合いの手。リードが伸ばす・休む隙間に、リードの下で返す短い句（サビ重ねの枠）。 */
+	answer: PartNote[];
+	/** アルペジオ。和音の音を刻む（主旋律の写しだった枠）。 */
+	arp: PartNote[];
+};
+
+/**
+ * 走句リードの曲の、リードの写しに代わる3つの層を作る。
+ *
+ * 2026-10-28 まで、上級者モードの t13 は4割の曲でリードの1オクターブ下の写し（全音一致）、t1 はサビのリードの写しで、
+ * サブメロ・ハモリの枠は空だった（所有者「枠がありながら同じ音のオクターブずらし」「全部のトラックを使っていない」）。
+ * 手本は同時に4〜5層で、リードの他は和音刻み・パッド・ベース。写しをやめ、リードに無い動き（長い音・返し・刻み）を
+ * 持つ層へ替える。どれも和音の音だけで組むので、リードとこすらない。
+ */
+export const nigoParts = (rnd: () => number, ctx: PartContext): NigoParts => {
+	const S = UNITS_PER_SEMITONE;
+	const six = ctx.sixteenth;
+	const pcOf = (u: number): number => pc(Math.round(u / S));
+	const chordAt = (t: number) =>
+		ctx.chords.find((c) => c.start <= t && t < c.end);
+	const leadAt = (t: number) =>
+		ctx.lead.find((n) => n.startStep <= t && t < n.startStep + n.durationSteps);
+	/** 和音の音を [lo, hi] に並べた梯子。 */
+	const ladder = (tones: number[], lo: number, hi: number): number[] => {
+		const out: number[] = [];
+		for (const t of tones) {
+			let u = t - Math.floor((t - lo) / (12 * S)) * 12 * S;
+			for (; u <= hi; u += 12 * S) if (u >= lo) out.push(u);
+		}
+		return [...new Set(out)].sort((a, b) => a - b);
+	};
+	const meanOf = (ns: PartNote[]): number =>
+		ns.reduce((a, n) => a + n.pitchUnits, 0) / Math.max(1, ns.length);
+	const leadIn = (s: { start: number; end: number }) =>
+		ctx.lead.filter((n) => n.startStep >= s.start && n.startStep < s.end);
+	const verseLead = ctx.sections
+		.filter((s) => s.kind === "verse")
+		.flatMap(leadIn);
+	const home = meanOf(verseLead.length > 0 ? verseLead : ctx.lead);
+	const of = (kinds: SectionKind[]) =>
+		ctx.sections.filter((s) => kinds.includes(s.kind));
+
+	// --- 対旋律: 和音が変わるたびに近い和音の音へ動く。根音より3度・7度を好み、同じ音の居座りを嫌う ---
+	const counter: PartNote[] = [];
+	const counterKinds = weighted<SectionKind[]>(
+		[
+			[["chorus", "drop_chorus"], 2],
+			[["verse", "chorus", "drop_chorus"], 3],
+			[["verse", "chorus", "drop_chorus", "bridge"], 2],
+		],
+		rnd,
+	);
+	const counterFeel = rnd() < 0.6 ? "hold" : "push";
+	/** 和音1つを8つに割ったリズム。曲ごとに2つ引き、和音ごとに交互に使う。 */
+	const cells = [
+		[8],
+		[6, 2],
+		[4, 4],
+		[3, 3, 2],
+		[2, 6],
+		[4, 2, 2],
+		[6, 1, 1],
+		[5, 3],
+		[2, 2, 4],
+		[3, 5],
+	];
+	const cellA = pick(cells, rnd);
+	const cellB = rnd() < 0.4 ? cellA : pick(cells, rnd);
+	/** 2音目からの向き（0 は上下交互）。 */
+	const counterDir = pick([1, -1, 0], rnd);
+	const below = (15 + Math.floor(rnd() * 5)) * S;
+	for (const sec of of(counterKinds)) {
+		const lead = leadIn(sec);
+		if (lead.length === 0) continue;
+		const center = meanOf(lead) - below;
+		let prev: number | null = null;
+		let stay = 0;
+		const segs: { start: number; end: number; tones: number[] }[] = [];
+		for (const c of ctx.chords) {
+			const start = Math.max(c.start, sec.start);
+			const end = Math.min(c.end, sec.end);
+			if (end <= start) continue;
+			segs.push({ start, end, tones: c.tones });
+		}
+		for (const [i, seg] of segs.entries()) {
+			const cands = ladder(seg.tones, center - 8 * S, center + 8 * S);
+			const root = pcOf(seg.tones[0]);
+			// 前へ食う曲は、セクション頭以外の音を8分だけ早く入る（2号の裏から入る和音と揃える）。
+			const start =
+				counterFeel === "push" && i > 0 ? seg.start - 2 * six : seg.start;
+			// 入りの瞬間と和音の頭で鳴っているリードの音。
+			const sounding = [leadAt(start), leadAt(seg.start)].flatMap((n) =>
+				n ? [pcOf(n.pitchUnits)] : [],
+			);
+			const cost = (u: number): number =>
+				(prev === null
+					? Math.abs(u - center) / S / 2
+					: Math.abs(u - prev) / S) +
+				Math.abs(u - center) / S / 6 +
+				(pcOf(u) === root ? 1.5 : 0) +
+				(u === prev ? (stay >= 1 ? 4 : 0.5) : 0) +
+				(sounding.includes(pcOf(u)) ? 1 : 0) +
+				// リードと半音でこすれる音を避ける（避けないと入りの2割がこすれる曲があった）。
+				(sounding.some((p) => [1, 11].includes(pc(p - pcOf(u)))) ? 4 : 0) +
+				rnd() * 0.3;
+			const scored = cands.map((u) => ({ u, c: cost(u) }));
+			const u = scored.reduce((a, b) => (b.c < a.c ? b : a)).u;
+			stay = u === prev ? stay + 1 : 0;
+			// 和音の中は曲ごとのリズムで刻み、2音目からは隣の和音の音へ動く。
+			// 1和音1音の伸ばしだけだと、どの曲の対旋律も同じ形になった（上物の形の最多が100曲中67曲）。
+			const cell = i % 2 === 0 ? cellA : cellB;
+			const unit = (seg.end - seg.start) / 8;
+			let pos = seg.start;
+			let cur = u;
+			for (const [j, len] of cell.entries()) {
+				const at = j === 0 ? start : Math.round(pos);
+				pos += len * unit;
+				if (j > 0) {
+					const idx = cands.indexOf(cur);
+					const dir = counterDir === 0 ? (j % 2 === 1 ? 1 : -1) : counterDir;
+					const lead = leadAt(at);
+					const rubs = (v: number) =>
+						lead !== undefined &&
+						[1, 11].includes(pc(pcOf(lead.pitchUnits) - pcOf(v)));
+					const next = [cands[idx + dir], cands[idx - dir]].find(
+						(v) => v !== undefined && !rubs(v),
+					);
+					if (next === undefined) continue;
+					cur = next;
+				}
+				counter.push({
+					startStep: at,
+					durationSteps: Math.round(pos) - at,
+					pitchUnits: cur,
+					velocity: j === 0 ? 74 : 66,
+				});
+			}
+			prev = cur;
+		}
+	}
+	// 前へ食った音に合わせ、手前の音を切る。
+	for (let i = 0; i + 1 < counter.length; i++) {
+		const gap = counter[i + 1].startStep - counter[i].startStep;
+		if (gap > 0 && counter[i].durationSteps > gap)
+			counter[i].durationSteps = gap;
+	}
+
+	// --- 合いの手: サビでリードが伸ばす・休む隙間に、リードの下の和音の音で短い句を返す ---
+	const answer: PartNote[] = [];
+	const answerKinds: SectionKind[] =
+		rnd() < 0.5
+			? ["chorus", "drop_chorus", "bridge"]
+			: ["chorus", "drop_chorus"];
+	const figure = pick(
+		[
+			[0, 1, 2, 3],
+			[3, 2, 1, 0],
+			[0, 1, 2, 1],
+			[3, 2, 3, 1],
+			[0, 2, 1, 3],
+		],
+		rnd,
+	);
+	const rate = rnd() < 0.7 ? 1 : 2;
+	/** 伸ばす音に入る割合。 */
+	const take = 0.5 + rnd() * 0.4;
+	for (const sec of of(answerKinds)) {
+		const lead = leadIn(sec).sort((a, b) => a.startStep - b.startStep);
+		// 句の形はセクションを通して続ける（短い返しが続くと、つないで1本の線に聞こえる）。
+		let k = 0;
+		for (const [i, n] of lead.entries()) {
+			const next = lead[i + 1]?.startStep ?? sec.end;
+			const end = n.startStep + n.durationSteps;
+			// 休符の隙間（16分3つ以上）か、16分3つ以上伸ばす音の頭の16分2つより後ろ。
+			// 走句リードはほとんど休まない（サビの隙間は16分1つのスタッカートだけ）。休符だけを待つと
+			// 1曲で10音ほどしか鳴らなかったので、伸ばす音（サビに40〜55）の間にも入り、リードと交互に鳴らす。
+			const from =
+				next - end >= 3 * six
+					? end
+					: n.durationSteps >= 3 * six
+						? n.startStep + 2 * six
+						: null;
+			if (from === null || rnd() >= take) continue;
+			const step = (next - from >= 4 * rate * six ? rate : 1) * six;
+			const count = Math.min(figure.length, Math.floor((next - from) / step));
+			if (count < 1) continue;
+			// 隙間の後ろへ寄せる（次のリードへ渡す形）。
+			const at = next - count * step;
+			for (let j = 0; j < count; j++) {
+				const t = at + j * step;
+				const c = chordAt(t);
+				if (!c) continue;
+				const lad = ladder(
+					c.tones,
+					n.pitchUnits - 14 * S,
+					n.pitchUnits - 2 * S,
+				).slice(-4);
+				if (lad.length === 0) continue;
+				// 鳴っているリードの音（伸ばしている音が和音の外のこともある）と半音でこすれる音は、隣の段へ逃がす。
+				const lead = leadAt(t)?.pitchUnits ?? n.pitchUnits;
+				const rubs = (v: number) => [1, 11].includes(pc(pcOf(lead) - pcOf(v)));
+				const want = Math.min(figure[k % figure.length], lad.length - 1);
+				k++;
+				const u = [lad[want], lad[want - 1], lad[want + 1]].find(
+					(v) => v !== undefined && !rubs(v),
+				);
+				if (u === undefined) continue;
+				answer.push({
+					startStep: t,
+					durationSteps: Math.max(1, Math.round(step * 0.85)),
+					pitchUnits: u,
+					velocity: j === 0 ? 80 : 70,
+				});
+			}
+		}
+	}
+
+	// --- アルペジオ: リードが低い（Aメロ）側やイントロで、和音の音を刻む ---
+	const arp: PartNote[] = [];
+	const arpKinds = weighted<SectionKind[]>(
+		[
+			[["verse"], 3],
+			[["intro", "verse"], 2],
+			[["verse", "bridge"], 2],
+			[["intro", "verse", "bridge"], 1],
+		],
+		rnd,
+	).filter((k) => !ctx.arpTaken.includes(k));
+	const arpRate = rnd() < 0.55 ? 2 : 1;
+	const arpShape = pick(
+		[
+			[0, 1, 2, 3],
+			[0, 1, 2, 3, 2, 1],
+			[0, 2, 1, 3],
+			[0, 1, 2, 3, 4, 3, 2, 1],
+		],
+		rnd,
+	);
+	const arpCenter = home - (8 + Math.floor(rnd() * 5)) * S;
+	for (const sec of of(arpKinds)) {
+		const step = arpRate * six;
+		let chord: (typeof ctx.chords)[number] | undefined;
+		let j = 0;
+		for (let t = sec.start; t + step <= sec.end; t += step) {
+			const c = chordAt(t);
+			if (!c) continue;
+			if (c !== chord) {
+				chord = c;
+				j = 0;
+			}
+			const lad = ladder(c.tones, arpCenter - 5 * S, arpCenter + 12 * S);
+			if (lad.length === 0) continue;
+			const k = arpShape[j % arpShape.length];
+			j++;
+			arp.push({
+				startStep: Math.round(t),
+				durationSteps: Math.max(1, Math.round(step * 0.9)),
+				pitchUnits: lad[Math.min(k, lad.length - 1)],
+				velocity:
+					Math.round(t - sec.start) % Math.round(4 * six) === 0 ? 70 : 60,
+			});
+		}
+	}
+	return { counter, answer, arp };
 };

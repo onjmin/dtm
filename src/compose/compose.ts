@@ -42,6 +42,7 @@ import {
 	loopBar,
 	loopShape,
 	loopStyle,
+	nigoParts,
 	relatedMotif,
 	sentenceAnswer,
 	sentenceSection,
@@ -93,6 +94,7 @@ import {
 	buildSectionPlan,
 	DEFAULT_SECTIONS,
 	type PlacedSection,
+	SECTION_ORDER,
 	type SectionKind,
 	STRUCTURE_TEMPLATES,
 	type StructureTemplate,
@@ -1566,6 +1568,11 @@ export type ComposeResult = {
 	 * その1本だけ別の楽器に割り当てられる。歌メロと同時には鳴らない。
 	 */
 	solo: ComposedNote[];
+	/**
+	 * 走句リードの曲（2号兄貴の楽器リード）だけが持つ、リードの写しに代わる層。上級者モードで
+	 * 合いの手はサビ重ね（t1）、アルペジオはオクターブ重ね（t13）の枠に入る。対旋律は {@link submelody}。
+	 */
+	parts?: { answer: ComposedNote[]; arp: ComposedNote[] };
 	/**
 	 * 上級者モードの編曲プラン。どの層をどのセクションでどの奏法で鳴らすか。
 	 * {@link ArrangePlan}
@@ -5911,8 +5918,18 @@ const draw = (
 		const tonicStep = degreeToCore(scale, scale.tonic);
 		const tonicSemi = degreeToPitch(scale, scale.tonic).semi;
 		const octave = Math.ceil((60 - rootShift - tonicSemi) / 12) * 12;
+		// 走句リードは全音階の段で歩く（曲の音階が五音でも）。手本の2号系は 1曲で 6〜10 の音を使い、
+		// 和音が動くと旋律の音も入れ替わる（Granite は 10 音、半音を含む駆け下り）。五音の段のままだと
+		// 曲じゅう同じ5音を行き来し、和音が変わっても旋律の響きが変わらなかった（2026-10-27）。
+		// 手本の上位5音の被覆は 0.63（Granite）〜0.99（Sanukite）と曲で振り切れるので、3分の1強の曲は五音の段のまま
+		// 歩かせる（和音に合わせた臨時記号と半音の経過音は付く）。全曲を全音階にすると、どの曲も 0.63〜0.80 に揃った。
+		const diatonic = lineLead === "riff16" && rnd() < 0.65;
+		/** 1オクターブの段数。 */
+		const per = diatonic ? scaleSize(scale) : scale.core.length;
 		const pitchOf = (step: number): ScaleDegree => {
-			const d = degreeToPitch(scale, coreToDegree(scale, tonicStep + step));
+			const d = diatonic
+				? degreeToPitch(scale, scale.tonic + step)
+				: degreeToPitch(scale, coreToDegree(scale, tonicStep + step));
 			return { semi: d.semi + octave, fifth: d.fifth };
 		};
 		let lineFeel: LineStyle | undefined;
@@ -5938,6 +5955,20 @@ const draw = (
 					)
 					.map((p) => Math.round(p.pitchUnits / UNITS_PER_SEMITONE) % 12),
 			);
+		const inScale = scalePcs(scale);
+		/**
+		 * 和音に合わせた臨時記号: 和音が音階の外の音（E7 の G♯ など）を持ち、旋律の音がその半音下で和音の外なら、
+		 * 和音の音へ上げる（G→G♯）。`at` は曲の頭からのステップ。
+		 * 上げるのは下の隣だけ。上の隣も下げると、2段が同じ音になり連打になった（E♭ 短調の E♮ で E♭・F → E・E）。
+		 */
+		const alter = (base: ScaleDegree, at: number): ScaleDegree => {
+			if (lineLead !== "riff16") return base;
+			const pcs = pcsAt(at);
+			const pc = (((base.semi - octave) % 12) + 12) % 12;
+			const up = (pc + 1) % 12;
+			if (pcs.has(pc) || !pcs.has(up) || inScale.has(up)) return base;
+			return { semi: base.semi + 1, fifth: base.fifth + 7 };
+		};
 		const blockOf = (
 			side: string,
 			bars: number,
@@ -5978,30 +6009,36 @@ const draw = (
 						: make(extra);
 				made = [x, answer(), x, answer()];
 			} else {
-				lineFeel ??= lineStyle(rnd);
+				lineFeel ??= lineStyle(rnd, per);
 				const sideLift = side === "c" ? 1 : 0;
 				made = lineSection(
 					rnd,
 					lineFeel,
 					bars,
 					{
-						fits: (bar, at, step) =>
-							pcsAt(
-								(startBar + bar) * stepsPerBar + Math.round(at * sixteenth),
-							).has(
-								(((pitchOf(step + sideLift).semi - octave) % 12) + 12) % 12,
-							),
-						clash: (bar, at, step) => {
-							const pcs = pcsAt(
-								(startBar + bar) * stepsPerBar + Math.round(at * sixteenth),
+						fits: (bar, at, step) => {
+							const t =
+								(startBar + bar) * stepsPerBar + Math.round(at * sixteenth);
+							return pcsAt(t).has(
+								(((alter(pitchOf(step + sideLift), t).semi - octave) % 12) +
+									12) %
+									12,
 							);
+						},
+						clash: (bar, at, step) => {
+							const t =
+								(startBar + bar) * stepsPerBar + Math.round(at * sixteenth);
+							const pcs = pcsAt(t);
 							const pc =
-								(((pitchOf(step + sideLift).semi - octave) % 12) + 12) % 12;
+								(((alter(pitchOf(step + sideLift), t).semi - octave) % 12) +
+									12) %
+								12;
 							return (
 								!pcs.has(pc) &&
 								(pcs.has((pc + 1) % 12) || pcs.has((pc + 11) % 12))
 							);
 						},
+						semi: (step) => pitchOf(step + sideLift).semi,
 					},
 					side === "b",
 				);
@@ -6019,7 +6056,7 @@ const draw = (
 			if (riffDropSteps === undefined) {
 				const chorusBlock = blocks.get("b");
 				const ref = chorusBlock ?? block;
-				const refLift = chorusBlock ? 2 * scale.core.length : lift;
+				const refLift = chorusBlock ? 2 * per : lift;
 				const top = Math.max(
 					...ref.flatMap((c) => c.filter((n) => n.len > 0).map((n) => n.step)),
 				);
@@ -6028,7 +6065,7 @@ const draw = (
 					drop < refLift &&
 					pitchOf(top + refLift - drop).semi + rootShift > 103
 				)
-					drop += scale.core.length;
+					drop += per;
 				if (chorusBlock) riffDropSteps = drop;
 				return side === "c" ? Math.min(drop, lift) : drop;
 			}
@@ -6081,9 +6118,9 @@ const draw = (
 			// 走句リードは全体も1オクターブ上に置く。所有者が上とした kw2 は Aメロの中央が C6・サビが C7 で、
 			// 生成はちょうど1オクターブ下（A#4・C6）にいた（2026-10-27）。
 			let lift =
-				(lineLead === "riff16" ? scale.core.length : 0) +
+				(lineLead === "riff16" ? per : 0) +
 				(lineLead === "riff16" && side === "b"
-					? scale.core.length
+					? per
 					: side === "c"
 						? 1
 						: lineLead === "riff-bar" && side === "b"
@@ -6108,9 +6145,12 @@ const draw = (
 					at -= n.len;
 					continue;
 				}
-				const base = pitchOf(n.step + lift);
 				const start = barStart + Math.round(at * sixteenth);
 				const end = barStart + Math.round((at + n.len) * sixteenth);
+				// 半音の経過音（chrom）は綴りどおり半音下。それ以外は和音に合わせた臨時記号を付ける。
+				const base = n.chrom
+					? pitchOf(n.step + lift)
+					: alter(pitchOf(n.step + lift), start);
 				melody.push({
 					startStep: start,
 					pitchUnits: spelledToUnits(
@@ -6128,7 +6168,7 @@ const draw = (
 				});
 				// サビに音階の3度下を重ねる曲（拍頭の音だけ。走句全部を重ねると団子になる）。
 				if (template?.nigo?.third && side === "b" && Math.abs(at % 4) < 1e-6) {
-					const low = pitchOf(n.step + lift - 2);
+					const low = alter(pitchOf(n.step + lift - 2), start);
 					harmony.push({
 						startStep: start,
 						pitchUnits: spelledToUnits(
@@ -6676,7 +6716,8 @@ const draw = (
 	// 短い音から落とす。移調が済んだ後の音をそのまま写す（トラック側のオクターブ
 	// 設定で下げるので、ここでは音高を触らない）。
 	// アルペジオ層の曲（界隈曲）は歌が1本——オクターブ下の重ねも置かない（ハモリを空にしたのと同じ理由）。
-	const fullOctave = template?.vocal?.octave === true;
+	// 走句リードの曲はオクターブ下の写しを置かず、その枠をアルペジオが使う（{@link ComposeResult.parts}）。
+	const fullOctave = template?.vocal?.octave === true && lineLead !== "riff16";
 	const octave: ComposedNote[] = fullOctave
 		? melody.map((n) => ({ ...n, velocity: Math.max(40, n.velocity - 26) }))
 		: useOctaveLayer && !arpeggioSub && !lineLead
@@ -6735,6 +6776,85 @@ const draw = (
 // ============================================================
 // 採点
 // ============================================================
+
+/**
+ * 走句リード（riff16）の曲の、リードの写しに代わる層（対旋律・合いの手・アルペジオ。{@link nigoParts}）を、
+ * 選んだ候補にだけ作る。対旋律は `d.submelody`（この経路では空）へ入れ、残りを返す。
+ *
+ * 乱数は旋律から決まる別の列で引く。候補ごとに共通の乱数で引くと後の候補のリードが入れ替わり、
+ * 層を足しただけでサビ上げの足りない曲が 100曲中 6→11 に増えた（2026-10-28）。
+ */
+const riffParts = (
+	d: Draw,
+	template: StructureTemplate,
+	stepsPerBar: number,
+	edo: 12 | 31,
+): ComposeResult["parts"] => {
+	const byStart = new Map<
+		number,
+		{ start: number; end: number; tones: number[] }
+	>();
+	for (const p of buildChordPlacements({
+		edo,
+		chordStr: d.chordProgression,
+		patternType: "block",
+		rootShift: d.rootShift,
+		bpm: 120,
+		stepsPerBar,
+	})) {
+		const c = byStart.get(p.startStep) ?? {
+			start: p.startStep,
+			end: p.startStep + p.durationSteps,
+			tones: [],
+		};
+		c.tones.push(p.pitchUnits);
+		byStart.set(p.startStep, c);
+	}
+	const arrange = template.arrange;
+	const rnd = seededRandom(
+		d.melody.reduce(
+			(h, n) =>
+				Math.imul(h ^ (n.startStep * 31 + n.pitchUnits), 16777619) >>> 0,
+			2166136261,
+		),
+	);
+	const parts = nigoParts(rnd, {
+		lead: d.melody,
+		chords: [...byStart.values()].sort((a, b) => a.start - b.start),
+		sections: d.sections.map((sec) => ({
+			kind: sec.kind,
+			start: sec.startBar * stepsPerBar,
+			end: (sec.startBar + sec.bars) * stepsPerBar,
+		})),
+		sixteenth: stepsPerBar / 16,
+		arpTaken: [
+			...(arrange?.backing ?? []),
+			...(arrange?.sparkle ? [arrange.sparkle] : []),
+		]
+			.filter((l) => l.pattern === "arpeggio")
+			.flatMap((l) => l.sections ?? SECTION_ORDER),
+	});
+	const notes = (from: typeof parts.arp): ComposedNote[] =>
+		from.map((n) => ({
+			startStep: Math.round(n.startStep),
+			durationSteps: Math.max(1, Math.round(n.durationSteps)),
+			pitchUnits: n.pitchUnits as Units,
+			velocity: n.velocity,
+		}));
+	d.submelody.push(...notes(parts.counter));
+	// 旋律の無いイントロは、伴奏と同じ小節からアルペジオを入れる（{@link NigoFeel.introEntry}）。
+	let arp = notes(parts.arp);
+	const intro = d.sections[0];
+	if (template.nigo && intro?.kind === "intro" && !intro.spec.melody) {
+		const from = intro.startBar * stepsPerBar;
+		const entry =
+			(intro.startBar +
+				Math.round((intro.bars * template.nigo.introEntry.backing) / 4)) *
+			stepsPerBar;
+		arp = arp.filter((n) => n.startStep < from || n.startStep >= entry);
+	}
+	return { answer: notes(parts.answer), arp };
+};
 
 /**
  * 今は楽器リフ（riff）だけに掛ける。走句リード（riff16）は 2026-10-26 から `lineSection` が道の段階でぶつかりを避ける。
@@ -7157,6 +7277,15 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 			options.edo === 31 ? 31 : 12,
 			template.lead === "riff" ? d.submelody : d.harmony,
 		);
+	const parts =
+		template?.lead === "riff16"
+			? riffParts(
+					d,
+					template,
+					options.stepsPerBar,
+					options.edo === 31 ? 31 : 12,
+				)
+			: undefined;
 	const result: ComposeResult = {
 		// ドラム・楽器・編曲プランは勝った候補にだけ後から付ける（メロディに
 		// 依存しないので候補ごとに引いても採点は動かず、候補数ぶん無駄になる）。
@@ -7185,6 +7314,7 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 		octave: d.octave,
 		pad: d.pad,
 		solo: d.solo,
+		parts,
 		stats: { ...chosen.stats, attempts: count, rejected },
 	};
 	result.stats.attempts = count;
