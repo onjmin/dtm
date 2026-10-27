@@ -502,8 +502,8 @@ type BeatCell = number[];
 
 /**
  * 走句リード（riff16）の曲ごとの癖。旋律は1音ずつ歩かせず、半小節ごとの着地点（骨格）を先に決め、
- * 直前の音から着地点への道で間を埋める（2026-10-26）。手で書いて評価された曲（Fable の kw2）は、
- * Aメロを「16分で駆け上がって着地する」同じリズムで走らせ、サビを1オクターブ以上上げて付点・8分で歌わせていた。
+ * 直前の音から着地点への道で間を埋める（2026-10-26）。
+ * リズムの型は曲ごとの家族（数種）から引き、句は kw2 の組み方（主題・答え・ゼクエンツ・閉じ）で並べる（2026-10-27）。
  */
 export type LineStyle = {
 	/** Aメロの4小節の輪郭（着地点の高さの並び）。 */
@@ -512,12 +512,13 @@ export type LineStyle = {
 	hookContour: Contour;
 	/** 着地点の前の道の型（1〜2種）。曲の手癖になる。 */
 	figures: Figure[];
-	/** Aメロの半小節のリズム（16分単位、和は8）。全部の半小節で使い、句末だけ伸ばす。 */
-	verseRhythm: number[];
-	/** 小節の後ろ半分のリズム（3連の曲は後ろ半分だけ3連で駆け込む）。 */
-	verseRhythm2: number[];
-	/** サビの半小節のリズム2つ（交互に使う）。高い所で伸ばし、付点・8分で歌う。 */
-	hookRhythm: [number[], number[]];
+	/** Aメロの半小節の型の家族（16分単位、和は8）。主題・答え・閉じの小節のリズムをここから引く。 */
+	cells: number[][];
+	/**
+	 * サビの半小節の型の家族。7割の曲は kw2 のように付点・8分で歌う型（＋走る型1つ）、残りは走る型。
+	 * 手本の MIDI は一番高い8小節でも16分を減らさない（9本中 9本）が、所有者の耳は kw2 を上とした（2026-10-27）。
+	 */
+	hookCells: number[][];
 	/** 着地点に和音の外の音階の音（9度・11度など）も許す。 */
 	tension: boolean;
 	/** 歩く範囲（主音からの歩数）。 */
@@ -553,24 +554,38 @@ const CONTOURS: Record<Contour, number[]> = {
 	zigzag: [0.2, 0.8, 0.3, 0.85, 0.25, 0.9, 0.4, 0.6],
 };
 
-/** Aメロの走る半小節（16分単位）。着地点は一番長い音（同じ長さなら前）。 */
-const VERSE_RHYTHMS: [number[], number][] = [
+/**
+ * 走る半小節（16分単位）。着地点は一番長い音（同じ長さなら前。全部16分なら半小節の頭）。
+ * 手本の上位の型（x.xxx.x.・x...x.x.・xxxxxxxx・x.x.x.x. など）を形として並べたもの。重みは手本の数ではない。
+ */
+// 重みは kw2 寄り（16分で駆け込んで8分で止まる型が中心。全部16分の型は少なく。2026-10-27）。
+const RUN_CELLS: [number[], number][] = [
 	[[1, 1, 1, 1, 2, 2], 4],
-	[[1, 1, 1, 1, 1, 1, 2], 2],
-	[[1, 1, 2, 1, 1, 2], 2],
-	[[2, 1, 1, 1, 1, 2], 1],
+	[[2, 1, 1, 2, 2], 4],
+	[[1, 1, 2, 1, 1, 2], 3],
+	[[1, 1, 2, 2, 2], 3],
+	[[2, 1, 1, 1, 1, 2], 2],
+	[[2, 2, 1, 1, 2], 2],
+	[[4, 2, 2], 1],
+	[[2, 2, 2, 2], 1],
+	[[1, 1, 1, 1, 1, 1, 1, 1], 1],
+	[[2, 1, 1, 1, 1, 1, 1], 1],
 	[[1, 1, 1, 1, 4], 1],
 ];
-/** 3連で着地点へ駆け込む半小節。 */
-const VERSE_TRIPLET = [4 / 3, 4 / 3, 4 / 3, 2, 2];
+/** 3連を含む半小節（手本の配布 MIDI 6本中 5本で、3連の裏に来る音が 9〜43%）。 */
+const TRIPLET_CELLS: [number[], number][] = [
+	[[4 / 3, 4 / 3, 4 / 3, 2, 2], 2],
+	[[4 / 3, 4 / 3, 4 / 3, 4], 1],
+	[[2, 2, 4 / 3, 4 / 3, 4 / 3], 1],
+];
 /** サビの歌う半小節。 */
+// kw2 のサビは付点＋16分＋8分（3,1,2,2）と、4分＋8分2つ（4,2,2）が中心。長く伸ばす型は少なく（2026-10-27）。
 const HOOK_RHYTHMS: [number[], number][] = [
-	[[3, 1, 2, 2], 3],
+	[[3, 1, 2, 2], 4],
 	[[4, 2, 2], 3],
-	[[2, 2, 4], 2],
-	[[3, 1, 4], 2],
-	[[2, 1, 1, 4], 2],
-	[[6, 2], 1],
+	[[2, 2, 2, 2], 1],
+	[[2, 1, 1, 4], 1],
+	[[2, 2, 4], 1],
 ];
 
 export const lineStyle = (rnd: () => number): LineStyle => {
@@ -579,7 +594,7 @@ export const lineStyle = (rnd: () => number): LineStyle => {
 			[
 				["run", 4],
 				["turn", 2],
-				["walk", 1],
+				// 歩き（walk）は引かない。2音を行き来するジグザグになり、kw2 の音階の駆け込みと別物だった（2026-10-27）
 			],
 			rnd,
 		);
@@ -588,7 +603,36 @@ export const lineStyle = (rnd: () => number): LineStyle => {
 		const f = figure();
 		if (!figures.includes(f)) figures.push(f);
 	}
-	const verseRhythm = weighted(VERSE_RHYTHMS, rnd);
+	/** 家族を `n` 種引く（同じ型は1つだけ）。 */
+	const family = (pool: [number[], number][], n: number): number[][] => {
+		const out: number[][] = [];
+		for (let i = 0; i < 4 * n && out.length < n; i++) {
+			const c = weighted(pool, rnd);
+			if (!out.includes(c)) out.push(c);
+		}
+		return out;
+	};
+	const triplets =
+		rnd() < 0.6 ? family(TRIPLET_CELLS, 1 + Math.floor(rnd() * 2)) : [];
+	// 家族の半分以上を走る型（16分が4つ以上）にする（手本は 8/8 曲で16分の音価が 3割以上）
+	const dense = (c: number[]) => c.filter((x) => x === 1).length >= 4;
+	const runFamily = (): number[][] => {
+		const out = [...family(RUN_CELLS, 3 + Math.floor(rnd() * 3)), ...triplets];
+		for (let i = 0; i < 12 && out.filter(dense).length * 2 < out.length; i++) {
+			const c = weighted(
+				RUN_CELLS.filter(([x]) => dense(x)),
+				rnd,
+			);
+			if (!out.includes(c)) out.push(c);
+		}
+		return out;
+	};
+	const cells = runFamily();
+	// 歌うサビも走る型を1つ混ぜる（歌う型だけだと、サビの長い曲で16分の音価が 3割を割った）
+	const hookCells =
+		rnd() < 0.3
+			? runFamily()
+			: [...family(HOOK_RHYTHMS, 2), cells.filter(dense)[0]];
 	return {
 		contour: weighted<Contour>(
 			[
@@ -611,10 +655,8 @@ export const lineStyle = (rnd: () => number): LineStyle => {
 			rnd,
 		),
 		figures,
-		verseRhythm,
-		// 3連は原曲8曲のうち2曲で多い。3連の曲は小節の後ろ半分を3連で駆け込む。
-		verseRhythm2: rnd() < 0.3 ? VERSE_TRIPLET : verseRhythm,
-		hookRhythm: [weighted(HOOK_RHYTHMS, rnd), weighted(HOOK_RHYTHMS, rnd)],
+		cells,
+		hookCells,
 		tension: rnd() < 0.3,
 		lo: -2 - Math.floor(rnd() * 2),
 		hi: 4 + Math.floor(rnd() * 3),
@@ -712,14 +754,18 @@ export type LineEnv = {
 };
 
 /**
- * `from` から `to` へ向かう `n` 個の音（`to` は含まない）。遠ければ1回跳んでから音階で駆け込み、
- * 近ければ一度 `to` と反対へ離れてから2度ずつ寄る。最初の音は `from` の近く、最後の音は `to` の近く。
+ * `from` から `to` へ向かう `n` 個の音（`to` は含まない）。遠ければ1回跳んでから音階で駆け込む。
+ * 近ければ、反対へ離れてから寄るか、着地点を越えてから戻る（回り込み）。範囲 [`lo`, `hi`] を出ない方を選ぶ。
+ * 以前は道が短いと直前の音と隣の音の往復を足し、範囲を出た音は端で折り返していて、2音を行き来するジグザグと
+ * 連打になった（2026-10-27。kw2 の駆け込みは音階と回り込みだけ）。
  */
 const pathTo = (
 	from: number,
 	to: number,
 	n: number,
 	rnd: () => number,
+	lo = Number.NEGATIVE_INFINITY,
+	hi = Number.POSITIVE_INFINITY,
 ): number[] => {
 	if (n <= 0) return [];
 	const dist = Math.abs(to - from);
@@ -727,15 +773,39 @@ const pathTo = (
 	// 遠いときは1回だけ跳んで、そこから音階で着地点へ駆け込む（跳躍を道の途中に散らさない）
 	if (dist >= n + 1)
 		return Array.from({ length: n }, (_, i) => to - d * (n - i));
-	const away = Math.min(2, Math.ceil((n + 1 - dist) / 2));
-	const route: number[] = [];
-	for (let i = 1; i <= away; i++) route.push(from - d * i);
-	for (let x = from - d * away + d; x !== to; x += d) route.push(x);
-	// 道が音の数より短いときは、頭に直前の音の隣との往復を足す（同じ音を続けない）
-	while (route.length < n)
-		route.unshift(route.length % 2 === 0 ? from : from - d);
-	// 長いときは着地点に近い側を残す（間引くと音を飛ばして跳躍になる）
-	return route.slice(route.length - n);
+	// ちょうど音の数だけ離れているときは、着地点の隣まで音階で行って1段越え、上（下）から着く
+	if (dist === n && n >= 2)
+		return [
+			...Array.from({ length: n - 1 }, (_, i) => from + d * (i + 1)),
+			to + d,
+		];
+	/** `a` の次から `b` まで `count` 個（等分。2度で足りなければ3度を混ぜる）。 */
+	const leg = (a: number, b: number, count: number): number[] =>
+		Array.from(
+			{ length: count },
+			(_, i) => a + Math.round(((i + 1) * (b - a)) / count),
+		);
+	// 反対へ離れてから着地点の隣まで寄る
+	const away = Math.max(1, Math.ceil((n - dist + 1) / 2));
+	const back = from - d * Math.min(away, n);
+	const viaBack = [
+		...leg(from, back, Math.min(away, n)),
+		...leg(back, to - d, n - Math.min(away, n)),
+	];
+	// 着地点を越えてから戻る（越える幅で音の数を合わせる）
+	const over = Math.max(1, Math.ceil((n - dist + 1) / 2));
+	const peak = to + d * over;
+	const up = Math.min(n, dist + over);
+	const viaOver = [...leg(from, peak, up), ...leg(peak, to + d, n - up)];
+	// どちらも範囲を出るとき（端の近く）は、範囲の内側から1回跳んで音階で駆け込む
+	const fromBelow = Array.from({ length: n }, (_, i) => to - (n - i));
+	const fromAbove = Array.from({ length: n }, (_, i) => to + (n - i));
+	const out = (xs: number[]) => xs.filter((x) => x < lo || x > hi).length;
+	const prefer = rnd() < 0.6 ? [viaBack, viaOver] : [viaOver, viaBack];
+	let best = prefer[0];
+	for (const xs of [...prefer, fromBelow, fromAbove])
+		if (out(xs) < out(best)) best = xs;
+	return best;
 };
 
 /** 半小節のリズムの着地点（一番長い音、同じ長さなら前）の位置。 */
@@ -760,12 +830,14 @@ const realizeSlot = (
 	const ti = landingOf(rhythm);
 	const pre = ti;
 	let before: number[];
-	if (figure === "turn" && pre >= 4) {
-		const s = rnd() < 0.5 ? 1 : -1;
+	if (figure === "turn" && pre >= 3) {
+		// 着地点の隣で小さく回ってから着く（kw2 の C D C B♭→G）。3段越える回り方は、ペンタトニックでは6度も跳んだ。
+		// 回る側は範囲の内側に取る（端を越えて折り返すと2音を行き来するジグザグになった）
+		const s =
+			t + 2 > style.hi + 1 ? -1 : t - 2 < style.lo - 1 ? 1 : prev >= t ? 1 : -1;
 		before = [
-			...pathTo(prev, t + 2 * s, pre - 4, rnd),
-			t + 2 * s,
-			t + 3 * s,
+			...pathTo(prev, t + s, pre - 3, rnd, style.lo - 1, style.hi + 1),
+			t + s,
 			t + 2 * s,
 			t + s,
 		];
@@ -774,8 +846,15 @@ const realizeSlot = (
 		step();
 		before = Array.from({ length: pre }, () => step());
 		before[pre - 1] = t + (before[pre - 2] >= t ? 1 : -1);
-	} else before = pathTo(prev, t, pre, rnd);
-	const after = pathTo(t, next, rhythm.length - ti - 1, rnd);
+	} else before = pathTo(prev, t, pre, rnd, style.lo - 1, style.hi + 1);
+	const after = pathTo(
+		t,
+		next,
+		rhythm.length - ti - 1,
+		rnd,
+		style.lo - 1,
+		style.hi + 1,
+	);
 	// 範囲の外へ出た音は端で折り返す（端に張り付けると同じ音が並んだ）
 	const top = style.hi + 1;
 	const bottom = style.lo - 1;
@@ -786,17 +865,32 @@ const realizeSlot = (
 				? Math.min(top, 2 * bottom - x)
 				: x,
 	);
-	// 道の音が和音と半音でぶつかるなら、隣の段へずらす（前後と同じ音にならない方を選ぶ）
+	// 道の音が和音と半音でぶつかるなら、隣の段へずらす（前後と同じ音にならない方を選ぶ。最後の音は次の着地点とも比べる）。
+	// 前の音に近づく向きを先に試す（離れる向きへずらすと4度の跳躍が増えた）
 	let at = (k % 2) * 8;
 	return rhythm.map((len, i) => {
 		let s = steps[i];
+		// 半小節の頭（1・3拍目）の音も和音の音へ寄せる（kw2 は1・3拍目の和音の音 76%。着地点だけ寄せた版は
+		// 16分で駆け込む型で頭が経過音になり、曲によって 3〜6割だった。2026-10-27）
+		if (i === 0 && i !== ti && !env.fits(Math.floor(k / 2), at, s))
+			for (const dx of (steps[i + 1] ?? next) > s ? [1, -1] : [-1, 1]) {
+				const c = s + dx;
+				if (
+					env.fits(Math.floor(k / 2), at, c) &&
+					c !== prev &&
+					c !== steps[i + 1]
+				) {
+					s = c;
+					break;
+				}
+			}
 		if (i !== ti && env.clash(Math.floor(k / 2), at, s))
-			for (const dx of [1, -1]) {
+			for (const dx of (steps[i - 1] ?? prev) > s ? [1, -1] : [-1, 1]) {
 				const c = s + dx;
 				if (
 					!env.clash(Math.floor(k / 2), at, c) &&
 					c !== steps[i - 1] &&
-					c !== steps[i + 1]
+					c !== (i + 1 < steps.length ? steps[i + 1] : next)
 				) {
 					s = c;
 					break;
@@ -809,11 +903,11 @@ const realizeSlot = (
 };
 
 /**
- * 走句リードのセクション（`bars` 小節）。
- * 1. 輪郭から、4小節に8つの着地点（半小節ごと）を決め、和音の音へ寄せる（`tension` の曲は寄せないこともある）。
- * 2. Aメロは1つの走るリズムを全部の半小節で使い、サビは歌うリズム2つを交互に使う（リズムが主題になる）。
- *    着地点の前は直前の音からの道、後ろは次の着地点への道で埋める。
- * 3. 8小節は a a′（頭の2小節を返し、後ろの2小節を閉じる）。4小節目・8小節目の着地点は長く伸ばす。
+ * 走句リードのセクション（`bars` 小節）。所有者が上とした手書き（kw2）の組み方を規則にした（2026-10-27）。
+ * kw2 は1小節の主題を作り、2小節目で答え、3小節目で主題を音階の上へずらし（ゼクエンツ）、4小節目を長い音で閉じる。
+ * 8小節の後半は頭の2小節をそのまま返し、3小節目を少し変え、最後を主音で閉じる。サビは主題のリズムを3小節続ける。
+ * 半小節ごとに型をばらばらに引いた版（3版目）は、戻ってくる主題が無く kw2 に届かなかった（所有者）。
+ * 1小節の中は、半小節ごとの着地点（骨格）を先に決め、直前の音からの道で埋める（2026-10-26 の作りのまま）。
  */
 export const lineSection = (
 	rnd: () => number,
@@ -822,92 +916,354 @@ export const lineSection = (
 	env: LineEnv,
 	chorus = false,
 ): LeadNote[][] => {
-	const heights = CONTOURS[chorus ? style.hookContour : style.contour];
-	const figures = [0, 1, 2, 3].map(() => pick(style.figures, rnd));
-	const slots = Math.ceil(bars / 4) * 8;
-	const rhythmOf = (k: number): number[] => {
-		if (k % 16 === 15) return [8];
-		if (k % 8 === 7) return chorus ? [2, 2, 4] : [1, 1, 1, 1, 4];
-		if (chorus) return style.hookRhythm[k % 2];
-		return k % 2 === 1 ? style.verseRhythm2 : style.verseRhythm;
-	};
-	const snap = (k: number, raw: number): number => {
-		const rhythm = rhythmOf(k);
-		const at =
-			(k % 2) * 8 +
-			rhythm.slice(0, landingOf(rhythm)).reduce((a, b) => a + b, 0);
-		if (style.tension && rnd() < 0.4) return raw;
+	// サビは着地点を範囲の上寄りに置く（サビで必ず上へ移るのは所有者の指示、2026-10-26）。
+	const heights = chorus
+		? CONTOURS[style.hookContour].map((h) => 0.25 + 0.55 * h)
+		: CONTOURS[style.contour];
+	const span = style.hi - style.lo;
+	const level = (i: number): number => Math.round(style.lo + heights[i] * span);
+	const family = chorus ? style.hookCells : style.cells;
+	const singing = family.filter((c) => HOOK_RHYTHMS.some(([h]) => h === c));
+	const figure = pick(style.figures, rnd);
+	const top = style.hi + 1;
+	const bottom = style.lo - 1;
+	const fold = (x: number): number =>
+		x > top
+			? Math.max(bottom, 2 * top - x)
+			: x < bottom
+				? Math.min(top, 2 * bottom - x)
+				: x;
+	/** 半小節の着地点の位置（小節の中の16分）。 */
+	const landAt = (half: number, rhythm: number[]): number =>
+		half * 8 + rhythm.slice(0, landingOf(rhythm)).reduce((a, b) => a + b, 0);
+	/** 着地点を和音の音へ寄せる（`tension` の曲は寄せないこともある）。 */
+	const snap = (bar: number, at: number, raw: number): number => {
+		if (style.tension && rnd() < 0.12) return fold(raw);
 		for (const dx of [0, -1, 1, -2, 2]) {
 			const s = raw + dx;
-			if (
-				s >= style.lo - 1 &&
-				s <= style.hi + 1 &&
-				env.fits(Math.floor(k / 2), at, s)
-			)
-				return s;
+			if (s >= bottom && s <= top && env.fits(bar, at, s)) return s;
 		}
-		return raw;
+		return fold(raw);
 	};
-	const span = style.hi - style.lo;
-	const fresh = (base: number): number[] =>
-		heights.map((h, i) => {
-			const jitter = rnd() < 0.3 ? (rnd() < 0.5 ? -1 : 1) : 0;
-			return snap(base + i, Math.round(style.lo + h * span) + jitter);
+	/** `snap` と同じ候補（±2段の和音の音）のうち、`ok` を満たす一番近いもの。無ければ `snap`。 */
+	const snapBy = (
+		bar: number,
+		at: number,
+		raw: number,
+		ok: (s: number) => boolean,
+	): number => {
+		if (style.tension && rnd() < 0.12) return fold(raw);
+		for (const dx of [0, -1, 1, -2, 2]) {
+			const s = raw + dx;
+			if (s >= bottom && s <= top && env.fits(bar, at, s) && ok(s)) return s;
+		}
+		return snap(bar, at, raw);
+	};
+	const lastOf = (notes: LeadNote[], fallback: number): number =>
+		[...notes].reverse().find((n) => n.len > 0)?.step ?? fallback;
+	/** 1小節を、2つの着地点（高さの生の値）とリズムから作る。 */
+	const makeBar = (
+		bar: number,
+		rs: number[][],
+		raw0: number,
+		raw1: number,
+		next: number,
+		prev: number,
+	): LeadNote[] => {
+		// 着地点は、道を全部2度で歩ける高さ（音の数と距離の偶奇が合うもの）を近い和音の音から選ぶ。
+		// 合わないと道の途中で1段飛ばし（ペンタトニックでは4度）が入り、kw2 より跳ぶ旋律になった（2026-10-27）。
+		const pre0 = landingOf(rs[0]);
+		const post0 = rs[0].length - pre0 - 1;
+		const t0 = snapBy(bar, landAt(0, rs[0]), raw0, (s) => {
+			const dist = Math.abs(s - prev);
+			return dist > pre0 + 1 || (pre0 + 1 + dist) % 2 === 0;
 		});
-	// 着地点の並び（半小節ごと）
-	const targets: number[] = [];
-	const first = fresh(0);
-	// 16小節の後半（9〜16小節目）を前半の写しにするか
-	const again = rnd() < 0.6;
-	for (let base = 0; base < slots; base += 8) {
-		if (base >= 16 && again) {
-			targets.push(...targets.slice(base - 16, base - 8));
-			continue;
+		const t1 = snapBy(bar, landAt(1, rs[1]), raw1, (s) => {
+			const dist = Math.abs(s - t0);
+			return dist > post0 + 1 || (post0 + 1 + dist) % 2 === 0;
+		});
+		const x = realizeSlot(
+			rnd,
+			style,
+			env,
+			2 * bar,
+			rs[0],
+			figure,
+			prev,
+			t0,
+			t1,
+		);
+		return [
+			...x,
+			...realizeSlot(
+				rnd,
+				style,
+				env,
+				2 * bar + 1,
+				rs[1],
+				figure,
+				lastOf(x, t0),
+				t1,
+				next,
+			),
+		];
+	};
+	/**
+	 * 別の小節へ移した音（主題のゼクエンツ・答え）を、その小節の和音へ合わせ直す。
+	 * 半小節ごとの着地点（一番長い音）は和音の音へ、ほかの音は和音と半音でぶつかるときだけ隣へずらす。
+	 */
+	const refit = (bar: number, notes: LeadNote[]): LeadNote[] => {
+		const out = notes.map((n) => ({
+			...n,
+			step: n.len > 0 ? fold(n.step) : n.step,
+		}));
+		const pos: number[] = [];
+		let t = 0;
+		for (const n of out) {
+			pos.push(t);
+			t += Math.abs(n.len);
 		}
-		const phrase = base === 0 ? first : fresh(base);
-		if (base % 16 === 8) {
-			// a′: 頭の2小節は1つ目の句と同じ、後ろの2小節は別の着地点で閉じ、最後は主音へ寄せる
-			phrase.splice(0, 4, ...first.slice(0, 4));
-			phrase[7] = snap(base + 7, 0);
+		const lands = new Set<number>();
+		for (const half of [0, 1]) {
+			let best = -1;
+			for (let i = 0; i < out.length; i++)
+				if (out[i].len > 0 && pos[i] >= half * 8 && pos[i] < half * 8 + 8)
+					if (best < 0 || out[i].len > out[best].len) best = i;
+			if (best >= 0) lands.add(best);
 		}
-		targets.push(...phrase);
-	}
-	// 半小節を順に作る。a′ の頭の2小節と、写しにした後半は、前の音をそのまま写す（主題が戻ってくる）。
-	const made: LeadNote[][] = [];
-	let prev = targets[0] + (rnd() < 0.5 ? 2 : -2);
-	for (let k = 0; k < slots; k++) {
-		const copyFrom =
-			k >= 16 && again ? k - 16 : k % 16 >= 8 && k % 16 < 12 ? k - 8 : -1;
-		let notes =
-			copyFrom >= 0 && made[copyFrom]
-				? made[copyFrom].map((n) => ({ ...n }))
-				: realizeSlot(
-						rnd,
-						style,
-						env,
-						k,
-						rhythmOf(k),
-						figures[k % 4],
-						prev,
-						targets[k],
-						targets[k + 1] ?? targets[0],
-					);
-		// 句末で息を継ぐ（伸ばした着地点の後ろを8分だけ休む）
-		if (k % 8 === 7 && rnd() < style.breath * 0.6) {
-			const last = notes[notes.length - 1];
-			if (last.len > 2)
-				notes = [
-					...notes.slice(0, -1),
-					{ ...last, len: last.len - 2 },
-					{ step: 0, chrom: false, len: -2 },
-				];
+		// 着地点は和音の音へ。前後の音と同じになるずらしは避ける（16分の連打は角張って聞こえた。2026-10-26）
+		for (const i of lands) {
+			const raw = out[i].step;
+			const near = [out[i - 1]?.step, out[i + 1]?.step];
+			for (const dx of [0, -1, 1, -2, 2]) {
+				const s = raw + dx;
+				if (
+					s >= bottom &&
+					s <= top &&
+					env.fits(bar, pos[i], s) &&
+					!near.includes(s)
+				) {
+					out[i].step = s;
+					break;
+				}
+			}
 		}
-		made.push(notes);
-		prev = [...notes].reverse().find((n) => n.len > 0)?.step ?? prev;
-	}
+		for (let i = 0; i < out.length; i++) {
+			if (
+				lands.has(i) ||
+				out[i].len <= 0 ||
+				!env.clash(bar, pos[i], out[i].step)
+			)
+				continue;
+			for (const dx of [1, -1]) {
+				const c = out[i].step + dx;
+				if (
+					!env.clash(bar, pos[i], c) &&
+					c !== out[i - 1]?.step &&
+					c !== out[i + 1]?.step
+				) {
+					out[i].step = c;
+					break;
+				}
+			}
+		}
+		return out;
+	};
+	/** 小節ごと `d` 段ずらす。範囲を出る分は小節ごと内側へ戻す（1音ずつ折り返すと連打やジグザグになった）。 */
+	const shift = (notes: LeadNote[], d: number): LeadNote[] => {
+		const steps = notes.filter((n) => n.len > 0).map((n) => n.step + d);
+		const hiOver = Math.max(0, Math.max(...steps) - top);
+		const loOver = Math.max(0, bottom - Math.min(...steps));
+		const back = hiOver > 0 ? -hiOver : loOver;
+		return notes.map((n) =>
+			n.len > 0 ? { ...n, step: n.step + d + back } : { ...n },
+		);
+	};
+	const cell = (): number[] => pick(family, rnd);
+	// 主題のリズム。サビの歌う曲は歌う型を2つ（kw2 は付点＋8分と、4分で伸ばす型）。
+	const two = (pool: number[][]): number[][] => {
+		const a = pick(pool, rnd);
+		let b = pick(pool, rnd);
+		for (let i = 0; i < 4 && b === a && pool.length > 1; i++)
+			b = pick(pool, rnd);
+		return [a, b];
+	};
+	const motifRhythm = two(chorus && singing.length > 0 ? singing : family);
+	// 句の閉じは16分4つで駆け込んで4分で伸ばす（kw2 はサビも b4 の F G B♭ C→D で閉じる）。
+	// 歌うサビを8分の閉じにしていた版は、サビの長い曲で16分の音価が 2割5分を割った。
+	const closing = [1, 1, 1, 1, 4];
 	const out: LeadNote[][] = [];
-	for (let b = 0; b < bars; b++) out.push([...made[2 * b], ...made[2 * b + 1]]);
-	return out;
+	let prev = level(0) + (rnd() < 0.5 ? 2 : -2);
+	const push = (notes: LeadNote[]): void => {
+		out.push(notes);
+		prev = lastOf(notes, prev);
+	};
+	// 1小節目: 主題。前の着地点を高く、後ろを低く（駆け上がって降りる）か、その逆。
+	const arch = rnd() < 0.7;
+	// サビは2つの着地点を近く置く（kw2 のサビは D7→B♭6 のように1〜2段。歌う型は間の音が少なく、離すと跳ぶ）
+	const motif = makeBar(
+		0,
+		motifRhythm,
+		chorus ? level(1) + 1 : level(1) + (arch ? 1 : -1),
+		chorus ? level(1) - (arch ? 1 : -1) : level(0) + (arch ? -1 : 1),
+		level(2),
+		prev,
+	);
+	// 2小節目: 答え。主題と同じリズムで、音の動きを上下に返すか、別のリズムで次の高さへ。
+	const answerOf = (bar: number): LeadNote[] => {
+		if (chorus && rnd() < 0.7) {
+			const first = motif.find((n) => n.len > 0)?.step ?? 0;
+			const inv = motif.map((n) =>
+				n.len > 0 ? { ...n, step: 2 * first - n.step } : { ...n },
+			);
+			const head = inv.find((n) => n.len > 0)?.step ?? 0;
+			const near = prev + (prev >= level(3) ? -2 : 2);
+			return refit(bar, shift(inv, near - head));
+		}
+		return makeBar(bar, two(family), level(3), level(2), level(4), prev);
+	};
+	// 3小節目: 主題を音階の上へ1〜3段ずらす（下へ1段も少し）。着地点が和音の音に多く合うずらしを選ぶ。
+	/** 主題の2つの着地点（半小節ごとの一番長い音の高さ）。 */
+	const motifLands = (): [number, number] => {
+		const out: number[] = [];
+		let t = 0;
+		for (const half of [0, 1]) {
+			let best: LeadNote | undefined;
+			t = 0;
+			for (const n of motif) {
+				if (
+					n.len > 0 &&
+					t >= half * 8 &&
+					t < half * 8 + 8 &&
+					(!best || n.len > best.len)
+				)
+					best = n;
+				t += Math.abs(n.len);
+			}
+			out.push(best?.step ?? level(half));
+		}
+		return [out[0], out[1]];
+	};
+	const sequenceOf = (bar: number): LeadNote[] => {
+		const ds = rnd() < 0.8 ? [2, 1, 3] : [-1, 1, 2];
+		// Aメロは kw2 のように小節ごとにリズムを替え、主題の着地点の高さだけを上へずらして沿わせる
+		if (!chorus) {
+			const [l0, l1] = motifLands();
+			return makeBar(bar, two(family), l0 + ds[0], l1 + ds[0], level(6), prev);
+		}
+		let best = shift(motif, ds[0]);
+		let score = -1;
+		for (const d of ds) {
+			const moved = shift(motif, d);
+			const fitted = refit(bar, moved);
+			const same = fitted.filter((n, i) => n.step === moved[i].step).length;
+			if (same > score) {
+				score = same;
+				best = fitted;
+			}
+		}
+		return best;
+	};
+	// 4小節目: 句を閉じる。後ろの半小節を長い音で伸ばす。最後の句は主音へ。
+	const cadence = (bar: number, home: boolean): LeadNote[] =>
+		makeBar(
+			bar,
+			[cell(), home && rnd() < 0.5 ? [8] : closing],
+			level(6),
+			home ? 0 : level(7),
+			level(0),
+			prev,
+		);
+	const block: LeadNote[][] = [];
+	block[0] = motif;
+	push(motif);
+	block[1] = answerOf(1);
+	push(block[1]);
+	block[2] = sequenceOf(2);
+	push(block[2]);
+	block[3] = cadence(3, false);
+	push(block[3]);
+	// 5〜6小節目は頭の2小節を返す（kw2 は2回とも返す）。7小節目は3小節目のまま（サビ）か後ろを変える。
+	block[4] = block[0].map((n) => ({ ...n }));
+	push(block[4]);
+	block[5] = block[1].map((n) => ({ ...n }));
+	push(block[5]);
+	const range = {
+		lo: style.lo,
+		hi: style.hi,
+		maxLeap: 3,
+		turn: 0.3,
+		stepShare: 0.65,
+	};
+	/**
+	 * 3小節目の飾り（kw2 の7小節目）: 1拍を3連の3音に替える。後ろの音が下なら音階で降り（F D C）、
+	 * そうでなければ回る（Bb C Bb）。替えられる拍が無ければそのまま。
+	 */
+	const ornament = (bar: number, notes: LeadNote[]): LeadNote[] => {
+		let t = 0;
+		const starts = notes.map((n) => {
+			const x = t;
+			t += Math.abs(n.len);
+			return x;
+		});
+		const beats = [0, 4, 8, 12].filter((b) => {
+			const inside = notes.filter(
+				(_, i) => starts[i] >= b && starts[i] < b + 4,
+			);
+			return (
+				inside.length > 0 &&
+				inside.every((n) => n.len > 0 && Number.isInteger(n.len)) &&
+				starts.includes(b) &&
+				inside.reduce((a, n) => a + n.len, 0) === 4
+			);
+		});
+		if (beats.length === 0) return notes.map((n) => ({ ...n }));
+		const b = pick(beats.slice(0, Math.max(1, beats.length - 1)), rnd);
+		const i0 = starts.indexOf(b);
+		const s0 = notes[i0].step;
+		const after =
+			notes.find((_, i) => starts[i] >= b + 4 && notes[i].len > 0)?.step ?? s0;
+		const tri = after < s0 ? [s0, s0 - 1, s0 - 2] : [s0, s0 + 1, s0];
+		return refit(bar, [
+			...notes.filter((_, i) => starts[i] < b),
+			...tri.map((step) => ({ step, chrom: false, len: 4 / 3 })),
+			...notes.filter((_, i) => starts[i] >= b + 4),
+		]);
+	};
+	// 7小節目: サビは3小節目のまま（kw2 のサビ）か飾りを入れる。Aメロは飾り（kw2 の a7）か後ろを替える。
+	block[6] =
+		chorus && rnd() < 0.6
+			? block[2].map((n) => ({ ...n }))
+			: rnd() < 0.7
+				? ornament(6, block[2])
+				: refit(
+						6,
+						developBar(rnd, block[2], range, () =>
+							makeBar(6, two(family), level(4), level(5), level(6), prev),
+						),
+					);
+	push(block[6]);
+	block[7] = cadence(7, true);
+	push(block[7]);
+	// 8小節を超える分は、同じ8小節を返し、最後の2小節だけ作り直す（kw2 のサビは 4小節×4 で終わりだけ違う）
+	for (let b = 8; b < bars; b++) {
+		const i = b % 8;
+		if (i < 6 || rnd() < 0.3) push(block[i].map((n) => ({ ...n })));
+		else push(i === 6 ? ornament(6, block[2]) : cadence(7, true));
+	}
+	// 句末で息を継ぐ（伸ばした着地点の後ろを8分だけ休む）
+	for (let b = 3; b < out.length; b += 4) {
+		if (rnd() >= style.breath * 0.6) continue;
+		const notes = out[b];
+		const last = notes[notes.length - 1];
+		if (last.len > 2)
+			out[b] = [
+				...notes.slice(0, -1),
+				{ ...last, len: last.len - 2 },
+				{ step: 0, chrom: false, len: -2 },
+			];
+	}
+	return out.slice(0, bars);
 };
 
 /** 輪郭: 音階を歩き、跳躍は `maxLeap` 歩まで。範囲の端で折り返す。同音は打たない。 */

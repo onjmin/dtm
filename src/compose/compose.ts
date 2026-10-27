@@ -6009,10 +6009,43 @@ const draw = (
 			blocks.set(side, made);
 			return made;
 		};
+		// 走句リードを下げる段数（サビで決め、Aメロにも同じだけ掛ける）
+		let riffDropSteps: number | undefined;
+		const riffDrop = (
+			side: string,
+			block: RiffNote[][],
+			lift: number,
+		): number => {
+			if (riffDropSteps === undefined) {
+				const chorusBlock = blocks.get("b");
+				const ref = chorusBlock ?? block;
+				const refLift = chorusBlock ? 2 * scale.core.length : lift;
+				const top = Math.max(
+					...ref.flatMap((c) => c.filter((n) => n.len > 0).map((n) => n.step)),
+				);
+				let drop = 0;
+				while (
+					drop < refLift &&
+					pitchOf(top + refLift - drop).semi + rootShift > 103
+				)
+					drop += scale.core.length;
+				if (chorusBlock) riffDropSteps = drop;
+				return side === "c" ? Math.min(drop, lift) : drop;
+			}
+			return side === "c" ? Math.min(riffDropSteps, lift) : riffDropSteps;
+		};
 		// riff-bar のセクションをまたぐ動き。最初の型から決まる別の列で引く（乱数列を保っていた頃の名残）。
 		let shape: LoopShape | undefined;
 		const spans = new Map<string, number>();
 		const entry = sectionPlan.find((x) => x.spec.melody)?.startBar ?? 0;
+		// 走句リードはサビの高さで全体の下げ幅を決めるので、サビの型を先に作る
+		if (lineLead === "riff16") {
+			const first = sectionPlan.find(
+				(x) =>
+					x.spec.melody && (x.kind === "chorus" || x.kind === "drop_chorus"),
+			);
+			if (first) blockOf("b", first.bars, first.startBar);
+		}
 		for (let bar = 0; bar < totalBars; bar++) {
 			const sec = sectionAt(sectionPlan, bar);
 			if (!sec?.spec.melody) continue;
@@ -6045,14 +6078,21 @@ const draw = (
 				if ((sparse || late) && bar !== totalBars - 1) continue;
 			}
 			// 走句リードのサビは必ず1オクターブ上げる（上げない曲はサビが Aメロより低く聞こえた。2026-10-26）。
-			const lift =
-				lineLead === "riff16" && side === "b"
+			// 走句リードは全体も1オクターブ上に置く。所有者が上とした kw2 は Aメロの中央が C6・サビが C7 で、
+			// 生成はちょうど1オクターブ下（A#4・C6）にいた（2026-10-27）。
+			let lift =
+				(lineLead === "riff16" ? scale.core.length : 0) +
+				(lineLead === "riff16" && side === "b"
 					? scale.core.length
 					: side === "c"
 						? 1
 						: lineLead === "riff-bar" && side === "b"
 							? (shape?.lift ?? 0)
-							: 0;
+							: 0);
+			// 走句リードの一番高い音は kw2 の上端（F7）の少し上（G7）まで。超えるときは1オクターブ下げ、
+			// サビが Aメロより上という並びは保つ（Aメロも同じだけ下げる）。上げた後の最高音が中央 105、最大 111 になった。
+			// 音階の段で下げると、和音に合わせた着地点が和音から外れた（着地点の和音の音 84%→55%）。
+			if (lineLead === "riff16") lift -= riffDrop(side, block, lift);
 			if (bar === totalBars - 1)
 				cell = [
 					{ step: 0, chrom: false, len: 8 },
