@@ -151,3 +151,5 @@ vite.config.ts.timestamp-*
 # 耳コピ（他人の曲）から作るデータ。どちらも元曲にたどれるので git にもバンドルにも入れず、scripts/ から渡す
 src/compose/compose-section-bank.ts
 src/compose/compose-phrases.ts
+# 台詞作曲の録音用 dist の写し（make-dist-rec.mjs が作る）
+scripts/speech-melody/rec/dist-rec/

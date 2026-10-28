@@ -34,6 +34,10 @@
 | `sync-version.ts` | `package.json` の版を `src/version.ts` 等へ写す（`pnpm version` が呼ぶ） | `pnpm patch` |
 | `downscale-assets.py` | アセット画像を縮小する | `python scripts/misc/downscale-assets.py` |
 
+## speech-melody/ — 台詞イントネーション作曲
+
+音MAD素材の台詞を16分格子へ伸縮・ピッチ補正し、手書きの伴奏に載せる（Python＋DAW での録音）。素材は `SPEECH_MATERIAL_DIR` で外から渡す。手順は [speech-melody/README.md](speech-melody/README.md)。
+
 ---
 
 ## 曲を作って残す手順

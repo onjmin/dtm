@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>台詞作曲の録音</title>
+<style>body{margin:0;background:#fff;color:#111;font:14px system-ui,sans-serif}#bar{display:flex;gap:8px;align-items:center;padding:8px}#app{min-height:600px}</style></head>
+<body>
+<div id="bar">
+	<button id="rec" disabled>伴奏とリードを録る</button>
+	<span id="status">準備中</span>
+</div>
+<div id="app"></div>
+<script type="module">
+// 録音ページ。?song=<曲名> の daw.json を DAW（上級者モード）へ書き込み、伴奏（acc.wav）とリード（lead.wav）を
+// 別々に実時間で録って曲のフォルダへ保存する。スピーカーには出さない（setSinkId({type:"none"})）。
+// 録音用の dist の写し（先読み 3 秒・割り込み判定 5 秒）を使うので、裏のページでタイマーが間引かれても止まらない。
+const status = (s) => { document.getElementById("status").textContent = s; };
+let DTM;
+try {
+	DTM = await import(new URL("/distrec/index.mjs", location.origin).href);
+} catch {
+	status("dist-rec が無い。pnpm build → node scripts/speech-melody/rec/make-dist-rec.mjs");
+	throw new Error("no dist-rec");
+}
+const { createDtmStudio, TRACKS_ADVANCED } = DTM;
+const studio = await createDtmStudio({ defaultPreset: "retro_game" });
+window.studio = studio;
+window.DTM = DTM;
+const daw = studio.mountEditor(document.getElementById("app"), {
+	mode: "advanced", tracks: TRACKS_ADVANCED, preset: "retro_game", defaultBpm: 120, skipConsent: true, tour: { autoStart: false },
+});
+window.daw = daw;
+const song = new URLSearchParams(location.search).get("song");
+const post = (name, body) => fetch(`/save?song=${encodeURIComponent(song)}&name=${encodeURIComponent(name)}`, { method: "POST", body });
+
+// daw.json（build が書く）: { bpm, drum, bars, tracks: { t0: [{startStep, durationSteps, midi}] }, instruments: { t0: "GM 名" } }
+// 開いたばかりの空の DAW へ書く前提（前の曲の音符は消さない）。書き直すときはページを開き直す
+window.loadDaw = async (j) => {
+	daw.stop();
+	daw.setBpm(j.bpm);
+	daw.setDrum(j.drum ?? "none");
+	for (const [id, notes] of Object.entries(j.tracks)) {
+		const added = notes.map((n) => ({ startStep: n.startStep, durationSteps: n.durationSteps, pitchUnits: DTM.midiToUnits(n.midi), velocity: n.velocity }));
+		daw.applyPatch(id, added, []);
+	}
+	for (const [id, name] of Object.entries(j.instruments ?? {})) {
+		daw.applyTrackInstrument(TRACKS_ADVANCED.findIndex((t) => t.id === id), name);
+	}
+	return Object.values(j.tracks).reduce((a, t) => a + t.length, 0);
+};
+
+// 曲頭（ステップ0）から最後まで録る。ドラムはトラックと別扱いなので setDrumVolume で消す
+const recordFromTop = async (name) => {
+	daw.stop(); // 読み込んだ曲は stop で曲頭へ戻る（forcePauseAt は位置を動かすだけで、再生がすぐ止まることがある）
+	await studio.audioContext.setSinkId?.({ type: "none" });
+	await studio.audioContext.resume();
+	studio.startWavRecording();
+	await daw.play();
+	const t0 = performance.now();
+	while (daw.getPlaybackState() !== "playing" && performance.now() - t0 < 15000) await new Promise((r) => setTimeout(r, 100));
+	await new Promise((r) => { const iv = setInterval(() => { if (daw.getPlaybackState() !== "playing") { clearInterval(iv); r(); } }, 200); });
+	const blob = await studio.stopWavRecording();
+	await post(name, blob);
+	return blob.size;
+};
+const LEAD = ["t0", "t1", "t2", "t14"]; // リードとして別に録るトラック（mix.py で音量を変えられる）
+window.recStem = async (name, leadOnly) => {
+	for (const t of TRACKS_ADVANCED) daw.setTrackAudible(t.id, LEAD.includes(t.id) ? leadOnly : !leadOnly);
+	daw.setDrumVolume(leadOnly ? 0 : 80);
+	try { return await recordFromTop(name); } finally {
+		daw.setDrumVolume(80);
+		for (const t of TRACKS_ADVANCED) daw.setTrackAudible(t.id, true);
+	}
+};
+window.recordAll = async () => {
+	status("伴奏を録音中（曲の長さぶんかかる）");
+	await window.recStem("acc.wav", false);
+	await new Promise((r) => setTimeout(r, 2000)); // 伴奏の残響がリードの頭へ入らないように
+	status("リードを録音中");
+	await window.recStem("lead.wav", true);
+	status(`保存した: ${song}/acc.wav, lead.wav → python scripts/speech-melody/mix.py ${song}`);
+};
+
+await studio.audioContext.setSinkId?.({ type: "none" });
+if (song) {
+	const r = await fetch(`/songs/${encodeURIComponent(song)}/daw.json`);
+	if (r.ok) {
+		const n = await window.loadDaw(await r.json());
+		status(`${song}: ${n} 音符を書き込んだ`);
+		const btn = document.getElementById("rec");
+		btn.disabled = false;
+		btn.onclick = async () => { btn.disabled = true; try { await window.recordAll(); } catch (e) { status(`失敗: ${e}`); } btn.disabled = false; };
+	} else status(`${song}/daw.json が無い（build を先に）`);
+} else status("?song=<曲名> を付けて開く");
+document.body.dataset.ready = "1";
+</script>
+</body>
+</html>

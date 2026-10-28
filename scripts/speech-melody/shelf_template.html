@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>台詞作曲の試作</title>
+<!-- shelf_build.py が SPEECH_OUT_DIR/shelf/index.html へ書き出すひな形（見た目は scripts/misc/song-shelf.html と同じ）。曲のデータは SONGS に入る -->
+<style>
+:root {
+	--bg: #f6f5f2; --panel: #ffffff; --fg: #1c1b19; --muted: #6d6a64; --line: #e2dfd8; --hover: #efede8; --sel: #e7e4dc;
+	--accent: #4a6fa5; --bad: #b0503c; --none: #a8a49c;
+	--mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #151514; --panel: #1d1c1b; --fg: #ebe9e4; --muted: #9c988f; --line: #33312e; --hover: #24231f; --sel: #2c2a26;
+		--accent: #7f9fd0; --bad: #d98a72; --none: #6f6b64;
+	}
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.65 system-ui, "Yu Gothic UI", "Hiragino Sans", sans-serif; }
+.wrap { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 100vh; }
+aside { border-right: 1px solid var(--line); padding: 20px 0; position: sticky; top: 0; height: 100vh; overflow: auto; }
+aside h1 { font-size: 15px; margin: 0 16px 12px; font-weight: 600; }
+aside h1 span { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.item { display: block; width: 100%; text-align: left; border: 0; background: none; color: inherit; font: inherit; padding: 8px 16px; cursor: pointer; }
+.item:hover { background: var(--hover); }
+.item[aria-current="true"] { background: var(--sel); }
+.item .when { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-right: 8px; }
+.item .facts { display: block; font-size: 12px; color: var(--muted); }
+main { padding: 28px 32px 64px; max-width: 900px; min-width: 0; overflow-wrap: anywhere; }
+h2 { font-size: 22px; margin: 0; font-weight: 600; }
+h3 { font-size: 14px; margin: 28px 0 10px; font-weight: 600; }
+.sub { color: var(--muted); margin: 2px 0 14px; }
+.facts-row { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0 0 14px; }
+.facts-row b { font-weight: 600; }
+.verdict { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; border: 1px solid var(--line); }
+.verdict.bad { color: var(--bad); border-color: var(--bad); }
+.verdict.none { color: var(--muted); }
+audio { width: 100%; display: block; margin: 6px 0 2px; }
+.label { font-size: 12px; color: var(--muted); }
+.note { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+.prog { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
+th, td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 400; }
+td.num { font-family: var(--mono); text-align: right; padding-right: 14px; white-space: nowrap; }
+td.path { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+tr.seek { cursor: pointer; }
+tr.seek:hover { background: var(--hover); }
+.empty { color: var(--muted); }
+dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; font-size: 13px; margin: 0; }
+dl.kv dt { color: var(--muted); }
+dl.kv dd { margin: 0; font-family: var(--mono); font-size: 12px; }
+@media (max-width: 760px) {
+	.wrap { grid-template-columns: minmax(0, 1fr); }
+	aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); max-height: 45vh; }
+	main { padding: 20px 16px 48px; }
+	td.path { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+	<aside><h1>台詞作曲の試作<span id="count"></span></h1><nav id="list"></nav></aside>
+	<main id="detail"></main>
+</div>
+<script>
+const SONGS = /*SONGS*/[];
+const el = (tag, attrs = {}, ...kids) => {
+	const e = document.createElement(tag);
+	for (const [k, v] of Object.entries(attrs)) {
+		if (k === "class") e.className = v;
+		else e.setAttribute(k, v);
+	}
+	for (const k of kids.flat(Infinity)) if (k != null && k !== false) e.append(k instanceof Node ? k : String(k));
+	return e;
+};
+const verdictClass = (v) => (v === "捨てる" || v.startsWith("「") ? "bad" : v.startsWith("評価なし") || v.startsWith("未提出") ? "none" : "");
+const fmtVal = (v) => (Array.isArray(v) ? v.join(" / ") : typeof v === "object" && v !== null ? JSON.stringify(v) : String(v));
+
+function renderList(currentId) {
+	const nav = document.getElementById("list");
+	nav.replaceChildren(...SONGS.map((s, i) =>
+		el("button", { class: "item", type: "button", "aria-current": String(s.id === currentId), "data-id": s.id },
+			el("span", { class: "when" }, s.at.slice(5)), s.title,
+			el("span", { style: "font-size:11px;color:var(--auto);margin-left:6px;" }, `[${s.model}]`),
+			el("span", { class: "facts" }, [s.facts.bpm ? `${s.facts.bpm}BPM` : null, s.facts.seconds ? `${s.facts.seconds}秒` : null, s.verdict].filter(Boolean).join(" ・ ")))));
+	document.getElementById("count").textContent = `${SONGS.length}曲`;
+}
+
+function renderDetail(s) {
+	const main = document.getElementById("detail");
+	const f = s.facts;
+	const song = el("audio", { controls: "", preload: "metadata", src: s.audio });
+	const kids = [
+		el("h2", {}, s.title),
+		el("p", { class: "sub" }, `${s.at}・日本時間 ・ 作成モデル: ${s.model}`),
+		el("p", { class: "sub" }, `素材: ${s.material} ／ 伴奏: ${s.accomp}`),
+		el("div", { class: "facts-row" },
+			f.bpm ? el("span", {}, el("b", {}, f.bpm), " BPM") : null,
+			f.key ? el("span", {}, "調 ", el("b", {}, f.key)) : null,
+			f.bars ? el("span", {}, el("b", {}, f.bars), " 小節") : null,
+			f.seconds ? el("span", {}, el("b", {}, f.seconds), " 秒") : null,
+			el("span", { class: `verdict ${verdictClass(s.verdict)}` }, `評価: ${s.verdict}`)),
+		el("div", { class: "label" }, "完成形"), song,
+		s.voice ? [el("div", { class: "label" }, "台詞だけ"), el("audio", { controls: "", preload: "none", src: s.voice })] : null,
+		f.progression ? el("p", { class: "prog" }, "和音: ", f.progression) : null,
+		el("h3", {}, "小節ごとの素材"),
+	];
+	if (s.rows.length) {
+		const bar = (b) => (f.bpm ? ((b - 1) * 240) / f.bpm : null);
+		kids.push(el("table", {},
+			el("thead", {}, el("tr", {}, el("th", {}, "小節"), el("th", {}, "台詞"), el("th", {}, "話者・フォルダ"), el("th", {}, "移調"), el("th", {}, "素材ファイル（SPEECH_MATERIAL_DIR から）"))),
+			el("tbody", {}, s.rows.map((r) => {
+				const tr = el("tr", { class: f.bpm ? "seek" : "", title: f.bpm ? "押すとこの小節へ移動（再生はしない）" : "" },
+					el("td", { class: "num" }, Number(r.bar).toFixed(r.bar % 1 ? 2 : 0)),
+					el("td", {}, r.text),
+					el("td", {}, r.who || ""),
+					el("td", { class: "num" }, r.transpose == null ? "" : `${r.transpose > 0 ? "+" : ""}${r.transpose}`),
+					el("td", { class: "path" }, r.path));
+				if (f.bpm) tr.addEventListener("click", () => { song.currentTime = bar(r.bar); });
+				return tr;
+			}))));
+		kids.push(el("p", { class: "note" }, `出どころ: ${s.rowsSource}`));
+	} else {
+		kids.push(el("p", { class: "empty" }, s.rowsSource));
+	}
+	if (s.check) {
+		kids.push(el("h3", {}, "測定値（check.json）"));
+		kids.push(el("dl", { class: "kv" }, Object.entries(s.check).map(([k, v]) => [el("dt", {}, k), el("dd", {}, fmtVal(v))])));
+	}
+	main.replaceChildren(...kids.flat().filter(Boolean));
+}
+
+function show(id) {
+	const s = SONGS.find((x) => x.id === id) || SONGS[0]; // 既定は一覧の先頭（いちばん新しい曲）
+	if (!s) return;
+	renderList(s.id);
+	renderDetail(s);
+	if (location.hash.slice(1) !== s.id) history.replaceState(null, "", `#${s.id}`);
+}
+document.getElementById("list").addEventListener("click", (e) => {
+	const b = e.target.closest(".item");
+	if (b) show(b.dataset.id);
+});
+show(location.hash.slice(1));
+</script>
+</body>
+</html>

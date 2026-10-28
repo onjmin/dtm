@@ -1,0 +1,12 @@
+# 台詞イントネーション作曲（scripts/speech-melody）の Python 依存。Python 3.10 で確かめた。
+# torch / torchaudio は GPU に合わせて先に入れる（README の「セットアップ」）。CPU だけでも動く（整列が遅いだけ）。
+# torchaudio の MMS_FA と functional.forced_align を使う。2.7.1 で確かめた（新しい版はこの API を外していることがある）。
+torch==2.7.1
+torchaudio==2.7.1
+# torch・librosa と組む numpy は 1.x に留める（pyopenjtalk-plus を入れるとき 2.x へ上げられないよう、ここで固定する）
+numpy==1.26.4
+scipy==1.15.3
+librosa==0.11.0
+soundfile==0.14.0
+pyworld==0.3.5
+pyopenjtalk-plus==0.4.1.post10
