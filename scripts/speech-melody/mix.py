@@ -16,6 +16,7 @@ import soundfile as sf
 import config
 
 FS = 44100
+LEAD = ("t0", "t1", "t2", "t14")  # rec.html がリードとして別に録るトラック
 
 
 def estimate_offset(acc, daw):
@@ -52,6 +53,15 @@ def main():
         print(f"offset {off:.3f}s（位相の集中度 {conc:.2f}。0.5 未満なら --offset で確かめる）")
     else:
         off = a.offset
+    # リードは別の録音で頭の遅れが伴奏と違う（0.5〜0.8 秒短いことがある）ので、リードの音符だけで求めて伴奏へそろえる
+    daw = json.loads((d / "daw.json").read_text(encoding="utf-8"))
+    lead_daw = {**daw, "drum": "none", "tracks": {k: v for k, v in daw["tracks"].items() if k in LEAD and v}}
+    if lead_daw["tracks"] and np.abs(lead).max() > 1e-4:
+        acc_off = estimate_offset(acc, daw)[0]
+        lead_off, lead_conc = estimate_offset(lead, lead_daw)
+        sh = int(round((acc_off - lead_off) * FS))
+        print(f"lead shift {sh / FS:+.3f}s（位相の集中度 {lead_conc:.2f}）")
+        lead = np.pad(lead, ((0, 0), (sh, 0))) if sh >= 0 else lead[:, -sh:]
     n = min(acc.shape[1], lead.shape[1])
     inst = acc[:, :n] + 10 ** (a.lead_db / 20) * lead[:, :n]
     v = np.zeros(n)
