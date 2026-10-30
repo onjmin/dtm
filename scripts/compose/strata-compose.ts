@@ -10,7 +10,7 @@
  *   npx tsx scripts/compose/strata-compose.ts rebuild <曲>
  *       strata-session.json の操作列を seed から当て直して song.mml を作り直す（会話はしない）。
  *
- * 手順と注意は docs/strata-compose.md。Strata の起動・接続は「Strata 呼び出しガイド」（STRATA_URL で接続先を変えられる）。
+ * 手順と注意は docs/strata-compose.md。接続先は STRATA_URL で変えられる。
  *
  * 道具は事実だけを返す（小節ごとの和音・層・リードの音、こすれの場所の一覧）。点数や合否は返さない
  * （docs/handover-compose.md §2: 点検の数値が目標になって曲が揃うため、作曲ハーネスは外した）。
