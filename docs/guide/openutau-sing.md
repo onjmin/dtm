@@ -37,9 +37,9 @@ dtm は OpenUtau も歌い手も同梱しない。
    - 同梱の Python に PyTorch が入っていないので入れる（CPU 版の例。GPU 版は付属の `reinstall_torch.bat`）。
 
      ```bash
-     python-3.9.13-embed-amd64python.exe -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+     python-3.9.13-embed-amd64/python.exe -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
      ```
-   - `simple_enunu_server.bat`（または `python-3.9.13-embed-amd64python.exe simple_enunu_server.py`）で起動する。初回は pyzmq を自分で入れる。
+   - `simple_enunu_server.bat`（または `python-3.9.13-embed-amd64/python.exe simple_enunu_server.py`）で起動する。初回は pyzmq を自分で入れる。
    - **注意: SimpleEnunuServer は `tcp://*:15556` で待ち受ける（手元だけでなく LAN 全体、認証なし）。** Windows のファイアウォールで外からの接続を許可しない。外部ソフトの作りなので dtm 側では直せない。
    - 配布の zip（[canon-voice.com](https://www.canon-voice.com/voicebanks/)）を `Singers/NamineRitsu_ENUNU/` に展開し（フォルダ名の `#` は外す）、`character.yaml` を作る。
 
