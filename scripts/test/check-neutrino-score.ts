@@ -17,7 +17,12 @@ loader._load = (request, ...rest) =>
 
 const { normalizeLyrics } =
 	require("../../src/voice/lyrics") as typeof import("../../src/voice/lyrics");
-const { buildNeutrinoTrack, isNeutrinoModel, scoreToNeutrinoMusicXml } =
+const {
+	absorbTinyFragments,
+	buildNeutrinoTrack,
+	isNeutrinoModel,
+	scoreToNeutrinoMusicXml,
+} =
 	require("../../src/voice/neutrino-sing") as typeof import("../../src/voice/neutrino-sing");
 const { isLocalEngineModel, isLocalPage } =
 	require("../../src/voice/local-engines") as typeof import("../../src/voice/local-engines");
@@ -145,6 +150,50 @@ console.log("■ トラック全体の楽譜とフレーズの切り出し");
 	);
 	check("leadSec は切り出しの頭から最初の音まで", round(b.leadSec), 0.3);
 	check("音の無いトラックは楽譜なし", buildNeutrinoTrack([]).score, null);
+}
+
+console.log(
+	"■ ごく短い休符・音のかけらを隣へまとめる（ENUNU が 0 で割って落ちるため）",
+);
+{
+	const r = (f: number) => ({ key: null, frame_length: f, lyric: "" });
+	const n = (k: number, f: number, l: string) => ({
+		key: k,
+		frame_length: f,
+		lyric: l,
+	});
+	const out = absorbTinyFragments([
+		r(24),
+		n(60, 20, "か"),
+		r(2), // 音の間の短い休符 → 直前の音へ
+		n(62, 3, "き"), // 短い音 → 直前の音へ
+		n(64, 20, "く"),
+		r(30),
+		n(65, 2, "け"), // 休符の直後の短い音 → 直後の音へ
+		n(67, 20, "こ"),
+		r(16),
+	]);
+	check(
+		"並び",
+		out.map((x) => `${x.lyric || "_"}${x.frame_length}`),
+		["_24", "か25", "く20", "_30", "こ22", "_16"],
+	);
+	check(
+		"合計の長さは変わらない",
+		out.reduce((s, x) => s + x.frame_length, 0),
+		24 + 20 + 2 + 3 + 20 + 30 + 2 + 20 + 16,
+	);
+	check(
+		"NaN・0 の長さは捨てる",
+		absorbTinyFragments([
+			r(10),
+			n(60, Number.NaN, "あ"),
+			n(60, 0, "い"),
+			n(60, 10, "う"),
+			r(10),
+		]).map((x) => x.lyric),
+		["", "う", ""],
+	);
 }
 
 console.log("■ 手元のエンジンの声を選択肢に出すか");

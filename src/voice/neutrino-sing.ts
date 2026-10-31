@@ -106,6 +106,54 @@ const pitchXml = (midi: number): string => {
  * 長さは秒をそのまま分割数へ写す（テンポ 60）。小節をまたぐ音はタイで分ける。
  * 歌詞はタイの頭にだけ付ける。`keyShift` は半音単位の移調。
  */
+/** これより短い音・休符は、隣の音へまとめる（フレーム数。5 フレーム ≒ 53ms）。 */
+const MIN_FRAGMENT_FRAMES = 5;
+
+/**
+ * 楽譜のごく短い休符・音を、隣の音へまとめる。
+ *
+ * 音の長さの丸め（約 10ms 単位）や、継続の音の高さの変わり目で区切った所から、30ms 前後の
+ * 音や 10〜20ms の休符のかけらが出る。ENUNU（の楽譜変換 utaupy）はこれを長さ 0 として扱い、
+ * 0 で割って落ちる（2026-11-01 の切り分けで、音 29ms・休符 20ms 以下で落ち、
+ * 音 40ms・休符 30ms 以上は通った）。耳ではほぼ分からない長さなので、
+ * - 音と音の間の短い休符は、直前の音を伸ばして埋める。
+ * - 短い音は、直前が音ならそこへ、そうでなければ直後の音へ足す。
+ * 長さが NaN・Infinity・0 以下のものは捨てる（MusicXML に "NaN" を書かない）。
+ * 先頭と末尾の休符はそのまま残す。
+ */
+export const absorbTinyFragments = (
+	notes: VoicevoxScoreNote[],
+): VoicevoxScoreNote[] => {
+	const out: VoicevoxScoreNote[] = notes
+		.filter((n) => Number.isFinite(n.frame_length) && n.frame_length > 0)
+		.map((n) => ({ ...n }));
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (let i = 1; i < out.length - 1; i++) {
+			const n = out[i];
+			if (n.frame_length >= MIN_FRAGMENT_FRAMES) continue;
+			const prev = out[i - 1];
+			const next = out[i + 1];
+			if (n.key === null) {
+				// 音と音の間の短い休符だけを埋める
+				if (prev.key === null || next.key === null) continue;
+				prev.frame_length += n.frame_length;
+			} else if (prev.key !== null) {
+				prev.frame_length += n.frame_length;
+			} else if (next.key !== null) {
+				next.frame_length += n.frame_length;
+			} else {
+				continue; // 前後とも休符の短い音はそのまま
+			}
+			out.splice(i, 1);
+			changed = true;
+			break;
+		}
+	}
+	return out;
+};
+
 export const scoreToNeutrinoMusicXml = (
 	score: VoicevoxScore,
 	keyShift = 0,
@@ -117,9 +165,7 @@ export const scoreToNeutrinoMusicXml = (
 	const at = (f: number): number =>
 		Math.round((f / VOICEVOX_FRAME_RATE) * DIVISIONS);
 	const shift = Number.isFinite(keyShift) ? Math.trunc(keyShift) : 0;
-	for (const note of score.notes) {
-		// 長さが NaN・Infinity・負の音は捨てる（MusicXML に "NaN" を書かない）。
-		if (!Number.isFinite(note.frame_length) || note.frame_length <= 0) continue;
+	for (const note of absorbTinyFragments(score.notes)) {
 		const start = at(frames);
 		frames += note.frame_length;
 		const end = at(frames);

@@ -74,6 +74,14 @@ dtm は OpenUtau も歌い手も同梱しない。
 - 波音リツ ENUNU #4130 でも歌わせた（SimpleEnunuServer 0.5.0・PyTorch 2.8 CPU 版）。CPU で約14〜17秒。音の高さは8音のうち7音が ±0.1 半音、1音が1オクターブ下と出た（測り方の取り違えとみている）。
 - デモの DAW（ヘッドレスの Edge）で `ou_ritsu_ds`・`ou_ritsu_enunu` のトラックを再生し、2つのフレーズが伴奏と同じアンカーから計算どおりの時刻に置かれた。規約のリンクは canon-voice.com の規約を指した。
 
+## ENUNU が「float division by zero」で落ちる件（2026-11-01 に切り分け）
+
+海鬼月（約3分）を ENUNU で歌わせると、合成の最初の段階（タイミング）で ENUNU のサーバーが `float division by zero` を返して落ちた。曲の長さは関係ない（96音・48秒の曲は通った）。
+
+- **短い音・短い休符**: テストの楽譜で、音 29ms・音の間の休符 20ms 以下で落ち、音 40ms・休符 30ms 以上は通った。dtm が書く楽譜には、音の長さの丸めや継続の高さの区切りから、30ms 前後の音や 10〜20ms の休符のかけらが混じっていた。→ dtm 側で、MusicXML を書く前に 50ms 未満の休符・音を隣の音へまとめるようにした（`absorbTinyFragments`。NEUTRINO・DiffSinger・Sinsy も同じ楽譜を使う）。
+- **子音だけのフレーズ**: それでも、休符の直後の音の子音（例:「きゅ」の ky）が、OpenUtau から ENUNU へ2回目に送る楽譜で、子音だけの1音のフレーズに切り離されることがある。1音だけのフレーズは、ENUNU が楽譜を変換する utaupy の `hts.py` の `_fill_e24_e25` で「フレーズの長さ」が 0 になり、0 で割って落ちる。dtm の楽譜からは避けきれない。
+- **回避方法（手元の SimpleEnunuServer を書き換える）**: `python-3.9.13-embed-amd64/lib/site-packages/utaupy/hts.py` の `_fill_e24_e25` にある2か所の `counter_100ns / phrase_length_100ns` を `counter_100ns / (phrase_length_100ns or 1)` にして、サーバーを起動し直す。手元ではこれで海鬼月の歌の3トラックとも最後まで歌えた（CPU で 1〜5 分）。外部ソフトの書き換えなので、SimpleEnunu の版を上げたらやり直す。
+
 ## 制約
 
 - OpenUtau の CLI が公式の版に入るまでは、提案のブランチを自分で組み立てる必要がある。
