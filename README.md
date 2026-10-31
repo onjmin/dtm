@@ -2,6 +2,7 @@
 
 MML を中間言語に用いた、モバイルファーストな DAW / ピアノロール打ち込みコンポーネント。
 楽器・ドラムに加え、UTAU 音源（[@onjmin/koe](https://www.npmjs.com/package/@onjmin/koe)）による歌声合成にも対応しています。
+手元で起動した [VOICEVOX](https://voicevox.hiroshiba.jp/) エンジン（既定 `http://127.0.0.1:50021`）の歌唱 API で歌わせることもできます（試作。歌詞トラックの音源に `vv_zundamon`・`vv_metan`・`vv_tsumugi`・`vv_ritsu` を選ぶ）。
 
 ## デモ
 
