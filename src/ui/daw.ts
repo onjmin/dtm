@@ -219,6 +219,7 @@ import {
 	genreFromTemplate,
 } from "./compose-genres";
 import { buildUI } from "./daw-ui";
+import { createExtraAudioPanel, type ExtraAudioPanel } from "./extra-audio";
 import { escapeHtml } from "./html";
 import { icon } from "./icons";
 import { createRenderer, type Renderer } from "./renderer";
@@ -1443,6 +1444,8 @@ export const mountDAW = (
 	// ライブラリ自身は音を出さないので、注入が無ければ鳴らしようがない。
 	const backingAudio = options.backingAudio ?? null;
 	const showAudio = !!backingAudio;
+	/** 2本目以降の同時再生音源の欄（{@link DawOptions.createExtraAudio} が渡されたときだけ）。 */
+	let extraAudio: ExtraAudioPanel | null = null;
 	const midiSearchClient = options.midiSearch
 		? new MidiSearchClient(options.midiSearch)
 		: undefined;
@@ -3272,13 +3275,20 @@ export const mountDAW = (
 			}
 			redrawAll();
 		},
-		getMinEndSec: () => backingRemainingSec(),
+		getMinEndSec: () =>
+			Math.max(
+				backingRemainingSec(),
+				extraAudio?.remainingSec(
+					backingFromStep * (60 / bpm / BACKING_STEPS_PER_BEAT),
+				) ?? 0,
+			),
 		onEnd: (interrupted) => {
 			// フェードアウト直後に即座に scheduleFade(null) で gain を 1 に戻すと、リバーブやリリース残響が
 			// 突然音量1で鳴り出す。フェードアウト時は自動復帰が予約済みなので、自然終了では即時解除しない
 			// （割り込み停止のときだけ）。トランスポートが止まったのに伴奏音源だけ鳴り続けるのはおかしい
 			// ので、曲の終わりで一緒に止める。
 			backingAudio?.stop();
+			extraAudio?.stop();
 			if (interrupted) {
 				options.onScheduleFade?.(null);
 				playbackState = "paused";
@@ -3586,6 +3596,10 @@ export const mountDAW = (
 			await fetchBackingSource(backing.url);
 			if (playGeneration !== generation) return; // 読み込み中に停止された
 		}
+		if (extraAudio) {
+			await extraAudio.ensureLoaded();
+			if (playGeneration !== generation) return;
+		}
 
 		const fromStep =
 			playbackState === "paused" ? pausedPlayStep : playStartStep;
@@ -3742,6 +3756,13 @@ export const mountDAW = (
 				startBacking(fromStep, anchor, preRollSec);
 			}
 		}
+		// 2本目以降も同じアンカーへ（打ち込みの fromStep の位置が anchor に鳴る）。
+		if (extraAudio) {
+			const anchor = sequencer.isActive()
+				? sequencer.getStartTime()
+				: getAudioTime() + SEQUENCER_START_DELAY + effectivePreRoll;
+			extraAudio.start(fromStep * (60 / bpm / BACKING_STEPS_PER_BEAT), anchor);
+		}
 
 		// フェードイン/アウトのスケジュール。フェードインは曲頭（fromStep===0）から
 		// 再生したときだけ。フェードアウトの着地点はシーケンサが曲を終える時刻に合わせる
@@ -3785,6 +3806,7 @@ export const mountDAW = (
 		pausedPlayStep = currentPlayStep;
 		sequencer.stop();
 		backingAudio?.stop();
+		extraAudio?.stop();
 		options.singingVoices?.stopStream();
 		clearSoundTimers();
 		options.onScheduleFade?.(null);
@@ -3805,6 +3827,7 @@ export const mountDAW = (
 		playGeneration++;
 		sequencer.stop();
 		backingAudio?.stop();
+		extraAudio?.stop();
 		options.singingVoices?.stopStream();
 		clearSoundTimers();
 		options.onScheduleFade?.(null);
@@ -5102,6 +5125,7 @@ export const mountDAW = (
 				audioEnd: backing.endSec || undefined,
 				audioOffset: backing.offsetSec || undefined,
 				audioVolume: backing.volume,
+				extraAudio: extraAudio?.toMeta(),
 				trackInstruments: trackInstMeta,
 				trackFonts: trackFontMeta,
 				trackCompression: trackCompMeta,
@@ -5142,6 +5166,7 @@ export const mountDAW = (
 				audioEnd: backing.endSec || undefined,
 				audioOffset: backing.offsetSec || undefined,
 				audioVolume: backing.volume,
+				extraAudio: extraAudio?.toMeta(),
 				trackInstruments: trackInstMeta,
 				trackFonts: trackFontMeta,
 				trackCompression: trackCompMeta,
@@ -5557,6 +5582,8 @@ export const mountDAW = (
 					clearBacking();
 				}
 			}
+			// 2本目以降。宣言が無ければ前の曲の枠は外す。
+			extraAudio?.loadFromMeta(meta.extraAudio);
 		}
 		// 別の曲を読み込んだのだから、前の曲で「作曲」が決めた音色スロットは捨てる。
 		// 残すと、読み込んだ曲におまかせマスタリングを掛けたときに、いま鳴っている
@@ -8490,6 +8517,23 @@ export const mountDAW = (
 		if (showAudio) {
 			wireBackingAudio();
 			updateBackingInputs();
+			if (options.createExtraAudio) {
+				const createExtra = options.createExtraAudio;
+				extraAudio = createExtraAudioPanel({
+					createAudio: createExtra,
+					getPlayingPosition: () =>
+						playbackState === "playing"
+							? {
+									fromSec:
+										currentPlayStep * (60 / bpm / BACKING_STEPS_PER_BEAT),
+									atTime: getAudioTime() + 0.05,
+								}
+							: null,
+				});
+				refs.audioPanel
+					.querySelector(".dtm-panel-body")
+					?.appendChild(extraAudio.el);
+			}
 		}
 		if (showMidiSearch) wireMidiSearch();
 
@@ -9878,6 +9922,7 @@ export const mountDAW = (
 			// 伴奏音源はこのエディタ専用に作られて渡されるので、ここで後始末する
 			// （YouTubeのiframeはDOMを消すだけでは音が止まらないことがある）。
 			backingAudio?.destroy();
+			extraAudio?.destroy();
 			options.singingVoices?.stopStream();
 			unsubscribeClip?.();
 			stopPeakSampling();

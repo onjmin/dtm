@@ -10,6 +10,7 @@
  * 単位）を秒へ戻し、テンポ 60（4分音符＝1秒）の MusicXML に書く。
  */
 
+import { sanitizeText } from "../safe-text";
 import {
 	buildVoicevoxPhrases,
 	type TimedNote,
@@ -81,8 +82,15 @@ const MEASURE = DIVISIONS * 4;
 const STEPS = ["C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B"];
 const ALTERS = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
 
+/** 1音の歌詞の長さの上限（1モーラのかななので、これより長いのは壊れた入力）。 */
+const MAX_LYRIC_CHARS = 8;
+
+/** 歌詞を XML の文字データへ。使えない文字を落としてから `& < >` をエスケープする。 */
 const escapeXml = (s: string): string =>
-	s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+	sanitizeText(s, MAX_LYRIC_CHARS)
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;");
 
 const pitchXml = (midi: number): string => {
 	const pc = ((midi % 12) + 12) % 12;
@@ -107,7 +115,10 @@ export const scoreToNeutrinoMusicXml = (
 	let frames = 0;
 	const at = (f: number): number =>
 		Math.round((f / VOICEVOX_FRAME_RATE) * DIVISIONS);
+	const shift = Number.isFinite(keyShift) ? Math.trunc(keyShift) : 0;
 	for (const note of score.notes) {
+		// 長さが NaN・Infinity・負の音は捨てる（MusicXML に "NaN" を書かない）。
+		if (!Number.isFinite(note.frame_length) || note.frame_length <= 0) continue;
 		const start = at(frames);
 		frames += note.frame_length;
 		const end = at(frames);
@@ -137,7 +148,11 @@ export const scoreToNeutrinoMusicXml = (
 			if (e <= s) continue;
 			filled = e;
 			const dur = e - s;
-			if (ev.note.key === null) {
+			const midi =
+				ev.note.key === null || !Number.isFinite(ev.note.key)
+					? null
+					: Math.max(0, Math.min(127, Math.round(ev.note.key + shift)));
+			if (midi === null) {
 				body.push(`<note><rest/><duration>${dur}</duration></note>`);
 				continue;
 			}
@@ -153,7 +168,7 @@ export const scoreToNeutrinoMusicXml = (
 				? ""
 				: `<lyric number="1"><syllabic>single</syllabic><text>${escapeXml(ev.note.lyric)}</text></lyric>`;
 			body.push(
-				`<note>${pitchXml(ev.note.key + keyShift)}<duration>${dur}</duration>${ties}` +
+				`<note>${pitchXml(midi)}<duration>${dur}</duration>${ties}` +
 					(tied ? `<notations>${tied}</notations>` : "") +
 					`${lyric}</note>`,
 			);

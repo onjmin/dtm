@@ -675,6 +675,12 @@ export type DawOptions = {
 	 */
 	backingAudio?: import("./audio/backing-audio").BackingAudio;
 	/**
+	 * 2本目以降の同時再生音源（`#audio2=` 〜）を鳴らす再生器を1本ぶん作る。
+	 * 渡すと、オーディオ同時再生の欄に「追加の音声」が出る（{@link backingAudio} と同じく
+	 * AudioContext を持つ利用側が `createBackingAudio` で作る。YouTube の枠は要らない）。
+	 */
+	createExtraAudio?: () => import("./audio/backing-audio").BackingAudio;
+	/**
 	 * 編集中の音割れ検知メーター（マスタの安全リミッター手前を監視）。
 	 * 渡すとDAW UIにクリップ警告バッジを表示できる。studio.mountEditor が自動的に渡す。
 	 */

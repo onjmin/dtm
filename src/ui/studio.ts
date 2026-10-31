@@ -1477,6 +1477,8 @@ export const createDtmStudio = async (
 		const base: DawOptions = {
 			getAudioTime: () => audioCtx.currentTime,
 			backingAudio,
+			createExtraAudio: () =>
+				createBackingAudio({ audioContext: audioCtx, destination: masterGain }),
 			onResumeAudio: async () => {
 				applyMasterFx(masterFxTarget, editorFx, editorBpm);
 				await resumeAudio();
@@ -1957,6 +1959,10 @@ export const createDtmStudio = async (
 							target.querySelector<HTMLElement>('[data-dtm="audio-youtube"]'),
 					})
 				: undefined,
+			// `#audio2=` 〜 の追加の音声（並びは MML と同じ）。
+			extraAudio: (song.meta.extraAudio ?? []).map(() =>
+				createBackingAudio({ audioContext: audioCtx, destination: masterGain }),
+			),
 		});
 		mountedPlayers.push(player);
 		// destroy 時に内部リストからも外す（多数の再生UIを生成し続けても溜まらないように）。

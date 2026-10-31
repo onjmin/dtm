@@ -189,7 +189,26 @@ export type MmlMeta = {
 	audioAt?: number;
 	/** 伴奏音源の音量 0-100。`#audiovol=` で埋め込む。省略時は80。 */
 	audioVolume?: number;
+	/**
+	 * 2本目以降の同時再生音源（`#audio2=` 〜 `#audio8=`）。外の歌声ソフトで作った歌の WAV や、
+	 * 別に録った伴奏などを重ねる。mp3 / wav 等の URL だけ（YouTube は1本目だけ）。
+	 * 並びは番号順で、抜けた番号は詰める。
+	 */
+	extraAudio?: ExtraAudioMeta[];
 };
+
+/** {@link MmlMeta.extraAudio} の1本。 */
+export type ExtraAudioMeta = {
+	/** 音源の URL（http / https）。`#audio<n>=`。 */
+	url: string;
+	/** 開始のずれ（秒）。正なら音源が先。`#audio<n>offset=`。意味は {@link MmlMeta.audioOffset} と同じ。 */
+	offset?: number;
+	/** 音量 0-100。`#audio<n>vol=`。省略時は80。 */
+	volume?: number;
+};
+
+/** 同時再生音源の本数の上限（1本目の `#audio=` を含む）。 */
+export const MAX_AUDIO_SOURCES = 8;
 
 /**
  * `#ver=...` `#inst=...` `#drum=...` `#drumfont=...` `#volume=...` `#drumvolume=...` `#mode=...`
@@ -216,6 +235,44 @@ const AUDIO_URL_DIRECTIVE = /#audio=([^\s#;\r\n]+)/gi;
  */
 const AUDIO_NUM_DIRECTIVE =
 	/#audio(start|end|offset|at|vol)=(-?\d+(?:\.\d+)?)/gi;
+
+/** `#audio2=<URL>` 〜 `#audio8=<URL>`（2本目以降の同時再生音源）。 */
+const EXTRA_AUDIO_URL_DIRECTIVE = /#audio([2-8])=([^\s#;\r\n]+)/gi;
+
+/** `#audio2offset=` `#audio2vol=` など（2本目以降のずれ・音量）。 */
+const EXTRA_AUDIO_NUM_DIRECTIVE =
+	/#audio([2-8])(offset|vol)=(-?\d+(?:\.\d+)?)/gi;
+
+/**
+ * 音源の URL を、MML に書いても他の宣言や音符に化けない形へそろえる。だめなら undefined。
+ *
+ * - http / https だけ（javascript: 等を弾く。全角の「ｊａｖａｓｃｒｉｐｔ：」も URL として読めないので落ちる）。
+ * - `new URL().href` へ正規化する。ホストは punycode、パスとクエリの非 ASCII（見えない文字・
+ *   向きを変える制御文字 U+202E など）はパーセントエンコードされ、結果は ASCII だけになる。
+ * - 宣言の区切りになる `#`（フラグメントは外す）・`;`、空白・制御文字、引用符・山括弧・
+ *   バッククォート・バックスラッシュを含むものは受けない（MML の本文へ漏れて音符や別の宣言に
+ *   読まれる・HTML に混ざるのを防ぐ）。
+ * - 長すぎるもの（2048 文字超）も受けない。
+ */
+export const normalizeMediaUrl = (url: string): string | undefined => {
+	if (typeof url !== "string" || url.length > 2048) return undefined;
+	let u: URL;
+	try {
+		u = new URL(url.trim());
+	} catch {
+		return undefined;
+	}
+	if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
+	if (u.username || u.password) return undefined;
+	u.hash = "";
+	const href = u.href;
+	if (href.length > 2048) return undefined;
+	if (!/^[\x21-\x7e]+$/.test(href)) return undefined;
+	if (/[#;"'<>`\\]/.test(href)) return undefined;
+	return href;
+};
+
+const safeHttpUrl = normalizeMediaUrl;
 
 /** `#t<n>inst=<GM楽器名>` にマッチする（値は`;` `#` 改行以外の任意文字） */
 const TRACK_INST_DIRECTIVE = /#t(\d+)inst=([^#;\r\n]+)/gi;
@@ -301,15 +358,30 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 		}
 	}
 	for (const m of mml.matchAll(AUDIO_URL_DIRECTIVE)) {
-		// http/https のみ受ける（javascript: 等を弾く）。長すぎるものも読まない。
-		const url = m[1];
-		if (url.length > 2048) continue;
-		try {
-			const u = new URL(url);
-			if (u.protocol === "http:" || u.protocol === "https:") meta.audio = url;
-		} catch {
-			// URLとして壊れている宣言は無視する（読み込み自体は継続する）
+		// http/https のみ受け、MML に書き戻しても化けない形へそろえる（{@link normalizeMediaUrl}）。
+		// URL として壊れている宣言は無視する（読み込み自体は継続する）。
+		const url = normalizeMediaUrl(m[1]);
+		if (url) meta.audio = url;
+	}
+	{
+		const extras = new Map<number, ExtraAudioMeta>();
+		for (const m of mml.matchAll(EXTRA_AUDIO_URL_DIRECTIVE)) {
+			const url = safeHttpUrl(m[2]);
+			if (url) extras.set(Number(m[1]), { url });
 		}
+		for (const m of mml.matchAll(EXTRA_AUDIO_NUM_DIRECTIVE)) {
+			const e = extras.get(Number(m[1]));
+			const value = Number.parseFloat(m[3]);
+			if (!e || !Number.isFinite(value)) continue;
+			// 数字だけの宣言なので NaN・Infinity は来ないが、桁の多い値は1日の範囲へ絞る。
+			if (m[2].toLowerCase() === "offset")
+				e.offset = Math.max(-86400, Math.min(86400, value));
+			else e.volume = clamp(Math.round(value), 0, 100);
+		}
+		if (extras.size > 0)
+			meta.extraAudio = [...extras.entries()]
+				.sort((a, b) => a[0] - b[0])
+				.map(([, e]) => e);
 	}
 	for (const m of mml.matchAll(AUDIO_NUM_DIRECTIVE)) {
 		const value = Number.parseFloat(m[2]);
@@ -410,6 +482,8 @@ export const stripMmlMeta = (mml: string): string =>
 		.replace(META_DIRECTIVE, "")
 		.replace(AUDIO_URL_DIRECTIVE, "")
 		.replace(AUDIO_NUM_DIRECTIVE, "")
+		.replace(EXTRA_AUDIO_URL_DIRECTIVE, "")
+		.replace(EXTRA_AUDIO_NUM_DIRECTIVE, "")
 		.replace(TRACK_INST_DIRECTIVE, "")
 		.replace(TRACK_FONT_DIRECTIVE, "")
 		.replace(TRACK_COMP_DIRECTIVE, "")
@@ -422,7 +496,16 @@ export const stripMmlMeta = (mml: string): string =>
 		.replace(TRACK_DELAYSEND_DIRECTIVE, "");
 
 /** 秒を小数3桁までへ丸めて文字列にする（末尾の0は落とす）。 */
-const round3 = (sec: number): string => String(Math.round(sec * 1000) / 1000);
+/** 0 以外の有限の数か（NaN・Infinity は書き出さない）。 */
+const isNonZeroFinite = (v: number | undefined): v is number =>
+	typeof v === "number" && Number.isFinite(v) && v !== 0;
+
+const round3 = (sec: number): string => {
+	// 1日を超える秒や NaN は来ないはずだが、来ても `1e+21` のような指数表記にしない
+	// （読み戻すと `e+21` が本文へ漏れて音符に読まれる）。
+	const v = Number.isFinite(sec) ? Math.max(-86400, Math.min(86400, sec)) : 0;
+	return String(Math.round(v * 1000) / 1000);
+};
 
 /** メタ情報を `#inst=… #drum=… #volume=… #mode=…` のMML宣言文字列へ直列化する（空なら空文字） */
 export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
@@ -458,15 +541,35 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	if (meta.seed !== undefined) parts.push(`#seed=${meta.seed}`);
 	if (meta.compose) parts.push(`#compose=${meta.compose}`);
 	// 伴奏音源。URLが無いとき（未設定・アップロードされたファイル）は関連宣言ごと出さない。
-	if (meta.audio) {
-		parts.push(`#audio=${meta.audio}`);
-		if (meta.audioStart) parts.push(`#audiostart=${round3(meta.audioStart)}`);
-		if (meta.audioEnd) parts.push(`#audioend=${round3(meta.audioEnd)}`);
-		if (meta.audioOffset)
+	// 画面で打たれた URL もここを通るので、書き出す前に必ずそろえる（`;` `#` や見えない文字で
+	// 本文へ漏れて音符・別の宣言に読まれるのを防ぐ）。そろえられない URL は出さない。
+	const audioUrl = meta.audio ? normalizeMediaUrl(meta.audio) : undefined;
+	if (audioUrl) {
+		parts.push(`#audio=${audioUrl}`);
+		if (isNonZeroFinite(meta.audioStart))
+			parts.push(`#audiostart=${round3(meta.audioStart)}`);
+		if (isNonZeroFinite(meta.audioEnd))
+			parts.push(`#audioend=${round3(meta.audioEnd)}`);
+		if (isNonZeroFinite(meta.audioOffset))
 			parts.push(`#audiooffset=${round3(meta.audioOffset)}`);
 		if (meta.audioVolume !== undefined && meta.audioVolume !== 80)
 			parts.push(`#audiovol=${meta.audioVolume}`);
 	}
+	// 2本目以降。番号は書き出すたびに 2 から振り直す（URL の無い枠は出さない）。
+	(meta.extraAudio ?? [])
+		.flatMap((e) => {
+			const url = normalizeMediaUrl(e.url);
+			return url ? [{ ...e, url }] : [];
+		})
+		.slice(0, MAX_AUDIO_SOURCES - 1)
+		.forEach((e, i) => {
+			const n = i + 2;
+			parts.push(`#audio${n}=${e.url}`);
+			if (isNonZeroFinite(e.offset))
+				parts.push(`#audio${n}offset=${round3(e.offset)}`);
+			if (e.volume !== undefined && e.volume !== 80)
+				parts.push(`#audio${n}vol=${e.volume}`);
+		});
 	if (meta.trackInstruments) {
 		for (const [idx, name] of Object.entries(meta.trackInstruments)) {
 			if (name) parts.push(`#t${idx}inst=${name}`);
@@ -632,8 +735,11 @@ export const parseMML = (
 	// 0.5 伴奏音源の `#audio=<URL>` も、カスタムボーカル宣言と同じ理由でコメント除去より
 	//     前に取り出して本文から外す。URL の "//" を行コメントと誤認すると、1行MMLでは
 	//     そこから後ろ（音源の開始位置や以降の宣言）が丸ごと消えてしまう。
-	const audioUrl = parseMmlMeta(noCustomVocals).audio;
-	const noAudioUrl = noCustomVocals.replace(AUDIO_URL_DIRECTIVE, "");
+	const audioMeta = parseMmlMeta(noCustomVocals);
+	const audioUrl = audioMeta.audio;
+	const noAudioUrl = noCustomVocals
+		.replace(AUDIO_URL_DIRECTIVE, "")
+		.replace(EXTRA_AUDIO_URL_DIRECTIVE, "");
 
 	// 1. コメント除去。歌詞行（@@n）の解析・除去は改行を畳み込む前に行う
 	const noComments = noAudioUrl
@@ -643,6 +749,9 @@ export const parseMML = (
 	// 2. トップレベル宣言（#inst= / #drum=）を抽出してから除去する
 	const meta = parseMmlMeta(noComments);
 	if (audioUrl) meta.audio = audioUrl;
+	// 2本目以降は URL ごと上で外したので、上で読んだもの（ずれ・音量も一緒）を戻す。
+	if (audioMeta.extraAudio) meta.extraAudio = audioMeta.extraAudio;
+	else delete meta.extraAudio;
 	const noMeta = stripMmlMeta(noComments);
 
 	const lyrics = collectLyrics ? parseLyrics(noMeta) : undefined;

@@ -50,6 +50,7 @@ import {
 	DEFAULT_PAN,
 	DEFAULT_VOCAL_VOLUME,
 } from "../types";
+import { checkExtraAudioUrl } from "../ui/extra-audio";
 import { icon } from "../ui/icons";
 import { injectStyles, showLoadingOverlay } from "../ui/styles";
 import { isLocalEngineModel } from "../voice/local-engines";
@@ -136,6 +137,11 @@ export type MmlPlayerOptions = {
 	 * ここで鳴るのは常にURLの音源）。渡さないと `#audio=` は無視される。
 	 */
 	backingAudio?: import("../audio/backing-audio").BackingAudio;
+	/**
+	 * 2本目以降の同時再生音源（`#audio2=` 〜）の再生器。MML の `extraAudio` と同じ並びで渡す
+	 * （足りない分は鳴らさない）。
+	 */
+	extraAudio?: import("../audio/backing-audio").BackingAudio[];
 	/** 再生終了または手動停止時に呼び出されるコールバック */
 	onStop?: () => void;
 	/** 埋め込みプレイヤーのベースURL（例: "https://onjmin.github.io/dtm/demo/embed.html"） */
@@ -1340,6 +1346,29 @@ export const mountMmlPlayer = (
 	const backingYoutube = doc.createElement("div");
 	backingYoutube.className = "dtm-audio-yt dtm-hidden";
 	backingYoutube.dataset.dtm = "audio-youtube";
+	// 2本目以降の同時再生音源（`#audio2=` 〜）。URL は http / https・YouTube 以外だけ。
+	const extraSources = (meta.extraAudio ?? []).flatMap((m, i) => {
+		const audio = options.extraAudio?.[i];
+		const check = checkExtraAudioUrl(m.url);
+		return audio && check.ok ? [{ meta: { ...m, url: check.url }, audio }] : [];
+	});
+	let extraReady: Promise<void> | null = null;
+	const ensureExtraLoaded = (): Promise<void> => {
+		extraReady ??= Promise.all(
+			extraSources.map((x) =>
+				x.audio
+					.load(x.meta.url)
+					.then(() => x.audio.setVolume(x.meta.volume ?? 80))
+					.catch((e) => {
+						console.warn("[dtm] 追加の音声を読み込めませんでした", e);
+					}),
+			),
+		).then(() => {});
+		return extraReady;
+	};
+	const stopExtra = (): void => {
+		for (const x of extraSources) x.audio.stop();
+	};
 	/** 伴奏音源の読み込み（1回だけ走らせ、再生開始時に待ち合わせる）。 */
 	let backingReady: Promise<void> | null = null;
 	const ensureBackingLoaded = (): Promise<void> => {
@@ -1667,14 +1696,23 @@ export const mountMmlPlayer = (
 		// 打ち込みより伴奏音源のほうが長いことは普通にある。音源の途中で
 		// 「曲が終わった」ことにしないよう、残りを伝える。
 		getMinEndSec: () => {
+			const extraSec = extraSources.reduce((max, x) => {
+				const d = x.audio.getLoaded()?.durationSec ?? 0;
+				return d
+					? Math.max(
+							max,
+							d - ((x.meta.offset ?? 0) + lastFromStep * secondsPerStep),
+						)
+					: max;
+			}, 0);
 			const info = backingAudio?.getLoaded();
-			if (!info) return 0;
+			if (!info) return extraSec;
 			const mediaSec = backingMediaSecAt(lastFromStep);
 			const until =
 				backingEndSec > 0
 					? Math.min(backingEndSec, info.durationSec || backingEndSec)
 					: info.durationSec;
-			return Math.max(0, until - mediaSec);
+			return Math.max(0, until - mediaSec, extraSec);
 		},
 		onPlayNote: (e) => {
 			const trackIdx = Number(e.trackId);
@@ -1724,6 +1762,7 @@ export const mountMmlPlayer = (
 
 	const finish = (): void => {
 		backingAudio?.stop();
+		stopExtra();
 		setPlayingUI(false);
 		clearJumpTimers();
 		resetPlayhead();
@@ -1866,6 +1905,14 @@ export const mountMmlPlayer = (
 				});
 			}
 		}
+		// 2本目以降も同じアンカーへ（fromStep の位置が曲の開始時刻に鳴る）。
+		for (const x of extraSources) {
+			if (!x.audio.isLoaded()) continue;
+			x.audio.start({
+				atTime: seq.getStartTime(),
+				mediaSec: (x.meta.offset ?? 0) + fromStep * secondsPerStep,
+			});
+		}
 		if (streaming && !skipSinging) {
 			const v = ensureVoices();
 			// 楽器と同じ「曲既定音量×現在のマスタ音量」を歌声のゲインノードへ反映してから鳴らす。
@@ -1909,6 +1956,7 @@ export const mountMmlPlayer = (
 				if (ctx.state === "suspended") resumes.push(ctx.resume());
 			}
 			if (backingAudio) resumes.push(ensureBackingLoaded());
+			if (extraSources.length > 0) resumes.push(ensureExtraLoaded());
 			if (resumes.length > 0) await Promise.all(resumes);
 			// 待機中に停止／別プレイヤー開始されていたら起動しない。
 			if (!playing || activePlayer !== instance) return;
@@ -1930,6 +1978,7 @@ export const mountMmlPlayer = (
 		seq.stop();
 		scheduleFade(null);
 		backingAudio?.stop();
+		stopExtra();
 		peekVoices()?.stopStream();
 		finish();
 	};
@@ -1941,6 +1990,7 @@ export const mountMmlPlayer = (
 		seq.stop();
 		scheduleFade(null);
 		backingAudio?.stop();
+		stopExtra();
 		peekVoices()?.stopStream();
 		clearJumpTimers();
 		setPlayingUI(false);
@@ -2024,6 +2074,7 @@ export const mountMmlPlayer = (
 		scheduleFade(null);
 		// YouTubeのiframeはDOMを消すだけでは音が止まらないことがあるので明示的に片付ける
 		backingAudio?.destroy();
+		for (const x of extraSources) x.audio.destroy();
 		peekVoices()?.stopStream();
 		if (activePlayer === instance) activePlayer = null;
 		if (audioCtx) {

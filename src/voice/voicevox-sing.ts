@@ -13,6 +13,7 @@
  */
 
 import { units, unitsToMidiDetune } from "../audio/tuning";
+import { sanitizeText } from "../safe-text";
 import type { LyricSyllable, Note } from "../types";
 
 /** VOICEVOX 楽譜のフレームレート。 */
@@ -271,6 +272,9 @@ export const buildVoicevoxPhrases = <N extends VoicevoxSourceNote>(
 	};
 	for (const note of notes) {
 		const syl = note.syllable;
+		// 時刻が NaN・Infinity の音は楽譜に入れない（フレーム数が壊れるため）。
+		if (!Number.isFinite(note.startSec) || !Number.isFinite(note.durationSec))
+			continue;
 		// 休符・語りは歌わず、フレーズもそこで切る。
 		if (syl.kind === "rest" || syl.kind === "speak") {
 			flush();
@@ -373,10 +377,18 @@ export const synthesizeVoicevoxSong = async (
 		keyShift = 0,
 		volumeScale,
 	} = options;
+	if (!Number.isInteger(teacher) || !Number.isInteger(singer))
+		throw new Error("VOICEVOX のスタイルIDが不正です");
+	const shift = Number.isFinite(keyShift) ? Math.trunc(keyShift) : 0;
+	// NaN・Infinity の長さや高さを JSON に入れない（JSON.stringify は null に化かす）。
 	const shifted: VoicevoxScore = {
-		notes: score.notes.map((n) =>
-			n.key === null ? n : { ...n, key: n.key + keyShift },
-		),
+		notes: score.notes
+			.filter((n) => Number.isFinite(n.frame_length) && n.frame_length > 0)
+			.map((n) =>
+				n.key === null || !Number.isFinite(n.key)
+					? { ...n, key: null, lyric: "" }
+					: { ...n, key: Math.max(0, Math.min(127, n.key + shift)) },
+			),
 	};
 	const json = { "Content-Type": "application/json" };
 	const queryRes = await fetch(
@@ -405,13 +417,21 @@ export const synthesizeVoicevoxSong = async (
  * 語り（`「…」`）の本文を VOICEVOX の話し声で読み上げ、WAV のバイト列を返す。
  * 本文は漢字まじりのままエンジンに渡す（読みとアクセントはエンジンが決める）。
  */
+/** 語り1つの本文の上限（文字数）。 */
+const MAX_TALK_CHARS = 300;
+
 export const synthesizeVoicevoxTalk = async (
 	text: string,
 	options: { speaker: number; baseUrl?: string },
 ): Promise<ArrayBuffer> => {
 	const { speaker, baseUrl = VOICEVOX_DEFAULT_URL } = options;
+	// 壊れたサロゲートで encodeURIComponent が投げない・長すぎる語りでエンジンを詰まらせないように。
+	const safe = sanitizeText(text, MAX_TALK_CHARS);
+	if (!safe) throw new Error("語りの本文が空です");
+	if (!Number.isInteger(speaker) || speaker < 0)
+		throw new Error(`VOICEVOX の話者IDが不正です: ${speaker}`);
 	const queryRes = await fetch(
-		`${baseUrl}/audio_query?speaker=${speaker}&text=${encodeURIComponent(text)}`,
+		`${baseUrl}/audio_query?speaker=${speaker}&text=${encodeURIComponent(safe)}`,
 		{ method: "POST" },
 	);
 	if (!queryRes.ok)
