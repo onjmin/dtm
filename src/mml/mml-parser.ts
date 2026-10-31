@@ -195,6 +195,12 @@ export type MmlMeta = {
 	 * 並びは番号順で、抜けた番号は詰める。
 	 */
 	extraAudio?: ExtraAudioMeta[];
+	/**
+	 * 外部のサウンドフォント（.sf2）の URL。`#sf2=` で埋め込む。トラックの音源で `ExtSF2`
+	 * （`#t<n>font=ExtSF2`）を選ぶと、その楽器番号に当たる楽器をここから鳴らす。
+	 * ローカルのファイルは MML に書けない（同時再生の音声と同じ）。
+	 */
+	soundFontUrl?: string;
 };
 
 /** {@link MmlMeta.extraAudio} の1本。 */
@@ -235,6 +241,9 @@ const AUDIO_URL_DIRECTIVE = /#audio=([^\s#;\r\n]+)/gi;
  */
 const AUDIO_NUM_DIRECTIVE =
 	/#audio(start|end|offset|at|vol)=(-?\d+(?:\.\d+)?)/gi;
+
+/** `#sf2=<URL>`（外部のサウンドフォント）。 */
+const SF2_URL_DIRECTIVE = /#sf2=([^\s#;\r\n]+)/gi;
 
 /** `#audio2=<URL>` 〜 `#audio8=<URL>`（2本目以降の同時再生音源）。 */
 const EXTRA_AUDIO_URL_DIRECTIVE = /#audio([2-8])=([^\s#;\r\n]+)/gi;
@@ -363,6 +372,10 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 		const url = normalizeMediaUrl(m[1]);
 		if (url) meta.audio = url;
 	}
+	for (const m of mml.matchAll(SF2_URL_DIRECTIVE)) {
+		const url = normalizeMediaUrl(m[1]);
+		if (url) meta.soundFontUrl = url;
+	}
 	{
 		const extras = new Map<number, ExtraAudioMeta>();
 		for (const m of mml.matchAll(EXTRA_AUDIO_URL_DIRECTIVE)) {
@@ -484,6 +497,7 @@ export const stripMmlMeta = (mml: string): string =>
 		.replace(AUDIO_NUM_DIRECTIVE, "")
 		.replace(EXTRA_AUDIO_URL_DIRECTIVE, "")
 		.replace(EXTRA_AUDIO_NUM_DIRECTIVE, "")
+		.replace(SF2_URL_DIRECTIVE, "")
 		.replace(TRACK_INST_DIRECTIVE, "")
 		.replace(TRACK_FONT_DIRECTIVE, "")
 		.replace(TRACK_COMP_DIRECTIVE, "")
@@ -555,6 +569,10 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 		if (meta.audioVolume !== undefined && meta.audioVolume !== 80)
 			parts.push(`#audiovol=${meta.audioVolume}`);
 	}
+	const sf2Url = meta.soundFontUrl
+		? normalizeMediaUrl(meta.soundFontUrl)
+		: undefined;
+	if (sf2Url) parts.push(`#sf2=${sf2Url}`);
 	// 2本目以降。番号は書き出すたびに 2 から振り直す（URL の無い枠は出さない）。
 	(meta.extraAudio ?? [])
 		.flatMap((e) => {
@@ -739,7 +757,8 @@ export const parseMML = (
 	const audioUrl = audioMeta.audio;
 	const noAudioUrl = noCustomVocals
 		.replace(AUDIO_URL_DIRECTIVE, "")
-		.replace(EXTRA_AUDIO_URL_DIRECTIVE, "");
+		.replace(EXTRA_AUDIO_URL_DIRECTIVE, "")
+		.replace(SF2_URL_DIRECTIVE, "");
 
 	// 1. コメント除去。歌詞行（@@n）の解析・除去は改行を畳み込む前に行う
 	const noComments = noAudioUrl
@@ -752,6 +771,8 @@ export const parseMML = (
 	// 2本目以降は URL ごと上で外したので、上で読んだもの（ずれ・音量も一緒）を戻す。
 	if (audioMeta.extraAudio) meta.extraAudio = audioMeta.extraAudio;
 	else delete meta.extraAudio;
+	if (audioMeta.soundFontUrl) meta.soundFontUrl = audioMeta.soundFontUrl;
+	else delete meta.soundFontUrl;
 	const noMeta = stripMmlMeta(noComments);
 
 	const lyrics = collectLyrics ? parseLyrics(noMeta) : undefined;

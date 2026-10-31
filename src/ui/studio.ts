@@ -61,6 +61,14 @@ import {
 	normalizeDrumPatterns,
 } from "../instruments/drum-config";
 import { INSTRUMENT_PRESETS } from "../instruments/instrument-presets";
+import {
+	getExternalSf2Status,
+	getExternalSf2Url,
+	isExternalSf2Bank,
+	isExternalSf2Pending,
+	loadExternalSf2Instrument,
+	setExternalSf2Source,
+} from "../instruments/sf/external-sf2";
 import { SoundFont } from "../instruments/sf/SoundFont";
 import { SoundFont_drum } from "../instruments/sf/SoundFont_drum";
 import { SoundFont_list } from "../instruments/sf/SoundFont_list";
@@ -1038,6 +1046,9 @@ export const createDtmStudio = async (
 		fileKey: string,
 		bank: string,
 	): Promise<SoundFontInstance> => {
+		// 外部 SF2 はデータとして読んだものから作る（配信元の JS は読まない）。
+		if (isExternalSf2Bank(bank))
+			return loadExternalSf2Instrument(audioCtx, Number(fileKey.slice(0, 3)));
 		const fullName = `${fileKey}_${bank}`;
 		return sf.load({
 			ctx: audioCtx,
@@ -1477,6 +1488,18 @@ export const createDtmStudio = async (
 		const base: DawOptions = {
 			getAudioTime: () => audioCtx.currentTime,
 			backingAudio,
+			externalSoundFont: {
+				set: async (src) => {
+					setExternalSf2Source(src);
+					// 前の .sf2 から作った楽器は捨てて、使っているトラックを読み直す。
+					for (const key of [...soundFonts.keys()])
+						if (/@extsf2$/i.test(key)) soundFonts.delete(key);
+					await loadEditorTrackSounds();
+				},
+				status: getExternalSf2Status,
+				url: getExternalSf2Url,
+				pending: isExternalSf2Pending,
+			},
 			createExtraAudio: () =>
 				createBackingAudio({ audioContext: audioCtx, destination: masterGain }),
 			onResumeAudio: async () => {
@@ -1836,6 +1859,17 @@ export const createDtmStudio = async (
 				: defaultPreset;
 		const roleOf = (trackIdx: number): string =>
 			getRoleForTrackIndex(trackIdx, mode);
+		// 外部 SoundFont（`#sf2=`）。読み込み元はページで1つなので、別の URL なら差し替え、
+		// 前の .sf2 から作った楽器は捨てる。取りに行くのは楽器が要るとき（再生の準備）。
+		if (meta.soundFontUrl && meta.soundFontUrl !== getExternalSf2Url()) {
+			try {
+				setExternalSf2Source(meta.soundFontUrl);
+				for (const key of [...soundFonts.keys()])
+					if (/@extsf2$/i.test(key)) soundFonts.delete(key);
+			} catch (e) {
+				console.warn("[dtm] 外部 SoundFont の URL を使えません", e);
+			}
+		}
 		/** そのトラックの音源バンク（既定の FluidR3 なら undefined）。 */
 		const bankOf = (trackIdx: number): string | undefined =>
 			trackSoundFontValue(meta.trackFonts?.[trackIdx]) || undefined;

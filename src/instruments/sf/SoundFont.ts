@@ -237,6 +237,44 @@ export class SoundFont {
 		return result;
 	}
 
+	/**
+	 * 読み込み済みのゾーン（AudioBuffer 付き）から楽器を作る。外部の .sf2 を
+	 * データとして読んだもの（external-sf2.ts）に使い、`<script>` は読まない。
+	 * `fontName` は `_tone_PPPV_…` の形にすると楽器の種別判定が効く。
+	 */
+	static async fromZones({
+		ctx,
+		fontName,
+		zones,
+	}: {
+		ctx: AudioContext;
+		fontName: string;
+		zones: Zone[];
+	}): Promise<SoundFont> {
+		const { fonts } = SoundFont;
+		const cached = fonts.get(fontName);
+		if (cached) return cached;
+		const map = new Map<number, Zone>();
+		let ch = -1;
+		for (const [pitch, v] of await findZone(ctx, fontName, zones)) {
+			if (!v.buffer) continue;
+			if (ch < v.buffer.numberOfChannels) ch = v.buffer.numberOfChannels;
+			map.set(Number(pitch), v);
+		}
+		if (map.size === 0) throw new Error("鳴らせる鍵盤がありません");
+		if (SoundFont.ch < ch) SoundFont.ch = ch;
+		const sf = new SoundFont(
+			map,
+			ch,
+			false,
+			toneOf(fontName),
+			styleOf(fontName),
+		);
+		sf.levelGain = measureLevelGain(map, fontName);
+		fonts.set(fontName, sf);
+		return sf;
+	}
+
 	constructor(
 		private zones: Map<number, Zone>,
 		public ch: number,

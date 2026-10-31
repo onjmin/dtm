@@ -489,6 +489,22 @@ export type DawViewState = {
 export type DawMode = "simple" | "advanced";
 
 // mountDAW のオプション
+/** {@link DawOptions.externalSoundFont}。 */
+export type ExternalSoundFontControl = {
+	/** 読み込み元を差し替える（null で外す）。使えない URL なら例外。読み直しが済むまで待つ。 */
+	set: (src: File | string | null) => Promise<void>;
+	/** 読み込みの結果（表示用。呼ぶと、まだなら取りに行く）。 */
+	status: () => Promise<
+		| { state: "none" }
+		| { state: "ok"; label: string; name: string; presets: number }
+		| { state: "error"; label: string; message: string }
+	>;
+	/** MML に書ける URL（ファイル・未設定なら undefined）。 */
+	url: () => string | undefined;
+	/** 読み込み元があり、まだ取りに行っていないか。 */
+	pending: () => boolean;
+};
+
 export type DawOptions = {
 	// --- 発音フック（ライブラリは音を出さない） ---
 	/** メロディックトラックのノート発音要求 */
@@ -680,6 +696,11 @@ export type DawOptions = {
 	 * AudioContext を持つ利用側が `createBackingAudio` で作る。YouTube の枠は要らない）。
 	 */
 	createExtraAudio?: () => import("./audio/backing-audio").BackingAudio;
+	/**
+	 * 外部のサウンドフォント（.sf2）。渡すと、トラックの音源に「外部 SoundFont」が出て、
+	 * ファイルか URL を読み込める（`#sf2=`）。音を出す側（`createDtmStudio`）が持つ。
+	 */
+	externalSoundFont?: ExternalSoundFontControl;
 	/**
 	 * 編集中の音割れ検知メーター（マスタの安全リミッター手前を監視）。
 	 * 渡すとDAW UIにクリップ警告バッジを表示できる。studio.mountEditor が自動的に渡す。

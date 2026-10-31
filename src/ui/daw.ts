@@ -102,6 +102,10 @@ import {
 	INSTRUMENT_PRESETS,
 	type InstrumentPreset,
 } from "../instruments/instrument-presets";
+import {
+	EXTERNAL_SF2_BANK,
+	isExternalSf2Bank,
+} from "../instruments/sf/external-sf2";
 import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
 import {
 	SOUNDFONT_BANKS,
@@ -1145,6 +1149,97 @@ const pickComposeVocal = (exclude?: string | null): string => {
 };
 
 /** 内蔵モデルキーワード → プルダウン表示名 */
+/**
+ * 外部 SoundFont（.sf2）の読み込み元の欄。ファイルか URL を選ぶ。入力やファイル名は
+ * value / textContent でだけ入れる（HTML として組み立てない）。
+ */
+const buildExternalSf2Row = (
+	ctl: import("../types").ExternalSoundFontControl,
+): { el: HTMLElement; refresh: () => Promise<void> } => {
+	const el = document.createElement("div");
+	el.className = "dtm-row dtm-hidden";
+	el.style.flexDirection = "column";
+	el.style.alignItems = "stretch";
+	el.style.gap = "4px";
+	const r1 = document.createElement("div");
+	r1.className = "dtm-row";
+	r1.style.flexWrap = "nowrap";
+	const label = document.createElement("span");
+	label.className = "dtm-label";
+	label.textContent = ".sf2";
+	const file = document.createElement("input");
+	file.type = "file";
+	file.accept = ".sf2";
+	file.className = "dtm-input dtm-grow";
+	file.style.minWidth = "0";
+	r1.append(label, file);
+	const r2 = document.createElement("div");
+	r2.className = "dtm-row";
+	r2.style.flexWrap = "nowrap";
+	const url = document.createElement("input");
+	url.type = "url";
+	url.className = "dtm-input dtm-grow";
+	url.placeholder = ".sf2 の URL";
+	url.style.minWidth = "0";
+	const load = document.createElement("button");
+	load.type = "button";
+	load.className = "dtm-btn dtm-btn--success";
+	load.textContent = "読込";
+	r2.append(url, load);
+	const status = document.createElement("p");
+	status.className = "dtm-audio-note";
+	status.title =
+		"トラックの楽器と同じ番号（GM）の楽器を .sf2 から鳴らします。無い楽器は FluidR3 で鳴ります。ファイルは MML に書き出されません";
+	el.append(r1, r2, status);
+
+	const show = (text: string, warn = false): void => {
+		status.textContent = text;
+		status.classList.toggle("dtm-audio-note--warn", warn);
+	};
+	const refresh = async (): Promise<void> => {
+		const u = ctl.url();
+		if (u && url.value === "") url.value = u;
+		if (ctl.pending()) {
+			let host = u ?? "";
+			try {
+				host = u ? new URL(u).host : "";
+			} catch {
+				// 表示だけ
+			}
+			show(`再生すると読み込みます（${host}）`);
+			return;
+		}
+		const st = await ctl.status();
+		if (st.state === "none") show("ファイルか URL を読み込んでください");
+		else if (st.state === "ok")
+			show(`${st.label}: ${st.name || "（名前なし）"}・楽器 ${st.presets} 個`);
+		else show(`読み込めませんでした: ${st.message}`, true);
+	};
+	const apply = async (src: File | string): Promise<void> => {
+		show("読み込み中…");
+		try {
+			await ctl.set(src);
+			await ctl.status();
+			await refresh();
+		} catch (e) {
+			show(e instanceof Error ? e.message : String(e), true);
+		}
+	};
+	file.addEventListener("change", () => {
+		const f = file.files?.[0];
+		if (!f) return;
+		url.value = "";
+		void apply(f);
+	});
+	load.addEventListener("click", () => {
+		const v = url.value.trim();
+		if (!v) return;
+		file.value = "";
+		void apply(v);
+	});
+	return { el, refresh };
+};
+
 const BASE_LYRIC_MODEL_LABELS: Record<string, string> = lookupTable({
 	klatt: "軽量ロボ声",
 	...KOE_VOICEBANK_NAMES,
@@ -4288,19 +4383,41 @@ export const mountDAW = (
 			o.textContent = bank.label;
 			fontSel.appendChild(o);
 		}
+		// 外部のサウンドフォント（.sf2）。音を出す側が受け持つときだけ出す。
+		const extSf2 = options.externalSoundFont;
+		if (extSf2) {
+			const o = document.createElement("option");
+			o.value = EXTERNAL_SF2_BANK;
+			o.textContent = "外部 SoundFont（.sf2）";
+			fontSel.appendChild(o);
+		}
 		// 一覧に無いバンク（MMLに直接書かれたもの）も、選択欄に足して消さずに見せる。
 		if (
 			active.trackFont &&
-			!SOUNDFONT_BANKS.some((b) => b.name === active.trackFont)
+			!SOUNDFONT_BANKS.some((b) => b.name === active.trackFont) &&
+			!(extSf2 && isExternalSf2Bank(active.trackFont))
 		) {
 			const o = document.createElement("option");
 			o.value = active.trackFont;
 			o.textContent = soundFontBankShortName(active.trackFont);
 			fontSel.appendChild(o);
 		}
-		fontSel.value = active.trackFont;
+		fontSel.value = isExternalSf2Bank(active.trackFont)
+			? EXTERNAL_SF2_BANK
+			: active.trackFont;
+		// 外部 SoundFont を選んだトラックにだけ、読み込み元の欄を出す（読み込み元は全トラック共通）。
+		const extRow = extSf2 ? buildExternalSf2Row(extSf2) : null;
+		if (extRow) fontSel.closest(".dtm-row")?.after(extRow.el);
+		const syncExtRow = (): void => {
+			if (!extRow) return;
+			const on = isExternalSf2Bank(fontSel.value);
+			extRow.el.classList.toggle("dtm-hidden", !on);
+			if (on) void extRow.refresh();
+		};
+		syncExtRow();
 		fontSel.addEventListener("change", () => {
 			active.trackFont = fontSel.value;
+			syncExtRow();
 			options.onTrackFontChange?.(
 				trackStates.indexOf(active),
 				active.trackFont,
@@ -5128,6 +5245,7 @@ export const mountDAW = (
 				audioOffset: backing.offsetSec || undefined,
 				audioVolume: backing.volume,
 				extraAudio: extraAudio?.toMeta(),
+				soundFontUrl: options.externalSoundFont?.url(),
 				trackInstruments: trackInstMeta,
 				trackFonts: trackFontMeta,
 				trackCompression: trackCompMeta,
@@ -5169,6 +5287,7 @@ export const mountDAW = (
 				audioOffset: backing.offsetSec || undefined,
 				audioVolume: backing.volume,
 				extraAudio: extraAudio?.toMeta(),
+				soundFontUrl: options.externalSoundFont?.url(),
 				trackInstruments: trackInstMeta,
 				trackFonts: trackFontMeta,
 				trackCompression: trackCompMeta,
@@ -5586,6 +5705,20 @@ export const mountDAW = (
 			}
 			// 2本目以降。宣言が無ければ前の曲の枠は外す。
 			extraAudio?.loadFromMeta(meta.extraAudio);
+			// 外部 SoundFont（`#sf2=`）。宣言が無ければ、前の曲で URL から読んだものは外す
+			// （ファイルで読んだものは残す）。差し替えると使っているトラックは読み直される。
+			{
+				const ext = options.externalSoundFont;
+				if (ext) {
+					if (meta.soundFontUrl && meta.soundFontUrl !== ext.url()) {
+						void ext.set(meta.soundFontUrl).catch((e) => {
+							console.warn("[dtm] 外部 SoundFont の URL を使えません", e);
+						});
+					} else if (!meta.soundFontUrl && ext.url()) {
+						void ext.set(null);
+					}
+				}
+			}
 		}
 		// 別の曲を読み込んだのだから、前の曲で「作曲」が決めた音色スロットは捨てる。
 		// 残すと、読み込んだ曲におまかせマスタリングを掛けたときに、いま鳴っている

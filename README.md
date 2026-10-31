@@ -82,6 +82,7 @@ MIDI ノート番号（`MidiNote`）とは型で区別され、変換は `pitchV
 | `#drum=` | ドラムパターン名。`none` と省略はドラム無し |
 | `#edo=31` | 31 平均律（省略時 12 平均律） |
 | `#audio=` / `#audiostart=` / `#audioend=` | 同時に鳴らす音源の URL（mp3 / wav / YouTube）と使う範囲（秒） |
+| `#sf2=` / `#t<n>font=ExtSF2` | 外部のサウンドフォント（.sf2）の URL と、それで鳴らすトラック（ローカルの .sf2 は DAW の画面から読み込む） |
 | `#audio2=` 〜 `#audio8=` / `#audio2offset=` / `#audio2vol=` | 2本目以降に重ねる音源の URL（mp3 / wav。外の歌声ソフトで作った歌や別の伴奏など）と、開始のずれ（秒）・音量 |
 | `#audiooffset=` / `#audiovol=` | 開始のずれ（秒。正＝音源が先）／音源の音量（0-100、既定 80） |
 

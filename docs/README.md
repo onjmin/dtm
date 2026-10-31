@@ -25,6 +25,7 @@ GitHub Pages の公開物（typedoc と `demo/`）は CI が `docs/` を作り�
 - [strata-compose.md](guide/strata-compose.md) — Strata に界隈曲を作らせる手順
 - [voicevox-sing.md](guide/voicevox-sing.md) — VOICEVOX で歌わせる（試作）
 - [neutrino-sing.md](guide/neutrino-sing.md) — NEUTRINO で歌わせる（試作。中継サーバーの起動と仕組み）
+- [external-soundfont.md](guide/external-soundfont.md) — 外部のサウンドフォント（.sf2）をファイルか URL で読んで鳴らす
 - [openutau-sing.md](guide/openutau-sing.md) — OpenUtau（DiffSinger）で歌わせる（試作。CLI の組み立てと歌い手の下ごしらえ）
 
 ## research/

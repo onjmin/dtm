@@ -124,6 +124,9 @@ export const resolveSoundFontFile = (
 		};
 	}
 	const program = instrumentKey.slice(0, 3);
+	// 外部 SF2（`ExtSF2`）は配信元の一覧に無い。プログラム番号だけ決め、無ければ読み込み側で落とす。
+	if (target.toLowerCase() === "extsf2")
+		return { key: `${program}0`, bank: "ExtSF2", fellBack: false };
 	if (!available) return { key: `${program}0`, bank: target, fellBack: false };
 	const ids = available.get(target);
 	if (ids?.has(`${program}0`)) {
