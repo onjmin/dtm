@@ -33,6 +33,7 @@
 | `voicevox-sing.ts` | 歌詞付き MML の1トラックを VOICEVOX の歌唱 API で歌わせ、歌声だけを WAV に書き出す（試作。伴奏は入らない）。VOICEVOX エンジンを先に起動しておく | `npx tsx scripts/misc/voicevox-sing.ts tmp/a.mml --track 0 --singer ずんだもん --out scratch/voicevox/sing.wav` |
 | `neutrino-server.ts` | 手元の NEUTRINO を dtm から呼ぶ中継サーバー（試作）。`nt_` の声で歌わせるときに起動しておく。[docs/guide/neutrino-sing.md](../docs/guide/neutrino-sing.md) | `npx tsx scripts/misc/neutrino-server.ts --neutrino C:/NEUTRINO` |
 | `openutau-server.ts` | 手元の OpenUtau（CLI つき）を dtm から呼ぶ中継サーバー（試作）。`ou_` の声（DiffSinger など）で歌わせるときに起動しておく。[docs/guide/openutau-sing.md](../docs/guide/openutau-sing.md) | `npx tsx scripts/misc/openutau-server.ts --openutau C:/OpenUtau` |
+| `sinsy-server.ts` / `sinsy_synth.py` | 手元の Sinsy（pysinsy。WSL 可）を dtm から呼ぶ中継サーバー（試作）。`ss_` の声で歌わせるときに起動しておく。[docs/guide/sinsy-sing.md](../docs/guide/sinsy-sing.md) | `npx tsx scripts/misc/sinsy-server.ts --wsl --python /home/me/dtm-sinsy/bin/python` |
 | `local-engine-server.ts` | NEUTRINO・OpenUtau の中継サーバーの共通部品（口と、Host・Origin の確認など安全のための決まり） | — |
 | `inject-csp.ts` | 公開デモの HTML へ CSP の `<meta>` を差し込む。gh-pages.yml が呼ぶ | `pnpm exec tsx scripts/misc/inject-csp.ts docs/demo/*.html` |
 | `sync-version.ts` | `package.json` の版を `src/version.ts` 等へ写す（`pnpm version` が呼ぶ） | `pnpm patch` |

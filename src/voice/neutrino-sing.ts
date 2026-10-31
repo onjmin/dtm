@@ -208,7 +208,7 @@ export const synthesizeNeutrino = async (
 		},
 	);
 	if (!res.ok)
-		throw new Error(`NEUTRINO /sing: ${res.status} ${await res.text()}`);
+		throw new Error(`${baseUrl}/sing: ${res.status} ${await res.text()}`);
 	return res.arrayBuffer();
 };
 

@@ -8,11 +8,15 @@
 
 import { isNeutrinoModel } from "./neutrino-sing";
 import { isOpenUtauModel } from "./openutau-sing";
+import { isSinsyModel } from "./sinsy-sing";
 import { isVoicevoxModel } from "./voicevox-sing";
 
 /** 手元のエンジンで歌うモデル名か（VOICEVOX・NEUTRINO・OpenUtau）。 */
 export const isLocalEngineModel = (model: string): boolean =>
-	isVoicevoxModel(model) || isNeutrinoModel(model) || isOpenUtauModel(model);
+	isVoicevoxModel(model) ||
+	isNeutrinoModel(model) ||
+	isOpenUtauModel(model) ||
+	isSinsyModel(model);
 
 /** dtm のページを手元で開いているか（localhost・127.x・::1・file:）。 */
 export const isLocalPage = (

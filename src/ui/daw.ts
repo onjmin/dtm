@@ -208,6 +208,7 @@ import {
 	neutrinoCharacterTerms,
 } from "../voice/neutrino-sing";
 import { OPENUTAU_SINGERS } from "../voice/openutau-sing";
+import { SINSY_SINGERS } from "../voice/sinsy-sing";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "../voice/voice-images";
 import { VOICEVOX_SINGERS } from "../voice/voicevox-sing";
 import {
@@ -1119,6 +1120,7 @@ const BASE_LYRIC_MODELS = [
 	...Object.keys(VOICEVOX_SINGERS),
 	...Object.keys(NEUTRINO_SINGERS),
 	...Object.keys(OPENUTAU_SINGERS),
+	...Object.keys(SINSY_SINGERS),
 ];
 
 /**
