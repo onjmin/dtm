@@ -10,7 +10,7 @@
  *   npx tsx scripts/compose/strata-compose.ts rebuild <曲>
  *       strata-session.json の操作列を seed から当て直して song.mml を作り直す（会話はしない）。
  *
- * 手順と注意は docs/strata-compose.md。接続先は STRATA_URL で変えられる。
+ * 手順と注意は docs/strata-compose.md。接続先は STRATA_URL、API キーは STRATA_API_KEY で渡す。
  *
  * 道具は事実だけを返す（小節ごとの和音・層・リードの音、こすれの場所の一覧）。点数や合否は返さない
  * （docs/handover-compose.md §2: 点検の数値が目標になって曲が揃うため、作曲ハーネスは外した）。
@@ -30,6 +30,8 @@ import { DTM_VERSION } from "../../src/version";
 import { pickOreName } from "./ore-names";
 
 const STRATA_URL = process.env.STRATA_URL ?? "http://127.0.0.1:8080/v1";
+// LAN などへ公開した Strata はこのPCからでもキーを要る
+const STRATA_API_KEY = process.env.STRATA_API_KEY;
 const MODEL_LABEL = "Strata Qwen3.8-Flash-Next";
 const SHELF = resolve("tmp/songs");
 const BAR = 192;
@@ -1008,7 +1010,10 @@ const rebuild = (s: Session): Song | undefined => {
 const chat = async (messages: Msg[]): Promise<Msg> => {
 	const res = await fetch(`${STRATA_URL}/chat/completions`, {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
+		headers: {
+			"Content-Type": "application/json",
+			...(STRATA_API_KEY && { Authorization: `Bearer ${STRATA_API_KEY}` }),
+		},
 		body: JSON.stringify({
 			model: "strata",
 			messages,
@@ -1289,7 +1294,7 @@ const main = async (): Promise<void> => {
 		.catch(() => undefined);
 	if (cmd !== "rebuild" && !health?.loaded)
 		throw new Error(
-			`Strata が応答しない（${STRATA_URL}）。strata launch --model iq2_xs --yes --no-tui で起動する`,
+			`Strata が応答しない（${STRATA_URL}）。Strata の PC で strata launch --preset LAN --no-tui で起動し、STRATA_URL を合わせる（docs/strata-compose.md）`,
 		);
 	if (cmd === "new") {
 		const title =
