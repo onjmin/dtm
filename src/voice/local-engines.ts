@@ -23,5 +23,10 @@ export const isLocalPage = (
 	if (!loc) return false;
 	if (loc.protocol === "file:") return true;
 	const host = loc.hostname.replace(/^\[|\]$/g, "");
-	return host === "localhost" || host === "::1" || /^127\./.test(host);
+	// `127.` で始まる公開ドメイン（127.example.com など）は手元ではない。IPv4 は数字4つで見る。
+	return (
+		host === "localhost" ||
+		host === "::1" ||
+		/^127(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/.test(host)
+	);
 };

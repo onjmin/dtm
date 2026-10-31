@@ -14,6 +14,7 @@ dtm は NEUTRINO 本体も歌声ライブラリも同梱しない。規約の解
    ```
 
    既定は `http://127.0.0.1:50022`。`--port` で変える。NVIDIA の GPU が無いときは `--cpu`。
+   dtm のページを file: で開いて使うときだけ `--allow-file-origin` を付ける（既定では断る。公開サイトでも sandbox 付きの iframe で `Origin: null` を作れるため）。
 3. dtm のページを**手元で**開く（`pnpm dev` のデモなど。localhost・127.0.0.1・file:）。歌詞トラックの音源の「NEUTRINO（要サーバー起動）」から声を選ぶ。MML では `@@0 nt_reina どんぐりころころ…` と書く。
 
 公開サイトなど手元以外で開いたページでは、VOICEVOX と NEUTRINO の声は選択肢に出ない（`src/voice/local-engines.ts` の `isLocalPage`）。MML に書かれた値は消さずに保つ。
@@ -45,7 +46,7 @@ dtm は NEUTRINO 本体も歌声ライブラリも同梱しない。規約の解
 - **フレーズとトラック**: フレーズの切り方は VOICEVOX と同じ（休符・ブレス・語りで切る）。NEUTRINO は1回呼ぶたびに約3秒の立ち上げがかかるので、トラック全体を1回で合成し（`buildNeutrinoTrack`）、出来た音声をフレーズの範囲に切って並べる。シーク・ループ・途中から鳴らす処理は VOICEVOX と共通（`src/voice/lyrics.ts` の `runExternalTrack`）。
 - **切り出し**: フレーズの切り出しは、最初の音の 0.3 秒前から次のフレーズの切り出しの頭まで。隣どうしは重ならないので、同じ音が二重に鳴らない。
 - **楽譜**: VOICEVOX 形式の楽譜（フレーム単位）を秒へ戻し、テンポ 60（4分音符＝1秒、divisions 960）の MusicXML に書く（`scoreToNeutrinoMusicXml`）。小節をまたぐ音はタイで分け、歌詞はタイの頭にだけ付ける。
-- **中継サーバー**: 受け取った MusicXML を一時フォルダに書き、`bin/musicXMLtoLabel` → `bin/neutrino`（`-m` で GPU）の順に呼んで WAV を返す。合成は1件ずつ。127.0.0.1 でだけ待ち受け、手元で開いたページ以外の Origin からは断る。歌声ライブラリの名前は `model/` にあるフォルダと完全一致だけ通す。
+- **中継サーバー**: 受け取った MusicXML を一時フォルダに書き、`bin/musicXMLtoLabel` → `bin/neutrino`（`-m` で GPU）の順に呼んで WAV を返す。合成は1件ずつ。127.0.0.1 でだけ待ち受ける。`Host` ヘッダーが手元のこのポートでない呼び出し（DNS リバインディング）と、手元以外の Origin（`127.` で始まる公開ドメインや `Origin: null` を含む）からの呼び出しは断る。2026-10-31 のセキュリティレビューで、最初の版はこの3つが通っていたのを直した。歌声ライブラリの名前は `model/` にあるフォルダと完全一致だけ通す。
 - テストは `scripts/test/check-neutrino-score.ts`（楽譜とフレーズの切り出し、手元判定。NEUTRINO は呼ばない）。
 
 ## 確かめたこと（2026-10-31、RTX 5060 Ti・NEUTRINO v3.2.2）

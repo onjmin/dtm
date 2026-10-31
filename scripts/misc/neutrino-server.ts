@@ -1,7 +1,7 @@
 /**
  * 手元の NEUTRINO を dtm から呼ぶための小さな中継サーバー（試作）。
  *
- *   npx tsx scripts/misc/neutrino-server.ts --neutrino <NEUTRINO のフォルダ> [--port 50022] [--cpu]
+ *   npx tsx scripts/misc/neutrino-server.ts --neutrino <NEUTRINO のフォルダ> [--port 50022] [--cpu] [--allow-file-origin]
  *
  * NEUTRINO はコマンドラインで動くソフトなので、ブラウザからは直接呼べない。このサーバーが
  * MusicXML を受け取り、利用者が公式から入れた NEUTRINO（`bin/musicXMLtoLabel` と
@@ -42,9 +42,19 @@ const opt = (name: string): string | undefined => {
 };
 const rootArg = opt("neutrino") ?? process.env.NEUTRINO_DIR;
 const root = rootArg ? resolve(rootArg) : "";
-const port = Number(opt("port") ?? 50022);
+/** 整数の引数。NaN・Infinity・範囲外は既定値に戻す。 */
+const intArg = (
+	name: string,
+	def: number,
+	min: number,
+	max: number,
+): number => {
+	const v = Number(opt(name) ?? def);
+	return Number.isInteger(v) && v >= min && v <= max ? v : def;
+};
+const port = intArg("port", 50022, 1024, 65535);
 const useGpu = !args.includes("--cpu");
-const threads = Number(opt("threads") ?? 4);
+const threads = intArg("threads", 4, 1, 64);
 
 if (
 	!root ||
@@ -79,12 +89,47 @@ const listSingers = (): { dir: string; name: string }[] =>
 			return { dir: d.name, name };
 		});
 
-/** 手元で開いた dtm のページからの呼び出しか（Origin が無い＝curl 等も通す）。 */
+/**
+ * 手元を指すホスト名か。`127.` で始まる公開ドメイン（`127.attacker.example`）を通さないよう、
+ * IPv4 は数字4つの完全一致で見る。
+ */
+const isLoopbackHost = (hostname: string): boolean => {
+	const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+	return (
+		host === "localhost" ||
+		host === "::1" ||
+		/^127(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/.test(host)
+	);
+};
+
+/**
+ * 手元で開いた dtm のページからの呼び出しか。
+ *
+ * - `Origin: null` は断る。公開サイトでも sandbox 付きの iframe で作れるため。file: で開いた
+ *   ページから使うときだけ、起動時に `--allow-file-origin` を付ける。
+ * - Origin の無い呼び出し（curl など）は通す。ブラウザの別サイトからの POST・CORS には
+ *   必ず Origin が付く。DNS リバインディングは {@link allowedHost} で止める。
+ */
+const allowFileOrigin = args.includes("--allow-file-origin");
 const allowedOrigin = (origin: string | undefined): boolean => {
-	if (!origin || origin === "null") return true; // file: は "null"
+	if (origin === undefined) return true;
+	if (origin === "null") return allowFileOrigin;
 	try {
-		const host = new URL(origin).hostname.replace(/^\[|\]$/g, "");
-		return host === "localhost" || host === "::1" || /^127\./.test(host);
+		return isLoopbackHost(new URL(origin).hostname);
+	} catch {
+		return false;
+	}
+};
+
+/**
+ * `Host` ヘッダーが手元のこのポートか（DNS リバインディングで、攻撃者のドメイン名のまま
+ * 127.0.0.1 に届いた呼び出しを断る）。
+ */
+const allowedHost = (host: string | undefined): boolean => {
+	if (!host) return false;
+	try {
+		const u = new URL(`http://${host}`);
+		return isLoopbackHost(u.hostname) && u.port === String(port);
 	} catch {
 		return false;
 	}
@@ -186,6 +231,8 @@ const send = (
 
 createServer(async (req, res) => {
 	const origin = req.headers.origin;
+	if (!allowedHost(req.headers.host))
+		return send(res, 403, "Host が手元（127.0.0.1・localhost）ではありません");
 	if (!allowedOrigin(origin))
 		return send(
 			res,

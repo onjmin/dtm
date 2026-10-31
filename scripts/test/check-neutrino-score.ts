@@ -153,6 +153,12 @@ console.log("■ 手元のエンジンの声を選択肢に出すか");
 		isLocalPage({ protocol, hostname });
 	check("localhost", page("http:", "localhost"), true);
 	check("127.0.0.1", page("http:", "127.0.0.1"), true);
+	check("127.0.0.2", page("http:", "127.0.0.2"), true);
+	check(
+		"127. で始まる公開ドメインは手元ではない",
+		page("https:", "127.attacker.example"),
+		false,
+	);
 	check("::1", page("http:", "[::1]"), true);
 	check("file:", page("file:", ""), true);
 	check("公開サイト", page("https:", "onjmin.github.io"), false);
