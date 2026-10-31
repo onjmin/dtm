@@ -59,36 +59,95 @@ def score_notes(path: str):
     return notes
 
 
-def tune(audio: np.ndarray, sr: int, notes) -> np.ndarray:
-    """声の出ている所の高さを楽譜の音へ置き換える。"""
-    import pyworld
-
-    x = audio.astype(np.float64) / 32768.0
-    f0, tpos = pyworld.harvest(x, sr, frame_period=FRAME_MS)
-    sp = pyworld.cheaptrick(x, f0, tpos, sr)
-    ap = pyworld.d4c(x, f0, tpos, sr)
-    target = np.zeros_like(f0)
+def target_curve(notes, n_frames: int, f0_hint=None) -> np.ndarray:
+    """5ms ごとの「楽譜の高さ」（Hz。音の無い所は 0）。変わり目は対数の高さでなめらかに。"""
+    hop = FRAME_MS / 1000.0
+    t = np.arange(n_frames) * hop
+    target = np.zeros(n_frames)
     for s, e, midi in notes:
-        hz = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
-        target[(tpos >= s) & (tpos < e)] = hz
-    # 休符の所（楽譜に音が無い）で声が出ていれば、直前・直後の音でつなぐ
+        target[(t >= s) & (t < e)] = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
+    # 楽譜の音が切れた直後も声が残っていることがあるので、直前の音で埋めておく
     last = 0.0
-    for i in range(len(target)):
+    for i in range(n_frames):
         if target[i] > 0:
             last = target[i]
-        elif f0[i] > 0 and last > 0:
+        else:
             target[i] = last
-    # 変わり目をなめらかに（対数の高さで移動平均）
     n = max(1, int(GLIDE_SEC * 1000 / FRAME_MS))
-    voiced_t = target > 0
-    logt = np.where(voiced_t, np.log(np.maximum(target, 1e-6)), 0.0)
+    voiced = target > 0
+    logt = np.where(voiced, np.log(np.maximum(target, 1e-6)), 0.0)
     kernel = np.ones(n) / n
     num = np.convolve(logt, kernel, mode="same")
-    den = np.convolve(voiced_t.astype(float), kernel, mode="same")
-    smooth = np.where(den > 0, np.exp(num / np.maximum(den, 1e-9)), 0.0)
-    new_f0 = np.where((f0 > 0) & (smooth > 0), smooth, f0)
+    den = np.convolve(voiced.astype(float), kernel, mode="same")
+    return np.where(den > 0, np.exp(num / np.maximum(den, 1e-9)), 0.0)
+
+
+def _tune_chunk(args):
+    """1区切りぶん: WORLD で分解し、声の出ている所の高さを楽譜の高さに替えて組み立て直す。"""
+    import pyworld
+
+    x, sr, target = args
+    # 高さはどうせ楽譜に置き換えるので、検出は速い dio＋stonemask で足りる（声の有無と声色用）
+    f0, tpos = pyworld.dio(x, sr, frame_period=FRAME_MS)
+    f0 = pyworld.stonemask(x, f0, tpos, sr)
+    sp = pyworld.cheaptrick(x, f0, tpos, sr)
+    ap = pyworld.d4c(x, f0, tpos, sr)
+    tg = target[: len(f0)]
+    if len(tg) < len(f0):
+        tg = np.pad(tg, (0, len(f0) - len(tg)))
+    new_f0 = np.where((f0 > 0) & (tg > 0), tg, f0)
     y = pyworld.synthesize(new_f0, sp, ap, sr, frame_period=FRAME_MS)
-    return y * 32768.0
+    y = y[: len(x)]
+    if len(y) < len(x):
+        y = np.pad(y, (0, len(x) - len(y)))
+    return y
+
+
+def split_points(x: np.ndarray, hop: int, min_gap_frames: int = 30):
+    """無音が続く所（5ms×30＝150ms 以上）の真ん中で区切る。区切りは hop の倍数にそろえる。"""
+    n_frames = len(x) // hop
+    rms = np.sqrt(np.mean(x[: n_frames * hop].reshape(n_frames, hop) ** 2, axis=1))
+    silent = rms < 1e-3
+    cuts = [0]
+    i = 0
+    while i < n_frames:
+        if silent[i]:
+            j = i
+            while j < n_frames and silent[j]:
+                j += 1
+            if j - i >= min_gap_frames and i > 0 and j < n_frames:
+                cuts.append(((i + j) // 2) * hop)
+            i = j
+        else:
+            i += 1
+    cuts.append(len(x))
+    return cuts
+
+
+def tune(audio: np.ndarray, sr: int, notes) -> np.ndarray:
+    """声の出ている所の高さを楽譜の音へ置き換える。
+
+    休符で区切り、区切りごとに別のプロセスで並べて処理する（2026-11-01、harvest を
+    dio に替えたのと合わせて、海鬼月のトラックで約 58 秒 → 数秒台）。
+    """
+    import os
+    from concurrent.futures import ProcessPoolExecutor
+
+    x = audio.astype(np.float64) / 32768.0
+    hop = int(round(sr * FRAME_MS / 1000.0))
+    target = target_curve(notes, len(x) // hop + 2)
+    cuts = split_points(x, hop)
+    jobs = [
+        (x[a:b], sr, target[a // hop : b // hop + 2])
+        for a, b in zip(cuts[:-1], cuts[1:])
+    ]
+    workers = max(1, min(len(jobs), os.cpu_count() or 1))
+    if workers == 1:
+        parts = [_tune_chunk(j) for j in jobs]
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            parts = list(pool.map(_tune_chunk, jobs))
+    return np.concatenate(parts) * 32768.0
 
 
 def main() -> int:
