@@ -1,5 +1,5 @@
 /**
- * 伴奏主体モードの最初のスタイル `fb`（`docs/accomp-style-engine.md` §3.2）。
+ * 伴奏主体モードの最初のスタイル `fb`（`docs/design/accomp-style-engine.md` §3.2）。
  *
  * 段階 S1 で、`compose-accomp-tables.ts` の表をここへ移した（値は1つも変えていない。黄金値と1バイトも
  * 違わないことを `scripts/test/check-accomp-golden.ts` で確かめる）。エンジン（`compose-accomp*.ts`）は

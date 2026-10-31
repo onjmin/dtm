@@ -1,5 +1,5 @@
 /**
- * 伴奏主体モードのスタイルの検査（`docs/accomp-style-engine.md` §7.1 の `check-accomp-styles.ts`、段階 S1）。
+ * 伴奏主体モードのスタイルの検査（`docs/design/accomp-style-engine.md` §7.1 の `check-accomp-styles.ts`、段階 S1）。
  * 登録した全スタイルを同じコードで回す（スタイルが増えると実行時間だけが増える）。
  *
  * - スキーマ（`validateStylePack`）と、いまのエンジンの前提（`engineSupportProblems`）を全スタイルが満たす。
@@ -514,7 +514,7 @@ section("DAW のミックス解放（§2.4）");
 		problems.push(
 			"runCompose が composeSetting を書き換える前に releaseAccompMix を呼んでいない",
 		);
-	// DAW の入口（BGM カード）は 2026-10-03 に外した（docs/handover-compose.md §0）
+	// DAW の入口（BGM カード）は 2026-10-03 に外した（docs/design/handover-compose.md §0）
 	if (/composeAccomp\(/.test(daw))
 		problems.push("daw.ts が composeAccomp を呼んでいる（入口は外した）");
 	ok(

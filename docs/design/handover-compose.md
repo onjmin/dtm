@@ -15,13 +15,13 @@
 | ② 保存するもの | 測って抜いた**規則・確率**（音階・和声の手口・ベースの刻み方・構成の有無） | **音そのもの**（句・小節・進行を写して並べ替える） |
 | ③ 名前 | 作者・作風（「○○リスペクト」「○○風」） | 特定の1曲 |
 
-- 規則は「その作風の何曲中何曲に出るか」を比較群と比べて、はっきり分かれるものだけ採る（`docs/kaiwai-lineages.md` の手順）。
+- 規則は「その作風の何曲中何曲に出るか」を比較群と比べて、はっきり分かれるものだけ採る（`docs/research/kaiwai-lineages.md` の手順）。
 - 狙った作風から1曲の模倣へずれていないかを見る。ずれていたら名前を変えて残すのではなく、作り直すか外す。
 
 | カード | 判定 | 理由 |
 |---|---|---|
 | 界隈曲・2号兄貴／Speder2／海鮮リスペクト | 許す | 8曲／4曲／3曲＋断片を比較群 59 曲と比べて規則にした。音符は写していない |
-| ゲームBGM・Toby Fox風（戦闘曲、10-17 改名） | 許す | Toby Fox の戦闘曲 13 曲を比較群と比べ、16分の旋律・調外の音・広い音域・4小節ブロックを規則にした。Pepper Steak 型は手本1曲なので削除（[game-bgm-toby-fox.md](game-bgm-toby-fox.md)） |
+| ゲームBGM・Toby Fox風（戦闘曲、10-17 改名） | 許す | Toby Fox の戦闘曲 13 曲を比較群と比べ、16分の旋律・調外の音・広い音域・4小節ブロックを規則にした。Pepper Steak 型は手本1曲なので削除（[game-bgm-toby-fox.md](../research/game-bgm-toby-fox.md)） |
 | J-POP・ボカロ・界隈曲（汎用） | 外した | 広すぎて手本が無い。当たりが出ない |
 | BGM（伴奏主体 `composeAccomp`） | 外した | 「0次元のような曲」を狙ったが1曲の模倣にずれた。表は fb・fa・backing の小節を出どころ付きで写した句で、家の冒頭は backing とほぼ同じ進行になる。生成器はライブラリに残し、UI の入口だけ外した |
 | 骨格借用・継ぎ合わせ（`kaiwai_skeleton`・`kaiwai_splice`） | 外した（10-01） | 耳コピの骨格・句を写すので元曲に戻る |
@@ -42,7 +42,7 @@
   アルペジオ層はラスサビだけ（`sub: "arpeggio"`）。
 - **仮歌詞は文で組む**（`src/compose/compose-lyrics.ts`）。曲ごとに登場物（キャスト）と文末の形を
   決め、句のモーラ数ぴったりの文を当て、伸びる音には あ・い を寄せる。規則と実測は
-  [docs/lyric-design.md](lyric-design.md)、検算は `scripts/test/check-compose-lyrics.ts`。
+  [docs/design/lyric-design.md](lyric-design.md)、検算は `scripts/test/check-compose-lyrics.ts`。
   テンプレートは `lyricVocab`（`"kaiwai"` / 既定は一般）で語彙を選ぶ。
 - **公開の歌メロ素材は `SYNTH_PHRASES`**（`src/compose/compose.ts`）。モチーフのリズム型 × 2小節目 ×
   輪郭の原型（`MOTIF_ARCHETYPES`、手書き）を決定的に組んだもので、どの曲の断片でもない。
@@ -211,7 +211,7 @@
   - こすれや一致率などの数値を目標にしても、無難な分散和音や平均的な走句に痩せるだけで品質には繋がらない。当時の「仮説」（2曲比較から出た項目）はこの評価を分けなかった。
 - 2026-10-25: seed 51 の手直し（`tmp/songs/2026-10-25 1437 seed 51 手直し（2号兄貴）`）は未評価。
 - 2026-10-25: Strata（ローカル LLM）主導の1曲「平行ステップ」（2号兄貴 seed 1、`tmp/songs/2026-10-25 1859 - Strata …`）は未評価。
-  作らせ方は [strata-compose.md](strata-compose.md)。広い指示で直させると、こすれを消すために走句を和音の音の往復へ痩せさせた（3稿目、捨てた）。
+  作らせ方は [strata-compose.md](../guide/strata-compose.md)。広い指示で直させると、こすれを消すために走句を和音の音の往復へ痩せさせた（3稿目、捨てた）。
 
 ## 3. 不変条件
 
@@ -438,8 +438,8 @@ npx tsx scripts/test/check-compose.ts --bless    # 出力を意図して変え�
 
 ## 関連資料
 
-- 作った曲の残し方（作曲の記録・試聴 URL・自動作曲と手書きの比率、`tmp/songs/`）: [`scripts/README.md`](../scripts/README.md) の「曲を作って残す手順」
-- 伴奏主体モードの設計: [`docs/accomp-compose.md`](accomp-compose.md)
-- データの出自とライセンス: [`docs/dataset-provenance.md`](dataset-provenance.md)
-- 手書き譜面の記法: [`docs/handscore.md`](handscore.md)
+- 作った曲の残し方（作曲の記録・試聴 URL・自動作曲と手書きの比率、`tmp/songs/`）: [`scripts/README.md`](../../scripts/README.md) の「曲を作って残す手順」
+- 伴奏主体モードの設計: [`docs/design/accomp-compose.md`](accomp-compose.md)
+- データの出自とライセンス: [`docs/design/dataset-provenance.md`](dataset-provenance.md)
+- 手書き譜面の記法: [`docs/guide/handscore.md`](../guide/handscore.md)
 - scripts の一覧: `scripts/README.md`

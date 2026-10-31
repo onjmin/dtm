@@ -2,7 +2,7 @@
  * 音符ごとの強弱（v）の読み書き規則。書き出し・DAW の読み込み・再生専用プレイヤー・
  * MIDI 書き出し・和音分解が、ここを通して同じ意味で v を扱う。
  *
- * **意味の約束**（`docs/accomp-compose.md` §8.2）
+ * **意味の約束**（`docs/design/accomp-compose.md` §8.2）
  *
  * - 内部の `Note.velocity` は、**トラック音量 T に対する相対値**（100 = T）。
  * - MML の `v` は**実効値** = round(T × velocity / 100)。

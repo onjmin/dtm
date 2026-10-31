@@ -699,7 +699,7 @@ export const exportMIDI = (options: ExportMidiOptions): Blob => {
 		// **どのバージョンが書き出したかを埋める。** 自動作曲の素材は外部コーパスから
 		// 作るので、権利の申告が誤っていた場合に「どこまでが影響範囲か」を後から
 		// 言えないと是正できない。テキストメタ（0xff 0x01）はどの再生環境でも
-		// 無視されるので、鳴りには影響しない。台帳は `docs/dataset-provenance.md`。
+		// 無視されるので、鳴りには影響しない。台帳は `docs/design/dataset-provenance.md`。
 		const stamp = Array.from(new TextEncoder().encode(`dtm ${DTM_VERSION}`));
 		a.push(0, 0xff, 0x01, ...deltaTime(stamp.length), ...stamp);
 		// ベンドの初期設定は曲頭に一度だけ置けばよいのでテンポトラックへまとめる

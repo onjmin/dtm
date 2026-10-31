@@ -1,5 +1,5 @@
 /**
- * 伴奏主体モードのスタイルの型（`docs/accomp-style-engine.md` §3.1）と、表を書くための小さな道具。
+ * 伴奏主体モードのスタイルの型（`docs/design/accomp-style-engine.md` §3.1）と、表を書くための小さな道具。
  *
  * 設計では `src/accomp/schema.ts` に置くものだが、`src/accomp/` への引っ越しは段階 S3 まで待つので、
  * 段階 S1 ではここに置く（付録 F.7）。
@@ -15,7 +15,7 @@
  *   行の `energy`・`mask`・`fits`（S2）・`variety`（監査、S2 以降）・`ablations`（fixtures へ移すとき）
  *
  * **実行時の import を増やさないこと**（`compose-accomp.ts` から読むので、Node から koe 無しで
- * 読めなければならない。`docs/accomp-compose.md` §4.2）。型の import は構わない。
+ * 読めなければならない。`docs/design/accomp-compose.md` §4.2）。型の import は構わない。
  */
 
 import type { MasterFxSettings } from "../../audio/master-fx";

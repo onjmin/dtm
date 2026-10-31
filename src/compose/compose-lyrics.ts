@@ -24,14 +24,14 @@ import {
 
 /**
  * 仮歌詞の文を組む。くじ引きで単語を並べるのではなく、**文の型に語を当てて、句のモーラ数
- * ぴったりに詰める**。規則と実測は [docs/lyric-design.md](../../docs/lyric-design.md)。
+ * ぴったりに詰める**。規則と実測は [docs/design/lyric-design.md](../../docs/design/lyric-design.md)。
  *
  * 守る約束（実測から）:
  *  - ひらがなだけ。小書きかな（ゃゅょ）は使わない——アプリは歌詞を**1文字＝1音符**で読むので、
  *    小書きかなを入れると文字数とモーラ数（`normalizeLyrics`）がずれる。
  *  - 伸ばし（`ー`）は使わない（原曲は16曲中15曲で2%以下）。
  *  - 報告体か言い切りかは曲ごとに決める。ただし報告体の曲でも光景の文は普通体が多く、
- *    「〜ました」は主に語り手の型が受け持つ（docs/lyric-design.md §18）。
+ *    「〜ました」は主に語り手の型が受け持つ（docs/design/lyric-design.md §18）。
  */
 
 /**
@@ -112,7 +112,7 @@ const BASES: Record<LyricVocabName, Base> = {
 	},
 };
 
-/** 曲ごとの登場物の数。原曲は少ない登場物が何度も戻ってくる（docs/lyric-design.md の層⑤）。 */
+/** 曲ごとの登場物の数。原曲は少ない登場物が何度も戻ってくる（docs/design/lyric-design.md の層⑤）。 */
 const CAST = {
 	heads: 8,
 	places: 4,
@@ -261,7 +261,7 @@ const formsOf = (cast: Base, register: LyricRegister): Vocab => ({
 
 /**
  * 文の型。前から順に埋め、`optional` は飛ばせる。最後は必ず動詞句か名詞で閉じる。
- * 「時間→場所→主語→動き」の順は報告型の語り（docs/lyric-design.md §2）。
+ * 「時間→場所→主語→動き」の順は報告型の語り（docs/design/lyric-design.md §2）。
  */
 const shapesOf = (vocab: Vocab): Slot[][] => {
 	const slot = (words: string[], optional = false): Slot => ({
@@ -283,7 +283,7 @@ const shapesOf = (vocab: Vocab): Slot[][] => {
 };
 
 /**
- * 報告体の語り手の型（docs/lyric-design.md §17）。異変を「〜ので」で受けて帰る・逃げる、
+ * 報告体の語り手の型（docs/design/lyric-design.md §17）。異変を「〜ので」で受けて帰る・逃げる、
  * どこかへ行く、何かを拾う・数える。主語は書かない。言い切りの曲では空。
  */
 const narrationShapesOf = (vocab: Vocab): Slot[][] => {
@@ -312,7 +312,7 @@ const narrationShapesOf = (vocab: Vocab): Slot[][] => {
 const NARRATION_SHARE = 0.3;
 
 /**
- * 旋律から来る語の置き方の制約（位置は文の頭からの音符の数。docs/lyric-design.md §19）。
+ * 旋律から来る語の置き方の制約（位置は文の頭からの音符の数。docs/design/lyric-design.md §19）。
  *  - cuts: 4分以上の休符の位置。語（助詞まで含むまとまり）は必ずここをまたがない
  *  - softCuts: 8分〜4分の休符の位置。なるべくまたがない（文が組めないときだけ許す。
  *    原曲も短い休符は語がまたぐことがある——休符またぎ 1%・17%）
@@ -507,7 +507,7 @@ const SENTENCE_MAX = 16;
 const SENTENCE_MIN = 4;
 
 // ============================================================
-// 母音の当て方（docs/lyric-design.md §5）
+// 母音の当て方（docs/design/lyric-design.md §5）
 // ============================================================
 
 /** かな1文字の母音。 */
@@ -581,7 +581,7 @@ export type LyricWriter = {
 
 /**
  * 曲ごとの歌詞係を作る。**登場物（キャスト）をここで引いて固定する**ので、
- * 同じ語が曲の中で何度も戻ってくる（原曲の作り。docs/lyric-design.md の層⑤）。
+ * 同じ語が曲の中で何度も戻ってくる（原曲の作り。docs/design/lyric-design.md の層⑤）。
  */
 export const createLyricWriter = (options: {
 	random: () => number;

@@ -1,5 +1,5 @@
 /**
- * `package.json` のバージョンを `src/version.ts` と `docs/dataset-provenance.md` へ写す。
+ * `package.json` のバージョンを `src/version.ts` と `docs/design/dataset-provenance.md` へ写す。
  *
  * `pnpm version patch` は package.json しか上げない。埋め込む定数と台帳が置き去りに
  * なるのは 2.1.12 と 2.1.13 で二度起きていて（どちらも `check-version.ts` が
@@ -34,9 +34,9 @@ const SEMVER = /\d+\.\d+\.\d+/g;
 	console.log(`  ${path} → ${version}`);
 }
 
-// docs/dataset-provenance.md
+// docs/design/dataset-provenance.md
 {
-	const path = "docs/dataset-provenance.md";
+	const path = "docs/design/dataset-provenance.md";
 	const src = readFileSync(path, "utf8");
 	const lines = src.split("\n");
 	let lastLedgerRow = -1;

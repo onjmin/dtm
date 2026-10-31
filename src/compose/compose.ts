@@ -3981,7 +3981,7 @@ const draw = (
 	};
 	if (form === "chant") {
 		// 詠唱は旋律側の装飾を掛けない（掛留・変化音・オクターブ跳躍は歌い上げの語彙）。
-		// 上で抽選してから潰すのは、乱数列を保っていた頃の名残（docs/handover-compose.md §3）。
+		// 上で抽選してから潰すのは、乱数列を保っていた頃の名残（docs/design/handover-compose.md §3）。
 		style.headTension = 0;
 		style.chromaticAffinity = 0;
 		style.octaveAffinity = 0;
@@ -5787,7 +5787,7 @@ const draw = (
 	// 歌メロを捨てて、16分リフで置き換える。**リフは和音に付いて動かない**（和音ごとに移すと
 	// 分散和音になり、リフに聞こえない。こする音だけ後で {@link fitRunToChords} がずらす）。セクションの種類ごとに4小節ブロック x y x z を作り、
 	// 後半の4小節は z だけ替える。1小節の型は回さない。サビは曲によって1オクターブ上げる
-	// （docs/game-bgm-toby-fox.md）。サブメロは3度下を重ねた2音。ハモリ・パッドは外す。
+	// （docs/research/game-bgm-toby-fox.md）。サブメロは3度下を重ねた2音。ハモリ・パッドは外す。
 	/** リフの半音下の刺繍音の発音位置。{@link fitRunToChords} が動かさずに残す。 */
 	const riffChromSteps: number[] = [];
 	if (template?.lead === "riff") {
@@ -7722,7 +7722,7 @@ export const isMonophonic = (
 };
 
 /**
- * 旋律から語の置き方の制約を作る（docs/lyric-design.md §19）。位置はまとまりの頭からの音符の数。
+ * 旋律から語の置き方の制約を作る（docs/design/lyric-design.md §19）。位置はまとまりの頭からの音符の数。
  * `next` はまとまりの後ろの最初の音符（語末の判定に使う。無ければ曲の終わり）。
  */
 export const lyricConstraintsOf = (
@@ -7761,7 +7761,7 @@ export const lyricConstraintsOf = (
  * `lyrics.ts` の約束は音符1つ＝音節1つ。だから息継ぎの間（4小節）ごとに「音符の数ぴったり」の
  * 文を組み、1文字ずつ音符へ載せる。読点（`、`）だけは音符を消費せず、直前の音節に息継ぎを立てる。
  *
- * 実測（[docs/lyric-design.md](../../docs/lyric-design.md)）に合わせてあるところ:
+ * 実測（[docs/design/lyric-design.md](../../docs/design/lyric-design.md)）に合わせてあるところ:
  *  - 伸ばし棒（`ー`）は置かない（原曲は16曲中15曲で2%以下）。
  *  - 文は途中の休符をまたいでよい（原曲も「イワシが／つちから／はえて／くるんだ」と続ける）。
  *  - 同じ形のまとまりには歌詞を使い回す。原曲の句の重複は23%、反復の単位は中央4句。

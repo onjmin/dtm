@@ -1,7 +1,7 @@
 # 伴奏主体モード（`composeAccomp`）の設計
 
 2026-09-28 作成、2026-10-01 に要約。経緯・検討して捨てた案・実測の詳細表・工数は git 履歴（この版より前）にある。
-作業の前に `docs/handover-compose.md` を読むこと（handover から本書へリンク済み）。後継の設計は `docs/accomp-style-engine.md`（以下「後継書」）。
+作業の前に `docs/design/handover-compose.md` を読むこと（handover から本書へリンク済み）。後継の設計は `docs/design/accomp-style-engine.md`（以下「後継書」）。
 
 **2026-10-03: DAW の入口（「BGM」カード）は外した。** 狙いは「0次元のような曲」だったが、1曲の模倣にずれた
 （表は fb・fa・backing の小節を写した句）。生成器・`#compose=style:…` の読み込み・`releaseAccompMix` は残す。
@@ -179,7 +179,7 @@ fa（評価されなかった版）との差から「短調側の長い滞留・
 - 音色と効果はモード単位で固定し、区間ごとには変えない。
 - ループ長は sequencer が最後の音の終わりで決めるので、分散と低音の最後の音を曲末ちょうどで終える。fadeIn/fadeOut は0。
 
-## 11. `docs/handover-compose.md` との整合
+## 11. `docs/design/handover-compose.md` との整合
 
 - 統計を参考コーパスへ寄せない（実測値は関門と表示だけ）。大量に引いて内蔵採点で選ばない。ドラムは「なし」を選ぶだけ。
 - 指標は暫定。評価ラベルが10本たまってから「分けるか」を検証する。

@@ -1,6 +1,6 @@
 /**
  * 仮歌詞（[compose-lyrics.ts](../../src/compose/compose-lyrics.ts)）の検算。
- * 規則と実測は [docs/lyric-design.md](../../docs/lyric-design.md)。
+ * 規則と実測は [docs/design/lyric-design.md](../../docs/design/lyric-design.md)。
  *
  *   npx tsx scripts/test/check-compose-lyrics.ts
  *
@@ -326,7 +326,7 @@ console.log("--- 曲に載せる ---");
 	check(
 		tieSongs.length === 0,
 		`伸ばし棒を置かない（${songs}曲）`,
-		"原曲の伸ばしは16曲中15曲で2%以下（docs/lyric-design.md §1）",
+		"原曲の伸ばしは16曲中15曲で2%以下（docs/design/lyric-design.md §1）",
 		tieSongs.slice(0, 3).join(" / "),
 	);
 	check(
@@ -350,7 +350,7 @@ console.log("--- 曲に載せる ---");
 	check(
 		longShare > shortShare + 3,
 		`伸びる音の母音（あ・い 列 ${longShare.toFixed(0)}% 対 短い音 ${shortShare.toFixed(0)}%）`,
-		"原曲は4分以上で あ 33→39%・い 21→25% と増える（docs/lyric-design.md §5）",
+		"原曲は4分以上で あ 33→39%・い 21→25% と増える（docs/design/lyric-design.md §5）",
 	);
 	check(
 		castRecurs >= songs / 2,

@@ -4770,7 +4770,7 @@ export const mountDAW = (
 			) as HTMLButtonElement;
 			lyricAuto.addEventListener("click", () => {
 				// すでに置いてある音符に歌詞を当てる（「歌入り作曲」と同じ生成器。
-				// docs/lyric-design.md）。語彙は「何を作る？」で選んでいるジャンルに合わせる。
+				// docs/design/lyric-design.md）。語彙は「何を作る？」で選んでいるジャンルに合わせる。
 				const notes = [...active.core.getNotes()].sort(
 					(a, b) => a.startStep - b.startStep,
 				);
@@ -5043,7 +5043,7 @@ export const mountDAW = (
 			{
 				// **書き出したバージョンを残す。** 自動作曲の素材は外部コーパスから
 				// 作るので、権利の申告が誤っていた場合に影響範囲を後から言えないと
-				// 是正できない。台帳は `docs/dataset-provenance.md`。
+				// 是正できない。台帳は `docs/design/dataset-provenance.md`。
 				version: DTM_VERSION,
 				instrument: currentInstrument || undefined,
 				// 「なし」も `#drum=none` と明示して書く。省略すると、読み込んだ側の DAW が

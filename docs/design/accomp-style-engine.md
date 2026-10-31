@@ -1,7 +1,7 @@
 # 伴奏主体モードのスタイル化（スタイルエンジン）の設計
 
 2026-09-28 作成。2026-10-01 に要約した（経緯・計測の表・却下した案の詳細・S0/S1 の検証ログは git 履歴にある）。
-前提は `docs/accomp-compose.md`（以下「前書」）。本書はその §14-2「表は fb・fa・backing から起こした」の続き。
+前提は `docs/design/accomp-compose.md`（以下「前書」）。本書はその §14-2「表は fb・fa・backing から起こした」の続き。
 
 **実装の状況: 段階 S1 まで済み**（S0: `#compose` の書式・監査・`references/fb/`・黄金値・退避率の記録。S1: 表を `src/compose/accomp-styles/fb.ts` へ移し、エンジンはスタイルから読む・DAW は `song.mix` と層の定義を読む・計画の記録 `PlanPins`）。P-1・P-3・S2 以降は未着手。設計からずらした点は付録 F。
 

@@ -1,5 +1,5 @@
 /**
- * 伴奏主体モードの曲を MML にする（`docs/accomp-compose.md` §4.1・§5 `accompToMml`）。
+ * 伴奏主体モードの曲を MML にする（`docs/design/accomp-compose.md` §4.1・§5 `accompToMml`）。
  *
  * **mml-parser を読むので koe まで引く。** `compose-accomp.ts` からは import しないこと（生成器は
  * Node から koe 無しで検算するため、§4.2）。scripts（試聴・再現・往復の検算）と外部利用のための口。

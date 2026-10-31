@@ -1,5 +1,5 @@
 /**
- * 伴奏主体モード（`composeAccomp`）の検算（`docs/accomp-compose.md` §12.2・§12.3）。
+ * 伴奏主体モード（`composeAccomp`）の検算（`docs/design/accomp-compose.md` §12.2・§12.3）。
  *
  * 段階1-A の時点で確かめるのは、表と計画器まで。
  * - 依存: `compose-accomp*.ts` が koe・mml-parser・voice/lyrics・daw を実行時に読まないこと
@@ -2234,7 +2234,7 @@ section("MML の往復（parseMML(accompToMml(song))）");
 
 // ============================================================
 section(
-	"#compose の書式（style:<id>.v<版>:<baseKey>:<k>、docs/accomp-style-engine.md §2.5）",
+	"#compose の書式（style:<id>.v<版>:<baseKey>:<k>、docs/design/accomp-style-engine.md §2.5）",
 );
 {
 	const { formatAccompCompose, parseAccompCompose, ACCOMP_COMPOSE_PREFIX } =
@@ -2371,7 +2371,7 @@ section(
 
 // ============================================================
 section(
-	"監査用の記録（diagnostics。docs/accomp-style-engine.md §5「退避の率を数える」）",
+	"監査用の記録（diagnostics。docs/design/accomp-style-engine.md §5「退避の率を数える」）",
 );
 {
 	type Diag = import("../../src/compose/compose-accomp").AccompCandidateDiag;
@@ -2427,7 +2427,7 @@ section(
 
 // ============================================================
 section(
-	"計画の記録（PlanPins。docs/accomp-style-engine.md §3.1・段階 S1）: 実現の段は決めたものを記録し、記録があれば従う",
+	"計画の記録（PlanPins。docs/design/accomp-style-engine.md §3.1・段階 S1）: 実現の段は決めたものを記録し、記録があれば従う",
 );
 {
 	const compIds = new Set(Object.keys(COMP_HITS));

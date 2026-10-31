@@ -1,5 +1,5 @@
 /**
- * 伴奏主体モードの黄金値（`docs/accomp-style-engine.md` §7.2・§8 段階 S0）。
+ * 伴奏主体モードの黄金値（`docs/design/accomp-style-engine.md` §7.2・§8 段階 S0）。
  *
  * 出力を1バイトも変えない作り替え（段階 S1・S3）の番をする。スタイルごとに
  * `scripts/test/fixtures/styles/<id>/golden.json` を持ち、次の sha256 を照合する（いまは fb だけ）。
@@ -180,7 +180,7 @@ if (recentSkipped === 0)
 
 const now: Golden = {
 	about:
-		"伴奏主体モードの黄金値（scripts/test/check-accomp-golden.ts）。取り直しは pnpm accomp:bless。出力を意図して変えたときだけ取り直し、スタイルの版も上げる（docs/accomp-style-engine.md §7.2）。",
+		"伴奏主体モードの黄金値（scripts/test/check-accomp-golden.ts）。取り直しは pnpm accomp:bless。出力を意図して変えたときだけ取り直し、スタイルの版も上げる（docs/design/accomp-style-engine.md §7.2）。",
 	style: `${STYLE.id}.v${STYLE.version}`,
 	mml: { version: MML_VERSION, stepsPerBar: 192, edo: 12 },
 	songs: { seeds: [SEED_FROM, SEED_FROM + SEED_COUNT - 1], rows: songRows },

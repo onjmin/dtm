@@ -1,12 +1,12 @@
 /**
- * 伴奏主体モード（`composeAccomp`）の公開 API。設計は `docs/accomp-compose.md`（§5）。
+ * 伴奏主体モード（`composeAccomp`）の公開 API。設計は `docs/design/accomp-compose.md`（§5）。
  *
  * 歌メロが主役の `composeSong`（`compose.ts`）とは**別系統**の自動作曲で、旋律は
  * ほとんど置かず、分散和音・低音・短い和音で約2分半〜3分のループ曲を作る。手本は所有者が
  * 評価した手書き編曲 `tmp/full/fb.mml`。
  *
  * ここには公開の型と入口（{@link composeAccomp}・{@link accompMeta}）を置く。
- * - 表 … スタイル（`src/compose/accomp-styles/<id>.ts`、`docs/accomp-style-engine.md` §3）。エンジンは
+ * - 表 … スタイル（`src/compose/accomp-styles/<id>.ts`、`docs/design/accomp-style-engine.md` §3）。エンジンは
  *   `compose-accomp-style.ts` を通して読む。`compose-accomp-tables.ts` は、いままでの名前で読み直すだけの
  *   互換の口（エンジンは読まない）
  * - 計画器（段0〜3）… `compose-accomp-plan.ts`
@@ -15,7 +15,7 @@
  * - MML の書き出し（`accompToMml`）… `compose-accomp-mml.ts`（mml-parser を読むので、ここからは
  *   import しない）
  *
- * **実行時の import を増やさないこと**（`docs/accomp-compose.md` §4.2）。このモジュールは
+ * **実行時の import を増やさないこと**（`docs/design/accomp-compose.md` §4.2）。このモジュールは
  * Node から検算するので、`mml-parser`・`lyrics`・`daw` を実行時に読んではいけない。
  */
 
@@ -66,7 +66,7 @@ export type AccompRole =
 
 export type AccompOptions = {
 	/**
-	 * スタイル id（`src/compose/accomp-styles/` の登録表。`docs/accomp-style-engine.md` §2.2）。省くと `fb`。
+	 * スタイル id（`src/compose/accomp-styles/` の登録表。`docs/design/accomp-style-engine.md` §2.2）。省くと `fb`。
 	 * 知らない id は例外。`overrides.plan` に `style` があるときは、それと同じでなければ例外。
 	 */
 	style?: string;
@@ -106,7 +106,7 @@ export type AccompOptions = {
 		plan?: AccompPlan;
 	};
 	/**
-	 * 監査用（伴奏の監査スクリプト（削除済み、git 履歴にある）、`docs/accomp-style-engine.md` §5「退避の率を数える」）。
+	 * 監査用（伴奏の監査スクリプト（削除済み、git 履歴にある）、`docs/design/accomp-style-engine.md` §5「退避の率を数える」）。
 	 * 候補を1つ関門に掛けるたび、保険の計画を鳴らしたときに1回ずつ呼ぶ。**曲は変えない**（乱数の
 	 * 引き方も同じ）。選抜には使わない。
 	 */
@@ -180,7 +180,7 @@ export type AccompRegion = {
 	levelOffset: number;
 	/**
 	 * 小節ごとの和音の打ち方の id（スタイルの `patterns.comp`。区間の小節数と同じ長さ）。
-	 * `docs/accomp-style-engine.md` §3.1 の `PlanPins`。実現の段が決めて記録し（{@link AccompSong.plan}）、
+	 * `docs/design/accomp-style-engine.md` §3.1 の `PlanPins`。実現の段が決めて記録し（{@link AccompSong.plan}）、
 	 * 与えられたら実現の段はそれに従う。省くと実現の段が優先順位（いまは `compHitsFor`）で決める。
 	 */
 	compHits?: string[];
@@ -307,7 +307,7 @@ export type AccompSong = {
 	 * 決めた小節ごとの和音の打ち方（`regions[].compHits`）。`overrides.plan` にこのまま渡すと、同じ
 	 * 計画で鳴らす（`#compose` は `…:plan`）。同じトラックになるのは、同じ種の乱数で作った候補 0 の
 	 * 曲だけ。和音の置き方・分散の組の同点の割り方と色の線の順は記録に無く、`overrides.plan` は種の
-	 * 最初の乱数列で引くため（候補 1 以降と保険の計画は変わりうる。`docs/accomp-style-engine.md` 付録 F.8）。
+	 * 最初の乱数列で引くため（候補 1 以降と保険の計画は変わりうる。`docs/design/accomp-style-engine.md` 付録 F.8）。
 	 */
 	plan: AccompPlan;
 	/** ComposeResult と同じ書式（"|" 区切り・ハ長調基準）。表示用。 */
@@ -317,7 +317,7 @@ export type AccompSong = {
 	mix: AccompMix;
 	/**
 	 * `style:<スタイル id>.v<版>:<baseKey>:<k>`（#compose の値。[\w:.-]+ に収まる。
-	 * `docs/accomp-style-engine.md` §2.5）。例 `style:fb.v1:major:0`。書式は
+	 * `docs/design/accomp-style-engine.md` §2.5）。例 `style:fb.v1:major:0`。書式は
 	 * {@link formatAccompCompose}・{@link parseAccompCompose}。
 	 */
 	compose: string;
@@ -341,7 +341,7 @@ export type AccompSong = {
 const BASE_KEY_RE = /^[\w.-]+$/;
 
 // ============================================================
-// #compose の書式（docs/accomp-style-engine.md §2.5）
+// #compose の書式（docs/design/accomp-style-engine.md §2.5）
 // ============================================================
 
 /** 伴奏主体モードの `#compose` の接頭辞。全スタイル共通。 */
@@ -433,7 +433,7 @@ const majorKeyOf = (
 };
 
 /**
- * 計画に記録（`PlanPins`、`docs/accomp-style-engine.md` §3.1）を埋める。スタイル・型・ミックスは計画に
+ * 計画に記録（`PlanPins`、`docs/design/accomp-style-engine.md` §3.1）を埋める。スタイル・型・ミックスは計画に
  * 無ければ引いた表のもの、小節ごとの和音の打ち方は実現の段が決めたもの（`realized.compHits`）。
  * 欄は後ろに足す（元の欄の並びは変えない。記録を消すと元の計画の JSON に戻る）。
  */
@@ -496,7 +496,7 @@ const songOf = (args: {
 };
 
 /**
- * 伴奏主体のループ曲を1曲作る（`docs/accomp-compose.md` §7.1）。
+ * 伴奏主体のループ曲を1曲作る（`docs/design/accomp-compose.md` §7.1）。
  *
  * - 段0: 呼び出しの乱数から調の種を1つ引き、調とテンポを決める（短調を選んだら平行長調を家にする）。
  * - 候補 k = 0,1,…（上限 `CANDIDATE_LIMIT`）: 候補ごとに種を6つ引き（計画・和声・質感・配置・強弱・色）、
@@ -716,7 +716,7 @@ export const accompMeta = (s: AccompSong): MmlMeta => {
 };
 
 // ============================================================
-// DAW との結合（docs/accomp-style-engine.md §2.4）。DAW はスタイル名も表も知らずに、これだけを使う
+// DAW との結合（docs/design/accomp-style-engine.md §2.4）。DAW はスタイル名も表も知らずに、これだけを使う
 // ============================================================
 
 /**

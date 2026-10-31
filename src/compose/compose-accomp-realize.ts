@@ -1,11 +1,11 @@
 /**
- * 伴奏主体モードの実現器（`docs/accomp-compose.md` §6 段4〜段10）。計画（`AccompPlan`）を
+ * 伴奏主体モードの実現器（`docs/design/accomp-compose.md` §6 段4〜段10）。計画（`AccompPlan`）を
  * 4トラックのノートにする。純関数だけを置く。
  *
  * - 段4 和音の配置（@3）… 3声の密集配置。分散のぶつかり回避に使うので最初に決める
  * - 段5 和音の打ち方 … スタイルの `patterns.comp`。借用和音だけ長く、home の予告は fore、最終小節は
  *   final。決めた打ち方は小節ごとに記録し（{@link AccompRealized.compHits}）、計画が記録を持っていれば
- *   それに従う（`PlanPins`、`docs/accomp-style-engine.md` §3.1）
+ *   それに従う（`PlanPins`、`docs/design/accomp-style-engine.md` §3.1）
  * - 段6 低音（@2）… スタイルの `patterns.bass`。経過音 P・区間の境の半音渡し・曲末の導音
  * - 段7 分散（@1、主役）… 和音ごとに5音の組を選び、4小節ごとのセルに流し込む
  * - 段8 色の線（@0）… borrowB の4小節と最終小節だけ

@@ -1,6 +1,6 @@
 /**
  * 陽性対照: 所有者が評価した手書き編曲 fb（`tmp/full/gen-fb.mjs`）を、`AccompPlan` として
- * **手で**書き直したもの（`docs/accomp-compose.md` §12.3）。ホ長調（rootShift 4）・112BPM・76小節。
+ * **手で**書き直したもの（`docs/design/accomp-compose.md` §12.3）。ホ長調（rootShift 4）・112BPM・76小節。
  *
  * `src/compose/compose-accomp-plan.ts` の `fbPlan()`（表の行を決めた値で組み立てる、保険の計画）は、
  * これと一致しなければならない。表の行が fb からずれたら検査で分かるように、ここは表を
@@ -9,7 +9,7 @@
  * - 和声は gen-fb.mjs の `CHORDS`（ホ長調の和音名、下の `FB_CHORD_NAMES`）をローマ数字に読み直したもの
  * - セルと低音型は付録 A・§6 段3 の表で、fb の各4小節に当てた id
  * - 分散の基準 v は gen-fb.mjs の `ARP_BASE`
- * - 記録（`PlanPins`、`docs/accomp-style-engine.md` §3.1。段階 S1 で足した）: スタイル・型・ミックスの id と、
+ * - 記録（`PlanPins`、`docs/design/accomp-style-engine.md` §3.1。段階 S1 で足した）: スタイル・型・ミックスの id と、
  *   小節ごとの和音の打ち方（`compHits`）。打ち方は gen-fb.mjs の `COMP`（1〜16 は backing と同じ規則、
  *   B は `one`/`three`/`two`、C は長く、L は `one`/`three` の交互）を id に読み直したもの。
  *   `fbPlan()` は打ち方の記録を持たない（実現の段が決めて記録する）ので、`fbPlan()` と一致するのは
@@ -314,7 +314,7 @@ export const FB_PLAN: AccompPlan = {
 			],
 		},
 	],
-	// 記録（PlanPins、docs/accomp-style-engine.md §3.1）: スタイル fb の型 fb、ミックス fb
+	// 記録（PlanPins、docs/design/accomp-style-engine.md §3.1）: スタイル fb の型 fb、ミックス fb
 	style: "fb",
 	archetype: "fb",
 	mix: "fb",

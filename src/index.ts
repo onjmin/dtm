@@ -37,7 +37,7 @@ export {
 	type MelodyForm,
 } from "./compose/compose";
 // 伴奏主体モード（旋律をほとんど置かず、分散和音・低音・和音で約2分半〜3分のループ曲を作る。
-// docs/accomp-compose.md）
+// docs/design/accomp-compose.md）
 export {
 	type AccompGate,
 	type AccompMix,

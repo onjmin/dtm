@@ -10,7 +10,7 @@
  *   npx tsx scripts/compose/export-samples.ts --app-seed 4022250974 --compose jpop_standard:any:auto:intro-verse-chorus
  *
  * **伴奏主体モード**（`#compose=style:<スタイル id>.v<版>:<baseKey>:<候補番号>`、
- * `docs/accomp-style-engine.md` §2.5）は `composeAccomp` と `accompToMml` へ振り分け、.mid ではなく
+ * `docs/design/accomp-style-engine.md` §2.5）は `composeAccomp` と `accompToMml` へ振り分け、.mid ではなく
  * .mml（強弱・ミックス込み。DAW に貼って聴ける）を書く。31平均律で作った曲は `--edo 31` を足す
  * （`#compose` は音律を持たない）。段階 S0 より前の書式 `accomp:<baseKey>:<候補番号>` は
  * `style:fb.v1:…` として読む。
@@ -137,7 +137,7 @@ const appOptions = (() => {
 })();
 
 /**
- * 伴奏主体モードの再現（`docs/accomp-compose.md` §12.5）。アプリと同じ種・同じ候補番号で
+ * 伴奏主体モードの再現（`docs/design/accomp-compose.md` §12.5）。アプリと同じ種・同じ候補番号で
  * `composeAccomp` を呼び、`accompToMml` で .mml を書く。`accompToMml` は mml-parser を読み、その先で
  * 歌唱合成エンジン @onjmin/koe（ブラウザ専用）を読むので、ここだけ空のスタブを入れてから読む。
  */

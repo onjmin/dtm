@@ -1,5 +1,5 @@
 /**
- * 伴奏主体モードの関門（硬い制約）と、表示用の指標（`docs/accomp-compose.md` §7）。
+ * 伴奏主体モードの関門（硬い制約）と、表示用の指標（`docs/design/accomp-compose.md` §7）。
  * 生成器（`composeAccomp` の候補のループ）と scripts（検算・試聴）の両方から使う。純関数だけを置く。
  *
  * - {@link accompGates} … §7.2 の関門を全部調べる。空なら候補は壊れていない。計画の段で分かるもの
@@ -39,7 +39,7 @@ import { planStyleView } from "./compose-accomp-style";
 /**
  * 関門「ぶつかり」（§7.2）: 全トラックの組で、別トラックの音が半音（短2度・短9度）で重なる数の
  * 1小節あたりの上限（fb 0.24、fa 0.20）。分散と和音トラック、色の線と分散は別に0を求める。
- * 衛生の制約（エンジンが全スタイルに掛ける。`docs/accomp-style-engine.md` §2.1）なので、エンジンの定数。
+ * 衛生の制約（エンジンが全スタイルに掛ける。`docs/design/accomp-style-engine.md` §2.1）なので、エンジンの定数。
  */
 export const CLASH_PER_BAR_MAX = 0.35;
 

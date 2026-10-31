@@ -1,5 +1,5 @@
 /**
- * 伴奏主体モード（`composeAccomp`）の表の、**互換の口**（段階 S1。`docs/accomp-style-engine.md` §8）。
+ * 伴奏主体モード（`composeAccomp`）の表の、**互換の口**（段階 S1。`docs/design/accomp-style-engine.md` §8）。
  *
  * 表は `src/compose/accomp-styles/fb.ts`（スタイル `fb`、型は `src/compose/accomp-styles/schema.ts`）へ移した。ここは、
  * いままでの名前と形（`ARP_CELLS`・`ROLE_TEXTURE`・`ACCOMP_MIX` など）で既定のスタイル fb を読み直す

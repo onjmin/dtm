@@ -2,7 +2,7 @@
  * 仮歌詞の語彙（[compose-lyrics.ts](compose-lyrics.ts) が文の型へ当てる語）。
  *
  * 原曲（耳コピ）から取るのは**語の種類**（海のもの・暮らしの場・時間・体…）と文の型だけで、
- * 種類の中身は一般の日本語から広く持つ（docs/lyric-design.md §20）。原曲に出る語だけに絞ると、
+ * 種類の中身は一般の日本語から広く持つ（docs/design/lyric-design.md §20）。原曲に出る語だけに絞ると、
  * どの曲も同じ語になる。
  *
  * 約束: ひらがなだけ。小書きの ゃゅょ・伸ばし棒 は使わない（アプリは1文字を1音符として読む）。
@@ -234,7 +234,7 @@ export const sceneVerbs = (): Record<LyricRegister, string[]> => {
 };
 
 /**
- * 報告体の語り手の語（docs/lyric-design.md §17）。主語は書かない。
+ * 報告体の語り手の語（docs/design/lyric-design.md §17）。主語は書かない。
  *  - causes: 「〜ので／〜から」の前に置く過去形（到来は「〜てきた」）
  *  - moves: 語り手が移る（場所は「へ」「から」）
  *  - stays: 語り手がとどまる（場所は「で」「に」）

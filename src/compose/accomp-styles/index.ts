@@ -1,5 +1,5 @@
 /**
- * 伴奏主体モードのスタイルの登録表（`docs/accomp-style-engine.md` §2.2）。
+ * 伴奏主体モードのスタイルの登録表（`docs/design/accomp-style-engine.md` §2.2）。
  *
  * スタイルは `<id>.ts` に `StylePack`（§3.1、型は `./schema`）として書き、ここに並べる。エンジン
  * （`compose-accomp*.ts`）は `compose-accomp-style.ts` を通してスタイルを読む。`#compose` の書式
@@ -10,7 +10,7 @@
  * `<id>.ts`・`references/<id>/`・`scripts/test/fixtures/styles/<id>/`。
  *
  * **実行時の import を増やさないこと。** `compose-accomp.ts` から読むので、ここも Node から koe 無しで
- * 読めなければならない（`docs/accomp-compose.md` §4.2）。
+ * 読めなければならない（`docs/design/accomp-compose.md` §4.2）。
  */
 
 import { fb } from "./fb";

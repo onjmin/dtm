@@ -161,7 +161,7 @@ python scripts/speech-melody/shelf_build.py
 
 ### 9-1. 譜面（MIDI）を使う
 
-1. **譜面を用意する**: 所有者の耳コピ .mid、picotune（AGENTS.md の API。`/picotune/songs/:file` で .mid を取れる）、MML、自動採譜（Demucs → Basic Pitch。道具は削除済みで git の履歴にある）のいずれか。自動採譜で合うのは歌とベースの半分ほどなので、下書き扱いにする（`docs/transcription-eval.md`）。生の tick のまま測ると結論が逆になることがあるので、先に16分格子へ量子化する。
+1. **譜面を用意する**: 所有者の耳コピ .mid、picotune（AGENTS.md の API。`/picotune/songs/:file` で .mid を取れる）、MML、自動採譜（Demucs → Basic Pitch。道具は削除済みで git の履歴にある）のいずれか。自動採譜で合うのは歌とベースの半分ほどなので、下書き扱いにする（`docs/research/transcription-eval.md`）。生の tick のまま測ると結論が逆になることがあるので、先に16分格子へ量子化する。
 2. **トラックの役割を決める**: 歌の旋律・ベース・和音を、トラックごとに決める。
 3. **台詞の当て方を区間ごとに選ぶ**:
    - **旋律に当てる（歌わせる）**: 歌の旋律の句ごとに、モーラ数と強い音節の位置が近い台詞を選ぶ。モーラを旋律の音符の頭へ置き、音程を旋律の音へ寄せる。移調は台詞全体で ±3 半音まで。それを超える句は台詞を替えるか、オクターブで逃がす。

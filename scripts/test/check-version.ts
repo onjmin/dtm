@@ -3,7 +3,7 @@
  *
  * 書き出す MML と MIDI には {@link DTM_VERSION} を埋めてある。これが
  * `package.json` とずれていると、**手元のファイルから素材の由来を引けなくなる**
- * （`docs/dataset-provenance.md` は package.json のバージョンで引く台帳なので）。
+ * （`docs/design/dataset-provenance.md` は package.json のバージョンで引く台帳なので）。
  *
  * ブラウザ向けのバンドルに `package.json` を読ませたくないので定数で二重に
  * 持っている。二重管理そのものは避けられないが、ずれたまま気付かないのは避けられる。

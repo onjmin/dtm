@@ -1,5 +1,5 @@
 /**
- * 伴奏主体モードの計画器（`docs/accomp-compose.md` §6 段0〜段3）。純関数だけを置く。
+ * 伴奏主体モードの計画器（`docs/design/accomp-compose.md` §6 段0〜段3）。純関数だけを置く。
  *
  * - 段0 調とテンポ … {@link resolveAccompKey}
  * - 段1 旅程（区間の役割と長さ）・段2 和声・段3 質感 … {@link planAccomp}
@@ -18,7 +18,7 @@
  * `seededRandom`・スタイル（`./compose-accomp-style`）だけ（§4.2）。`mml-parser`・`lyrics`・`daw` は読まない。
  *
  * 表は定数を import せず、スタイル（`src/compose/accomp-styles/`）を {@link accompStyleView} で引いて読む
- * （段階 S1。`docs/accomp-style-engine.md` §8）。計画を受け取る関数は計画の `style`・`archetype`
+ * （段階 S1。`docs/design/accomp-style-engine.md` §8）。計画を受け取る関数は計画の `style`・`archetype`
  * から引き（{@link planStyleView}）、計画を作る関数は `style`（省くと既定のスタイル）を受け取る。
  */
 
@@ -828,7 +828,7 @@ export type PlanAccompInput = {
 	/** 区間長の上書き（`AccompOptions.overrides.lengths`）。 */
 	lengths?: Partial<Record<AccompRole, number>>;
 	/**
-	 * 監査用。与えると、計画の中の引き直しを使い切ったかを書き込む（`docs/accomp-style-engine.md`
+	 * 監査用。与えると、計画の中の引き直しを使い切ったかを書き込む（`docs/design/accomp-style-engine.md`
 	 * §5「退避の率を数える」）。**計画は変えない**（乱数の引き方も同じ）。
 	 */
 	diag?: AccompPlanDiag;

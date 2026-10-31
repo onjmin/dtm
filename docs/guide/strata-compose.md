@@ -9,7 +9,7 @@
 ## 0. 先に知っておくこと
 
 - 判断は Strata がする。スクリプトの道具は事実（小節ごとの和音・層・リードの音、こすれる場所の一覧）だけを返し、
-  点数や合否は返さない（[handover-compose.md](handover-compose.md) §2: 点検の数値が目標になって曲が揃うので、作曲ハーネスは外した）。
+  点数や合否は返さない（[handover-compose.md](../design/handover-compose.md) §2: 点検の数値が目標になって曲が揃うので、作曲ハーネスは外した）。
 - Strata は日本語の細かい処理が弱い（実測で条件付き作詞 2/6）。歌は作らせず、インスト（2号兄貴・Speder2 の楽器版）に絞ってある。
 - Strata は耳で聴けない。曲の良し悪しは最後にあなたが聴いて決める。
 - 1回の作曲は 20〜60 分かかる（生成 50〜80 tok/s、文脈 64K。RTX 5060 Ti 16GB・メモリ 64GB の PC で Qwen3.8-Flash-Next IQ2_XS）。
@@ -52,7 +52,7 @@ curl.exe -s "$($env:STRATA_URL -replace '/v1$','')/health"     # "loaded": true 
 npx tsx scripts/compose/strata-compose.ts new
 ```
 
-- 曲名は岩石・鉱石の英名（Cinnabar・Obsidian・Rhyolite…。一覧は `scripts/compose/ore-names.ts`。2号兄貴の鉱石シリーズの曲名とそれを含む名前は除外）から、棚でまだ使っていないものを選ぶ。Strata はインストだけを作るので、歌ものの命名規則（海の生物に関係する語を含める。[scripts/README.md](../scripts/README.md)）はここでは使わない。自分で決めるなら `--title "曲名"`。
+- 曲名は岩石・鉱石の英名（Cinnabar・Obsidian・Rhyolite…。一覧は `scripts/compose/ore-names.ts`。2号兄貴の鉱石シリーズの曲名とそれを含む名前は除外）から、棚でまだ使っていないものを選ぶ。Strata はインストだけを作るので、歌ものの命名規則（海の生物に関係する語を含める。[scripts/README.md](../../scripts/README.md)）はここでは使わない。自分で決めるなら `--title "曲名"`。
 - 依頼文を変えるなら `--request "…"`（既定は「自動作曲機能を土台に界隈曲を1曲作り、自分で品質を評価して納得できるところまで手を入れてから finish」）。
   例: `--request "Speder2 で、サビの主題がはっきりした曲を。"`
 - 画面には Strata の思考（点）・発言・道具の呼び出しが流れる。止まったように見えても思考中のことが多い。
@@ -108,7 +108,7 @@ npx tsx scripts/misc/song-shelf.ts verdict "Strata 作業名" --verdict 使う -
 
 | 道具 | すること |
 |---|---|
-| `read_doc` | 流派の実測（[kaiwai-lineages.md](kaiwai-lineages.md)）と所有者の判断の記録（handover §2）を読む |
+| `read_doc` | 流派の実測（[kaiwai-lineages.md](../research/kaiwai-lineages.md)）と所有者の判断の記録（handover §2）を読む |
 | `list_seeds` / `select_seed` | 流派テンプレートの seed を一覧し、1曲を土台に選ぶ |
 | `read_bars` | 小節ごとに和音（実音）・鳴っている層・リードとベースの音を読む（主旋律の重ねは `t13(=t0)`、リードより上で鳴る伴奏は「リードより上」と印が付く）。seed を付ければ選ぶ前の候補も読める |
 | `list_rubs` | リードが伴奏と半音でこする場所と、主旋律の重ねが t0 とずれた小節の一覧（件数ではなく場所）。`all` で16分の裏も見る |

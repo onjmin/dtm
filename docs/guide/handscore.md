@@ -81,7 +81,7 @@ cd C:\_own\git\_users\onjmin\dtm
 あなたは作曲家です。自動作曲マクロを使わず、自分で1曲書いてください。
 
 ## 手順
-1. docs/handscore.md を読んで記法を把握する。
+1. docs/guide/handscore.md を読んで記法を把握する。
 2. 譜面 JSON を tmp/handscore/<名前>.json に書く。
 3. （削除済みのコンパイラ。git 履歴にある） tmp/handscore/<名前>.json → tmp/handscore/<名前>.mml
    エラーが出たら直して、通るまで繰り返す。

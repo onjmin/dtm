@@ -1,6 +1,6 @@
 /**
  * スタイル（`src/compose/accomp-styles/`）を、エンジン（`compose-accomp*.ts`）が引く形にする
- * （`docs/accomp-style-engine.md` §2.1・段階 S1）。
+ * （`docs/design/accomp-style-engine.md` §2.1・段階 S1）。
  *
  * エンジンは表の定数を import せず、ここで作る {@link AccompStyleView}（スタイルと型1つぶんの表を
  * id で引ける形に並べたもの）を読む。計画から引くときは計画の `style`・`archetype`（`PlanPins`）で
@@ -16,7 +16,7 @@
  * - 和声の句の表は plan の文法が名前で引く7つ（S3f まで）。和音の打ち方は realize の優先順位が
  *   id で引く5つ（S3a まで）
  *
- * 実行時の import を増やさないこと（`docs/accomp-compose.md` §4.2）。
+ * 実行時の import を増やさないこと（`docs/design/accomp-compose.md` §4.2）。
  */
 
 import {

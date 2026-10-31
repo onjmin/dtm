@@ -748,7 +748,7 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 		name: "game_loop",
 		label: "ゲームBGM（ループ）",
 		plan: ["intro", "chorus", "verse", "chorus", "bridge", "chorus"],
-		// Toby Fox の戦闘曲 13 曲の実測（docs/game-bgm-toby-fox.md）。112〜170、中央 120・140 以上 4/13。
+		// Toby Fox の戦闘曲 13 曲の実測（docs/research/game-bgm-toby-fox.md）。112〜170、中央 120・140 以上 4/13。
 		bpmChoices: [112, 115, 118, 120, 120, 126, 135, 145, 150, 170],
 		form: "ostinato",
 		lead: "riff",
@@ -766,7 +766,7 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 	},
 
 	// 界隈曲。短調・4つ打ち・8分ベース・多回サビ。コーパス（bars≥40・非ドラム ch≥6 の43曲）と
-	// 当たり12曲の実測から。細部の根拠は docs/handover-compose.md「界隈曲テンプレート」。
+	// 当たり12曲の実測から。細部の根拠は docs/design/handover-compose.md「界隈曲テンプレート」。
 	{
 		name: "kaiwai",
 		label: "界隈曲（短調・4つ打ち・8分ベース）",
@@ -907,7 +907,7 @@ export const STRUCTURE_TEMPLATES: StructureTemplate[] = [
 		lyricVocab: "kaiwai",
 	},
 
-	// 界隈曲の流派（docs/kaiwai-lineages.md の規則案）。
+	// 界隈曲の流派（docs/research/kaiwai-lineages.md の規則案）。
 	KAIWAI_KAISEN,
 	KAIWAI_NIGO,
 	KAIWAI_NIGO_LEAD,

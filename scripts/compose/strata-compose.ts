@@ -10,10 +10,10 @@
  *   npx tsx scripts/compose/strata-compose.ts rebuild <曲>
  *       strata-session.json の操作列を seed から当て直して song.mml を作り直す（会話はしない）。
  *
- * 手順と注意は docs/strata-compose.md。接続先は STRATA_URL、API キーは STRATA_API_KEY で渡す。
+ * 手順と注意は docs/guide/strata-compose.md。接続先は STRATA_URL、API キーは STRATA_API_KEY で渡す。
  *
  * 道具は事実だけを返す（小節ごとの和音・層・リードの音、こすれの場所の一覧）。点数や合否は返さない
- * （docs/handover-compose.md §2: 点検の数値が目標になって曲が揃うため、作曲ハーネスは外した）。
+ * （docs/design/handover-compose.md §2: 点検の数値が目標になって曲が揃うため、作曲ハーネスは外した）。
  */
 
 import { execFileSync } from "node:child_process";
@@ -39,7 +39,7 @@ const S16 = 12;
 const SEMI = 31;
 const TEMPLATES = ["kaiwai_2go_lead", "kaiwai_speder2_lead"] as const;
 type Template = (typeof TEMPLATES)[number];
-// 耳コピ由来の kaiwai_1〜4 は渡さない（docs/handover-compose.md §1）
+// 耳コピ由来の kaiwai_1〜4 は渡さない（docs/design/handover-compose.md §1）
 const DRUMS = [
 	"4beat",
 	"8beat",
@@ -916,18 +916,18 @@ const section = (file: string, start: RegExp, end: RegExp): string => {
 const DOCS: Record<string, () => string> = {
 	lineage_2go: () =>
 		section(
-			"docs/kaiwai-lineages.md",
+			"docs/research/kaiwai-lineages.md",
 			/^## 2号兄貴 — 規則/m,
 			/^## 規則案：Speder2/m,
 		) +
-		section("docs/kaiwai-lineages.md", /^## 構成の幅/m, /^## 試聴/m)
+		section("docs/research/kaiwai-lineages.md", /^## 構成の幅/m, /^## 試聴/m)
 			.split("\n")
 			.filter((l) => !l.includes("Speder2") && !l.includes("海鮮"))
 			.join("\n"),
 	lineage_speder2: () =>
-		section("docs/kaiwai-lineages.md", /^## 規則案：Speder2/m, /^## 両流派/m),
+		section("docs/research/kaiwai-lineages.md", /^## 規則案：Speder2/m, /^## 両流派/m),
 	owner: () =>
-		section("docs/handover-compose.md", /^### 戒め/m, /^## 3\. 不変条件/m),
+		section("docs/design/handover-compose.md", /^### 戒め/m, /^## 3\. 不変条件/m),
 };
 
 const SYSTEM = `あなたは作曲者です。DAW の自動作曲機能（界隈曲の流派テンプレート）が作った曲を土台に、聴く価値のあるインスト曲を1曲仕上げます。
@@ -1294,7 +1294,7 @@ const main = async (): Promise<void> => {
 		.catch(() => undefined);
 	if (cmd !== "rebuild" && !health?.loaded)
 		throw new Error(
-			`Strata が応答しない（${STRATA_URL}）。Strata の PC で strata launch --preset LAN --no-tui で起動し、STRATA_URL を合わせる（docs/strata-compose.md）`,
+			`Strata が応答しない（${STRATA_URL}）。Strata の PC で strata launch --preset LAN --no-tui で起動し、STRATA_URL を合わせる（docs/guide/strata-compose.md）`,
 		);
 	if (cmd === "new") {
 		const title =

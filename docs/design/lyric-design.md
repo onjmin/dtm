@@ -302,7 +302,7 @@ note の界隈曲まとめ2本、fukuyuru-note、謎歌詞.com、UtaTen のレ�
 
 - 耳コピの歌詞・言い回しを、素材としてリポジトリやバンドルに入れる（[台帳](dataset-provenance.md)）。
 - 1曲だけに出る言い回しを規則にする（[§0 の基準](handover-compose.md)）。
-- UI の表に作者名を出す（文書の中で流派をたどるために書くのは既存の [kaiwai-lineages.md](kaiwai-lineages.md) と同じ扱い。§4 の慣習）。
+- UI の表に作者名を出す（文書の中で流派をたどるために書くのは既存の [kaiwai-lineages.md](../research/kaiwai-lineages.md) と同じ扱い。§4 の慣習）。
 
 ## 17. 報告体の語り手（追加 2026-10-03）
 

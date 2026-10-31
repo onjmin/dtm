@@ -1,7 +1,7 @@
 # Scripts Directory
 
 回帰テスト・曲の書き出しと棚・公開物のビルド補助だけを置く。一時的な測定は git 管理外の `scratch/` に使い捨てで書く。
-代理指標でコーパスへ寄せる測定・点検の道具は削除した（git 履歴にある。理由は [docs/handover-compose.md](../docs/handover-compose.md) §2）。
+代理指標でコーパスへ寄せる測定・点検の道具は削除した（git 履歴にある。理由は [docs/design/handover-compose.md](../docs/design/handover-compose.md) §2）。
 
 耳コピ由来のデータ（`src/compose/compose-phrases.ts`・`compose-section-bank.ts`・`compose-skeletons.ts`）は git にもバンドルにも入れない。
 `scripts/corpus/skeleton-data.ts` が手元にあれば読み、無ければ該当の検査は skip する。
@@ -21,7 +21,7 @@
 | ファイル名 | 役割 | コマンド例 |
 | :--- | :--- | :--- |
 | `export-samples.ts` | 生成曲を .mid（伴奏主体モードは .mml）で書き出す。`--app-seed` と `--compose` でアプリの曲を再現 | `npx tsx scripts/compose/export-samples.ts --app-seed 3842857959 --compose style:fb.v1:any:0` |
-| `strata-compose.ts` | Strata（ローカル LLM）に界隈曲を作らせて棚へ置く。手順は [docs/strata-compose.md](../docs/strata-compose.md) | `npx tsx scripts/compose/strata-compose.ts new` |
+| `strata-compose.ts` | Strata（ローカル LLM）に界隈曲を作らせて棚へ置く。手順は [docs/guide/strata-compose.md](../docs/guide/strata-compose.md) | `npx tsx scripts/compose/strata-compose.ts new` |
 | `ore-names.ts` | インスト曲の名前（岩石・鉱石の英名）。`song-shelf.ts`・`strata-compose.ts` が使う | — |
 
 ## misc/ — 棚・共有 URL・リリース補助
@@ -47,7 +47,7 @@
 
 ## 曲を作って残す手順
 
-先に [docs/handover-compose.md](../docs/handover-compose.md) の §0・§2 と流派の実測 [docs/kaiwai-lineages.md](../docs/kaiwai-lineages.md)（ゲームBGMは game-bgm-toby-fox.md）を読む。
+先に [docs/design/handover-compose.md](../docs/design/handover-compose.md) の §0・§2 と流派の実測 [docs/research/kaiwai-lineages.md](../docs/research/kaiwai-lineages.md)（ゲームBGMは [docs/research/game-bgm-toby-fox.md](../docs/research/game-bgm-toby-fox.md)）を読む。
 フォルダは `tmp/songs/<日本時間> - <モデル名> - <タイトル>/`。手順は1段ずつ書きためる。
 
 1. `song-shelf.ts new [--title <タイトル>] [--model <モデル名>]` — フォルダと `meta.json`・`steps.md`・`notes.md` のひな形を作る。
