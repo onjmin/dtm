@@ -1,17 +1,18 @@
 /**
- * 手元で起動したエンジン（VOICEVOX・NEUTRINO）で歌う声の扱い。
+ * 手元で起動したエンジン（VOICEVOX・NEUTRINO・OpenUtau）で歌う声の扱い。
  *
- * どちらも利用者の PC の 127.0.0.1 で動くエンジンを呼ぶので、公開サイトの聴き手には
+ * どれも利用者の PC の 127.0.0.1 で動くエンジンを呼ぶので、公開サイトの聴き手には
  * 鳴らせない。音源の選択肢には、dtm のページを手元（localhost・127.0.0.1・file:）で
  * 開いたときだけ出す。MML に書かれた値は読み込み・書き出しで保つ（消さない）。
  */
 
 import { isNeutrinoModel } from "./neutrino-sing";
+import { isOpenUtauModel } from "./openutau-sing";
 import { isVoicevoxModel } from "./voicevox-sing";
 
-/** 手元のエンジンで歌うモデル名か（VOICEVOX・NEUTRINO）。 */
+/** 手元のエンジンで歌うモデル名か（VOICEVOX・NEUTRINO・OpenUtau）。 */
 export const isLocalEngineModel = (model: string): boolean =>
-	isVoicevoxModel(model) || isNeutrinoModel(model);
+	isVoicevoxModel(model) || isNeutrinoModel(model) || isOpenUtauModel(model);
 
 /** dtm のページを手元で開いているか（localhost・127.x・::1・file:）。 */
 export const isLocalPage = (

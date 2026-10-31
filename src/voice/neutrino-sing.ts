@@ -328,6 +328,11 @@ export type NeutrinoRenderer = {
 export const createNeutrinoRenderer = (
 	ctx: BaseAudioContext,
 	baseUrl: string = NEUTRINO_DEFAULT_URL,
+	/** 警告に出すエンジン名と起動するスクリプト（OpenUtau の中継サーバーでも同じ係を使う）。 */
+	engine: { label: string; script: string } = {
+		label: "NEUTRINO",
+		script: "scripts/misc/neutrino-server.ts",
+	},
 ): NeutrinoRenderer => {
 	const cache = new Map<string, Promise<AudioBuffer | null>>();
 	let queue: Promise<unknown> = Promise.resolve();
@@ -345,7 +350,7 @@ export const createNeutrinoRenderer = (
 				if (!warned) {
 					warned = true;
 					console.warn(
-						`[dtm] NEUTRINO（${baseUrl}）で歌えませんでした。scripts/misc/neutrino-server.ts を起動し、歌声ライブラリ（${model}）を入れているか確かめてください`,
+						`[dtm] ${engine.label}（${baseUrl}）で歌えませんでした。${engine.script} を起動し、歌い手（${model}）を入れているか確かめてください`,
 						err,
 					);
 				}

@@ -38,6 +38,7 @@ import type {
 	PlayNoteEvent,
 } from "../types";
 import { DEFAULT_GATE, DEFAULT_PAN, DEFAULT_VOCAL_VOLUME } from "../types";
+import { isLocalEngineModel } from "./local-engines";
 import {
 	buildNeutrinoTrack,
 	createNeutrinoRenderer,
@@ -47,6 +48,11 @@ import {
 	type NeutrinoRenderer,
 	sliceAudioBuffer,
 } from "./neutrino-sing";
+import {
+	isOpenUtauModel,
+	OPENUTAU_DEFAULT_URL,
+	OPENUTAU_SINGERS,
+} from "./openutau-sing";
 import type { PitchSegment } from "./pitch-curve";
 import {
 	glideMsForSegments,
@@ -1531,6 +1537,9 @@ export const KOE_VOICEBANK_NAMES: Record<string, string> = lookupTable({
 	...Object.fromEntries(
 		Object.entries(NEUTRINO_SINGERS).map(([k, v]) => [k, v.name]),
 	),
+	...Object.fromEntries(
+		Object.entries(OPENUTAU_SINGERS).map(([k, v]) => [k, v.name]),
+	),
 });
 
 /**
@@ -1558,6 +1567,10 @@ export const VOICE_MODEL_CATEGORIES: ReadonlyArray<{
 	{
 		label: "NEUTRINO（要サーバー起動）",
 		models: Object.keys(NEUTRINO_SINGERS),
+	},
+	{
+		label: "OpenUtau・DiffSinger（要サーバー起動）",
+		models: Object.keys(OPENUTAU_SINGERS),
 	},
 ];
 
@@ -1642,6 +1655,9 @@ export const KOE_VOICEBANK_TERMS: Record<string, string> = lookupTable({
 	),
 	...Object.fromEntries(
 		Object.keys(NEUTRINO_SINGERS).map((k) => [k, NEUTRINO_TERMS_URL]),
+	),
+	...Object.fromEntries(
+		Object.entries(OPENUTAU_SINGERS).map(([k, v]) => [k, v.terms]),
 	),
 });
 
@@ -4076,6 +4092,11 @@ export type SingingVoicesOptions = {
 	 * 省略時は `http://127.0.0.1:50022`（`scripts/misc/neutrino-server.ts` の既定）。
 	 */
 	neutrinoUrl?: string;
+	/**
+	 * OpenUtau を呼ぶ手元のサーバーのURL（`ou_` で始まるモデルで歌うときに呼ぶ）。
+	 * 省略時は `http://127.0.0.1:50023`（`scripts/misc/openutau-server.ts` の既定）。
+	 */
+	openutauUrl?: string;
 };
 
 /** VOICEVOX の話し声の WAV の頭の無音（audio_query の prePhonemeLength の既定）。 */
@@ -4365,6 +4386,15 @@ export const createSingingVoices = (
 	};
 	// ── NEUTRINO（`nt_` モデル）: トラック全体を1回で歌わせ、フレーズの範囲に切って並べる ──
 	let neutrino: NeutrinoRenderer | null = null;
+	let openutau: NeutrinoRenderer | null = null;
+	const getOpenUtau = (): NeutrinoRenderer => {
+		openutau ??= createNeutrinoRenderer(
+			ctx,
+			options.openutauUrl ?? OPENUTAU_DEFAULT_URL,
+			{ label: "OpenUtau", script: "scripts/misc/openutau-server.ts" },
+		);
+		return openutau;
+	};
 	const getNeutrino = (): NeutrinoRenderer => {
 		neutrino ??= createNeutrinoRenderer(ctx, options.neutrinoUrl);
 		return neutrino;
@@ -4411,12 +4441,15 @@ export const createSingingVoices = (
 				}));
 			return [...sung, ...spoken].sort((a, b) => a.startSec - b.startSec);
 		}
-		if (isNeutrinoModel(model)) {
+		// NEUTRINO と OpenUtau は同じ MusicXML を送り、トラック全体を1回で合成する。
+		if (isNeutrinoModel(model) || isOpenUtauModel(model)) {
 			const built = buildNeutrinoTrack(track.notes);
 			const { score } = built;
 			if (!score) return [];
-			const dir = NEUTRINO_SINGERS[model].dir;
-			const whole = memo(() => getNeutrino().render(dir, score));
+			const [dir, renderer] = isNeutrinoModel(model)
+				? [NEUTRINO_SINGERS[model].dir, getNeutrino()]
+				: [OPENUTAU_SINGERS[model].dir, getOpenUtau()];
+			const whole = memo(() => renderer.render(dir, score));
 			return built.phrases.map((p) => ({
 				startSec: p.startSec,
 				leadSec: p.leadSec,
@@ -4437,8 +4470,7 @@ export const createSingingVoices = (
 		}
 		return [];
 	};
-	const isExternalModel = (model: string): boolean =>
-		isVoicevoxModel(model) || isNeutrinoModel(model);
+	const isExternalModel = isLocalEngineModel;
 
 	/**
 	 * 曲中の全フレーズの合成を頼み、`withinSec` 秒までに始まるフレーズの出来上がりを待つ。
