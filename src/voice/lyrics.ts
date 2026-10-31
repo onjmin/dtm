@@ -4078,6 +4078,9 @@ export type SingingVoicesOptions = {
 	neutrinoUrl?: string;
 };
 
+/** VOICEVOX の話し声の WAV の頭の無音（audio_query の prePhonemeLength の既定）。 */
+const VOICEVOX_TALK_LEAD_SEC = 0.1;
+
 /** VOICEVOX の歌を、再生ヘッドからこの秒数先までに置く（それより先は近づくまで待つ）。 */
 const VOICEVOX_SCHEDULE_AHEAD_SEC = 8;
 
@@ -4387,13 +4390,26 @@ export const createSingingVoices = (
 	const externalPhrasesOf = (track: StreamVoiceTrack): ExternalPhrase[] => {
 		const model = track.model.toLowerCase();
 		if (isVoicevoxModel(model)) {
-			const style = VOICEVOX_SINGERS[model].style;
-			return buildVoicevoxPhrases(track.notes).map((p) => ({
-				startSec: p.startSec,
-				leadSec: p.leadSec,
-				notes: p.notes,
-				buffer: () => getVoicevox().render(style, p.score),
-			}));
+			const { style, talk } = VOICEVOX_SINGERS[model];
+			const sung: ExternalPhrase[] = buildVoicevoxPhrases(track.notes).map(
+				(p) => ({
+					startSec: p.startSec,
+					leadSec: p.leadSec,
+					notes: p.notes,
+					buffer: () => getVoicevox().render(style, p.score),
+				}),
+			);
+			// 語り（「…」）は同じキャラの話し声で読み上げ、そのノートの頭から鳴らす。
+			// 話し声の WAV は頭に無音（audio_query の prePhonemeLength、既定 0.1 秒）が付く。
+			const spoken: ExternalPhrase[] = track.notes
+				.filter((n) => n.syllable.kind === "speak" && n.syllable.text)
+				.map((n) => ({
+					startSec: n.startSec,
+					leadSec: VOICEVOX_TALK_LEAD_SEC,
+					notes: [n],
+					buffer: () => getVoicevox().speak(talk, n.syllable.text ?? ""),
+				}));
+			return [...sung, ...spoken].sort((a, b) => a.startSec - b.startSec);
 		}
 		if (isNeutrinoModel(model)) {
 			const built = buildNeutrinoTrack(track.notes);

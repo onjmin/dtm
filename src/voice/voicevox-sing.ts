@@ -167,27 +167,32 @@ export const timedToScore = (
  * DAW の歌詞トラックで選べる VOICEVOX の歌い手（モデル名 → 歌唱スタイル）。
  * モデル名は `vv_` で始める（koe 音源のキーワードと混ざらないように）。
  * スタイルIDは VOICEVOX 側で固定（0.26.0 の `/singers` で確かめた）。
+ * `talk` は語り（`「…」`）を読み上げる同じキャラの話し声のスタイル（`/speakers` のノーマル）。
  */
 export const VOICEVOX_SINGERS: Record<
 	string,
-	{ style: number; name: string; terms: string }
+	{ style: number; talk: number; name: string; terms: string }
 > = {
 	vv_zundamon: {
+		talk: 3,
 		style: 3003,
 		name: "VOICEVOX:ずんだもん",
 		terms: "https://voicevox.hiroshiba.jp/product/zundamon/",
 	},
 	vv_metan: {
+		talk: 2,
 		style: 3002,
 		name: "VOICEVOX:四国めたん",
 		terms: "https://voicevox.hiroshiba.jp/product/shikoku_metan/",
 	},
 	vv_tsumugi: {
+		talk: 8,
 		style: 3008,
 		name: "VOICEVOX:春日部つむぎ",
 		terms: "https://voicevox.hiroshiba.jp/product/kasukabe_tsumugi/",
 	},
 	vv_ritsu: {
+		talk: 9,
 		style: 3009,
 		name: "VOICEVOX:波音リツ",
 		terms: "https://voicevox.hiroshiba.jp/product/namine_ritsu/",
@@ -396,6 +401,36 @@ export const synthesizeVoicevoxSong = async (
 	return wavRes.arrayBuffer();
 };
 
+/**
+ * 語り（`「…」`）の本文を VOICEVOX の話し声で読み上げ、WAV のバイト列を返す。
+ * 本文は漢字まじりのままエンジンに渡す（読みとアクセントはエンジンが決める）。
+ */
+export const synthesizeVoicevoxTalk = async (
+	text: string,
+	options: { speaker: number; baseUrl?: string },
+): Promise<ArrayBuffer> => {
+	const { speaker, baseUrl = VOICEVOX_DEFAULT_URL } = options;
+	const queryRes = await fetch(
+		`${baseUrl}/audio_query?speaker=${speaker}&text=${encodeURIComponent(text)}`,
+		{ method: "POST" },
+	);
+	if (!queryRes.ok)
+		throw new Error(
+			`VOICEVOX /audio_query: ${queryRes.status} ${await queryRes.text()}`,
+		);
+	const query = await queryRes.json();
+	const wavRes = await fetch(`${baseUrl}/synthesis?speaker=${speaker}`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(query),
+	});
+	if (!wavRes.ok)
+		throw new Error(
+			`VOICEVOX /synthesis: ${wavRes.status} ${await wavRes.text()}`,
+		);
+	return wavRes.arrayBuffer();
+};
+
 /** {@link createVoicevoxRenderer} の戻り値。 */
 export type VoicevoxRenderer = {
 	/**
@@ -404,6 +439,8 @@ export type VoicevoxRenderer = {
 	 * 失敗したら null（エンジンが起動していない・歌えない歌詞など）。
 	 */
 	render: (style: number, score: VoicevoxScore) => Promise<AudioBuffer | null>;
+	/** 語りを話し声で読み上げて AudioBuffer にする（同じ話者・同じ本文は1回だけ）。 */
+	speak: (speaker: number, text: string) => Promise<AudioBuffer | null>;
 };
 
 /** ブラウザから VOICEVOX エンジンを呼んで歌わせる係。 */
@@ -414,13 +451,15 @@ export const createVoicevoxRenderer = (
 	const cache = new Map<string, Promise<AudioBuffer | null>>();
 	let queue: Promise<unknown> = Promise.resolve();
 	let warned = false;
-	const render: VoicevoxRenderer["render"] = (style, score) => {
-		const key = `${style}|${JSON.stringify(score.notes)}`;
+	const enqueue = (
+		key: string,
+		synth: () => Promise<ArrayBuffer>,
+	): Promise<AudioBuffer | null> => {
 		const hit = cache.get(key);
 		if (hit) return hit;
 		const job = queue
 			.catch(() => {})
-			.then(() => synthesizeVoicevoxSong(score, { singer: style, baseUrl }))
+			.then(synth)
 			.then((wav) => ctx.decodeAudioData(wav))
 			.catch((err) => {
 				// エンジン未起動なら全フレーズが落ちるので、警告は1回だけ出す。
@@ -438,5 +477,13 @@ export const createVoicevoxRenderer = (
 		cache.set(key, job);
 		return job;
 	};
-	return { render };
+	const render: VoicevoxRenderer["render"] = (style, score) =>
+		enqueue(`${style}|${JSON.stringify(score.notes)}`, () =>
+			synthesizeVoicevoxSong(score, { singer: style, baseUrl }),
+		);
+	const speak: VoicevoxRenderer["speak"] = (speaker, text) =>
+		enqueue(`talk|${speaker}|${text}`, () =>
+			synthesizeVoicevoxTalk(text, { speaker, baseUrl }),
+		);
+	return { render, speak };
 };
