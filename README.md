@@ -121,4 +121,9 @@ UST（UTAU）ファイルは「MIDI / UST / MML 入力」から音符と歌詞�
 
 ## ライセンス
 
-[MIT](./LICENSE)
+[GNU Affero General Public License v3.0 以降（AGPL-3.0-or-later）](./LICENSE)
+
+Copyright (c) 2025 おんJ民
+
+v2.1.37 までに公開した版は MIT ライセンスのままです。それより後の版から AGPL-3.0 になります。
+改変した dtm をネットワーク越しに使わせる場合（Web サイトへの組み込みなど）は、利用者にその改変後のソースコードを提供する必要があります。
