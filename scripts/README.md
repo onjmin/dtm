@@ -36,7 +36,11 @@
 
 ## speech-melody/ — 台詞イントネーション作曲
 
-音MAD素材の台詞を16分格子へ伸縮・ピッチ補正し、手書きの伴奏に載せる（Python＋DAW での録音）。素材は `SPEECH_MATERIAL_DIR` で外から渡す。手順は [speech-melody/README.md](speech-melody/README.md)。
+音MAD素材の台詞を16分格子へ伸縮・ピッチ補正し、手書きの伴奏に載せる（Python＋DAW での録音）。素材は `SPEECH_MATERIAL_DIR` で外から渡す。手順は [speech-melody/README.md](speech-melody/README.md)、動画まで作る流れと緩急・物語性の決まりは同 §8、既存曲のカバーは同 §9。
+
+## otomad/ — 音MAD制作（曲と動画）
+
+台詞イントネーション作曲の作品の build・動画・測定・メモ。曲ごとの build が他の曲の build を部品として読む作業場。場所は `lib/paths.py`（`.env` の `SPEECH_MATERIAL_DIR`・`OTOMAD_WORK`）で決まる。別PCでの再開手順は [otomad/README.md](otomad/README.md)。
 
 ---
 

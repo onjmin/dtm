@@ -1,0 +1,8 @@
+# 音MAD制作（scripts/otomad）で speech-melody の requirements.txt に足すもの。Python 3.10 で確かめた。
+-r ../speech-melody/requirements.txt
+pillow==10.4.0
+matplotlib==3.10.6
+praat-parselmouth==0.4.7
+mido==1.3.3
+# analysis/ の文字起こし（nigo_mad_asr）だけが使う
+transformers
