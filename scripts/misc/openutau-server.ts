@@ -61,13 +61,35 @@ const listSingers = (): { dir: string; name: string }[] =>
 				existsSync(join(root, "Singers", d.name, "character.txt")),
 		)
 		.map((d) => {
-			const txt = readFileSync(
+			const bytes = readFileSync(
 				join(root, "Singers", d.name, "character.txt"),
-				"utf8",
 			);
+			// UTAU 由来の音源は Shift_JIS のことが多い。UTF-8 として読めなければ Shift_JIS で読む。
+			let txt: string;
+			try {
+				txt = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+			} catch {
+				txt = new TextDecoder("shift_jis").decode(bytes);
+			}
 			const name = /^name=(.*)$/m.exec(txt)?.[1]?.trim() || d.name;
 			return { dir: d.name, name };
 		});
+
+/**
+ * 歌い手の音素変換。歌い手の `character.yaml` に `default_phonemizer` があればそれ
+ * （ENUNU は ENUNU の、DiffSinger は日本語 DiffSinger の音素変換が要る）、無ければ起動時の値。
+ * 値は手元のファイルからだけ読み、型名として正しい形（英数・ドット・下線）だけ使う。
+ */
+const phonemizerOf = (model: string): string => {
+	const yaml = join(root, "Singers", model, "character.yaml");
+	if (existsSync(yaml)) {
+		const m = /^default_phonemizer:\s*([A-Za-z0-9_.]+)\s*$/m.exec(
+			readFileSync(yaml, "utf8"),
+		);
+		if (m) return m[1];
+	}
+	return phonemizer;
+};
 
 let seq = 0;
 
@@ -89,7 +111,7 @@ const sing = async (xml: string, model: string): Promise<Buffer> => {
 				"--singer",
 				model,
 				"--phonemizer",
-				phonemizer,
+				phonemizerOf(model),
 				"--onnx-runner",
 				onnxRunner,
 			],

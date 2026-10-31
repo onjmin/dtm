@@ -3,7 +3,7 @@
 MML を中間言語に用いた、モバイルファーストな DAW / ピアノロール打ち込みコンポーネント。
 楽器・ドラムに加え、UTAU 音源（[@onjmin/koe](https://www.npmjs.com/package/@onjmin/koe)）による歌声合成にも対応しています。
 手元で起動した [VOICEVOX](https://voicevox.hiroshiba.jp/) エンジン（既定 `http://127.0.0.1:50021`）の歌唱 API で歌わせることもできます（試作。歌詞トラックの音源に `vv_zundamon`・`vv_metan`・`vv_tsumugi`・`vv_ritsu` を選ぶ）。
-利用者が公式から入れた [NEUTRINO](https://studio-neutrino.com/) で歌わせることもできます（試作。中継サーバー `scripts/misc/neutrino-server.ts` を起動し、`nt_reina` などを選ぶ）。手元の OpenUtau（書き出しコマンドつきの版）を通して、DiffSinger の歌い手（`ou_ritsu_ds` など）でも歌わせられます（試作。`scripts/misc/openutau-server.ts`）。Sinsy（pysinsy）の声 `ss_f001` も同じ形で使えます（`scripts/misc/sinsy-server.ts`）。VOICEVOX・NEUTRINO・OpenUtau の声は、dtm のページを手元（localhost など）で開いたときだけ選べます。
+利用者が公式から入れた [NEUTRINO](https://studio-neutrino.com/) で歌わせることもできます（試作。中継サーバー `scripts/misc/neutrino-server.ts` を起動し、`nt_reina` などを選ぶ）。手元の OpenUtau（書き出しコマンドつきの版）を通して、DiffSinger・ENUNU の歌い手（`ou_ritsu_ds`・`ou_ritsu_enunu`）でも歌わせられます（試作。`scripts/misc/openutau-server.ts`）。Sinsy（pysinsy）の声 `ss_f001` も同じ形で使えます（`scripts/misc/sinsy-server.ts`）。VOICEVOX・NEUTRINO・OpenUtau の声は、dtm のページを手元（localhost など）で開いたときだけ選べます。
 
 ## デモ
 

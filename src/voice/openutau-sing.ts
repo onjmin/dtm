@@ -24,6 +24,11 @@ export const OPENUTAU_SINGERS: Record<
 		name: "DiffSinger:波音リツ",
 		terms: "https://www.canon-voice.com/kiyaku.html",
 	},
+	ou_ritsu_enunu: {
+		dir: "NamineRitsu_ENUNU",
+		name: "ENUNU:波音リツ",
+		terms: "https://www.canon-voice.com/kiyaku.html",
+	},
 };
 
 /** OpenUtau で歌うモデル名か。 */

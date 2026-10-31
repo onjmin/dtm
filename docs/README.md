@@ -27,7 +27,7 @@ GitHub Pages の公開物（typedoc と `demo/`）は CI が `docs/` を作り�
 - [neutrino-sing.md](guide/neutrino-sing.md) — NEUTRINO で歌わせる（試作。中継サーバーの起動と仕組み）
 - [external-soundfont.md](guide/external-soundfont.md) — 外部のサウンドフォント（.sf2）をファイルか URL で読んで鳴らす
 - [sinsy-sing.md](guide/sinsy-sing.md) — Sinsy で歌わせる（試作。WSL の pysinsy を中継サーバーで呼ぶ）
-- [openutau-sing.md](guide/openutau-sing.md) — OpenUtau（DiffSinger）で歌わせる（試作。CLI の組み立てと歌い手の下ごしらえ）
+- [openutau-sing.md](guide/openutau-sing.md) — OpenUtau（DiffSinger・ENUNU）で歌わせる（試作。CLI の組み立てと歌い手の下ごしらえ）
 
 ## research/
 
