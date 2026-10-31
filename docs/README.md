@@ -31,3 +31,4 @@ GitHub Pages の公開物（typedoc と `demo/`）は CI が `docs/` を作り�
 - [game-bgm-toby-fox.md](research/game-bgm-toby-fox.md) — ゲームBGM: Toby Fox の戦闘曲の実測（2026-10-17）
 - [transcription-eval.md](research/transcription-eval.md) — 自動採譜（耳コピ）の評価実験（2026-09-30）
 - [singing-engines.md](research/singing-engines.md) — 歌声エンジンの調べ物（VOICEVOX・AI-MGRoid、2026-10-31）
+- [neutrino-terms.md](research/neutrino-terms.md) — NEUTRINO の規約の解釈と、dtm から呼ぶときにやること・やらないこと（2026-10-31）
