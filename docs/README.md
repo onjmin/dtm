@@ -24,6 +24,7 @@ GitHub Pages の公開物（typedoc と `demo/`）は CI が `docs/` を作り�
 - [parseChord.md](guide/parseChord.md) — `parseChord` / `parseChords` の使い方
 - [strata-compose.md](guide/strata-compose.md) — Strata に界隈曲を作らせる手順
 - [voicevox-sing.md](guide/voicevox-sing.md) — VOICEVOX で歌わせる（試作）
+- [neutrino-sing.md](guide/neutrino-sing.md) — NEUTRINO で歌わせる（試作。中継サーバーの起動と仕組み）
 
 ## research/
 

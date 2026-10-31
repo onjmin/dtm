@@ -51,7 +51,7 @@ export type BuildVoicevoxScoreOptions = {
 };
 
 /** 楽譜の1音（秒で持ち、最後にフレームへ割る）。 */
-type TimedNote = {
+export type TimedNote = {
 	start: number;
 	end: number;
 	key: number | null;
@@ -131,7 +131,7 @@ export const buildVoicevoxScore = (
  * 秒で並べた音を楽譜へ割る。先頭に `leadFrames` の休符、末尾に `tailFrames` の休符を置き、
  * 音の間の隙間も休符で埋める。先頭の休符の終わりが `out[0].start` に当たる。
  */
-const timedToScore = (
+export const timedToScore = (
 	out: TimedNote[],
 	leadFrames: number,
 	tailFrames: number,

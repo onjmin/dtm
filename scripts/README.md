@@ -31,6 +31,7 @@
 | `song-shelf.ts` | 作った曲の棚（`tmp/songs/`）。一覧 `tmp/songs/index.html`（ひな形 `song-shelf.html`）。下の手順 | `npx tsx scripts/misc/song-shelf.ts new --title 終末カタストロフ` |
 | `mml-embed-url.ts` | .mml を公開デモの埋め込み URL と編集画面の URL にする（組み立ては `embed-url.ts`） | `npx tsx scripts/misc/mml-embed-url.ts tmp/a.mml --json tmp/urls.json` |
 | `voicevox-sing.ts` | 歌詞付き MML の1トラックを VOICEVOX の歌唱 API で歌わせ、歌声だけを WAV に書き出す（試作。伴奏は入らない）。VOICEVOX エンジンを先に起動しておく | `npx tsx scripts/misc/voicevox-sing.ts tmp/a.mml --track 0 --singer ずんだもん --out scratch/voicevox/sing.wav` |
+| `neutrino-server.ts` | 手元の NEUTRINO を dtm から呼ぶ中継サーバー（試作）。`nt_` の声で歌わせるときに起動しておく。[docs/guide/neutrino-sing.md](../docs/guide/neutrino-sing.md) | `npx tsx scripts/misc/neutrino-server.ts --neutrino C:/NEUTRINO` |
 | `inject-csp.ts` | 公開デモの HTML へ CSP の `<meta>` を差し込む。gh-pages.yml が呼ぶ | `pnpm exec tsx scripts/misc/inject-csp.ts docs/demo/*.html` |
 | `sync-version.ts` | `package.json` の版を `src/version.ts` 等へ写す（`pnpm version` が呼ぶ） | `pnpm patch` |
 | `downscale-assets.py` | アセット画像を縮小する | `python scripts/misc/downscale-assets.py` |

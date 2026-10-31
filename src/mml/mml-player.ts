@@ -52,6 +52,7 @@ import {
 } from "../types";
 import { icon } from "../ui/icons";
 import { injectStyles, showLoadingOverlay } from "../ui/styles";
+import { isLocalEngineModel } from "../voice/local-engines";
 import {
 	buildStreamVoiceNotes,
 	createSingingVoices,
@@ -66,8 +67,8 @@ import {
 	VOICE_IMAGE_KEY,
 	vocalVolumeToGain,
 } from "../voice/lyrics";
+import { neutrinoCharacterTerms } from "../voice/neutrino-sing";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "../voice/voice-images";
-import { isVoicevoxModel } from "../voice/voicevox-sing";
 import { MML_INFO_HTML } from "./mml-info";
 import { parseMML } from "./mml-parser";
 import { playerTrackVelocity } from "./mml-velocity";
@@ -1541,16 +1542,21 @@ export const mountMmlPlayer = (
 			const body = doc.createElement("div");
 			body.className = "dtm-consent-body";
 
-			let contentHTML = `<p style="margin: 0 0 8px 0; line-height: 1.4; font-weight: bold; color: var(--dtm-danger);">本データには UTAU / VOICEVOX の歌声音源が含まれています。<br>ご利用にあたっては、以下の音源利用規約への同意が必要です。</p>`;
+			let contentHTML = `<p style="margin: 0 0 8px 0; line-height: 1.4; font-weight: bold; color: var(--dtm-danger);">本データには UTAU / VOICEVOX / NEUTRINO の歌声音源が含まれています。<br>ご利用にあたっては、以下の音源利用規約への同意が必要です。</p>`;
 
 			for (const model of unagreed) {
 				const label = KOE_VOICEBANK_NAMES[model] || model;
 				const url = KOE_VOICEBANK_TERMS[model];
+				const extra = neutrinoCharacterTerms(model);
+				const extraHTML = extra
+					? `<span>と</span><a href="${extra.url}" target="_blank" rel="noopener noreferrer" style="color: var(--dtm-primary); text-decoration: underline;">${extra.label}</a>`
+					: "";
 				contentHTML += `
 					<div style="margin-bottom: 8px; padding: 6px 10px; background: var(--dtm-deep); border: 2px solid var(--c-black); box-shadow: 2px 2px 0 var(--c-black);">
 						<div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11px; font-weight: bold; color: var(--dtm-gold);">
 							<span>使用時には</span>
-							<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: var(--dtm-primary); text-decoration: underline;">${label}${isVoicevoxModel(model) ? "" : "UTAU音源"}</a>
+							<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: var(--dtm-primary); text-decoration: underline;">${label}${isLocalEngineModel(model) ? "" : "UTAU音源"}</a>
+							${extraHTML}
 							<span>の利用規約に従ってください</span>
 						</div>
 					</div>

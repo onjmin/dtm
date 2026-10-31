@@ -181,6 +181,7 @@ import {
 	unitsPerRow,
 } from "../types";
 import { DTM_VERSION } from "../version";
+import { isLocalEngineModel, isLocalPage } from "../voice/local-engines";
 import {
 	buildStreamVoiceNotes,
 	displayKana,
@@ -198,8 +199,12 @@ import {
 	VOICE_IMAGE_KEY,
 	vocalVolumeToGain,
 } from "../voice/lyrics";
+import {
+	NEUTRINO_SINGERS,
+	neutrinoCharacterTerms,
+} from "../voice/neutrino-sing";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "../voice/voice-images";
-import { isVoicevoxModel, VOICEVOX_SINGERS } from "../voice/voicevox-sing";
+import { VOICEVOX_SINGERS } from "../voice/voicevox-sing";
 import {
 	AUTO_ROLE_BASS_UNITS,
 	type AutoRoleStats,
@@ -1106,15 +1111,25 @@ const BASE_LYRIC_MODELS = [
 	"klatt",
 	...Object.keys(KOE_VOICEBANKS),
 	...Object.keys(VOICEVOX_SINGERS),
+	...Object.keys(NEUTRINO_SINGERS),
 ];
+
+/**
+ * 音源の選択肢に出す内蔵モデル。VOICEVOX・NEUTRINO は手元のエンジンを呼ぶので、
+ * dtm のページを手元で開いたときだけ出す（公開サイトの聴き手には鳴らせないため）。
+ */
+const selectableLyricModel = (m: string): boolean =>
+	!isLocalEngineModel(m) || isLocalPage();
 
 /**
  * 「歌入り作曲」でボーカル未選択のときに引く候補。内蔵の `klatt`（軽量ロボ声）に加えて
  * **UTAU由来の .koe 音源も1回目から引く**——毎回同じロボ声では曲の印象が変わらないため。
  * 既に別のモデルが選ばれているトラックでは差し替えない（前回この機能が当てた値のときだけ
- * 引き直す）。VOICEVOX はエンジンの起動が要るので引かない。
+ * 引き直す）。VOICEVOX・NEUTRINO はエンジンの起動が要るので引かない。
  */
-const COMPOSE_VOCAL_POOL = BASE_LYRIC_MODELS.filter((m) => !isVoicevoxModel(m));
+const COMPOSE_VOCAL_POOL = BASE_LYRIC_MODELS.filter(
+	(m) => !isLocalEngineModel(m),
+);
 
 /**
  * 「歌入り作曲」のボーカルを1つ引く。`exclude`（前回当てた値）とは違うものを返し、
@@ -4288,9 +4303,10 @@ export const mountDAW = (
         </div>
         <button class="dtm-btn dtm-btn--ghost" data-dtm="lyric-auto" title="このトラックに置いてある音符へ仮歌詞を当てる（和音のトラックは非対応）">歌詞を作る</button>
       </div>
-      <div class="dtm-row dtm-hidden" data-dtm="lyric-terms" style="font-size:10px;gap:4px;color:var(--dtm-warn)">
+      <div class="dtm-row dtm-hidden" data-dtm="lyric-terms" style="font-size:10px;gap:4px;flex-wrap:wrap;color:var(--dtm-warn)">
         <span>使用時には</span>
         <a data-dtm="lyric-terms-link" target="_blank" rel="noopener" style="color:var(--dtm-primary);text-decoration:underline"></a>
+        <span data-dtm="lyric-terms-extra" class="dtm-hidden">と<a data-dtm="lyric-terms-extra-link" target="_blank" rel="noopener" style="color:var(--dtm-primary);text-decoration:underline"></a></span>
         <span>の利用規約に従ってください</span>
       </div>
       <div class="dtm-row dtm-hidden" data-dtm="lyric-custom" style="flex-direction:column;align-items:stretch;gap:4px">
@@ -4509,6 +4525,12 @@ export const mountDAW = (
 			const lyricTermsLink = lyricDiv.querySelector(
 				'[data-dtm="lyric-terms-link"]',
 			) as HTMLAnchorElement;
+			const lyricTermsExtra = lyricDiv.querySelector(
+				'[data-dtm="lyric-terms-extra"]',
+			) as HTMLElement;
+			const lyricTermsExtraLink = lyricDiv.querySelector(
+				'[data-dtm="lyric-terms-extra-link"]',
+			) as HTMLAnchorElement;
 			const lyricCustom = lyricDiv.querySelector(
 				'[data-dtm="lyric-custom"]',
 			) as HTMLElement;
@@ -4545,7 +4567,12 @@ export const mountDAW = (
 
 			// カテゴリごとに optgroup を作成して追加。分類は lyrics.ts が持ち、
 			// そこに載っていない内蔵モデルは「その他」に出る（増やした日に消えないように）
-			for (const cat of groupVoiceModels(BASE_LYRIC_MODEL_LABELS)) {
+			const selectableLabels = Object.fromEntries(
+				Object.entries(BASE_LYRIC_MODEL_LABELS).filter(([m]) =>
+					selectableLyricModel(m),
+				),
+			);
+			for (const cat of groupVoiceModels(selectableLabels)) {
 				const group = document.createElement("optgroup");
 				group.label = cat.label;
 				for (const m of cat.models) {
@@ -4565,11 +4592,12 @@ export const mountDAW = (
 			// URL指定でカスタム音声を登録する入力エリアを開く選択肢
 			addOpt(customGroup, CUSTOM_VOCAL_ADD_VALUE, "カスタム音声を追加…");
 
-			// 上記どちらにも含まれない非標準モデル（往復維持用）
+			// 上記どちらにも含まれない非標準モデル・選択肢に出していない手元エンジンの声（往復維持用）
 			if (
 				active.lyricModel &&
-				!BASE_LYRIC_MODELS.includes(active.lyricModel) &&
-				!customVocalsMap.has(active.lyricModel)
+				!customVocalsMap.has(active.lyricModel) &&
+				(!BASE_LYRIC_MODELS.includes(active.lyricModel) ||
+					!selectableLyricModel(active.lyricModel))
 			) {
 				addOpt(
 					customGroup,
@@ -4619,10 +4647,17 @@ export const mountDAW = (
 					: undefined;
 				if (url) {
 					const label = lyricModelLabel(active.lyricModel, customVocalsMap);
-					lyricTermsLink.textContent = isVoicevoxModel(active.lyricModel)
+					lyricTermsLink.textContent = isLocalEngineModel(active.lyricModel)
 						? label
 						: `${label}UTAU音源`;
 					lyricTermsLink.href = url;
+					// NEUTRINO の規約より厳しい条件がキャラクター側にある声は、そちらも並べる
+					const extra = neutrinoCharacterTerms(active.lyricModel);
+					lyricTermsExtra.classList.toggle("dtm-hidden", !extra);
+					if (extra) {
+						lyricTermsExtraLink.textContent = extra.label;
+						lyricTermsExtraLink.href = extra.url;
+					}
 					lyricTerms.classList.remove("dtm-hidden");
 				} else {
 					lyricTerms.classList.add("dtm-hidden");
@@ -6746,7 +6781,8 @@ export const mountDAW = (
 			};
 			add("", "声：おまかせ（毎回かえる）");
 			for (const m of BASE_LYRIC_MODELS)
-				add(m, lyricModelLabel(m, customVocalsMap));
+				if (selectableLyricModel(m))
+					add(m, lyricModelLabel(m, customVocalsMap));
 			for (const key of customVocalsMap.keys())
 				add(key, lyricModelLabel(key, customVocalsMap));
 			sel.value = [...sel.options].some((o) => o.value === want) ? want : "";

@@ -7,7 +7,7 @@ koe（UTAU 音源をブラウザ内で合成）とは別の経路で、エンジ
 ## 使い方
 
 1. VOICEVOX エンジンを起動する（既定 `http://127.0.0.1:50021`）。手元では 0.26.0 の CPU 版を `tmp/voicevox/engine/` に置き、`run.exe` で動かしている（`tmp/` は git 管理外）。
-2. 歌詞トラックの音源から「VOICEVOX（要エンジン起動）」の中の声を選ぶ。MML では `@@0 vv_zundamon かし…` と書く。
+2. dtm のページを**手元で**開き（localhost・127.0.0.1・file:）、歌詞トラックの音源から「VOICEVOX（要エンジン起動）」の中の声を選ぶ。MML では `@@0 vv_zundamon かし…` と書く。公開サイトなど手元以外で開いたページでは選択肢に出ない（NEUTRINO と同じ。`src/voice/local-engines.ts`）。
 3. 歌声だけを WAV にするときは CLI を使う（伴奏は入らない）。
 
    ```bash

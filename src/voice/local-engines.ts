@@ -1,0 +1,27 @@
+/**
+ * 手元で起動したエンジン（VOICEVOX・NEUTRINO）で歌う声の扱い。
+ *
+ * どちらも利用者の PC の 127.0.0.1 で動くエンジンを呼ぶので、公開サイトの聴き手には
+ * 鳴らせない。音源の選択肢には、dtm のページを手元（localhost・127.0.0.1・file:）で
+ * 開いたときだけ出す。MML に書かれた値は読み込み・書き出しで保つ（消さない）。
+ */
+
+import { isNeutrinoModel } from "./neutrino-sing";
+import { isVoicevoxModel } from "./voicevox-sing";
+
+/** 手元のエンジンで歌うモデル名か（VOICEVOX・NEUTRINO）。 */
+export const isLocalEngineModel = (model: string): boolean =>
+	isVoicevoxModel(model) || isNeutrinoModel(model);
+
+/** dtm のページを手元で開いているか（localhost・127.x・::1・file:）。 */
+export const isLocalPage = (
+	loc: { protocol: string; hostname: string } | undefined = typeof location ===
+	"undefined"
+		? undefined
+		: location,
+): boolean => {
+	if (!loc) return false;
+	if (loc.protocol === "file:") return true;
+	const host = loc.hostname.replace(/^\[|\]$/g, "");
+	return host === "localhost" || host === "::1" || /^127\./.test(host);
+};

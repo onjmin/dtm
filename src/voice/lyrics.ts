@@ -38,6 +38,15 @@ import type {
 	PlayNoteEvent,
 } from "../types";
 import { DEFAULT_GATE, DEFAULT_PAN, DEFAULT_VOCAL_VOLUME } from "../types";
+import {
+	buildNeutrinoTrack,
+	createNeutrinoRenderer,
+	isNeutrinoModel,
+	NEUTRINO_SINGERS,
+	NEUTRINO_TERMS_URL,
+	type NeutrinoRenderer,
+	sliceAudioBuffer,
+} from "./neutrino-sing";
 import type { PitchSegment } from "./pitch-curve";
 import {
 	glideMsForSegments,
@@ -1519,6 +1528,9 @@ export const KOE_VOICEBANK_NAMES: Record<string, string> = lookupTable({
 	...Object.fromEntries(
 		Object.entries(VOICEVOX_SINGERS).map(([k, v]) => [k, v.name]),
 	),
+	...Object.fromEntries(
+		Object.entries(NEUTRINO_SINGERS).map(([k, v]) => [k, v.name]),
+	),
 });
 
 /**
@@ -1542,6 +1554,10 @@ export const VOICE_MODEL_CATEGORIES: ReadonlyArray<{
 	{
 		label: "VOICEVOX（要エンジン起動）",
 		models: Object.keys(VOICEVOX_SINGERS),
+	},
+	{
+		label: "NEUTRINO（要サーバー起動）",
+		models: Object.keys(NEUTRINO_SINGERS),
 	},
 ];
 
@@ -1623,6 +1639,9 @@ export const KOE_VOICEBANK_TERMS: Record<string, string> = lookupTable({
 	uta: "https://utaneuta.utau-synth.com/please.html",
 	...Object.fromEntries(
 		Object.entries(VOICEVOX_SINGERS).map(([k, v]) => [k, v.terms]),
+	),
+	...Object.fromEntries(
+		Object.keys(NEUTRINO_SINGERS).map((k) => [k, NEUTRINO_TERMS_URL]),
 	),
 });
 
@@ -4052,6 +4071,11 @@ export type SingingVoicesOptions = {
 	 * 省略時は `http://127.0.0.1:50021`（VOICEVOX を起動したPCのブラウザから使う想定）。
 	 */
 	voicevoxUrl?: string;
+	/**
+	 * NEUTRINO を呼ぶ手元のサーバーのURL（`nt_` で始まるモデルで歌うときに呼ぶ）。
+	 * 省略時は `http://127.0.0.1:50022`（`scripts/misc/neutrino-server.ts` の既定）。
+	 */
+	neutrinoUrl?: string;
 };
 
 /** VOICEVOX の歌を、再生ヘッドからこの秒数先までに置く（それより先は近づくまで待つ）。 */
@@ -4336,24 +4360,81 @@ export const createSingingVoices = (
 		voicevox ??= createVoicevoxRenderer(ctx, options.voicevoxUrl);
 		return voicevox;
 	};
+	// ── NEUTRINO（`nt_` モデル）: トラック全体を1回で歌わせ、フレーズの範囲に切って並べる ──
+	let neutrino: NeutrinoRenderer | null = null;
+	const getNeutrino = (): NeutrinoRenderer => {
+		neutrino ??= createNeutrinoRenderer(ctx, options.neutrinoUrl);
+		return neutrino;
+	};
 	const activeVoicevox = new Set<AudioBufferSourceNode>();
-	const voicevoxStyleOf = (track: StreamVoiceTrack): number =>
-		VOICEVOX_SINGERS[track.model.toLowerCase()].style;
+
+	/** 手元のエンジンで歌うフレーズ1つ。`buffer()` は何度呼んでも同じ合成を返す。 */
+	type ExternalPhrase = {
+		startSec: number;
+		leadSec: number;
+		notes: StreamVoiceNote[];
+		buffer: () => Promise<AudioBuffer | null>;
+	};
+	const memo = <T>(f: () => Promise<T>): (() => Promise<T>) => {
+		let p: Promise<T> | null = null;
+		return () => {
+			p ??= f();
+			return p;
+		};
+	};
+
+	/** VOICEVOX・NEUTRINO のトラックをフレーズに分ける（それ以外のモデルは空）。 */
+	const externalPhrasesOf = (track: StreamVoiceTrack): ExternalPhrase[] => {
+		const model = track.model.toLowerCase();
+		if (isVoicevoxModel(model)) {
+			const style = VOICEVOX_SINGERS[model].style;
+			return buildVoicevoxPhrases(track.notes).map((p) => ({
+				startSec: p.startSec,
+				leadSec: p.leadSec,
+				notes: p.notes,
+				buffer: () => getVoicevox().render(style, p.score),
+			}));
+		}
+		if (isNeutrinoModel(model)) {
+			const built = buildNeutrinoTrack(track.notes);
+			const { score } = built;
+			if (!score) return [];
+			const dir = NEUTRINO_SINGERS[model].dir;
+			const whole = memo(() => getNeutrino().render(dir, score));
+			return built.phrases.map((p) => ({
+				startSec: p.startSec,
+				leadSec: p.leadSec,
+				notes: p.notes,
+				buffer: memo(async () => {
+					const b = await whole();
+					return b
+						? sliceAudioBuffer(
+								ctx,
+								b,
+								built.originSec,
+								p.sliceStartSec,
+								p.sliceEndSec,
+							)
+						: null;
+				}),
+			}));
+		}
+		return [];
+	};
+	const isExternalModel = (model: string): boolean =>
+		isVoicevoxModel(model) || isNeutrinoModel(model);
 
 	/**
 	 * 曲中の全フレーズの合成を頼み、`withinSec` 秒までに始まるフレーズの出来上がりを待つ。
-	 * エンジンは頼んだ順に作るので、残りは再生中に追いつく。
+	 * エンジンは頼んだ順に作るので、残りは再生中に追いつく（NEUTRINO はトラック全体が
+	 * 1回で出来るので、最初のフレーズを待てば全部そろう）。
 	 */
-	const prefetchVoicevox = (
+	const prefetchExternal = (
 		track: StreamVoiceTrack,
 		withinSec: number,
 	): Promise<unknown> => {
-		const style = voicevoxStyleOf(track);
-		const phrases = buildVoicevoxPhrases(track.notes);
-		const jobs = phrases.map((p) => ({
-			p,
-			job: getVoicevox().render(style, p.score),
-		}));
+		const phrases = externalPhrasesOf(track);
+		const jobs = phrases.map((p) => ({ p, job: p.buffer() }));
 		return Promise.all(
 			jobs
 				.filter(({ p }, i) => i === 0 || p.startSec < withinSec)
@@ -4406,18 +4487,16 @@ export const createSingingVoices = (
 		return true;
 	};
 
-	/** VOICEVOX のトラック1本を再生する（{@link startStream} の `vv_` 版）。 */
-	const runVoicevoxTrack = async (
+	/** VOICEVOX・NEUTRINO のトラック1本を再生する（{@link startStream} の `vv_`・`nt_` 版）。 */
+	const runExternalTrack = async (
 		track: StreamVoiceTrack,
 		anchorTime: number,
 		session: number,
 		opts?: StreamPlaybackOptions,
 	): Promise<void> => {
-		const style = voicevoxStyleOf(track);
-		const phrases = buildVoicevoxPhrases(track.notes);
+		const phrases = externalPhrasesOf(track);
 		if (phrases.length === 0) return;
-		const renderer = getVoicevox();
-		for (const p of phrases) void renderer.render(style, p.score);
+		for (const p of phrases) void p.buffer();
 		const loopStartSec = opts?.loopStartSec ?? 0;
 		const loopLengthSec = opts?.loopLengthSec ?? 0;
 		let loopOffsetSec = 0;
@@ -4439,7 +4518,7 @@ export const createSingingVoices = (
 					await new Promise((resolve) => setTimeout(resolve, STREAM_POLL_MS));
 					if (session !== streamSession) return;
 				}
-				const buffer = await renderer.render(style, p.score);
+				const buffer = await p.buffer();
 				if (session !== streamSession) return;
 				if (!buffer || (opts?.isAudible && !opts.isAudible(track))) continue;
 				const at = anchorTime + startSec - p.leadSec;
@@ -4467,8 +4546,8 @@ export const createSingingVoices = (
 	) => {
 		await Promise.all(
 			tracks
-				.filter((t) => isVoicevoxModel(t.model))
-				.map((t) => prefetchVoicevox(t, STREAM_LOOKAHEAD_SEC)),
+				.filter((t) => isExternalModel(t.model))
+				.map((t) => prefetchExternal(t, STREAM_LOOKAHEAD_SEC)),
 		);
 		const tasks: {
 			model: VoiceModel;
@@ -4584,8 +4663,8 @@ export const createSingingVoices = (
 		// （旧実装は全トラックを1列に平坦化して直列 await していたため、ワーカーが
 		//  複数あっても常に1つしか動かず、同時発声でスループットが頭打ちだった。）
 		const runTrack = async (track: StreamVoiceTrack): Promise<void> => {
-			if (isVoicevoxModel(track.model))
-				return runVoicevoxTrack(track, anchorTime, session, opts);
+			if (isExternalModel(track.model))
+				return runExternalTrack(track, anchorTime, session, opts);
 			const model = loaded.get(track.model.toLowerCase());
 			if (!model) return;
 
