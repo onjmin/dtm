@@ -80,6 +80,13 @@ import type {
 	VoiceWorkerSpeakReq,
 } from "./voice-worker-types";
 import { packCompositeAlias, unpackCompositeAlias } from "./voice-worker-types";
+import {
+	buildVoicevoxPhrases,
+	createVoicevoxRenderer,
+	isVoicevoxModel,
+	VOICEVOX_SINGERS,
+	type VoicevoxRenderer,
+} from "./voicevox-sing";
 
 export { VIBRATO_MIN_SEC } from "../audio/vibrato";
 export type {
@@ -1509,6 +1516,9 @@ export const KOE_VOICEBANK_NAMES: Record<string, string> = lookupTable({
 	uc: "蓄音キリコ",
 	hibika_aru: "響化アル",
 	uta: "デフォ子",
+	...Object.fromEntries(
+		Object.entries(VOICEVOX_SINGERS).map(([k, v]) => [k, v.name]),
+	),
 });
 
 /**
@@ -1529,6 +1539,10 @@ export const VOICE_MODEL_CATEGORIES: ReadonlyArray<{
 	},
 	{ label: "一般", models: ["uta", "teto", "rei", "ruko_male", "ruko_female"] },
 	{ label: "クッキー☆", models: ["mgroid", "motroid", "nynroid"] },
+	{
+		label: "VOICEVOX（要エンジン起動）",
+		models: Object.keys(VOICEVOX_SINGERS),
+	},
 ];
 
 /** {@link groupVoiceModels} が返す 1 グループ（`<optgroup>` 1 つぶん）。 */
@@ -1607,6 +1621,9 @@ export const KOE_VOICEBANK_TERMS: Record<string, string> = lookupTable({
 	hibika_aru:
 		"https://hibikaaru.wixsite.com/aruofficial/%E5%88%A9%E7%94%A8%E8%A6%8F%E7%B4%84",
 	uta: "https://utaneuta.utau-synth.com/please.html",
+	...Object.fromEntries(
+		Object.entries(VOICEVOX_SINGERS).map(([k, v]) => [k, v.terms]),
+	),
 });
 
 /** ファイル名（日本語可）を encodeURIComponent して .koe のフルURLにする */
@@ -4030,7 +4047,15 @@ export type SingingVoicesOptions = {
 	 * 省略時は koe のデモと同じ GitHub Pages のホスト（{@link DEFAULT_TTS_BASE_URL}）。
 	 */
 	ttsBaseUrl?: string;
+	/**
+	 * VOICEVOX エンジンのURL（`vv_` で始まるモデルで歌うときに呼ぶ）。
+	 * 省略時は `http://127.0.0.1:50021`（VOICEVOX を起動したPCのブラウザから使う想定）。
+	 */
+	voicevoxUrl?: string;
 };
+
+/** VOICEVOX の歌を、再生ヘッドからこの秒数先までに置く（それより先は近づくまで待つ）。 */
+const VOICEVOX_SCHEDULE_AHEAD_SEC = 8;
 
 /** 内蔵フォルマント合成のモデル名（koe音源が見つからないときのフォールバック先） */
 const FALLBACK_MODEL = "klatt";
@@ -4305,11 +4330,146 @@ export const createSingingVoices = (
 		}
 	};
 
+	// ── VOICEVOX（`vv_` モデル）: フレーズ単位でエンジンに歌わせ、出来た音声を並べる ──
+	let voicevox: VoicevoxRenderer | null = null;
+	const getVoicevox = (): VoicevoxRenderer => {
+		voicevox ??= createVoicevoxRenderer(ctx, options.voicevoxUrl);
+		return voicevox;
+	};
+	const activeVoicevox = new Set<AudioBufferSourceNode>();
+	const voicevoxStyleOf = (track: StreamVoiceTrack): number =>
+		VOICEVOX_SINGERS[track.model.toLowerCase()].style;
+
+	/**
+	 * 曲中の全フレーズの合成を頼み、`withinSec` 秒までに始まるフレーズの出来上がりを待つ。
+	 * エンジンは頼んだ順に作るので、残りは再生中に追いつく。
+	 */
+	const prefetchVoicevox = (
+		track: StreamVoiceTrack,
+		withinSec: number,
+	): Promise<unknown> => {
+		const style = voicevoxStyleOf(track);
+		const phrases = buildVoicevoxPhrases(track.notes);
+		const jobs = phrases.map((p) => ({
+			p,
+			job: getVoicevox().render(style, p.score),
+		}));
+		return Promise.all(
+			jobs
+				.filter(({ p }, i) => i === 0 || p.startSec < withinSec)
+				.map((j) => j.job),
+		);
+	};
+
+	/** 合成したフレーズ1つを置く。もう始まっている（シーク・合成待ち）なら途中から鳴らす。 */
+	const scheduleVoicevoxPhrase = (
+		buffer: AudioBuffer,
+		at: number,
+		track: StreamVoiceTrack,
+	): boolean => {
+		const now = ctx.currentTime + 0.02;
+		const offset = Math.max(0, now - at);
+		if (offset >= buffer.duration) return false;
+		const dest = options.getTrackDestination?.(track.id ?? "");
+		const peak = Math.max(0.0001, track.volume);
+		const src = ctx.createBufferSource();
+		src.buffer = buffer;
+		const gain = ctx.createGain();
+		gain.gain.value = dest ? peak * masterVolumeScalar : peak;
+		src.connect(gain);
+		const nodes: AudioNode[] = [src, gain];
+		let out: AudioNode = gain;
+		if (typeof ctx.createStereoPanner === "function") {
+			const panner = ctx.createStereoPanner();
+			panner.pan.value = Math.max(-1, Math.min(1, track.pan));
+			gain.connect(panner);
+			out = panner;
+			nodes.push(panner);
+		}
+		out.connect(dest ?? masterGain);
+		for (const [bus, amount] of [
+			[options.reverbBus, track.reverbSend],
+			[options.delayBus, track.delaySend],
+		] as const) {
+			if (!bus || !amount) continue;
+			const send = ctx.createGain();
+			send.gain.value = amount;
+			out.connect(send).connect(bus);
+			nodes.push(send);
+		}
+		src.start(Math.max(at, now), offset);
+		activeVoicevox.add(src);
+		src.onended = () => {
+			activeVoicevox.delete(src);
+			for (const n of nodes) n.disconnect();
+		};
+		return true;
+	};
+
+	/** VOICEVOX のトラック1本を再生する（{@link startStream} の `vv_` 版）。 */
+	const runVoicevoxTrack = async (
+		track: StreamVoiceTrack,
+		anchorTime: number,
+		session: number,
+		opts?: StreamPlaybackOptions,
+	): Promise<void> => {
+		const style = voicevoxStyleOf(track);
+		const phrases = buildVoicevoxPhrases(track.notes);
+		if (phrases.length === 0) return;
+		const renderer = getVoicevox();
+		for (const p of phrases) void renderer.render(style, p.score);
+		const loopStartSec = opts?.loopStartSec ?? 0;
+		const loopLengthSec = opts?.loopLengthSec ?? 0;
+		let loopOffsetSec = 0;
+		let pass = 0;
+		do {
+			for (const p of phrases) {
+				if (session !== streamSession) return;
+				if (pass > 0 && p.startSec < loopStartSec - 0.0001) continue;
+				if (
+					loopLengthSec > 0 &&
+					p.startSec >= loopStartSec + loopLengthSec - 0.0001
+				)
+					continue;
+				const startSec = p.startSec + loopOffsetSec;
+				while (
+					startSec - (ctx.currentTime - anchorTime) >
+					VOICEVOX_SCHEDULE_AHEAD_SEC
+				) {
+					await new Promise((resolve) => setTimeout(resolve, STREAM_POLL_MS));
+					if (session !== streamSession) return;
+				}
+				const buffer = await renderer.render(style, p.score);
+				if (session !== streamSession) return;
+				if (!buffer || (opts?.isAudible && !opts.isAudible(track))) continue;
+				const at = anchorTime + startSec - p.leadSec;
+				if (!scheduleVoicevoxPhrase(buffer, at, track)) {
+					opts?.onLateSkip?.(p.notes[0], ctx.currentTime - at);
+					continue;
+				}
+				for (const note of p.notes)
+					opts?.onScheduled?.(
+						track,
+						note,
+						anchorTime + note.startSec + loopOffsetSec,
+					);
+			}
+			if (loopLengthSec <= 0) break;
+			loopOffsetSec += loopLengthSec;
+			pass++;
+		} while (session === streamSession);
+	};
+
 	const warm: SingingVoices["warm"] = async (
 		tracks,
 		count = PREWARM_NOTES,
 		onProgress,
 	) => {
+		await Promise.all(
+			tracks
+				.filter((t) => isVoicevoxModel(t.model))
+				.map((t) => prefetchVoicevox(t, STREAM_LOOKAHEAD_SEC)),
+		);
 		const tasks: {
 			model: VoiceModel;
 			note: StreamVoiceNote;
@@ -4424,6 +4584,8 @@ export const createSingingVoices = (
 		// （旧実装は全トラックを1列に平坦化して直列 await していたため、ワーカーが
 		//  複数あっても常に1つしか動かず、同時発声でスループットが頭打ちだった。）
 		const runTrack = async (track: StreamVoiceTrack): Promise<void> => {
+			if (isVoicevoxModel(track.model))
+				return runVoicevoxTrack(track, anchorTime, session, opts);
 			const model = loaded.get(track.model.toLowerCase());
 			if (!model) return;
 
@@ -4709,6 +4871,12 @@ export const createSingingVoices = (
 	const stopStream: SingingVoices["stopStream"] = () => {
 		streamSession++; // 進行中の合成ループをキャンセル
 		for (const v of loaded.values()) v.stopAll?.();
+		for (const src of activeVoicevox) {
+			try {
+				src.stop();
+			} catch {}
+		}
+		activeVoicevox.clear();
 		for (const src of activeBreaths) {
 			try {
 				src.stop();

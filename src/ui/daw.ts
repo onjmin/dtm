@@ -199,6 +199,7 @@ import {
 	vocalVolumeToGain,
 } from "../voice/lyrics";
 import { FALLBACK_VOCAL_ICON, VOICE_IMAGES } from "../voice/voice-images";
+import { isVoicevoxModel, VOICEVOX_SINGERS } from "../voice/voicevox-sing";
 import {
 	AUTO_ROLE_BASS_UNITS,
 	type AutoRoleStats,
@@ -1101,15 +1102,19 @@ const DEFAULT_TRACKS = TRACKS_SIMPLE;
  * 内蔵モデルの静的リスト（klatt + koe音源）。
  * カスタムボーカルは mountDAW スコープ内で動的に追加する。
  */
-const BASE_LYRIC_MODELS = ["klatt", ...Object.keys(KOE_VOICEBANKS)];
+const BASE_LYRIC_MODELS = [
+	"klatt",
+	...Object.keys(KOE_VOICEBANKS),
+	...Object.keys(VOICEVOX_SINGERS),
+];
 
 /**
  * 「歌入り作曲」でボーカル未選択のときに引く候補。内蔵の `klatt`（軽量ロボ声）に加えて
  * **UTAU由来の .koe 音源も1回目から引く**——毎回同じロボ声では曲の印象が変わらないため。
  * 既に別のモデルが選ばれているトラックでは差し替えない（前回この機能が当てた値のときだけ
- * 引き直す）。
+ * 引き直す）。VOICEVOX はエンジンの起動が要るので引かない。
  */
-const COMPOSE_VOCAL_POOL = BASE_LYRIC_MODELS;
+const COMPOSE_VOCAL_POOL = BASE_LYRIC_MODELS.filter((m) => !isVoicevoxModel(m));
 
 /**
  * 「歌入り作曲」のボーカルを1つ引く。`exclude`（前回当てた値）とは違うものを返し、
@@ -4614,7 +4619,9 @@ export const mountDAW = (
 					: undefined;
 				if (url) {
 					const label = lyricModelLabel(active.lyricModel, customVocalsMap);
-					lyricTermsLink.textContent = `${label}UTAU音源`;
+					lyricTermsLink.textContent = isVoicevoxModel(active.lyricModel)
+						? label
+						: `${label}UTAU音源`;
 					lyricTermsLink.href = url;
 					lyricTerms.classList.remove("dtm-hidden");
 				} else {
