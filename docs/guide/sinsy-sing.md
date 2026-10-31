@@ -13,10 +13,10 @@ pysinsy には Windows 用の組み立て済みの配布が無く、ソースか
    ```bash
    python3 -m venv ~/dtm-sinsy
    ~/dtm-sinsy/bin/pip install cmake cython numpy "setuptools<81"
-   ~/dtm-sinsy/bin/pip install pysinsy
+   ~/dtm-sinsy/bin/pip install pysinsy pyworld
    ```
 
-   `setuptools<81` は、pysinsy 0.0.5 が読む `pkg_resources` のため。
+   `setuptools<81` は、pysinsy 0.0.5 が読む `pkg_resources` のため。`pyworld` は音程を楽譜どおりに直すため（下記）。
 2. Windows 側で中継サーバーを起動する。`--python` は WSL の中のフルパス（`~` は使えない）。
 
    ```bash
@@ -30,9 +30,12 @@ pysinsy には Windows 用の組み立て済みの配布が無く、ソースか
 | :--- | :--- | :--- |
 | `ss_f001` | NIT SONG070 F001（pysinsy 付属） | CC BY 3.0（名古屋工業大学）。公開するときは出典を書く |
 
-合成は `scripts/misc/sinsy_synth.py`（`pysinsy.synthesize` → 16bit の WAV）。中継サーバーの口と安全のための決まりは `scripts/misc/local-engine-server.ts`（NEUTRINO・OpenUtau と共通）。
+合成は `scripts/misc/sinsy_synth.py`（`pysinsy.synthesize` → 16bit の WAV）。
+
+**音程の補正**: Sinsy の声のモデル（HMM）は高さの動きを自分で作るので、楽譜から外れやすい（2026-11-01、海鬼月の主旋律で「音痴」と言われた）。pyworld があれば、出てきた歌声を WORLD で分解し、声の出ている所の高さを楽譜の音に置き換えて組み立て直す（声色はそのまま、音の変わり目は 30ms でつなぐ）。`--no-tune` か pyworld が無いときは補正しない。補正すると合成の時間は数倍になる（海鬼月の主旋律で約8秒 → 約58秒）。中継サーバーの口と安全のための決まりは `scripts/misc/local-engine-server.ts`（NEUTRINO・OpenUtau と共通）。
 
 ## 確かめたこと（2026-10-31、WSL の Ubuntu・Python 3.12・pysinsy 0.0.5）
 
-- dtm が書いた MusicXML（どんぐりころころの頭8音）を 0.35 秒で歌わせた。音の高さは楽譜から ±1 半音ほどずれる音がある（声のモデルの癖と、測り方の誤差）。
+- dtm が書いた MusicXML（どんぐりころころの頭8音）を 0.35 秒で歌わせた。補正なしでは楽譜から ±1 半音ほどずれる音があった。
+- 海鬼月の主旋律（頭の44秒、約90音）を DAW で鳴らして測ると、補正後は全部の音が楽譜と ±50 セント以内、ずれの中央値 4 セント（元の UTAU 音源と同じ）。
 - デモの DAW（ヘッドレスの Edge）で `ss_f001` のトラックを再生し、2つのフレーズが伴奏と同じアンカーから計算どおりの時刻に置かれた。
