@@ -60,6 +60,12 @@ createServer((req, res) => {
 		});
 		return;
 	}
+	if (req.method === "POST" && path === "/done") {
+		const song = safe(url.searchParams.get("song"));
+		console.log(`[REC DONE] for song: ${song}`);
+		res.writeHead(200).end("done");
+		return;
+	}
 	let file;
 	let root = here;
 	if (path === "/" || path === "/rec.html") file = join(here, "rec.html");

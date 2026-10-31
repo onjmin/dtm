@@ -88,6 +88,16 @@ if (song) {
 		const btn = document.getElementById("rec");
 		btn.disabled = false;
 		btn.onclick = async () => { btn.disabled = true; try { await window.recordAll(); } catch (e) { status(`失敗: ${e}`); } btn.disabled = false; };
+		if (new URLSearchParams(location.search).get("auto") === "1") {
+			status(`${song}: 自動録音を開始...`);
+			try {
+				const mml = daw.getMML().full;
+				await post("song.mml", mml);
+			} catch (e) { console.error("MML save error", e); }
+			await window.recordAll();
+			await fetch(`/done?song=${encodeURIComponent(song)}`, { method: "POST" });
+			status(`${song}: 自動録音完了`);
+		}
 	} else status(`${song}/daw.json が無い（build を先に）`);
 } else status("?song=<曲名> を付けて開く");
 document.body.dataset.ready = "1";
