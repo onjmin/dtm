@@ -196,6 +196,28 @@ console.log("■ NEUTRINO 用 MusicXML に壊れた値が入らない");
 	);
 }
 
+console.log("■ 外部エンジンの声の大きさをそろえる");
+{
+	const { externalVoiceGain, softLimit, EXTERNAL_VOICE_TARGET_DB } =
+		require("../../src/voice/voice-level") as typeof import("../../src/voice/voice-level");
+	// -30 dBFS の正弦波（声の出ている所）と無音
+	const x = new Float32Array(48000 * 2);
+	const amp = 10 ** (-30 / 20) * Math.SQRT2;
+	for (let i = 0; i < 48000; i++) x[i] = amp * Math.sin((i / 48000) * 2 * Math.PI * 220);
+	const g = externalVoiceGain([x]);
+	check(
+		"声の所の RMS を目標へ（無音は数えない）",
+		Math.round(20 * Math.log10(g) - (EXTERNAL_VOICE_TARGET_DB + 30)),
+		0,
+	);
+	check("無音なら倍率 1", externalVoiceGain([new Float32Array(1000)]), 1);
+	check("小さい音は変えない", softLimit(0.3), 0.3);
+	check("大きい音は上限（-1 dBFS）を超えない", softLimit(5) < 10 ** (-1 / 20), true);
+	check("負の側も同じ", softLimit(-5) > -(10 ** (-1 / 20)), true);
+	check("単調に増える", softLimit(0.6) < softLimit(0.8) && softLimit(0.8) < softLimit(1.5), true);
+	check("NaN は倍率 1", externalVoiceGain([new Float32Array([Number.NaN, 0.5])]) > 0, true);
+}
+
 if (failed > 0) {
 	console.log(`\n${failed} 件失敗`);
 	process.exit(1);

@@ -11,6 +11,7 @@
  */
 
 import { sanitizeText } from "../safe-text";
+import { normalizeExternalVoice } from "./voice-level";
 import {
 	buildVoicevoxPhrases,
 	type TimedNote,
@@ -346,6 +347,8 @@ export const createNeutrinoRenderer = (
 			.catch(() => {})
 			.then(() => synthesizeNeutrino(xml, { model, baseUrl }))
 			.then((wav) => ctx.decodeAudioData(wav))
+			// エンジン・歌い手ごとに違う素の大きさを、koe の声に近い大きさへそろえる
+			.then(normalizeExternalVoice)
 			.catch((err) => {
 				if (!warned) {
 					warned = true;

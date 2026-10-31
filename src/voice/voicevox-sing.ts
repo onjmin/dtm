@@ -15,6 +15,7 @@
 import { units, unitsToMidiDetune } from "../audio/tuning";
 import { sanitizeText } from "../safe-text";
 import type { LyricSyllable, Note } from "../types";
+import { normalizeExternalVoice } from "./voice-level";
 
 /** VOICEVOX 楽譜のフレームレート。 */
 export const VOICEVOX_FRAME_RATE = 24000 / 256;
@@ -481,6 +482,8 @@ export const createVoicevoxRenderer = (
 			.catch(() => {})
 			.then(synth)
 			.then((wav) => ctx.decodeAudioData(wav))
+			// エンジン・歌い手ごとに違う素の大きさを、koe の声に近い大きさへそろえる
+			.then(normalizeExternalVoice)
 			.catch((err) => {
 				// エンジン未起動なら全フレーズが落ちるので、警告は1回だけ出す。
 				if (!warned) {
