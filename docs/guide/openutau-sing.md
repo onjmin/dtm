@@ -62,7 +62,7 @@ dtm は OpenUtau も歌い手も同梱しない。
 
 | モデル名 | 歌い手（`Singers/` のフォルダ） | 規約 |
 | :--- | :--- | :--- |
-| `ou_ritsu_ds` | 波音リツ DiffSinger（NamineRitsu_DiffSinger） | [canon-voice.com/kiyaku.html](https://www.canon-voice.com/kiyaku.html) |
+| `ou_ritsu_ds` | 波音リツ DiffSinger（NamineRitsu_DiffSinger） | [canon-voice.com/terms/](https://www.canon-voice.com/terms/) |
 | `ou_ritsu_enunu` | 波音リツ ENUNU #4130（NamineRitsu_ENUNU。SimpleEnunuServer が要る） | 同上 |
 
 歌い手を増やすときは `src/voice/openutau-sing.ts` の `OPENUTAU_SINGERS` に1行足す。
