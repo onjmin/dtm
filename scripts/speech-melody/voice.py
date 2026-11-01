@@ -172,8 +172,10 @@ def harmonize(bar_notes, root, nbars):
 
 # ── 声 ───────────────────────────────────────
 
-def render_voice(c, grid_t, ratios):
+def render_voice(c, grid_t, ratios, pre=None):
     """格子に合わせる点を grid_t（秒）へ写し、モーラごとに f0 を ratios[i] 倍（中心の補正）。揺れは原音のまま。
+
+    pre: 最初のモーラの格子点より前に含める秒（既定 0.15）。台詞の途中から切り出すときは前のモーラが混ざらないよう短くする。
 
     戻り値: (波形, 台詞頭からの開始ずれ秒)。置くときは 台詞頭の時刻 + 開始ずれ へ足す。
     """
@@ -191,7 +193,7 @@ def render_voice(c, grid_t, ratios):
         a = int(max(0, (bounds[i] - (0.06 if i == 0 else 0.04)) * fps))
         b = int((bounds[i + 1] - 0.04) * fps) if i + 1 < len(on) else len(f0)
         ratio_src[a:max(a, b)] = ratios[i]
-    pre = min(0.15, on[0])
+    pre = min(0.15 if pre is None else pre, on[0])
     src = [on[0] - pre] + list(on)
     dst = [grid_t[0] - pre] + list(grid_t)
     tail = max(0.05, min(0.6, c["snd"][-1]["end"] - on[-1]))
@@ -210,10 +212,10 @@ def render_voice(c, grid_t, ratios):
     return out, d0
 
 
-def tune_line(c, six, shift, pcs):
+def tune_line(c, six, shift, pcs, pre=None):
     """台詞を shift 半音移調し、pcs の音階へ補正して描く。→ (波形, 開始ずれ, 補正後の MIDI 列)"""
     q = correct(c["midi"] + shift, pcs)
     ratios = [2 ** ((qq - m) / 12) if np.isfinite(qq) and np.isfinite(m) else 2 ** (shift / 12)
               for qq, m in zip(q, c["midi"])]
-    x, d0 = render_voice(c, c["pos"] * six, ratios)
+    x, d0 = render_voice(c, c["pos"] * six, ratios, pre)
     return x, d0, q
