@@ -23,12 +23,15 @@ GitHub Pages の公開物（typedoc と `demo/`）は CI が `docs/` を作り�
 - [handscore.md](guide/handscore.md) — 手書き譜面（HandScore）の書き方
 - [parseChord.md](guide/parseChord.md) — `parseChord` / `parseChords` の使い方
 - [strata-compose.md](guide/strata-compose.md) — Strata に界隈曲を作らせる手順
-- [voicevox-sing.md](guide/voicevox-sing.md) — VOICEVOX で歌わせる（試作）
-- [neutrino-sing.md](guide/neutrino-sing.md) — NEUTRINO で歌わせる（試作。中継サーバーの起動と仕組み）
 - [external-soundfont.md](guide/external-soundfont.md) — 外部のサウンドフォント（.sf2）をファイルか URL で読んで鳴らす
-- [sinsy-sing.md](guide/sinsy-sing.md) — Sinsy で歌わせる（試作。WSL の pysinsy を中継サーバーで呼ぶ）
-- [openutau-sing.md](guide/openutau-sing.md) — OpenUtau（DiffSinger・ENUNU）で歌わせる（試作。CLI の組み立てと歌い手の下ごしらえ）
-- [local-engines-setup.md](guide/local-engines-setup.md) — 手元の歌声エンジン（VOICEVOX・NEUTRINO・OpenUtau・Sinsy）を別の PC に入れて確かめる手順
+
+手元の歌声エンジン（試作）。**入れるときはまず local-engines-setup.md から。** 各エンジンのページは細かい話。
+
+- [local-engines-setup.md](guide/local-engines-setup.md) — 手元の歌声エンジン（VOICEVOX・NEUTRINO・OpenUtau・Sinsy）を入れて鳴らすまでの手順と、`pnpm engines` でのまとめての起動
+  - [voicevox-sing.md](guide/voicevox-sing.md) — VOICEVOX で歌わせる
+  - [neutrino-sing.md](guide/neutrino-sing.md) — NEUTRINO で歌わせる（中継サーバーの起動と仕組み）
+  - [openutau-sing.md](guide/openutau-sing.md) — OpenUtau（DiffSinger・ENUNU）で歌わせる（CLI の組み立てと歌い手の下ごしらえ）
+  - [sinsy-sing.md](guide/sinsy-sing.md) — Sinsy で歌わせる（WSL の pysinsy を中継サーバーで呼ぶ）
 
 ## research/
 

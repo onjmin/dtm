@@ -1,5 +1,7 @@
 # VOICEVOX で歌わせる（試作）
 
+> まっさらな PC に入れて鳴らすまでの手順（ほかのエンジンと共通の準備・`pnpm engines` でのまとめての起動を含む）は [local-engines-setup.md](local-engines-setup.md)。このページはこのエンジンの細かい話。
+
 歌詞トラックの音源に VOICEVOX の歌い手を選ぶと、手元で起動した VOICEVOX エンジンの歌唱 API で歌わせる。
 koe（UTAU 音源をブラウザ内で合成）とは別の経路で、エンジンに楽譜を送って WAV を受け取り、伴奏に合わせて並べる。
 選ぶまでの調べ物と、採らなかった案は [research/singing-engines.md](../research/singing-engines.md)。

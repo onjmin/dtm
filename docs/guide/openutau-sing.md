@@ -1,5 +1,7 @@
 # OpenUtau（DiffSinger・ENUNU）で歌わせる（試作）
 
+> まっさらな PC に入れて鳴らすまでの手順（ほかのエンジンと共通の準備・`pnpm engines` でのまとめての起動を含む）は [local-engines-setup.md](local-engines-setup.md)。このページはこのエンジンの細かい話。
+
 歌詞トラックの音源に OpenUtau の歌い手（`ou_` で始まるモデル名）を選ぶと、利用者の手元の OpenUtau で歌わせる。
 DiffSinger や ENUNU（NNSVS）のような AI の歌い手を、NEUTRINO と同じ形（MusicXML を送ると WAV が返る）で使う。楽譜の組み立てと、区切りごとに合成してフレーズに切って並べる仕組みは NEUTRINO と共通（[neutrino-sing.md](neutrino-sing.md)）。
 dtm は OpenUtau も歌い手も同梱しない。

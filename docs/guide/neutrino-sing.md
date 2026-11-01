@@ -1,5 +1,7 @@
 # NEUTRINO で歌わせる（試作）
 
+> まっさらな PC に入れて鳴らすまでの手順（ほかのエンジンと共通の準備・`pnpm engines` でのまとめての起動を含む）は [local-engines-setup.md](local-engines-setup.md)。このページはこのエンジンの細かい話。
+
 歌詞トラックの音源に NEUTRINO の歌い手を選ぶと、利用者が公式から入れた NEUTRINO で歌わせる。
 NEUTRINO はコマンドラインで動くソフトなので、ブラウザからは手元の中継サーバー（`scripts/misc/neutrino-server.ts`）を通して呼ぶ。
 dtm は NEUTRINO 本体も歌声ライブラリも同梱しない。規約の解釈と、やること・やらないことは [../research/neutrino-terms.md](../research/neutrino-terms.md)。
