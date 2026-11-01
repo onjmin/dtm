@@ -162,6 +162,7 @@ const kanaTable: Record<string, [string, string]> = {
 	れ: ["r", "e"],
 	ろ: ["r", "o"],
 	わ: ["w", "a"],
+	ゎ: ["w", "a"], // 単独で書かれたら わ と同じ（拗音として前のかなへは付けない）
 	を: ["w", "o"],
 	が: ["g", "a"],
 	ぎ: ["g", "i"],
@@ -202,6 +203,7 @@ const SAME_SOUND_KANA: Record<string, string> = {
 	ぢゃ: "じゃ",
 	ぢゅ: "じゅ",
 	ぢょ: "じょ",
+	ゎ: "わ",
 };
 
 /** ヴ系の代用（音源にヴが無いとき）。日本語の慣習どおりバ行で近似する。 */
@@ -391,7 +393,7 @@ const kanaToVowel = (kana: string): string => {
 	if (/[ぅゅ]/.test(kana)) return "u";
 	if (/[ぇ]/.test(kana)) return "e";
 	if (/[ぉょ]/.test(kana)) return "o";
-	if (/[あかさたなはまやらわがざだばぱ]/.test(kana)) return "a";
+	if (/[あかさたなはまやらわゎがざだばぱ]/.test(kana)) return "a";
 	if (/[いきしちにひみりぎじぢびぴ]/.test(kana)) return "i";
 	if (/[うくすつぬふむゆるぐずづぶぷ]/.test(kana)) return "u";
 	if (/[えけせてねへめれげぜでべぺ]/.test(kana)) return "e";
