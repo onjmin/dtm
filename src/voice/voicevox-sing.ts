@@ -169,7 +169,8 @@ export const timedToScore = (
 /**
  * DAW の歌詞トラックで選べる VOICEVOX の歌い手（モデル名 → 歌唱スタイル）。
  * モデル名は `vv_` で始める（koe 音源のキーワードと混ざらないように）。
- * スタイルIDは VOICEVOX 側で固定（0.26.0 の `/singers` で確かめた）。
+ * スタイルIDは VOICEVOX 側で固定（0.26.0 の `/singers` で確かめた。歌えるキャラ30人全員。
+ * 東北三姉妹など 0.26.0 のエンジンに入っていないキャラは、スタイルIDを確かめられないので入れていない）。
  * `talk` は語り（`「…」`）を読み上げる同じキャラの話し声のスタイル（`/speakers` のノーマル）。
  */
 export const VOICEVOX_SINGERS: Record<
@@ -194,11 +195,167 @@ export const VOICEVOX_SINGERS: Record<
 		name: "VOICEVOX:春日部つむぎ",
 		terms: "https://voicevox.hiroshiba.jp/product/kasukabe_tsumugi/",
 	},
+	vv_hau: {
+		talk: 10,
+		style: 3010,
+		name: "VOICEVOX:雨晴はう",
+		terms: "https://voicevox.hiroshiba.jp/product/amehare_hau/",
+	},
 	vv_ritsu: {
 		talk: 9,
 		style: 3009,
 		name: "VOICEVOX:波音リツ",
 		terms: "https://voicevox.hiroshiba.jp/product/namine_ritsu/",
+	},
+	vv_takehiro: {
+		talk: 11,
+		style: 3011,
+		name: "VOICEVOX:玄野武宏",
+		terms: "https://voicevox.hiroshiba.jp/product/kurono_takehiro/",
+	},
+	vv_kotarou: {
+		talk: 12,
+		style: 3012,
+		name: "VOICEVOX:白上虎太郎",
+		terms: "https://voicevox.hiroshiba.jp/product/shirakami_kotarou/",
+	},
+	vv_ryusei: {
+		talk: 13,
+		style: 3013,
+		name: "VOICEVOX:青山龍星",
+		terms: "https://voicevox.hiroshiba.jp/product/aoyama_ryusei/",
+	},
+	vv_himari: {
+		talk: 14,
+		style: 3014,
+		name: "VOICEVOX:冥鳴ひまり",
+		terms: "https://voicevox.hiroshiba.jp/product/meimei_himari/",
+	},
+	vv_sora: {
+		talk: 16,
+		style: 3016,
+		name: "VOICEVOX:九州そら",
+		terms: "https://voicevox.hiroshiba.jp/product/kyushu_sora/",
+	},
+	vv_mochiko: {
+		talk: 20,
+		style: 3020,
+		name: "VOICEVOX:もち子(cv 明日葉よもぎ)",
+		terms: "https://voicevox.hiroshiba.jp/product/mochikosan/",
+	},
+	vv_mesuo: {
+		talk: 21,
+		style: 3021,
+		name: "VOICEVOX:剣崎雌雄",
+		terms: "https://voicevox.hiroshiba.jp/product/kenzaki_mesuo/",
+	},
+	vv_whitecul: {
+		talk: 23,
+		style: 3023,
+		name: "VOICEVOX:WhiteCUL",
+		terms: "https://voicevox.hiroshiba.jp/product/white_cul/",
+	},
+	vv_goki: {
+		talk: 27,
+		style: 3027,
+		name: "VOICEVOX:後鬼",
+		terms: "https://voicevox.hiroshiba.jp/product/goki/",
+	},
+	vv_no7: {
+		talk: 29,
+		style: 3029,
+		name: "VOICEVOX:No.7",
+		terms: "https://voicevox.hiroshiba.jp/product/number_seven/",
+	},
+	vv_chibijii: {
+		talk: 42,
+		style: 3042,
+		name: "VOICEVOX:ちび式じい",
+		terms: "https://voicevox.hiroshiba.jp/product/chibishikiji/",
+	},
+	vv_miko: {
+		talk: 43,
+		style: 3043,
+		name: "VOICEVOX:櫻歌ミコ",
+		terms: "https://voicevox.hiroshiba.jp/product/ouka_miko/",
+	},
+	vv_sayo: {
+		talk: 46,
+		style: 3046,
+		name: "VOICEVOX:小夜/SAYO",
+		terms: "https://voicevox.hiroshiba.jp/product/sayo/",
+	},
+	vv_nurserobo: {
+		talk: 47,
+		style: 3047,
+		name: "VOICEVOX:ナースロボ＿タイプＴ",
+		terms: "https://voicevox.hiroshiba.jp/product/nurserobo_typet/",
+	},
+	vv_benizakura: {
+		talk: 51,
+		style: 3051,
+		name: "VOICEVOX:†聖騎士 紅桜†",
+		terms: "https://voicevox.hiroshiba.jp/product/horinaito_benizakura/",
+	},
+	vv_akashi: {
+		talk: 52,
+		style: 3052,
+		name: "VOICEVOX:雀松朱司",
+		terms: "https://voicevox.hiroshiba.jp/product/wakamatsu_akashi/",
+	},
+	vv_sourin: {
+		talk: 53,
+		style: 3053,
+		name: "VOICEVOX:麒ヶ島宗麟",
+		terms: "https://voicevox.hiroshiba.jp/product/kigashima_sourin/",
+	},
+	vv_nana: {
+		talk: 54,
+		style: 3054,
+		name: "VOICEVOX:春歌ナナ",
+		terms: "https://voicevox.hiroshiba.jp/product/haruka_nana/",
+	},
+	vv_aru: {
+		talk: 55,
+		style: 3055,
+		name: "VOICEVOX:猫使アル",
+		terms: "https://voicevox.hiroshiba.jp/product/nekotsuka_aru/",
+	},
+	vv_bi: {
+		talk: 58,
+		style: 3058,
+		name: "VOICEVOX:猫使ビィ",
+		terms: "https://voicevox.hiroshiba.jp/product/nekotsuka_bi/",
+	},
+	vv_usagi: {
+		talk: 61,
+		style: 3061,
+		name: "VOICEVOX:中国うさぎ",
+		terms: "https://voicevox.hiroshiba.jp/product/chugoku_usagi/",
+	},
+	vv_maron: {
+		talk: 67,
+		style: 3067,
+		name: "VOICEVOX:栗田まろん",
+		terms: "https://voicevox.hiroshiba.jp/product/kurita_maron/",
+	},
+	vv_aierutan: {
+		talk: 68,
+		style: 3068,
+		name: "VOICEVOX:あいえるたん",
+		terms: "https://voicevox.hiroshiba.jp/product/aierutan/",
+	},
+	vv_hanamaru: {
+		talk: 69,
+		style: 3069,
+		name: "VOICEVOX:満別花丸",
+		terms: "https://voicevox.hiroshiba.jp/product/manbetsu_hanamaru/",
+	},
+	vv_nia: {
+		talk: 74,
+		style: 3074,
+		name: "VOICEVOX:琴詠ニア",
+		terms: "https://voicevox.hiroshiba.jp/product/kotoyomi_nia/",
 	},
 };
 

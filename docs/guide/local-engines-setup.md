@@ -54,7 +54,7 @@ dtm はどのエンジンも歌声ライブラリも同梱しない。各自が�
 2. `run.exe` を起動する（既定 `http://127.0.0.1:50021`）。
 3. 確かめる: `curl http://127.0.0.1:50021/version` で版が返る。
 
-声は `vv_zundamon`・`vv_metan`・`vv_tsumugi`・`vv_ritsu`。VOICEVOX は中継サーバーが要らない。
+声は VOICEVOX で歌える30人全員（`vv_zundamon`・`vv_metan` など。一覧は [voicevox-sing.md](voicevox-sing.md)）。VOICEVOX は中継サーバーが要らない。
 
 ## 2. NEUTRINO
 
@@ -133,7 +133,7 @@ OpenUtau の書き出しコマンドは、2026-11-01 時点では本家に入っ
 
    | エンジン | モデル名 |
    | :--- | :--- |
-   | VOICEVOX | `vv_zundamon` `vv_metan` `vv_tsumugi` `vv_ritsu` |
+   | VOICEVOX | `vv_zundamon` `vv_metan` `vv_tsumugi` `vv_ritsu` など30人（[voicevox-sing.md](voicevox-sing.md)） |
    | NEUTRINO | `nt_reina` `nt_merrow` `nt_nakumo` `nt_soma` `nt_runo` `nt_akane` `nt_aoi` |
    | OpenUtau | `ou_ritsu_ds`（DiffSinger）`ou_ritsu_enunu`（ENUNU） |
    | Sinsy | `ss_f001` |
