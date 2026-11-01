@@ -9,6 +9,7 @@ VOICEVOX・NEUTRINO・OpenUtau（DiffSinger・ENUNU）・Sinsy の声を、ま�
 - [sinsy-sing.md](sinsy-sing.md) — Sinsy
 
 dtm はどのエンジンも歌声ライブラリも同梱しない。各自が公式の配布元から入れる。全部入れる必要はなく、確かめたいものだけでよい。
+歌い手を自分で作る（学習する）方法の調べ物は [../research/voice-model-training.md](../research/voice-model-training.md)（どれもまだ試していない）。
 
 ## 全体の形
 
