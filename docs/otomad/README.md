@@ -52,6 +52,7 @@ docs/otomad/
 | [otomad-video-research.md](research/otomad-video-research.md) | 音MADの映像の作り方（ネットの記事、10-31） |
 | [inmu-cookie-staging.md](research/inmu-cookie-staging.md) | 淫夢・クッキー☆音MADの演出の引き出し、文字PV、講評の観点、dande3 の照合（10-31） |
 | [bb-theater.md](research/bb-theater.md) | BB劇場の測定（割り方・型・物語性・バトルの撮り方、11-01） |
+| [battle-inmu.md](research/battle-inmu.md) | バトル淫夢のヒット作の測定（格ゲーの枠・技ごとの BB・裏切り・決まり文句・肩すかし、11-01） |
 | [material-packs.md](research/material-packs.md) | 音MAD素材のスターターパックの一覧（[一覧の tsv](research/material-packs-list.tsv)、11-01） |
 | [../research/kaiwai-lineages.md](../research/kaiwai-lineages.md) | 界隈曲の流派の実測（自動作曲と共用なので `docs/research/` に置く） |
 
