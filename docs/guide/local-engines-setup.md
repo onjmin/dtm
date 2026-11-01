@@ -59,7 +59,7 @@ dtm はどのエンジンも歌声ライブラリも同梱しない。各自が�
 ## 2. NEUTRINO
 
 1. [NEUTRINO の公式サイト](https://studio-neutrino.com/downloads/)から本体（Windows 版 Tau v3.2 以降。手元は v3.2.2）を落として展開する。めろう・レイナ・ナクモ・ソウマ・ルノは本体に入っている。
-2. 琴葉茜・葵（`nt_akane`・`nt_aoi`）も使うときは、ライブラリを別に落として `model/` に入れる。**この2人は出力の解析（学習データにすることを含む）が禁止されているので、検証でも音を測ったり解析したりしない。** 聞いて確かめるだけにする。
+2. ほかの歌声ライブラリ（ずんだもん・四国めたん・東北三姉妹・No.7・琴葉茜・葵・夜語トバリなど）も使うときは、ダウンロードページから別に落とし、zip の中のフォルダを `model/` に入れる（一覧は [neutrino-sing.md](neutrino-sing.md)）。**琴葉茜・葵・夜語トバリは出力の解析（学習データにすることを含む）が禁止されているので、検証でも音を測ったり解析したりしない。** 聞いて確かめるだけにする。
 3. 中継サーバーを起動する。
 
    ```bash
@@ -134,7 +134,7 @@ OpenUtau の書き出しコマンドは、2026-11-01 時点では本家に入っ
    | エンジン | モデル名 |
    | :--- | :--- |
    | VOICEVOX | `vv_zundamon` `vv_metan` `vv_tsumugi` `vv_ritsu` など30人（[voicevox-sing.md](voicevox-sing.md)） |
-   | NEUTRINO | `nt_reina` `nt_merrow` `nt_nakumo` `nt_soma` `nt_runo` `nt_akane` `nt_aoi` |
+   | NEUTRINO | `nt_reina` `nt_merrow` `nt_nakumo` `nt_soma` `nt_runo` `nt_akane` `nt_aoi` `nt_zundamon` `nt_metan` `nt_zunko` `nt_kiritan` `nt_itako` `nt_chanko` `nt_no7` `nt_tobari` `nt_yoko` `nt_jsut` |
    | OpenUtau | `ou_ritsu_ds`（DiffSinger）`ou_ritsu_enunu`（ENUNU） |
    | Sinsy | `ss_f001` |
 4. 見るところ

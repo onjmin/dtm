@@ -37,6 +37,30 @@ const KOTONOHA_TERMS: NeutrinoCharacterTerms = {
 	label: "琴葉茜・葵（A.I.VOICE）",
 	url: "https://aivoice.jp/character/kotonoha/",
 };
+/** 東北ずん子・ずんだもんプロジェクトのキャラ（ライブラリ付属の Readme が指すガイドライン）。 */
+const ZUNKO_TERMS: NeutrinoCharacterTerms = {
+	label: "東北ずん子・ずんだもんプロジェクトのガイドライン",
+	url: "https://zunko.jp/guideline.html",
+};
+const SEVEN_TERMS: NeutrinoCharacterTerms = {
+	label: "No.7 の歌声ライブラリの利用規約",
+	url: "https://voiceseven.com/#j0400",
+};
+/** 夜語トバリは株式会社エーアイの使用許諾契約書（琴葉茜・葵と同じく商用・同人などは事前の問い合わせ、出力の解析は禁止）。 */
+const TOBARI_TERMS: NeutrinoCharacterTerms = {
+	label: "夜語トバリのキャラクター使用ガイドライン",
+	url: "https://yogataritobari.studio.site/",
+};
+/** 謡子は名古屋工業大学の NIT SONG070 F001（CC BY 3.0）で学習した声（ライブラリ付属の license.txt）。 */
+const YOKO_TERMS: NeutrinoCharacterTerms = {
+	label: "NIT SONG070 F001（名古屋工業大学、CC BY 3.0）",
+	url: "https://creativecommons.org/licenses/by/3.0/deed.ja",
+};
+/** JSUT は東京大学の JSUT-song コーパスで学習した声（研究・個人は自由、商用は問い合わせ）。 */
+const JSUT_TERMS: NeutrinoCharacterTerms = {
+	label: "JSUT-song コーパス（東京大学 猿渡・高道研究室）",
+	url: "https://sites.google.com/site/shinnosuketakamichi/publication/jsut-song",
+};
 
 /**
  * DAW の歌詞トラックで選べる NEUTRINO の歌い手（モデル名 → 歌声ライブラリ）。
@@ -64,6 +88,49 @@ export const NEUTRINO_SINGERS: Record<
 		name: "NEUTRINO:琴葉葵",
 		characterTerms: KOTONOHA_TERMS,
 	},
+	// 以下は別配布（studio-neutrino.com のダウンロードページ、2026-11-01 時点の v3）
+	nt_zundamon: {
+		dir: "ZUNDAMON",
+		name: "NEUTRINO:ずんだもん",
+		characterTerms: ZUNKO_TERMS,
+	},
+	nt_metan: {
+		dir: "METAN",
+		name: "NEUTRINO:四国めたん",
+		characterTerms: ZUNKO_TERMS,
+	},
+	nt_zunko: {
+		dir: "ZUNKO",
+		name: "NEUTRINO:東北ずん子",
+		characterTerms: ZUNKO_TERMS,
+	},
+	nt_kiritan: {
+		dir: "KIRITAN",
+		name: "NEUTRINO:東北きりたん",
+		characterTerms: ZUNKO_TERMS,
+	},
+	nt_itako: {
+		dir: "ITAKO",
+		name: "NEUTRINO:東北イタコ",
+		characterTerms: ZUNKO_TERMS,
+	},
+	nt_chanko: {
+		dir: "CHANKO",
+		name: "NEUTRINO:大江戸ちゃんこ",
+		characterTerms: ZUNKO_TERMS,
+	},
+	nt_no7: {
+		dir: "SEVEN",
+		name: "NEUTRINO:No.7",
+		characterTerms: SEVEN_TERMS,
+	},
+	nt_tobari: {
+		dir: "TOBARI",
+		name: "NEUTRINO:夜語トバリ",
+		characterTerms: TOBARI_TERMS,
+	},
+	nt_yoko: { dir: "YOKO", name: "NEUTRINO:謡子", characterTerms: YOKO_TERMS },
+	nt_jsut: { dir: "JSUT", name: "NEUTRINO:JSUT", characterTerms: JSUT_TERMS },
 };
 
 /** NEUTRINO で歌うモデル名か。 */
