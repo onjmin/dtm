@@ -16,7 +16,7 @@ loader._load = (request, ...rest) =>
 
 const { normalizeLyrics } =
 	require("../../src/voice/lyrics") as typeof import("../../src/voice/lyrics");
-const { buildVoicevoxScore, VOICEVOX_FRAME_RATE } =
+const { buildVoicevoxScore, timedToScore, VOICEVOX_FRAME_RATE } =
 	require("../../src/voice/voicevox-sing") as typeof import("../../src/voice/voicevox-sing");
 
 import type { Note } from "../../src/types";
@@ -95,6 +95,24 @@ check(
 		"合計フレームが曲の長さと一致",
 		total,
 		Math.round(1.5 * VOICEVOX_FRAME_RATE),
+	);
+}
+{
+	// 1フレームの休符の直後が子音だとエンジンが 500 を返すので、ごく短い隙間は前の音へ足す
+	const f = 1 / VOICEVOX_FRAME_RATE;
+	const s = timedToScore(
+		[
+			{ start: 0, end: 20 * f, key: 72, lyric: "あ" },
+			{ start: 21 * f, end: 41 * f, key: 69, lyric: "て" },
+			{ start: 51 * f, end: 71 * f, key: 69, lyric: "わ" },
+		],
+		24,
+		16,
+	).notes;
+	check(
+		"短い隙間は前の音を伸ばし、長い隙間は休符",
+		s.map((n) => `${n.lyric || "_"}${n.frame_length}`),
+		["_24", "あ21", "て20", "_10", "わ20", "_16"],
 	);
 }
 

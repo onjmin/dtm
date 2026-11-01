@@ -130,6 +130,9 @@ export const buildVoicevoxScore = (
 	return timedToScore(out, frames, 8);
 };
 
+/** 音の間に休符として残す最短の長さ（フレーム）。これより短い隙間は前の音を伸ばして埋める。 */
+const MIN_REST_FRAMES = 3;
+
 /**
  * 秒で並べた音を楽譜へ割る。先頭に `leadFrames` の休符、末尾に `tailFrames` の休符を置き、
  * 音の間の隙間も休符で埋める。先頭の休符の終わりが `out[0].start` に当たる。
@@ -151,6 +154,9 @@ export const timedToScore = (
 		if (gap > 0) {
 			const last = score[score.length - 1];
 			if (last.key === null) last.frame_length += gap;
+			// ごく短い休符は前の音へ足す。1フレームの休符の直後が子音で始まると、
+			// 子音の長さを休符から取れずエンジンが 500 を返し、フレーズごと歌わなくなる。
+			else if (gap < MIN_REST_FRAMES) last.frame_length += gap;
 			else score.push({ key: null, frame_length: gap, lyric: "" });
 		}
 		const length = frames(n.end) - frames(n.start);
