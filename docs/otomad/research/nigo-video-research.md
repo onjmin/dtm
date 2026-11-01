@@ -1,6 +1,6 @@
 # 2号兄貴（2号.）の音MAD と淫夢 — 作品一覧と映像の作り（2026-10-30）
 
-音の分析は nigo-mad-analysis.md にある。ここでは作品一覧と映像の作り方をまとめる。
+音の分析は [nigo-mad-analysis.md](nigo-mad-analysis.md) にある。ここでは作品一覧と映像の作り方をまとめる。
 
 調べ方:
 - ニコニコの API（nvapi のユーザー動画一覧・getthumbinfo）で一覧と説明文・タグを取った。

@@ -8,7 +8,13 @@
 | `guide/` | 使い方と手順。書式・API・道具の動かし方 | 使い方が変わったら直す |
 | `research/` | 実測・調査・実験の記録。日付と、その時点で分かったこと・採った案・採らなかった案 | 原則として後から直さない。結論が変わったら新しい記録を足す |
 
+音MAD・BB劇場の知識（基準・技・型・測定・作品台帳）は別に [`otomad/`](otomad/README.md) へまとめる。中の分け方は [otomad/README.md](otomad/README.md)。
+
 GitHub Pages の公開物（typedoc と `demo/`）は CI が `docs/` を作り直して出すので、ここの .md は公開物に入らない。
+
+## otomad/
+
+- [otomad/README.md](otomad/README.md) — 音MAD・BB劇場の入口。**音MAD・BB劇場を作る前に読む**（基準 rules.md、技 techniques/、型 genres/、測定 research/、作品台帳 works/、BB素材の手順 bb-flow.md）
 
 ## design/
 
@@ -24,7 +30,6 @@ GitHub Pages の公開物（typedoc と `demo/`）は CI が `docs/` を作り�
 - [parseChord.md](guide/parseChord.md) — `parseChord` / `parseChords` の使い方
 - [strata-compose.md](guide/strata-compose.md) — Strata に界隈曲を作らせる手順
 - [external-soundfont.md](guide/external-soundfont.md) — 外部のサウンドフォント（.sf2）をファイルか URL で読んで鳴らす
-- [otomad-bb-flow.md](guide/otomad-bb-flow.md) — BB素材を集めて、切り抜き・透過して、音MAD の動画に使う流れ（`AI/<ジャンル>/` の置き場所）
 
 手元の歌声エンジン（試作）。**入れるときはまず local-engines-setup.md から。** 各エンジンのページは細かい話。
 
@@ -42,4 +47,3 @@ GitHub Pages の公開物（typedoc と `demo/`）は CI が `docs/` を作り�
 - [singing-engines.md](research/singing-engines.md) — 歌声エンジンの調べ物（VOICEVOX・AI-MGRoid、2026-10-31）
 - [neutrino-terms.md](research/neutrino-terms.md) — NEUTRINO の規約の解釈と、dtm から呼ぶときにやること・やらないこと（2026-10-31）
 - [voice-model-training.md](research/voice-model-training.md) — 歌声のモデル（歌い手）を自分で作る方法（DiffSinger・ENUNU・Sinsy など。どれも未試行、2026-11-01）
-- [otomad-material-packs.md](research/otomad-material-packs.md) — 音MAD素材のスターターパック（淫夢・クッキー☆・エレ淫ク☆・ニコニコ文化）の一覧、まとめ wiki、配布先の生死（一覧は otomad-material-packs-list.tsv、2026-11-01）
