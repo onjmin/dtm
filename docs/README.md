@@ -39,4 +39,4 @@ GitHub Pages の公開物（typedoc と `demo/`）は CI が `docs/` を作り�
 - [singing-engines.md](research/singing-engines.md) — 歌声エンジンの調べ物（VOICEVOX・AI-MGRoid、2026-10-31）
 - [neutrino-terms.md](research/neutrino-terms.md) — NEUTRINO の規約の解釈と、dtm から呼ぶときにやること・やらないこと（2026-10-31）
 - [voice-model-training.md](research/voice-model-training.md) — 歌声のモデル（歌い手）を自分で作る方法（DiffSinger・ENUNU・Sinsy など。どれも未試行、2026-11-01）
-- [otomad-material-packs.md](research/otomad-material-packs.md) — 淫夢・クッキー☆・BB素材のスターターパックの一覧と配布先の生死（一覧は otomad-material-packs-list.tsv、2026-11-01）
+- [otomad-material-packs.md](research/otomad-material-packs.md) — 音MAD素材のスターターパック（淫夢・クッキー☆・エレ淫ク☆・ニコニコ文化）の一覧、まとめ wiki、配布先の生死（一覧は otomad-material-packs-list.tsv、2026-11-01）
