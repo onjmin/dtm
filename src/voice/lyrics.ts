@@ -1618,11 +1618,8 @@ export const groupVoiceModels = (
 	return groups;
 };
 
-/**
- * モデルキーワード → 内蔵キャラクター画像キー（voice-images.ts の VOICE_IMAGES キー）。
- * klatt合成は "puyuyu"、koe音源は音源名に対応する画像キーを返す。
- */
-export const VOICE_IMAGE_KEY: Record<string, string> = lookupTable({
+/** キャラごとの画像キー（VOICEVOX のノーマル以外のスタイルは {@link VOICE_IMAGE_KEY} で元のキャラから引く）。 */
+const CHARACTER_IMAGE_KEY: Record<string, string> = {
 	klatt: "puyuyu",
 	tsukuyomi: "tsukuyomi",
 	rino: "rino",
@@ -1647,6 +1644,23 @@ export const VOICE_IMAGE_KEY: Record<string, string> = lookupTable({
 	nt_zunko: "zunko",
 	nt_kiritan: "kiritan",
 	nt_itako: "itako",
+	nt_akane: "akane",
+	nt_aoi: "aoi",
+};
+
+/**
+ * モデルキーワード → 内蔵キャラクター画像キー（voice-images.ts の VOICE_IMAGES キー）。
+ * klatt合成は "puyuyu"、koe音源は音源名に対応する画像キーを返す。
+ * VOICEVOX のノーマル以外のスタイル（`vv_zundamon_hisohiso` など）は元のキャラの画像を使う。
+ */
+export const VOICE_IMAGE_KEY: Record<string, string> = lookupTable({
+	...CHARACTER_IMAGE_KEY,
+	...Object.fromEntries(
+		Object.entries(VOICEVOX_SINGERS).flatMap(([k, v]) => {
+			const img = v.base && CHARACTER_IMAGE_KEY[v.base];
+			return img ? [[k, img]] : [];
+		}),
+	),
 });
 
 /**

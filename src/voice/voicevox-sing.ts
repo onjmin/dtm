@@ -166,17 +166,24 @@ export const timedToScore = (
 // DAW から歌わせる（フレーズ単位の合成）
 // ─────────────────────────────────────────────────────────────
 
+/** VOICEVOX の歌い手1人ぶん（1スタイル）。 */
+export type VoicevoxSingerEntry = {
+	/** 歌唱スタイルID（`/singers` の frame_decode） */
+	style: number;
+	/** 語り（`「…」`）を読み上げる話し声のスタイルID */
+	talk: number;
+	name: string;
+	terms: string;
+	/** ノーマル以外のスタイルのとき、元のキャラのモデル名（アイコンなどを引き継ぐ） */
+	base?: string;
+};
+
 /**
- * DAW の歌詞トラックで選べる VOICEVOX の歌い手（モデル名 → 歌唱スタイル）。
- * モデル名は `vv_` で始める（koe 音源のキーワードと混ざらないように）。
- * スタイルIDは VOICEVOX 側で固定（0.26.0 の `/singers` で確かめた。歌えるキャラ30人全員。
+ * キャラごとのノーマルのスタイル。歌えるキャラ30人全員（0.26.0 の `/singers` で確かめた。
  * 東北三姉妹など 0.26.0 のエンジンに入っていないキャラは、スタイルIDを確かめられないので入れていない）。
  * `talk` は語り（`「…」`）を読み上げる同じキャラの話し声のスタイル（`/speakers` のノーマル）。
  */
-export const VOICEVOX_SINGERS: Record<
-	string,
-	{ style: number; talk: number; name: string; terms: string }
-> = {
+const VOICEVOX_CHARACTERS: Record<string, Omit<VoicevoxSingerEntry, "base">> = {
 	vv_zundamon: {
 		talk: 3,
 		style: 3003,
@@ -358,6 +365,128 @@ export const VOICEVOX_SINGERS: Record<
 		terms: "https://voicevox.hiroshiba.jp/product/kotoyomi_nia/",
 	},
 };
+
+/**
+ * ノーマル以外の歌えるスタイル（キャラのモデル名 → 接尾辞 → スタイル）。モデル名は
+ * `<キャラのモデル名>_<接尾辞>`（例: `vv_zundamon_hisohiso`）。0.26.0 の `/singers` の
+ * frame_decode をすべて載せた。歌唱スタイルIDは話し声のスタイルID + 3000 で、語りは同じスタイルの
+ * 話し声で読む（ヒソヒソで歌うキャラは語りもヒソヒソ）。話し声にしか無いスタイル
+ * （ずんだもんの「ささやき」など）は歌えないので載せていない。
+ */
+const VOICEVOX_EXTRA_STYLES: Record<
+	string,
+	Record<string, { label: string; style: number; talk: number }>
+> = {
+	vv_metan: {
+		amaama: { label: "あまあま", style: 3000, talk: 0 },
+		tsuntsun: { label: "ツンツン", style: 3006, talk: 6 },
+		sexy: { label: "セクシー", style: 3004, talk: 4 },
+		hisohiso: { label: "ヒソヒソ", style: 3037, talk: 37 },
+	},
+	vv_zundamon: {
+		amaama: { label: "あまあま", style: 3001, talk: 1 },
+		tsuntsun: { label: "ツンツン", style: 3007, talk: 7 },
+		sexy: { label: "セクシー", style: 3005, talk: 5 },
+		hisohiso: { label: "ヒソヒソ", style: 3038, talk: 38 },
+		herohero: { label: "ヘロヘロ", style: 3075, talk: 75 },
+		namidame: { label: "なみだめ", style: 3076, talk: 76 },
+	},
+	vv_ritsu: {
+		queen: { label: "クイーン", style: 3065, talk: 65 },
+	},
+	vv_takehiro: {
+		yorokobi: { label: "喜び", style: 3039, talk: 39 },
+		tsungire: { label: "ツンギレ", style: 3040, talk: 40 },
+		kanashimi: { label: "悲しみ", style: 3041, talk: 41 },
+	},
+	vv_kotarou: {
+		wai: { label: "わーい", style: 3032, talk: 32 },
+		bikubiku: { label: "びくびく", style: 3033, talk: 33 },
+		oko: { label: "おこ", style: 3034, talk: 34 },
+		bien: { label: "びえーん", style: 3035, talk: 35 },
+	},
+	vv_ryusei: {
+		nekketsu: { label: "熱血", style: 3081, talk: 81 },
+		fukigen: { label: "不機嫌", style: 3082, talk: 82 },
+		yorokobi: { label: "喜び", style: 3083, talk: 83 },
+		shittori: { label: "しっとり", style: 3084, talk: 84 },
+		kanashimi: { label: "かなしみ", style: 3085, talk: 85 },
+	},
+	vv_sora: {
+		amaama: { label: "あまあま", style: 3015, talk: 15 },
+		tsuntsun: { label: "ツンツン", style: 3018, talk: 18 },
+		sexy: { label: "セクシー", style: 3017, talk: 17 },
+	},
+	vv_mochiko: {
+		sexy: { label: "セクシー／あん子", style: 3066, talk: 66 },
+		naki: { label: "泣き", style: 3077, talk: 77 },
+		ikari: { label: "怒り", style: 3078, talk: 78 },
+		yorokobi: { label: "喜び", style: 3079, talk: 79 },
+		nonbiri: { label: "のんびり", style: 3080, talk: 80 },
+	},
+	vv_whitecul: {
+		tanoshii: { label: "たのしい", style: 3024, talk: 24 },
+		kanashii: { label: "かなしい", style: 3025, talk: 25 },
+		bien: { label: "びえーん", style: 3026, talk: 26 },
+	},
+	vv_goki: {
+		nuigurumi: { label: "ぬいぐるみver.", style: 3028, talk: 28 },
+	},
+	vv_no7: {
+		announce: { label: "アナウンス", style: 3030, talk: 30 },
+		yomikikase: { label: "読み聞かせ", style: 3031, talk: 31 },
+	},
+	vv_miko: {
+		daini: { label: "第二形態", style: 3044, talk: 44 },
+		loli: { label: "ロリ", style: 3045, talk: 45 },
+	},
+	vv_nurserobo: {
+		rakuraku: { label: "楽々", style: 3048, talk: 48 },
+		kyofu: { label: "恐怖", style: 3049, talk: 49 },
+	},
+	vv_aru: {
+		ochitsuki: { label: "おちつき", style: 3056, talk: 56 },
+		ukiuki: { label: "うきうき", style: 3057, talk: 57 },
+	},
+	vv_bi: {
+		ochitsuki: { label: "おちつき", style: 3059, talk: 59 },
+	},
+	vv_usagi: {
+		odoroki: { label: "おどろき", style: 3062, talk: 62 },
+		kowagari: { label: "こわがり", style: 3063, talk: 63 },
+		herohero: { label: "へろへろ", style: 3064, talk: 64 },
+	},
+	vv_hanamaru: {
+		genki: { label: "元気", style: 3070, talk: 70 },
+		sasayaki: { label: "ささやき", style: 3071, talk: 71 },
+		burikko: { label: "ぶりっ子", style: 3072, talk: 72 },
+		boy: { label: "ボーイ", style: 3073, talk: 73 },
+	},
+};
+
+/**
+ * DAW の歌詞トラックで選べる VOICEVOX の歌い手（モデル名 → 歌唱スタイル）。
+ * モデル名は `vv_` で始める（koe 音源のキーワードと混ざらないように）。
+ * キャラのノーマルのすぐ後にそのキャラのほかのスタイルを並べる（音源の一覧の並び順になる）。
+ */
+export const VOICEVOX_SINGERS: Record<string, VoicevoxSingerEntry> =
+	Object.fromEntries(
+		Object.entries(VOICEVOX_CHARACTERS).flatMap(([key, singer]) => [
+			[key, singer],
+			...Object.entries(VOICEVOX_EXTRA_STYLES[key] ?? {}).map(
+				([suffix, { label, style, talk }]) => [
+					`${key}_${suffix}`,
+					{
+						...singer,
+						style,
+						talk,
+						name: `${singer.name}（${label}）`,
+						base: key,
+					},
+				],
+			),
+		]),
+	);
 
 /** VOICEVOX で歌うモデル名か。 */
 export const isVoicevoxModel = (model: string): boolean =>

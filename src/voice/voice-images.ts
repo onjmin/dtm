@@ -1,6 +1,8 @@
 // 内蔵キャラクター画像。assets/*.png をビルド時に base64 data URI 化して同梱する
 // （tsup の dataurl ローダー）。外部URL依存・CORS・バージョンドリフトを回避するため。
 import fallback from "../../assets/404Chip.png";
+import akane from "../../assets/akane.png";
+import aoi from "../../assets/aoi.png";
 import hibika_aru from "../../assets/hibika_aru.png";
 import itako from "../../assets/itako.png";
 import kiritan from "../../assets/kiritan.png";
@@ -43,6 +45,8 @@ export const VOICE_IMAGES: Record<string, string> = {
 	tsumugi,
 	zundamon,
 	zunko,
+	akane,
+	aoi,
 };
 
 /**
