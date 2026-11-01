@@ -28,7 +28,7 @@ const {
 	require("../../src/voice/neutrino-sing") as typeof import("../../src/voice/neutrino-sing");
 const { isLocalEngineModel, isLocalPage } =
 	require("../../src/voice/local-engines") as typeof import("../../src/voice/local-engines");
-const { VOICEVOX_FRAME_RATE } =
+const { buildVoicevoxPhrases, splitVoicevoxVoices, VOICEVOX_FRAME_RATE } =
 	require("../../src/voice/voicevox-sing") as typeof import("../../src/voice/voicevox-sing");
 
 import type { Units } from "../../src/audio/tuning";
@@ -217,6 +217,54 @@ console.log("■ トラック全体の楽譜とフレーズの切り出し");
 		}).length,
 		1,
 	);
+}
+
+console.log("■ 和音は声ごとに分けて重ねる");
+{
+	const syl = normalizeLyrics("かきくけこさし");
+	const n = (
+		i: number,
+		start: number,
+		dur: number,
+		midi: number,
+	): VoicevoxSourceNote => ({
+		syllable: syl[i],
+		pitch: (midi * 31) as Units,
+		startSec: start,
+		durationSec: dur,
+	});
+	const sungOf = (notes: VoicevoxSourceNote[]): string[] =>
+		buildVoicevoxPhrases(notes).flatMap((p) =>
+			p.score.notes
+				.filter((x) => x.key !== null)
+				.map((x) => `${x.lyric}${x.key}`),
+		);
+	// 「か」の後に3音の和音（き・く・け）、続けて「こ」、最後に2音の和音（さ・し）
+	const notes = [
+		n(0, 0, 1, 60),
+		n(1, 1, 1, 64),
+		n(2, 1, 1, 67),
+		n(3, 1, 1, 72),
+		n(4, 2, 1, 65),
+		n(5, 3, 1, 60),
+		n(6, 3, 1, 64),
+	];
+	const voices = splitVoicevoxVoices(notes);
+	check("声ごとの歌", voices.map(sungOf), [
+		["か60", "き64", "こ65", "さ60"],
+		["く67", "し64"],
+		["け72"],
+	]);
+	check("1本目は従来の先勝ちと同じ", sungOf(voices[0]), sungOf(notes));
+	check(
+		"和音の無いトラックは1本のまま",
+		splitVoicevoxVoices([n(0, 0, 1, 60), n(1, 1, 1, 62)]).length,
+		1,
+	);
+	check("上限を超える声は捨てる", splitVoicevoxVoices(notes, 2).map(sungOf), [
+		["か60", "き64", "こ65", "さ60"],
+		["く67", "し64"],
+	]);
 }
 
 console.log(

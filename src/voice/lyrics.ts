@@ -102,6 +102,7 @@ import {
 	buildVoicevoxPhrases,
 	createVoicevoxRenderer,
 	isVoicevoxModel,
+	splitVoicevoxVoices,
 	VOICEVOX_FRAME_RATE,
 	VOICEVOX_SINGERS,
 	type VoicevoxRenderer,
@@ -4516,14 +4517,19 @@ export const createSingingVoices = (
 		return chunk;
 	};
 
-	/** VOICEVOX・NEUTRINO のトラックをフレーズに分ける（それ以外のモデルは空）。 */
+	/**
+	 * VOICEVOX・NEUTRINO のトラックをフレーズに分ける（それ以外のモデルは空）。
+	 * 和音はエンジンが単旋律しか歌えないので、声ごとに分けて別々に合成し、重ねて鳴らす
+	 * （{@link splitVoicevoxVoices}）。エンジンは頼んだ順に作るので、声をまたいで曲の頭から並べる。
+	 */
 	const externalPhrasesOf = (track: StreamVoiceTrack): ExternalPhrase[] => {
 		const model = track.model.toLowerCase();
+		const voices = splitVoicevoxVoices(track.notes);
 		if (isVoicevoxModel(model)) {
 			const { style, talk } = VOICEVOX_SINGERS[model];
 			const vv = getVoicevox();
-			const sung: ExternalPhrase[] = buildVoicevoxPhrases(track.notes).map(
-				(p) => {
+			const sung: ExternalPhrase[] = voices.flatMap((voice) =>
+				buildVoicevoxPhrases(voice).map((p) => {
 					const chunk = makeChunk(
 						p.startSec - p.leadSec,
 						p.score.notes.reduce((a, n) => a + n.frame_length, 0) /
@@ -4539,7 +4545,7 @@ export const createSingingVoices = (
 						buffer: chunk.buffer,
 						chunk,
 					};
-				},
+				}),
 			);
 			// 語り（「…」）は同じキャラの話し声で読み上げ、そのノートの頭から鳴らす。
 			// 話し声の WAV は頭に無音（audio_query の prePhonemeLength、既定 0.1 秒）が付く。
@@ -4581,8 +4587,10 @@ export const createSingingVoices = (
 				: isOpenUtauModel(model)
 					? [OPENUTAU_SINGERS[model].dir, getOpenUtau()]
 					: [SINSY_SINGERS[model].dir, getSinsy()];
-			const chunks = splitNeutrinoTrack(track.notes, LOCAL_ENGINE_CHUNKING);
-			return chunks.flatMap((built) => {
+			const chunks = voices.flatMap((voice) =>
+				splitNeutrinoTrack(voice, LOCAL_ENGINE_CHUNKING),
+			);
+			const phrases: ExternalPhrase[] = chunks.flatMap((built) => {
 				const { score } = built;
 				if (!score) return [];
 				const chunk = makeChunk(
@@ -4612,6 +4620,7 @@ export const createSingingVoices = (
 					}),
 				}));
 			});
+			return phrases.sort((a, b) => a.startSec - b.startSec);
 		}
 		return [];
 	};

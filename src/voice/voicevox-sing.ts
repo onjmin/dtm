@@ -589,9 +589,13 @@ export type VoicevoxSourceNote = {
  * 曲まるごと1回で合成すると、編集やシークのたびに全部を作り直すことになる。
  * フレーズ単位なら楽譜が同じフレーズはキャッシュが効き、最初のフレーズが
  * できた時点で鳴らし始められる。
+ *
+ * 単旋律しか歌えないので、和音・重なりは先勝ちで1本へ潰す。`dropped` を渡すと、
+ * 潰して捨てた音をそこへ積む（{@link splitVoicevoxVoices} が別の声へ回す）。
  */
 export const buildVoicevoxPhrases = <N extends VoicevoxSourceNote>(
 	notes: N[],
+	dropped?: N[],
 ): VoicevoxPhrase<N>[] => {
 	const phrases: VoicevoxPhrase<N>[] = [];
 	let timed: TimedNote[] = [];
@@ -622,7 +626,11 @@ export const buildVoicevoxPhrases = <N extends VoicevoxSourceNote>(
 		const prev = timed[timed.length - 1];
 		const start = note.startSec;
 		const end = note.startSec + note.durationSec;
-		if (prev && start < prev.end - 1e-6) continue; // 和音・重なりは先勝ち
+		// 和音・重なりは先勝ち
+		if (prev && start < prev.end - 1e-6) {
+			dropped?.push(note);
+			continue;
+		}
 		if (prev && (note.phraseStart || start - prev.end > PHRASE_SPLIT_GAP_SEC))
 			flush();
 		const key = (pitch: number): number => unitsToMidiDetune(units(pitch)).midi;
@@ -661,6 +669,32 @@ export const buildVoicevoxPhrases = <N extends VoicevoxSourceNote>(
 	}
 	flush();
 	return phrases;
+};
+
+/**
+ * 手元のエンジンで重ねて歌う声の上限（1本目を含む）。和音の音はそれぞれ別の声として
+ * 合成するので、声の数だけ合成の手間が増える。これを超える音は従来どおり捨てる。
+ */
+export const MAX_ENGINE_VOICES = 4;
+
+/**
+ * 和音・重なりを、単旋律の声ごとに分ける。1本目は元の音そのまま（{@link buildVoicevoxPhrases}
+ * が先勝ちで歌う音）、2本目からは前の声で捨てられた音を同じやり方で拾い直したもの。
+ * 和音の無いトラックは1本だけになり、合成の手間は変わらない。
+ */
+export const splitVoicevoxVoices = <N extends VoicevoxSourceNote>(
+	notes: N[],
+	maxVoices = MAX_ENGINE_VOICES,
+): N[][] => {
+	const voices: N[][] = [];
+	let left = notes;
+	while (left.length > 0 && voices.length < maxVoices) {
+		const dropped: N[] = [];
+		buildVoicevoxPhrases(left, dropped);
+		voices.push(left);
+		left = dropped;
+	}
+	return voices;
 };
 
 /** `/singers` の1人ぶん（必要な所だけ）。 */
