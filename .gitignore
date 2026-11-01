@@ -1,9 +1,16 @@
+# このリポジトリ固有
 AGENTS.md
+.claude
 tmp
 scratch
-# 耳コピ MIDI から生成する骨格データ（他人の曲の和音・ベース・構成をそのまま持つ）。抽出スクリプトは削除済み（git 履歴にある）
+# 耳コピ（他人の曲）から作るデータ。元曲にたどれるので git にもバンドルにも入れず、scripts/ から渡す
 src/compose/compose-skeletons.ts
-.claude
+src/compose/compose-section-bank.ts
+src/compose/compose-phrases.ts
+# 台詞作曲の録音用 dist の写し（make-dist-rec.mjs が作る）
+scripts/speech-melody/rec/dist-rec/
+# 音MAD の曲ごとの build・video・メモ。台詞素材と結びついた作品なので手元だけに置く
+scripts/otomad/songs/
 
 # Python
 __pycache__/
@@ -82,7 +89,6 @@ web_modules/
 !.env.example
 
 # parcel-bundler cache (https://parceljs.org/)
-.cache
 .parcel-cache
 
 # Next.js build output
@@ -94,7 +100,6 @@ out
 dist
 
 # Gatsby files
-.cache/
 # Comment in the public line in if your project uses Gatsby and not Next.js
 # https://nextjs.org/blog/next-9-1#public-directory-support
 # public
@@ -148,8 +153,3 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-# 耳コピ（他人の曲）から作るデータ。どちらも元曲にたどれるので git にもバンドルにも入れず、scripts/ から渡す
-src/compose/compose-section-bank.ts
-src/compose/compose-phrases.ts
-# 台詞作曲の録音用 dist の写し（make-dist-rec.mjs が作る）
-scripts/speech-melody/rec/dist-rec/
