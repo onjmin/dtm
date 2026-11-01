@@ -1,7 +1,7 @@
 # OpenUtau（DiffSinger・ENUNU）で歌わせる（試作）
 
 歌詞トラックの音源に OpenUtau の歌い手（`ou_` で始まるモデル名）を選ぶと、利用者の手元の OpenUtau で歌わせる。
-DiffSinger や ENUNU（NNSVS）のような AI の歌い手を、NEUTRINO と同じ形（MusicXML を送ると WAV が返る）で使う。楽譜の組み立てと、トラック全体を1回で合成してフレーズに切って並べる仕組みは NEUTRINO と共通（[neutrino-sing.md](neutrino-sing.md)）。
+DiffSinger や ENUNU（NNSVS）のような AI の歌い手を、NEUTRINO と同じ形（MusicXML を送ると WAV が返る）で使う。楽譜の組み立てと、区切りごとに合成してフレーズに切って並べる仕組みは NEUTRINO と共通（[neutrino-sing.md](neutrino-sing.md)）。
 dtm は OpenUtau も歌い手も同梱しない。
 
 **OpenUtau の書き出しコマンド（`OpenUtau render`）は、本家への提案 [PR #2162](https://github.com/openutau/OpenUtau/pull/2162) の段階で、2026-10-31 時点では公式の版に入っていない。** 試すには提案のブランチ（`christianazinn/OpenUtau` の `christian/cli`）を自分で組み立てる。公式に入ったら、その版に置き換える。
@@ -110,16 +110,7 @@ dtm は OpenUtau も歌い手も同梱しない。
 - OpenUtau は合成したフレーズをキャッシュするので、同じ楽譜の2回目は1秒ほどで返る。
 - ENUNU のサーバーの口（15556）は SimpleEnunu と OpenUtau の両方に決め打ちで、複数立てて並べることはできない。
 
-**dtm 側の工夫（待ち時間を短くする）**: OpenUtau の声は、トラックを休符（0.2 秒以上）で区切り（最初は 4 秒以上、あとは 20 秒以上の歌ごと、`OPENUTAU_CHUNKING`）、区切りごとに楽譜を送る。中継サーバーには、どのトラックでも曲の頭に近い区切りから先に頼む。再生は、ここまでの合成の速さから「残りの区切りが鳴る2秒前までに出来る」と見込めた時点で始める（`waitUntilAhead`）。区切りの境目は、トラック全体で切るときと同じ所で受け渡し、余白が二重に鳴らないようにする。見込みが外れて遅れたフレーズは途中から鳴り、コンソールに警告を1回出す。
-
-海鬼月（ENUNU・DiffSinger とも3トラック）で、キャッシュの無い状態から DAW で鳴り始めるまで:
-
-| | トラック全体を待つ（前の作り） | 区切って順に合成（今） |
-| :--- | :--- | :--- |
-| DiffSinger | 66 秒 | 44 秒 |
-| ENUNU（GPU 版） | 266 秒 | 102 秒 |
-
-どちらも、頭から44秒を録って、合成が間に合わない警告は出なかった。ENUNU は3トラック合わせると歌の長さより合成に時間がかかるので、残りが間に合う所まで待つぶん、これより短くはならない。
+**dtm 側の工夫（待ち時間を短くする）**: トラックを休符で区切り、曲の頭に近い区切りから順に合成して、残りが間に合う見込みが立ったら鳴らし始める（手元のエンジン共通。[neutrino-sing.md](neutrino-sing.md) の「待たずに鳴らし始める仕組み」）。海鬼月で、作り置きの無い状態から鳴り始めるまで、DiffSinger は 66 秒 → 11 秒、ENUNU（GPU 版）は 266 秒 → 95 秒。
 
 ## 制約
 

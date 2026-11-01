@@ -105,7 +105,7 @@ OpenUtau の書き出しコマンドは、2026-11-01 時点では本家に入っ
    GPU が使えないときは `--onnx-runner CPU`。
 6. 確かめる: `curl http://127.0.0.1:50023/singers` で、`Singers/` の歌い手が並ぶ。
 
-時間の目安（海鬼月の歌の1トラック、152音・約108秒）: DiffSinger は GPU（DirectML）で約10秒、ENUNU は CPU 版の PyTorch で約83秒、GPU 版で約36秒。dtm は OpenUtau の声を区切って頭から順に合成し、間に合う見込みが立ったら鳴らし始める（海鬼月の3トラックで、キャッシュ無しから DiffSinger 44 秒、ENUNU 102 秒）。一度合成した所は OpenUtau がキャッシュするので、2回目からはすぐ鳴る。詳しくは [openutau-sing.md](openutau-sing.md) の「合成にかかる時間」。
+時間の目安（海鬼月の歌の1トラック、152音・約108秒）: DiffSinger は GPU（DirectML）で約10秒、ENUNU は CPU 版の PyTorch で約83秒、GPU 版で約36秒。dtm は手元のエンジンの歌を区切って頭から順に合成し、間に合う見込みが立ったら鳴らし始める。海鬼月の3トラックで、作り置きの無い状態から鳴り始めるまで VOICEVOX 1.7 秒・Sinsy 2.6 秒・DiffSinger 11 秒・NEUTRINO 12 秒・ENUNU（GPU 版）95 秒。一度合成した所は OpenUtau がキャッシュするので、2回目からはすぐ鳴る。仕組みは [neutrino-sing.md](neutrino-sing.md) の「待たずに鳴らし始める仕組み」。
 
 ## 4. Sinsy（WSL）
 

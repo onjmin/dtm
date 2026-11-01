@@ -2,7 +2,7 @@
  * OpenUtau（DiffSinger など）で歌わせる（試作）。
  *
  * 手元の中継サーバー（`scripts/misc/openutau-server.ts`、既定 `http://127.0.0.1:50023`）に
- * NEUTRINO と同じ MusicXML を送って WAV を受け取る。楽譜の組み立て・トラック全体を1回で
+ * NEUTRINO と同じ MusicXML を送って WAV を受け取る。楽譜の組み立て・休符で区切った区切りごとに
  * 合成して切って並べる仕組みは NEUTRINO と共通（{@link file://./neutrino-sing.ts}）。
  * dtm は OpenUtau も歌い手も同梱しない。
  */

@@ -11,6 +11,7 @@
  */
 
 import { sanitizeText } from "../safe-text";
+import { createPriorityQueue } from "./priority-queue";
 import { normalizeExternalVoice } from "./voice-level";
 import {
 	buildVoicevoxPhrases,
@@ -390,10 +391,11 @@ export type TrackChunking = {
 };
 
 /**
- * OpenUtau 向けの区切り方。ENUNU は GPU でも1トラック（約150音）に30秒余りかかるので、
- * トラック全体を待たず、曲の頭の区切りから順に合成して鳴らし始める。
+ * 手元のエンジン（NEUTRINO・OpenUtau・Sinsy）の区切り方。トラック全体を待たず、
+ * 曲の頭の区切りから順に合成して鳴らし始める（ENUNU は GPU でも1トラック約150音に
+ * 30秒余り、NEUTRINO は1回ごとに約3秒の立ち上げ）。
  */
-export const OPENUTAU_CHUNKING: TrackChunking = {
+export const LOCAL_ENGINE_CHUNKING: TrackChunking = {
 	firstSec: 4,
 	chunkSec: 20,
 	minGapSec: 0.2,
@@ -495,6 +497,8 @@ export type NeutrinoRenderer = {
 		model: string,
 		score: VoicevoxScore,
 		priority?: number,
+		/** サーバーへ実際に送り始めたとき（待ち行列から出たとき）に呼ぶ。 */
+		onStart?: () => void,
 	) => Promise<AudioBuffer | null>;
 };
 
@@ -510,38 +514,22 @@ export const createNeutrinoRenderer = (
 ): NeutrinoRenderer => {
 	const cache = new Map<string, Promise<AudioBuffer | null>>();
 	// サーバーは1件ずつしか作れないので、待ち行列から曲の頭に近いものを先に出す。
-	type Pending = { priority: number; seq: number; run: () => Promise<void> };
-	const pending: Pending[] = [];
-	let seq = 0;
-	let busy = false;
-	const pump = (): void => {
-		if (busy || pending.length === 0) return;
-		pending.sort((a, b) => a.priority - b.priority || a.seq - b.seq);
-		const next = pending.shift() as Pending;
-		busy = true;
-		next.run().finally(() => {
-			busy = false;
-			pump();
-		});
-	};
-	const enqueue = (priority: number, task: () => Promise<ArrayBuffer>) =>
-		new Promise<ArrayBuffer>((resolve, reject) => {
-			pending.push({
-				priority: Number.isFinite(priority) ? priority : Number.MAX_VALUE,
-				seq: seq++,
-				run: () => task().then(resolve, reject),
-			});
-			pump();
-		});
+	const enqueue = createPriorityQueue();
 	let warned = false;
-	const render: NeutrinoRenderer["render"] = (model, score, priority = 0) => {
+	const render: NeutrinoRenderer["render"] = (
+		model,
+		score,
+		priority = 0,
+		onStart,
+	) => {
 		const xml = scoreToNeutrinoMusicXml(score, 0, engine.timing);
 		const key = `${model}|${xml}`;
 		const hit = cache.get(key);
 		if (hit) return hit;
-		const job = enqueue(priority, () =>
-			synthesizeNeutrino(xml, { model, baseUrl }),
-		)
+		const job = enqueue(priority, () => {
+			onStart?.();
+			return synthesizeNeutrino(xml, { model, baseUrl });
+		})
 			.then((wav) => ctx.decodeAudioData(wav))
 			// エンジン・歌い手ごとに違う素の大きさを、koe の声に近い大きさへそろえる
 			.then(normalizeExternalVoice)

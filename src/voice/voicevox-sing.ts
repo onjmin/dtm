@@ -15,6 +15,7 @@
 import { units, unitsToMidiDetune } from "../audio/tuning";
 import { sanitizeText } from "../safe-text";
 import type { LyricSyllable, Note } from "../types";
+import { createPriorityQueue } from "./priority-queue";
 import { normalizeExternalVoice } from "./voice-level";
 
 /** VOICEVOX 楽譜のフレームレート。 */
@@ -456,12 +457,23 @@ export const synthesizeVoicevoxTalk = async (
 export type VoicevoxRenderer = {
 	/**
 	 * 楽譜を合成して AudioBuffer にする。同じ歌い手・同じ楽譜は1回だけ合成する。
-	 * エンジンへは1件ずつ順に送る（頼んだ順に出来上がるので、曲頭から埋まっていく）。
+	 * エンジンへは1件ずつ送る。待っているものは `priority`（曲の中の開始秒）の小さい順、
+	 * 同じなら頼んだ順（曲頭から埋まっていく）。`onStart` はエンジンへ送り始めたときに呼ぶ。
 	 * 失敗したら null（エンジンが起動していない・歌えない歌詞など）。
 	 */
-	render: (style: number, score: VoicevoxScore) => Promise<AudioBuffer | null>;
+	render: (
+		style: number,
+		score: VoicevoxScore,
+		priority?: number,
+		onStart?: () => void,
+	) => Promise<AudioBuffer | null>;
 	/** 語りを話し声で読み上げて AudioBuffer にする（同じ話者・同じ本文は1回だけ）。 */
-	speak: (speaker: number, text: string) => Promise<AudioBuffer | null>;
+	speak: (
+		speaker: number,
+		text: string,
+		priority?: number,
+		onStart?: () => void,
+	) => Promise<AudioBuffer | null>;
 };
 
 /** ブラウザから VOICEVOX エンジンを呼んで歌わせる係。 */
@@ -470,17 +482,20 @@ export const createVoicevoxRenderer = (
 	baseUrl: string = VOICEVOX_DEFAULT_URL,
 ): VoicevoxRenderer => {
 	const cache = new Map<string, Promise<AudioBuffer | null>>();
-	let queue: Promise<unknown> = Promise.resolve();
+	const queue = createPriorityQueue();
 	let warned = false;
 	const enqueue = (
 		key: string,
 		synth: () => Promise<ArrayBuffer>,
+		priority = 0,
+		onStart?: () => void,
 	): Promise<AudioBuffer | null> => {
 		const hit = cache.get(key);
 		if (hit) return hit;
-		const job = queue
-			.catch(() => {})
-			.then(synth)
+		const job = queue(priority, () => {
+			onStart?.();
+			return synth();
+		})
 			.then((wav) => ctx.decodeAudioData(wav))
 			// エンジン・歌い手ごとに違う素の大きさを、koe の声に近い大きさへそろえる
 			.then(normalizeExternalVoice)
@@ -496,17 +511,27 @@ export const createVoicevoxRenderer = (
 				cache.delete(key); // 起動し直したら作り直せるように
 				return null;
 			});
-		queue = job;
 		cache.set(key, job);
 		return job;
 	};
-	const render: VoicevoxRenderer["render"] = (style, score) =>
-		enqueue(`${style}|${JSON.stringify(score.notes)}`, () =>
-			synthesizeVoicevoxSong(score, { singer: style, baseUrl }),
+	const render: VoicevoxRenderer["render"] = (
+		style,
+		score,
+		priority,
+		onStart,
+	) =>
+		enqueue(
+			`${style}|${JSON.stringify(score.notes)}`,
+			() => synthesizeVoicevoxSong(score, { singer: style, baseUrl }),
+			priority,
+			onStart,
 		);
-	const speak: VoicevoxRenderer["speak"] = (speaker, text) =>
-		enqueue(`talk|${speaker}|${text}`, () =>
-			synthesizeVoicevoxTalk(text, { speaker, baseUrl }),
+	const speak: VoicevoxRenderer["speak"] = (speaker, text, priority, onStart) =>
+		enqueue(
+			`talk|${speaker}|${text}`,
+			() => synthesizeVoicevoxTalk(text, { speaker, baseUrl }),
+			priority,
+			onStart,
 		);
 	return { render, speak };
 };
