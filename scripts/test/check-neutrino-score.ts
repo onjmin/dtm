@@ -21,7 +21,9 @@ const {
 	absorbTinyFragments,
 	buildNeutrinoTrack,
 	isNeutrinoModel,
+	OPENUTAU_XML_TIMING,
 	scoreToNeutrinoMusicXml,
+	splitNeutrinoTrack,
 } =
 	require("../../src/voice/neutrino-sing") as typeof import("../../src/voice/neutrino-sing");
 const { isLocalEngineModel, isLocalPage } =
@@ -150,6 +152,71 @@ console.log("■ トラック全体の楽譜とフレーズの切り出し");
 	);
 	check("leadSec は切り出しの頭から最初の音まで", round(b.leadSec), 0.3);
 	check("音の無いトラックは楽譜なし", buildNeutrinoTrack([]).score, null);
+
+	// OpenUtau 向けの区切り: 2秒のフレーズを、間を 0.5 秒・1.5 秒と交互にあけて10個並べる
+	const many: VoicevoxSourceNote[] = [];
+	let t = 1;
+	for (let k = 0; k < 10; k++) {
+		many.push(n(k % 5, t, 1, 60), n((k + 1) % 5, t + 1, 1, 62));
+		t += 2 + (k % 2 === 0 ? 0.5 : 1.5);
+	}
+	const chunks = splitNeutrinoTrack(many, {
+		firstSec: 3,
+		chunkSec: 6,
+		minGapSec: 1,
+	});
+	check(
+		"区切りごとの音の数（最初は短め、1 秒以上の休符でだけ区切る）",
+		chunks.map(
+			(c) => (c.score?.notes ?? []).filter((x) => x.key !== null).length,
+		),
+		[4, 8, 8],
+	);
+	check(
+		"フレーズは割らずに全部どこかの区切りに入る",
+		chunks.reduce((a, c) => a + c.phrases.length, 0),
+		buildNeutrinoTrack(many).phrases.length,
+	);
+	const bounds = chunks.flatMap((c) =>
+		c.phrases.map((p) => [round(p.sliceStartSec), round(p.sliceEndSec)]),
+	);
+	check(
+		"区切りをまたいでも切り出しは重ならない",
+		bounds.every((b, k) => k === 0 || bounds[k - 1][1] <= b[0]),
+		true,
+	);
+	// 0.5 秒の休符でも区切ると、前後の余白（各 0.5 秒）が重なりうる。受け渡しで重ならないこと
+	const fine = splitNeutrinoTrack(many, {
+		firstSec: 1,
+		chunkSec: 1,
+		minGapSec: 0.5,
+	});
+	const fineBounds = fine.flatMap((c) =>
+		c.phrases.map((p) => [
+			p.sliceStartSec,
+			p.sliceEndSec,
+			p.startSec - p.leadSec,
+		]),
+	);
+	check("0.5 秒の休符でも区切る", fine.length, 10);
+	check(
+		"短い休符で区切っても、切り出しは重ならず、鳴らし始めは切り出しの頭",
+		fineBounds.every(
+			(b, k) =>
+				(k === 0 || fineBounds[k - 1][1] <= b[0] + 1e-9) &&
+				Math.abs(b[2] - b[0]) < 1e-9,
+		),
+		true,
+	);
+	check(
+		"区切れる所が無ければ1つ",
+		splitNeutrinoTrack(many.slice(0, 4), {
+			firstSec: 100,
+			chunkSec: 100,
+			minGapSec: 1,
+		}).length,
+		1,
+	);
 }
 
 console.log(
@@ -193,6 +260,56 @@ console.log(
 			r(10),
 		]).map((x) => x.lyric),
 		["", "う", ""],
+	);
+}
+
+console.log("■ OpenUtau 用 MusicXML（ENUNU の丸めで遅れが溜まらない）");
+{
+	// 75ms 前後の速い音を 200 個（テンポ 60・960 分割の書き方だと ENUNU で約 1 秒遅れた並び）
+	const notes = [{ key: null, frame_length: frames(0.5), lyric: "" }];
+	for (let i = 0; i < 200; i++)
+		notes.push({ key: 60 + (i % 5), frame_length: 7 + (i % 3), lyric: "な" });
+	const xml = scoreToNeutrinoMusicXml({ notes }, 0, OPENUTAU_XML_TIMING);
+	check(
+		"テンポ 150・480 分割",
+		[
+			xml.match(/<divisions>(\d+)/)?.[1],
+			xml.match(/<sound tempo="(\d+)"/)?.[1],
+		],
+		["480", "150"],
+	);
+	const durs = [...xml.matchAll(/<duration>(\d+)/g)].map((m) => Number(m[1]));
+	check(
+		"長さはすべて 20 分割（96分音符）の倍数",
+		durs.every((d) => d > 0 && d % 20 === 0),
+		true,
+	);
+	// 音の頭の時刻（秒）を楽譜から戻し、元の時刻とのずれを見る
+	const sec = (div: number): number => (div / 480) * (60 / 150);
+	let pos = 0;
+	let frame = 0;
+	let worst = 0;
+	const parts = [...xml.matchAll(/<note>(.*?)<\/note>/g)].map((m) => m[1]);
+	let k = 0;
+	for (const p of parts) {
+		const d = Number(p.match(/<duration>(\d+)/)?.[1]);
+		if (!p.includes("<rest/>") && !p.includes('tie type="stop"')) {
+			k++;
+			const want = (frame + frames(0.5)) / VOICEVOX_FRAME_RATE;
+			worst = Math.max(worst, Math.abs(sec(pos) - want));
+			frame += notes[k].frame_length;
+		}
+		pos += d;
+	}
+	check("音の数", k, 200);
+	check("音の頭のずれは 1 格子の半分（8.4ms）以内", worst <= 0.0084, true);
+	check(
+		"NEUTRINO 用は今までどおり（テンポ 60・960 分割）",
+		[
+			scoreToNeutrinoMusicXml({ notes }).match(/<divisions>(\d+)/)?.[1],
+			scoreToNeutrinoMusicXml({ notes }).match(/<sound tempo="(\d+)"/)?.[1],
+		],
+		["960", "60"],
 	);
 }
 

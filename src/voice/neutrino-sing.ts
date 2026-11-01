@@ -11,6 +11,7 @@
  */
 
 import { sanitizeText } from "../safe-text";
+import { createPriorityQueue } from "./priority-queue";
 import { normalizeExternalVoice } from "./voice-level";
 import {
 	buildVoicevoxPhrases,
@@ -35,6 +36,30 @@ export type NeutrinoCharacterTerms = { label: string; url: string };
 const KOTONOHA_TERMS: NeutrinoCharacterTerms = {
 	label: "琴葉茜・葵（A.I.VOICE）",
 	url: "https://aivoice.jp/character/kotonoha/",
+};
+/** 東北ずん子・ずんだもんプロジェクトのキャラ（ライブラリ付属の Readme が指すガイドライン）。 */
+const ZUNKO_TERMS: NeutrinoCharacterTerms = {
+	label: "東北ずん子・ずんだもんプロジェクトのガイドライン",
+	url: "https://zunko.jp/guideline.html",
+};
+const SEVEN_TERMS: NeutrinoCharacterTerms = {
+	label: "No.7 の歌声ライブラリの利用規約",
+	url: "https://voiceseven.com/#j0400",
+};
+/** 夜語トバリは株式会社エーアイの使用許諾契約書（琴葉茜・葵と同じく商用・同人などは事前の問い合わせ、出力の解析は禁止）。 */
+const TOBARI_TERMS: NeutrinoCharacterTerms = {
+	label: "夜語トバリのキャラクター使用ガイドライン",
+	url: "https://yogataritobari.studio.site/",
+};
+/** 謡子は名古屋工業大学の NIT SONG070 F001（CC BY 3.0）で学習した声（ライブラリ付属の license.txt）。 */
+const YOKO_TERMS: NeutrinoCharacterTerms = {
+	label: "NIT SONG070 F001（名古屋工業大学、CC BY 3.0）",
+	url: "https://creativecommons.org/licenses/by/3.0/deed.ja",
+};
+/** JSUT は東京大学の JSUT-song コーパスで学習した声（研究・個人は自由、商用は問い合わせ）。 */
+const JSUT_TERMS: NeutrinoCharacterTerms = {
+	label: "JSUT-song コーパス（東京大学 猿渡・高道研究室）",
+	url: "https://sites.google.com/site/shinnosuketakamichi/publication/jsut-song",
 };
 
 /**
@@ -63,6 +88,49 @@ export const NEUTRINO_SINGERS: Record<
 		name: "NEUTRINO:琴葉葵",
 		characterTerms: KOTONOHA_TERMS,
 	},
+	// 以下は別配布（studio-neutrino.com のダウンロードページ、2026-11-01 時点の v3）
+	nt_zundamon: {
+		dir: "ZUNDAMON",
+		name: "NEUTRINO:ずんだもん",
+		characterTerms: ZUNKO_TERMS,
+	},
+	nt_metan: {
+		dir: "METAN",
+		name: "NEUTRINO:四国めたん",
+		characterTerms: ZUNKO_TERMS,
+	},
+	nt_zunko: {
+		dir: "ZUNKO",
+		name: "NEUTRINO:東北ずん子",
+		characterTerms: ZUNKO_TERMS,
+	},
+	nt_kiritan: {
+		dir: "KIRITAN",
+		name: "NEUTRINO:東北きりたん",
+		characterTerms: ZUNKO_TERMS,
+	},
+	nt_itako: {
+		dir: "ITAKO",
+		name: "NEUTRINO:東北イタコ",
+		characterTerms: ZUNKO_TERMS,
+	},
+	nt_chanko: {
+		dir: "CHANKO",
+		name: "NEUTRINO:大江戸ちゃんこ",
+		characterTerms: ZUNKO_TERMS,
+	},
+	nt_no7: {
+		dir: "SEVEN",
+		name: "NEUTRINO:No.7",
+		characterTerms: SEVEN_TERMS,
+	},
+	nt_tobari: {
+		dir: "TOBARI",
+		name: "NEUTRINO:夜語トバリ",
+		characterTerms: TOBARI_TERMS,
+	},
+	nt_yoko: { dir: "YOKO", name: "NEUTRINO:謡子", characterTerms: YOKO_TERMS },
+	nt_jsut: { dir: "JSUT", name: "NEUTRINO:JSUT", characterTerms: JSUT_TERMS },
 };
 
 /** NEUTRINO で歌うモデル名か。 */
@@ -75,10 +143,40 @@ export const neutrinoCharacterTerms = (
 ): NeutrinoCharacterTerms | undefined =>
 	NEUTRINO_SINGERS[model.toLowerCase()]?.characterTerms;
 
-/** MusicXML の4分音符あたりの分割数。テンポ 60 なので 1 分割 ≒ 1ms。 */
-const DIVISIONS = 960;
-/** 1小節（4/4）の分割数。 */
-const MEASURE = DIVISIONS * 4;
+/** MusicXML に書くテンポと細かさ。dtm の楽譜は秒で持つので、テンポは時刻の物差しにすぎない。 */
+export type MusicXmlTiming = {
+	/** 4分音符の BPM。 */
+	tempo: number;
+	/** 4分音符あたりの分割数（MusicXML の divisions）。 */
+	divisions: number;
+	/** 音の境目をこの分割数の倍数にそろえる。1 ならそろえない。 */
+	grid: number;
+};
+
+/** NEUTRINO・Sinsy 向け。テンポ 60・960 分割なので 1 分割 ≒ 1ms。 */
+export const NEUTRINO_XML_TIMING: MusicXmlTiming = {
+	tempo: 60,
+	divisions: 960,
+	grid: 1,
+};
+
+/**
+ * OpenUtau 向け（DiffSinger・ENUNU）。
+ * - 分割数を OpenUtau の 480 にそろえる。960 だと取り込みで長さが切り捨てられ、
+ *   1音ごとに最大 1ms ずつ歌が早まっていく（海鬼月で曲の終わりに 0.1〜0.3 秒）。
+ * - 音の境目を 20 分割（1拍の 1/24 ＝ 96分音符）の倍数にそろえる。ENUNU の楽譜変換
+ *   （utaupy）が音の長さを1音ずつこの単位に四捨五入するため、そろえないと丸めが溜まり、
+ *   歌が遅れていく（テンポ 60 の 75ms の音で1音あたり約 5ms、曲の終わりに 0.9 秒）。
+ *   遅れた時刻を OpenUtau が元の音に当てはめると、子音の長さが負になって捨てられ、
+ *   フレーズが細切れになって声が抜ける。
+ * - テンポ 150 なら格子は 16.7ms で、そろえる誤差は1音あたり 8ms 以内（溜まらない）。
+ *   テンポ 60 より、短い音の「96分音符いくつ分」も実際の歌に近くなる。
+ */
+export const OPENUTAU_XML_TIMING: MusicXmlTiming = {
+	tempo: 150,
+	divisions: 480,
+	grid: 20,
+};
 
 const STEPS = ["C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B"];
 const ALTERS = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
@@ -157,13 +255,18 @@ export const absorbTinyFragments = (
 export const scoreToNeutrinoMusicXml = (
 	score: VoicevoxScore,
 	keyShift = 0,
+	timing: MusicXmlTiming = NEUTRINO_XML_TIMING,
 ): string => {
+	const { tempo, divisions } = timing;
+	const grid = Math.max(1, Math.trunc(timing.grid));
+	const MEASURE = divisions * 4;
 	// フレームを分割数へ。丸めの誤差が溜まらないよう、累積の位置で割る。
 	type Ev = { start: number; end: number; note: VoicevoxScoreNote };
 	const events: Ev[] = [];
 	let frames = 0;
 	const at = (f: number): number =>
-		Math.round((f / VOICEVOX_FRAME_RATE) * DIVISIONS);
+		Math.round(((f / VOICEVOX_FRAME_RATE) * (tempo / 60) * divisions) / grid) *
+		grid;
 	const shift = Number.isFinite(keyShift) ? Math.trunc(keyShift) : 0;
 	for (const note of absorbTinyFragments(score.notes)) {
 		const start = at(frames);
@@ -181,11 +284,11 @@ export const scoreToNeutrinoMusicXml = (
 		const body: string[] = [];
 		if (m === 0) {
 			body.push(
-				`<attributes><divisions>${DIVISIONS}</divisions><key><fifths>0</fifths></key>` +
+				`<attributes><divisions>${divisions}</divisions><key><fifths>0</fifths></key>` +
 					"<time><beats>4</beats><beat-type>4</beat-type></time>" +
 					"<clef><sign>G</sign><line>2</line></clef></attributes>",
 				'<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit>' +
-					'<per-minute>60</per-minute></metronome></direction-type><sound tempo="60"/></direction>',
+					`<per-minute>${tempo}</per-minute></metronome></direction-type><sound tempo="${tempo}"/></direction>`,
 			);
 		}
 		let filled = mStart;
@@ -344,6 +447,94 @@ export const buildNeutrinoTrack = <N extends VoicevoxSourceNote>(
 	};
 };
 
+/** {@link splitNeutrinoTrack} の区切り方。 */
+export type TrackChunking = {
+	/** 最初の区切りは、少なくともこの秒数の歌を含める（短いほど早く鳴り始める）。 */
+	firstSec: number;
+	/** 2つ目からの区切りは、少なくともこの秒数の歌を含める。 */
+	chunkSec: number;
+	/** この秒数以上空いたフレーズの間でだけ区切る（息継ぎだけの所では区切らない）。 */
+	minGapSec: number;
+};
+
+/**
+ * 手元のエンジン（NEUTRINO・OpenUtau・Sinsy）の区切り方。トラック全体を待たず、
+ * 曲の頭の区切りから順に合成して鳴らし始める（ENUNU は GPU でも1トラック約150音に
+ * 30秒余り、NEUTRINO は1回ごとに約3秒の立ち上げ）。
+ */
+export const LOCAL_ENGINE_CHUNKING: TrackChunking = {
+	firstSec: 4,
+	chunkSec: 20,
+	minGapSec: 0.2,
+};
+
+/**
+ * トラックを長めの休符の所で区切り、区切りごとに {@link buildNeutrinoTrack} を作る。
+ * 区切りはフレーズの境目（`minGapSec` 以上空いた所）だけなので、フレーズは割らない。
+ * 区切れる所が無ければ1つ（トラック全体）のまま。
+ */
+export const splitNeutrinoTrack = <N extends VoicevoxSourceNote>(
+	notes: N[],
+	chunking: TrackChunking,
+): NeutrinoTrack<N>[] => {
+	const phrases = buildVoicevoxPhrases(notes);
+	if (phrases.length === 0) return [];
+	const index = new Map<N, number>();
+	notes.forEach((n, k) => {
+		index.set(n, k);
+	});
+	const spans = phrases
+		.map((p) => {
+			const ks = p.notes.map((n) => index.get(n) ?? -1).filter((k) => k >= 0);
+			const end = Math.max(...p.notes.map((n) => n.startSec + n.durationSec));
+			return {
+				from: Math.min(...ks),
+				to: Math.max(...ks),
+				start: p.startSec,
+				end,
+			};
+		})
+		.filter((sp) => Number.isFinite(sp.from) && Number.isFinite(sp.end));
+	const groups: { from: number; to: number }[] = [];
+	let cur: { from: number; to: number; start: number; end: number } | null =
+		null;
+	for (const sp of spans) {
+		const want = groups.length === 0 ? chunking.firstSec : chunking.chunkSec;
+		if (
+			cur &&
+			cur.end - cur.start >= want &&
+			sp.start - cur.end >= chunking.minGapSec
+		) {
+			groups.push({ from: cur.from, to: cur.to });
+			cur = null;
+		}
+		cur = cur
+			? {
+					from: cur.from,
+					to: Math.max(cur.to, sp.to),
+					start: cur.start,
+					end: Math.max(cur.end, sp.end),
+				}
+			: { ...sp };
+	}
+	if (cur) groups.push({ from: cur.from, to: cur.to });
+	const tracks = groups
+		.map((g) => buildNeutrinoTrack(notes.slice(g.from, g.to + 1)))
+		.filter((t) => t.score !== null && t.phrases.length > 0);
+	// 区切りの境目: トラック全体で切るときと同じ所（前の音の終わりか、次の最初の音の
+	// SLICE_LEAD_SEC 前の遅い方）で受け渡し、前後の区切りの余白が二重に鳴らないようにする。
+	for (let k = 1; k < tracks.length; k++) {
+		const a = tracks[k - 1].phrases[tracks[k - 1].phrases.length - 1];
+		const b = tracks[k].phrases[0];
+		const lastEnd = a.sliceEndSec - TRACK_TAIL_SEC;
+		const boundary = Math.max(lastEnd, b.startSec - SLICE_LEAD_SEC);
+		a.sliceEndSec = Math.min(a.sliceEndSec, boundary);
+		b.sliceStartSec = Math.max(b.sliceStartSec, boundary);
+		b.leadSec = b.startSec - b.sliceStartSec;
+	}
+	return tracks;
+};
+
 /** 合成した音声から、アンカー基準の秒の範囲を切り出す。 */
 export const sliceAudioBuffer = (
 	ctx: BaseAudioContext,
@@ -366,9 +557,16 @@ export const sliceAudioBuffer = (
 export type NeutrinoRenderer = {
 	/**
 	 * 楽譜を合成して AudioBuffer にする。同じ歌い手・同じ楽譜は1回だけ合成する。
-	 * サーバーへは1件ずつ順に送る。失敗したら null（サーバー未起動・ライブラリ未導入など）。
+	 * サーバーへは1件ずつ送る。待っているものは `priority`（曲の中の開始秒）の小さい順、
+	 * 同じなら頼んだ順。失敗したら null（サーバー未起動・ライブラリ未導入など）。
 	 */
-	render: (model: string, score: VoicevoxScore) => Promise<AudioBuffer | null>;
+	render: (
+		model: string,
+		score: VoicevoxScore,
+		priority?: number,
+		/** サーバーへ実際に送り始めたとき（待ち行列から出たとき）に呼ぶ。 */
+		onStart?: () => void,
+	) => Promise<AudioBuffer | null>;
 };
 
 /** ブラウザから NEUTRINO のサーバーを呼んで歌わせる係。 */
@@ -376,22 +574,29 @@ export const createNeutrinoRenderer = (
 	ctx: BaseAudioContext,
 	baseUrl: string = NEUTRINO_DEFAULT_URL,
 	/** 警告に出すエンジン名と起動するスクリプト（OpenUtau の中継サーバーでも同じ係を使う）。 */
-	engine: { label: string; script: string } = {
+	engine: { label: string; script: string; timing?: MusicXmlTiming } = {
 		label: "NEUTRINO",
 		script: "scripts/misc/neutrino-server.ts",
 	},
 ): NeutrinoRenderer => {
 	const cache = new Map<string, Promise<AudioBuffer | null>>();
-	let queue: Promise<unknown> = Promise.resolve();
+	// サーバーは1件ずつしか作れないので、待ち行列から曲の頭に近いものを先に出す。
+	const enqueue = createPriorityQueue();
 	let warned = false;
-	const render: NeutrinoRenderer["render"] = (model, score) => {
-		const xml = scoreToNeutrinoMusicXml(score);
+	const render: NeutrinoRenderer["render"] = (
+		model,
+		score,
+		priority = 0,
+		onStart,
+	) => {
+		const xml = scoreToNeutrinoMusicXml(score, 0, engine.timing);
 		const key = `${model}|${xml}`;
 		const hit = cache.get(key);
 		if (hit) return hit;
-		const job = queue
-			.catch(() => {})
-			.then(() => synthesizeNeutrino(xml, { model, baseUrl }))
+		const job = enqueue(priority, () => {
+			onStart?.();
+			return synthesizeNeutrino(xml, { model, baseUrl });
+		})
 			.then((wav) => ctx.decodeAudioData(wav))
 			// エンジン・歌い手ごとに違う素の大きさを、koe の声に近い大きさへそろえる
 			.then(normalizeExternalVoice)
@@ -406,7 +611,6 @@ export const createNeutrinoRenderer = (
 				cache.delete(key);
 				return null;
 			});
-		queue = job;
 		cache.set(key, job);
 		return job;
 	};

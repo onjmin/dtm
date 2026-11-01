@@ -1,7 +1,10 @@
 # このリポジトリ固有
 AGENTS.md
 .claude
+.agents
 tmp
+# 手元のエンジンの置き場所（start-engines.ts が読む）
+engines.local.json
 scratch
 # 耳コピ（他人の曲）から作るデータ。元曲にたどれるので git にもバンドルにも入れず、scripts/ から渡す
 src/compose/compose-skeletons.ts

@@ -1,5 +1,7 @@
 # Sinsy で歌わせる（試作）
 
+> まっさらな PC に入れて鳴らすまでの手順（ほかのエンジンと共通の準備・`pnpm engines` でのまとめての起動を含む）は [local-engines-setup.md](local-engines-setup.md)。このページはこのエンジンの細かい話。
+
 歌詞トラックの音源に Sinsy の声（`ss_f001`）を選ぶと、手元の Sinsy（pysinsy）で歌わせる。NEUTRINO・OpenUtau と同じく、手元の中継サーバーに MusicXML を送って WAV を受け取る（仕組みは [neutrino-sing.md](neutrino-sing.md)）。dtm は Sinsy も声も同梱しない。
 
 声の質は NEUTRINO・DiffSinger より古い（HMM の歌声合成）。代わりに軽く、1フレーズ 0.4 秒ほどで出来る。
