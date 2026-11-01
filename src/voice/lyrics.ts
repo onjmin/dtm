@@ -1639,6 +1639,14 @@ export const VOICE_IMAGE_KEY: Record<string, string> = lookupTable({
 	uc: "uc",
 	hibika_aru: "hibika_aru",
 	uta: "uta",
+	vv_zundamon: "zundamon",
+	vv_metan: "metan",
+	vv_tsumugi: "tsumugi",
+	nt_zundamon: "zundamon",
+	nt_metan: "metan",
+	nt_zunko: "zunko",
+	nt_kiritan: "kiritan",
+	nt_itako: "itako",
 });
 
 /**
