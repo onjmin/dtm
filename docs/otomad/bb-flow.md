@@ -107,7 +107,7 @@ def draw(frame, t, t0, x, y, scale=1.0):
 
 - 台詞の頭・拍に合わせるなら、`t0` に placement.json の秒を入れる。BB の動きを拍に合わせたいときは、`t` を拍の位相から作る（例: 1拍で1ループ → `t = (拍の位相) * META["frames"] / META["fps"]`）。
 - 同じコマを何度も読むなら、`functools.lru_cache` で `bb_frame` を包む。multiprocessing で並べるときは、プロセスごとにキャッシュする。
-- 1本の中では素材の系統をそろえる（淫夢とクッキー☆を混ぜない。[rules.md](rules.md) の「素材」）。
+- 淫夢とクッキー☆の素材は混ぜてよい（[rules.md](rules.md) の「素材」）。
 
 ## 6. 確かめる
 
