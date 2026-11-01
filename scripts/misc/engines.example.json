@@ -1,0 +1,14 @@
+{
+	"voicevox": { "dir": "tmp/voicevox/engine" },
+	"neutrino": { "dir": "tmp/neutrino/NEUTRINO", "args": [] },
+	"openutau": {
+		"dir": "tmp/openutau-bin",
+		"dotnetRoot": "tmp/dotnet",
+		"args": []
+	},
+	"enunu": {
+		"dir": "tmp/enunu/server/SimpleEnunuServer-0.5.0/SimpleEnunuServer-0.5.0"
+	},
+	"sinsy": { "wsl": true, "python": "/home/<ユーザー>/dtm-sinsy/bin/python" },
+	"demo": { "build": true }
+}

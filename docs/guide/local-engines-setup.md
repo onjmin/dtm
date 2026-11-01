@@ -125,6 +125,24 @@ OpenUtau の書き出しコマンドは、2026-11-01 時点では本家に入っ
    ```
 4. 確かめる: `curl http://127.0.0.1:50024/singers` に `nitech_jp_song070_f001` が出る。
 
+## まとめて起動する
+
+1〜4 を入れ終えたら、毎回の起動は `pnpm engines` 1つで済む。
+
+1. `scripts/misc/engines.example.json` をリポジトリ直下に `engines.local.json` として写し、手元の置き場所に直す（git 管理外）。使わないエンジンの行は消す。パスは相対ならリポジトリ直下から読む。`sinsy.python` だけは WSL の中のフルパス。
+2. 起動する。
+
+   ```bash
+   pnpm engines
+   ```
+
+   書いてあるエンジン・中継サーバー・SimpleEnunuServer・デモの DAW をまとめて起動し、出力を `[voicevox]` `[neutrino]` のように頭に名前を付けて1つの画面に流す。一部だけなら `pnpm engines --only voicevox,neutrino`。
+3. Ctrl+C で、起動したものを全部止める（ENUNU のサーバーも止まる）。Windows では続けて「バッチ ジョブを終了しますか (Y/N)?」と聞かれる（pnpm の起動用の bat が聞いている）。エンジンはもう止まっているので、どちらで答えてもよい。
+
+- すでにそのポートで動いているもの（エディタ付きの VOICEVOX など）は起動しない。
+- `demo` を `{ "build": true }` にすると、起動の前に `npx tsup` で `dist/` を組み立て直す。
+- 中継サーバーの追加の引数（`--cpu`・`--onnx-runner CPU` など）は各エンジンの `args` に並べる。
+
 ## 5. dtm で鳴らして確かめる
 
 1. `http://localhost:40298/` を開く（127.0.0.1 でもよい。LAN の IP で開くと手元扱いにならず、声が選べない）。
