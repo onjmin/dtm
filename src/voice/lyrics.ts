@@ -46,8 +46,10 @@ import {
 	NEUTRINO_SINGERS,
 	NEUTRINO_TERMS_URL,
 	type NeutrinoRenderer,
+	OPENUTAU_CHUNKING,
 	OPENUTAU_XML_TIMING,
 	sliceAudioBuffer,
+	splitNeutrinoTrack,
 } from "./neutrino-sing";
 import {
 	isOpenUtauModel,
@@ -101,6 +103,7 @@ import {
 	buildVoicevoxPhrases,
 	createVoicevoxRenderer,
 	isVoicevoxModel,
+	VOICEVOX_FRAME_RATE,
 	VOICEVOX_SINGERS,
 	type VoicevoxRenderer,
 } from "./voicevox-sing";
@@ -4027,6 +4030,8 @@ export const PREWARM_NOTES = 3;
  * 合成負荷を曲全体へ平準化する。小さすぎると密なフレーズでアンダーランしやすくなる。
  */
 const STREAM_LOOKAHEAD_SEC = 1.5;
+/** 区切って合成する手元のエンジンで、出来上がりを鳴る時刻よりこの秒数は前に見込む。 */
+const EXTERNAL_AHEAD_MARGIN_SEC = 2;
 
 /** 先読み上限に達したときの再ポーリング間隔（ミリ秒）。 */
 const STREAM_POLL_MS = 100;
@@ -4435,11 +4440,22 @@ export const createSingingVoices = (
 	const activeVoicevox = new Set<AudioBufferSourceNode>();
 
 	/** 手元のエンジンで歌うフレーズ1つ。`buffer()` は何度呼んでも同じ合成を返す。 */
+	/** まとめて合成する1かたまり（トラック全体、または OpenUtau の区切り1つ）。 */
+	type ExternalChunk = {
+		/** 最初のフレーズの切り出しの頭（再生位置からの秒）。 */
+		startSec: number;
+		/** 合成する歌の長さ（秒）。合成の速さを見積もる物差し。 */
+		workSec: number;
+		/** 出来上がった時刻（performance.now()）。まだなら null。 */
+		doneAt: number | null;
+		buffer: () => Promise<AudioBuffer | null>;
+	};
 	type ExternalPhrase = {
 		startSec: number;
 		leadSec: number;
 		notes: StreamVoiceNote[];
 		buffer: () => Promise<AudioBuffer | null>;
+		chunk?: ExternalChunk;
 	};
 	const memo = <T>(f: () => Promise<T>): (() => Promise<T>) => {
 		let p: Promise<T> | null = null;
@@ -4474,42 +4490,64 @@ export const createSingingVoices = (
 				}));
 			return [...sung, ...spoken].sort((a, b) => a.startSec - b.startSec);
 		}
-		// NEUTRINO と OpenUtau は同じ MusicXML を送り、トラック全体を1回で合成する。
+		// NEUTRINO・OpenUtau・Sinsy は同じ MusicXML を送る。NEUTRINO と Sinsy はトラック全体を
+		// 1回で合成する（NEUTRINO は1回ごとに約3秒の立ち上げがかかる）。OpenUtau は合成が遅い
+		// （ENUNU は GPU でも1トラック30秒余り）ので、休符で区切り、曲の頭の区切りから
+		// 順に合成して、残りが間に合う見込みが立ったら全体を待たずに鳴らし始める。
 		if (
 			isNeutrinoModel(model) ||
 			isOpenUtauModel(model) ||
 			isSinsyModel(model)
 		) {
-			const built = buildNeutrinoTrack(track.notes);
-			const { score } = built;
-			if (!score) return [];
 			const [dir, renderer] = isNeutrinoModel(model)
 				? [NEUTRINO_SINGERS[model].dir, getNeutrino()]
 				: isOpenUtauModel(model)
 					? [OPENUTAU_SINGERS[model].dir, getOpenUtau()]
 					: [SINSY_SINGERS[model].dir, getSinsy()];
-			const whole = memo(() => renderer.render(dir, score));
-			return built.phrases.map((p) => ({
-				startSec: p.startSec,
-				leadSec: p.leadSec,
-				notes: p.notes,
-				buffer: memo(async () => {
-					const b = await whole();
-					return b
-						? sliceAudioBuffer(
-								ctx,
-								b,
-								built.originSec,
-								p.sliceStartSec,
-								p.sliceEndSec,
-							)
-						: null;
-				}),
-			}));
+			const chunks = isOpenUtauModel(model)
+				? splitNeutrinoTrack(track.notes, OPENUTAU_CHUNKING)
+				: [buildNeutrinoTrack(track.notes)];
+			return chunks.flatMap((built) => {
+				const { score } = built;
+				if (!score) return [];
+				const chunk: ExternalChunk = {
+					startSec: built.phrases[0]?.sliceStartSec ?? built.originSec,
+					workSec:
+						score.notes.reduce((a, n) => a + n.frame_length, 0) /
+						VOICEVOX_FRAME_RATE,
+					doneAt: null,
+					buffer: () => whole(),
+				};
+				const whole = memo(() =>
+					renderer.render(dir, score, built.originSec).then((b) => {
+						chunk.doneAt = performance.now();
+						return b;
+					}),
+				);
+				return built.phrases.map((p) => ({
+					startSec: p.startSec,
+					leadSec: p.leadSec,
+					notes: p.notes,
+					chunk,
+					buffer: memo(async () => {
+						const b = await whole();
+						return b
+							? sliceAudioBuffer(
+									ctx,
+									b,
+									built.originSec,
+									p.sliceStartSec,
+									p.sliceEndSec,
+								)
+							: null;
+					}),
+				}));
+			});
 		}
 		return [];
 	};
 	const isExternalModel = isLocalEngineModel;
+	let externalLateWarned = false;
 
 	/**
 	 * 曲中の全フレーズの合成を頼み、`withinSec` 秒までに始まるフレーズの出来上がりを待つ。
@@ -4519,14 +4557,56 @@ export const createSingingVoices = (
 	const prefetchExternal = (
 		track: StreamVoiceTrack,
 		withinSec: number,
-	): Promise<unknown> => {
+	): { ready: Promise<unknown>; chunks: ExternalChunk[] } => {
 		const phrases = externalPhrasesOf(track);
 		const jobs = phrases.map((p) => ({ p, job: p.buffer() }));
-		return Promise.all(
-			jobs
-				.filter(({ p }, i) => i === 0 || p.startSec < withinSec)
-				.map((j) => j.job),
-		);
+		const chunks = [
+			...new Set(phrases.flatMap((p) => (p.chunk ? [p.chunk] : []))),
+		];
+		return {
+			ready: Promise.all(
+				jobs
+					.filter(({ p }, i) => i === 0 || p.startSec < withinSec)
+					.map((j) => j.job),
+			),
+			chunks,
+		};
+	};
+
+	/**
+	 * 区切って合成するトラック（OpenUtau）で、残りの区切りが再生に間に合うと見込めるまで待つ。
+	 * 見込みは、ここまでに出来た区切りの「歌の秒数 ÷ かかった秒数」で、残りを頭から順に
+	 * 作ると仮定する。間に合わない間は、次の区切りが出来るたびに見直す。
+	 * 見込みが外れて遅れた区切りは、今までどおり途中から鳴る。
+	 */
+	const waitUntilAhead = async (
+		chunks: ExternalChunk[],
+		since: number,
+	): Promise<void> => {
+		const order = [...chunks].sort((a, b) => a.startSec - b.startSec);
+		for (;;) {
+			const pending = order.filter((c) => c.doneAt === null);
+			if (pending.length === 0) return;
+			const done = order.filter((c) => c.doneAt !== null);
+			const last = Math.max(since, ...done.map((c) => c.doneAt as number));
+			const work = done.reduce((a, c) => a + c.workSec, 0);
+			const rate =
+				last > since && work > 0 ? work / ((last - since) / 1000) : 0;
+			if (rate > 0) {
+				// 今すぐ鳴らし始めたとして、各区切りの出来上がりが鳴る前に来るか
+				let t = (performance.now() - last) / -1000;
+				let ok = true;
+				for (const c of pending) {
+					t += c.workSec / rate;
+					if (t > c.startSec - EXTERNAL_AHEAD_MARGIN_SEC) {
+						ok = false;
+						break;
+					}
+				}
+				if (ok) return;
+			}
+			await Promise.race(pending.map((c) => c.buffer()));
+		}
 	};
 
 	/** 合成したフレーズ1つを置く。もう始まっている（シーク・合成待ち）なら途中から鳴らす。 */
@@ -4609,6 +4689,17 @@ export const createSingingVoices = (
 				if (session !== streamSession) return;
 				if (!buffer || (opts?.isAudible && !opts.isAudible(track))) continue;
 				const at = anchorTime + startSec - p.leadSec;
+				// 再生を始めてから鳴るはずだったのに、合成が間に合わず途中から鳴る（1回だけ知らせる）
+				if (
+					!externalLateWarned &&
+					startSec - p.leadSec > 0.1 &&
+					ctx.currentTime + 0.02 - at > 0.05
+				) {
+					externalLateWarned = true;
+					console.warn(
+						`[dtm] ${track.model} の合成が間に合わず、途中から鳴らしたフレーズがあります（${(ctx.currentTime - at).toFixed(2)} 秒遅れ）`,
+					);
+				}
 				if (!scheduleVoicevoxPhrase(buffer, at, track)) {
 					opts?.onLateSkip?.(p.notes[0], ctx.currentTime - at);
 					continue;
@@ -4631,10 +4722,14 @@ export const createSingingVoices = (
 		count = PREWARM_NOTES,
 		onProgress,
 	) => {
-		await Promise.all(
-			tracks
-				.filter((t) => isExternalModel(t.model))
-				.map((t) => prefetchExternal(t, STREAM_LOOKAHEAD_SEC)),
+		const since = performance.now();
+		const external = tracks
+			.filter((t) => isExternalModel(t.model))
+			.map((t) => prefetchExternal(t, STREAM_LOOKAHEAD_SEC));
+		await Promise.all(external.map((e) => e.ready));
+		await waitUntilAhead(
+			external.flatMap((e) => e.chunks),
+			since,
 		);
 		const tasks: {
 			model: VoiceModel;

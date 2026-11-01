@@ -379,6 +379,93 @@ export const buildNeutrinoTrack = <N extends VoicevoxSourceNote>(
 	};
 };
 
+/** {@link splitNeutrinoTrack} の区切り方。 */
+export type TrackChunking = {
+	/** 最初の区切りは、少なくともこの秒数の歌を含める（短いほど早く鳴り始める）。 */
+	firstSec: number;
+	/** 2つ目からの区切りは、少なくともこの秒数の歌を含める。 */
+	chunkSec: number;
+	/** この秒数以上空いたフレーズの間でだけ区切る（息継ぎだけの所では区切らない）。 */
+	minGapSec: number;
+};
+
+/**
+ * OpenUtau 向けの区切り方。ENUNU は GPU でも1トラック（約150音）に30秒余りかかるので、
+ * トラック全体を待たず、曲の頭の区切りから順に合成して鳴らし始める。
+ */
+export const OPENUTAU_CHUNKING: TrackChunking = {
+	firstSec: 4,
+	chunkSec: 20,
+	minGapSec: 0.2,
+};
+
+/**
+ * トラックを長めの休符の所で区切り、区切りごとに {@link buildNeutrinoTrack} を作る。
+ * 区切りはフレーズの境目（`minGapSec` 以上空いた所）だけなので、フレーズは割らない。
+ * 区切れる所が無ければ1つ（トラック全体）のまま。
+ */
+export const splitNeutrinoTrack = <N extends VoicevoxSourceNote>(
+	notes: N[],
+	chunking: TrackChunking,
+): NeutrinoTrack<N>[] => {
+	const phrases = buildVoicevoxPhrases(notes);
+	if (phrases.length === 0) return [];
+	const index = new Map<N, number>();
+	notes.forEach((n, k) => {
+		index.set(n, k);
+	});
+	const spans = phrases
+		.map((p) => {
+			const ks = p.notes.map((n) => index.get(n) ?? -1).filter((k) => k >= 0);
+			const end = Math.max(...p.notes.map((n) => n.startSec + n.durationSec));
+			return {
+				from: Math.min(...ks),
+				to: Math.max(...ks),
+				start: p.startSec,
+				end,
+			};
+		})
+		.filter((sp) => Number.isFinite(sp.from) && Number.isFinite(sp.end));
+	const groups: { from: number; to: number }[] = [];
+	let cur: { from: number; to: number; start: number; end: number } | null =
+		null;
+	for (const sp of spans) {
+		const want = groups.length === 0 ? chunking.firstSec : chunking.chunkSec;
+		if (
+			cur &&
+			cur.end - cur.start >= want &&
+			sp.start - cur.end >= chunking.minGapSec
+		) {
+			groups.push({ from: cur.from, to: cur.to });
+			cur = null;
+		}
+		cur = cur
+			? {
+					from: cur.from,
+					to: Math.max(cur.to, sp.to),
+					start: cur.start,
+					end: Math.max(cur.end, sp.end),
+				}
+			: { ...sp };
+	}
+	if (cur) groups.push({ from: cur.from, to: cur.to });
+	const tracks = groups
+		.map((g) => buildNeutrinoTrack(notes.slice(g.from, g.to + 1)))
+		.filter((t) => t.score !== null && t.phrases.length > 0);
+	// 区切りの境目: トラック全体で切るときと同じ所（前の音の終わりか、次の最初の音の
+	// SLICE_LEAD_SEC 前の遅い方）で受け渡し、前後の区切りの余白が二重に鳴らないようにする。
+	for (let k = 1; k < tracks.length; k++) {
+		const a = tracks[k - 1].phrases[tracks[k - 1].phrases.length - 1];
+		const b = tracks[k].phrases[0];
+		const lastEnd = a.sliceEndSec - TRACK_TAIL_SEC;
+		const boundary = Math.max(lastEnd, b.startSec - SLICE_LEAD_SEC);
+		a.sliceEndSec = Math.min(a.sliceEndSec, boundary);
+		b.sliceStartSec = Math.max(b.sliceStartSec, boundary);
+		b.leadSec = b.startSec - b.sliceStartSec;
+	}
+	return tracks;
+};
+
 /** 合成した音声から、アンカー基準の秒の範囲を切り出す。 */
 export const sliceAudioBuffer = (
 	ctx: BaseAudioContext,
@@ -401,9 +488,14 @@ export const sliceAudioBuffer = (
 export type NeutrinoRenderer = {
 	/**
 	 * 楽譜を合成して AudioBuffer にする。同じ歌い手・同じ楽譜は1回だけ合成する。
-	 * サーバーへは1件ずつ順に送る。失敗したら null（サーバー未起動・ライブラリ未導入など）。
+	 * サーバーへは1件ずつ送る。待っているものは `priority`（曲の中の開始秒）の小さい順、
+	 * 同じなら頼んだ順。失敗したら null（サーバー未起動・ライブラリ未導入など）。
 	 */
-	render: (model: string, score: VoicevoxScore) => Promise<AudioBuffer | null>;
+	render: (
+		model: string,
+		score: VoicevoxScore,
+		priority?: number,
+	) => Promise<AudioBuffer | null>;
 };
 
 /** ブラウザから NEUTRINO のサーバーを呼んで歌わせる係。 */
@@ -417,16 +509,39 @@ export const createNeutrinoRenderer = (
 	},
 ): NeutrinoRenderer => {
 	const cache = new Map<string, Promise<AudioBuffer | null>>();
-	let queue: Promise<unknown> = Promise.resolve();
+	// サーバーは1件ずつしか作れないので、待ち行列から曲の頭に近いものを先に出す。
+	type Pending = { priority: number; seq: number; run: () => Promise<void> };
+	const pending: Pending[] = [];
+	let seq = 0;
+	let busy = false;
+	const pump = (): void => {
+		if (busy || pending.length === 0) return;
+		pending.sort((a, b) => a.priority - b.priority || a.seq - b.seq);
+		const next = pending.shift() as Pending;
+		busy = true;
+		next.run().finally(() => {
+			busy = false;
+			pump();
+		});
+	};
+	const enqueue = (priority: number, task: () => Promise<ArrayBuffer>) =>
+		new Promise<ArrayBuffer>((resolve, reject) => {
+			pending.push({
+				priority: Number.isFinite(priority) ? priority : Number.MAX_VALUE,
+				seq: seq++,
+				run: () => task().then(resolve, reject),
+			});
+			pump();
+		});
 	let warned = false;
-	const render: NeutrinoRenderer["render"] = (model, score) => {
+	const render: NeutrinoRenderer["render"] = (model, score, priority = 0) => {
 		const xml = scoreToNeutrinoMusicXml(score, 0, engine.timing);
 		const key = `${model}|${xml}`;
 		const hit = cache.get(key);
 		if (hit) return hit;
-		const job = queue
-			.catch(() => {})
-			.then(() => synthesizeNeutrino(xml, { model, baseUrl }))
+		const job = enqueue(priority, () =>
+			synthesizeNeutrino(xml, { model, baseUrl }),
+		)
 			.then((wav) => ctx.decodeAudioData(wav))
 			// エンジン・歌い手ごとに違う素の大きさを、koe の声に近い大きさへそろえる
 			.then(normalizeExternalVoice)
@@ -441,7 +556,6 @@ export const createNeutrinoRenderer = (
 				cache.delete(key);
 				return null;
 			});
-		queue = job;
 		cache.set(key, job);
 		return job;
 	};

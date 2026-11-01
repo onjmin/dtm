@@ -34,9 +34,12 @@ dtm は OpenUtau も歌い手も同梱しない。
        ```
 3. **ENUNU の歌い手を使うとき**（波音リツ ENUNU #4130 の例）
    - ENUNU は OpenUtau の外に「ENUNU のサーバー」を起動しておき、OpenUtau がそこへ問い合わせる。波音リツの ENUNU 版には SimpleEnunu が要るので、[rokujyushi/SimpleEnunu](https://github.com/rokujyushi/SimpleEnunu/releases) の **SimpleEnunuServer 0.5.0** を展開する。
-   - 同梱の Python に PyTorch が入っていないので入れる（CPU 版の例。GPU 版は付属の `reinstall_torch.bat`）。
+   - 同梱の Python に PyTorch が入っていないので入れる。NVIDIA の GPU があれば GPU 版（CUDA）を入れる（ENUNU は2〜3倍速くなる。下の「合成にかかる時間」）。RTX 50 番台は CUDA 12.8 以上の版が要る。SimpleEnunu は GPU があれば自動で使う。
 
      ```bash
+     # GPU 版（NVIDIA。手元は RTX 5060 Ti で確かめた）
+     python-3.9.13-embed-amd64/python.exe -m pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
+     # CPU 版
      python-3.9.13-embed-amd64/python.exe -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
      ```
    - `simple_enunu_server.bat`（または `python-3.9.13-embed-amd64/python.exe simple_enunu_server.py`）で起動する。初回は pyzmq を自分で入れる。
@@ -92,6 +95,31 @@ dtm は OpenUtau も歌い手も同梱しない。
 - **細切れのフレーズ**: OpenUtau は ENUNU が出した遅れた時刻を、元の（遅れていない）音に当てはめる。子音が自分の音の終わりより後ろに来て「長さが 0 以下」のエラーで捨てられ、残った母音が1〜2音のフレーズに細切れになる（1トラックで 113 フレーズ）。ENUNU は前後のつながりを知らずに切れ端を歌うので、歌い出しが遅れ、声がかすれて抜けた。
 - **直し方（dtm 側）**: OpenUtau に送る楽譜だけ、4分音符 480 分割・テンポ 150 で書き、音の境目を 20 分割の格子（16.7ms）にそろえる（`OPENUTAU_XML_TIMING`）。取り込みの切り捨ても ENUNU の丸めも起きず、格子にそろえる誤差は1音あたり 8ms 以内で溜まらない。テンポは時刻の物差しにすぎない（ENUNU のモデルはテンポの文脈 e5 を使わない）。テンポ 60 より、短い音の「96分音符いくつ分」も実際の歌に近い。NEUTRINO と Sinsy は今までどおりテンポ 60・960 分割で書く。
 - **確かめたこと**: 同じトラックで、ENUNU の楽譜の時刻と OpenUtau の音の時刻の差は、曲の終わりでも ±2ms 以内になった。子音のエラーは 0 件、フレーズは 14（直す前は 113）。音の高さを楽譜と重ねたグラフで、頭から終わりまで楽譜に乗っていた。
+
+## 合成にかかる時間と、待ち時間を短くする工夫（2026-11-01）
+
+海鬼月の歌の1トラック（152音・約108秒）を、キャッシュの無い状態で OpenUtau に歌わせた時間。
+
+| | 時間 |
+| :--- | :--- |
+| DiffSinger（DirectML） | 約10秒 |
+| ENUNU（PyTorch CPU 版） | 約83秒（388音のトラックは約5分） |
+| ENUNU（PyTorch GPU 版・RTX 5060 Ti） | 約36秒（388音のトラックは約98秒） |
+
+- ENUNU（波音リツ #4130）の声のモデルは拡散モデルで、フレーズごとに声色と息成分の2つを 100 ステップずつ計算する。時間の大半はここ。ステップを減らす仕組み（PNDM）は nnsvs で未実装なので、モデルの設定は変えない。
+- OpenUtau は合成したフレーズをキャッシュするので、同じ楽譜の2回目は1秒ほどで返る。
+- ENUNU のサーバーの口（15556）は SimpleEnunu と OpenUtau の両方に決め打ちで、複数立てて並べることはできない。
+
+**dtm 側の工夫（待ち時間を短くする）**: OpenUtau の声は、トラックを休符（0.2 秒以上）で区切り（最初は 4 秒以上、あとは 20 秒以上の歌ごと、`OPENUTAU_CHUNKING`）、区切りごとに楽譜を送る。中継サーバーには、どのトラックでも曲の頭に近い区切りから先に頼む。再生は、ここまでの合成の速さから「残りの区切りが鳴る2秒前までに出来る」と見込めた時点で始める（`waitUntilAhead`）。区切りの境目は、トラック全体で切るときと同じ所で受け渡し、余白が二重に鳴らないようにする。見込みが外れて遅れたフレーズは途中から鳴り、コンソールに警告を1回出す。
+
+海鬼月（ENUNU・DiffSinger とも3トラック）で、キャッシュの無い状態から DAW で鳴り始めるまで:
+
+| | トラック全体を待つ（前の作り） | 区切って順に合成（今） |
+| :--- | :--- | :--- |
+| DiffSinger | 66 秒 | 44 秒 |
+| ENUNU（GPU 版） | 266 秒 | 102 秒 |
+
+どちらも、頭から44秒を録って、合成が間に合わない警告は出なかった。ENUNU は3トラック合わせると歌の長さより合成に時間がかかるので、残りが間に合う所まで待つぶん、これより短くはならない。
 
 ## 制約
 

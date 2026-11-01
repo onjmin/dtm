@@ -23,6 +23,7 @@ const {
 	isNeutrinoModel,
 	OPENUTAU_XML_TIMING,
 	scoreToNeutrinoMusicXml,
+	splitNeutrinoTrack,
 } =
 	require("../../src/voice/neutrino-sing") as typeof import("../../src/voice/neutrino-sing");
 const { isLocalEngineModel, isLocalPage } =
@@ -151,6 +152,71 @@ console.log("■ トラック全体の楽譜とフレーズの切り出し");
 	);
 	check("leadSec は切り出しの頭から最初の音まで", round(b.leadSec), 0.3);
 	check("音の無いトラックは楽譜なし", buildNeutrinoTrack([]).score, null);
+
+	// OpenUtau 向けの区切り: 2秒のフレーズを、間を 0.5 秒・1.5 秒と交互にあけて10個並べる
+	const many: VoicevoxSourceNote[] = [];
+	let t = 1;
+	for (let k = 0; k < 10; k++) {
+		many.push(n(k % 5, t, 1, 60), n((k + 1) % 5, t + 1, 1, 62));
+		t += 2 + (k % 2 === 0 ? 0.5 : 1.5);
+	}
+	const chunks = splitNeutrinoTrack(many, {
+		firstSec: 3,
+		chunkSec: 6,
+		minGapSec: 1,
+	});
+	check(
+		"区切りごとの音の数（最初は短め、1 秒以上の休符でだけ区切る）",
+		chunks.map(
+			(c) => (c.score?.notes ?? []).filter((x) => x.key !== null).length,
+		),
+		[4, 8, 8],
+	);
+	check(
+		"フレーズは割らずに全部どこかの区切りに入る",
+		chunks.reduce((a, c) => a + c.phrases.length, 0),
+		buildNeutrinoTrack(many).phrases.length,
+	);
+	const bounds = chunks.flatMap((c) =>
+		c.phrases.map((p) => [round(p.sliceStartSec), round(p.sliceEndSec)]),
+	);
+	check(
+		"区切りをまたいでも切り出しは重ならない",
+		bounds.every((b, k) => k === 0 || bounds[k - 1][1] <= b[0]),
+		true,
+	);
+	// 0.5 秒の休符でも区切ると、前後の余白（各 0.5 秒）が重なりうる。受け渡しで重ならないこと
+	const fine = splitNeutrinoTrack(many, {
+		firstSec: 1,
+		chunkSec: 1,
+		minGapSec: 0.5,
+	});
+	const fineBounds = fine.flatMap((c) =>
+		c.phrases.map((p) => [
+			p.sliceStartSec,
+			p.sliceEndSec,
+			p.startSec - p.leadSec,
+		]),
+	);
+	check("0.5 秒の休符でも区切る", fine.length, 10);
+	check(
+		"短い休符で区切っても、切り出しは重ならず、鳴らし始めは切り出しの頭",
+		fineBounds.every(
+			(b, k) =>
+				(k === 0 || fineBounds[k - 1][1] <= b[0] + 1e-9) &&
+				Math.abs(b[2] - b[0]) < 1e-9,
+		),
+		true,
+	);
+	check(
+		"区切れる所が無ければ1つ",
+		splitNeutrinoTrack(many.slice(0, 4), {
+			firstSec: 100,
+			chunkSec: 100,
+			minGapSec: 1,
+		}).length,
+		1,
+	);
 }
 
 console.log(

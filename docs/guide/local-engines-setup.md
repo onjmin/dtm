@@ -82,12 +82,17 @@ OpenUtau の書き出しコマンドは、2026-11-01 時点では本家に入っ
    ```
 3. **歌い手を入れる。** 波音リツ DiffSinger・ENUNU の配布は [canon-voice.com](https://www.canon-voice.com/voicebanks/)。DiffSinger はボコーダー（`nsf_hifigan`）と、`dsdict.yaml`・`default_phonemizer`・subbank の下ごしらえが要る。手順は [openutau-sing.md](openutau-sing.md) の「使い方」の 2〜3 をそのまま行う。
 4. **ENUNU を使うときは SimpleEnunuServer も起動する。**
-   - [SimpleEnunu のリリース](https://github.com/rokujyushi/SimpleEnunu/releases)から SimpleEnunuServer 0.5.0 を展開し、同梱の Python に PyTorch（CPU 版でよい）と pyzmq を入れる。
+   - [SimpleEnunu のリリース](https://github.com/rokujyushi/SimpleEnunu/releases)から SimpleEnunuServer 0.5.0 を展開し、同梱の Python に PyTorch と pyzmq を入れる。NVIDIA の GPU があれば GPU 版を入れる（ENUNU が2〜3倍速い。RTX 50 番台は CUDA 12.8 以上の版、約3GB）。
 
      ```bash
+     # GPU 版
+     python-3.9.13-embed-amd64/python.exe -m pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
+     # GPU が無いときは CPU 版
      python-3.9.13-embed-amd64/python.exe -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
      python-3.9.13-embed-amd64/python.exe -m pip install pyzmq
      ```
+
+     GPU を使えているかは `python-3.9.13-embed-amd64/python.exe -c "import torch; print(torch.cuda.is_available())"` が True になるかで確かめる。
    - `simple_enunu_server.bat` で起動する。
    - **SimpleEnunuServer は `tcp://*:15556`（LAN 全体、認証なし）で待ち受ける。** Windows のファイアウォールが許可を聞いてきたら許可しない。
    - utaupy の書き換えは要らない（以前の「float division by zero」の回避は、2026-11-01 に dtm 側の楽譜の書き方を直して不要になった。[openutau-sing.md](openutau-sing.md)）。
@@ -100,7 +105,7 @@ OpenUtau の書き出しコマンドは、2026-11-01 時点では本家に入っ
    GPU が使えないときは `--onnx-runner CPU`。
 6. 確かめる: `curl http://127.0.0.1:50023/singers` で、`Singers/` の歌い手が並ぶ。
 
-時間の目安（海鬼月の歌の1トラック、約150〜400音）: DiffSinger は GPU（DirectML）で数秒〜十数秒、ENUNU は CPU で 1.5〜5 分。ENUNU は DAW で再生する前に1回合成させておくと（OpenUtau がフレーズごとにキャッシュする）、2回目からすぐ鳴る。
+時間の目安（海鬼月の歌の1トラック、152音・約108秒）: DiffSinger は GPU（DirectML）で約10秒、ENUNU は CPU 版の PyTorch で約83秒、GPU 版で約36秒。dtm は OpenUtau の声を区切って頭から順に合成し、間に合う見込みが立ったら鳴らし始める（海鬼月の3トラックで、キャッシュ無しから DiffSinger 44 秒、ENUNU 102 秒）。一度合成した所は OpenUtau がキャッシュするので、2回目からはすぐ鳴る。詳しくは [openutau-sing.md](openutau-sing.md) の「合成にかかる時間」。
 
 ## 4. Sinsy（WSL）
 
@@ -145,7 +150,7 @@ OpenUtau の書き出しコマンドは、2026-11-01 時点では本家に入っ
 | file: で開いたページから鳴らない | 中継サーバーに `--allow-file-origin` を付ける（既定では断る） |
 | コードを直したのに変わらない | `npx tsup` で `dist/` を組み立て直したか |
 | NEUTRINO の最初の1回が戻ってこない | GPU の準備中（2分20秒ほど）。待つ |
-| ENUNU の再生で歌が入らない・遅れる | SimpleEnunuServer が起動しているか。合成が間に合っていないときは、1回合成させてから再生し直す |
+| ENUNU の再生で歌が入らない・遅れる | SimpleEnunuServer が起動しているか。PyTorch が GPU 版か。コンソールに「合成が間に合わず、途中から鳴らしたフレーズがあります」が出たら、もう一度再生する（合成済みの所はすぐ鳴る） |
 | OpenUtau が `DOTNET_ROOT` 関係で起動しない | 中継サーバーを起動するシェルで `DOTNET_ROOT` を .NET 8 のフォルダにする |
 | Sinsy の中継サーバーが Python を見つけない | Git Bash なら `MSYS_NO_PATHCONV=1`。`--python` は `~` を使わずフルパス |
 | ポートがぶつかる | 中継サーバーは `--port`、デモの DAW は `PORT` で変える。dtm の側のエンジンの URL も合わせて変える |
