@@ -39,7 +39,7 @@ scripts/otomad/
    ```
 
    ffmpeg（動画の書き出し・測定）と 7-Zip（`C:\Program Files\7-Zip\7z.exe`。クッキー☆の素材の展開）も入れる。動画は CUDA の torch があれば GPU で描く（無ければ CPU で遅くなるだけ）。
-2. **曲のスクリプト**: `scripts/otomad/songs/` は git に入っていないので、元の PC から丸ごと写す（曲同士が `inmu_v3`・`samson_build`・`cookie_v1` などを読み合うので、一部だけでは動かない）。写さなくても、新しい曲は `lib/` の部品（`clip_grid`・`pitch_snap`・`voice_inst`）から作れる。
+2. **曲のスクリプトと作品台帳**: `scripts/otomad/songs/` と `docs/otomad/works/` は git に入っていないので、元の PC から丸ごと写す（曲同士が `inmu_v3`・`samson_build`・`cookie_v1` などを読み合うので、一部だけでは動かない）。写さなくても、新しい曲は `lib/` の部品（`clip_grid`・`pitch_snap`・`voice_inst`）から作れる。
 3. **素材**: 音MAD素材のフォルダ（今は `D:\音MAD素材`。中は `淫夢/`・`クッキー☆/`・`エア本/`）を写す。場所が違えば `.env` に書く。
 4. **`.env`**（リポジトリ直下、gitignore）:
 
@@ -104,7 +104,7 @@ build は song.wav・placement.json を書き、video はそれを読んで vide
 
 ## git に入れないもの
 
-曲ごとのスクリプト（`songs/`、gitignore）。作品のメモは `docs/otomad/works/` に置いて git に入れる。素材の音声・絵、素材の写し（`cookie_src/`）、ダウンロードした参考動画（`refs/`）、分離した音（`ana_demucs*/`）、書き出した曲と動画、外部ライブラリ（`pylib/`）。これらは作業フォルダに置く。
+曲ごとのスクリプト（`songs/`、gitignore）。作品のメモ（台帳）は `docs/otomad/works/` に置く（こちらも gitignore）。素材の音声・絵、素材の写し（`cookie_src/`）、ダウンロードした参考動画（`refs/`）、分離した音（`ana_demucs*/`）、書き出した曲と動画、外部ライブラリ（`pylib/`）。これらは作業フォルダに置く。
 
 ## 既知のこと
 

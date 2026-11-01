@@ -14,6 +14,10 @@ src/compose/compose-phrases.ts
 scripts/speech-melody/rec/dist-rec/
 # 音MAD の曲ごとの build・video・メモ。台詞素材と結びついた作品なので手元だけに置く
 scripts/otomad/songs/
+# 音MAD の作品台帳（狙い・評価の履歴）。一覧とひな形だけ git に入れる
+docs/otomad/works/*
+!docs/otomad/works/README.md
+!docs/otomad/works/_template.md
 
 # Python
 __pycache__/
