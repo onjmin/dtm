@@ -9,9 +9,12 @@
 ```
 scripts/otomad/
   lib/        共通の部品（整列・音高・PSOLA・測定）と paths.py（場所の決まり）
+    clip_grid.py   台詞を16分へ置く配置 DP・調と移調・声の合成（inmu_v3 から切り出し）
+    pitch_snap.py  モーラごとの音を音階へ寄せる補正（samson_build から）
+    voice_inst.py  声のシンセ・音節の粒・子音の打楽器（samson_2go_build から）
   songs/      曲の系統ごと。build・video・メモ（notes-*.md）。git 管理外で手元だけにある
-    inmu/       淫夢の試作（inmu_v3 は配置 DP の本体で、多くの曲が読む）
-    samson/     サムソン・2号式（samson_build / samson_2go_build は声の楽器と伴奏の部品）
+    inmu/       淫夢の試作（inmu_v3 は lib の部品を曲の SECTIONS・SIX で呼ぶ窓口で、多くの曲が読む）
+    samson/     サムソン・2号式（samson_build / samson_2go_build は lib の部品を名前そのままで読み直す）
     nigo/       野獣・KBTIT の2号式
     cookie/     クッキー☆（cookie_list で素材の 7z を展開、cookie_v1 は台詞の定義）
     plasti/     Plasticookie☆Adventure 型
@@ -35,7 +38,7 @@ scripts/otomad/
    ```
 
    ffmpeg（動画の書き出し・測定）と 7-Zip（`C:\Program Files\7-Zip\7z.exe`。クッキー☆の素材の展開）も入れる。動画は CUDA の torch があれば GPU で描く（無ければ CPU で遅くなるだけ）。
-2. **曲のスクリプト**: `scripts/otomad/songs/` は git に入っていないので、元の PC から丸ごと写す（多くの曲が `inmu_v3`・`samson_build`・`cookie_v1` などを部品として読むので、一部だけでは動かない）。
+2. **曲のスクリプト**: `scripts/otomad/songs/` は git に入っていないので、元の PC から丸ごと写す（曲同士が `inmu_v3`・`samson_build`・`cookie_v1` などを読み合うので、一部だけでは動かない）。写さなくても、新しい曲は `lib/` の部品（`clip_grid`・`pitch_snap`・`voice_inst`）から作れる。
 3. **素材**: 音MAD素材のフォルダ（今は `D:\音MAD素材`。中は `淫夢/`・`クッキー☆/`・`エア本/`）を写す。場所が違えば `.env` に書く。
 4. **`.env`**（リポジトリ直下、gitignore）:
 
