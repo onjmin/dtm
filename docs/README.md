@@ -28,6 +28,7 @@ GitHub Pages の公開物（typedoc と `demo/`）は CI が `docs/` を作り�
 - [external-soundfont.md](guide/external-soundfont.md) — 外部のサウンドフォント（.sf2）をファイルか URL で読んで鳴らす
 - [sinsy-sing.md](guide/sinsy-sing.md) — Sinsy で歌わせる（試作。WSL の pysinsy を中継サーバーで呼ぶ）
 - [openutau-sing.md](guide/openutau-sing.md) — OpenUtau（DiffSinger・ENUNU）で歌わせる（試作。CLI の組み立てと歌い手の下ごしらえ）
+- [otomad-bb-flow.md](guide/otomad-bb-flow.md) — BB素材を集めて、切り抜き・透過して、音MAD の動画に使う流れ（`AI/<ジャンル>/` の置き場所）
 - [local-engines-setup.md](guide/local-engines-setup.md) — 手元の歌声エンジン（VOICEVOX・NEUTRINO・OpenUtau・Sinsy）を別の PC に入れて確かめる手順
 
 ## research/
@@ -38,3 +39,4 @@ GitHub Pages の公開物（typedoc と `demo/`）は CI が `docs/` を作り�
 - [singing-engines.md](research/singing-engines.md) — 歌声エンジンの調べ物（VOICEVOX・AI-MGRoid、2026-10-31）
 - [neutrino-terms.md](research/neutrino-terms.md) — NEUTRINO の規約の解釈と、dtm から呼ぶときにやること・やらないこと（2026-10-31）
 - [voice-model-training.md](research/voice-model-training.md) — 歌声のモデル（歌い手）を自分で作る方法（DiffSinger・ENUNU・Sinsy など。どれも未試行、2026-11-01）
+- [otomad-material-packs.md](research/otomad-material-packs.md) — 淫夢・クッキー☆・BB素材のスターターパックの一覧と配布先の生死（一覧は otomad-material-packs-list.tsv、2026-11-01）

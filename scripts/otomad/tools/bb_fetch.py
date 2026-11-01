@@ -1,15 +1,18 @@
 """BB素材（ブルーバック・グリーンバックの淫夢・クッキー☆素材動画）を集めて、使う範囲を透過の連番 PNG にする。
 
   python -I bb_fetch.py search ガバ穴ダディー BB素材          # ニコニコで探す（再生数順。--check で取れるかも見る）
-  python -I bb_fetch.py get sm28427080                      # 落とす → <素材>/BB/<id>/source.mp4・info.json
+  python -I bb_fetch.py get sm28427080                      # 落とす → <AI>/<ジャンル>/BB/<id>/source.mp4・info.json
   python -I bb_fetch.py key sm28427080 現場監督_ドッスン --ss 0 --to 5
-                                                            # 範囲を切って透過 → <素材>/BB/<id>/<名前>/0001.png…・sheet.png・meta.json
+                                                            # 範囲を切って透過 → <AI>/<ジャンル>/BB/<id>/<名前>/0001.png…・sheet.png・meta.json
   python -I bb_fetch.py ls                                  # 集めた素材の一覧
 
 - 地の色は既定で画面の縁から推定する（--color 0000FF のように手で渡してもよい）。縁の1〜2px を削り、地の色のにじみ（despill）を消す。
 - 動画の書き出し（*_video.py）からは PIL で 0001.png… を順に読んで貼る。meta.json に fps・絵の外接矩形（bbox）がある。
 - 取れるのはニコニコの「日本国内のみ」でない動画だけ（クラウドから）。YouTube はクラウドから取れないことがある。取れないものは手元の PC で同じコマンドを流す。
-- 素材は SPEECH_MATERIAL_DIR（lib/paths.py）の下に置く。git に入れない・公開しない。
+- 置き場は <AI> = OTOMAD_AI_DIR（既定 <SPEECH_MATERIAL_DIR>/AI、lib/paths.py）。ジャンルはタグから決める（クッキー☆ → エア本 → 淫夢 → その他 の順に見る）。
+  外れたら get --genre で渡す。所有者が手で置いた素材（素材フォルダ直下）には書かない。
+- <AI>/index.json に、集めた動画と切り抜きの一覧（ジャンル・題・URL・場所）を書き足していく。
+- 素材は git に入れない・公開しない。
 """
 import argparse
 import json
@@ -21,10 +24,40 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 import numpy as np  # noqa: E402
-from paths import MATERIAL  # noqa: E402
+from paths import AI, GENRES  # noqa: E402
 from PIL import Image, ImageFilter  # noqa: E402
 
-BB = MATERIAL / "BB"
+INDEX = AI / "index.json"
+
+
+def guess_genre(tags):
+    t = " ".join(tags or [])
+    if "クッキー☆" in t or "ク☆" in t:
+        return "クッキー☆"
+    if "エア本" in t:
+        return "エア本"
+    if "淫夢" in t or "例のアレ" in t:
+        return "淫夢"
+    return "その他"
+
+
+def find(cid):
+    """<AI>/<ジャンル>/BB/<id> を探す。"""
+    for g in GENRES:
+        if (AI / g / "BB" / cid).is_dir():
+            return AI / g / "BB" / cid
+    sys.exit(f"{cid} はまだ落としていない（get を先に）")
+
+
+def index_put(cid, **kw):
+    ix = json.loads(INDEX.read_text(encoding="utf-8")) if INDEX.exists() else {}
+    e = ix.setdefault(cid, {"cuts": {}})
+    cuts = kw.pop("cut", None)
+    e.update(kw)
+    if cuts:
+        e["cuts"].update(cuts)
+    AI.mkdir(parents=True, exist_ok=True)
+    INDEX.write_text(json.dumps(ix, ensure_ascii=False, indent=1), encoding="utf-8")
 SEARCH = "https://snapshot.search.nicovideo.jp/api/v2/snapshot/video/contents/search"
 UA = "dtm-otomad-bb-fetch"
 
@@ -57,13 +90,15 @@ def url_of(src):
 def cmd_get(a):
     url = url_of(a.src)
     info = json.loads(subprocess.run(["yt-dlp", "--no-warnings", "-J", url], capture_output=True, text=True, check=True).stdout)
-    d = BB / info["id"]
+    genre = a.genre or guess_genre(info.get("tags"))
+    d = AI / genre / "BB" / info["id"]
     d.mkdir(parents=True, exist_ok=True)
     subprocess.run(["yt-dlp", "--no-warnings", "-q", "-f", f"bv*[height<={a.height}]+ba/b", "--merge-output-format", "mp4",
                     "-o", str(d / "source.%(ext)s"), url], check=True)
     keep = {k: info.get(k) for k in ["id", "title", "webpage_url", "uploader", "upload_date", "duration", "tags", "description"]}
     (d / "info.json").write_text(json.dumps(keep, ensure_ascii=False, indent=1), encoding="utf-8")
     sheet(d / "source.mp4", d / "sheet.png", info.get("duration") or 60)
+    index_put(info["id"], genre=genre, title=info.get("title"), url=info.get("webpage_url"), dir=str(d.relative_to(AI)))
     print(d)
 
 
@@ -120,7 +155,7 @@ def despill(rgb, key):
 
 
 def cmd_key(a):
-    d = BB / a.id
+    d = find(a.id)
     src = d / "source.mp4"
     frames, fps = read_frames(src, a.ss, a.to, a.fps)
     key = np.array([int(a.color[i:i + 2], 16) for i in (0, 2, 4)], np.float32) if a.color else guess_key(frames)
@@ -145,6 +180,7 @@ def cmd_key(a):
             "bbox": union, "size": [frames.shape[2], frames.shape[1]]}
     (out / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
     check_sheet(out, len(frames))
+    index_put(a.id, cut={a.name: {"dir": str(out.relative_to(AI)), "ss": a.ss, "to": a.to, "frames": len(frames)}})
     print(out, meta)
 
 
@@ -165,10 +201,10 @@ def check_sheet(out, n, k=10):
 
 
 def cmd_ls(a):
-    for d in sorted(BB.glob("*")):
+    for d in sorted(AI.glob("*/BB/*")):
         info = json.loads((d / "info.json").read_text(encoding="utf-8")) if (d / "info.json").exists() else {}
         cuts = [p.name for p in d.iterdir() if (p / "meta.json").exists()]
-        print(f'{d.name}\t{info.get("title", "")}\t切り抜き: {", ".join(cuts) or "なし"}')
+        print(f'{d.parents[1].name}\t{d.name}\t{info.get("title", "")}\t切り抜き: {", ".join(cuts) or "なし"}')
 
 
 def main():
@@ -182,6 +218,7 @@ def main():
     g = sp.add_parser("get")
     g.add_argument("src", help="sm… か URL")
     g.add_argument("--height", type=int, default=720)
+    g.add_argument("--genre", choices=GENRES, help="既定はタグから推定")
     g.set_defaults(f=cmd_get)
     k = sp.add_parser("key")
     k.add_argument("id")

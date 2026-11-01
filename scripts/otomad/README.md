@@ -46,6 +46,8 @@ scripts/otomad/
    SPEECH_MATERIAL_DIR=D:\音MAD素材
    # 任意。既定は scratch/speech-melody
    OTOMAD_WORK=D:\otomad-work
+   # 任意。エージェントが集めた素材の置き場。既定は <SPEECH_MATERIAL_DIR>/AI
+   OTOMAD_AI_DIR=D:\音MAD素材\AI
    # 任意。pip --target で numpy の版を分けて入れた外部ライブラリ
    SPEECH_PYLIB=D:\otomad-work\pylib
    ```
@@ -74,7 +76,8 @@ python -I scripts/otomad/tools/bb_fetch.py get sm28427080
 python -I scripts/otomad/tools/bb_fetch.py key sm28427080 現場監督_ドッスン --ss 0 --to 5
 ```
 
-- 置き場所は `<SPEECH_MATERIAL_DIR>/BB/<動画ID>/`。`source.mp4`・`info.json`（題・URL・投稿者・タグ）・`sheet.png`（全体の一覧）と、切り抜きごとのフォルダ（`0001.png`…・`meta.json`（fps・外接矩形 bbox・地の色）・`sheet.png`（市松の地に並べた確認用））。
+- 置き場所は `<SPEECH_MATERIAL_DIR>/AI/<ジャンル>/BB/<動画ID>/`（`AI/` は `OTOMAD_AI_DIR` で変えられる。ジャンルはタグから推定し、`get --genre` で渡してもよい）。`source.mp4`・`info.json`（題・URL・投稿者・タグ）・`sheet.png`（全体の一覧）と、切り抜きごとのフォルダ（`0001.png`…・`meta.json`（fps・外接矩形 bbox・地の色）・`sheet.png`（市松の地に並べた確認用））。集めたものの一覧は `AI/index.json`。所有者が手で置いた素材（素材フォルダ直下）には書かない。
+- 流れの全体（範囲の決め方・透過の直し方・`*_video.py` での貼り方・持ち越し）は [docs/guide/otomad-bb-flow.md](../../docs/guide/otomad-bb-flow.md)。配られているスターターパックの一覧は [docs/research/otomad-material-packs.md](../../docs/research/otomad-material-packs.md)。
 - 地の色は画面の縁から推定する。外れたら `--color 0000FF`。縁ににじみが残れば `--erode 2`、絵の中まで抜けたら `--tol` を下げる。黒い頭出しのコマなどがあると bbox が画面全体になるので、`--ss` で外す。
 - `*_video.py` からは PIL で連番を読み、`alpha_composite` で貼る。
 - **クラウドから取れるのは「日本国内のみ」でない動画だけ**（`--check` で見る。2026-11-01 の時点で、現場監督・ガバ穴ダディーの BB素材の半分ほどが国内のみだった）。YouTube はクラウドからは取れなかった。取れないものは手元の PC で同じコマンドを流し、素材のフォルダごと渡す。
