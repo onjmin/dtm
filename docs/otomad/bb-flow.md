@@ -1,6 +1,6 @@
 # BB素材を集めて、切り抜いて、動画に使う流れ
 
-淫夢・クッキー☆などの BB素材（ブルーバック・グリーンバックの素材動画）を、エージェントが探して落とし、使う範囲を透過して、音MAD の動画（`scripts/otomad/songs/*/*_video.py`）に貼るまでの手順。道具は `scripts/otomad/tools/bb_fetch.py`。配られているスターターパックの一覧は [research/otomad-material-packs.md](../research/otomad-material-packs.md)。
+淫夢・クッキー☆などの BB素材（ブルーバック・グリーンバックの素材動画）を、エージェントが探して落とし、使う範囲を透過して、音MAD の動画（`scripts/otomad/songs/*/*_video.py`）に貼るまでの手順。道具は `scripts/otomad/tools/bb_fetch.py`。配られているスターターパックの一覧は [research/material-packs.md](research/material-packs.md)。
 
 ## 0. 置き場所
 
@@ -107,12 +107,12 @@ def draw(frame, t, t0, x, y, scale=1.0):
 
 - 台詞の頭・拍に合わせるなら、`t0` に placement.json の秒を入れる。BB の動きを拍に合わせたいときは、`t` を拍の位相から作る（例: 1拍で1ループ → `t = (拍の位相) * META["frames"] / META["fps"]`）。
 - 同じコマを何度も読むなら、`functools.lru_cache` で `bb_frame` を包む。multiprocessing で並べるときは、プロセスごとにキャッシュする。
-- 1本の中では素材の系統をそろえる（淫夢とクッキー☆を混ぜない。[speech-melody/README.md](../../scripts/speech-melody/README.md) §8）。
+- 淫夢とクッキー☆の素材は混ぜてよい（[rules.md](rules.md) の「素材」）。
 
 ## 6. 確かめる
 
 - 指定した秒のコマと、全体の一覧画像（ffmpeg の tile）で、絵の縁に地の色が残っていないか、台詞の頭に出ているかを見る。
-- 確認は `FPS=15`、渡すのは 30fps（§8 と同じ）。
+- 確認は `FPS=15`、渡すのは 30fps（[rules.md](rules.md) の「確かめ方」と同じ）。
 
 ## 7. セッションをまたいで持ち越す
 

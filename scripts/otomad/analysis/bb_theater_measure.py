@@ -1,4 +1,4 @@
-"""BB劇場を秒単位で測る（docs/notes-bb-theater.md）。カット・動き・音・コメント（笑い）を同じ時間軸に並べる。
+"""BB劇場を秒単位で測る（docs/otomad/research/bb-theater.md）。カット・動き・音・コメント（笑い）を同じ時間軸に並べる。
 
 python -I bb_theater_measure.py <outdir> <mp4> [<comments.json>] ...
 mp4 ごとに要約を1行、<outdir>/<名前>.timeline.txt（5秒ごと）と <名前>.shots.png（ショットの頭のコマ）を書く。

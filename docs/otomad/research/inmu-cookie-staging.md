@@ -43,7 +43,7 @@
 - ナユタン星人は単色の地と常に太字、サビで曲名を繰り返す。フォントは1〜3種、合いの手は縁取りだけで本文と分ける（Filmora）。
 - 出現アニメのフレーム数・カメラ・揺れは一次資料なし。4〜8フレームの急な減速が多いのは推測。読めなかった一次資料: AIST 加藤・後藤 INTERACTION2024、TextAlive ガイドブック（PDF）。
 - 出典: scrapbox.io/uesYn「リリックビデオを解剖する（後）」、suno.bi/blog/lyric-subtitle-styling-timing-method-sunomv-2026-ja、filmora.wondershare.jp（make-character-pv・make-cool-mv-with-letters）、news.denfaminicogamer.jp/news/2604053a、zh.moegirl.org.cn/Nayutan星人、0120.co.jp/blog/video-125、jstage.jst.go.jp/article/iits/18/0/18_1802。
-- dande3 で 1・2・4 を使った（notes-dande3.md）。
+- dande3 で 1・2・4 を使った（台帳 dande3、手元）。
 
 ## 動画の評論で語られる観点（10-31、ブログ・note の講評や10選から）
 大会の審査講評やまとめは見つからず、主に個人の講評。3D の板・万華鏡の地を論じたものは無い。
