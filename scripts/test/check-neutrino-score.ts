@@ -21,6 +21,7 @@ const {
 	absorbTinyFragments,
 	buildNeutrinoTrack,
 	isNeutrinoModel,
+	OPENUTAU_XML_TIMING,
 	scoreToNeutrinoMusicXml,
 } =
 	require("../../src/voice/neutrino-sing") as typeof import("../../src/voice/neutrino-sing");
@@ -193,6 +194,56 @@ console.log(
 			r(10),
 		]).map((x) => x.lyric),
 		["", "う", ""],
+	);
+}
+
+console.log("■ OpenUtau 用 MusicXML（ENUNU の丸めで遅れが溜まらない）");
+{
+	// 75ms 前後の速い音を 200 個（テンポ 60・960 分割の書き方だと ENUNU で約 1 秒遅れた並び）
+	const notes = [{ key: null, frame_length: frames(0.5), lyric: "" }];
+	for (let i = 0; i < 200; i++)
+		notes.push({ key: 60 + (i % 5), frame_length: 7 + (i % 3), lyric: "な" });
+	const xml = scoreToNeutrinoMusicXml({ notes }, 0, OPENUTAU_XML_TIMING);
+	check(
+		"テンポ 150・480 分割",
+		[
+			xml.match(/<divisions>(\d+)/)?.[1],
+			xml.match(/<sound tempo="(\d+)"/)?.[1],
+		],
+		["480", "150"],
+	);
+	const durs = [...xml.matchAll(/<duration>(\d+)/g)].map((m) => Number(m[1]));
+	check(
+		"長さはすべて 20 分割（96分音符）の倍数",
+		durs.every((d) => d > 0 && d % 20 === 0),
+		true,
+	);
+	// 音の頭の時刻（秒）を楽譜から戻し、元の時刻とのずれを見る
+	const sec = (div: number): number => (div / 480) * (60 / 150);
+	let pos = 0;
+	let frame = 0;
+	let worst = 0;
+	const parts = [...xml.matchAll(/<note>(.*?)<\/note>/g)].map((m) => m[1]);
+	let k = 0;
+	for (const p of parts) {
+		const d = Number(p.match(/<duration>(\d+)/)?.[1]);
+		if (!p.includes("<rest/>") && !p.includes('tie type="stop"')) {
+			k++;
+			const want = (frame + frames(0.5)) / VOICEVOX_FRAME_RATE;
+			worst = Math.max(worst, Math.abs(sec(pos) - want));
+			frame += notes[k].frame_length;
+		}
+		pos += d;
+	}
+	check("音の数", k, 200);
+	check("音の頭のずれは 1 格子の半分（8.4ms）以内", worst <= 0.0084, true);
+	check(
+		"NEUTRINO 用は今までどおり（テンポ 60・960 分割）",
+		[
+			scoreToNeutrinoMusicXml({ notes }).match(/<divisions>(\d+)/)?.[1],
+			scoreToNeutrinoMusicXml({ notes }).match(/<sound tempo="(\d+)"/)?.[1],
+		],
+		["960", "60"],
 	);
 }
 

@@ -46,6 +46,7 @@ import {
 	NEUTRINO_SINGERS,
 	NEUTRINO_TERMS_URL,
 	type NeutrinoRenderer,
+	OPENUTAU_XML_TIMING,
 	sliceAudioBuffer,
 } from "./neutrino-sing";
 import {
@@ -4407,7 +4408,11 @@ export const createSingingVoices = (
 		openutau ??= createNeutrinoRenderer(
 			ctx,
 			options.openutauUrl ?? OPENUTAU_DEFAULT_URL,
-			{ label: "OpenUtau", script: "scripts/misc/openutau-server.ts" },
+			{
+				label: "OpenUtau",
+				script: "scripts/misc/openutau-server.ts",
+				timing: OPENUTAU_XML_TIMING,
+			},
 		);
 		return openutau;
 	};

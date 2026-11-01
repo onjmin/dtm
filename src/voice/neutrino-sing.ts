@@ -75,10 +75,40 @@ export const neutrinoCharacterTerms = (
 ): NeutrinoCharacterTerms | undefined =>
 	NEUTRINO_SINGERS[model.toLowerCase()]?.characterTerms;
 
-/** MusicXML の4分音符あたりの分割数。テンポ 60 なので 1 分割 ≒ 1ms。 */
-const DIVISIONS = 960;
-/** 1小節（4/4）の分割数。 */
-const MEASURE = DIVISIONS * 4;
+/** MusicXML に書くテンポと細かさ。dtm の楽譜は秒で持つので、テンポは時刻の物差しにすぎない。 */
+export type MusicXmlTiming = {
+	/** 4分音符の BPM。 */
+	tempo: number;
+	/** 4分音符あたりの分割数（MusicXML の divisions）。 */
+	divisions: number;
+	/** 音の境目をこの分割数の倍数にそろえる。1 ならそろえない。 */
+	grid: number;
+};
+
+/** NEUTRINO・Sinsy 向け。テンポ 60・960 分割なので 1 分割 ≒ 1ms。 */
+export const NEUTRINO_XML_TIMING: MusicXmlTiming = {
+	tempo: 60,
+	divisions: 960,
+	grid: 1,
+};
+
+/**
+ * OpenUtau 向け（DiffSinger・ENUNU）。
+ * - 分割数を OpenUtau の 480 にそろえる。960 だと取り込みで長さが切り捨てられ、
+ *   1音ごとに最大 1ms ずつ歌が早まっていく（海鬼月で曲の終わりに 0.1〜0.3 秒）。
+ * - 音の境目を 20 分割（1拍の 1/24 ＝ 96分音符）の倍数にそろえる。ENUNU の楽譜変換
+ *   （utaupy）が音の長さを1音ずつこの単位に四捨五入するため、そろえないと丸めが溜まり、
+ *   歌が遅れていく（テンポ 60 の 75ms の音で1音あたり約 5ms、曲の終わりに 0.9 秒）。
+ *   遅れた時刻を OpenUtau が元の音に当てはめると、子音の長さが負になって捨てられ、
+ *   フレーズが細切れになって声が抜ける。
+ * - テンポ 150 なら格子は 16.7ms で、そろえる誤差は1音あたり 8ms 以内（溜まらない）。
+ *   テンポ 60 より、短い音の「96分音符いくつ分」も実際の歌に近くなる。
+ */
+export const OPENUTAU_XML_TIMING: MusicXmlTiming = {
+	tempo: 150,
+	divisions: 480,
+	grid: 20,
+};
 
 const STEPS = ["C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B"];
 const ALTERS = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
@@ -157,13 +187,18 @@ export const absorbTinyFragments = (
 export const scoreToNeutrinoMusicXml = (
 	score: VoicevoxScore,
 	keyShift = 0,
+	timing: MusicXmlTiming = NEUTRINO_XML_TIMING,
 ): string => {
+	const { tempo, divisions } = timing;
+	const grid = Math.max(1, Math.trunc(timing.grid));
+	const MEASURE = divisions * 4;
 	// フレームを分割数へ。丸めの誤差が溜まらないよう、累積の位置で割る。
 	type Ev = { start: number; end: number; note: VoicevoxScoreNote };
 	const events: Ev[] = [];
 	let frames = 0;
 	const at = (f: number): number =>
-		Math.round((f / VOICEVOX_FRAME_RATE) * DIVISIONS);
+		Math.round(((f / VOICEVOX_FRAME_RATE) * (tempo / 60) * divisions) / grid) *
+		grid;
 	const shift = Number.isFinite(keyShift) ? Math.trunc(keyShift) : 0;
 	for (const note of absorbTinyFragments(score.notes)) {
 		const start = at(frames);
@@ -181,11 +216,11 @@ export const scoreToNeutrinoMusicXml = (
 		const body: string[] = [];
 		if (m === 0) {
 			body.push(
-				`<attributes><divisions>${DIVISIONS}</divisions><key><fifths>0</fifths></key>` +
+				`<attributes><divisions>${divisions}</divisions><key><fifths>0</fifths></key>` +
 					"<time><beats>4</beats><beat-type>4</beat-type></time>" +
 					"<clef><sign>G</sign><line>2</line></clef></attributes>",
 				'<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit>' +
-					'<per-minute>60</per-minute></metronome></direction-type><sound tempo="60"/></direction>',
+					`<per-minute>${tempo}</per-minute></metronome></direction-type><sound tempo="${tempo}"/></direction>`,
 			);
 		}
 		let filled = mStart;
@@ -376,7 +411,7 @@ export const createNeutrinoRenderer = (
 	ctx: BaseAudioContext,
 	baseUrl: string = NEUTRINO_DEFAULT_URL,
 	/** 警告に出すエンジン名と起動するスクリプト（OpenUtau の中継サーバーでも同じ係を使う）。 */
-	engine: { label: string; script: string } = {
+	engine: { label: string; script: string; timing?: MusicXmlTiming } = {
 		label: "NEUTRINO",
 		script: "scripts/misc/neutrino-server.ts",
 	},
@@ -385,7 +420,7 @@ export const createNeutrinoRenderer = (
 	let queue: Promise<unknown> = Promise.resolve();
 	let warned = false;
 	const render: NeutrinoRenderer["render"] = (model, score) => {
-		const xml = scoreToNeutrinoMusicXml(score);
+		const xml = scoreToNeutrinoMusicXml(score, 0, engine.timing);
 		const key = `${model}|${xml}`;
 		const hit = cache.get(key);
 		if (hit) return hit;
