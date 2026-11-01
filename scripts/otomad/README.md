@@ -21,6 +21,7 @@ scripts/otomad/
     techno/     TECHNO MUSIC 先輩型（techno1_build はドラム・シンセの部品）
     dande/      Dandelion biscuit☆型と文字PV（dande3）
     kaisen/     既存曲のカバー（海鮮リスペクト）
+    hijikata/   既存曲のカバー（picotune の MIDI をサウンドフォントで鳴らす。ネイティブフェイス × 変態糞土方）
     kary/ cpr/ eahon/
   analysis/   参考の曲・動画の測定（切り替え・明るさ・音量・拍・文字起こし）
   tools/      聴き返しの棚・録音の時刻合わせ・書き出し補助
