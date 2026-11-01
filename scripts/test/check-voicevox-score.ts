@@ -16,7 +16,7 @@ loader._load = (request, ...rest) =>
 
 const { normalizeLyrics } =
 	require("../../src/voice/lyrics") as typeof import("../../src/voice/lyrics");
-const { buildVoicevoxScore, timedToScore, VOICEVOX_FRAME_RATE } =
+const { buildVoicevoxScore, engineKana, timedToScore, VOICEVOX_FRAME_RATE } =
 	require("../../src/voice/voicevox-sing") as typeof import("../../src/voice/voicevox-sing");
 
 import type { Note } from "../../src/types";
@@ -114,6 +114,17 @@ check(
 		s.map((n) => `${n.lyric || "_"}${n.frame_length}`),
 		["_24", "あ21", "て20", "_10", "わ20", "_16"],
 	);
+}
+{
+	// エンジンが知らない「かな＋小さいかな」は前のかなだけ歌う（知らないとフレーズごと無音になる）
+	check(
+		"小さいかなはエンジンが読める形へ",
+		["なぁ", "ねぇ", "かぃ", "ぁ", "ゎ", "きゃ", "てぃ", "ふぁ", "ふゅ", "ゔょ", "か"].map(
+			engineKana,
+		),
+		["な", "ね", "か", "あ", "わ", "きゃ", "てぃ", "ふぁ", "ひゅ", "ゔ", "か"],
+	);
+	check("楽譜の歌詞にも当てる", sung(score([note(0, 1, 60)], "なぁ")), ["な60"]);
 }
 
 if (failed > 0) {

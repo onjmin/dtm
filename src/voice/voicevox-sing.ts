@@ -71,7 +71,50 @@ export type TimedNote = {
 const lyricOf = (syl: LyricSyllable | undefined): string | null => {
 	if (!syl) return "ら";
 	if (syl.kind === "rest" || syl.kind === "speak") return null;
-	return syl.kana;
+	return engineKana(syl.kana);
+};
+
+/** 小さいかな → 大きいかな。 */
+const LARGE_KANA: Record<string, string> = {
+	ぁ: "あ",
+	ぃ: "い",
+	ぅ: "う",
+	ぇ: "え",
+	ぉ: "お",
+	ゃ: "や",
+	ゅ: "ゆ",
+	ょ: "よ",
+	ゎ: "わ",
+};
+/**
+ * 小さいかなを含む2文字のモーラのうち、VOICEVOX が歌える拗音（2026-11-01 にエンジン 0.26.0 へ
+ * 全組み合わせを送って確かめた）。`きぃ` `てぇ` のように伸ばすだけのものと、ENUNU が落ちる `ゔゃ` `ゔょ` は除く。
+ */
+const ENGINE_YOUON = new Set(
+	(
+		"いぇ うぃ うぇ うぉ きぇ きゃ きゅ きょ くぁ くぃ くぇ くぉ くゎ しぇ しゃ しゅ しょ すぃ " +
+		"ちぇ ちゃ ちゅ ちょ つぁ つぃ つぇ つぉ てぃ てゃ てゅ てょ とぅ にぇ にゃ にゅ にょ " +
+		"ひぇ ひゃ ひゅ ひょ ふぁ ふぃ ふぇ ふぉ みぇ みゃ みゅ みょ りぇ りゃ りゅ りょ " +
+		"ぎぇ ぎゃ ぎゅ ぎょ ぐぁ ぐぃ ぐぇ ぐぉ ぐゎ じぇ じゃ じゅ じょ ずぃ ぢぇ ぢゃ ぢゅ ぢょ " +
+		"でぃ でゃ でゅ でょ どぅ びぇ びゃ びゅ びょ ぴぇ ぴゃ ぴゅ ぴょ ゔぁ ゔぃ ゔぇ ゔぉ ゔゅ"
+	).split(" "),
+);
+
+/**
+ * 歌詞の1モーラを、歌唱エンジン（VOICEVOX・ENUNU）が読めるかなへ。
+ *
+ * 歌詞解析は `なぁ` `ねぇ` `かぃ` のような「かな＋小さいかな」を1モーラにまとめるが、
+ * エンジンは拗音のほかを知らず（VOICEVOX は 400、ENUNU は 500）、フレーズ・区切りが
+ * 丸ごと無音になる。知らない組み合わせは小さいかなを落として前のかなだけ歌い、
+ * 小さいかな1文字（`ぁ` `ゎ`）は大きいかなにする。`ふゅ` は VOICEVOX が知らないので近い `ひゅ` へ。
+ */
+export const engineKana = (kana: string): string => {
+	const chars = [...kana];
+	if (chars.length === 1) return LARGE_KANA[kana] ?? kana;
+	if (chars.length !== 2) return kana;
+	if (kana === "ふゅ") return "ひゅ";
+	if (ENGINE_YOUON.has(kana)) return kana;
+	return LARGE_KANA[chars[0]] ?? chars[0];
 };
 
 /**
@@ -601,7 +644,7 @@ export const buildVoicevoxPhrases = <N extends VoicevoxSourceNote>(
 		const segments = note.pitchSegments ?? [];
 		let segStart = start;
 		let segKey = key(note.pitch);
-		let lyric = syl.kana;
+		let lyric = engineKana(syl.kana);
 		for (const seg of segments) {
 			if (key(seg.pitch) === segKey) continue;
 			const at = Math.min(end, start + seg.atSec);
