@@ -58,6 +58,28 @@ scripts/otomad/
 
 6. **フォント**（dande3 の文字PV）: コーポレート・ロゴ Bold・クラフト明朝・美咲ゴシックを「ユーザー用」に入れる（`%LOCALAPPDATA%\Microsoft\Windows\Fonts`）。Noto Sans JP と游ゴシックは Windows 標準。
 
+## BB素材を集める（tools/bb_fetch.py）
+
+ブルーバック・グリーンバックの BB素材（ニコニコの「BB素材」タグなど）を、探す → 落とす → 使う範囲を透過の連番 PNG にする、まで1本で流す。エージェントがクラウドで流してもよい。yt-dlp・ffmpeg・numpy・pillow を使う。
+
+```bash
+python -I scripts/otomad/tools/bb_fetch.py search 現場監督 BB素材 --check
+```
+
+```bash
+python -I scripts/otomad/tools/bb_fetch.py get sm28427080
+```
+
+```bash
+python -I scripts/otomad/tools/bb_fetch.py key sm28427080 現場監督_ドッスン --ss 0 --to 5
+```
+
+- 置き場所は `<SPEECH_MATERIAL_DIR>/BB/<動画ID>/`。`source.mp4`・`info.json`（題・URL・投稿者・タグ）・`sheet.png`（全体の一覧）と、切り抜きごとのフォルダ（`0001.png`…・`meta.json`（fps・外接矩形 bbox・地の色）・`sheet.png`（市松の地に並べた確認用））。
+- 地の色は画面の縁から推定する。外れたら `--color 0000FF`。縁ににじみが残れば `--erode 2`、絵の中まで抜けたら `--tol` を下げる。黒い頭出しのコマなどがあると bbox が画面全体になるので、`--ss` で外す。
+- `*_video.py` からは PIL で連番を読み、`alpha_composite` で貼る。
+- **クラウドから取れるのは「日本国内のみ」でない動画だけ**（`--check` で見る。2026-11-01 の時点で、現場監督・ガバ穴ダディーの BB素材の半分ほどが国内のみだった）。YouTube はクラウドからは取れなかった。取れないものは手元の PC で同じコマンドを流し、素材のフォルダごと渡す。
+- 素材は他の方の作品なので、git に入れず公開しない。
+
 ## 動かし方
 
 作業フォルダで実行する。書き出し先は相対パスで渡す。
