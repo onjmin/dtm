@@ -51,6 +51,8 @@ if (!root || !existsSync(exe) || !existsSync(join(root, "Singers"))) {
 
 const work = join(tmpdir(), "dtm-openutau");
 mkdirSync(work, { recursive: true });
+// 組み立てたばかりの OpenUtau には Cache/ が無く、DiffSinger の音素変換が全部失敗する
+mkdirSync(join(root, "Cache"), { recursive: true });
 
 /** Singers/ 以下の歌い手（character.txt のある所）。表示名は character.txt の name=。 */
 const listSingers = (): { dir: string; name: string }[] =>
