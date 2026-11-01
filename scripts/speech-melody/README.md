@@ -133,7 +133,7 @@ python scripts/speech-melody/shelf_build.py
 
 ## 8. 動画まで作る（音MAD）
 
-所有者に曲と動画を渡すときの流れ。作例のスクリプトとメモは [`scripts/otomad/`](../otomad/README.md) にある（曲は `songs/<系統>/*_build.py`、動画は `*_video.py`、メモは `notes-*.md`）。素材の写し・キャッシュ・書き出しは作業フォルダ（既定 `scratch/speech-melody/`、gitignore）に置く。
+所有者に曲と動画を渡すときの流れ。作例のスクリプトとメモは [`scripts/otomad/`](../otomad/README.md) にある（曲は `songs/<系統>/*_build.py`、動画は `*_video.py`、メモは `notes-*.md`。`songs/` は git 管理外で手元だけ）。素材の写し・キャッシュ・書き出しは作業フォルダ（既定 `scratch/speech-melody/`、gitignore）に置く。
 
 1. **素材**: 所有者が指定したフォルダ（今は `D:\音MAD素材` ＝ `SPEECH_MATERIAL_DIR`）の中を見て台詞を選ぶ。前に使った抜き出しだけで済ませない。性的・下ネタの素材も使ってよい。1本の中では系統（同じシリーズ・演者）をそろえる。
 2. **先に notes.md へ書く**: 振り切る軸（1〜2つ）、筋書き（誰が出て、何が起きて、どこがオチか）、緩急の設計（区間ごとの密度、いちばん強い所とその手前の引き算）。
@@ -155,7 +155,7 @@ python scripts/speech-melody/shelf_build.py
 
 ## 9. 既存曲のカバー（台詞イントネーションで歌わせる）
 
-既存曲の伴奏の上で、素材の台詞に歌わせる。原曲の譜面（MIDI）を使うかどうかで2通りある。作例は `scripts/otomad/songs/kaisen/`（海鮮リスペクト。譜面は MML から `kaisen_parse.ts` で JSON にした）。
+既存曲の伴奏の上で、素材の台詞に歌わせる。原曲の譜面（MIDI）を使うかどうかで2通りある。作例は手元の `scripts/otomad/songs/kaisen/`（git 管理外。海鮮リスペクト。譜面は MML から `kaisen_parse.ts` で JSON にした）。
 
 原曲の音声・MIDI・耳コピ・inst は他の方の曲なので、git にも公開物にも入れない（`scratch/` か `SPEECH_OUT_DIR` に置く）。
 

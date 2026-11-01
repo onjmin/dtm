@@ -9,7 +9,7 @@
 ```
 scripts/otomad/
   lib/        共通の部品（整列・音高・PSOLA・測定）と paths.py（場所の決まり）
-  songs/      曲の系統ごと。build・video・メモ（notes-*.md）
+  songs/      曲の系統ごと。build・video・メモ（notes-*.md）。git 管理外で手元だけにある
     inmu/       淫夢の試作（inmu_v3 は配置 DP の本体で、多くの曲が読む）
     samson/     サムソン・2号式（samson_build / samson_2go_build は声の楽器と伴奏の部品）
     nigo/       野獣・KBTIT の2号式
@@ -35,8 +35,9 @@ scripts/otomad/
    ```
 
    ffmpeg（動画の書き出し・測定）と 7-Zip（`C:\Program Files\7-Zip\7z.exe`。クッキー☆の素材の展開）も入れる。動画は CUDA の torch があれば GPU で描く（無ければ CPU で遅くなるだけ）。
-2. **素材**: 音MAD素材のフォルダ（今は `D:\音MAD素材`。中は `淫夢/`・`クッキー☆/`・`エア本/`）を写す。場所が違えば `.env` に書く。
-3. **`.env`**（リポジトリ直下、gitignore）:
+2. **曲のスクリプト**: `scripts/otomad/songs/` は git に入っていないので、元の PC から丸ごと写す（多くの曲が `inmu_v3`・`samson_build`・`cookie_v1` などを部品として読むので、一部だけでは動かない）。
+3. **素材**: 音MAD素材のフォルダ（今は `D:\音MAD素材`。中は `淫夢/`・`クッキー☆/`・`エア本/`）を写す。場所が違えば `.env` に書く。
+4. **`.env`**（リポジトリ直下、gitignore）:
 
    ```
    SPEECH_MATERIAL_DIR=D:\音MAD素材
@@ -46,13 +47,13 @@ scripts/otomad/
    SPEECH_PYLIB=D:\otomad-work\pylib
    ```
 
-4. **作業フォルダを作る**: クッキー☆の台詞は 7z を展開して使う。
+5. **作業フォルダを作る**: クッキー☆の台詞は 7z を展開して使う。
 
    ```bash
    python -I scripts/otomad/songs/cookie/cookie_list.py x RU姉貴 UDK姉貴 HNS姉貴 BNKRG姉貴 MZ姉貴 JOKER姉貴
    ```
 
-5. **フォント**（dande3 の文字PV）: コーポレート・ロゴ Bold・クラフト明朝・美咲ゴシックを「ユーザー用」に入れる（`%LOCALAPPDATA%\Microsoft\Windows\Fonts`）。Noto Sans JP と游ゴシックは Windows 標準。
+6. **フォント**（dande3 の文字PV）: コーポレート・ロゴ Bold・クラフト明朝・美咲ゴシックを「ユーザー用」に入れる（`%LOCALAPPDATA%\Microsoft\Windows\Fonts`）。Noto Sans JP と游ゴシックは Windows 標準。
 
 ## 動かし方
 
@@ -74,7 +75,7 @@ build は song.wav・placement.json を書き、video はそれを読んで vide
 
 ## git に入れないもの
 
-素材の音声・絵、素材の写し（`cookie_src/`）、ダウンロードした参考動画（`refs/`）、分離した音（`ana_demucs*/`）、書き出した曲と動画、外部ライブラリ（`pylib/`）。どれも作業フォルダに置く。
+曲ごとのスクリプトとメモ（`songs/`、gitignore）。素材の音声・絵、素材の写し（`cookie_src/`）、ダウンロードした参考動画（`refs/`）、分離した音（`ana_demucs*/`）、書き出した曲と動画、外部ライブラリ（`pylib/`）。これらは作業フォルダに置く。
 
 ## 既知のこと
 
