@@ -18,6 +18,7 @@
 | [voice-instrument.md](voice-instrument.md) | 声を楽器（シンセ・太鼓・ベース）に作り替える、音節を16分に刻む | techno1・samson2go1r | 2号式の核 |
 | [audio-mix.md](audio-mix.md) | 声と伴奏の音量の上下・ダッキング・ラウドネス | samsonnigo1・bb7・kaisen | 2号式では曲が上。BB劇場は -16 LUFS |
 | [camera-3d.md](camera-3d.md) | 全天球の地面投影・板の向き・被写界深度・回り込み・リプレイ | bb7・bb8 | 「平たい横滑り」を無くした |
+| [voxel-world.md](voxel-world.md) | ブロックの世界を光線で描き、時刻つきで建てて壊す。BB を巨人にする | bb19 | — |
 | [impact.md](impact.md) | 衝撃のコマ・揺れの減衰・流し撮り・レンズ割れ | bb6〜bb8 | — |
 | [aspect-ratio.md](aspect-ratio.md) | 場面に合わせた黒帯（16:9 → 2.39:1 → 全画面） | bb7 | — |
 | [keying.md](keying.md) | 青背景・緑背景の抜き方、字幕の消し方 | — | 手順は [../bb-flow.md](../bb-flow.md) |

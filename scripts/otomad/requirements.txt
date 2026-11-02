@@ -6,3 +6,6 @@ praat-parselmouth==0.4.7
 mido==1.3.3
 # analysis/ の文字起こし（nigo_mad_asr）だけが使う
 transformers
+# lib/voxel.py（ブロックの世界の描画）だけが使う。numpy の版を動かさないよう --no-deps で SPEECH_PYLIB へ入れてもよい
+numba
+llvmlite
