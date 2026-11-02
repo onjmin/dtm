@@ -116,6 +116,7 @@ def draw(frame, t, t0, x, y, scale=1.0):
 
 - 指定した秒のコマと、全体の一覧画像（ffmpeg の tile）で、絵の縁に地の色が残っていないか、台詞の頭に出ているかを見る。
 - 確認は `FPS=15`、渡すのは 30fps（[rules.md](rules.md) の「確かめ方」と同じ）。
+- 30fps で書き出したら `python -I scripts/otomad/tools/video_shelf.py` を流し、`scratch/videos/index.html`（見返しの棚）に載ったことを確かめてから渡す。
 
 ## 7. セッションをまたいで持ち越す
 

@@ -10,7 +10,7 @@
 - 所有者の指摘で変わった基準 → [rules.md](../rules.md)（末尾の「改めた記録」にも1行）
 - 型の作法 → [genres/](../genres/README.md)
 
-新しい作品を作ったら、下の表にも1行足す（表は git に入る）。
+新しい作品を作ったら、下の表にも1行足す（表は git に入る）。書き出した動画は `python -I scripts/otomad/tools/video_shelf.py` で `scratch/videos/index.html` に並び、台帳の本文と一緒に見返せる（[scripts/otomad/README.md](../../../scripts/otomad/README.md) の「作った動画を見返す」）。
 
 | 作品 | 日付 | 系統 × 型 | 狙い（短く） |
 |---|---|---|---|

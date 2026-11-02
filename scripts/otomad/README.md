@@ -25,7 +25,7 @@ scripts/otomad/
     hijikata/   既存曲のカバー（picotune の MIDI をサウンドフォントで鳴らす。ネイティブフェイス × 変態糞土方）
     kary/ cpr/ eahon/
   analysis/   参考の曲・動画の測定（切り替え・明るさ・音量・拍・文字起こし）
-  tools/      聴き返しの棚・録音の時刻合わせ・書き出し補助
+  tools/      聴き返しの棚・動画を見返す棚（video_shelf）・録音の時刻合わせ・書き出し補助
 ```
 
 どのスクリプトも冒頭で `lib/paths.py` を読み込む。これで lib・songs の各フォルダ・analysis・tools が `sys.path` に入るので、フォルダをまたいだ import がそのまま通る。
@@ -83,6 +83,18 @@ python -I scripts/otomad/tools/bb_fetch.py key sm28427080 現場監督_ドッス
 - `*_video.py` からは PIL で連番を読み、`alpha_composite` で貼る。
 - **クラウドから取れるのは「日本国内のみ」でない動画だけ**（`--check` で見る。2026-11-01 の時点で、現場監督・ガバ穴ダディーの BB素材の半分ほどが国内のみだった）。YouTube はクラウドからは取れなかった。取れないものは手元の PC で同じコマンドを流し、素材のフォルダごと渡す。
 - 素材は他の方の作品なので、git に入れず公開しない。
+
+## 作った動画を見返す（tools/video_shelf.py）
+
+作曲の棚（`tmp/songs/index.html`）・台詞作曲の棚（`shelf/index.html`）と同じ形（左に一覧、右に詳細）で、BB劇場・音MAD の動画を見返すページを作る。
+
+```bash
+.venv-speech/Scripts/python -I scripts/otomad/tools/video_shelf.py
+```
+
+- 書き出し先は `scratch/videos/index.html`（ひな形 `tools/video_shelf.html`）。載せるのは [作品台帳の一覧](../../docs/otomad/works/README.md) の表にある作品のうち、動画が手元にあるもの。動画は台帳の「書き出し: `…`」、無ければ `scratch/<作品>/out/video.mp4`、`<作業フォルダ>/<作品>/video.mp4` の順に探す。
+- 詳細には台帳（`<作品>.md`）の本文を出す。緩急計画の「区間（秒）」の行と、下のコマの一覧（8枚、`scratch/videos/thumbs/`）を押すとその秒へ移る。評価は「所有者の評価」の最後の箇条。
+- 作品を書き出したり台帳を直したりしたら流し直す（コマは動画が新しくなったものだけ作り直す）。file:// のまま開いてよい。素材の絵と音を含むので公開しない。
 
 ## 動かし方
 
