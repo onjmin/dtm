@@ -20,7 +20,7 @@ docs/otomad/
   techniques/      使い回せる技を1つ1ファイル。どの作品で試して、効いたか
   genres/          型ごとの作法
   research/        日付つきの測定・調べ物の記録（後から直さない）
-  works/           作品台帳。1作品1ファイル（手元だけ。git には一覧とひな形だけ）
+  works/           作品台帳。1作品1ファイル（手元だけ。git には説明とひな形だけ）
 ```
 
 | 書くこと | 置き場所 | 更新 |
@@ -62,7 +62,7 @@ docs/otomad/
 `scripts/otomad/songs/` は git 管理外で、クラウドのセッションからは見えない。次は元の PC でやる。
 
 - [ ] notes.md から作った台帳 12 本（quotes・samson5・plasti1・techno1・samson2go1r・dande1〜3・bb6〜9）は git から外したので、`git pull` しても手元には来ない。git の履歴から取り出して `works/` に置く（例: `git show 97d0cfd:docs/otomad/works/bb8.md > docs/otomad/works/bb8.md`）。
-- [ ] `songs/*/notes-*.md`（33本）の中身を `works/` へ写す。台帳がある作品は「元のメモ」節を消し、無い作品は [works/README.md](works/README.md) の「まだ台帳に無い作品」から表へ移す。
+- [ ] `songs/*/notes-*.md`（33本）の中身を `works/` へ写す。台帳がある作品は「元のメモ」節を消し、無い作品は [works/README.md](works/README.md) の「まだ台帳に無い作品」から消す。
 - [ ] そのメモにしか無い技（3D カメラの作り方・字幕の消し方・レンズ割れなど）を `techniques/` へ写し、各ファイルの「手元のメモから写す」を消す。
 - [ ] 所有者の評価を各台帳の「所有者の評価」へ写す。
 - [ ] 他の作品が import している部品（bb8 の 3D エンジン・抜き・効果音など）を `scripts/otomad/lib/` へ出して git に入れ、`songs/` 側はそれを読むように直す。

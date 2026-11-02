@@ -1,7 +1,7 @@
 """BB劇場・音MAD の動画を見返すページ scratch/videos/index.html を書き出す（素材の絵と音を含むので手元だけで開く）。
 
-見た目は scripts/misc/song-shelf.html と同じ（左に一覧、右に詳細）。載せるのは作品台帳の一覧
-（docs/otomad/works/README.md の表）にある作品のうち、動画が手元にあるもの。動画の場所は台帳の
+見た目は scripts/misc/song-shelf.html と同じ（左に一覧、右に詳細）。載せるのは手元の台帳
+（docs/otomad/works/<作品>.md）と書き出した動画から見つけた作品のうち、動画が手元にあるもの。動画の場所は台帳の
 「書き出し: `…`」、無ければ scratch/<作品>/out/video.mp4、<作業フォルダ>/<作品>/video.mp4 の順に探す。
 詳細には台帳（<作品>.md）の本文を出し、緩急計画の「区間（秒）」の行を押すとその秒へ移る。
 コマの一覧（8枚）は scratch/videos/thumbs/ に作り、動画が新しくなったときだけ作り直す。
@@ -32,14 +32,25 @@ JST = timezone(timedelta(hours=9))  # tzdata が無い Windows でも動くよ�
 MODEL = "Claude Opus 5.5"  # 作ったモデル（ほかの棚と同じく一覧に出す）。台帳に「モデル: …」があればそちら
 
 
-def table_rows():
-    """作品台帳の一覧の表 → [{id, date, kind, aim}]（表の順）。"""
-    rows = []
-    for line in (WORKS / "README.md").read_text(encoding="utf-8").splitlines():
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) == 4 and line.startswith("|") and cells[0] not in ("作品", "---"):
-            rows.append({"id": cells[0], "date": cells[1], "kind": cells[2], "aim": cells[3]})
-    return rows
+def work_ids():
+    """手元の台帳と書き出した動画から作品 ID を集める（一覧は持たない。git に入れると複数の PC でぶつかる）。"""
+    ids = {p.stem for p in WORKS.glob("*.md")} - {"README", "_template"}
+    ids |= {p.parent.parent.name for p in (REPO / "scratch").glob("*/out/video.mp4")}
+    for name in ("video.mp4", "video_15fps.mp4"):
+        ids |= {p.parent.name for p in paths.WORK.glob(f"*/{name}")}
+    return sorted(ids)
+
+
+def kind_of(md):
+    """台帳の見出し「# <作品>（<系統> × <型>、<日付>）」→ 系統 × 型。"""
+    m = re.search(r"^# .*?（(.+?)(?:、[\d-]+)?）\s*$", md, re.M)
+    return m[1] if m else ""
+
+
+def aim_of(md):
+    """「狙い」の節の最初の行。"""
+    m = re.search(r"^## 狙い.*\n+(?!#)(.+)$", md, re.M)
+    return m[1].strip() if m else ""
 
 
 def find_video(wid, md):
@@ -97,23 +108,23 @@ def verdicts(md):
 
 def main():
     works, missing = [], []
-    for r in table_rows():
-        p = WORKS / f"{r['id']}.md"
+    for wid in work_ids():
+        p = WORKS / f"{wid}.md"
         md = p.read_text(encoding="utf-8") if p.exists() else ""
-        video = find_video(r["id"], md)
+        video = find_video(wid, md)
         if not video:
-            missing.append(r["id"])
+            missing.append(wid)
             continue
         f = probe(video)
         h1 = re.search(r"^# (.+)$", md, re.M)
         model = re.search(r"^- モデル:\s*(.+)$", md, re.M)
         v = verdicts(md)
         works.append({
-            "id": r["id"], "title": h1[1] if h1 else r["id"], "kind": r["kind"], "aim": r["aim"],
+            "id": wid, "title": h1[1] if h1 else wid, "kind": kind_of(md), "aim": aim_of(md),
             "at": datetime.fromtimestamp(video.stat().st_mtime, JST).strftime("%Y-%m-%d %H:%M"),
             "model": model[1].strip() if model else MODEL,
             "video": href(video), "videoPath": str(video), "facts": f,
-            "frames": frames(r["id"], video, f["seconds"]) if f.get("seconds") else [],
+            "frames": frames(wid, video, f["seconds"]) if f.get("seconds") else [],
             "verdict": v[-1] if v else "評価なし", "md": md or None,
         })
     works.sort(key=lambda x: x["at"], reverse=True)  # 一覧は新しい作品が上

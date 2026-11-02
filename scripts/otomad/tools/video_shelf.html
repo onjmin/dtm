@@ -145,7 +145,7 @@ function renderList(currentId) {
 			el("span", { class: "facts" }, [w.kind, w.facts.seconds ? mmss(w.facts.seconds) : null, w.verdict === "評価なし" ? w.verdict : "評価あり"].filter(Boolean).join(" ・ ")))));
 	document.getElementById("count").textContent = `${WORKS.length}本`;
 	const miss = SHELF.missing ?? [];
-	document.getElementById("missing").textContent = miss.length ? `台帳の一覧にあるが動画が手元に無い: ${miss.join("、")}` : "";
+	document.getElementById("missing").textContent = miss.length ? `台帳はあるが動画が手元に無い: ${miss.join("、")}` : "";
 }
 
 function renderDetail(w) {
@@ -154,7 +154,7 @@ function renderDetail(w) {
 	const kids = [
 		el("h2", {}, w.title),
 		el("p", { class: "sub" }, `${w.at}・日本時間（動画を書き出した時刻） ・ 作成モデル: ${w.model}`),
-		el("p", { class: "sub" }, `${w.kind} ／ ${w.aim}`),
+		el("p", { class: "sub" }, [w.kind, w.aim].filter(Boolean).join(" ／ ")),
 		el("div", { class: "facts-row" },
 			f.seconds ? el("span", {}, el("b", {}, mmss(f.seconds)), `（${f.seconds} 秒）`) : null,
 			f.size ? el("span", {}, el("b", {}, f.size)) : null,

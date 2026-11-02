@@ -92,7 +92,7 @@ python -I scripts/otomad/tools/bb_fetch.py key sm28427080 現場監督_ドッス
 .venv-speech/Scripts/python -I scripts/otomad/tools/video_shelf.py
 ```
 
-- 書き出し先は `scratch/videos/index.html`（ひな形 `tools/video_shelf.html`）。載せるのは [作品台帳の一覧](../../docs/otomad/works/README.md) の表にある作品のうち、動画が手元にあるもの。動画は台帳の「書き出し: `…`」、無ければ `scratch/<作品>/out/video.mp4`、`<作業フォルダ>/<作品>/video.mp4` の順に探す。
+- 書き出し先は `scratch/videos/index.html`（ひな形 `tools/video_shelf.html`）。載せるのは手元の台帳（`docs/otomad/works/<作品>.md`）と書き出した動画（`scratch/<作品>/out/video.mp4` など）から見つけた作品のうち、動画が手元にあるもの。系統・型と狙いは台帳の見出しと「狙い」から読む。動画は台帳の「書き出し: `…`」、無ければ `scratch/<作品>/out/video.mp4`、`<作業フォルダ>/<作品>/video.mp4` の順に探す。
 - 詳細には台帳（`<作品>.md`）の本文を出す。緩急計画の「区間（秒）」の行と、下のコマの一覧（8枚、`scratch/videos/thumbs/`）を押すとその秒へ移る。評価は「所有者の評価」の最後の箇条。
 - 作品を書き出したり台帳を直したりしたら流し直す（コマは動画が新しくなったものだけ作り直す）。file:// のまま開いてよい。素材の絵と音を含むので公開しない。
 
