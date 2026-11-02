@@ -311,13 +311,12 @@ const shelfNav = (current: string): string => {
 	const parts = shelves.map(([name, p]) => {
 		if (resolve(p) === resolve(current))
 			return `<b aria-current="page">${esc(name)}</b>`;
-		if (!existsSync(p))
-			return `<span style="color:var(--muted)" title="まだ書き出されていない: ${esc(p)}">${esc(name)}</span>`;
+		// 無い棚もリンクにする（このページを作った後で書き出せば通る）
 		const rel = relative(dirname(current), p);
 		const href = isAbsolute(rel)
 			? pathToFileURL(p).href // 別のドライブ
 			: encodeURI(rel.split(sep).join("/")).replace(/#/g, "%23");
-		return `<a href="${esc(href)}" style="color:var(--accent,inherit)">${esc(name)}</a>`;
+		return `<a href="${esc(href)}" title="${esc(p)}" style="color:var(--accent,inherit)">${esc(name)}</a>`;
 	});
 	return `<nav aria-label="棚" style="display:flex;flex-wrap:wrap;gap:2px 12px;margin:0 16px 14px;padding-bottom:10px;border-bottom:1px solid var(--line);font-size:12px">${parts.join("")}</nav>`;
 };
