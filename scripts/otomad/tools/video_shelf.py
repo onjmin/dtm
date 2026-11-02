@@ -20,6 +20,8 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents if p.name == "otomad") / "lib"))
 import paths  # noqa: E402  作業フォルダ（OTOMAD_WORK）の場所
 import imageio_ffmpeg  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "misc"))
+import shelf_links  # noqa: E402  棚どうしのリンクの帯
 
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 REPO = paths.REPO
@@ -118,7 +120,7 @@ def main():
     data = json.dumps({"works": works, "missing": missing}, ensure_ascii=False).replace("</", "<\\/")
     tpl = (Path(__file__).with_name("video_shelf.html")).read_text(encoding="utf-8")
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "index.html").write_text(tpl.replace("/*SHELF*/{}", data), encoding="utf-8")
+    (OUT / "index.html").write_text(shelf_links.inject(tpl.replace("/*SHELF*/{}", data), OUT / "index.html"), encoding="utf-8")
     print(OUT / "index.html", len(works), "videos;", "no video:", " ".join(missing) or "-")
 
 

@@ -29,6 +29,7 @@
 | ファイル名 | 役割 | コマンド例 |
 | :--- | :--- | :--- |
 | `song-shelf.ts` | 作った曲の棚（`tmp/songs/`）。一覧 `tmp/songs/index.html`（ひな形 `song-shelf.html`）。下の手順 | `npx tsx scripts/misc/song-shelf.ts new --title 終末カタストロフ` |
+| `shelf_links.py` | 4つの棚（曲・台詞作曲・台詞作曲の試作・BB劇場・音MADの動画）の左上に入れる、互いへのリンクの帯。Python の棚の build が読む（`song-shelf.ts` は同じものを TS で持つ）。リンクは相対パスで、file:// で開いたときに通る。まだ書き出されていない棚は灰色の文字 | — |
 | `mml-embed-url.ts` | .mml を公開デモの埋め込み URL と編集画面の URL にする（組み立ては `embed-url.ts`） | `npx tsx scripts/misc/mml-embed-url.ts tmp/a.mml --json tmp/urls.json` |
 | `voicevox-sing.ts` | 歌詞付き MML の1トラックを VOICEVOX の歌唱 API で歌わせ、歌声だけを WAV に書き出す（試作。伴奏は入らない）。VOICEVOX エンジンを先に起動しておく | `npx tsx scripts/misc/voicevox-sing.ts tmp/a.mml --track 0 --singer ずんだもん --out scratch/voicevox/sing.wav` |
 | `neutrino-server.ts` | 手元の NEUTRINO を dtm から呼ぶ中継サーバー（試作）。`nt_` の声で歌わせるときに起動しておく。[docs/guide/neutrino-sing.md](../docs/guide/neutrino-sing.md) | `npx tsx scripts/misc/neutrino-server.ts --neutrino C:/NEUTRINO` |

@@ -14,6 +14,8 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents if p.nam
 import paths  # noqa: E402  素材・作業フォルダ・曲フォルダを sys.path へ
 HERE = paths.WORK
 import soundfile as sf  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "misc"))
+import shelf_links  # noqa: E402  棚どうしのリンクの帯
 
 SRC_ROOT = paths.MATERIAL
 COOKIE_ROOT = HERE / "cookie_src"
@@ -230,7 +232,7 @@ def main():
     tpl = (HERE / "shelf_template.html").read_text(encoding="utf-8")
     songs.sort(key=lambda x: x["at"], reverse=True)  # 一覧は新しい曲が上
     html = tpl.replace("/*SONGS*/[]", json.dumps(songs, ensure_ascii=False))
-    (HERE / "shelf" / "index.html").write_text(html, encoding="utf-8")
+    (HERE / "shelf" / "index.html").write_text(shelf_links.inject(html, HERE / "shelf" / "index.html"), encoding="utf-8")
     print(len(songs), "songs;", sum(len(s["rows"]) for s in songs), "rows;",
           [s["id"] for s in songs if not s["rows"]], "without rows")
 

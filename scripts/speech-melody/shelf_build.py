@@ -5,6 +5,7 @@ SPEECH_OUT_DIR の下の、song.wav がある曲フォルダを全部載せる�
 python shelf_build.py → rec/server.mjs で http://localhost:40321/shelf/index.html
 """
 import json
+import sys
 from datetime import datetime
 from pathlib import PureWindowsPath  # 区切りが / でも \ でも読める
 from zoneinfo import ZoneInfo
@@ -12,6 +13,9 @@ from zoneinfo import ZoneInfo
 import soundfile as sf
 
 import config
+
+sys.path.insert(0, str(config.REPO / "scripts" / "misc"))
+import shelf_links  # noqa: E402  棚どうしのリンクの帯
 
 MODEL = "Claude"  # 一覧に出す作り手。meta.json の model で上書きできる
 
@@ -47,7 +51,7 @@ def main():
     out = config.OUT_DIR / "shelf" / "index.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     # </script> を閉じさせない
-    out.write_text(tpl.replace("/*SONGS*/[]", json.dumps(songs, ensure_ascii=False).replace("</", "<\\/")), encoding="utf-8")
+    out.write_text(shelf_links.inject(tpl.replace("/*SONGS*/[]", json.dumps(songs, ensure_ascii=False).replace("</", "<\\/")), out), encoding="utf-8")
     print(out, len(songs), "songs")
 
 

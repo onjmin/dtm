@@ -29,7 +29,16 @@ import {
 	writeFileSync,
 } from "node:fs";
 import Module from "node:module";
-import { basename, join, resolve } from "node:path";
+import {
+	basename,
+	dirname,
+	isAbsolute,
+	join,
+	relative,
+	resolve,
+	sep,
+} from "node:path";
+import { pathToFileURL } from "node:url";
 import { pickOreName } from "../compose/ore-names";
 import { mmlShareUrls } from "./embed-url";
 
@@ -267,6 +276,52 @@ const publish = (dir: string, mmlFile: string) => {
 	);
 };
 
+/** 環境変数か、リポジトリ直下の .env の値 */
+const env = (key: string): string | undefined => {
+	if (process.env[key]) return process.env[key];
+	const file = resolve(".env");
+	if (!existsSync(file)) return undefined;
+	for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+		const i = line.indexOf("=");
+		if (i > 0 && line.slice(0, i).trim() === key)
+			return line
+				.slice(i + 1)
+				.trim()
+				.replace(/^["']|["']$/g, "");
+	}
+	return undefined;
+};
+
+/** 棚どうしを行き来するリンクの帯（scripts/misc/shelf_links.py と同じもの）。<aside> の頭に入れる */
+const shelfNav = (current: string): string => {
+	const shelves: [string, string][] = [
+		["曲", join(SHELF, "index.html")],
+		[
+			"台詞作曲",
+			join(env("SPEECH_OUT_DIR") ?? resolve("scratch/speech-songs"), "shelf", "index.html"),
+		],
+		[
+			"台詞作曲の試作",
+			join(env("OTOMAD_WORK") ?? resolve("scratch/speech-melody"), "shelf", "index.html"),
+		],
+		["BB劇場・音MADの動画", resolve("scratch/videos/index.html")],
+	];
+	const esc = (s: string) =>
+		s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+	const parts = shelves.map(([name, p]) => {
+		if (resolve(p) === resolve(current))
+			return `<b aria-current="page">${esc(name)}</b>`;
+		if (!existsSync(p))
+			return `<span style="color:var(--muted)" title="まだ書き出されていない: ${esc(p)}">${esc(name)}</span>`;
+		const rel = relative(dirname(current), p);
+		const href = isAbsolute(rel)
+			? pathToFileURL(p).href // 別のドライブ
+			: encodeURI(rel.split(sep).join("/")).replace(/#/g, "%23");
+		return `<a href="${esc(href)}" style="color:var(--accent,inherit)">${esc(name)}</a>`;
+	});
+	return `<nav aria-label="棚" style="display:flex;flex-wrap:wrap;gap:2px 12px;margin:0 16px 14px;padding-bottom:10px;border-bottom:1px solid var(--line);font-size:12px">${parts.join("")}</nav>`;
+};
+
 const writeIndex = () => {
 	mkdirSync(SHELF, { recursive: true });
 	const songs = readdirSync(SHELF)
@@ -277,7 +332,9 @@ const writeIndex = () => {
 	const template = readFileSync(join(__dirname, "song-shelf.html"), "utf8");
 	writeFileSync(
 		join(SHELF, "index.html"),
-		template.replace("/*SONGS*/[]", data),
+		template
+			.replace("/*SONGS*/[]", data)
+			.replace("<aside>", `<aside>${shelfNav(join(SHELF, "index.html"))}`),
 		"utf8",
 	);
 	console.log(`${join(SHELF, "index.html")}（${songs.length} 曲）`);
