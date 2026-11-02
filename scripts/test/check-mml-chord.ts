@@ -177,6 +177,58 @@ check("書き出し→読み込みで和音が戻る", shape(written), [
 	"0:2077/48",
 ]);
 
+// 和音の一部が小節頭の少し手前から始まっても、小節頭で切らない（海鬼月で64分に切られていた形）。
+console.log("発音がわずかにずれた和音");
+const notesOf = (rows: [number, number, number][]): Note[] =>
+	rows.map(([startStep, pitchUnits, durationSteps], id) => ({
+		id,
+		startStep,
+		durationSteps,
+		pitchUnits: pitchUnits as Note["pitchUnits"],
+	}));
+const shapeOf = (rows: [number, number, number][]): string[] =>
+	shape(core.getMMLFromNotes(notesOf(rows), 120, 100));
+check(
+	"小節頭の2ステップ手前から伸びる音は和音へ寄せる",
+	shapeOf([
+		[190, 1860, 96],
+		[192, 2077, 72],
+	]),
+	["192:1860/96", "192:2077/96"],
+);
+check(
+	"小節頭の6ステップ手前（32分）から伸びる音も寄せる",
+	shapeOf([
+		[186, 1860, 96],
+		[192, 2077, 96],
+	]),
+	["192:1860/96", "192:2077/96"],
+);
+check(
+	"小節頭より少し後ろへずれた音も小節頭へ寄せる",
+	shapeOf([
+		[192, 1860, 96],
+		[194, 2077, 96],
+	]),
+	["192:1860/96", "192:2077/96"],
+);
+check(
+	"手前の短い音は寄せない（前打音やつなぎを和音にしない）",
+	shapeOf([
+		[192, 1860, 6],
+		[198, 2077, 96],
+	]),
+	["192:1860/6", "198:2077/96"],
+);
+check(
+	"32分より離れた音は寄せない",
+	shapeOf([
+		[144, 1860, 96],
+		[192, 2077, 96],
+	]),
+	["144:1860/48", "192:2077/96"],
+);
+
 if (failed > 0) {
 	console.error(`\n${failed} 件が期待と違う`);
 	process.exit(1);

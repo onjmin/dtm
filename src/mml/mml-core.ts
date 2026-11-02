@@ -448,6 +448,58 @@ export class MMLCore {
 	}
 
 	/**
+	 * ほぼ同時に始まり鳴り続ける音を、同じ発音位置の和音へ寄せる。
+	 *
+	 * MML の1トラックは次の発音までしか音を伸ばせない。MIDI の手弾きのように和音の一部が
+	 * 小節頭の少し手前から始まると、その音は小節頭で切られ、64分音符だけ鳴って消える。
+	 * 発音の差が32分音符以内で、前の音が差の2倍以上伸びているものだけを寄せる
+	 * （前の音がすぐ終わる短い音やレガートのつなぎは、別の音のまま残す）。
+	 * 寄せ先は16分の格子に最も近い発音で、同じ近さなら後ろの発音にする。
+	 */
+	private mergeRingingOnsets(byStep: Map<number, Note[]>): Map<number, Note[]> {
+		const { stepsPerBar } = this.getConfig();
+		const maxSpan = stepsPerBar / 32;
+		const grid = stepsPerBar / 16;
+		const steps = Array.from(byStep.keys()).sort((a, b) => a - b);
+		const notesAt = (step: number): Note[] => byStep.get(step) ?? [];
+		const gridDistance = (step: number): number =>
+			Math.min(step % grid, grid - (step % grid));
+		const merged = new Map<number, Note[]>();
+
+		for (let i = 0; i < steps.length; ) {
+			let j = i;
+			while (
+				j + 1 < steps.length &&
+				steps[j + 1] - steps[i] <= maxSpan &&
+				Math.max(...notesAt(steps[j]).map((n) => n.durationSteps)) >=
+					2 * (steps[j + 1] - steps[j])
+			)
+				j++;
+			if (i === j) {
+				merged.set(steps[i], notesAt(steps[i]));
+			} else {
+				const group = steps.slice(i, j + 1);
+				const anchor = group.reduce((best, step) =>
+					gridDistance(step) <= gridDistance(best) ? step : best,
+				);
+				// 和音の音価は先頭の音で決まるので、一番長い音を先頭にする。同じ高さは1つにまとめる。
+				const seen = new Set<number>();
+				const notes = group
+					.flatMap(notesAt)
+					.sort((a, b) => b.durationSteps - a.durationSteps)
+					.filter((n) => {
+						if (seen.has(n.pitchUnits)) return false;
+						seen.add(n.pitchUnits);
+						return true;
+					});
+				merged.set(anchor, notes);
+			}
+			i = j + 1;
+		}
+		return merged;
+	}
+
+	/**
 	 * ギャップに収まる最大の音符を探す（減算アルゴリズム用）
 	 */
 	private findBestFitDuration(gap: number): { dur: number; steps: number } {
@@ -528,18 +580,21 @@ export class MMLCore {
 		let firstV: number | null = null;
 		let lastV = headerV;
 
+		// 同一 startStep のノートをまとめる（和音）。発音開始位置の昇順で処理する
+		const rawByStep = new Map<number, Note[]>();
+		for (const n of this.notes) {
+			const list = rawByStep.get(n.startStep) ?? [];
+			list.push(n);
+			rawByStep.set(n.startStep, list);
+		}
+		const notesByStep = this.mergeRingingOnsets(rawByStep);
+
 		// 末尾の余白は最後に到達する発音終端まで（最長ノートの末尾を採用）
 		const endStep = Math.max(
-			...this.notes.map((n) => n.startStep + n.durationSteps),
+			...Array.from(notesByStep, ([step, notes]) =>
+				Math.max(...notes.map((n) => step + n.durationSteps)),
+			),
 		);
-
-		// 同一 startStep のノートをまとめる（和音）。発音開始位置の昇順で処理する
-		const notesByStep = new Map<number, Note[]>();
-		for (const n of this.notes) {
-			const list = notesByStep.get(n.startStep) ?? [];
-			list.push(n);
-			notesByStep.set(n.startStep, list);
-		}
 		const sortedSteps = Array.from(notesByStep.keys()).sort((a, b) => a - b);
 
 		const MIN_STEP = config.stepsPerBar / 64;
