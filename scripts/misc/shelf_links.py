@@ -1,7 +1,7 @@
 """棚（見返しページ）どうしを行き来するリンクの帯。Python の棚の build が読む（song-shelf.ts は同じものを TS で持つ）。
 
 棚の場所は各 build と同じ決まり（環境変数か、リポジトリ直下の .env）。リンクは書き出すページから見た相対パスなので、
-file:// で開いたときに通る。リンクはいつも4つとも出す（このページを作った時点で無かった棚も、後から書き出せば通る）。
+file:// で開いたときに通る。まだ書き出されていない棚はリンクにせず「まだ無い」と出す。
 
   import shelf_links
   html = shelf_links.inject(html, <書き出すページのパス>)   # <aside> の頭に帯を入れる
@@ -45,12 +45,14 @@ def nav_html(current):
         p = p.resolve()
         if p == current:
             parts.append(f'<b aria-current="page">{h.escape(name)}</b>')
-        else:
+        elif p.exists():
             try:
                 href = quote(Path(os.path.relpath(p, current.parent)).as_posix(), safe="/.")
             except ValueError:  # 別のドライブ
                 href = p.as_uri()
-            parts.append(f'<a href="{href}" title="{h.escape(str(p))}" style="color:var(--accent,inherit)">{h.escape(name)}</a>')
+            parts.append(f'<a href="{href}" style="color:var(--accent,inherit)">{h.escape(name)}</a>')
+        else:
+            parts.append(f'<span style="color:var(--muted)" title="まだ書き出されていない: {h.escape(str(p))}">{h.escape(name)}</span>')
     return ('<nav aria-label="棚" style="display:flex;flex-wrap:wrap;gap:2px 12px;margin:0 16px 14px;padding-bottom:10px;'
             'border-bottom:1px solid var(--line);font-size:12px">' + "".join(parts) + "</nav>")
 
