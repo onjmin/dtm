@@ -16,7 +16,7 @@
 |---|---|---|---|
 | [speech-melody.md](speech-melody.md) | 台詞イントネーション作曲（台詞の抑揚を主旋律にする） | samson5・dande1〜3・quotes ほか | 主軸。手順は作者本人の手順に合わせ直した |
 | [voice-instrument.md](voice-instrument.md) | 声を楽器（シンセ・太鼓・ベース）に作り替える、音節を16分に刻む | techno1・samson2go1r | 2号式の核 |
-| [audio-mix.md](audio-mix.md) | 声と伴奏の音量の上下・ダッキング・ラウドネス | samsonnigo1・bb7・kaisen | 2号式では曲が上。BB劇場は -16 LUFS |
+| [audio-mix.md](audio-mix.md) | 声と伴奏の音量の上下・ダッキング・ラウドネス | samsonnigo1・bb7・kaisen・海鬼月 | 2号式では曲が上。BB劇場は -16 LUFS |
 | [camera-3d.md](camera-3d.md) | 全天球の地面投影・板の向き・被写界深度・回り込み・リプレイ | bb7・bb8 | 「平たい横滑り」を無くした |
 | [voxel-world.md](voxel-world.md) | ブロックの世界を光線で描き、時刻つきで建てて壊す。BB を巨人にする | bb19 | — |
 | [impact.md](impact.md) | 衝撃のコマ・揺れの減衰・流し撮り・レンズ割れ | bb6〜bb8 | — |
@@ -24,6 +24,8 @@
 | [keying.md](keying.md) | 青背景・緑背景の抜き方、字幕の消し方 | — | 手順は [../bb-flow.md](../bb-flow.md) |
 | [lyrics-text.md](lyrics-text.md) | 文字PV・モーラごとの字幕・括弧のト書き・漢字1字の札 | dande3 | 字はモーラ単位で出す |
 | [thumbnail.md](thumbnail.md) | 専用コマのサムネ、題の付け方 | dande2 | — |
+| [pixel-character.md](pixel-character.md) | ドット絵のキャラを 3D モデルで確かめて似せる。めたん・ずんだもん・イタコの確定した形 | 海鬼月 | 所有者の直しで確定 |
+| [pixel-video.md](pixel-video.md) | 界隈風のドット絵歌動画。合唱の度数・間奏のピアノロール・描画のバグの型 | 海鬼月 | — |
 | [minimal-process.md](minimal-process.md) | ミニマル音楽の手順（ずれ・埋める・抜ける）と、音と1対1の楽譜の映像 | cm18 | — |
 
 「—」は所有者の評価をまだ台帳に写していないもの。手元の `songs/*/notes-*.md` から写す（[../README.md](../README.md) の「移し替えの残り」）。

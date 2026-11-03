@@ -25,7 +25,7 @@ scripts/otomad/
     hijikata/   既存曲のカバー（picotune の MIDI をサウンドフォントで鳴らす。ネイティブフェイス × 変態糞土方）
     kary/ cpr/ eahon/
   analysis/   参考の曲・動画の測定（切り替え・明るさ・音量・拍・文字起こし）
-  tools/      聴き返しの棚・動画を見返す棚（video_shelf）・録音の時刻合わせ・書き出し補助
+  tools/      聴き返しの棚・動画を見返す棚（video_shelf）・録音の時刻合わせ・書き出し補助・3D モデルの描き出し（model_view）
 ```
 
 どのスクリプトも冒頭で `lib/paths.py` を読み込む。これで lib・songs の各フォルダ・analysis・tools が `sys.path` に入るので、フォルダをまたいだ import がそのまま通る。
