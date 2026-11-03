@@ -298,11 +298,19 @@ const shelfNav = (current: string): string => {
 		["曲", join(SHELF, "index.html")],
 		[
 			"台詞作曲",
-			join(env("SPEECH_OUT_DIR") ?? resolve("scratch/speech-songs"), "shelf", "index.html"),
+			join(
+				env("SPEECH_OUT_DIR") ?? resolve("scratch/speech-songs"),
+				"shelf",
+				"index.html",
+			),
 		],
 		[
 			"台詞作曲の試作",
-			join(env("OTOMAD_WORK") ?? resolve("scratch/speech-melody"), "shelf", "index.html"),
+			join(
+				env("OTOMAD_WORK") ?? resolve("scratch/speech-melody"),
+				"shelf",
+				"index.html",
+			),
 		],
 		["BB劇場・音MADの動画", resolve("scratch/videos/index.html")],
 	];
@@ -322,11 +330,27 @@ const shelfNav = (current: string): string => {
 	return `<nav aria-label="棚" style="display:flex;flex-wrap:wrap;gap:2px 12px;margin:0 16px 14px;padding-bottom:10px;border-bottom:1px solid var(--line);font-size:12px">${parts.join("")}</nav>`;
 };
 
+/** 曲のフォルダの production/ に master.wav があれば棚で聴けるようにする（master.mp3 があれば軽いそちらを鳴らす）。stem_*.wav はリンクだけ */
+const readMix = (d: string) => {
+	const prod = join(SHELF, d, "production");
+	if (!existsSync(join(prod, "master.wav"))) return {};
+	const masters = ["master.mp3", "master.wav"].filter((f) =>
+		existsSync(join(prod, f)),
+	);
+	const stems = readdirSync(prod).filter((f) => /^stem_.*\.wav$/.test(f));
+	return {
+		mix: {
+			play: `production/${masters[0]}`,
+			files: [...masters, ...stems].map((f) => `production/${f}`),
+		},
+	};
+};
+
 const writeIndex = () => {
 	mkdirSync(SHELF, { recursive: true });
 	const songs = readdirSync(SHELF)
 		.filter((d) => existsSync(join(SHELF, d, "meta.json")))
-		.map((d) => ({ dir: d, ...readMeta(join(SHELF, d)) }))
+		.map((d) => ({ dir: d, ...readMeta(join(SHELF, d)), ...readMix(d) }))
 		.sort((a, b) => b.at.localeCompare(a.at) || b.dir.localeCompare(a.dir));
 	const data = JSON.stringify(songs).replace(/</g, "\\u003c");
 	const template = readFileSync(join(__dirname, "song-shelf.html"), "utf8");

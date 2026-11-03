@@ -119,6 +119,11 @@ function show(i) {
 			s.song.seed && el("span", {}, `seed ${s.song.seed}`)));
 	}
 	if (s.summary) kids.push(el("p", { class: "summary" }, s.summary));
+	if (s.mix) {
+		kids.push(el("p", { class: "summary" }, el("b", {}, "ミックス済みの音源")));
+		kids.push(el("audio", { src: href(s, s.mix.play), controls: "", preload: "metadata", style: "width:100%;display:block;margin-bottom:6px;" }));
+		kids.push(el("p", { class: "links" }, ...s.mix.files.map((f) => el("a", { href: href(s, f) }, f.split("/").pop()))));
+	}
 	if (s.song) {
 		kids.push(el("iframe", { src: s.song.embed, title: `${s.title} のプレイヤー`, loading: "lazy" }));
 		kids.push(el("p", { class: "links" },
