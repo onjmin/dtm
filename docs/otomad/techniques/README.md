@@ -24,7 +24,7 @@
 | [keying.md](keying.md) | 青背景・緑背景の抜き方、字幕の消し方 | — | 手順は [../bb-flow.md](../bb-flow.md) |
 | [lyrics-text.md](lyrics-text.md) | 文字PV・モーラごとの字幕・括弧のト書き・漢字1字の札 | dande3 | 字はモーラ単位で出す |
 | [thumbnail.md](thumbnail.md) | 専用コマのサムネ、題の付け方 | dande2 | — |
-| [pixel-character.md](pixel-character.md) | ドット絵のキャラを 3D モデルで確かめて似せる。めたん・ずんだもん・イタコの確定した形 | 海鬼月 | 所有者の直しで確定 |
+| [pixel-character.md](pixel-character.md) | ドット絵のキャラを 3D モデルで確かめて似せる。めたん・ずんだもん・イタコ・キリコ・シヨ・アルの確定した形、目・髪・手の描き方 | 海鬼月 | 所有者の直しで確定 |
 | [pixel-video.md](pixel-video.md) | 界隈風のドット絵歌動画。合唱の度数・間奏のピアノロール・描画のバグの型 | 海鬼月 | — |
 | [minimal-process.md](minimal-process.md) | ミニマル音楽の手順（ずれ・埋める・抜ける）と、音と1対1の楽譜の映像 | cm18 | — |
 
