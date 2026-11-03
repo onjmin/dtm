@@ -341,6 +341,9 @@ const readMix = (d: string) => {
 	return {
 		mix: {
 			play: `production/${masters[0]}`,
+			video: existsSync(join(prod, "video.mp4"))
+				? "production/video.mp4"
+				: undefined,
 			files: [...masters, ...stems].map((f) => `production/${f}`),
 		},
 	};

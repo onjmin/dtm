@@ -122,6 +122,7 @@ function show(i) {
 	if (s.summary) kids.push(el("p", { class: "summary" }, s.summary));
 	if (s.mix) {
 		kids.push(el("p", { class: "summary" }, el("b", {}, "ミックス済みの音源")));
+		if (s.mix.video) kids.push(el("video", { src: href(s, s.mix.video), controls: "", preload: "metadata", style: "width:100%;display:block;margin-bottom:6px;background:#000;image-rendering:pixelated;" }));
 		kids.push(el("audio", { src: href(s, s.mix.play), controls: "", preload: "metadata", style: "width:100%;display:block;margin-bottom:6px;" }));
 		kids.push(el("p", { class: "links" }, ...s.mix.files.map((f) => el("a", { href: href(s, f) }, f.split("/").pop()))));
 	}
