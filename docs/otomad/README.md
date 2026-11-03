@@ -54,6 +54,7 @@ docs/otomad/
 | [bb-theater.md](research/bb-theater.md) | BB劇場の測定（割り方・型・物語性・バトルの撮り方、11-01） |
 | [battle-inmu.md](research/battle-inmu.md) | バトル淫夢のヒット作の測定（格ゲーの枠・技ごとの BB・裏切り・決まり文句・肩すかし、11-01） |
 | [noediyu.md](research/noediyu.md) | のえぢゆ（NEL姉貴・DIYUSI）の設定・台詞・BB素材・抜き方の注意（11-02） |
+| [oshare-cookie.md](research/oshare-cookie.md) | オシャレクッキー☆の全 724 本の題名の傾向、型、コメント、まだ無いジャンル（11-03） |
 | [material-packs.md](research/material-packs.md) | 音MAD素材のスターターパックの一覧（[一覧の tsv](research/material-packs-list.tsv)、11-01） |
 | [../research/kaiwai-lineages.md](../research/kaiwai-lineages.md) | 界隈曲の流派の実測（自動作曲と共用なので `docs/research/` に置く） |
 
