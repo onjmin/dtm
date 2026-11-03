@@ -346,11 +346,30 @@ const readMix = (d: string) => {
 	};
 };
 
+/** 歌詞を棚に出す。lyrics.txt があればそれを、無ければ song.mml の歌詞行を読点で改行して出す。歌詞の無い曲は出さない */
+const readLyrics = (d: string) => {
+	const dir = join(SHELF, d);
+	if (existsSync(join(dir, "lyrics.txt")))
+		return { lyrics: readFileSync(join(dir, "lyrics.txt"), "utf8").trim() };
+	if (!existsSync(join(dir, "song.mml"))) return {};
+	const lines = readFileSync(join(dir, "song.mml"), "utf8")
+		.split(/;\s*/)
+		.filter((l) => l.startsWith("@@"));
+	const first = lines[0]?.match(/[ぁ-ゖァ-ヺー、_〜]+\s*$/)?.[0];
+	if (!first) return {};
+	return { lyrics: first.trim().split("、").join("\n") };
+};
+
 const writeIndex = () => {
 	mkdirSync(SHELF, { recursive: true });
 	const songs = readdirSync(SHELF)
 		.filter((d) => existsSync(join(SHELF, d, "meta.json")))
-		.map((d) => ({ dir: d, ...readMeta(join(SHELF, d)), ...readMix(d) }))
+		.map((d) => ({
+			dir: d,
+			...readMeta(join(SHELF, d)),
+			...readMix(d),
+			...readLyrics(d),
+		}))
 		.sort((a, b) => b.at.localeCompare(a.at) || b.dir.localeCompare(a.dir));
 	const data = JSON.stringify(songs).replace(/</g, "\\u003c");
 	const template = readFileSync(join(__dirname, "song-shelf.html"), "utf8");
