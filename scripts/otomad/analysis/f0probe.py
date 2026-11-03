@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents if p.name == "otomad") / "lib"))
 import paths  # noqa: E402
 import librosa, numpy as np, pyworld
-Y = str(paths.MATERIAL / "淫夢/淫夢SPパック_分割⑤/第４章「昏睡レイプ！野獣と化した先輩」/野獣")
+Y = str(paths.MATERIAL / "淫夢/淫夢SPパック/淫夢SPパック_分割⑤/第４章「昏睡レイプ！野獣と化した先輩」/野獣")
 for n in ['おまたせ', 'これもうわかんねぇな', 'アアッ！アッ！', '大丈夫でしょ']:
     y, sr = librosa.load(Y + '/野獣「' + n + '」.wav', sr=16000)
     f0, t = pyworld.harvest(y.astype(np.float64), sr, f0_floor=60, f0_ceil=700, frame_period=10)
