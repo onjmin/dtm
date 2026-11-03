@@ -60,6 +60,7 @@ def index_put(cid, **kw):
     INDEX.write_text(json.dumps(ix, ensure_ascii=False, indent=1), encoding="utf-8")
 SEARCH = "https://snapshot.search.nicovideo.jp/api/v2/snapshot/video/contents/search"
 UA = "dtm-otomad-bb-fetch"
+YT_DLP = [sys.executable, "-m", "yt_dlp"]  # exe はアプリ制御で止まる PC があるので、この Python の中のものを動かす
 
 
 def nico_search(q, limit):
@@ -72,7 +73,7 @@ def nico_search(q, limit):
 
 
 def available(cid):
-    r = subprocess.run(["yt-dlp", "--no-warnings", "--simulate", "--print", "id", f"https://www.nicovideo.jp/watch/{cid}"],
+    r = subprocess.run([*YT_DLP, "--no-warnings", "--simulate", "--print", "id", f"https://www.nicovideo.jp/watch/{cid}"],
                        capture_output=True, text=True)
     return r.returncode == 0
 
@@ -89,11 +90,11 @@ def url_of(src):
 
 def cmd_get(a):
     url = url_of(a.src)
-    info = json.loads(subprocess.run(["yt-dlp", "--no-warnings", "-J", url], capture_output=True, text=True, check=True).stdout)
+    info = json.loads(subprocess.run([*YT_DLP, "--no-warnings", "-J", url], capture_output=True, text=True, check=True).stdout)
     genre = a.genre or guess_genre(info.get("tags"))
     d = AI / genre / "BB" / info["id"]
     d.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["yt-dlp", "--no-warnings", "-q", "-f", f"bv*[height<={a.height}]+ba/b", "--merge-output-format", "mp4",
+    subprocess.run([*YT_DLP, "--no-warnings", "-q", "-f", f"bv*[height<={a.height}]+ba/b", "--merge-output-format", "mp4",
                     "-o", str(d / "source.%(ext)s"), url], check=True)
     keep = {k: info.get(k) for k in ["id", "title", "webpage_url", "uploader", "upload_date", "duration", "tags", "description"]}
     (d / "info.json").write_text(json.dumps(keep, ensure_ascii=False, indent=1), encoding="utf-8")
