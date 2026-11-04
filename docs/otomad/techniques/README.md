@@ -28,6 +28,7 @@
 | [pixel-video.md](pixel-video.md) | 界隈風のドット絵歌動画。合唱の度数・間奏のピアノロール・描画のバグの型 | 海鬼月 | — |
 | [manga-tone.md](manga-tone.md) | 白黒の漫画調。層ごとの網点、縦書きのフキダシ、斜めの擬音、粉に崩れる表現 | bb26 | — |
 | [one-take-thread.md](one-take-thread.md) | 声の音程から引いた糸をワンカットで飛ぶ MV。網点から色の解放、窓を破る、対数極座標の筒 | cm24 | — |
+| [voice-icon-bounce.md](voice-icon-bounce.md) | 鳴っている声のアイコンを音ごとに弾ませて震わせる。音の高さの位置には置かない | ENU☆ | — |
 | [roid-unison.md](roid-unison.md) | 台詞にロイドとオクターブを重ねて声を太くする。koe と淫夢の50音を波形のまま音符へ並べる | ENU☆ | — |
 | [minimal-process.md](minimal-process.md) | ミニマル音楽の手順（ずれ・埋める・抜ける）と、音と1対1の楽譜の映像 | cm18 | — |
 
