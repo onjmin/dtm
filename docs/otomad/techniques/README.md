@@ -26,6 +26,7 @@
 | [thumbnail.md](thumbnail.md) | 専用コマのサムネ、題の付け方 | dande2 | — |
 | [pixel-character.md](pixel-character.md) | ドット絵のキャラを 3D モデルで確かめて似せる。めたん・ずんだもん・イタコ・キリコ・シヨ・アルの確定した形、目・髪・手の描き方 | 海鬼月 | 所有者の直しで確定 |
 | [pixel-video.md](pixel-video.md) | 界隈風のドット絵歌動画。合唱の度数・間奏のピアノロール・描画のバグの型 | 海鬼月 | — |
+| [manga-tone.md](manga-tone.md) | 白黒の漫画調。層ごとの網点、縦書きのフキダシ、斜めの擬音、粉に崩れる表現 | bb26 | — |
 | [minimal-process.md](minimal-process.md) | ミニマル音楽の手順（ずれ・埋める・抜ける）と、音と1対1の楽譜の映像 | cm18 | — |
 
 「—」は所有者の評価をまだ台帳に写していないもの。手元の `songs/*/notes-*.md` から写す（[../README.md](../README.md) の「移し替えの残り」）。
