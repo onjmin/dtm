@@ -29,6 +29,8 @@
 | [manga-tone.md](manga-tone.md) | 白黒の漫画調。層ごとの網点、縦書きのフキダシ、斜めの擬音、粉に崩れる表現 | bb26 | — |
 | [one-take-thread.md](one-take-thread.md) | 声の音程から引いた糸をワンカットで飛ぶ MV。網点から色の解放、窓を破る、対数極座標の筒 | cm24 | — |
 | [voice-icon-bounce.md](voice-icon-bounce.md) | 鳴っている声のアイコンを音ごとに弾ませて震わせる。音の高さの位置には置かない | ENU☆ | — |
+| [ichiten-kousei.md](ichiten-kousei.md) | 一転攻勢。最後のサビで同じ作りのまま中身を淫夢へ替える。数秒前に前触れを入れる | ENU☆ | — |
+| [material-drums.md](material-drums.md) | 声と物音で場面ごとのドラムキットを組み、打点に BB を出す | ENU☆ | — |
 | [roid-unison.md](roid-unison.md) | 台詞にロイドとオクターブを重ねて声を太くする。koe と淫夢の50音を波形のまま音符へ並べる | ENU☆ | — |
 | [minimal-process.md](minimal-process.md) | ミニマル音楽の手順（ずれ・埋める・抜ける）と、音と1対1の楽譜の映像 | cm18 | — |
 
