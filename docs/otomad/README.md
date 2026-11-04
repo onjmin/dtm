@@ -48,6 +48,7 @@ docs/otomad/
 | [inmu-kousatsu.md](research/inmu-kousatsu.md) | 淫夢の素材としての考察（成り立ち・系統・扱わないもの） |
 | [nigo-kousatsu.md](research/nigo-kousatsu.md) | 2号兄貴の作風の考察（曲の規則） |
 | [nigo-mad-analysis.md](research/nigo-mad-analysis.md) | 2号兄貴の音MADの分析（声を楽器に・刻む・隠して落とす・音量、10-29） |
+| [nigo-cookie-frames.md](research/nigo-cookie-frames.md) | 2号兄貴のクッキー☆3本のコマと音の実測（11-04） |
 | [nigo-video-research.md](research/nigo-video-research.md) | 2号兄貴の作品一覧と映像の作り、OtomadMaker を使うか（10-30） |
 | [otomad-video-research.md](research/otomad-video-research.md) | 音MADの映像の作り方（ネットの記事、10-31） |
 | [inmu-cookie-staging.md](research/inmu-cookie-staging.md) | 淫夢・クッキー☆音MADの演出の引き出し、文字PV、講評の観点、dande3 の照合（10-31） |
