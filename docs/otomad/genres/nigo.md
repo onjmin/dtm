@@ -16,6 +16,7 @@
 ## 声
 
 - 大半は楽器に作り替える（[techniques/voice-instrument.md](../techniques/voice-instrument.md)）。音節を16分に1粒ずつ刻む。
+- ただし**シンセに寄せすぎると素材の良さが消える**（所有者 11-05、cm24 第1版「シンセによりすぎて元の素材の良さが失われてる」）。母音だけの楽器を主役にせず、台詞のイントネーションを旋律として多く聴かせる。
 - 生の台詞は数か所。きれいに始め、「ん？」とためて、後半や最後に原液で落とす。
 - 音量は曲が上（声 −5〜−12 dB。[techniques/audio-mix.md](../techniques/audio-mix.md)）。
 - 台詞を旋律に抜擢してもよい。そのときは [techniques/speech-melody.md](../techniques/speech-melody.md)。
