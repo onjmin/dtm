@@ -31,6 +31,7 @@
 | [voice-icon-bounce.md](voice-icon-bounce.md) | 鳴っている声のアイコンを音ごとに弾ませて震わせる。音の高さの位置には置かない | ENU☆ | — |
 | [ichiten-kousei.md](ichiten-kousei.md) | 一転攻勢。最後のサビで同じ作りのまま中身を淫夢へ替える。数秒前に前触れを入れる | ENU☆ | — |
 | [material-drums.md](material-drums.md) | 声と物音で場面ごとのドラムキットを組み、打点に BB を出す | ENU☆ | — |
+| [voice-cleanup.md](voice-cleanup.md) | 質の悪い語録をモーラごとに直す。環境音を引き、言葉の間を切り、音量と音高を合わせる | ENU☆ | — |
 | [roid-unison.md](roid-unison.md) | 台詞にロイドとオクターブを重ねて声を太くする。koe と淫夢の50音を波形のまま音符へ並べる | ENU☆ | — |
 | [minimal-process.md](minimal-process.md) | ミニマル音楽の手順（ずれ・埋める・抜ける）と、音と1対1の楽譜の映像 | cm18 | — |
 
