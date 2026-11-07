@@ -4,6 +4,7 @@
 |---|---|
 | [bb-theater.md](bb-theater.md) | BB劇場（日常・番組／一発合成／型パロディ／物語／バトル） |
 | [nigo.md](nigo.md) | 2号式（TECHNO MUSIC先輩型・Plasticookie☆Adventure型・Dandelion biscuit☆型） |
+| [juke.md](juke.md) | じゅーけー式（アニメの1キャラの台詞と場面の音を、既成曲の拍で2小節の型にして繰り返す） |
 | 台詞イントネーション作曲 | 技として [techniques/speech-melody.md](../techniques/speech-melody.md) |
 | 文字PV | 技として [techniques/lyrics-text.md](../techniques/lyrics-text.md) |
 | 既存曲のカバー | 手順は [speech-melody/README.md](../../../scripts/speech-melody/README.md) §9。原曲の構成を緩急の骨組みにする（Aメロは少なく、サビは密に、落ちサビは止める） |
