@@ -2,9 +2,10 @@
 
 WORLD で分析した母音の芯を伸ばした「声のシンセ」（vsyn）、音節を切った1粒（chop）、子音の破裂の打楽器（burst）。
 """
-import librosa
 import numpy as np
 import pyworld
+import soundfile as sf
+from scipy.signal import resample_poly
 
 FS = 44100
 _W = {}
@@ -12,8 +13,10 @@ _W = {}
 
 def world(path):
     if path not in _W:
-        y, _ = librosa.load(str(path), sr=FS, mono=True)
-        y = y.astype(np.float64)
+        y, sr = sf.read(str(path), always_2d=True)
+        y = y.mean(1).astype(np.float64)
+        if sr != FS:
+            y = resample_poly(y, FS, sr).astype(np.float64)
         f0, t = pyworld.harvest(y, FS, f0_floor=60, f0_ceil=800, frame_period=5.0)
         _W[path] = (f0, pyworld.cheaptrick(y, f0, t, FS), pyworld.d4c(y, f0, t, FS))
     return _W[path]
