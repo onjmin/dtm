@@ -4,6 +4,7 @@
 
 ## 作る前に読む順
 
+0. [how-to-make.md](how-to-make.md) — 選曲から渡すまでの工程順のノウハウ（カバー音MAD）。初めて作るときに通して読む
 1. [rules.md](rules.md) — 所有者の基準（軸・緩急・物語性・素材・安全の線・渡し方）。**毎回読む**
 2. [genres/](genres/README.md) — 作る型の作法（BB劇場・2号式など）
 3. [techniques/](techniques/README.md) — 使う技の一覧と、どの作品で効いたか
@@ -16,6 +17,7 @@
 docs/otomad/
   README.md        ここ。読む順と目次、運用の決まり
   rules.md         所有者の基準。指摘で基準が変わったら直す
+  how-to-make.md   工程順のノウハウ。技や基準が増えたら該当の工程に足す
   bb-flow.md       BB素材を集めて、切り抜いて、動画に使う手順
   techniques/      使い回せる技を1つ1ファイル。どの作品で試して、効いたか
   genres/          型ごとの作法
