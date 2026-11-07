@@ -39,6 +39,7 @@ scripts/otomad/
    ```
 
    ffmpeg（動画の書き出し・測定）と 7-Zip（`C:\Program Files\7-Zip\7z.exe`。クッキー☆の素材の展開）も入れる。動画は CUDA の torch があれば GPU で描く（無ければ CPU で遅くなるだけ）。
+   動画の符号化もグラボ（NVENC）が標準。ffmpeg の引数は `lib/venc.py` の `venc(q)` から取り、新しい書き出しも libx264 を直に書かない。CPU に戻すときは `VIDEO_ENC=x264`（NVENC の無い PC では自動で戻る）。
 2. **曲のスクリプトと作品台帳**: `scripts/otomad/songs/` と `docs/otomad/works/` は git に入っていないので、元の PC から丸ごと写す（曲同士が `inmu_v3`・`samson_build`・`cookie_v1` などを読み合うので、一部だけでは動かない）。写さなくても、新しい曲は `lib/` の部品（`clip_grid`・`pitch_snap`・`voice_inst`）から作れる。
 3. **素材**: 音MAD素材のフォルダ（今は `D:\音MAD素材`。中は `淫夢/`・`クッキー☆/`・`エア本/`）を写す。場所が違えば `.env` に書く。
 4. **`.env`**（リポジトリ直下、gitignore）:
