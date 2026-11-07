@@ -60,6 +60,7 @@ docs/otomad/
 | [oshare-cookie.md](research/oshare-cookie.md) | オシャレクッキー☆の全 724 本の題名の傾向、型、コメント、まだ無いジャンル（11-03） |
 | [cookie-relations.md](research/cookie-relations.md) | クッキー☆の人物の関係をタグの共起で調べた表（6992 本、11-03） |
 | [hit-otomad.md](research/hit-otomad.md) | 再生数の多い淫夢・クッキー☆音MAD 11本の型・切り替え・コメントの山（11-07） |
+| [mora-scatter-stretch.md](research/mora-scatter-stretch.md) | じゅーけー sm46506771 の「モーラで散らす」「母音を伸ばす」の測定と、ネットのセリフ合わせの技法（11-07） |
 | [material-packs.md](research/material-packs.md) | 音MAD素材のスターターパックの一覧（[一覧の tsv](research/material-packs-list.tsv)、11-01） |
 | [../research/kaiwai-lineages.md](../research/kaiwai-lineages.md) | 界隈曲の流派の実測（自動作曲と共用なので `docs/research/` に置く） |
 
