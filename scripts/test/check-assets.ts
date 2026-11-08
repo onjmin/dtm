@@ -16,7 +16,7 @@ if (bad.length > 0) {
 		`  ✗ 内蔵キャラ画像ではない物がある: ${bad.map((e) => e.name).join(", ")}`,
 	);
 	console.error(
-		"    素材は C:\_own\git\asset（onjmin/asset）へ置くこと。assets/README.md を参照。",
+		"    素材は C:\\_own\\git\\asset（onjmin/asset）へ置くこと。assets/README.md を参照。",
 	);
 	process.exit(1);
 }
