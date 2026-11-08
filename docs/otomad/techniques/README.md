@@ -27,7 +27,7 @@
 | [pixel-character.md](pixel-character.md) | ドット絵のキャラを 3D モデルで確かめて似せる。めたん・ずんだもん・イタコ・キリコ・シヨ・アルの確定した形、目・髪・手の描き方 | 海鬼月 | 所有者の直しで確定 |
 | [pixel-video.md](pixel-video.md) | 界隈風のドット絵歌動画。合唱の度数・間奏のピアノロール・描画のバグの型 | 海鬼月 | — |
 | [manga-tone.md](manga-tone.md) | 白黒の漫画調。層ごとの網点、縦書きのフキダシ、斜めの擬音、粉に崩れる表現 | bb26 | — |
-| [one-take-thread.md](one-take-thread.md) | 声の音程から引いた糸をワンカットで飛ぶ MV。網点から色の解放、窓を破る、対数極座標の筒 | cm24 | — |
+| [one-take-thread.md](one-take-thread.md) | 声の音程から引いた糸をワンカットで飛ぶ MV。網点から色の解放、窓を破る、対数極座標の筒 | cm24 | 伸びず（いいね率 3.1%）。色の解放が黄色一色に見えた |
 | [voice-icon-bounce.md](voice-icon-bounce.md) | 鳴っている声のアイコンを音ごとに弾ませて震わせる。音の高さの位置には置かない | ENU☆ | — |
 | [ichiten-kousei.md](ichiten-kousei.md) | 一転攻勢。最後のサビで同じ作りのまま中身を淫夢へ替える。数秒前に前触れを入れる | ENU☆ | — |
 | [material-drums.md](material-drums.md) | 声と物音で場面ごとのドラムキットを組み、打点に BB を出す | ENU☆ | — |

@@ -12,6 +12,10 @@
 
 作品の一覧は git に置かない。作品ごとに git の同じファイルへ1行足す運用は、複数の PC で作るとコンフリクトの元になるので、**新しい作品を作っても git に入るファイルには作品の行を足さない**。書き出した動画は `python -I scripts/otomad/tools/video_shelf.py` で `scratch/videos/index.html` に並び、台帳の本文と一緒に見返せる（[scripts/otomad/README.md](../../../scripts/otomad/README.md) の「作った動画を見返す」）。
 
+## 視聴者の評価
+
+評価は視聴者が決める。投稿したら `python -I scripts/otomad/tools/my_videos.py` で再生・マイリスト・いいねと時刻つきのコメントを取り（`scratch/videos/posted.txt`）、手元の `works/posted.md` に全投稿の数字を、各台帳の「視聴者の評価」にその作品のコメントを、日付つきで写す。コメントの時刻は書き出した動画のその秒の画面と突き合わせ、何に付いたかまで書く。荒らしの書き込みは数えない。
+
 ## まだ台帳に無い作品
 
 手元の `scripts/otomad/songs/*/notes-*.md` にだけメモがある作品。台帳へ写したらここから消す: inmu（v1〜v5・inmu_v3）、samson（samson2go1・samsonnigo1 ほか）、nigo、cookie、kaisen、hijikata、kary、cpr、eahon、bb1〜bb5。
