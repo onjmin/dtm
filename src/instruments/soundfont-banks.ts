@@ -21,10 +21,23 @@ export type SoundFontBankInfo = {
 	short: string;
 	/** 選択欄に出す名前。 */
 	label: string;
+	/**
+	 * 配信元が surikov 以外のとき、`<PPPV>_<正式名>.js` を置いた場所（末尾 `/`）。
+	 * script-src の CSP（scripts/misc/inject-csp.ts）が許す所に限る。
+	 */
+	baseUrl?: string;
+	/**
+	 * 持っている楽器（`PPPV`）。surikov の一覧（list.txt）に載らないバンクだけ書く。
+	 * ここに無いプログラムは FluidR3 で鳴らす。
+	 */
+	programs?: readonly string[];
 };
 
+/** surikov の配信元（webaudiofontdata）の置き場所。 */
+const SURIKOV_SOUND_URL = "https://surikov.github.io/webaudiofontdata/sound/";
+
 /**
- * 選べる音源バンク。どれも GM 128 音色がバリエーション 0 で揃っている
+ * 選べる音源バンク。Inc 以外は、どれも GM 128 音色がバリエーション 0 で揃っている
  * （2026-09 時点の list.txt で確認）。
  */
 export const SOUNDFONT_BANKS: readonly SoundFontBankInfo[] = [
@@ -47,7 +60,23 @@ export const SOUNDFONT_BANKS: readonly SoundFontBankInfo[] = [
 	{ name: "JCLive_sf2_file", short: "JCLive", label: "JCLive" },
 	{ name: "Chaos_sf2_file", short: "Chaos", label: "Chaos" },
 	{ name: "SBLive_sf2", short: "SBLive", label: "SB Live!" },
+	// 淫ク☆サウンドフォント（onjmin/inc-sf2）。淫夢・クッキー☆の声から作ったシンセ4音色だけで、
+	// 80 YMN・81 UDK・82 野獣・83 MUR。作り方は docs/otomad/techniques/voice-instrument.md。
+	{
+		name: "Inc_sf2_file",
+		short: "Inc",
+		label: "淫ク☆（80〜83 番だけ）",
+		baseUrl: "https://onjmin.github.io/inc-sf2/sound/",
+		programs: ["0800", "0810", "0820", "0830"],
+	},
 ];
+
+/** 楽器のファイル（`<PPPV>_<正式名>.js`）の URL。配信元はバンクごと（既定は surikov）。 */
+export const soundFontFileUrl = (fileKey: string, bank: string): string => {
+	const base =
+		SOUNDFONT_BANKS.find((b) => b.name === bank)?.baseUrl ?? SURIKOV_SOUND_URL;
+	return `${base}${fileKey}_${bank}.js`;
+};
 
 /**
  * バンク名として受け付ける文字。値は配信元の URL
@@ -127,6 +156,16 @@ export const resolveSoundFontFile = (
 	// 外部 SF2（`ExtSF2`）は配信元の一覧に無い。プログラム番号だけ決め、無ければ読み込み側で落とす。
 	if (target.toLowerCase() === "extsf2")
 		return { key: `${program}0`, bank: "ExtSF2", fellBack: false };
+	// surikov の一覧に載らないバンク（Inc）は、自分で持っている楽器の一覧で決める。
+	const own = SOUNDFONT_BANKS.find((b) => b.name === target)?.programs;
+	if (own) {
+		const hit = own.includes(`${program}0`)
+			? `${program}0`
+			: own.filter((id) => id.startsWith(program)).sort()[0];
+		return hit
+			? { key: hit, bank: target, fellBack: false }
+			: { key: instrumentKey, bank: DEFAULT_SOUNDFONT_BANK, fellBack: true };
+	}
 	if (!available) return { key: `${program}0`, bank: target, fellBack: false };
 	const ids = available.get(target);
 	if (ids?.has(`${program}0`)) {

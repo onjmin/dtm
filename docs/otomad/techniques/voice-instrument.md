@@ -86,4 +86,4 @@
   - dtm の `parseSf2` で 80〜83 番の 17 ゾーンとループが読めた。
   - JS は node で読み込み、ループ点が音の中にあることを見た。
   - 耳ではまだ聴いていない。`check/` の C 音階の wav で聴く。
-- 配り方: 公開は [onjmin/inc-sf2](https://github.com/onjmin/inc-sf2)（https://onjmin.github.io/inc-sf2/ 。試し弾きのページつき。dtm と同じ Actions の Pages）。.sf2 は dtm で `#sf2=https://onjmin.github.io/inc-sf2/inc.sf2` を書いて今でも鳴る（[docs/guide/external-soundfont.md](../../guide/external-soundfont.md)）。WebAudioFont の JS は、dtm がいま surikov の配信元からしか読まないので、`#t<n>font=Inc` で選ぶには配り先と読み方を足す。
+- 配り方: 公開は [onjmin/inc-sf2](https://github.com/onjmin/inc-sf2)（https://onjmin.github.io/inc-sf2/ 。試し弾きのページつき。dtm と同じ Actions の Pages）。.sf2 は dtm で `#sf2=https://onjmin.github.io/inc-sf2/inc.sf2` を書いて今でも鳴る（[docs/guide/external-soundfont.md](../../guide/external-soundfont.md)）。WebAudioFont の JS は `#t<n>font=Inc` で選べる（11-09、所有者「Inc を選べるようにする」）。バンクに読む先（`baseUrl`）と持っている楽器（`programs`）を持たせ（`src/instruments/soundfont-banks.ts`）、80〜83 番以外は FluidR3 へ落とす。デモの DAW で、80・83 番が onjmin/inc-sf2 から読まれ、ピアノが FluidR3 に落ちたのを確かめた。

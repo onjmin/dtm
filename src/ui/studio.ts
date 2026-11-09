@@ -76,6 +76,7 @@ import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
 import {
 	DEFAULT_SOUNDFONT_BANK,
 	resolveSoundFontFile,
+	soundFontFileUrl,
 	trackSoundFontValue,
 } from "../instruments/soundfont-banks";
 import {
@@ -1053,7 +1054,7 @@ export const createDtmStudio = async (
 		return sf.load({
 			ctx: audioCtx,
 			fontName: `_tone_${fullName}`,
-			url: sf.toURL(fullName),
+			url: soundFontFileUrl(fileKey, bank),
 		});
 	};
 

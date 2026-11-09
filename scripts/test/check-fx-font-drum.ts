@@ -44,6 +44,7 @@ const {
 	DEFAULT_SOUNDFONT_BANK,
 	normalizeSoundFontBank,
 	resolveSoundFontFile,
+	soundFontFileUrl,
 	soundFontBankShortName,
 	trackSoundFontValue,
 } =
@@ -457,6 +458,41 @@ console.log("■ 音源バンクのファイル解決");
 		"一覧を持たない（注入エンジン）ときは V=0 を仮定",
 		resolveSoundFontFile("0330", "JCLive"),
 		{ key: "0330", bank: "JCLive_sf2_file", fellBack: false },
+	);
+	// Inc（淫ク☆）は surikov の一覧に載らないので、バンクが持つ楽器（80〜83）で決める。
+	check(
+		"Inc: 短縮名で選べ、持っている楽器（80 番）は Inc で読む",
+		[
+			normalizeSoundFontBank("inc"),
+			resolveSoundFontFile("0800", "Inc", available),
+			resolveSoundFontFile("0830", "Inc"),
+		],
+		[
+			"Inc_sf2_file",
+			{ key: "0800", bank: "Inc_sf2_file", fellBack: false },
+			{ key: "0830", bank: "Inc_sf2_file", fellBack: false },
+		],
+	);
+	check(
+		"Inc: 持っていない楽器は FluidR3 へ落とす",
+		resolveSoundFontFile("0330", "Inc", available),
+		{ key: "0330", bank: DEFAULT_SOUNDFONT_BANK, fellBack: true },
+	);
+	check(
+		"読む先: Inc は onjmin/inc-sf2、ほかは surikov",
+		[
+			soundFontFileUrl("0820", "Inc_sf2_file"),
+			soundFontFileUrl("0330", "GeneralUserGS_sf2_file"),
+		],
+		[
+			"https://onjmin.github.io/inc-sf2/sound/0820_Inc_sf2_file.js",
+			"https://surikov.github.io/webaudiofontdata/sound/0330_GeneralUserGS_sf2_file.js",
+		],
+	);
+	check(
+		"Inc の書き出しは短縮名",
+		formatMmlMeta({ trackFonts: { 0: "inc" } }, " "),
+		"#t0font=Inc",
 	);
 }
 

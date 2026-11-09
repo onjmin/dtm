@@ -90,7 +90,7 @@ MIDI ノート番号（`MidiNote`）とは型で区別され、変換は `pitchV
 | 宣言 | 意味 |
 | --- | --- |
 | `#inst=` / `#t<n>inst=` | 曲全体の楽器プリセット（`INSTRUMENT_PRESETS`）／トラック n の GM 楽器 |
-| `#t<n>font=` | トラック n の音源バンク: `FluidR3`（既定）・`GeneralUserGS`・`Aspirin`・`SoundBlasterOld`・`JCLive`・`Chaos`・`SBLive` |
+| `#t<n>font=` | トラック n の音源バンク: `FluidR3`（既定）・`GeneralUserGS`・`Aspirin`・`SoundBlasterOld`・`JCLive`・`Chaos`・`SBLive`・`Inc`（淫ク☆。80 YMN・81 UDK・82 野獣・83 MUR の声のシンセだけで、ほかの楽器は FluidR3。配信は [onjmin/inc-sf2](https://github.com/onjmin/inc-sf2)） |
 | `#reverb=` / `#reverbdecay=` / `#reverbpredelay=` | マスタリバーブの量（0-100）／長さ（3-40、×0.1 秒）／遅れ（0-150 ms） |
 | `#delay=` / `#delaydiv=` | テンポ同期ディレイの量（0-100）／音価（`4` `8` `8d` `16`） |
 | `#t<n>rev=` / `#t<n>dly=` | トラック n からリバーブ／ディレイへの送り（戻りが 0 だと鳴らない） |
