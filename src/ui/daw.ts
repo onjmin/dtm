@@ -108,11 +108,11 @@ import {
 } from "../instruments/sf/external-sf2";
 import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
 import {
-	bankedFontBanks,
 	bankedFontValue,
 	externalSf2BankNumber,
 	externalSf2BankValue,
 	parseBankedFont,
+	resolveBankedPreset,
 	SOUNDFONT_BANKS,
 	soundFontBankShortName,
 	trackSoundFontValue,
@@ -4018,6 +4018,11 @@ export const mountDAW = (
 		}
 
 		refs.trackBody.innerHTML = `
+      <div class="dtm-row" data-dtm="track-source-row" style="flex-wrap:nowrap">
+        <span class="dtm-label">音源</span>
+        <select class="dtm-select dtm-select--half" data-dtm="track-font" aria-label="このトラックを鳴らす音源" title="音源"></select>
+      </div>
+      <p class="dtm-audio-note dtm-hidden" data-dtm="track-voice-note">♪ 歌声（UTAU）で鳴らすトラックです。音源と楽器は使いません（下の UTAU を「ボーカルなし」にすると戻ります）</p>
       <div class="dtm-row" data-dtm="track-vol-row">
         <span class="dtm-label">ベロシティ</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="track-vol" min="0" max="127">
@@ -4039,10 +4044,6 @@ export const mountDAW = (
           <option value="up">上 (+1oct)</option>
           <option value="both">上下両方</option>
         </select>
-        <div class="dtm-row dtm-grow" style="flex-wrap:nowrap">
-          <span class="dtm-label">音源</span>
-          <select class="dtm-select dtm-grow" data-dtm="track-font" aria-label="このトラックの楽器を鳴らす音源（同じ楽器を別の音源データで鳴らす）" title="音源"></select>
-        </div>
       </div>
       <details class="dtm-advanced" data-dtm="track-fx-advanced" ${trackFxAdvancedOpen ? "open" : ""}>
         <summary>詳細設定（EQ・音圧・ステレオ幅）</summary>
@@ -4332,14 +4333,21 @@ export const mountDAW = (
 			instSel.appendChild(grp);
 		});
 		instSel.value = normalizeInstrumentName(active.trackInstrument);
-		// 歌詞モデルが設定されているトラックは歌声が楽器音を置き換えるため、個別楽器を無効化する
+		// 歌詞モデルが設定されているトラックは歌声が楽器音を置き換えるため、音源と楽器の欄ごと隠し、
+		// 代わりに「歌声で鳴らす」と1行出す（音源の下の .sf2 の欄も syncExtRow で隠れる）。
+		const sourceRow = refs.trackBody.querySelector(
+			'[data-dtm="track-source-row"]',
+		) as HTMLElement;
+		const voiceNote = refs.trackBody.querySelector(
+			'[data-dtm="track-voice-note"]',
+		) as HTMLElement;
+		let syncSourceExtras = (): void => {};
 		const syncInstDisabled = (): void => {
-			instSel.disabled = !!active.lyricModel;
-			instSel.title = active.lyricModel
-				? "歌詞モードのときは楽器を個別指定できません"
-				: "";
+			const voice = !!active.lyricModel.trim();
+			sourceRow.classList.toggle("dtm-hidden", voice);
+			voiceNote.classList.toggle("dtm-hidden", !voice);
+			syncSourceExtras();
 		};
-		syncInstDisabled();
 		instSel.addEventListener("change", () => {
 			active.trackInstrument = instSel.value;
 			// 手で選んだ楽器は、次のおまかせマスタリングでも書き換えない。
@@ -4348,10 +4356,8 @@ export const mountDAW = (
 			options.onTrackInstrumentChange?.(trackIndex, active.trackInstrument);
 			persistTrack1(active);
 		});
-		// 楽器はベロシティと同じ行に並べる（行数を減らして歌詞欄をピアノロールへ寄せる）
-		(
-			refs.trackBody.querySelector('[data-dtm="track-vol-row"]') as HTMLElement
-		).prepend(instLabel, instSel);
+		// 楽器は音源と同じ行に並べる（音源が上位。行数を減らして歌詞欄をピアノロールへ寄せる）
+		sourceRow.append(instLabel, instSel);
 
 		// トラックのオクターブ。歌詞トラックは歌声側の「オクターブ」が効くので、
 		// 二重に効かせないようこちらは隠す。
@@ -4380,7 +4386,7 @@ export const mountDAW = (
 		});
 
 		// 音源バンク。楽器（個別指定かプリセット）はそのままに、同じGM番号を別の音源データで
-		// 鳴らす（`#t<n>font=` と往復）。歌詞トラックは声が楽器を置き換えるので、この行ごと隠れる。
+		// 鳴らす（`#t<n>font=` と往復）。トラック設定のいちばん上の行。歌詞トラックは声が楽器を置き換えるので、この行ごと隠れる。
 		const fontSel = refs.trackBody.querySelector(
 			'[data-dtm="track-font"]',
 		) as HTMLSelectElement;
@@ -4461,57 +4467,64 @@ export const mountDAW = (
 			bankRow.append(bankLabel, bankInput);
 			extRow.el.append(bankRow);
 		}
-		// キャラごとにバンクを分けた音源（レ淫棒）のキャラ（バンク）。プログラムは楽器の番号で選ぶ。
-		const charBox = document.createElement("div");
-		charBox.className = "dtm-row dtm-hidden";
-		charBox.style.flexDirection = "column";
-		charBox.style.alignItems = "stretch";
-		charBox.style.gap = "4px";
-		const charRow = document.createElement("div");
-		charRow.className = "dtm-row";
-		charRow.style.flexWrap = "nowrap";
+		// キャラごとにバンクを分けた音源（レ淫棒）の音色。バンクとプログラムを1つの欄で選ぶ
+		// （その音源が持っているプリセットだけ。見出しは sf2 ごとのバンクの名前）。
+		// GM の楽器欄の代わりに、同じ場所へ出す。
 		const charLabel = document.createElement("span");
 		charLabel.className = "dtm-label";
-		charLabel.textContent = "キャラ";
+		charLabel.textContent = "音色";
 		const charSel = document.createElement("select");
 		charSel.className = "dtm-select dtm-grow";
 		charSel.style.minWidth = "0";
-		charSel.setAttribute("aria-label", "キャラ（バンク）");
-		charRow.append(charLabel, charSel);
-		const charNote = document.createElement("p");
-		charNote.className = "dtm-audio-note";
-		charBox.append(charRow, charNote);
-		fontSel.closest(".dtm-row")?.after(charBox);
+		charSel.setAttribute("aria-label", "音色（バンク-プログラム）");
+		sourceRow.append(charLabel, charSel);
+		let charFont = "";
 		const syncCharRow = (): void => {
 			const parsed = parseBankedFont(active.trackFont);
-			const presets = parsed?.info.banked?.presets;
-			charBox.classList.toggle("dtm-hidden", !presets);
-			if (!parsed || !presets) return;
-			const banks = bankedFontBanks(parsed.info);
-			const bank = parsed.bank ?? banks[0];
-			charSel.textContent = "";
-			for (const b of banks) {
-				const names = presets.filter((p) => p.bank === b).map((p) => p.name);
-				const text = `${b}: ${names.join("・")}`;
-				charSel.add(
-					new Option(
-						text.length > 40 ? `${text.slice(0, 39)}…` : text,
-						String(b),
-					),
-				);
+			const banked = parsed?.info.banked;
+			for (const el of [charLabel, charSel])
+				el.classList.toggle("dtm-hidden", !banked);
+			for (const el of [instLabel, instSel])
+				el.classList.toggle("dtm-hidden", !!banked);
+			if (!parsed || !banked) return;
+			// 音源が変わったときだけ一覧を作り直す。
+			if (charFont !== parsed.info.name) {
+				charFont = parsed.info.name;
+				charSel.textContent = "";
+				let group: HTMLOptGroupElement | null = null;
+				let groupKey = "";
+				for (const p of banked.presets) {
+					const b = banked.banks.find((x) => x.bank === p.bank);
+					const head = [b?.series, b?.name ?? `バンク ${p.bank}`, p.group]
+						.filter(Boolean)
+						.join(" / ");
+					if (!group || groupKey !== `${p.bank}:${head}`) {
+						group = document.createElement("optgroup");
+						group.label = head;
+						groupKey = `${p.bank}:${head}`;
+						charSel.append(group);
+					}
+					group.append(
+						new Option(
+							`${p.bank}-${p.program} ${p.name}`,
+							`${p.bank}_${p.program}`,
+						),
+					);
+				}
 			}
-			charSel.value = String(bank);
-			const list = presets
-				.filter((p) => p.bank === bank)
-				.map((p) => `${p.program} ${p.name}`)
-				.join(" / ");
-			charNote.textContent = `楽器の番号（GM）で選ぶ: ${list}。無い番号は FluidR3 で鳴ります`;
+			const hit = resolveBankedPreset(
+				parsed.info,
+				parsed.bank,
+				parsed.program,
+				0,
+			);
+			if (hit) charSel.value = `${hit.bank}_${hit.program}`;
 		};
 		charSel.addEventListener("change", () => {
 			const parsed = parseBankedFont(active.trackFont);
 			if (!parsed) return;
-			active.trackFont = bankedFontValue(parsed.info, Number(charSel.value));
-			syncCharRow();
+			const [b, p] = charSel.value.split("_").map(Number);
+			active.trackFont = bankedFontValue(parsed.info, b, p);
 			options.onTrackFontChange?.(
 				trackStates.indexOf(active),
 				active.trackFont,
@@ -4520,11 +4533,13 @@ export const mountDAW = (
 		syncCharRow();
 		const syncExtRow = (): void => {
 			if (!extRow) return;
-			const on = isExternalSf2Bank(fontSel.value);
+			const on = isExternalSf2Bank(fontSel.value) && !active.lyricModel.trim();
 			extRow.el.classList.toggle("dtm-hidden", !on);
 			if (on) void extRow.refresh();
 		};
 		syncExtRow();
+		syncSourceExtras = syncExtRow;
+		syncInstDisabled();
 		fontSel.addEventListener("change", () => {
 			active.trackFont = fontSel.value;
 			bankInput.value = "";

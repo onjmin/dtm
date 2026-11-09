@@ -520,9 +520,32 @@ console.log("■ 音源バンクのファイル解決");
 		],
 	);
 	check(
-		"レ淫棒: そのバンクに無いプログラムは FluidR3 へ落とす",
-		resolveSoundFontFile("0100", "Niji_33", available),
-		{ key: "0100", bank: DEFAULT_SOUNDFONT_BANK, fellBack: true },
+		"レ淫棒: バンクとプログラムを値で決め、楽器（GM）の番号は使わない",
+		[
+			normalizeSoundFontBank("NIJI_33_1"),
+			formatMmlMeta({ trackFonts: { 0: "niji_33_1" } }, " "),
+			resolveSoundFontFile("0400", "Niji_33_1", available),
+			resolveSoundFontFile("0000", "Otenkiame_0_32"),
+		],
+		[
+			"Niji_33_1",
+			"#t0font=Niji_33_1",
+			{ key: "033001", bank: "Niji_33_1", fellBack: false },
+			{ key: "000032", bank: "Otenkiame_0_32", fellBack: false },
+		],
+	);
+	check(
+		"レ淫棒: 持っていないプリセットは、そのバンクの最初の音色（ほかの音源へ落とさない）",
+		[
+			resolveSoundFontFile("0100", "Niji_33", available),
+			resolveSoundFontFile("0000", "Niji_33_99"),
+			resolveSoundFontFile("0000", "Niji_30"),
+		],
+		[
+			{ key: "033000", bank: "Niji_33", fellBack: false },
+			{ key: "033000", bank: "Niji_33_99", fellBack: false },
+			{ key: "000000", bank: "Niji_30", fellBack: false },
+		],
 	);
 	check(
 		"レ淫棒: 読む先は inc-sf2 の作者ごとのフォルダ",

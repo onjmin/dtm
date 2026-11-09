@@ -12,8 +12,11 @@
  */
 
 import {
+	type BankedBank,
 	type BankedPreset,
+	NIJI_20171022_BANKS,
 	NIJI_20171022_PRESETS,
+	OTENKIAME_20200424_BANKS,
 	OTENKIAME_20200424_PRESETS,
 } from "./rainbow-presets";
 
@@ -39,10 +42,15 @@ export type SoundFontBankInfo = {
 	programs?: readonly string[];
 	/**
 	 * キャラごとにバンクを分けた作り（レ淫棒）。GM の番号だけでは選べないので、
-	 * トラックの値を `<名前>_<バンク>`（例 `Niji_33`）にしてバンクを決め、プログラムは楽器の番号で選ぶ。
+	 * トラックの値を `<名前>_<バンク>_<プログラム>`（例 `Niji_33_0`）にしてプリセットを決める。
 	 * ファイルは `<バンク3桁><プログラム3桁>_<fileName>.js`。
 	 */
-	banked?: { fileName: string; presets: readonly BankedPreset[] };
+	banked?: {
+		fileName: string;
+		/** バンクの名前（sf2 ごとの付け方）。 */
+		banks: readonly BankedBank[];
+		presets: readonly BankedPreset[];
+	};
 };
 
 /** surikov の配信元（webaudiofontdata）の置き場所。 */
@@ -82,21 +90,26 @@ export const SOUNDFONT_BANKS: readonly SoundFontBankInfo[] = [
 		programs: ["0800", "0810", "0820", "0830"],
 	},
 	// レ淫棒サウンドフォント（ほかの作者のもの。onjmin/inc-sf2 の作者ごとのフォルダに元の配布のまま置き、
-	// WebAudioFont に書き出した）。キャラはバンクで選ぶ（`Niji_33` など）。
+	// WebAudioFont に書き出した）。プリセットはバンクとプログラムで選ぶ（`Niji_33_0` など）。
 	{
 		name: "Niji",
 		short: "Niji",
-		label: "レ淫棒（虹.・20171022）",
+		label: "レ淫棒（虹.）",
 		baseUrl: "https://onjmin.github.io/inc-sf2/niji/20171022/sound/",
-		banked: { fileName: "Rainbow_20171022", presets: NIJI_20171022_PRESETS },
+		banked: {
+			fileName: "Rainbow_20171022",
+			banks: NIJI_20171022_BANKS,
+			presets: NIJI_20171022_PRESETS,
+		},
 	},
 	{
 		name: "Otenkiame",
 		short: "Otenkiame",
-		label: "レ淫棒 2020年版（お天気雨・20200424）",
+		label: "レ淫棒2020（お天気雨）",
 		baseUrl: "https://onjmin.github.io/inc-sf2/otenkiame/20200424/sound/",
 		banked: {
 			fileName: "RaInBow_20200424",
+			banks: OTENKIAME_20200424_BANKS,
 			presets: OTENKIAME_20200424_PRESETS,
 		},
 	},
@@ -104,34 +117,66 @@ export const SOUNDFONT_BANKS: readonly SoundFontBankInfo[] = [
 
 /**
  * キャラごとにバンクを分けた音源（{@link SoundFontBankInfo.banked}）の値を分ける。
- * `Niji` → バンク無し（undefined。いちばん小さいバンクで鳴らす）、`Niji_33` → 33。
- * そういう音源でない・バンクが範囲外なら null。
+ * `Niji`・`Niji_33`・`Niji_33_1`（音源・バンク・プログラム）。書かれていない所は undefined。
+ * そういう音源でない・番号が範囲外なら null。
  */
 export const parseBankedFont = (
 	value: string | null | undefined,
-): { info: SoundFontBankInfo; bank: number | undefined } | null => {
-	const m = /^([A-Za-z]+)(?:_(\d{1,3}))?$/.exec((value ?? "").trim());
+): {
+	info: SoundFontBankInfo;
+	bank: number | undefined;
+	program: number | undefined;
+} | null => {
+	const m = /^([A-Za-z]+)(?:_(\d{1,3})(?:_(\d{1,3}))?)?$/.exec(
+		(value ?? "").trim(),
+	);
 	if (!m) return null;
 	const info = SOUNDFONT_BANKS.find(
 		(b) => b.banked && b.name.toLowerCase() === m[1].toLowerCase(),
 	);
 	if (!info) return null;
-	if (m[2] === undefined) return { info, bank: undefined };
-	const bank = Number(m[2]);
-	return bank <= 127 ? { info, bank } : null;
+	const bank = m[2] === undefined ? undefined : Number(m[2]);
+	const program = m[3] === undefined ? undefined : Number(m[3]);
+	if ((bank ?? 0) > 127 || (program ?? 0) > 127) return null;
+	return { info, bank, program };
 };
 
-/** キャラごとにバンクを分けた音源の値を作る（`Niji` / `Niji_33`）。 */
+/** キャラごとにバンクを分けた音源の値を作る（`Niji` / `Niji_33` / `Niji_33_1`）。 */
 export const bankedFontValue = (
 	info: SoundFontBankInfo,
-	bank: number | undefined,
-): string => (bank === undefined ? info.name : `${info.name}_${bank}`);
+	bank?: number,
+	program?: number,
+): string =>
+	bank === undefined
+		? info.name
+		: program === undefined
+			? `${info.name}_${bank}`
+			: `${info.name}_${bank}_${program}`;
 
-/** その音源が持っているバンク（小さい順）。 */
-export const bankedFontBanks = (info: SoundFontBankInfo): number[] =>
-	[...new Set((info.banked?.presets ?? []).map((p) => p.bank))].sort(
-		(a, b) => a - b,
+/**
+ * 鳴らすプリセットを決める。いつもその音源が持っているものから選ぶ（GM の別の楽器や FluidR3 へは落とさない）。
+ * - バンク: 書かれたもの。無い・持っていないなら、いちばん小さいバンク。
+ * - プログラム: 書かれたもの。無いならトラックの楽器の番号（GM）。そのバンクに無ければ、そのバンクの最初のもの。
+ */
+export const resolveBankedPreset = (
+	info: SoundFontBankInfo,
+	bank: number | undefined,
+	program: number | undefined,
+	gmProgram: number,
+): BankedPreset | undefined => {
+	const presets = info.banked?.presets ?? [];
+	const inBank = (b: number) => presets.filter((p) => p.bank === b);
+	const b =
+		bank !== undefined && inBank(bank).length > 0
+			? bank
+			: Math.min(...presets.map((p) => p.bank));
+	const list = inBank(b);
+	return (
+		list.find((p) => p.program === (program ?? gmProgram)) ??
+		list.find((p) => p.program === gmProgram) ??
+		list[0]
 	);
+};
 
 /**
  * 外部 SF2 の音源名（`ExtSF2`、バンクを決めるときは `ExtSF2_<バンク>`）。
@@ -202,7 +247,7 @@ export const normalizeSoundFontBank = (
 	const ext = externalSf2BankNumber(v);
 	if (ext !== null) return externalSf2BankValue(ext);
 	const banked = parseBankedFont(v);
-	if (banked) return bankedFontValue(banked.info, banked.bank);
+	if (banked) return bankedFontValue(banked.info, banked.bank, banked.program);
 	const lower = v.toLowerCase();
 	const known = SOUNDFONT_BANKS.find(
 		(b) => b.name.toLowerCase() === lower || b.short.toLowerCase() === lower,
@@ -262,20 +307,22 @@ export const resolveSoundFontFile = (
 	// 無ければ読み込み側で落とす。
 	if (isExternalSf2Bank(target))
 		return { key: `${program}0`, bank: target, fellBack: false };
-	// キャラごとにバンクを分けた音源（レ淫棒）は、バンク（無ければいちばん小さいもの）の同じプログラム。
+	// キャラごとにバンクを分けた音源（レ淫棒）は、その音源が持っているプリセットだけから選ぶ。
 	const banked = parseBankedFont(target);
-	if (banked?.info.banked) {
-		const bankNo = banked.bank ?? bankedFontBanks(banked.info)[0];
-		const hit = banked.info.banked.presets.find(
-			(p) => p.bank === bankNo && p.program === Number(program),
+	if (banked) {
+		const hit = resolveBankedPreset(
+			banked.info,
+			banked.bank,
+			banked.program,
+			Number(program),
 		);
-		return hit
-			? {
-					key: `${String(hit.bank).padStart(3, "0")}${program}`,
-					bank: target,
-					fellBack: false,
-				}
-			: { key: instrumentKey, bank: DEFAULT_SOUNDFONT_BANK, fellBack: true };
+		if (hit)
+			return {
+				key: `${String(hit.bank).padStart(3, "0")}${String(hit.program).padStart(3, "0")}`,
+				bank: target,
+				fellBack: false,
+			};
+		return { key: instrumentKey, bank: DEFAULT_SOUNDFONT_BANK, fellBack: true };
 	}
 	// surikov の一覧に載らないバンク（Inc）は、自分で持っている楽器の一覧で決める。
 	const own = SOUNDFONT_BANKS.find((b) => b.name === target)?.programs;

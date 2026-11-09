@@ -1,18 +1,74 @@
 /**
- * 音源バンク「レ淫棒」2版のプリセット表（onjmin/inc-sf2 の `sound/list.txt` から作った）。
- * どちらもキャラごとにバンクを分けた作りで、ファイルは `<バンク3桁><プログラム3桁>_<名前>.js`。
- * ドラム（バンク 128）は旋律の音源では使わないので入れない。
+ * 音源バンク「レ淫棒」2版のバンクとプリセットの表。
+ *
+ * - プリセット（バンク・プログラム・日本語名）は onjmin/inc-sf2 の `sound/list.txt` から。
+ * - バンクの名前は sf2 ごとに作者の付け方に従う。虹.版はバンク＝キャラで、Domino の音源定義の
+ *   Map 名（シリーズの見出しは `series`）。お天気雨版はバンク＝シリーズで、配布の sforzando の
+ *   フォルダ名（`000 王道淫夢` など）。キャラはバンクの中の音色のまとまり（Map 名）で `group` に持つ。
+ * - 名前の無いバンク（虹.版の 125）は「バンク 125」。
+ * - ドラム（バンク 128）は旋律の音源では使わないので入れない。
  */
+
+export type BankedBank = {
+	bank: number;
+	/** バンクの名前（sf2 ごとの付け方）。 */
+	name: string;
+	/** バンクの上の見出し（虹.版の「淫夢」「クッキー☆」など）。 */
+	series?: string;
+};
+
 export type BankedPreset = {
 	/** .sf2 のバンク。 */
 	bank: number;
-	/** プログラム（GM の番号で選ぶ）。 */
+	/** プログラム。 */
 	program: number;
 	/** 日本語の音色名（Domino の音源定義から）。 */
 	name: string;
+	/** バンクの中のまとまり（お天気雨版のキャラ）。 */
+	group?: string;
 };
 
 /** 虹.のレ淫棒（20171022）。 */
+export const NIJI_20171022_BANKS: readonly BankedBank[] = [
+	{ bank: 0, name: "野獣", series: "淫夢" },
+	{ bank: 1, name: "遠野", series: "淫夢" },
+	{ bank: 2, name: "MUR", series: "淫夢" },
+	{ bank: 3, name: "HTN", series: "淫夢" },
+	{ bank: 4, name: "AOK", series: "淫夢" },
+	{ bank: 5, name: "ひで", series: "淫夢" },
+	{ bank: 6, name: "TKGW", series: "淫夢" },
+	{ bank: 31, name: "淫夢その他", series: "淫夢" },
+	{ bank: 32, name: "RU", series: "クッキー☆" },
+	{ bank: 33, name: "UDK", series: "クッキー☆" },
+	{ bank: 34, name: "HNS", series: "クッキー☆" },
+	{ bank: 35, name: "YMN", series: "クッキー☆" },
+	{ bank: 36, name: "NDK", series: "クッキー☆" },
+	{ bank: 37, name: "YZY", series: "クッキー☆" },
+	{ bank: 38, name: "YKMR(原発姉貴)", series: "クッキー☆" },
+	{ bank: 40, name: "BNKRG", series: "クッキー☆☆" },
+	{ bank: 41, name: "MZ", series: "クッキー☆☆" },
+	{ bank: 47, name: "海綿体", series: "クッキー☆☆" },
+	{ bank: 48, name: "KNN", series: "クッキー☆☆" },
+	{ bank: 49, name: "AZS", series: "クッキー☆☆" },
+	{ bank: 56, name: "RI", series: "クッキー☆☆" },
+	{ bank: 64, name: "JOKER", series: "鍋☆" },
+	{ bank: 72, name: "NYN", series: "クッソー☆" },
+	{ bank: 73, name: "ICG", series: "クッソー☆" },
+	{ bank: 74, name: "RRM", series: "クッソー☆" },
+	{ bank: 75, name: "SZ", series: "クッソー☆" },
+	{ bank: 88, name: "SRMY", series: "クッソー☆" },
+	{ bank: 96, name: "CL(Cり)", series: "クラピー☆" },
+	{ bank: 97, name: "NBR(ナビラ)", series: "クラピー☆" },
+	{ bank: 98, name: "MIMI(銘々)", series: "クラピー☆" },
+	{ bank: 104, name: "Web", series: "イースター☆" },
+	{ bank: 105, name: "Kofji", series: "イースター☆" },
+	{ bank: 113, name: "KN(きぬ)", series: "スペカ☆" },
+	{ bank: 114, name: "BBAN(びびあん)", series: "スペカ☆" },
+	{ bank: 115, name: "偽NYN(青目ルミコ)", series: "スペカ☆" },
+	{ bank: 125, name: "バンク 125" },
+	{ bank: 126, name: "レスリング", series: "レスリング" },
+];
+
 export const NIJI_20171022_PRESETS: readonly BankedPreset[] = [
 	{ bank: 0, program: 0, name: "オォン！_P" },
 	{ bank: 0, program: 1, name: "アォン！_P" },
@@ -115,41 +171,49 @@ export const NIJI_20171022_PRESETS: readonly BankedPreset[] = [
 ];
 
 /** お天気雨のレ淫棒 2020年版（20200424）。 */
+export const OTENKIAME_20200424_BANKS: readonly BankedBank[] = [
+	{ bank: 0, name: "王道淫夢" },
+	{ bank: 8, name: "古典淫夢" },
+	{ bank: 16, name: "現代淫夢" },
+	{ bank: 64, name: "クッキー☆主要" },
+	{ bank: 96, name: "キレテナーイ" },
+];
+
 export const OTENKIAME_20200424_PRESETS: readonly BankedPreset[] = [
-	{ bank: 0, program: 0, name: "野獣の咆哮" },
-	{ bank: 0, program: 1, name: "野獣の咆哮 Mo" },
-	{ bank: 0, program: 2, name: "野獣の咆哮 Pt" },
-	{ bank: 0, program: 3, name: "野獣の咆哮 Syn1St" },
-	{ bank: 0, program: 4, name: "野獣の咆哮 Syn1Mo" },
-	{ bank: 0, program: 12, name: "ダブリング咆哮" },
-	{ bank: 0, program: 16, name: "オォン！" },
-	{ bank: 0, program: 17, name: "オォン！ Pt" },
-	{ bank: 0, program: 20, name: "こ↑こ↓" },
-	{ bank: 0, program: 21, name: "こ↑こ↓ Mo" },
-	{ bank: 0, program: 32, name: "世界の遠野" },
-	{ bank: 0, program: 33, name: "世界の遠野 Pt" },
-	{ bank: 0, program: 34, name: "宇宙の遠野" },
-	{ bank: 0, program: 64, name: "便乗ベース" },
-	{ bank: 0, program: 65, name: "便乗ベース Mo" },
-	{ bank: 8, program: 0, name: "ワン！" },
-	{ bank: 8, program: 1, name: "ワン！ Mo" },
-	{ bank: 8, program: 4, name: "TDNシンセ" },
-	{ bank: 8, program: 5, name: "TDNシタール" },
-	{ bank: 16, program: 0, name: "ビンビンベース" },
-	{ bank: 16, program: 1, name: "ビンビンベース Mo" },
-	{ bank: 64, program: 0, name: "ぷはー" },
-	{ bank: 64, program: 1, name: "ぷはーベル" },
-	{ bank: 64, program: 4, name: "てん気" },
-	{ bank: 64, program: 5, name: "てん気ピアノ" },
-	{ bank: 64, program: 32, name: "UDKシンセA Syn1" },
-	{ bank: 64, program: 33, name: "UDKシンセA Syn2" },
-	{ bank: 64, program: 36, name: "UDKシンセA Dec" },
-	{ bank: 64, program: 40, name: "UDKシンセB" },
-	{ bank: 64, program: 44, name: "VANホーテン" },
-	{ bank: 64, program: 64, name: "SIKシンセ" },
-	{ bank: 64, program: 65, name: "SIKシンセ Dec" },
-	{ bank: 64, program: 72, name: "あっ！" },
-	{ bank: 64, program: 74, name: "まい！ Pt" },
-	{ bank: 64, program: 96, name: "大外刈り" },
-	{ bank: 96, program: 0, name: "TNKシンセ" },
+	{ bank: 0, program: 0, name: "野獣の咆哮", group: "野獣先輩" },
+	{ bank: 0, program: 1, name: "野獣の咆哮 Mo", group: "野獣先輩" },
+	{ bank: 0, program: 2, name: "野獣の咆哮 Pt", group: "野獣先輩" },
+	{ bank: 0, program: 3, name: "野獣の咆哮 Syn1St", group: "野獣先輩" },
+	{ bank: 0, program: 4, name: "野獣の咆哮 Syn1Mo", group: "野獣先輩" },
+	{ bank: 0, program: 12, name: "ダブリング咆哮", group: "野獣先輩" },
+	{ bank: 0, program: 16, name: "オォン！", group: "野獣先輩" },
+	{ bank: 0, program: 17, name: "オォン！ Pt", group: "野獣先輩" },
+	{ bank: 0, program: 20, name: "こ↑こ↓", group: "野獣先輩" },
+	{ bank: 0, program: 21, name: "こ↑こ↓ Mo", group: "野獣先輩" },
+	{ bank: 0, program: 32, name: "世界の遠野", group: "遠野" },
+	{ bank: 0, program: 33, name: "世界の遠野 Pt", group: "遠野" },
+	{ bank: 0, program: 34, name: "宇宙の遠野", group: "遠野" },
+	{ bank: 0, program: 64, name: "便乗ベース", group: "MUR" },
+	{ bank: 0, program: 65, name: "便乗ベース Mo", group: "MUR" },
+	{ bank: 8, program: 0, name: "ワン！", group: "TDN" },
+	{ bank: 8, program: 1, name: "ワン！ Mo", group: "TDN" },
+	{ bank: 8, program: 4, name: "TDNシンセ", group: "TDN" },
+	{ bank: 8, program: 5, name: "TDNシタール", group: "TDN" },
+	{ bank: 16, program: 0, name: "ビンビンベース", group: "ゆうさく" },
+	{ bank: 16, program: 1, name: "ビンビンベース Mo", group: "ゆうさく" },
+	{ bank: 64, program: 0, name: "ぷはー", group: "RU" },
+	{ bank: 64, program: 1, name: "ぷはーベル", group: "RU" },
+	{ bank: 64, program: 4, name: "てん気", group: "RU" },
+	{ bank: 64, program: 5, name: "てん気ピアノ", group: "RU" },
+	{ bank: 64, program: 32, name: "UDKシンセA Syn1", group: "UDK" },
+	{ bank: 64, program: 33, name: "UDKシンセA Syn2", group: "UDK" },
+	{ bank: 64, program: 36, name: "UDKシンセA Dec", group: "UDK" },
+	{ bank: 64, program: 40, name: "UDKシンセB", group: "UDK" },
+	{ bank: 64, program: 44, name: "VANホーテン", group: "UDK" },
+	{ bank: 64, program: 64, name: "SIKシンセ", group: "SIK" },
+	{ bank: 64, program: 65, name: "SIKシンセ Dec", group: "SIK" },
+	{ bank: 64, program: 72, name: "あっ！", group: "SIK" },
+	{ bank: 64, program: 74, name: "まい！ Pt", group: "SIK" },
+	{ bank: 64, program: 96, name: "大外刈り", group: "ALC" },
+	{ bank: 96, program: 0, name: "TNKシンセ", group: "TNK" },
 ];
