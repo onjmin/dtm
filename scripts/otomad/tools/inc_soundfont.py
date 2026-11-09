@@ -4,9 +4,9 @@
 声は voice_synth_export.py と同じ WORLD の作り（息 ×0.25・響きのならし・高い所 −8 dB）で、
 音域に短3度おきに置いた音を、継ぎ目を周期にそろえてクロスフェードした前向きのループにする。
 
-  python -I scripts/otomad/tools/inku_soundfont.py [--out tmp/淫ク☆サウンドフォント]
+  python -I scripts/otomad/tools/inc_soundfont.py [--out tmp/inc-sf2]
 素材は C:/_own/音MAD素材 から読む（git に入れない）。
-出力: inku.sf2（4音色）、webaudiofont/<番号>0_Inku_sf2_file.js（80 YMN・81 UDK・82 野獣・83 MUR）、list.txt、確かめ用の wav。
+出力: inc.sf2（4音色）、sound/<番号>0_Inc_sf2_file.js（80 YMN・81 UDK・82 野獣・83 MUR）、list.txt、確かめ用の wav。
 """
 import argparse
 import base64
@@ -61,7 +61,7 @@ def zone_sample(v, m):
 
 def build(out):
     out.mkdir(parents=True, exist_ok=True)
-    (out / "webaudiofont").mkdir(exist_ok=True)
+    (out / "sound").mkdir(exist_ok=True)
     (out / "check").mkdir(exist_ok=True)
     insts = []
     for name, prog, src, cut, loop, f0lo in VOICES:
@@ -80,13 +80,13 @@ def build(out):
             z["lo"] = 0 if i == 0 else z["root"] - 1
             z["hi"] = 127 if i == len(zs) - 1 else z["root"] + 1
         insts.append(dict(name=name, prog=prog, zones=zs, src=Path(src).name))
-    write_sf2(out / "inku.sf2", insts)
+    write_sf2(out / "inc.sf2", insts)
     lines = []
     for ins in insts:
-        fn = f"_tone_{ins['prog']:03d}0_Inku_sf2_file"  # dtm のバンクの形（PPPV_<バンク>）。音色は GM の番号で分ける
-        write_waf(out / "webaudiofont" / f"{fn[6:]}.js", fn, ins)
+        fn = f"_tone_{ins['prog']:03d}0_Inc_sf2_file"  # dtm のバンクの形（PPPV_<バンク>）。音色は GM の番号で分ける
+        write_waf(out / "sound" / f"{fn[6:]}.js", fn, ins)
         lines.append(f"{fn[6:]}	{ins['prog']}	{ins['name']}	{ins['src']}")
-    (out / "webaudiofont" / "list.txt").write_text("\n".join(lines) + "\n", encoding="utf8")
+    (out / "sound" / "list.txt").write_text("\n".join(lines) + "\n", encoding="utf8")
     check(out, insts)
 
 
@@ -113,10 +113,10 @@ def write_sf2(path, insts):
     phdr = b""; pbag = b""; pgen = b""; inst = b""; ibag = b""; igen = b""
     nib = nig = 0
     for k, ins in enumerate(insts):
-        phdr += name20(f"Inku {ins['name']}") + struct.pack("<HHHIII", ins["prog"], 0, k, 0, 0, 0)
+        phdr += name20(f"Inc {ins['name']}") + struct.pack("<HHHIII", ins["prog"], 0, k, 0, 0, 0)
         pbag += struct.pack("<HH", k, 0)
         pgen += struct.pack("<HH", 41, k)  # instrument
-        inst += name20(f"Inku {ins['name']}") + struct.pack("<H", nib)
+        inst += name20(f"Inc {ins['name']}") + struct.pack("<H", nib)
         for z in ins["zones"]:
             d = i16(z["y"]).tobytes()
             start = pos; end = pos + len(z["y"])
@@ -141,7 +141,7 @@ def write_sf2(path, insts):
     igen += b"\0" * 4
     shdr += name20("EOS") + b"\0" * 26
     info = lst(b"INFO", chunk(b"ifil", struct.pack("<HH", 2, 1)) + chunk(b"isng", b"EMU8000\0")
-               + chunk(b"INAM", "Inku SoundFont\0".encode()) + chunk(b"ICMT", "淫夢・クッキー☆の声から作ったシンセ。onjmin/dtm scripts/otomad/tools/inku_soundfont.py\0".encode("utf8")))
+               + chunk(b"INAM", "Inc SoundFont\0".encode()) + chunk(b"ICMT", "淫夢・クッキー☆の声から作ったシンセ。onjmin/dtm scripts/otomad/tools/inc_soundfont.py\0".encode("utf8")))
     sdta = lst(b"sdta", chunk(b"smpl", smpl))
     pdta = lst(b"pdta", b"".join(chunk(t, d) for t, d in [
         (b"phdr", phdr), (b"pbag", pbag), (b"pmod", pmod), (b"pgen", pgen),
@@ -181,5 +181,5 @@ def check(out, insts):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="tmp/淫ク☆サウンドフォント")
+    ap.add_argument("--out", default="tmp/inc-sf2")
     build(Path(ap.parse_args().out))

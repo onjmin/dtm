@@ -64,7 +64,7 @@
 ### サウンドフォントにまとめる（淫ク☆サウンドフォント、11-09）
 
 - 所有者 11-09「淫ク☆サウンドフォントを作りましょう」。YMN「るぅ＾～」に加えて、UDK・野獣・MUR のシンセを .sf2 と WebAudioFont（JS）にまとめた。WebAudioFont の形は [surikov/webaudiofont](https://github.com/surikov/webaudiofont) に合わせる（所有者の指定）。
-- 道具: `scripts/otomad/tools/inku_soundfont.py`。声の作りは `voice_synth_export.py` と同じ。出力は `tmp/淫ク☆サウンドフォント/`（git に入れない）。
+- 道具: `scripts/otomad/tools/inc_soundfont.py`。声の作りは `voice_synth_export.py` と同じ。出力は `tmp/inc-sf2/`（git に入れない）。
 
 | 番号（GM） | 名前 | 素材 | 切る所 | 元の高さ |
 |---|---|---|---|---|
@@ -79,11 +79,11 @@
 - 大きさ: ループの所の RMS を楽器の中でそろえ、いちばん大きいピークを −1 dB にする（dtm は読み込み時に楽器ごとの大きさをさらにそろえる）。
 - 32 kHz・16bit。4.5 kHz から上は下げてあるので足りる。.sf2 は 3.2 MB、JS は1音色 1.1 MB。
 - SF2 の中身: 音色ごとに楽器を1つ。ゾーンごとに鍵盤範囲・立ち上がり 4ms・離した後 0.12 秒・鳴らしている間ループ。
-- WebAudioFont: dtm のバンクの形（`PPPV_<バンク>.js`）にそろえて `0800_Inku_sf2_file.js`〜`0830_Inku_sf2_file.js`。変数は `_tone_0800_Inku_sf2_file`。ゾーンは `sample`（16bit PCM の base64）で、ループ点は標本の番号。圧縮した音（`file`）は使わない。MP3 は頭に無音が入りループがずれる。Safari は Ogg を読めない。
+- WebAudioFont: dtm のバンクの形（`PPPV_<バンク>.js`）にそろえて `sound/0800_Inc_sf2_file.js`〜`sound/0830_Inc_sf2_file.js`。変数は `_tone_0800_Inc_sf2_file`。ゾーンは `sample`（16bit PCM の base64）で、ループ点は標本の番号。圧縮した音（`file`）は使わない。MP3 は頭に無音が入りループがずれる。Safari は Ogg を読めない。
 - 確かめ方（道具が最後に表示する）:
   - ループを回して 2 秒鳴らし、高さを測る。全部 ±0.05 半音以内。
   - 継ぎ目の段差を、ループの中の隣どうしの差の 99% 点と比べる。全部 1 以下で、最大 0.83。
   - dtm の `parseSf2` で 80〜83 番の 17 ゾーンとループが読めた。
   - JS は node で読み込み、ループ点が音の中にあることを見た。
   - 耳ではまだ聴いていない。`check/` の C 音階の wav で聴く。
-- 配り方: .sf2 は、CORS を許す所（GitHub Pages など）に置けば、dtm で `#sf2=<URL>` を書いて今でも鳴る（[docs/guide/external-soundfont.md](../../guide/external-soundfont.md)）。WebAudioFont の JS は、dtm がいま surikov の配信元からしか読まないので、`#t<n>font=Inku` で選ぶには配り先と読み方を足す。
+- 配り方: 公開は [onjmin/inc-sf2](https://github.com/onjmin/inc-sf2)（https://onjmin.github.io/inc-sf2/ 。試し弾きのページつき。dtm と同じ Actions の Pages）。.sf2 は dtm で `#sf2=https://onjmin.github.io/inc-sf2/inc.sf2` を書いて今でも鳴る（[docs/guide/external-soundfont.md](../../guide/external-soundfont.md)）。WebAudioFont の JS は、dtm がいま surikov の配信元からしか読まないので、`#t<n>font=Inc` で選ぶには配り先と読み方を足す。
