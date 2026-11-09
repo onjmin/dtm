@@ -108,8 +108,11 @@ import {
 } from "../instruments/sf/external-sf2";
 import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
 import {
+	bankedFontBanks,
+	bankedFontValue,
 	externalSf2BankNumber,
 	externalSf2BankValue,
+	parseBankedFont,
 	SOUNDFONT_BANKS,
 	soundFontBankShortName,
 	trackSoundFontValue,
@@ -4399,7 +4402,8 @@ export const mountDAW = (
 		if (
 			active.trackFont &&
 			!SOUNDFONT_BANKS.some((b) => b.name === active.trackFont) &&
-			!(extSf2 && isExternalSf2Bank(active.trackFont))
+			!(extSf2 && isExternalSf2Bank(active.trackFont)) &&
+			!parseBankedFont(active.trackFont)
 		) {
 			const o = document.createElement("option");
 			o.value = active.trackFont;
@@ -4408,7 +4412,7 @@ export const mountDAW = (
 		}
 		fontSel.value = isExternalSf2Bank(active.trackFont)
 			? EXTERNAL_SF2_BANK
-			: active.trackFont;
+			: (parseBankedFont(active.trackFont)?.info.name ?? active.trackFont);
 		// 外部 SoundFont を選んだトラックにだけ、読み込み元の欄を出す（読み込み元は全トラック共通）。
 		const extRow = extSf2 ? buildExternalSf2Row(extSf2) : null;
 		if (extRow) fontSel.closest(".dtm-row")?.after(extRow.el);
@@ -4457,6 +4461,63 @@ export const mountDAW = (
 			bankRow.append(bankLabel, bankInput);
 			extRow.el.append(bankRow);
 		}
+		// キャラごとにバンクを分けた音源（レ淫棒）のキャラ（バンク）。プログラムは楽器の番号で選ぶ。
+		const charBox = document.createElement("div");
+		charBox.className = "dtm-row dtm-hidden";
+		charBox.style.flexDirection = "column";
+		charBox.style.alignItems = "stretch";
+		charBox.style.gap = "4px";
+		const charRow = document.createElement("div");
+		charRow.className = "dtm-row";
+		charRow.style.flexWrap = "nowrap";
+		const charLabel = document.createElement("span");
+		charLabel.className = "dtm-label";
+		charLabel.textContent = "キャラ";
+		const charSel = document.createElement("select");
+		charSel.className = "dtm-select dtm-grow";
+		charSel.style.minWidth = "0";
+		charSel.setAttribute("aria-label", "キャラ（バンク）");
+		charRow.append(charLabel, charSel);
+		const charNote = document.createElement("p");
+		charNote.className = "dtm-audio-note";
+		charBox.append(charRow, charNote);
+		fontSel.closest(".dtm-row")?.after(charBox);
+		const syncCharRow = (): void => {
+			const parsed = parseBankedFont(active.trackFont);
+			const presets = parsed?.info.banked?.presets;
+			charBox.classList.toggle("dtm-hidden", !presets);
+			if (!parsed || !presets) return;
+			const banks = bankedFontBanks(parsed.info);
+			const bank = parsed.bank ?? banks[0];
+			charSel.textContent = "";
+			for (const b of banks) {
+				const names = presets.filter((p) => p.bank === b).map((p) => p.name);
+				const text = `${b}: ${names.join("・")}`;
+				charSel.add(
+					new Option(
+						text.length > 40 ? `${text.slice(0, 39)}…` : text,
+						String(b),
+					),
+				);
+			}
+			charSel.value = String(bank);
+			const list = presets
+				.filter((p) => p.bank === bank)
+				.map((p) => `${p.program} ${p.name}`)
+				.join(" / ");
+			charNote.textContent = `楽器の番号（GM）で選ぶ: ${list}。無い番号は FluidR3 で鳴ります`;
+		};
+		charSel.addEventListener("change", () => {
+			const parsed = parseBankedFont(active.trackFont);
+			if (!parsed) return;
+			active.trackFont = bankedFontValue(parsed.info, Number(charSel.value));
+			syncCharRow();
+			options.onTrackFontChange?.(
+				trackStates.indexOf(active),
+				active.trackFont,
+			);
+		});
+		syncCharRow();
 		const syncExtRow = (): void => {
 			if (!extRow) return;
 			const on = isExternalSf2Bank(fontSel.value);
@@ -4468,6 +4529,7 @@ export const mountDAW = (
 			active.trackFont = fontSel.value;
 			bankInput.value = "";
 			syncExtRow();
+			syncCharRow();
 			options.onTrackFontChange?.(
 				trackStates.indexOf(active),
 				active.trackFont,

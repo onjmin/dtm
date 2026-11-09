@@ -11,6 +11,12 @@
  * DOM に依存しない（`scripts/test/check-fx-font-drum.ts` が Node で検算する）。
  */
 
+import {
+	type BankedPreset,
+	NIJI_20171022_PRESETS,
+	OTENKIAME_20200424_PRESETS,
+} from "./rainbow-presets";
+
 /** 既定の音源バンク（これまで固定だったもの）。 */
 export const DEFAULT_SOUNDFONT_BANK = "FluidR3_GM_sf2_file";
 
@@ -31,6 +37,12 @@ export type SoundFontBankInfo = {
 	 * ここに無いプログラムは FluidR3 で鳴らす。
 	 */
 	programs?: readonly string[];
+	/**
+	 * キャラごとにバンクを分けた作り（レ淫棒）。GM の番号だけでは選べないので、
+	 * トラックの値を `<名前>_<バンク>`（例 `Niji_33`）にしてバンクを決め、プログラムは楽器の番号で選ぶ。
+	 * ファイルは `<バンク3桁><プログラム3桁>_<fileName>.js`。
+	 */
+	banked?: { fileName: string; presets: readonly BankedPreset[] };
 };
 
 /** surikov の配信元（webaudiofontdata）の置き場所。 */
@@ -69,7 +81,57 @@ export const SOUNDFONT_BANKS: readonly SoundFontBankInfo[] = [
 		baseUrl: "https://onjmin.github.io/inc-sf2/sound/",
 		programs: ["0800", "0810", "0820", "0830"],
 	},
+	// レ淫棒サウンドフォント（ほかの作者のもの。onjmin/inc-sf2 の作者ごとのフォルダに元の配布のまま置き、
+	// WebAudioFont に書き出した）。キャラはバンクで選ぶ（`Niji_33` など）。
+	{
+		name: "Niji",
+		short: "Niji",
+		label: "レ淫棒（虹.・20171022）",
+		baseUrl: "https://onjmin.github.io/inc-sf2/niji/20171022/sound/",
+		banked: { fileName: "Rainbow_20171022", presets: NIJI_20171022_PRESETS },
+	},
+	{
+		name: "Otenkiame",
+		short: "Otenkiame",
+		label: "レ淫棒 2020年版（お天気雨・20200424）",
+		baseUrl: "https://onjmin.github.io/inc-sf2/otenkiame/20200424/sound/",
+		banked: {
+			fileName: "RaInBow_20200424",
+			presets: OTENKIAME_20200424_PRESETS,
+		},
+	},
 ];
+
+/**
+ * キャラごとにバンクを分けた音源（{@link SoundFontBankInfo.banked}）の値を分ける。
+ * `Niji` → バンク無し（undefined。いちばん小さいバンクで鳴らす）、`Niji_33` → 33。
+ * そういう音源でない・バンクが範囲外なら null。
+ */
+export const parseBankedFont = (
+	value: string | null | undefined,
+): { info: SoundFontBankInfo; bank: number | undefined } | null => {
+	const m = /^([A-Za-z]+)(?:_(\d{1,3}))?$/.exec((value ?? "").trim());
+	if (!m) return null;
+	const info = SOUNDFONT_BANKS.find(
+		(b) => b.banked && b.name.toLowerCase() === m[1].toLowerCase(),
+	);
+	if (!info) return null;
+	if (m[2] === undefined) return { info, bank: undefined };
+	const bank = Number(m[2]);
+	return bank <= 127 ? { info, bank } : null;
+};
+
+/** キャラごとにバンクを分けた音源の値を作る（`Niji` / `Niji_33`）。 */
+export const bankedFontValue = (
+	info: SoundFontBankInfo,
+	bank: number | undefined,
+): string => (bank === undefined ? info.name : `${info.name}_${bank}`);
+
+/** その音源が持っているバンク（小さい順）。 */
+export const bankedFontBanks = (info: SoundFontBankInfo): number[] =>
+	[...new Set((info.banked?.presets ?? []).map((p) => p.bank))].sort(
+		(a, b) => a - b,
+	);
 
 /**
  * 外部 SF2 の音源名（`ExtSF2`、バンクを決めるときは `ExtSF2_<バンク>`）。
@@ -100,11 +162,20 @@ export const externalSf2BankNumber = (
 export const externalSf2BankValue = (bank?: number): string =>
 	bank === undefined ? "ExtSF2" : `ExtSF2_${bank}`;
 
+/**
+ * 楽器のファイル名（拡張子なし。変数名は頭に `_tone_` を付けたもの）。
+ * ふつうは `<PPPV>_<正式名>`、キャラごとにバンクを分けた音源は `<BBBPPP>_<fileName>`。
+ */
+export const soundFontFileName = (fileKey: string, bank: string): string => {
+	const banked = parseBankedFont(bank)?.info.banked;
+	return `${fileKey}_${banked ? banked.fileName : bank}`;
+};
+
 /** 楽器のファイル（`<PPPV>_<正式名>.js`）の URL。配信元はバンクごと（既定は surikov）。 */
 export const soundFontFileUrl = (fileKey: string, bank: string): string => {
-	const base =
-		SOUNDFONT_BANKS.find((b) => b.name === bank)?.baseUrl ?? SURIKOV_SOUND_URL;
-	return `${base}${fileKey}_${bank}.js`;
+	const info =
+		parseBankedFont(bank)?.info ?? SOUNDFONT_BANKS.find((b) => b.name === bank);
+	return `${info?.baseUrl ?? SURIKOV_SOUND_URL}${soundFontFileName(fileKey, bank)}.js`;
 };
 
 /**
@@ -130,6 +201,8 @@ export const normalizeSoundFontBank = (
 	// 外部 SF2 は書き方をそろえる（`extsf2_33` → `ExtSF2_33`）。
 	const ext = externalSf2BankNumber(v);
 	if (ext !== null) return externalSf2BankValue(ext);
+	const banked = parseBankedFont(v);
+	if (banked) return bankedFontValue(banked.info, banked.bank);
 	const lower = v.toLowerCase();
 	const known = SOUNDFONT_BANKS.find(
 		(b) => b.name.toLowerCase() === lower || b.short.toLowerCase() === lower,
@@ -189,6 +262,21 @@ export const resolveSoundFontFile = (
 	// 無ければ読み込み側で落とす。
 	if (isExternalSf2Bank(target))
 		return { key: `${program}0`, bank: target, fellBack: false };
+	// キャラごとにバンクを分けた音源（レ淫棒）は、バンク（無ければいちばん小さいもの）の同じプログラム。
+	const banked = parseBankedFont(target);
+	if (banked?.info.banked) {
+		const bankNo = banked.bank ?? bankedFontBanks(banked.info)[0];
+		const hit = banked.info.banked.presets.find(
+			(p) => p.bank === bankNo && p.program === Number(program),
+		);
+		return hit
+			? {
+					key: `${String(hit.bank).padStart(3, "0")}${program}`,
+					bank: target,
+					fellBack: false,
+				}
+			: { key: instrumentKey, bank: DEFAULT_SOUNDFONT_BANK, fellBack: true };
+	}
 	// surikov の一覧に載らないバンク（Inc）は、自分で持っている楽器の一覧で決める。
 	const own = SOUNDFONT_BANKS.find((b) => b.name === target)?.programs;
 	if (own) {

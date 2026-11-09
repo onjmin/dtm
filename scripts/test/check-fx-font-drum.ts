@@ -494,6 +494,47 @@ console.log("■ 音源バンクのファイル解決");
 		formatMmlMeta({ trackFonts: { 0: "inc" } }, " "),
 		"#t0font=Inc",
 	);
+	// レ淫棒（Niji・Otenkiame）はキャラごとにバンクを分けた作り。`Niji_33` でバンクを決める。
+	check(
+		"レ淫棒: 書き方をそろえ、バンクを持ったまま往復する",
+		[
+			normalizeSoundFontBank("niji_33"),
+			normalizeSoundFontBank("OTENKIAME"),
+			parseMML("#t0font=niji_33\n@0 c4;").meta.trackFonts?.[0],
+			formatMmlMeta({ trackFonts: { 0: "niji_33" } }, " "),
+			normalizeSoundFontBank("Niji_128"),
+		],
+		["Niji_33", "Otenkiame", "Niji_33", "#t0font=Niji_33", "Niji_128"],
+	);
+	check(
+		"レ淫棒: バンクとプログラムでファイルを決める（バンク無しはいちばん小さいバンク）",
+		[
+			resolveSoundFontFile("0001", "Niji_33", available),
+			resolveSoundFontFile("0000", "Niji", available),
+			resolveSoundFontFile("0040", "Otenkiame_8"),
+		],
+		[
+			{ key: "033000", bank: "Niji_33", fellBack: false },
+			{ key: "000000", bank: "Niji", fellBack: false },
+			{ key: "008004", bank: "Otenkiame_8", fellBack: false },
+		],
+	);
+	check(
+		"レ淫棒: そのバンクに無いプログラムは FluidR3 へ落とす",
+		resolveSoundFontFile("0100", "Niji_33", available),
+		{ key: "0100", bank: DEFAULT_SOUNDFONT_BANK, fellBack: true },
+	);
+	check(
+		"レ淫棒: 読む先は inc-sf2 の作者ごとのフォルダ",
+		[
+			soundFontFileUrl("033000", "Niji_33"),
+			soundFontFileUrl("008004", "Otenkiame_8"),
+		],
+		[
+			"https://onjmin.github.io/inc-sf2/niji/20171022/sound/033000_Rainbow_20171022.js",
+			"https://onjmin.github.io/inc-sf2/otenkiame/20200424/sound/008004_RaInBow_20200424.js",
+		],
+	);
 }
 
 // ── 3. ドラム無し ──

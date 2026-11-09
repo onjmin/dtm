@@ -64,7 +64,7 @@
 ### サウンドフォントにまとめる（淫ク☆サウンドフォント、11-09）
 
 - 所有者 11-09「淫ク☆サウンドフォントを作りましょう」。YMN「るぅ＾～」に加えて、UDK・野獣・MUR のシンセを .sf2 と WebAudioFont（JS）にまとめた。WebAudioFont の形は [surikov/webaudiofont](https://github.com/surikov/webaudiofont) に合わせる（所有者の指定）。
-- ほかの作者の版（11-09、所有者「onjmin/inc-sf2 で web 経由で呼び出せるように」「作者ごとにディレクトリを分けて」）: 虹.のレ淫棒（20171022）を `niji/20171022/`、お天気雨の 2020年版（20200424）を `otenkiame/20200424/` に元の配布のまま置き、`scripts/otomad/tools/sf2-to-webaudiofont.ts` でプリセットごとの WebAudioFont（`<バンク3桁><プログラム3桁>_<名前>.js`）にした。淫ク☆の素材の方針はこれらには当てはめない（レスリングも入れたまま）。作者様に限らず、どなたからでも指摘があれば速やかに消す（所有者 11-09「第三者から言われた場合も消す。ニュートリノと同じ」。docs/research/neutrino-terms.md と同じ扱い）。
+- ほかの作者の版（11-09、所有者「onjmin/inc-sf2 で web 経由で呼び出せるように」「作者ごとにディレクトリを分けて」）: 虹.のレ淫棒（20171022）を `niji/20171022/`、お天気雨の 2020年版（20200424）を `otenkiame/20200424/` に元の配布のまま置き、`scripts/otomad/tools/sf2-to-webaudiofont.ts` でプリセットごとの WebAudioFont（`<バンク3桁><プログラム3桁>_<名前>.js`）にした。淫ク☆の素材の方針はこれらには当てはめない（レスリングも入れたまま）。dtm では音源バンク `Niji`・`Otenkiame` として選べる（`#t<n>font=Niji_33` のようにバンクを付ける。DAW では「キャラ」欄。所有者 11-09「onjmin/dtm でも選べるように」）。作者様に限らず、どなたからでも指摘があれば速やかに消す（所有者 11-09「第三者から言われた場合も消す。ニュートリノと同じ」。docs/research/neutrino-terms.md と同じ扱い）。
 - 範囲: 所有者 11-09「淫ク☆サウンドフォントは私が開発・保守するもの」。素材は淫夢・クッキー☆に限る。レスリング・エア本・ヒカマニなどは拡張でも入れない。
 - 道具: `scripts/otomad/tools/inc_soundfont.py`。声の作りは `voice_synth_export.py` と同じ。出力は `tmp/inc-sf2/`（git に入れない）。
 

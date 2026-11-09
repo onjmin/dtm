@@ -77,6 +77,7 @@ import {
 	DEFAULT_SOUNDFONT_BANK,
 	externalSf2BankNumber,
 	resolveSoundFontFile,
+	soundFontFileName,
 	soundFontFileUrl,
 	trackSoundFontValue,
 } from "../instruments/soundfont-banks";
@@ -1055,7 +1056,7 @@ export const createDtmStudio = async (
 				Number(fileKey.slice(0, 3)),
 				externalSf2BankNumber(bank) ?? undefined,
 			);
-		const fullName = `${fileKey}_${bank}`;
+		const fullName = soundFontFileName(fileKey, bank);
 		return sf.load({
 			ctx: audioCtx,
 			fontName: `_tone_${fullName}`,
