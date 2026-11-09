@@ -64,6 +64,7 @@
 ### サウンドフォントにまとめる（淫ク☆サウンドフォント、11-09）
 
 - 所有者 11-09「淫ク☆サウンドフォントを作りましょう」。YMN「るぅ＾～」に加えて、UDK・野獣・MUR のシンセを .sf2 と WebAudioFont（JS）にまとめた。WebAudioFont の形は [surikov/webaudiofont](https://github.com/surikov/webaudiofont) に合わせる（所有者の指定）。
+- 範囲: 所有者 11-09「淫ク☆サウンドフォントは私が開発・保守するもの」。素材は淫夢・クッキー☆に限る。レスリング・エア本・ヒカマニなどは拡張でも入れない。
 - 道具: `scripts/otomad/tools/inc_soundfont.py`。声の作りは `voice_synth_export.py` と同じ。出力は `tmp/inc-sf2/`（git に入れない）。
 
 | 番号（GM） | 名前 | 素材 | 切る所 | 元の高さ |
