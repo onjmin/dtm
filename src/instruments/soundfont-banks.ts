@@ -36,10 +36,14 @@ export type SoundFontBankInfo = {
 	 */
 	baseUrl?: string;
 	/**
-	 * 持っている楽器（`PPPV`）。surikov の一覧（list.txt）に載らないバンクだけ書く。
-	 * ここに無いプログラムは FluidR3 で鳴らす。
+	 * GM の番号（トラックの楽器）で選ぶ自前の音源（淫ク☆）の、バンクと音色の名前。
+	 * surikov の一覧（list.txt）に載らないので、持っている音色もここで決める
+	 * （ファイルは `<プログラム3桁>0_<正式名>.js`）。持っていない番号は最初の音色で鳴らす。
 	 */
-	programs?: readonly string[];
+	named?: {
+		banks: readonly BankedBank[];
+		presets: readonly BankedPreset[];
+	};
 	/**
 	 * キャラごとにバンクを分けた作り（レ淫棒）。GM の番号だけでは選べないので、
 	 * トラックの値を `<名前>_<バンク>_<プログラム>`（例 `Niji_33_0`）にしてプリセットを決める。
@@ -81,13 +85,22 @@ export const SOUNDFONT_BANKS: readonly SoundFontBankInfo[] = [
 	{ name: "Chaos_sf2_file", short: "Chaos", label: "Chaos" },
 	{ name: "SBLive_sf2", short: "SBLive", label: "SB Live!" },
 	// 淫ク☆サウンドフォント（onjmin/inc-sf2）。淫夢・クッキー☆の声から作ったシンセ4音色だけで、
-	// 80 YMN・81 UDK・82 野獣・83 MUR。作り方は docs/otomad/techniques/voice-instrument.md。
+	// バンク 0 の 80 YMN・81 UDK・82 野獣・83 MUR。作り方は docs/otomad/techniques/voice-instrument.md。
+	// 名前は inc-sf2 の Domino 音源定義（Inc_SoundFont.xml）と同じ。
 	{
 		name: "Inc_sf2_file",
 		short: "Inc",
-		label: "淫ク☆（80〜83 番だけ）",
+		label: "淫ク☆",
 		baseUrl: "https://onjmin.github.io/inc-sf2/sound/",
-		programs: ["0800", "0810", "0820", "0830"],
+		named: {
+			banks: [{ bank: 0, name: "淫ク☆" }],
+			presets: [
+				{ bank: 0, program: 80, name: "YMN「るぅ＾～」", group: "クッキー☆" },
+				{ bank: 0, program: 81, name: "UDK「あーっ」", group: "クッキー☆" },
+				{ bank: 0, program: 82, name: "野獣シンセ", group: "淫夢" },
+				{ bank: 0, program: 83, name: "MUR「ゾ～」", group: "淫夢" },
+			],
+		},
 	},
 	// レ淫棒サウンドフォント（ほかの作者のもの。onjmin/inc-sf2 の作者ごとのフォルダに元の配布のまま置き、
 	// WebAudioFont に書き出した）。プリセットはバンクとプログラムで選ぶ（`Niji_33_0` など）。
@@ -279,6 +292,13 @@ export type SoundFontFile = {
 	fellBack: boolean;
 };
 
+/** GM の番号で選ぶ自前の音源で、その番号の音色（無ければ最初の音色）。 */
+export const namedPreset = (
+	presets: readonly BankedPreset[],
+	program: number,
+): BankedPreset | undefined =>
+	presets.find((p) => p.program === program) ?? presets[0];
+
 /**
  * 楽器キー（FluidR3 の `PPPV`、例 `0330`）と音源バンクから、実際に読むファイルを決める。
  *
@@ -324,15 +344,18 @@ export const resolveSoundFontFile = (
 			};
 		return { key: instrumentKey, bank: DEFAULT_SOUNDFONT_BANK, fellBack: true };
 	}
-	// surikov の一覧に載らないバンク（Inc）は、自分で持っている楽器の一覧で決める。
-	const own = SOUNDFONT_BANKS.find((b) => b.name === target)?.programs;
-	if (own) {
-		const hit = own.includes(`${program}0`)
-			? `${program}0`
-			: own.filter((id) => id.startsWith(program)).sort()[0];
-		return hit
-			? { key: hit, bank: target, fellBack: false }
-			: { key: instrumentKey, bank: DEFAULT_SOUNDFONT_BANK, fellBack: true };
+	// surikov の一覧に載らない自前の音源（Inc）は、持っている音色の中から選ぶ
+	// （持っていない番号は最初の音色。ほかの音源へは落とさない）。
+	const named = SOUNDFONT_BANKS.find((b) => b.name === target)?.named;
+	if (named) {
+		const hit = namedPreset(named.presets, Number(program));
+		if (hit)
+			return {
+				key: `${String(hit.program).padStart(3, "0")}0`,
+				bank: target,
+				fellBack: false,
+			};
+		return { key: instrumentKey, bank: DEFAULT_SOUNDFONT_BANK, fellBack: true };
 	}
 	if (!available) return { key: `${program}0`, bank: target, fellBack: false };
 	const ids = available.get(target);

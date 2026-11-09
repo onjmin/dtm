@@ -102,6 +102,7 @@ import {
 	INSTRUMENT_PRESETS,
 	type InstrumentPreset,
 } from "../instruments/instrument-presets";
+import type { BankedBank, BankedPreset } from "../instruments/rainbow-presets";
 import {
 	EXTERNAL_SF2_BANK,
 	isExternalSf2Bank,
@@ -111,9 +112,12 @@ import {
 	bankedFontValue,
 	externalSf2BankNumber,
 	externalSf2BankValue,
+	namedPreset,
+	normalizeSoundFontBank,
 	parseBankedFont,
 	resolveBankedPreset,
 	SOUNDFONT_BANKS,
+	type SoundFontBankInfo,
 	soundFontBankShortName,
 	trackSoundFontValue,
 } from "../instruments/soundfont-banks";
@@ -4467,9 +4471,10 @@ export const mountDAW = (
 			bankRow.append(bankLabel, bankInput);
 			extRow.el.append(bankRow);
 		}
-		// キャラごとにバンクを分けた音源（レ淫棒）の音色。バンクとプログラムを1つの欄で選ぶ
-		// （その音源が持っているプリセットだけ。見出しは sf2 ごとのバンクの名前）。
-		// GM の楽器欄の代わりに、同じ場所へ出す。
+		// 音色に名前のある音源（レ淫棒・淫ク☆）は、GM の楽器欄の代わりに「音色」欄を出す。
+		// その音源が持っているプリセットだけを、バンクとプログラムで1つの一覧にする
+		// （見出しは sf2 ごとのバンクの名前）。レ淫棒はトラックの音源の値（`Niji_33_0`）に、
+		// 淫ク☆はトラックの楽器（GM の番号）に書く。
 		const charLabel = document.createElement("span");
 		charLabel.className = "dtm-label";
 		charLabel.textContent = "音色";
@@ -4478,23 +4483,38 @@ export const mountDAW = (
 		charSel.style.minWidth = "0";
 		charSel.setAttribute("aria-label", "音色（バンク-プログラム）");
 		sourceRow.append(charLabel, charSel);
+		const namedFont = (): {
+			info: SoundFontBankInfo;
+			banks: readonly BankedBank[];
+			presets: readonly BankedPreset[];
+		} | null => {
+			const banked = parseBankedFont(active.trackFont);
+			if (banked?.info.banked)
+				return { info: banked.info, ...banked.info.banked };
+			const target = normalizeSoundFontBank(active.trackFont);
+			const info = SOUNDFONT_BANKS.find((b) => b.name === target);
+			return info?.named ? { info, ...info.named } : null;
+		};
+		const trackProgram = (): number =>
+			GM_INSTRUMENT_NAMES.indexOf(
+				normalizeInstrumentName(active.trackInstrument),
+			);
 		let charFont = "";
 		const syncCharRow = (): void => {
-			const parsed = parseBankedFont(active.trackFont);
-			const banked = parsed?.info.banked;
+			const font = namedFont();
 			for (const el of [charLabel, charSel])
-				el.classList.toggle("dtm-hidden", !banked);
+				el.classList.toggle("dtm-hidden", !font);
 			for (const el of [instLabel, instSel])
-				el.classList.toggle("dtm-hidden", !!banked);
-			if (!parsed || !banked) return;
+				el.classList.toggle("dtm-hidden", !!font);
+			if (!font) return;
 			// 音源が変わったときだけ一覧を作り直す。
-			if (charFont !== parsed.info.name) {
-				charFont = parsed.info.name;
+			if (charFont !== font.info.name) {
+				charFont = font.info.name;
 				charSel.textContent = "";
 				let group: HTMLOptGroupElement | null = null;
 				let groupKey = "";
-				for (const p of banked.presets) {
-					const b = banked.banks.find((x) => x.bank === p.bank);
+				for (const p of font.presets) {
+					const b = font.banks.find((x) => x.bank === p.bank);
 					const head = [b?.series, b?.name ?? `バンク ${p.bank}`, p.group]
 						.filter(Boolean)
 						.join(" / ");
@@ -4512,23 +4532,26 @@ export const mountDAW = (
 					);
 				}
 			}
-			const hit = resolveBankedPreset(
-				parsed.info,
-				parsed.bank,
-				parsed.program,
-				0,
-			);
+			const banked = parseBankedFont(active.trackFont);
+			const hit = banked
+				? resolveBankedPreset(banked.info, banked.bank, banked.program, 0)
+				: namedPreset(font.presets, trackProgram());
 			if (hit) charSel.value = `${hit.bank}_${hit.program}`;
 		};
 		charSel.addEventListener("change", () => {
-			const parsed = parseBankedFont(active.trackFont);
-			if (!parsed) return;
 			const [b, p] = charSel.value.split("_").map(Number);
-			active.trackFont = bankedFontValue(parsed.info, b, p);
-			options.onTrackFontChange?.(
-				trackStates.indexOf(active),
-				active.trackFont,
-			);
+			const banked = parseBankedFont(active.trackFont);
+			if (banked) {
+				active.trackFont = bankedFontValue(banked.info, b, p);
+				options.onTrackFontChange?.(
+					trackStates.indexOf(active),
+					active.trackFont,
+				);
+				return;
+			}
+			// 淫ク☆: 楽器欄を選んだのと同じに扱う（楽器の変更として保存される）。
+			instSel.value = GM_INSTRUMENT_NAMES[p] ?? "";
+			instSel.dispatchEvent(new Event("change"));
 		});
 		syncCharRow();
 		const syncExtRow = (): void => {

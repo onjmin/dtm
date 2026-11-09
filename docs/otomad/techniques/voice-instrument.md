@@ -89,3 +89,4 @@
   - JS は node で読み込み、ループ点が音の中にあることを見た。
   - 耳ではまだ聴いていない。`check/` の C 音階の wav で聴く。
 - 配り方: 公開は [onjmin/inc-sf2](https://github.com/onjmin/inc-sf2)（https://onjmin.github.io/inc-sf2/ 。試し弾きのページつき。dtm と同じ Actions の Pages）。.sf2 は dtm で `#sf2=https://onjmin.github.io/inc-sf2/inc.sf2` を書いて今でも鳴る（[docs/guide/external-soundfont.md](../../guide/external-soundfont.md)）。WebAudioFont の JS は `#t<n>font=Inc` で選べる（11-09、所有者「Inc を選べるようにする」）。バンクに読む先（`baseUrl`）と持っている楽器（`programs`）を持たせ（`src/instruments/soundfont-banks.ts`）、80〜83 番以外は FluidR3 へ落とす。デモの DAW で、80・83 番が onjmin/inc-sf2 から読まれ、ピアノが FluidR3 に落ちたのを確かめた。
+- バンク名・音色名（11-09、所有者「淫ク☆（拙作）にもバンク名・プログラム名つけるべきでは」）: バンク 0 を「淫ク☆」、音色を 0-80 YMN「るぅ＾～」・0-81 UDK「あーっ」・0-82 野獣シンセ・0-83 MUR「ゾ～」とし、見出しはクッキー☆（80・81）と淫夢（82・83）。名前は inc-sf2 の Domino 音源定義 `Inc_SoundFont.xml` と dtm のバンク（`named`）で同じにする。DAW ではレ淫棒と同じ「音色」欄で選び、選ぶとトラックの楽器（GM 番号）に書く（`#t0inst=` の書き方はそのまま）。持っていない番号は FluidR3 へ落とさず 0-80 で鳴らす（レ淫棒と同じく、その音源の中だけで鳴らす）。

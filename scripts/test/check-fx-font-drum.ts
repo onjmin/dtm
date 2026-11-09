@@ -39,11 +39,13 @@ const {
 	masterDynamicsFromMeta,
 	masterFxFromMeta,
 	masterFxToMeta,
-} = require("../../src/audio/master-fx") as typeof import("../../src/audio/master-fx");
+} =
+	require("../../src/audio/master-fx") as typeof import("../../src/audio/master-fx");
 const {
 	DEFAULT_SOUNDFONT_BANK,
 	normalizeSoundFontBank,
 	resolveSoundFontFile,
+	SOUNDFONT_BANKS,
 	soundFontFileUrl,
 	soundFontBankShortName,
 	trackSoundFontValue,
@@ -459,7 +461,7 @@ console.log("■ 音源バンクのファイル解決");
 		resolveSoundFontFile("0330", "JCLive"),
 		{ key: "0330", bank: "JCLive_sf2_file", fellBack: false },
 	);
-	// Inc（淫ク☆）は surikov の一覧に載らないので、バンクが持つ楽器（80〜83）で決める。
+	// Inc（淫ク☆）は surikov の一覧に載らないので、持っている音色（バンク 0 の 80〜83）で決める。
 	check(
 		"Inc: 短縮名で選べ、持っている楽器（80 番）は Inc で読む",
 		[
@@ -474,9 +476,21 @@ console.log("■ 音源バンクのファイル解決");
 		],
 	);
 	check(
-		"Inc: 持っていない楽器は FluidR3 へ落とす",
+		"Inc: 持っていない楽器は 80 番 YMN で鳴らす（ほかの音源へ落とさない）",
 		resolveSoundFontFile("0330", "Inc", available),
-		{ key: "0330", bank: DEFAULT_SOUNDFONT_BANK, fellBack: true },
+		{ key: "0800", bank: "Inc_sf2_file", fellBack: false },
+	);
+	check(
+		"Inc: バンクと音色の名前",
+		SOUNDFONT_BANKS.find((b) => b.short === "Inc")?.named?.presets.map(
+			(p) => `${p.bank}-${p.program} ${p.name}`,
+		),
+		[
+			"0-80 YMN「るぅ＾～」",
+			"0-81 UDK「あーっ」",
+			"0-82 野獣シンセ",
+			"0-83 MUR「ゾ～」",
+		],
 	);
 	check(
 		"読む先: Inc は onjmin/inc-sf2、ほかは surikov",
