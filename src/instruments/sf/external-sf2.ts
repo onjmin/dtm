@@ -22,12 +22,10 @@ import {
 	type Sf2Preset,
 } from "./sf2-parser";
 
-/** 外部 SF2 を指す音源バンク名（`#t<n>font=ExtSF2`）。 */
+/** 外部 SF2 を指す音源バンク名（`#t<n>font=ExtSF2`。バンクを決めるときは `ExtSF2_<バンク>`）。 */
 export const EXTERNAL_SF2_BANK = "ExtSF2";
 
-/** バンク名が外部 SF2 か（大小文字は問わない）。 */
-export const isExternalSf2Bank = (bank: string | null | undefined): boolean =>
-	(bank ?? "").toLowerCase() === EXTERNAL_SF2_BANK.toLowerCase();
+export { isExternalSf2Bank } from "../soundfont-banks";
 
 type Source = {
 	/** 差し替えのたびに増える番号（読み込み済みの楽器のキャッシュを分けるため）。 */
@@ -194,19 +192,23 @@ const presetZones = (ctx: AudioContext, preset: Sf2Preset) =>
 export const loadExternalSf2Instrument = async (
 	ctx: AudioContext,
 	program: number,
+	bank?: number,
 ): Promise<SoundFont> => {
 	const src = current;
 	if (!src) throw new Error("外部 SoundFont が読み込まれていません");
 	if (!Number.isInteger(program) || program < 0 || program > 127)
 		throw new Error("楽器の番号が不正です");
 	const f = await src.file();
-	const preset = findSf2Preset(f, program);
-	if (!preset) throw new Error(`外部 SoundFont に楽器 ${program} がありません`);
+	const preset = findSf2Preset(f, program, bank);
+	if (!preset)
+		throw new Error(
+			`外部 SoundFont に楽器 ${bank === undefined ? "" : `バンク ${bank} の`}${program} がありません`,
+		);
 	const ppp = String(program).padStart(3, "0");
 	return SoundFont.fromZones({
 		ctx,
 		// `_tone_PPP0_` で始めると、楽器の種別（ベース・ギター等）の判定が FluidR3 と同じになる。
-		fontName: `_tone_${ppp}0_${EXTERNAL_SF2_BANK}_g${src.gen}`,
+		fontName: `_tone_${ppp}0_${EXTERNAL_SF2_BANK}${bank === undefined ? "" : `_b${bank}`}_g${src.gen}`,
 		zones: presetZones(ctx, preset),
 	});
 };

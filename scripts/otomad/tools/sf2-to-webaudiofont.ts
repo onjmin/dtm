@@ -33,7 +33,8 @@ const xmlNames = (path: string): Map<string, string> => {
 		const drum = drumAt >= 0 && (m.index ?? 0) > drumAt;
 		const banks = [...m[3].matchAll(/<Bank Name="([^"]*)"[^>]*MSB="(\d+)"/g)];
 		if (drum) names.set(`128:${pc}`, m[1]);
-		for (const b of banks) names.set(`${drum ? 128 : Number(b[2])}:${pc}`, b[1]);
+		for (const b of banks)
+			names.set(`${drum ? 128 : Number(b[2])}:${pc}`, b[1]);
 	}
 	return names;
 };

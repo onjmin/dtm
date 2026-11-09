@@ -385,11 +385,15 @@ export const parseSf2 = (data: ArrayBuffer): Sf2File => {
 
 /**
  * GM のプログラム番号（0〜127）に当たる旋律楽器のプリセットを選ぶ。
- * バンク 0 を優先し、無ければ同じ番号のほかのバンク（ドラムのバンク 128 は除く）。
+ * `bank` を渡すとそのバンクのものだけ。渡さなければバンク 0 を優先し、無ければ同じ番号の
+ * ほかのバンク（ドラムのバンク 128 は除く）。
  */
 export const findSf2Preset = (
 	sf2: Sf2File,
 	program: number,
+	bank?: number,
 ): Sf2Preset | undefined =>
-	sf2.presets.find((p) => p.bank === 0 && p.program === program) ??
-	sf2.presets.find((p) => p.bank !== 128 && p.program === program);
+	bank !== undefined
+		? sf2.presets.find((p) => p.bank === bank && p.program === program)
+		: (sf2.presets.find((p) => p.bank === 0 && p.program === program) ??
+			sf2.presets.find((p) => p.bank !== 128 && p.program === program));

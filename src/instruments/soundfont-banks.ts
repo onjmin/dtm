@@ -71,6 +71,35 @@ export const SOUNDFONT_BANKS: readonly SoundFontBankInfo[] = [
 	},
 ];
 
+/**
+ * 外部 SF2 の音源名（`ExtSF2`、バンクを決めるときは `ExtSF2_<バンク>`）。
+ * バンクは .sf2 のプリセットのバンク番号（0〜127）。キャラごとにバンクを分けた .sf2
+ * （レ淫棒など）で、GM の番号だけでは選べない楽器を選ぶのに使う。
+ */
+const EXTERNAL_SF2_PATTERN = /^extsf2(?:_(\d{1,3}))?$/i;
+
+/** 外部 SF2 の音源名か（大小文字は問わない。バンクは 0〜127）。 */
+export const isExternalSf2Bank = (bank: string | null | undefined): boolean =>
+	externalSf2BankNumber(bank) !== null;
+
+/**
+ * 外部 SF2 の音源名からバンク番号を取り出す。バンクの指定が無い `ExtSF2` は undefined、
+ * 外部 SF2 の音源名でない（バンクが範囲外も）ときは null。
+ */
+export const externalSf2BankNumber = (
+	bank: string | null | undefined,
+): number | undefined | null => {
+	const m = EXTERNAL_SF2_PATTERN.exec((bank ?? "").trim());
+	if (!m) return null;
+	if (m[1] === undefined) return undefined;
+	const n = Number(m[1]);
+	return n <= 127 ? n : null;
+};
+
+/** 外部 SF2 の音源名を作る（バンクが無ければ `ExtSF2`）。 */
+export const externalSf2BankValue = (bank?: number): string =>
+	bank === undefined ? "ExtSF2" : `ExtSF2_${bank}`;
+
 /** 楽器のファイル（`<PPPV>_<正式名>.js`）の URL。配信元はバンクごと（既定は surikov）。 */
 export const soundFontFileUrl = (fileKey: string, bank: string): string => {
 	const base =
@@ -98,6 +127,9 @@ export const normalizeSoundFontBank = (
 ): string | undefined => {
 	const v = (value ?? "").trim();
 	if (!v || !BANK_NAME_PATTERN.test(v)) return undefined;
+	// 外部 SF2 は書き方をそろえる（`extsf2_33` → `ExtSF2_33`）。
+	const ext = externalSf2BankNumber(v);
+	if (ext !== null) return externalSf2BankValue(ext);
 	const lower = v.toLowerCase();
 	const known = SOUNDFONT_BANKS.find(
 		(b) => b.name.toLowerCase() === lower || b.short.toLowerCase() === lower,
@@ -153,9 +185,10 @@ export const resolveSoundFontFile = (
 		};
 	}
 	const program = instrumentKey.slice(0, 3);
-	// 外部 SF2（`ExtSF2`）は配信元の一覧に無い。プログラム番号だけ決め、無ければ読み込み側で落とす。
-	if (target.toLowerCase() === "extsf2")
-		return { key: `${program}0`, bank: "ExtSF2", fellBack: false };
+	// 外部 SF2（`ExtSF2`・`ExtSF2_<バンク>`）は配信元の一覧に無い。プログラム番号だけ決め、
+	// 無ければ読み込み側で落とす。
+	if (isExternalSf2Bank(target))
+		return { key: `${program}0`, bank: target, fellBack: false };
 	// surikov の一覧に載らないバンク（Inc）は、自分で持っている楽器の一覧で決める。
 	const own = SOUNDFONT_BANKS.find((b) => b.name === target)?.programs;
 	if (own) {

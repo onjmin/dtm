@@ -20,7 +20,7 @@ const { parseSf2, findSf2Preset } =
 	require("../../src/instruments/sf/sf2-parser") as typeof import("../../src/instruments/sf/sf2-parser");
 const { parseMML, formatMmlMeta } =
 	require("../../src/mml/mml-parser") as typeof import("../../src/mml/mml-parser");
-const { resolveSoundFontFile } =
+const { resolveSoundFontFile, externalSf2BankNumber } =
 	require("../../src/instruments/soundfont-banks") as typeof import("../../src/instruments/soundfont-banks");
 
 let failed = 0;
@@ -230,6 +230,44 @@ console.log("■ `#sf2=` と音源バンク");
 		"ExtSF2 のトラックは楽器番号だけ決めて落とさない",
 		resolveSoundFontFile("0330", "ExtSF2", new Map()),
 		{ key: "0330", bank: "ExtSF2", fellBack: false },
+	);
+	check(
+		"バンク付きは書き方をそろえて往復する",
+		parseMML("#t0font=extsf2_33\n@0 c4;").meta.trackFonts?.[0],
+		"ExtSF2_33",
+	);
+	check(
+		"バンク付きのトラックはバンクを持ったまま読む",
+		resolveSoundFontFile("0330", "ExtSF2_33", new Map()),
+		{ key: "0330", bank: "ExtSF2_33", fellBack: false },
+	);
+	check(
+		"バンク付きを書き出す",
+		formatMmlMeta({ trackFonts: { 0: "ExtSF2_35" } }, " "),
+		"#t0font=ExtSF2_35",
+	);
+	check("バンクを取り出す", externalSf2BankNumber("ExtSF2_33"), 33);
+	check("バンク無しは undefined", externalSf2BankNumber("ExtSF2"), undefined);
+	check(
+		"範囲外のバンクは外部 SF2 にしない",
+		externalSf2BankNumber("ExtSF2_128"),
+		null,
+	);
+	check("ほかの音源は null", externalSf2BankNumber("FluidR3"), null);
+	// 同じプログラム番号がバンク 0 と 33 にある .sf2（キャラごとにバンクを分けた作り）
+	const multi = {
+		name: "m",
+		presets: [
+			{ name: "B0", bank: 0, program: 1, zones: [] },
+			{ name: "B33", bank: 33, program: 1, zones: [] },
+		],
+	};
+	check("バンク指定なしはバンク 0", findSf2Preset(multi, 1)?.name, "B0");
+	check("バンク 33 を指定", findSf2Preset(multi, 1, 33)?.name, "B33");
+	check(
+		"指定のバンクに無ければ undefined",
+		findSf2Preset(multi, 1, 5),
+		undefined,
 	);
 }
 

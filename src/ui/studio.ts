@@ -75,6 +75,7 @@ import { SoundFont_list } from "../instruments/sf/SoundFont_list";
 import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
 import {
 	DEFAULT_SOUNDFONT_BANK,
+	externalSf2BankNumber,
 	resolveSoundFontFile,
 	soundFontFileUrl,
 	trackSoundFontValue,
@@ -1049,7 +1050,11 @@ export const createDtmStudio = async (
 	): Promise<SoundFontInstance> => {
 		// 外部 SF2 はデータとして読んだものから作る（配信元の JS は読まない）。
 		if (isExternalSf2Bank(bank))
-			return loadExternalSf2Instrument(audioCtx, Number(fileKey.slice(0, 3)));
+			return loadExternalSf2Instrument(
+				audioCtx,
+				Number(fileKey.slice(0, 3)),
+				externalSf2BankNumber(bank) ?? undefined,
+			);
 		const fullName = `${fileKey}_${bank}`;
 		return sf.load({
 			ctx: audioCtx,
@@ -1494,7 +1499,7 @@ export const createDtmStudio = async (
 					setExternalSf2Source(src);
 					// 前の .sf2 から作った楽器は捨てて、使っているトラックを読み直す。
 					for (const key of [...soundFonts.keys()])
-						if (/@extsf2$/i.test(key)) soundFonts.delete(key);
+						if (/@extsf2(_\d+)?$/i.test(key)) soundFonts.delete(key);
 					await loadEditorTrackSounds();
 				},
 				status: getExternalSf2Status,
@@ -1866,7 +1871,7 @@ export const createDtmStudio = async (
 			try {
 				setExternalSf2Source(meta.soundFontUrl);
 				for (const key of [...soundFonts.keys()])
-					if (/@extsf2$/i.test(key)) soundFonts.delete(key);
+					if (/@extsf2(_\d+)?$/i.test(key)) soundFonts.delete(key);
 			} catch (e) {
 				console.warn("[dtm] 外部 SoundFont の URL を使えません", e);
 			}

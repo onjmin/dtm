@@ -108,6 +108,8 @@ import {
 } from "../instruments/sf/external-sf2";
 import { SONG_DRUM_PATTERNS } from "../instruments/song-drum-config";
 import {
+	externalSf2BankNumber,
+	externalSf2BankValue,
 	SOUNDFONT_BANKS,
 	soundFontBankShortName,
 	trackSoundFontValue,
@@ -4410,6 +4412,51 @@ export const mountDAW = (
 		// 外部 SoundFont を選んだトラックにだけ、読み込み元の欄を出す（読み込み元は全トラック共通）。
 		const extRow = extSf2 ? buildExternalSf2Row(extSf2) : null;
 		if (extRow) fontSel.closest(".dtm-row")?.after(extRow.el);
+		// .sf2 のバンク（トラックごと）。キャラごとにバンクを分けた .sf2（レ淫棒など）で、
+		// GM の番号だけでは選べない楽器を選ぶ。空ならバンク 0 を優先する（`ExtSF2`）。
+		const bankInput = document.createElement("input");
+		if (extRow) {
+			const bankRow = document.createElement("div");
+			bankRow.className = "dtm-row";
+			bankRow.style.flexWrap = "nowrap";
+			const bankLabel = document.createElement("span");
+			bankLabel.className = "dtm-label";
+			bankLabel.textContent = "バンク";
+			bankInput.type = "number";
+			bankInput.min = "0";
+			bankInput.max = "127";
+			bankInput.step = "1";
+			bankInput.placeholder = "自動";
+			bankInput.className = "dtm-input dtm-grow";
+			bankInput.style.minWidth = "0";
+			bankInput.setAttribute(
+				"aria-label",
+				".sf2 のバンク（0〜127。空なら自動）",
+			);
+			bankInput.title =
+				".sf2 のプリセットのバンク番号。楽器の番号（GM）と合わせて選びます。空ならバンク 0 を優先します";
+			const n = externalSf2BankNumber(active.trackFont);
+			bankInput.value = n == null ? "" : String(n);
+			bankInput.addEventListener("change", () => {
+				const v = bankInput.value.trim();
+				const num = v === "" ? undefined : Number(v);
+				if (
+					num !== undefined &&
+					!(Number.isInteger(num) && num >= 0 && num <= 127)
+				) {
+					const cur = externalSf2BankNumber(active.trackFont);
+					bankInput.value = cur == null ? "" : String(cur);
+					return;
+				}
+				active.trackFont = externalSf2BankValue(num);
+				options.onTrackFontChange?.(
+					trackStates.indexOf(active),
+					active.trackFont,
+				);
+			});
+			bankRow.append(bankLabel, bankInput);
+			extRow.el.append(bankRow);
+		}
 		const syncExtRow = (): void => {
 			if (!extRow) return;
 			const on = isExternalSf2Bank(fontSel.value);
@@ -4419,6 +4466,7 @@ export const mountDAW = (
 		syncExtRow();
 		fontSel.addEventListener("change", () => {
 			active.trackFont = fontSel.value;
+			bankInput.value = "";
 			syncExtRow();
 			options.onTrackFontChange?.(
 				trackStates.indexOf(active),
