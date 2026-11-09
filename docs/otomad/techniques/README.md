@@ -15,7 +15,7 @@
 | 技 | 中身 | 試した作品 | 効いたか |
 |---|---|---|---|
 | [speech-melody.md](speech-melody.md) | 台詞イントネーション作曲（台詞の抑揚を主旋律にする） | samson5・dande1〜3・quotes ほか | 主軸。手順は作者本人の手順に合わせ直した |
-| [voice-instrument.md](voice-instrument.md) | 声を楽器（シンセ・太鼓・ベース）に作り替える、音節を16分に刻む | techno1・samson2go1r | 2号式の核 |
+| [voice-instrument.md](voice-instrument.md) | 声を楽器（シンセ・太鼓・ベース）に作り替える、音節を16分に刻む、語尾をサンプラー用のシンセ音に書き出す | techno1・samson2go1r・桔梗☆ | 2号式の核。桔梗☆の語尾のシンセは「素晴らしい」 |
 | [audio-mix.md](audio-mix.md) | 声と伴奏の音量の上下・ダッキング・ラウドネス | samsonnigo1・bb7・kaisen・海鬼月 | 2号式では曲が上。BB劇場は -16 LUFS |
 | [camera-3d.md](camera-3d.md) | 全天球の地面投影・板の向き・被写界深度・回り込み・リプレイ | bb7・bb8 | 「平たい横滑り」を無くした |
 | [voxel-world.md](voxel-world.md) | ブロックの世界を光線で描き、時刻つきで建てて壊す。BB を巨人にする | bb19 | — |
