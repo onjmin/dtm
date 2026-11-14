@@ -62,6 +62,7 @@ docs/otomad/
 | [hit-otomad.md](research/hit-otomad.md) | 再生数の多い淫夢・クッキー☆音MAD 11本の型・切り替え・コメントの山（11-07） |
 | [mora-scatter-stretch.md](research/mora-scatter-stretch.md) | じゅーけー sm46506771 の「モーラで散らす」「母音を伸ばす」の測定と、ネットのセリフ合わせの技法（11-07） |
 | [general-otomad.md](research/general-otomad.md) | 一般の音MAD（アニメ・ゲームの台詞）9 本と自分のループの差。声の立ち上がりを拍の 5〜12ms 後ろ、小節を声で埋める、音高を旋律へ（11-08） |
+| [hiwai-kyoku.md](research/hiwai-kyoku.md) | 卑猥曲タグの替え歌の型（原曲の骨を残す・1語替え・1番と2番の対・素材にする側を刺す、11-14） |
 | [material-packs.md](research/material-packs.md) | 音MAD素材のスターターパックの一覧（[一覧の tsv](research/material-packs-list.tsv)、11-01） |
 | [../research/kaiwai-lineages.md](../research/kaiwai-lineages.md) | 界隈曲の流派の実測（自動作曲と共用なので `docs/research/` に置く） |
 

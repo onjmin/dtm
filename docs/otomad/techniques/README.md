@@ -22,6 +22,7 @@
 | [impact.md](impact.md) | 衝撃のコマ・揺れの減衰・流し撮り・レンズ割れ | bb6〜bb8 | — |
 | [aspect-ratio.md](aspect-ratio.md) | 場面に合わせた黒帯（16:9 → 2.39:1 → 全画面） | bb7 | — |
 | [keying.md](keying.md) | 青背景・緑背景の抜き方、字幕の消し方 | — | 手順は [../bb-flow.md](../bb-flow.md) |
+| [kaeuta.md](kaeuta.md) | 替え歌の書き方（原曲の骨を残す・1語替え・1番と2番の対・自分たちも的に入れる・決め言葉を長い音へ） | sunameri1 | 評価待ち |
 | [lyrics-text.md](lyrics-text.md) | 文字PV・モーラごとの字幕・括弧のト書き・漢字1字の札 | dande3 | 字はモーラ単位で出す |
 | [thumbnail.md](thumbnail.md) | 専用コマのサムネ、題の付け方 | dande2 | — |
 | [pixel-character.md](pixel-character.md) | ドット絵のキャラを 3D モデルで確かめて似せる。めたん・ずんだもん・イタコ・キリコ・シヨ・アルの確定した形、目・髪・手の描き方 | 海鬼月 | 所有者の直しで確定 |
