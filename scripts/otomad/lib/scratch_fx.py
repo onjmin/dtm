@@ -173,15 +173,16 @@ class Hit:
 
 @dataclass
 class StepGrid:
-    """打点で点く箱の格子。列 = 小節（新しい小節が col 0、古いものは右へ送られ cols 本を超えると薄れて消える）。
+    """打点で点く箱の格子。列 = 小節。新しい小節が col 0（舞台の中央寄り）で、古い列は外側（縦長なら左、横長なら下）へ送られ、
+    cols 本を超えた列は外側の隠し列へ滑りながら薄れて消える。手本は見える列が 2 本。
     layout(t) が 'v' のとき左に縦長、'h' のとき下に横長。切り替えは箱ごとに少しずつ遅らせて滑らせる。"""
     stage: Stage
     hits: list
-    cols: int = 3
+    cols: int = 2
     rows: int = 8
     cell: float = 40.0                 # 箱の間隔（Scratch 単位）
-    v_origin: tuple = (-200.0, 140.0)  # 縦長のときの col 0・row 0 の中心
-    h_origin: tuple = (-140.0, -160.0)  # 横長のときの col 0・row 0 の中心（列は上へ積む）
+    v_origin: tuple = (-160.0, 140.0)  # 縦長のときの col 0・row 0 の中心（古い列は左へ）
+    h_origin: tuple = (-140.0, -100.0)  # 横長のときの col 0・row 0 の中心（古い列は下へ）
     morphs: list = field(default_factory=list)  # [(時刻, 'v' or 'h')]（時刻順）。最初の形は morphs が無ければ 'v'
     start_layout: str = 'v'
     shift_k: float = 2.0               # 列送りのなめらかさ（Scratch の /2）
@@ -202,9 +203,9 @@ class StepGrid:
     def _slot(self, col, row, lay):
         if lay == 'v':
             ox, oy = self.v_origin
-            return ox + col * self.cell, oy - row * self.cell
+            return ox - col * self.cell, oy - row * self.cell
         ox, oy = self.h_origin
-        return ox + row * self.cell, oy + col * self.cell
+        return ox + row * self.cell, oy - col * self.cell
 
     def _layout_mix(self, t, idx):
         """（前の形, 次の形, 混ぜ具合 0..1）"""
