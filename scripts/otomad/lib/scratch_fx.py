@@ -4,13 +4,12 @@
 Scratch のコマ単位の動き（毎コマ「x += (目標 - x) / k」「v *= 5/6」「v -= 0.3」）は 30fps の閉じた式に直してあるので、
 どの t から描いても同じ絵になる（コマを順に回さなくてよい）。
 
-部品（使い方は scripts/otomad/tools/scratch_fx_demo.py、技の説明は docs/otomad/techniques/scratch-fx.md）:
-  BeatBoard     拍ごとに満ちる箱の盤（1拍1箱・縦8行で2小節・キックとスネアの2列・4拍ごとに外へずれて消える）。縦⇔横の組み替え。
-  FramePop      中央の枠。サビ前に段々縮み、サビ頭で 180° 回りながら元の大きさへ戻る＋白い閃光。
-  ScatterText   大きな字を散らして置き、置いた瞬間に1方向へ滑って止まる。カメラ（回転・拡大・ずらし）・枠での切り抜き・重力で崩れ落ちる。
-  VerticalLyrics 縦書きの歌詞を右から左へ1行ずつ積む。
-  Subtitle      下の1行字幕。
-  blink         出る瞬間のちらつき（0.02 秒で 4 回）。
+部品は3つの単位で使う（どれも draw(canvas, t) を持ち、spans の区間だけ出る。compose() で重ねる）。
+  左   BeatColumn  拍ごとに満ちる箱の縦の盤（1拍1箱・縦8行で2小節・キックとスネアの2列・4拍ごとに外へずれて消える）
+  下   BeatRow     同じ盤の横向き。enter_from=左の盤 で、区間の頭に左の位置から滑ってくる
+  真ん中 LyricPV   枠のパーン・語ごとに滑り込む字・カメラ・崩れ落ち・右上の縦書きをまとめた文字PV
+  ほか Subtitle（下の1行字幕）。細かく組むときは FramePop・ScatterText・VerticalLyrics を直接使う。
+使い方は scripts/otomad/tools/scratch_fx_demo.py、技の説明は docs/otomad/techniques/scratch-fx.md。
 """
 
 from __future__ import annotations
@@ -251,56 +250,67 @@ class Beat:
     lane1: str | None = None      # 外の列: 'snare' / 'snare2' / None
 
 
+def _in_spans(spans, t):
+    """spans が None なら常に、[(始め, 終わり)] ならその中だけ True。終わりが None はずっと"""
+    if spans is None:
+        return True
+    return any(a <= t and (b is None or t < b) for a, b in spans)
+
+
+def _span_start(spans, t):
+    """t を含む区間の始め（無ければ None）"""
+    for a, b in spans or []:
+        if a <= t and (b is None or t < b):
+            return a
+    return None
+
+
 @dataclass
-class BeatBoard:
-    """拍ごとに満ちる箱の盤。beats は1拍ずつ（休みの拍も Beat(t, None, None) で入れる）。拍の通し番号 k の箱は
-    行 k % rows に置かれ、列は「レーン + (今の4拍のまとまり - 置いた時のまとまり)」。2 を超えたら消える。"""
+class _BeatBoardBase:
+    """拍ごとに満ちる箱の盤の共通部分。beats は1拍ずつ（休みの拍も Beat(t, None, None) で入れる）。拍の通し番号 k の箱は
+    行 k % rows に置かれ、列は「レーン + (今の4拍のまとまり - 置いた時のまとまり)」。2 を超えたら消える。
+    spans の区間だけ描く。enter_from に別の盤を渡すと、区間の頭で箱がその盤の位置から滑ってくる（左 → 下の組み替え）。"""
     stage: Stage
     beats: list
+    spans: list | None = None
+    enter_from: object = None
     rows: int = 8
     group: int = 4                  # 何拍ごとに1列ずれるか
-    xs: tuple = (-160.0, -200.0, -260.0)   # 縦長の列の x（3本目は隠し列）
-    top: float = 180.0              # 縦長: 行 r（1..8）の y = top - step * r
-    step: float = 40.0
-    h_x0: float = -180.0            # 横長: 行 r の x = h_x0 + step * r
-    h_ys: tuple = (-100.0, -140.0, -180.0)
+    step: float = 40.0              # 行の間隔（Scratch 単位）
     box_size: float = 37.4          # 箱の一辺（Scratch 単位。手本は 22 単位 × 大きさ 170%）
-    morphs: list = field(default_factory=list)   # [(時刻, 'v' or 'h')]
-    start_layout: str = 'v'
-    morph_stagger: float = 0.02
-    appear: float = 0.0
+    stagger: float = 0.02           # 滑ってくるとき箱ごとに遅らせる秒
 
     def __post_init__(self):
         self.beats = sorted(self.beats, key=lambda b: b.t)
         self._ts = np.array([b.t for b in self.beats])
         self._px = int(round(self.box_size * self.stage.s))
 
-    def _slot(self, col, row, lay):
-        r = row + 1
-        if lay == 'v':
-            return self.xs[min(col, 2)], self.top - self.step * r
-        return self.h_x0 + self.step * r, self.h_ys[min(col, 2)]
+    def slot(self, col, row):
+        raise NotImplementedError
+
+    def _handover(self, s):
+        """区間の頭 s が enter_from の区間の終わりと同じ（＝向こうから受け継ぐ）か"""
+        o = self.enter_from
+        return o is not None and s is not None and any(b is not None and abs(b - s) < 1e-6 for a, b in (o.spans or []))
 
     def _pos(self, t, col, row):
-        prev, nxt, mt = self.start_layout, self.start_layout, None
-        for t_, lay in self.morphs:
-            if t_ <= t:
-                prev, nxt, mt = nxt, lay, t_
-        xa, ya = self._slot(col, row, prev); xb, yb = self._slot(col, row, nxt)
-        if mt is None:
-            return xb, yb
-        dt = t - mt - (col * self.rows + row) * self.morph_stagger
-        return approach(xa, xb, 2.0, dt), approach(ya, yb, 3.0, dt)
+        x1, y1 = self.slot(col, row)
+        s = _span_start(self.spans, t)
+        if not self._handover(s):
+            return x1, y1
+        x0, y0 = self.enter_from.slot(col, row)
+        dt = t - s - (col * self.rows + row) * self.stagger
+        return approach(x0, x1, 2.0, dt), approach(y0, y1, 3.0, dt)
 
     def _zone_start(self, z):
-        """z 番目の4拍のまとまりが始まった時刻"""
         i = z * self.group
         return self._ts[i] if i < len(self._ts) else 1e9
 
     def draw(self, canvas, t):
-        if t < self.appear:
+        if not _in_spans(self.spans, t):
             return
-        if blink(t, self.appear):
+        s = _span_start(self.spans, t)
+        if self._handover(s) or s is None or blink(t, s):
             empty = box_frames(None, self._px)[0]
             for col in (0, 1):
                 for row in range(self.rows):
@@ -326,6 +336,28 @@ class BeatBoard:
                 fr = box_frames(kind, self._px)
                 i = min(len(fr) - 1, int((t - b.t) * FPS_SCRATCH))
                 paste(canvas, fr[i], *self.stage.px(x, y), alpha=alpha)
+
+
+@dataclass
+class BeatColumn(_BeatBoardBase):
+    """左の縦の盤。列 0 が中央寄り（x）、古い列ほど左（x + col_dx）。行は上から下へ"""
+    x: float = -160.0
+    top: float = 140.0              # 1行目の y
+    col_dx: tuple = (0.0, -40.0, -100.0)   # 3本目は隠し列
+
+    def slot(self, col, row):
+        return self.x + self.col_dx[min(col, 2)], self.top - self.step * row
+
+
+@dataclass
+class BeatRow(_BeatBoardBase):
+    """下の横の盤。列 0 が上（y）、古い列ほど下（y + col_dy）。行は左から右へ"""
+    x0: float = -140.0              # 1行目の x
+    y: float = -100.0
+    col_dy: tuple = (0.0, -40.0, -80.0)
+
+    def slot(self, col, row):
+        return self.x0 + self.step * row, self.y + self.col_dy[min(col, 2)]
 
 
 # ---- 中央の枠 ----
@@ -424,13 +456,16 @@ class Glyph:
 
 @dataclass
 class ScatterText:
-    """字を置いた瞬間に1方向へ滑らせて止める。カメラで層ごと回す・寄る。clip_to の枠で切り抜く。fall_at で全部が崩れ落ちる。"""
+    """字を置いた瞬間に1方向へ滑らせて止める。カメラで層ごと回す・寄る。clip_to の枠で切り抜く。
+    fall_at（時刻か時刻の並び）で、それまでに置いた字が崩れ落ちる。"""
     stage: Stage
     glyphs: list
     camera: object = None          # camera(t) -> (x, y, rot_deg, scale)
     clip_to: FramePop | None = None
     clears: list = field(default_factory=list)   # この時刻より前に置いた字は消す
-    fall_at: float | None = None   # 崩れ落ちる時刻（この時は枠で切らない）
+    fall_at: object = None         # 崩れ落ちる時刻（1つか並び）。落ちている間は枠で切らない
+    fall_secs: float = 2.5         # 落ち始めてから枠で切らない秒
+    pivot: tuple = (0.0, 0.0)      # カメラが回る・寄る中心（Scratch 単位）
     fall_color: tuple | None = (255, 255, 255)  # 落ちる間の字の色（枠の地が消えて黒地に出るため）
     seed: int = 1
     unit_px: float = 40.0          # 大きさ 100% の字の高さ（Scratch 単位）
@@ -438,6 +473,15 @@ class ScatterText:
     def __post_init__(self):
         rng = np.random.default_rng(self.seed)
         self._fall_v = rng.uniform(0.5, 1.2, len(self.glyphs))
+        fa = self.fall_at
+        self._falls = sorted([fa] if isinstance(fa, (int, float)) else (fa or []))
+
+    def _fall_of(self, g):
+        """その字が落ちる時刻（置いてから最初の崩れ落ち。落ち始めて1秒以内に置いた字も落ちる）"""
+        for f in self._falls:
+            if g.t <= f + 1.0:
+                return f
+        return None
 
     def _visible(self, g, t):
         if g.t > t:
@@ -450,19 +494,23 @@ class ScatterText:
     def draw(self, canvas, t):
         lay = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
         any_ = False
-        falling = self.fall_at is not None and t >= self.fall_at
+        falling = any(f <= t < f + self.fall_secs for f in self._falls)
         for i, g in enumerate(self.glyphs):
             if not self._visible(g, t):
                 continue
-            d = drift(g.speed, min(t, self.fall_at if falling else t) - g.t)
+            f = self._fall_of(g)
+            g_fall = f is not None and t >= f
+            if g_fall and t >= f + self.fall_secs:
+                continue
+            d = drift(g.speed, min(t, max(f, g.t)) - g.t if g_fall else t - g.t)
             th = math.radians(g.move_dir)
             x = g.x + d * math.sin(th); y = g.y + d * math.cos(th)
-            if falling:
-                y += fall(self._fall_v[i], t - self.fall_at)
+            if g_fall:
+                y += fall(self._fall_v[i], t - max(f, g.t))
                 if y < -260:
                     continue
             px, py = self.stage.px(x, y)
-            col = self.fall_color if falling and self.fall_color else g.color
+            col = self.fall_color if g_fall and self.fall_color else g.color
             im = glyph(g.ch, self.unit_px * self.stage.s * g.size / 100, col)
             paste(lay, im, px, py, rot=90 - g.angle)
             any_ = True
@@ -471,7 +519,7 @@ class ScatterText:
         if self.camera is not None:
             cx, cy, rot, sc = self.camera(t)
             if (cx, cy, rot, sc) != (0, 0, 0, 1):
-                ox, oy = self.stage.px(0, 0)
+                ox, oy = self.stage.px(*self.pivot)
                 M = cv2.getRotationMatrix2D((ox, oy), rot, sc)
                 M[0, 2] -= cx * self.stage.s * sc; M[1, 2] += cy * self.stage.s * sc
                 arr = cv2.warpAffine(np.asarray(lay), M, lay.size, flags=cv2.INTER_LINEAR, borderValue=(0, 0, 0, 0))
@@ -543,3 +591,75 @@ class Subtitle:
                 w = d.textlength(s, font=f)
                 x, y = self.stage.px(0, self.y)
                 d.text((x - w / 2, y), s, font=f, fill=tuple(self.color) + (255,))
+
+
+# ---- 真ん中の文字PV（枠・散らし字・縦書きをまとめた部品） ----
+@dataclass
+class LyricPV:
+    """真ん中の文字PV。spans の各区間（サビなど）で、頭に枠が回ってパーン、語ごとに字を枠の中へ滑り込ませ、
+    小節ごとにカメラを振り、区間の最後の1小節で字が崩れ落ちる。右上に縦書きで歌詞を積む（vertical=False で消す）。
+    words は [(始め, 終わり, 語, [各字の時刻])]。区間の外の語は使わない。枠は frame_spans の間（既定は常に）出ている。"""
+    stage: Stage
+    words: list
+    spans: list
+    bar: float                       # 1小節の秒（カメラの拍と崩れ落ちに使う）
+    center: tuple = (0.0, 20.0)
+    size: float = 120.0
+    frame_spans: list | None = None
+    fill: tuple = (215, 215, 215)
+    vertical: bool = True
+    camera: bool = True
+    fall: bool = True
+    seed: int = 7
+
+    def __post_init__(self):
+        st, bar = self.stage, self.bar
+        rng = np.random.default_rng(self.seed)
+        self.frame = FramePop(st, pops=[a for a, e in self.spans], size=self.size, center=self.center,
+                              fill=[x for a, e in self.spans for x in ((a, self.fill), (e - bar if self.fall else e, None))])
+        glyphs, vlines, clears, cam_keys, falls = [], [], [], [], []
+        dirs = [0, 90, 180, -90, 45, -45, 135, -135]
+        for a, e in self.spans:
+            for k, b in enumerate(np.arange(a, e - bar / 2, bar)):
+                cam_keys.append((b, 0, 0, (20 if k % 2 else -12) * (k % 3 != 2), 1.15 if k % 2 else 0.9))
+            cam_keys.append((e - bar, 0, 0, 0, 1.0))
+            if self.fall:
+                falls.append(e - bar)
+        cx, cy = self.center
+        inner = self.size * 0.93
+        for t0, t1, w, ts in self.words:
+            if not _in_spans(self.spans, t0) or any(f - 0.05 <= t0 < f + bar for f in falls):
+                continue
+            vlines.append((t0, w))
+            clears.append(t0 - 0.01)             # 語ごとに枠の中を入れ替える
+            # 語の字を枠の中の格子へ。置いた所から滑って、格子の位置で止まるよう出発点を逆算する
+            n = len(w); cols = min(3, n) if n <= 6 else 3 if n <= 9 else 4
+            rows = -(-n // cols); cell = inner / max(cols, rows)
+            for j, (ch, t) in enumerate(zip(w, ts)):
+                r, c = divmod(j, cols)
+                fx_ = cx + (c - (cols - 1) / 2) * cell + rng.uniform(-4, 4)
+                fy = cy - (r - (rows - 1) / 2) * cell + rng.uniform(-4, 4)
+                d = float(rng.choice(dirs)); sp = rng.uniform(5, 10); L = drift_total(sp)
+                th = np.radians(d)
+                glyphs.append(Glyph(t, ch, fx_ - L * np.sin(th), fy - L * np.cos(th), size=cell / 40 * 100 * 0.9,
+                                    angle=90 + float(rng.choice([0, 0, 0, 0, 15, -15, 90])), move_dir=d, speed=sp))
+        self.scatter = ScatterText(st, glyphs, camera=camera_keys(cam_keys) if self.camera else None, clip_to=self.frame,
+                                   clears=clears, fall_at=falls, seed=self.seed)
+        self.vert = VerticalLyrics(st, vlines, clears=[e for a, e in self.spans]) if self.vertical else None
+
+    def draw(self, canvas, t):
+        if _in_spans(self.frame_spans, t):
+            self.frame.draw_back(canvas, t)
+        self.scatter.draw(canvas, t)
+        if _in_spans(self.frame_spans, t):
+            self.frame.draw_front(canvas, t)
+        if self.vert is not None:
+            self.vert.draw(canvas, t)
+
+
+def compose(stage, parts, t, bg=(0, 0, 0)):
+    """部品を順に重ねた1コマ（RGB の配列）。parts は draw(canvas, t) を持つものの並び（先が奥）"""
+    cv = stage.new(bg)
+    for p in parts:
+        p.draw(cv, t)
+    return np.asarray(cv.convert('RGB'))
