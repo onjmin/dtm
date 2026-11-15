@@ -37,6 +37,7 @@
 | [speech-hook.md](speech-hook.md) | 語録の中から音階に乗るものを探し、抑揚をそのまま開幕の主題にする | cm25 | — |
 | [ust-cover.md](ust-cover.md) | 所有者の UST と MIDI から UTAU 音源（束音ロゼ・華）でカバーを録る。延ばしの母音・ハモリの歌詞・落ちた音の補修・界隈曲の音での編曲とミックスの最終形 | anemone | — |
 | [pv-pixel-cover-mv.md](pv-pixel-cover-mv.md) | 原曲 PV の語彙で組むドット絵カバー MV。振りを PV に合わせる、人物へのグリッチ、コードと旋律のピアノロール、頁の縦書き、4K の書き出し | anemone | — |
+| [scratch-fx.md](scratch-fx.md) | Scratch 文字PVの白黒の演出（打点で点く箱の格子・回って戻る枠のパーン・滑り込む字とカメラ・縦書きの積み上げ・崩れ落ち）。lib/scratch_fx.py | エイがとなりにすわってくる（見本） | — |
 | [minimal-process.md](minimal-process.md) | ミニマル音楽の手順（ずれ・埋める・抜ける）と、音と1対1の楽譜の映像 | cm18 | — |
 
 「—」は所有者の評価をまだ台帳に写していないもの。手元の `songs/*/notes-*.md` から写す（[../README.md](../README.md) の「移し替えの残り」）。
