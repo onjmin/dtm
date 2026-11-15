@@ -5,7 +5,7 @@ Scratch のコマ単位の動き（毎コマ「x += (目標 - x) / k」「v *= 5
 どの t から描いても同じ絵になる（コマを順に回さなくてよい）。
 
 部品（使い方は scripts/otomad/tools/scratch_fx_demo.py、技の説明は docs/otomad/techniques/scratch-fx.md）:
-  StepGrid      ドラムの打点で点く箱の格子（シーケンサーの見た目）。小節ごとに列が送られ、古い列は薄れて消える。縦⇔横の組み替え。
+  BeatBoard     拍ごとに満ちる箱の盤（1拍1箱・縦8行で2小節・キックとスネアの2列・4拍ごとに外へずれて消える）。縦⇔横の組み替え。
   FramePop      中央の枠。サビ前に段々縮み、サビ頭で 180° 回りながら元の大きさへ戻る＋白い閃光。
   ScatterText   大きな字を散らして置き、置いた瞬間に1方向へ滑って止まる。カメラ（回転・拡大・ずらし）・枠での切り抜き・重力で崩れ落ちる。
   VerticalLyrics 縦書きの歌詞を右から左へ1行ずつ積む。
@@ -119,142 +119,181 @@ def paste(canvas, im, cx, cy, rot=0.0, scale=1.0, alpha=1.0):
     canvas.alpha_composite(im, (int(round(cx - im.width / 2)), int(round(cy - im.height / 2))))
 
 
-# ---- 箱の格子（シーケンサー） ----
-PATTERNS = ('fill', 'check', 'dots', 'cross', 'ring')
-
-def _tile(kind, size, fg=(255, 255, 255)):
-    im = Image.new('RGBA', (size, size), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
-    m = max(2, size // 9); a, b = m, size - m - 1
-    fgc = tuple(fg) + (255,)
-    if kind == 'fill':
-        d.rectangle([a, a, b, b], fill=fgc)
-    elif kind == 'check':
-        c = max(2, (b - a) // 4)
-        for i in range(4):
-            for j in range(4):
-                if (i + j) % 2 == 0:
-                    d.rectangle([a + i * c, a + j * c, a + (i + 1) * c - 1, a + (j + 1) * c - 1], fill=fgc)
-        d.rectangle([a, a, b, b], outline=fgc, width=max(1, size // 20))
-    elif kind == 'dots':
-        r = max(1, size // 14)
-        for i in range(3):
-            for j in range(3):
-                x = a + (b - a) * (i + 0.5) / 3; y = a + (b - a) * (j + 0.5) / 3
-                d.ellipse([x - r, y - r, x + r, y + r], fill=fgc)
-        d.rectangle([a, a, b, b], outline=fgc, width=max(1, size // 20))
-    elif kind == 'cross':
-        w = max(2, size // 8)
-        d.line([a, a, b, b], fill=fgc, width=w); d.line([a, b, b, a], fill=fgc, width=w)
-        d.rectangle([a, a, b, b], outline=fgc, width=max(1, size // 20))
-    elif kind == 'ring':
-        d.rectangle([a, a, b, b], outline=fgc, width=max(2, size // 7))
-    return im
+# ---- 箱の盤（拍ごとに満ちる箱） ----
+# 手本の規則: 箱1つ = 1拍、縦8行 = 2小節。列は2本（中央寄りがキック、外がスネア）で、4拍ごとに全部が1列外へずれ、
+# 3本目（隠し列）へ入った箱は滑りながら薄れて消える。箱の中身は静止した柄ではなく、打った瞬間から1コマずつ白く満ちるドット絵。
+#   kick   滴が落ちて底で跳ね、下から満ちる（7コマ）
+#   accent 滴のあと、左から右へ塗り広がる（3 + 10 コマ）。2小節の句の最後の拍
+#   snare  中心の点が十字に弾け、四隅へ広がって満ちる（6コマ）
+#   snare2 斜めの線が風車のように回り、対角の区画から満ちる（12コマ）
+# 絵は手本の画像を写さず、この規則から描く。
+BOX_PX = 22          # 箱の外寸（ドット）
+BOX_IN = 16          # 中の満ちる所（ドット）
 
 
-def _dashed(size, fg=(255, 255, 255), dash=None):
-    im = Image.new('RGBA', (size, size), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
-    m = max(2, size // 9); a, b = m, size - m - 1
-    dash = dash or max(3, size // 10); w = max(1, size // 30)
-    col = tuple(fg) + (200,)
-    for x in range(a, b, dash * 2):
-        d.line([x, a, min(x + dash, b), a], fill=col, width=w); d.line([x, b, min(x + dash, b), b], fill=col, width=w)
-    for y in range(a, b, dash * 2):
-        d.line([a, y, a, min(y + dash, b)], fill=col, width=w); d.line([b, y, b, min(y + dash, b)], fill=col, width=w)
-    return im
+def _box_border():
+    a = np.zeros((BOX_PX, BOX_PX), bool)
+    a[1:21, 1:3] = a[1:21, 19:21] = a[1:3, 1:21] = a[19:21, 1:21] = True   # 2ドットの縁
+    for i in range(2, 20):                                                   # 外側の歯
+        if (i // 2) % 2 == 0:
+            a[0, i] = a[21, i] = a[i, 0] = a[i, 21] = True
+    for i in (1, 20):                                                        # 角を欠く
+        for j in (1, 20):
+            a[i, j] = False
+    return a
+
+
+def _fill_frames(kind):
+    """中 16×16 の白（True）のコマ列"""
+    n = BOX_IN
+    yy, xx = np.mgrid[0:n, 0:n]
+    c = (n - 1) / 2
+    F = []
+    if kind in ('kick', 'accent'):
+        for r in (1, 5, 10):                         # 落ちる滴（だんだん縦に伸びる）
+            m = np.zeros((n, n), bool); m[r:r + 1 + (r > 3) + (r > 8), 7:9] = True; F.append(m)
+        if kind == 'accent':
+            rough = np.array([0, 1, 0, 2, 1, 0, 1, 2, 0, 1, 0, 2, 1, 0, 1, 0])
+            for k in range(10):                      # 左から右へ、縁をぎざぎざに
+                m = xx < (k + 1) * n / 10 + rough[yy] - 1
+                if k == 8:
+                    m &= ~((yy < 3) & (xx > 10))     # 右上だけ残る
+                F.append(m)
+            return F
+        F.append((yy >= 13) | ((yy == 12) & (abs(xx - c) < 3)) | ((yy == 10) & ((xx == 3) | (xx == 12))))  # 底で跳ねる
+        F.append(yy >= 8 + np.round(np.sin(xx * 0.9)).astype(int))   # 波打って満ちる
+        F.append((yy >= 2) | (abs(xx - c) > 2))                       # 上の真ん中だけ残る
+        F.append(np.ones((n, n), bool))
+        return F
+    if kind == 'snare':
+        ax, ay = abs(xx - c), abs(yy - c)
+        F.append((ax < 1) & (ay < 1))
+        F.append(((ax < 1) & (ay < 3)) | ((ay < 1) & (ax < 3)))
+        F.append(((ax < 1.5) & (ay < 7)) | ((ay < 1.5) & (ax < 7)) | ((abs(ax - ay) < 0.6) & (ax < 3)))
+        F.append((ax < 1.5) | (ay < 1.5) | ((abs(ax - 5.5) < 1.6) & (abs(ay - 5.5) < 0.6)) | ((abs(ay - 5.5) < 1.6) & (abs(ax - 5.5) < 0.6)))
+        F.append(~(((ax > 1.5) & (ax < 2.6)) | ((ay > 1.5) & (ay < 2.6))) & ~((ax > 3) & (ax < 6) & (ay > 3) & (ay < 6)))
+        F.append(~(((ax < 0.6) | (ay < 0.6)) & (ax + ay > 4) & (ax + ay < 7)))
+        return F
+    if kind == 'snare2':
+        dx, dy = xx - c, yy - c
+        ang = np.arctan2(dy, dx)
+        r = np.hypot(dx, dy)
+        for k in range(4):                           # 斜めの線が伸びながら回る
+            th = k * np.pi / 8
+            F.append((abs(np.sin(ang - th)) * r < 0.8) & (r < 2 + k * 1.6))
+        for k in range(4):                           # 風車: 羽が4枚
+            th = np.pi / 4 + k * np.pi / 8
+            blade = (np.mod(ang - th, np.pi / 2) < 0.5) & (r < 3 + k * 1.5)
+            F.append(blade | (((dx > 0) == (dy > 0)) & (r < k * 2)))
+        for k in range(3):                           # 対角の区画から満ちる
+            F.append(((dx > 0) == (dy > 0)) | (abs(dx + dy) < 2 + k * 3))
+        F.append(~((r > 2.5) & (r < 3.6) & ((abs(dx) < 0.6) | (abs(dy) < 0.6))))
+        return F
+    raise ValueError(kind)
+
+
+BOX_KINDS = ('kick', 'accent', 'snare', 'snare2')
+_box_cache = {}
+def box_frames(kind, px):
+    """kind のコマ列（RGBA 画像）。kind=None は空の枠"""
+    key = (kind, px)
+    if key not in _box_cache:
+        border = _box_border()
+        fills = [np.zeros((BOX_IN, BOX_IN), bool)] if kind is None else _fill_frames(kind)
+        ims = []
+        for f in fills:
+            a = np.zeros((BOX_PX, BOX_PX, 4), np.uint8)
+            if kind is not None:
+                a[3:19, 3:19] = (0, 0, 0, 255)       # 点いた箱の中は黒で、下の空の枠を隠す
+            a[border] = (255, 255, 255, 255)
+            a[3:19, 3:19][f] = (255, 255, 255, 255)
+            ims.append(Image.fromarray(a, 'RGBA').resize((px, px), Image.NEAREST))
+        _box_cache[key] = ims
+    return _box_cache[key]
 
 
 @dataclass
-class Hit:
-    t: float       # 打点の時刻（秒）
-    bar: int       # 何小節目か（列を送る単位）
-    step: int      # 小節の中の位置（0..rows-1）
-    kind: str = 'fill'
+class Beat:
+    t: float
+    lane0: str | None = 'kick'    # 中央寄りの列: 'kick' / 'accent' / None
+    lane1: str | None = None      # 外の列: 'snare' / 'snare2' / None
 
 
 @dataclass
-class StepGrid:
-    """打点で点く箱の格子。列 = 小節。新しい小節が col 0（舞台の中央寄り）で、古い列は外側（縦長なら左、横長なら下）へ送られ、
-    cols 本を超えた列は外側の隠し列へ滑りながら薄れて消える。手本は見える列が 2 本。
-    layout(t) が 'v' のとき左に縦長、'h' のとき下に横長。切り替えは箱ごとに少しずつ遅らせて滑らせる。"""
+class BeatBoard:
+    """拍ごとに満ちる箱の盤。beats は1拍ずつ（休みの拍も Beat(t, None, None) で入れる）。拍の通し番号 k の箱は
+    行 k % rows に置かれ、列は「レーン + (今の4拍のまとまり - 置いた時のまとまり)」。2 を超えたら消える。"""
     stage: Stage
-    hits: list
-    cols: int = 2
+    beats: list
     rows: int = 8
-    cell: float = 40.0                 # 箱の間隔（Scratch 単位）
-    v_origin: tuple = (-160.0, 140.0)  # 縦長のときの col 0・row 0 の中心（古い列は左へ）
-    h_origin: tuple = (-140.0, -100.0)  # 横長のときの col 0・row 0 の中心（古い列は下へ）
-    morphs: list = field(default_factory=list)  # [(時刻, 'v' or 'h')]（時刻順）。最初の形は morphs が無ければ 'v'
+    group: int = 4                  # 何拍ごとに1列ずれるか
+    xs: tuple = (-160.0, -200.0, -260.0)   # 縦長の列の x（3本目は隠し列）
+    top: float = 180.0              # 縦長: 行 r（1..8）の y = top - step * r
+    step: float = 40.0
+    h_x0: float = -180.0            # 横長: 行 r の x = h_x0 + step * r
+    h_ys: tuple = (-100.0, -140.0, -180.0)
+    box_size: float = 37.4          # 箱の一辺（Scratch 単位。手本は 22 単位 × 大きさ 170%）
+    morphs: list = field(default_factory=list)   # [(時刻, 'v' or 'h')]
     start_layout: str = 'v'
-    shift_k: float = 2.0               # 列送りのなめらかさ（Scratch の /2）
-    morph_k: float = 4.5
-    morph_stagger: float = 0.025       # 組み替えで箱ごとに遅らせる秒
-    appear: float = 0.0                # 格子の枠が出る時刻（blink つき）
+    morph_stagger: float = 0.02
+    appear: float = 0.0
 
     def __post_init__(self):
-        cpx = int(self.cell * self.stage.s)
-        self._cpx = cpx
-        self._tiles = {k: _tile(k, cpx) for k in PATTERNS}
-        self._empty = _dashed(cpx)
-        self.hits = sorted(self.hits, key=lambda h: h.t)
-        self._bar_start = {}
-        for h in self.hits:
-            self._bar_start.setdefault(h.bar, h.t)
+        self.beats = sorted(self.beats, key=lambda b: b.t)
+        self._ts = np.array([b.t for b in self.beats])
+        self._px = int(round(self.box_size * self.stage.s))
 
     def _slot(self, col, row, lay):
+        r = row + 1
         if lay == 'v':
-            ox, oy = self.v_origin
-            return ox - col * self.cell, oy - row * self.cell
-        ox, oy = self.h_origin
-        return ox + row * self.cell, oy - col * self.cell
+            return self.xs[min(col, 2)], self.top - self.step * r
+        return self.h_x0 + self.step * r, self.h_ys[min(col, 2)]
 
-    def _layout_mix(self, t, idx):
-        """（前の形, 次の形, 混ぜ具合 0..1）"""
-        prev, cur_t = self.start_layout, None
-        nxt = prev
-        for mt, lay in self.morphs:
-            if mt <= t:
-                prev, nxt, cur_t = nxt, lay, mt
-        if cur_t is None:
-            return prev, prev, 1.0
-        dt = t - cur_t - idx * self.morph_stagger
-        return prev, nxt, 1 - approach(1.0, 0.0, self.morph_k, dt)
+    def _pos(self, t, col, row):
+        prev, nxt, mt = self.start_layout, self.start_layout, None
+        for t_, lay in self.morphs:
+            if t_ <= t:
+                prev, nxt, mt = nxt, lay, t_
+        xa, ya = self._slot(col, row, prev); xb, yb = self._slot(col, row, nxt)
+        if mt is None:
+            return xb, yb
+        dt = t - mt - (col * self.rows + row) * self.morph_stagger
+        return approach(xa, xb, 2.0, dt), approach(ya, yb, 3.0, dt)
 
-    def _pos(self, t, col, row, idx):
-        a, b, m = self._layout_mix(t, idx)
-        xa, ya = self._slot(col, row, a); xb, yb = self._slot(col, row, b)
-        return xa + (xb - xa) * m, ya + (yb - ya) * m
+    def _zone_start(self, z):
+        """z 番目の4拍のまとまりが始まった時刻"""
+        i = z * self.group
+        return self._ts[i] if i < len(self._ts) else 1e9
 
     def draw(self, canvas, t):
         if t < self.appear:
             return
-        show = blink(t, self.appear)
-        n = self.cols * self.rows
-        if show:
-            for c in range(self.cols):
-                for r in range(self.rows):
-                    x, y = self._pos(t, c, r, c * self.rows + r)
-                    paste(canvas, self._empty, *self.stage.px(x, y))
-        past = [h for h in self.hits if h.t <= t]
-        if not past:
+        if blink(t, self.appear):
+            empty = box_frames(None, self._px)[0]
+            for col in (0, 1):
+                for row in range(self.rows):
+                    paste(canvas, empty, *self.stage.px(*self._pos(t, col, row)), alpha=0.5)
+        K = int(np.searchsorted(self._ts, t, side='right')) - 1
+        if K < 0:
             return
-        cur = past[-1].bar
-        starts = sorted(self._bar_start.items())
-        for h in past:
-            age = cur - h.bar
-            if age > self.cols:
-                continue
-            # 今の列へ送られた時刻と、送られる前の列
-            t_shift = self._bar_start.get(h.bar + age, h.t) if age > 0 else h.t
-            prev_col = age - 1 if age > 0 else 0
-            idx = min(age, self.cols - 1) * self.rows + h.step
-            x0, y0 = self._pos(t, prev_col, h.step, idx)
-            x1, y1 = self._pos(t, min(age, self.cols - 1) if age < self.cols else self.cols, h.step, idx)
-            x = approach(x0, x1, self.shift_k, t - t_shift)
-            y = approach(y0, y1, self.shift_k + 1, t - t_shift)
-            alpha = 1.0 if age < self.cols else ghost(15, t - t_shift)
-            pop = approach(1.35, 1.0, 2.0, t - h.t)  # 点いた瞬間に少し大きく
-            if alpha > 0:
-                paste(canvas, self._tiles[h.kind], *self.stage.px(x, y), scale=pop, alpha=alpha)
+        Z = K // self.group
+        for k in range(max(0, (Z - 3) * self.group), K + 1):
+            b = self.beats[k]
+            z0, row = k // self.group, k % self.rows
+            for lane, kind in ((0, b.lane0), (1, b.lane1)):
+                if kind is None:
+                    continue
+                col = lane + Z - z0
+                if col > 2:
+                    continue
+                t_shift = self._zone_start(Z) if Z > z0 else b.t
+                x0, y0 = self._pos(t, max(lane, col - 1), row)
+                x1, y1 = self._pos(t, col, row)
+                x = approach(x0, x1, 2.0, t - t_shift); y = approach(y0, y1, 3.0, t - t_shift)
+                alpha = ghost(15, t - t_shift) if col >= 2 else 1.0
+                fr = box_frames(kind, self._px)
+                i = min(len(fr) - 1, int((t - b.t) * FPS_SCRATCH))
+                paste(canvas, fr[i], *self.stage.px(x, y), alpha=alpha)
 
 
 # ---- 中央の枠 ----

@@ -4,7 +4,7 @@
     → tmp/scratch_fx_demo/<曲名>.mp4（--shots のときは同じ場所へ確認用の静止画）
 
 決まり:
-- 箱の格子はドラムの打点（master の打楽器成分の立ち上がりを8分の格子で読む）。1小節 = 1列。
+- 箱の盤は1拍1箱（縦8行で2小節）。キックとスネアは song.mml の #drum の固定パターン（src/instruments/drum-config.ts）から読む。
 - サビ（marks の C で始まる区間）の頭で枠が回ってパーン、格子が下へ組み替わる。サビの歌は1音1字で枠の中へ散らし、
   2小節ごとに消し、縦書きでも右に積む。サビの最後の1小節で字が崩れ落ちる。
 - サビ以外の歌は下の1行字幕。歌詞は song.mml の @@n 行（1字1モーラで音符と同数、の曲だけ使える）。
@@ -48,28 +48,40 @@ def load_song(song_dir):
     return bar_sec, marks, words, n['TOTAL']
 
 
-def drum_hits(wav, bar_sec, b0, b1, rows=8):
-    import librosa
-    y, sr = librosa.load(wav, sr=22050, mono=True)
-    _, perc = librosa.effects.hpss(y)
-    env = librosa.onset.onset_strength(y=perc, sr=sr, hop_length=256)
-    times = librosa.frames_to_time(np.arange(len(env)), sr=sr, hop_length=256)
-    step = bar_sec / rows
+def drum_pattern(song_dir):
+    """song.mml の #drum=<名前> を src/instruments/drum-config.ts から引き、[(step, 'kick'|'snare')] と1周の長さを返す。
+    dtm のドラムは名前つきの固定パターンなので、ミックスから読むより確か（ミックスの帯域ではスネアが歌に埋もれた）。"""
+    mml = open(os.path.join(song_dir, 'song.mml'), encoding='utf8').read()
+    m = re.search(r'#drum=(\w+)', mml)
+    if not m or m.group(1) == 'none':
+        return [], 192
+    src = open(os.path.join(REPO, 'src', 'instruments', 'drum-config.ts'), encoding='utf8').read()
+    i = src.find(f'\t{m.group(1)}: {{')
+    if i < 0:
+        return [], 192
+    block = src[i:src.index('],', i)]
     hits = []
-    for b in range(b0, b1):
-        vals = []
-        for s in range(rows):
-            t = b * bar_sec + s * step
-            sel = (times > t - 0.03) & (times < t + 0.03)
-            vals.append(env[sel].max() if sel.any() else 0)
-        vals = np.array(vals); top = vals.max() or 1
-        for s, v in enumerate(vals):
-            r = v / top
-            if r < 0.6:
-                continue
-            kind = 'fill' if r > 0.8 else 'check' if s % 4 == 2 else 'cross' if r > 0.55 else 'dots'
-            hits.append(fx.Hit(b * bar_sec + s * step, b, s, kind))
-    return hits
+    for st, key in re.findall(r'step: (\d+), pitch: DRUM_KEYS\.(\w+)', block):
+        kind = 'kick' if 'bassDrum' in key else 'snare' if ('Snare' in key or 'Clap' in key) else None
+        if kind:
+            hits.append((int(st), kind))
+    top = max([s_ for s_, _ in hits], default=0)
+    return hits, 192 * (top // 192 + 1)
+
+
+def drum_beats(song_dir, bar_sec, b0, b1, in_chorus):
+    """1拍ごとの Beat。拍の頭（4分の位置）にキック・スネアがあれば点ける。
+    2小節の最後の拍のキックは accent、サビのスネアは snare2（手本の規則）。"""
+    hits, length = drum_pattern(song_dir)
+    beat = bar_sec / 4
+    beats = []
+    for i in range((b1 - b0) * 4):
+        t = b0 * bar_sec + i * beat
+        pos = (b0 * 192 + i * 48) % length
+        kinds = {k for s_, k in hits if s_ == pos}
+        beats.append(fx.Beat(t, ('accent' if i % 8 == 7 else 'kick') if 'kick' in kinds else None,
+                             ('snare2' if in_chorus(t) else 'snare') if 'snare' in kinds else None))
+    return beats
 
 
 def build(song_dir, wav, b0, b1):
@@ -85,7 +97,7 @@ def build(song_dir, wav, b0, b1):
     in_ch = lambda t: any(a <= t < e for a, e in chorus)
     win = [(a, e) for a, e in chorus if T(b0) <= a < T(b1)]
 
-    grid = fx.StepGrid(st, drum_hits(wav, bar_sec, b0, b1), appear=T(b0) + 0.1,
+    grid = fx.BeatBoard(st, drum_beats(song_dir, bar_sec, b0, b1, in_ch), appear=T(b0) + 0.1,
                        morphs=[m for a, e in win for m in ((a, 'h'), (e - bar_sec, 'v'))])
     frame = fx.FramePop(st, pops=[a for a, e in win], fill=[x for a, e in win for x in ((a, (215, 215, 215)), (e - bar_sec, None))],
                         appear=T(b0) + 0.1)
