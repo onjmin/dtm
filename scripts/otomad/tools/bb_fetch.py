@@ -90,11 +90,12 @@ def url_of(src):
 
 def cmd_get(a):
     url = url_of(a.src)
-    info = json.loads(subprocess.run([*YT_DLP, "--no-warnings", "-J", url], capture_output=True, text=True, check=True).stdout)
+    yt = [*YT_DLP, "--cookies-from-browser", a.browser] if a.browser else YT_DLP
+    info = json.loads(subprocess.run([*yt, "--no-warnings", "-J", url], capture_output=True, text=True, check=True).stdout)
     genre = a.genre or guess_genre(info.get("tags"))
-    d = AI / genre / "BB" / info["id"]
+    d = AI / genre / a.kind / info["id"]
     d.mkdir(parents=True, exist_ok=True)
-    subprocess.run([*YT_DLP, "--no-warnings", "-q", "-f", f"bv*[height<={a.height}]+ba/b", "--merge-output-format", "mp4",
+    subprocess.run([*yt, "--no-warnings", "-q", "-f", f"bv*[height<={a.height}]+ba/b", "--merge-output-format", "mp4",
                     "-o", str(d / "source.%(ext)s"), url], check=True)
     keep = {k: info.get(k) for k in ["id", "title", "webpage_url", "uploader", "upload_date", "duration", "tags", "description"]}
     (d / "info.json").write_text(json.dumps(keep, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -220,6 +221,8 @@ def main():
     g.add_argument("src", help="sm… か URL")
     g.add_argument("--height", type=int, default=720)
     g.add_argument("--genre", choices=GENRES, help="既定はタグから推定")
+    g.add_argument("--kind", default="BB", help="置き場 <AI>/<ジャンル>/<kind>/。声の元動画は 声")
+    g.add_argument("--browser", help="センシティブ指定の動画用。ログイン済みのブラウザ（Chrome・Edge は暗号化で読めない。firefox）")
     g.set_defaults(f=cmd_get)
     k = sp.add_parser("key")
     k.add_argument("id")
