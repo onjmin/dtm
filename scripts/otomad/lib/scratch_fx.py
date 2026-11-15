@@ -121,73 +121,104 @@ def paste(canvas, im, cx, cy, rot=0.0, scale=1.0, alpha=1.0):
 
 # ---- 箱の盤（拍ごとに満ちる箱） ----
 # 手本の規則: 箱1つ = 1拍、縦8行 = 2小節。列は2本（中央寄りがキック、外がスネア）で、4拍ごとに全部が1列外へずれ、
-# 3本目（隠し列）へ入った箱は滑りながら薄れて消える。箱の中身は静止した柄ではなく、打った瞬間から1コマずつ白く満ちるドット絵。
-#   kick   滴が落ちて底で跳ね、下から満ちる（7コマ）
-#   accent 滴のあと、左から右へ塗り広がる（3 + 10 コマ）。2小節の句の最後の拍
-#   snare  中心の点が十字に弾け、四隅へ広がって満ちる（6コマ）
-#   snare2 斜めの線が風車のように回り、対角の区画から満ちる（12コマ）
+# 3本目（隠し列）へ入った箱は滑りながら薄れて消える。箱は 22×22 ドットで、外周はぎざぎざの白い板＋内側に黒い線。
+# 中身は静止した柄ではなく、打った瞬間から1コマずつ白く満ちる:
+#   kick   滴が3つ落ち、底で跳ねて器の形 → 両端がせり上がる水面 → 満ちる（7コマ）
+#   accent 滴のあと左半分が満ち、続いて右半分が満ちる（13コマ）。2小節の句の最後の拍
+#   snare  中心の点から十字に光線が走り、区画が窓のように満ちて、白地に細い「#」の線が残る（6コマ）
+#   snare2 snare と同じ満ち方を区画ごとに順に（左上 → 右下 → 左下 → 右上、12コマ）
 # 絵は手本の画像を写さず、この規則から描く。
 BOX_PX = 22          # 箱の外寸（ドット）
 BOX_IN = 16          # 中の満ちる所（ドット）
 
 
-def _box_border():
-    a = np.zeros((BOX_PX, BOX_PX), bool)
-    a[1:21, 1:3] = a[1:21, 19:21] = a[1:3, 1:21] = a[19:21, 1:21] = True   # 2ドットの縁
-    for i in range(2, 20):                                                   # 外側の歯
-        if (i // 2) % 2 == 0:
-            a[0, i] = a[21, i] = a[i, 0] = a[i, 21] = True
-    for i in (1, 20):                                                        # 角を欠く
-        for j in (1, 20):
-            a[i, j] = False
-    return a
+def _box_plate():
+    """外周の白い板（ぎざぎざの切り欠きつき）と、その内側の黒い1ドットの線。→ (白, 黒) のマスク"""
+    white = np.zeros((BOX_PX, BOX_PX), bool)
+    white[:2, :] = white[-2:, :] = white[:, :2] = white[:, -2:] = True
+    notch = [3, 6, 8, 13, 15, 18]                    # 板の切り欠き（外側と内側に交互に）
+    for k, i in enumerate(notch):
+        o = 0 if k % 2 == 0 else 1
+        white[o, i] = white[BOX_PX - 1 - o, i] = white[i, o] = white[i, BOX_PX - 1 - o] = False
+    for i in (7, 11, 14):                            # 縁に食い込む黒い点
+        white[i, 1] = white[i, BOX_PX - 2] = False
+    black = np.zeros((BOX_PX, BOX_PX), bool)
+    black[2, 2:20] = black[19, 2:20] = black[2:20, 2] = black[2:20, 19] = True
+    black |= ~white & ~np.pad(np.ones((16, 16), bool), 3)
+    black[3:19, 3:19] = False
+    return white, black
+
+
+def _kick_stages(n=BOX_IN):
+    """液が満ちる段: 滴3つ → 底で跳ねた器の形 → 両端がせり上がった水面 → 上の真ん中だけ欠ける → 満ちる"""
+    yy, xx = np.mgrid[0:n, 0:n]
+    c = (n - 1) / 2
+    S = []
+    for top, h in ((0, 1), (4, 2), (9, 3)):
+        m = np.zeros((n, n), bool); m[top:top + h, 7:9] = True; S.append(m)
+    cup = (yy >= 13) | ((yy >= 10) & ((xx <= 1) | (xx >= n - 2))) | ((yy == 11) & ((xx == 6) | (xx == 9)))
+    S.append(cup)
+    arch = ~((((xx - c) / 6.5) ** 2 + ((yy - 1) / 9) ** 2) < 1) & (yy >= 1)   # 丸い水面の窪み
+    S.append(arch)
+    S.append(~((yy < 2) & (abs(xx - c) < 3)))
+    S.append(np.ones((n, n), bool))
+    return S
+
+
+def _hash_final(n=BOX_IN):
+    """十字に弾けた後の形: 白地に「#」の細い黒線（真ん中の帯は白）"""
+    yy, xx = np.mgrid[0:n, 0:n]
+    m = np.ones((n, n), bool)
+    m[((xx == 6) | (xx == 9)) & ((yy < 6) | (yy > 9))] = False
+    m[((yy == 6) | (yy == 9)) & ((xx < 3) | (xx > 12))] = False
+    return m
+
+
+def _burst_stages(n=BOX_IN):
+    """中心から十字に弾ける段: 点 → 短い十字と火花 → 端まで届く光線とひび → 区画が窓のように満ちる → 窓の穴が残る → #"""
+    yy, xx = np.mgrid[0:n, 0:n]
+    band = lambda w, L: ((abs(xx - 7.5) < w) & (abs(yy - 7.5) < L)) | ((abs(yy - 7.5) < w) & (abs(xx - 7.5) < L))
+    final = _hash_final(n)
+    S = [band(1, 1)]
+    S.append(band(1, 3) | ((yy == 5) & (xx == 10)) | ((yy == 10) & (xx == 5)) | ((xx == 4) & (yy == 7)))
+    rays = band(1, 8) | (((xx == 6) | (xx == 9)) & (abs(yy - 7.5) > 3)) | (((yy == 6) | (yy == 9)) & (abs(xx - 7.5) > 3))
+    S.append(rays & ~((abs(xx - 7.5) > 6) & (abs(yy - 7.5) > 6)))
+    quad = (abs(xx - 7.5) > 3) & (abs(yy - 7.5) > 3)
+    win = quad & ~(((xx % 5) == 2) & ((yy % 5) == 2))
+    S.append(band(1, 8) | (quad & ((xx < 2) | (xx > 13) | (yy < 2) | (yy > 13))) | (win & ((xx + yy) % 3 == 0)))
+    holes = ((abs(xx - 7.5) > 4) & (abs(xx - 7.5) < 6.5) & (abs(yy - 7.5) > 4) & (abs(yy - 7.5) < 6.5))
+    S.append(final & ~holes)
+    S.append(final)
+    return S
 
 
 def _fill_frames(kind):
     """中 16×16 の白（True）のコマ列"""
     n = BOX_IN
     yy, xx = np.mgrid[0:n, 0:n]
-    c = (n - 1) / 2
-    F = []
-    if kind in ('kick', 'accent'):
-        for r in (1, 5, 10):                         # 落ちる滴（だんだん縦に伸びる）
-            m = np.zeros((n, n), bool); m[r:r + 1 + (r > 3) + (r > 8), 7:9] = True; F.append(m)
-        if kind == 'accent':
-            rough = np.array([0, 1, 0, 2, 1, 0, 1, 2, 0, 1, 0, 2, 1, 0, 1, 0])
-            for k in range(10):                      # 左から右へ、縁をぎざぎざに
-                m = xx < (k + 1) * n / 10 + rough[yy] - 1
-                if k == 8:
-                    m &= ~((yy < 3) & (xx > 10))     # 右上だけ残る
-                F.append(m)
-            return F
-        F.append((yy >= 13) | ((yy == 12) & (abs(xx - c) < 3)) | ((yy == 10) & ((xx == 3) | (xx == 12))))  # 底で跳ねる
-        F.append(yy >= 8 + np.round(np.sin(xx * 0.9)).astype(int))   # 波打って満ちる
-        F.append((yy >= 2) | (abs(xx - c) > 2))                       # 上の真ん中だけ残る
+    if kind == 'kick':
+        return _kick_stages()
+    if kind == 'accent':                             # 滴のあと、左半分が満ちてから右半分が満ちる
+        K = _kick_stages()
+        left, right = xx < 8, xx >= 8
+        F = K[:3]
+        F += [K[i] & left for i in (3, 4, 5, 6, 6, 6)]
+        F += [left | (K[i] & right) for i in (4, 5, 6)]
         F.append(np.ones((n, n), bool))
         return F
     if kind == 'snare':
-        ax, ay = abs(xx - c), abs(yy - c)
-        F.append((ax < 1) & (ay < 1))
-        F.append(((ax < 1) & (ay < 3)) | ((ay < 1) & (ax < 3)))
-        F.append(((ax < 1.5) & (ay < 7)) | ((ay < 1.5) & (ax < 7)) | ((abs(ax - ay) < 0.6) & (ax < 3)))
-        F.append((ax < 1.5) | (ay < 1.5) | ((abs(ax - 5.5) < 1.6) & (abs(ay - 5.5) < 0.6)) | ((abs(ay - 5.5) < 1.6) & (abs(ax - 5.5) < 0.6)))
-        F.append(~(((ax > 1.5) & (ax < 2.6)) | ((ay > 1.5) & (ay < 2.6))) & ~((ax > 3) & (ax < 6) & (ay > 3) & (ay < 6)))
-        F.append(~(((ax < 0.6) | (ay < 0.6)) & (ax + ay > 4) & (ax + ay < 7)))
-        return F
-    if kind == 'snare2':
-        dx, dy = xx - c, yy - c
-        ang = np.arctan2(dy, dx)
-        r = np.hypot(dx, dy)
-        for k in range(4):                           # 斜めの線が伸びながら回る
-            th = k * np.pi / 8
-            F.append((abs(np.sin(ang - th)) * r < 0.8) & (r < 2 + k * 1.6))
-        for k in range(4):                           # 風車: 羽が4枚
-            th = np.pi / 4 + k * np.pi / 8
-            blade = (np.mod(ang - th, np.pi / 2) < 0.5) & (r < 3 + k * 1.5)
-            F.append(blade | (((dx > 0) == (dy > 0)) & (r < k * 2)))
-        for k in range(3):                           # 対角の区画から満ちる
-            F.append(((dx > 0) == (dy > 0)) | (abs(dx + dy) < 2 + k * 3))
-        F.append(~((r > 2.5) & (r < 3.6) & ((abs(dx) < 0.6) | (abs(dy) < 0.6))))
+        return _burst_stages()
+    if kind == 'snare2':                             # 区画が1つずつ: 左上 → 右下 → 左下 → 右上（風車の順）
+        B = _burst_stages()
+        quads = [(xx < 8) & (yy < 8), (xx >= 8) & (yy >= 8), (xx < 8) & (yy >= 8), (xx >= 8) & (yy < 8)]
+        start = [0, 4, 6, 8]
+        F = []
+        for f in range(12):
+            m = np.zeros((n, n), bool)
+            for q, s in zip(quads, start):
+                if f >= s:
+                    m |= B[min(len(B) - 1, f - s)] & q
+            F.append(m)
         return F
     raise ValueError(kind)
 
@@ -195,18 +226,19 @@ def _fill_frames(kind):
 BOX_KINDS = ('kick', 'accent', 'snare', 'snare2')
 _box_cache = {}
 def box_frames(kind, px):
-    """kind のコマ列（RGBA 画像）。kind=None は空の枠"""
+    """kind のコマ列（RGBA 画像）。kind=None は空の枠（中は透明）"""
     key = (kind, px)
     if key not in _box_cache:
-        border = _box_border()
+        white, black = _box_plate()
         fills = [np.zeros((BOX_IN, BOX_IN), bool)] if kind is None else _fill_frames(kind)
         ims = []
         for f in fills:
             a = np.zeros((BOX_PX, BOX_PX, 4), np.uint8)
+            a[black] = (0, 0, 0, 255)
+            a[white] = (255, 255, 255, 255)
             if kind is not None:
                 a[3:19, 3:19] = (0, 0, 0, 255)       # 点いた箱の中は黒で、下の空の枠を隠す
-            a[border] = (255, 255, 255, 255)
-            a[3:19, 3:19][f] = (255, 255, 255, 255)
+                a[3:19, 3:19][f] = (255, 255, 255, 255)
             ims.append(Image.fromarray(a, 'RGBA').resize((px, px), Image.NEAREST))
         _box_cache[key] = ims
     return _box_cache[key]
