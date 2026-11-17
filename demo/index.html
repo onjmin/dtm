@@ -570,6 +570,18 @@
 
         mountEditor(currentMode, initialMml);
         loadingEl.textContent = '';
+
+        // ── 未保存の編集があるときだけ離脱を確かめる ──
+        // 「保存済み」は読み込んだ直後・スナップショット保存・履歴から復元した時点の MML。
+        let cleanMml = daw.getMML().full;
+        const markClean = (mml = daw?.getMML().full) => { cleanMml = mml ?? ''; };
+        window.addEventListener('beforeunload', (e) => {
+            if (!daw) return;
+            const { full, trackCount } = daw.getMML();
+            if (trackCount === 0 || full === cleanMml) return;
+            e.preventDefault();
+            e.returnValue = '';
+        });
         loadingEl.style.display = 'none';
 
         // ── モード切替（simple / advanced）はブラウザを閉じても維持する ──
@@ -821,6 +833,7 @@
                 }
                 await localforage.setItem(HISTORY_STORAGE_KEY, history);
                 lastSavedMml = full;
+                markClean(full);
                 console.log('[dtm] snapshot saved at', new Date().toLocaleTimeString());
                 if (manual) showHistoryToast('スナップショットを保存しました。', 'text-pico-green');
                 return true;
@@ -1055,6 +1068,7 @@
                                 mountEditor(currentMode, item.mml);
                                 mountPlayer(item.mml);
                                 lastSavedMml = item.mml;
+                                markClean();
                                 activateGracePeriod(10);
                             } finally {
                                 historyLoadOverlay.remove();
