@@ -82,12 +82,58 @@ export const normalizeDrumPatterns = (
 	return normalized;
 };
 
+/** ドラムを止める小節の範囲（1始まり・両端を含む）。MML の `#drumrest=49-56,91-109`。 */
+export type DrumRest = [number, number][];
+
+export const parseDrumRest = (text: string): DrumRest =>
+	text
+		.split(",")
+		.map((r) => r.split("-").map((x) => Number.parseInt(x, 10)))
+		.filter(
+			(r): r is [number, number] =>
+				r.length === 2 && r.every((x) => Number.isFinite(x) && x >= 1),
+		)
+		.filter(([s, e]) => s <= e);
+
+export const formatDrumRest = (rest: DrumRest): string =>
+	rest.map(([s, e]) => `${s}-${e}`).join(",");
+
+/**
+ * 小節の範囲ごとに組み込みの型を替える（1始まり・両端を含む）。MML の
+ * `#drumscene=four_ride_busy:25-31,fill_snare:8`。範囲の外は `#drum=` の型、`#drumrest=` が優先。
+ * 場面の切り替え（vecolite の 25〜31 小節）と句末のフィルのため（2026-11-18）。
+ */
+export type DrumScene = [string, number, number][];
+
+export const parseDrumScene = (text: string): DrumScene =>
+	text
+		.split(",")
+		.map((item) => /^(\w+):(\d+)(?:-(\d+))?$/.exec(item.trim()))
+		.filter((m): m is RegExpExecArray => m !== null)
+		.map((m): [string, number, number] => {
+			const s = Number.parseInt(m[2], 10);
+			return [m[1], s, m[3] ? Number.parseInt(m[3], 10) : s];
+		})
+		.filter(([, s, e]) => s >= 1 && s <= e);
+
+export const formatDrumScene = (scene: DrumScene): string =>
+	scene
+		.map(([n, s, e]) => (s === e ? `${n}:${s}` : `${n}:${s}-${e}`))
+		.join(",");
+
 export const resolveDrumPattern = (
 	name: string,
 	dict: Record<string, DrumPatternDef>,
 	currentBar: number,
+	rest?: DrumRest,
+	scene?: DrumScene,
 ): DrumPattern | null => {
-	const def = dict[name];
+	if (rest?.some(([s, e]) => currentBar >= s && currentBar <= e)) return [];
+	// 後に書いた範囲が勝つ（場面の中の1小節だけフィルにする書き方のため）
+	const hit = scene
+		?.filter(([n, s, e]) => currentBar >= s && currentBar <= e && dict[n])
+		.at(-1);
+	const def = dict[hit ? hit[0] : name];
 	if (!def) return null;
 	const patternObj = def.pattern;
 	if (
@@ -483,6 +529,94 @@ export const DRUM_PATTERNS: Record<string, DrumPatternDef<DrumPattern>> = {
 			{ step: 144, pitch: DRUM_KEYS.handClap, velocity: 0.85 },
 			{ step: 144, pitch: DRUM_KEYS.acousticSnare, velocity: 0.45 },
 			{ step: 168, pitch: DRUM_KEYS.openHihat, velocity: 0.55 },
+		],
+	},
+	// --- 場面とフィル（`#drumscene=` で小節の範囲に当てる型。2026-11-18、vecolite の場面転換と句末から） ---
+	// 4つ打ちの頭にクラッシュ。場面の1小節目に当てる。
+	crash_four: {
+		label: "4つ打ち（頭にクラッシュ）",
+		pattern: [
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 0, pitch: DRUM_KEYS.crashCymbal1, velocity: 0.8 },
+			{ step: 24, pitch: DRUM_KEYS.openHihat, velocity: 0.55 },
+			{ step: 48, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 48, pitch: DRUM_KEYS.handClap, velocity: 0.85 },
+			{ step: 72, pitch: DRUM_KEYS.openHihat, velocity: 0.55 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 120, pitch: DRUM_KEYS.openHihat, velocity: 0.55 },
+			{ step: 144, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 144, pitch: DRUM_KEYS.handClap, velocity: 0.85 },
+			{ step: 168, pitch: DRUM_KEYS.openHihat, velocity: 0.55 },
+		],
+	},
+	// 句末のフィル: 前半は4つ打ち、後半はスネアの16分を強めながら。
+	fill_snare: {
+		label: "フィル（スネア16分）",
+		pattern: [
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 24, pitch: DRUM_KEYS.openHihat, velocity: 0.5 },
+			{ step: 48, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 48, pitch: DRUM_KEYS.handClap, velocity: 0.85 },
+			{ step: 72, pitch: DRUM_KEYS.openHihat, velocity: 0.5 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({
+				step: 96 + i * 12,
+				pitch: DRUM_KEYS.acousticSnare,
+				velocity: 0.45 + i * 0.07,
+			})),
+			{ step: 144, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+		],
+	},
+	// 句末のフィル: 4拍目でタムを高い方から降りる。
+	fill_tom: {
+		label: "フィル（タム）",
+		pattern: [
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 24, pitch: DRUM_KEYS.openHihat, velocity: 0.5 },
+			{ step: 48, pitch: DRUM_KEYS.bassDrum1, velocity: 0.9 },
+			{ step: 48, pitch: DRUM_KEYS.handClap, velocity: 0.85 },
+			{ step: 72, pitch: DRUM_KEYS.openHihat, velocity: 0.5 },
+			{ step: 96, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 120, pitch: DRUM_KEYS.acousticSnare, velocity: 0.7 },
+			{ step: 132, pitch: DRUM_KEYS.acousticSnare, velocity: 0.6 },
+			{ step: 144, pitch: DRUM_KEYS.highTom, velocity: 0.85 },
+			{ step: 156, pitch: DRUM_KEYS.highTom, velocity: 0.75 },
+			{ step: 168, pitch: DRUM_KEYS.lowMidTom, velocity: 0.85 },
+			{ step: 180, pitch: DRUM_KEYS.lowTom, velocity: 0.95 },
+		],
+	},
+	// 引きの小節: 頭にキックとクラッシュだけ、あとは鳴らさない。
+	break_hit: {
+		label: "頭の一打だけ",
+		pattern: [
+			{ step: 0, pitch: DRUM_KEYS.bassDrum1, velocity: 1.0 },
+			{ step: 0, pitch: DRUM_KEYS.crashCymbal1, velocity: 0.75 },
+		],
+	},
+	// 場面転換の型: 4つ打ちにキックの食い込み、16分裏のサイドスティック、8分裏のスネア、ライドの刻み。
+	four_ride_busy: {
+		label: "4つ打ち（ライド・サイドスティック・食い込み）",
+		pattern: [
+			...[0, 48, 84, 96, 144, 180].map((step) => ({
+				step,
+				pitch: DRUM_KEYS.bassDrum1,
+				velocity: step % 48 === 0 ? 1.0 : 0.7,
+			})),
+			...[12, 36, 60, 84, 108, 132, 156, 180].map((step) => ({
+				step,
+				pitch: DRUM_KEYS.sideStick,
+				velocity: 0.45,
+			})),
+			...[24, 72, 120, 168].map((step) => ({
+				step,
+				pitch: DRUM_KEYS.acousticSnare,
+				velocity: 0.55,
+			})),
+			...[0, 24, 36, 48, 72, 84, 96, 120, 132, 144, 168, 180].map((step) => ({
+				step,
+				pitch: DRUM_KEYS.rideCymbal1,
+				velocity: step % 48 === 0 ? 0.7 : 0.5,
+			})),
 		],
 	},
 	// --- 界隈曲の骨格のドラム型（骨格の抽出スクリプト（削除済み、git 履歴にある） が生成。ここから） ---

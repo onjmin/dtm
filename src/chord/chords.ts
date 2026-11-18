@@ -27,7 +27,9 @@ export type ChordPatternType =
 	/** 和音を4分・8分・16分で刻み直す。 */
 	| "stab-quarter"
 	| "stab-eighth"
-	| "stab-sixteenth";
+	| "stab-sixteenth"
+	/** 和音を伸ばし、1オクターブ上で8分の裏だけ刻む（2号系の Granite の和音＋パッドの重ね方）。 */
+	| "hold-offbeat";
 
 export type ChordPlacement = {
 	startStep: number;
@@ -281,6 +283,24 @@ export const buildChordPlacements = (
 							}
 						}
 					}
+				} else if (patternType === "hold-offbeat") {
+					const stepsPerQuarter = Math.floor(stepsPerBar / 4);
+					const halfBeat = Math.floor(stepsPerQuarter / 2);
+					for (const noteOffset of notes)
+						placements.push({
+							startStep: chord.whenStep,
+							pitchUnits: toUnits(noteOffset),
+							durationSteps: noteLength,
+							velocity: 72,
+						});
+					for (let at = halfBeat; at < noteLength; at += stepsPerQuarter)
+						for (const noteOffset of notes)
+							placements.push({
+								startStep: chord.whenStep + at,
+								pitchUnits: units(toUnits(noteOffset) + UNITS_PER_OCTAVE),
+								durationSteps: Math.min(halfBeat, 12),
+								velocity: 100,
+							});
 				} else if (patternType === "yatsume") {
 					const ticksPerQuarter = 480;
 					const stepsPerQuarter = Math.floor(stepsPerBar / 4);

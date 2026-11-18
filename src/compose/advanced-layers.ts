@@ -256,7 +256,13 @@ export const buildAdvancedLayers = (
 	const padNotes = onlyIn(song.pad, plan.padSections);
 
 	const layers: AdvancedLayer[] = [
-		{ index: 0, notes: song.melody, octave: 0, volume: 104, slot: "melody" },
+		{
+			index: 0,
+			notes: [...song.melody, ...(song.leadDouble ?? [])],
+			octave: 0,
+			volume: 104,
+			slot: "melody",
+		},
 		leadLayer,
 		// t2 ハモリ。**セクションで分割しない。**
 		// 一度 t12 と loud/quiet で分けてみたが、ハモリは音の87%が盛り上がる側にあり、
@@ -435,5 +441,18 @@ export const buildAdvancedLayers = (
 					};
 				})(),
 	);
+	// 層の台本（2号兄貴）: 足す伴奏の2・3本目と装飾は、その小節の段が足りなければ鳴らさない。
+	// ほかの層は compose 側で間引き済み。
+	const flow = song.flow?.bars;
+	if (flow) {
+		const need: Record<number, number> = { 8: 2, 9: 3, 10: 3 };
+		for (const layer of layers) {
+			const min = need[layer.index];
+			if (min === undefined) continue;
+			layer.notes = layer.notes.filter(
+				(n) => (flow[Math.floor(n.startStep / stepsPerBar)]?.extra ?? 3) >= min,
+			);
+		}
+	}
 	return layers;
 };

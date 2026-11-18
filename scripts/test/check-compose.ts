@@ -2157,7 +2157,24 @@ console.log("● 界隈曲の流派テンプレート");
 					1,
 					mel.reduce((a, n) => a + n.durationSteps, 0),
 				);
-			m.penta.push(durOf((p) => PENTA.has(p)));
+			// 2号の Cメロは同主調の「別の世界」で、わざと主調の5音から外れる（2026-11-18）。主調の旋律だけで見る。
+			const inBridge = (n: { startStep: number }): boolean =>
+				song.sections.some(
+					(s) =>
+						s.kind === "bridge" &&
+						n.startStep >= s.startBar * STEPS_PER_BAR &&
+						n.startStep < (s.startBar + s.bars) * STEPS_PER_BAR,
+				);
+			const home = (keep: (p: number) => boolean): number =>
+				mel.reduce(
+					(a, n, i) => a + (!inBridge(n) && keep(pcs[i]) ? n.durationSteps : 0),
+					0,
+				) /
+				Math.max(
+					1,
+					mel.reduce((a, n) => a + (inBridge(n) ? 0 : n.durationSteps), 0),
+				);
+			m.penta.push(nigo ? home((p) => PENTA.has(p)) : durOf((p) => PENTA.has(p)));
 			const byPc = Array.from({ length: 12 }, (_, k) => durOf((p) => p === k));
 			m.top5.push(
 				[...byPc]
@@ -2246,9 +2263,12 @@ console.log("● 界隈曲の流派テンプレート");
 				}
 			}
 			if (lineage === "kaiwai_2go") {
+				// 長い尻尾（ドラムと主旋律を止めて終わる、`nigoForm`）だけは引っ込んでよい。
+				const tail = song.flow?.axes.includes("tail");
 				const quiet = song.sections.filter(
 					(s) =>
 						s.kind !== "intro" &&
+						!(tail && s.kind === "outro") &&
 						notesIn(song.melody, s.startBar, s.startBar + s.bars) === 0,
 				);
 				check(
@@ -2309,9 +2329,12 @@ console.log("● 界隈曲の流派テンプレート");
 			if (name.endsWith("_lead")) {
 				let sounding = 0;
 				let span = 0;
+				// 台本でリードを止めた小節（2号の長い尻尾）は数えない。鳴る所でどれだけ途切れないかを見る。
+				const leadOff = (b: number): boolean => song.flow?.bars[b]?.lead === false;
 				for (const s of song.sections) {
 					if (!s.spec.melody) continue;
-					span += s.bars * STEPS_PER_BAR;
+					for (let b = s.startBar; b < s.startBar + s.bars; b++)
+						if (!leadOff(b)) span += STEPS_PER_BAR;
 					sounding += song.melody
 						.filter(
 							(n) =>
@@ -2426,8 +2449,7 @@ console.log("● 界隈曲の流派テンプレート");
 					m.six.every((x) => x >= 0.25),
 					m.six.map((x) => x.toFixed(2)).join(" "),
 				);
-			else
-				check("2号: 16分の音価が 2割5分以上", avg(m.six) >= 0.25, f(m.six));
+			else check("2号: 16分の音価が 2割5分以上", avg(m.six) >= 0.25, f(m.six));
 			if (name.endsWith("_lead")) {
 				check("2号（楽器リード）: 3連が出る", avg(m.triplet) > 0, f(m.triplet));
 				check(

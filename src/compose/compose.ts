@@ -31,6 +31,7 @@ import {
 	CORPUS_PROFILE_KEYS,
 } from "./compose-corpus";
 import {
+	barRanges,
 	bassFigure,
 	developBar,
 	grammarProgressions,
@@ -42,6 +43,8 @@ import {
 	loopBar,
 	loopShape,
 	loopStyle,
+	type NigoForm,
+	nigoForm,
 	nigoParts,
 	relatedMotif,
 	sentenceAnswer,
@@ -1550,6 +1553,8 @@ export type ComposeResult = {
 	/** 仮歌詞の語彙（テンプレートが持つときだけ）。{@link composeLyrics} の `vocab`。 */
 	lyricVocab?: LyricVocabName;
 	melody: ComposedNote[];
+	/** 主旋律と同じトラックに重ねる音（走句リードのオクターブ下）。主旋律の解析には使わない。 */
+	leadDouble?: ComposedNote[];
 	submelody: ComposedNote[];
 	bass: ComposedNote[];
 	/** ハモリトラック。メロディの3度/6度上。サビセクションでのみ鳴る。 */
@@ -1573,6 +1578,12 @@ export type ComposeResult = {
 	 * 合いの手はサビ重ね（t1）、アルペジオはオクターブ重ね（t13）の枠に入る。対旋律は {@link submelody}。
 	 */
 	parts?: { answer: ComposedNote[]; arp: ComposedNote[] };
+	/** 2号兄貴の層の台本（{@link nigoForm}）。音の列はこれで間引き済み。上級者モードの足す層もこれで絞る。 */
+	flow?: NigoForm;
+	/** ドラムを止める小節（1始まり・両端を含む）。MML の `#drumrest=`。 */
+	drumRest?: [number, number][];
+	/** 小節の範囲ごとのドラムの型（`#drumscene=`）。2号兄貴の場面転換とフィル。 */
+	drumScene?: [string, number, number][];
 	/**
 	 * 上級者モードの編曲プラン。どの層をどのセクションでどの奏法で鳴らすか。
 	 * {@link ArrangePlan}
@@ -3175,6 +3186,11 @@ const draw = (
 	if (relativeKinds.size > 0 && relativeShift !== 0)
 		for (const s of sectionPlan)
 			if (relativeKinds.has(s.kind)) s.keyShift = relativeShift;
+	// 2号兄貴の Cメロは「別の世界」: 同主調へ振る（長調なら同主短調の借用 ivm7・♭VII7…、vecolite 25〜31）。
+	// 曲全体を移すので旋律・ベースも音階ごと移り、借用和音とこすれない。
+	if (template?.grammar === "nigo")
+		for (const s of sectionPlan)
+			if (s.kind === "bridge") s.keyShift = resolvedKey.mode === "minor" ? -3 : 3;
 
 	if (
 		relativeKinds.size === 0 &&
@@ -3335,12 +3351,15 @@ const draw = (
 	// で始まるのは「曲の顔を先に見せる」定石で、間奏も同じ理由でサビ側を使う。ベース調が
 	// 長調／短調に指定されている場合は進行をそれに合わせる。
 	// テンプレートの進行プールは短調のときだけ。利用者が長調を手で指定したら従来プールへ退避する。
+	// 2号兄貴は長調でも文法を使う（vecolite は E♭長調。長調を指定すると汎用の進行に落ちていた。2026-11-18）。
+	const nigoMajor =
+		template?.grammar === "nigo" && resolvedKey.mode === "major";
 	const grammarProg =
-		resolvedKey.mode === "minor" && template?.grammar
-			? grammarProgressions(template.grammar, rnd, template.nigo)
+		(resolvedKey.mode === "minor" || nigoMajor) && template?.grammar
+			? grammarProgressions(template.grammar, rnd, template.nigo, nigoMajor)
 			: undefined;
 	const tmplProg =
-		resolvedKey.mode === "minor"
+		resolvedKey.mode === "minor" || nigoMajor
 			? (grammarProg ?? template?.progressions)
 			: undefined;
 	const progAPool = center
@@ -3379,9 +3398,11 @@ const draw = (
 	// 同じ和音列へ潰れる。1和音目は `slow` でも必ず鳴り、しかもセクションの半分を占める。
 	const progBAll = center ? center.b : (tmplProg?.b ?? SECTION_B_PROGRESSIONS);
 	const progBHead = progBAll.filter((p) => p[0] !== progA[0]);
-	const progBPool = (progBHead.length > 0 ? progBHead : progBAll).filter(
+	const progBDistinct = (progBHead.length > 0 ? progBHead : progBAll).filter(
 		(p) => p.join("|") !== progA.join("|"),
 	);
+	// 候補がAメロと全部同じになる文法（2号兄貴の1小節1和音）もあるので、空なら元の候補へ戻す
+	const progBPool = progBDistinct.length > 0 ? progBDistinct : progBAll;
 	const progB = pick(
 		floating ? withoutTonic(progBPool, homeRoot) : progBPool,
 		rnd,
@@ -3402,11 +3423,11 @@ const draw = (
 		floating ? withoutTonic(progRelativePool, homeRoot) : progRelativePool,
 		rnd,
 	);
-	const progCPool = (
-		center ? center.c : (tmplProg?.c ?? SECTION_C_PROGRESSIONS)
-	).filter(
+	const progCAll = center ? center.c : (tmplProg?.c ?? SECTION_C_PROGRESSIONS);
+	const progCDistinct = progCAll.filter(
 		(p) => p.join("|") !== progA.join("|") && p.join("|") !== progB.join("|"),
 	);
+	const progCPool = progCDistinct.length > 0 ? progCDistinct : progCAll;
 	const progC = pick(
 		floating ? withoutTonic(progCPool, homeRoot) : progCPool,
 		rnd,
@@ -3458,6 +3479,43 @@ const draw = (
 			const put = (cells: string[]): void => {
 				progression.push(...cells.slice(0, room));
 			};
+			// 2号兄貴は8小節を問いと答えにする。後ろの4小節は同じ頭2小節から主音へ着く（vecolite は23句中10句が
+			// 主音で終わる。同じ4小節を回すだけの生成は最後まで主音に着かなかった。2026-11-18）。
+			const answer =
+				template?.grammar === "nigo" &&
+				cadenceTable !== undefined &&
+				!loopCadence &&
+				i % 8 === 4 &&
+				room === 4 &&
+				!relativeKinds.has(section.kind);
+			if (
+				answer &&
+				(!isLastPhrase ||
+					(section.kind !== "chorus" &&
+						section.kind !== "outro" &&
+						section.kind !== "prechorus"))
+			) {
+				put([...base.slice(0, 2), ...progFull.slice(2)]);
+				continue;
+			}
+			// 問い（8小節の前半）は開いて終える。進行が主音で終わるときは半終止の締めに替える
+			// （主音で閉じる問いでは、答えの解決が効かない）。
+			const endsOnTonic = (cells: string[]): boolean => {
+				const last = cells[cells.length - 1]?.split(" ").pop() ?? "";
+				return tonic === "Am" ? /^Am/.test(last) : /^C(?![#b]|m)/.test(last);
+			};
+			if (
+				template?.grammar === "nigo" &&
+				cadenceTable !== undefined &&
+				!loopCadence &&
+				i % 8 === 0 &&
+				room === 4 &&
+				!relativeKinds.has(section.kind) &&
+				endsOnTonic(base)
+			) {
+				put([...base.slice(0, 2), ...progHalf.slice(2)]);
+				continue;
+			}
 			if (!isLastPhrase || loopCadence) {
 				put(base);
 				continue;
@@ -7334,7 +7392,68 @@ export const composeSong = (options: ComposeOptions): ComposeResult => {
 				template.nigo?.introEntry.backing,
 			)
 		: buildArrangePlan(result, rnd, template?.chordPatterns);
+	// 走句リードのオクターブ下の重ね。手本は Granite が全編、vecolite・金町・Sanukite が要所で主旋律を重ねる
+	// （同時発音 1.4〜2.4。生成は 1.0 だった。2026-11-18）。4割は全編、3.5割はサビだけ、残りは重ねない。
+	if (template?.lead === "riff16") {
+		const r = rnd();
+		const chorusOnly = r >= 0.4;
+		if (r < 0.75) {
+			const inChorus = (n: ComposedNote) => {
+				const sec = sectionAt(
+					result.sections,
+					Math.floor(n.startStep / options.stepsPerBar),
+				);
+				return sec?.kind === "chorus" || sec?.kind === "drop_chorus";
+			};
+			result.leadDouble = result.melody
+				.filter((n) => !chorusOnly || inChorus(n))
+				.map((n) => ({
+					...n,
+					pitchUnits: (n.pitchUnits - 12 * UNITS_PER_SEMITONE) as Units,
+					velocity: Math.max(40, n.velocity - 18),
+				}));
+		}
+	}
+	// 層の台本は最後に引く（それより前の抽選を動かさない）。
+	if (template?.grammar === "nigo") {
+		const form = nigoForm(result.sections, result.bars, rnd);
+		if (form) applyForm(result, form, options.stepsPerBar);
+	}
 	return result;
+};
+
+/** 台本で止める小節の音を消し、ドラムを止める小節を記録する。 */
+const applyForm = (
+	song: ComposeResult,
+	form: NigoForm,
+	stepsPerBar: number,
+): void => {
+	const at = (n: ComposedNote) =>
+		form.bars[Math.floor(n.startStep / stepsPerBar)];
+	const keep = (
+		notes: ComposedNote[],
+		ok: (b: NigoForm["bars"][number]) => boolean,
+	) =>
+		notes.filter((n) => {
+			const b = at(n);
+			return !b || ok(b);
+		});
+	song.melody = keep(song.melody, (b) => b.lead);
+	song.octave = keep(song.octave, (b) => b.lead);
+	if (song.leadDouble) song.leadDouble = keep(song.leadDouble, (b) => b.lead);
+	song.bass = keep(song.bass, (b) => b.bass);
+	song.pad = keep(song.pad, (b) => b.extra >= 1);
+	for (const k of ["submelody", "harmony", "harmony2", "solo"] as const)
+		song[k] = keep(song[k], (b) => b.extra >= 2 && b.lead);
+	if (song.parts)
+		song.parts = {
+			answer: keep(song.parts.answer, (b) => b.extra >= 2),
+			arp: keep(song.parts.arp, (b) => b.extra >= 3),
+		};
+	song.flow = form;
+	const rest = barRanges(form.bars.map((b) => !b.drums));
+	if (rest.length > 0) song.drumRest = rest;
+	if (form.scene.length > 0) song.drumScene = form.scene;
 };
 
 /**
@@ -7536,6 +7655,7 @@ const GRAIN_OF: Partial<Record<ChordPatternType, UpperGrain>> = {
 	"stab-eighth": "eighth",
 	"stab-sixteenth": "sixteenth",
 	offbeat: "offbeat",
+	"hold-offbeat": "offbeat",
 	yatsume: "eighth",
 	arpeggio: "arpeggio",
 	"arpeggio-fast": "arpeggio",
