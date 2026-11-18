@@ -253,7 +253,11 @@ const main = async (): Promise<void> => {
 
 		const blob = exportMIDI({
 			tracks: [
-				{ notes: toNotes(song.melody), volume: 100, program: melProg },
+				{
+					notes: toNotes([...song.melody, ...(song.leadDouble ?? [])]),
+					volume: 100,
+					program: melProg,
+				},
 				{ notes: toNotes(song.submelody), volume: 70, program: subProg },
 				{ notes: toNotes(song.harmony), volume: 60, program: melProg },
 				{ notes: toNotes(song.harmony2), volume: 52, program: melProg },
@@ -275,7 +279,7 @@ const main = async (): Promise<void> => {
 				{ notes: toNotes(chords), volume: 65, program: chordProg },
 			],
 			getDrumPattern: (bar) =>
-				resolveDrumPattern(song.drum, DRUM_PATTERNS, bar),
+				resolveDrumPattern(song.drum, DRUM_PATTERNS, bar, song.drumRest, song.drumScene),
 			drumVolume: 80,
 			bpm: song.bpm,
 			stepsPerBar: STEPS_PER_BAR,

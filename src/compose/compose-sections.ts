@@ -554,7 +554,8 @@ const KAIWAI_NIGO: StructureTemplate = {
 		],
 	},
 	instruments: ["synth_pop", "synth_pop", "retro_game"],
-	chordPatterns: ["block", "block", "stab-eighth"],
+	// 8分を表裏とも刻む型（stab-eighth）は手本に無い。手本は2拍伸ばす（vecolite）か、伸ばし＋8分裏（Granite）（2026-11-18）
+	chordPatterns: ["block", "hold-offbeat", "hold-offbeat"],
 	harmonicRhythms: ["half"],
 	bass: {
 		styles: ["octave-eighth", "octave-eighth", "tresillo"],

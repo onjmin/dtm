@@ -5222,6 +5222,7 @@ export const mountDAW = (
             <option value="stab-quarter">4分刻み</option>
             <option value="stab-eighth">8分刻み</option>
             <option value="stab-sixteenth">16分刻み</option>
+            <option value="hold-offbeat">伸ばし＋裏打ち</option>
           </select>
         </div>
         <div class="dtm-row">
@@ -7536,7 +7537,7 @@ export const mountDAW = (
 					// 置き場所が無く、ボーカルアレンジもセクション別の楽器替えも
 					// advanced 限定という判断（解説にも書いてある）。
 					for (const t of trackStates) t.composeSlot = null;
-					writeTrack("melody", song.melody);
+					writeTrack("melody", [...song.melody, ...(song.leadDouble ?? [])]);
 					writeTrack("submelody", song.submelody);
 					writeTrack("bass", song.bass);
 
@@ -7561,8 +7562,8 @@ export const mountDAW = (
 
 				// ドラムも曲に合わせて組み込みパターンから自動選択する。
 				currentDrumPattern = song.drum;
-				currentDrumRest = [];
-				currentDrumScene = [];
+				currentDrumRest = song.drumRest ?? [];
+				currentDrumScene = song.drumScene ?? [];
 				refs.drumSelect.value = song.drum;
 				options.onDrumChange?.(song.drum);
 				applyDrumPatternFont(song.drum);

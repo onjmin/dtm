@@ -303,6 +303,60 @@ const nigo = (rnd: () => number, feel?: NigoFeel): GrammarProgressions => {
 	};
 };
 
+/**
+ * 長調の2号兄貴（vecolite 型）。家は Ⅰ（ハ長調の枠で C）。句の頭は Ⅳ に置き、締めは 2-5-1 で Ⅰ へ着く。
+ * 開く締めは vecolite の4小節目の半音下降（Ⅰ→Ⅶ7→♭Ⅶ7→Ⅵ7）か Ⅴ7 で止める（2026-11-18、nigo-form-plan.md）。
+ */
+const nigoMajor = (rnd: () => number, feel?: NigoFeel): GrammarProgressions => {
+	const f: NigoFeel | undefined = feel ? { ...feel, minor: 0 } : feel;
+	const core = (heads: [string, number][]) => () =>
+		thin(
+			until(
+				() => nigoBlock(weighted(heads, rnd), rnd, f),
+				(b) => slotsOf(b).includes("FM7") && hasTwoFive(b),
+			),
+			f,
+			rnd,
+		);
+	const four = (make: () => Block): Block[] => [make(), make(), make(), make()];
+	const approach = (): string =>
+		pick(["Dm7 G7", "FM7 G7", "Dm7 Db7", "Fm7 G7"], rnd);
+	return {
+		a: four(
+			core([
+				["FM7", 3],
+				["CM7", 1],
+				["Dm7", 1],
+			]),
+		),
+		b: four(
+			core([
+				["FM7", 3],
+				["Dm7", 1],
+				["Am7", 1],
+			]),
+		),
+		c: four(
+			core([
+				["Dm7", 1],
+				["Em7", 1],
+				["Am7", 1],
+			]),
+		),
+		cadences: {
+			half: [0, 1, 2].map(() => [
+				pick(["Dm7 G7", "FM7 G7", "Em7 A7"], rnd),
+				pick(["C B7", "Dm7 G7", "Bb7 A7"], rnd),
+			]),
+			full: [0, 1, 2].map(() => [approach(), pick(["C CM7", "CM7 C"], rnd)]),
+			deceptive: [0, 1, 2].map(() => [
+				approach(),
+				pick(["Am7 A7", "Am7 Am7"], rnd),
+			]),
+		},
+	};
+};
+
 // ============================================================
 // 海鮮: Ⅵm 中心・2拍ごと・4度上への根音進行・属7で短調Ⅰへ引き戻す
 // ============================================================
@@ -487,9 +541,12 @@ export const grammarProgressions = (
 	grammar: KaiwaiGrammar,
 	rnd: () => number,
 	feel?: NigoFeel,
+	major = false,
 ): GrammarProgressions =>
 	grammar === "nigo"
-		? nigo(rnd, feel)
+		? major
+			? nigoMajor(rnd, feel)
+			: nigo(rnd, feel)
 		: grammar === "kaisen"
 			? kaisen(rnd)
 			: speder(rnd);
@@ -553,8 +610,10 @@ export type Contour =
  * 着地点の前の道。`run` は直前の音から音階で着地点へ（近ければ一度反対へ離れて回り込む）、`turn` は
  * 着地点の上か下で回ってから着く、`walk` は今までの歩き（偶然の新しさを残す。最後の音だけ着地点の隣へ）。
  * どれも直前の音から始まり、着地点の隣で終わる（半小節の頭で跳ばない）。
+ * `arp` は着地点の和音の音を3度・4度で跳んで降りる（上る）。手本の主旋律は跳躍（4度以上）0.08〜0.28 に対し、
+ * run と turn だけの生成は 0.04〜0.06 で、2度が 0.7 を超えていた（2026-11-18、nigo-form-plan.md）。
  */
-export type Figure = "run" | "turn" | "walk";
+export type Figure = "run" | "turn" | "walk" | "arp";
 
 /** 輪郭ごとの、4小節8つの着地点の高さ（範囲の下端 0〜上端 1）。 */
 const CONTOURS: Record<Contour, number[]> = {
@@ -607,6 +666,7 @@ export const lineStyle = (rnd: () => number, per = 5): LineStyle => {
 			[
 				["run", 4],
 				["turn", 2],
+				["arp", 3],
 				// 歩き（walk）は引かない。2音を行き来するジグザグになり、kw2 の音階の駆け込みと別物だった（2026-10-27）
 			],
 			rnd,
@@ -833,6 +893,44 @@ const pathTo = (
 	return best;
 };
 
+/**
+ * 着地点 `t` の和音の音を、直前の音の側から近い順に `n` 個拾い、遠い方から並べる（分散和音で着地点へ降りる・上る）。
+ * 2.5割は1つ飛ばしで拾い、4度〜6度の跳躍にする（4割では跳躍が手本の上端を超えた）。範囲の中で足りなければ反対側からも拾う。
+ */
+const arpTo = (
+	env: LineEnv,
+	k: number,
+	rhythm: number[],
+	ti: number,
+	prev: number,
+	t: number,
+	n: number,
+	rnd: () => number,
+	style: LineStyle,
+): number[] => {
+	const at = (k % 2) * 8 + rhythm.slice(0, ti).reduce((a, b) => a + b, 0);
+	const bar = Math.floor(k / 2);
+	const lo = style.lo - 1;
+	const hi = style.hi + 1;
+	const skip = rnd() < 0.25 ? 2 : 1;
+	const side = prev === t ? (rnd() < 0.5 ? 1 : -1) : Math.sign(prev - t);
+	const collect = (dir: number): number[] => {
+		const out: number[] = [];
+		let seen = 0;
+		for (let s = t + dir; s >= lo && s <= hi && out.length < n; s += dir)
+			if (env.fits(bar, at, s) && seen++ % skip === 0) out.push(s);
+		return out;
+	};
+	let tones = collect(side);
+	if (tones.length < n)
+		tones = collect(-side).length > tones.length ? collect(-side) : tones;
+	if (tones.length === 0) return pathTo(prev, t, n, rnd, lo, hi);
+	// 足りない分は一番遠い音を繰り返さず、着地点の隣の段を前に足す（同音を作らない）
+	while (tones.length < n)
+		tones.push(tones[tones.length - 1] + Math.sign(tones[0] - t));
+	return tones.slice(0, n).reverse();
+};
+
 /** 半小節のリズムの着地点（一番長い音、同じ長さなら前）の位置。 */
 const landingOf = (rhythm: number[]): number =>
 	rhythm.indexOf(Math.max(...rhythm));
@@ -866,6 +964,8 @@ const realizeSlot = (
 			t + 2 * s,
 			t + s,
 		];
+	} else if (figure === "arp" && pre >= 2) {
+		before = arpTo(env, k, rhythm, ti, prev, t, pre, rnd, style);
 	} else if (figure === "walk" && pre >= 2) {
 		const step = walker(rnd, prev, style.lo, style.hi, 3, 0.3, 0.65);
 		step();
@@ -2098,9 +2198,9 @@ export type GrammarPlan = {
 };
 
 /**
- * 2号兄貴: 層を足していくイントロ（4〜16小節、無い曲もある。原曲の幅。32 だと層の遅れた入りで
- * ドラムだけが8小節続いた）→ Aメロ・サビの組を1〜3周
- * （サビ始まり・Cメロも出る）→ 1ブロックを回し続ける区間・短い締めは曲による。
+ * 2号兄貴: 層を足していくイントロ（4〜16小節、無い曲もある）→ Aメロ・サビの組を2〜3周 → 長い尻尾。
+ * 1周目の後に必ず8小節の「別の世界」（Cメロ。同主調へ振る）を置き、尻尾も必ず長くする
+ * （vecolite 25〜32・77〜92。物語を抽選にすると平均へ寄って出ない曲が大半だった。2026-11-18）。
  */
 const nigoPlan = (rnd: () => number): GrammarPlan => {
 	const kinds: SectionKind[] = [];
@@ -2133,18 +2233,15 @@ const nigoPlan = (rnd: () => number): GrammarPlan => {
 	}
 	const rounds = weighted(
 		[
-			[1, 1],
 			[2, 3],
 			[3, 1],
 		],
 		rnd,
 	);
 	const chorusFirst = rnd() < 0.15;
+	bars.bridge = 8;
 	for (let r = 0; r < rounds; r++) {
-		if (r > 0 && r === rounds - 1 && rnd() < 0.4) {
-			kinds.push("bridge");
-			bars.bridge = pick([8, 16], rnd);
-		}
+		if (r === 1) kinds.push("bridge");
 		kinds.push(
 			...(chorusFirst && r === 0
 				? (["chorus", "verse", "chorus"] as SectionKind[])
@@ -2152,19 +2249,16 @@ const nigoPlan = (rnd: () => number): GrammarPlan => {
 		);
 	}
 	if (rnd() < 0.5) kinds.push("chorus");
-	if (rnd() < 0.5) {
-		kinds.push("outro");
-		bars.outro = pick([4, 8], rnd);
-	}
-	// 途中の1〜2セクションを全音上下へ（戻る曲も、そのまま終わる曲もある）。
-	let shift: GrammarPlan["shift"];
-	const first = kinds[0] === "intro" ? 1 : 0;
-	if (rnd() < 0.3 && kinds.length - first >= 3) {
-		const from = first + 1 + Math.floor(rnd() * (kinds.length - first - 1));
-		const to = Math.min(kinds.length - 1, from + Math.floor(rnd() * 2));
-		shift = { from, to, semitones: rnd() < 0.5 ? 2 : -2 };
-	}
-	return { kinds, bars, shift };
+	// 長い尻尾（ドラムと主旋律を止めて薄く終わる。`nigoForm`）。手本は曲の 17〜27%。
+	kinds.push("outro");
+	const body = kinds.slice(0, -1).reduce((sum, k) => sum + (bars[k] ?? 8), 0);
+	const long = [12, 16, 16, 20].filter((n) => {
+		const share = n / (body + n);
+		return share >= 0.12 && share <= 0.28;
+	});
+	bars.outro = long.length > 0 ? pick(long, rnd) : NIGO_TAIL_BARS;
+	// 全音上下の転調は置かない（Cメロの同主調と重なって、別の世界が埋もれる）。
+	return { kinds, bars };
 };
 
 /**
@@ -2752,4 +2846,141 @@ export const nigoParts = (rnd: () => number, ctx: PartContext): NigoParts => {
 		}
 	}
 	return { counter, answer, arp };
+};
+
+// ============================================================
+// 2号兄貴: 曲の長い流れ（層の台本）
+// ============================================================
+
+/**
+ * 1小節で鳴らすもの。`extra` は足す層の段: 0＝地の伴奏だけ、1＝パッド、2＝対旋律・合いの手・ハモリ、
+ * 3＝アルペジオ・装飾・3本目の伴奏まで全部。
+ */
+export type FormBar = {
+	drums: boolean;
+	bass: boolean;
+	lead: boolean;
+	extra: 0 | 1 | 2 | 3;
+};
+/** 曲が振り切る流れの軸。手本は docs/design/nigo-form-plan.md。 */
+export type NigoFormAxis = "build" | "pullback" | "tail";
+export type NigoForm = {
+	axes: NigoFormAxis[];
+	bars: FormBar[];
+	/** 小節の範囲ごとのドラムの型（MML の `#drumscene=`、1始まり）。 */
+	scene: [string, number, number][];
+};
+
+/** 尻尾とみなすアウトロの長さ（`nigoPlan` が長いアウトロを引いたときだけ出る）。 */
+export const NIGO_TAIL_BARS = 12;
+
+/**
+ * 曲ごとに流れの軸を1〜2つ選び、小節ごとの鳴らし方にする。軸の無い曲（Granite 型の平ら）は null。
+ * 長い尻尾は `nigoPlan` が長いアウトロを引いた曲だけ。
+ */
+export const nigoForm = (
+	sections: { kind: SectionKind; startBar: number; bars: number }[],
+	totalBars: number,
+	rnd: () => number,
+): NigoForm | null => {
+	const last = sections[sections.length - 1];
+	const tail = last?.kind === "outro" && last.bars >= NIGO_TAIL_BARS;
+	let peakIdx = -1;
+	for (let i = sections.length - 1; i >= 0; i--)
+		if (sections[i].kind === "chorus") {
+			peakIdx = i;
+			while (peakIdx > 0 && sections[peakIdx - 1].kind === "chorus") peakIdx--;
+			break;
+		}
+	const before = peakIdx > 0 ? sections[peakIdx - 1] : null;
+	const canPull = before !== null && before.kind !== "intro";
+	const firstChorus = sections.find((s) => s.kind === "chorus");
+	const canBuild = (firstChorus?.startBar ?? 0) >= 8;
+
+	// 山の前の引きと尻尾は抽選しない（物語の骨。2026-11-18）。足していくイントロだけ曲による。
+	const axes: NigoFormAxis[] = [];
+	if (tail) axes.push("tail");
+	if (canPull) axes.push("pullback");
+	if (canBuild && rnd() < 0.5) axes.push("build");
+	if (axes.length === 0) return null;
+
+	const bars: FormBar[] = Array.from({ length: totalBars }, () => ({
+		drums: true,
+		bass: true,
+		lead: true,
+		extra: 3,
+	}));
+	const span = (
+		from: number,
+		to: number,
+		f: (b: FormBar, i: number) => void,
+	) => {
+		for (let b = Math.max(0, from); b < Math.min(totalBars, to); b++)
+			f(bars[b], b - from);
+	};
+	const peakStart = peakIdx >= 0 ? sections[peakIdx].startBar : totalBars;
+	// 山は後半: 最後のサビ群より前は1段少なくする（いちばん厚い所を取っておく）。
+	if (axes.includes("build") || axes.includes("pullback"))
+		span(0, peakStart, (b) => {
+			b.extra = 2;
+		});
+	if (axes.includes("build") && firstChorus) {
+		// 最初のサビまで、4小節ごとに1段ずつ足す（柴又・金町）。
+		const end = firstChorus.startBar;
+		span(0, end, (b, i) => {
+			b.extra = Math.min(2, Math.floor((i * 3) / end)) as FormBar["extra"];
+		});
+	}
+	const scene: [string, number, number][] = [];
+	/** 0始まりの小節 b から n 小節に型を当てる。 */
+	const sceneAt = (name: string, b: number, n = 1) => {
+		if (b >= 0 && b < totalBars) scene.push([name, b + 1, Math.min(totalBars, b + n)]);
+	};
+	// 句末のフィル: 4小節目はスネア、8小節目はタム。場面の頭はクラッシュ（vecolite の 8・16・24・32…）。
+	for (const s of sections) {
+		if (s.kind === "intro" || s.kind === "outro") continue;
+		if (s.kind === "chorus" || s.startBar > 0) sceneAt("crash_four", s.startBar);
+		if (s.kind === "chorus" && s.bars >= 16) sceneAt("crash_four", s.startBar + 8);
+		for (let k = 3; k < s.bars; k += 4)
+			sceneAt(k % 8 === 7 ? "fill_tom" : "fill_snare", s.startBar + k);
+	}
+	// 別の世界（Cメロ）: ライドとサイドスティックの型。最後の小節はタムで戻る。
+	for (const s of sections)
+		if (s.kind === "bridge") {
+			sceneAt("four_ride_busy", s.startBar, s.bars - 1);
+			sceneAt("fill_tom", s.startBar + s.bars - 1);
+		}
+	if (axes.includes("pullback") && before) {
+		// 山の直前の4小節を引く（vecolite 57〜60）: 頭の一打→2小節ドラム無し→フィルで山へ。
+		const n = 4;
+		const bass = rnd() >= 0.35;
+		span(peakStart - n, peakStart, (b, i) => {
+			b.extra = 0;
+			b.drums = i === 0 || i === n - 1;
+			b.bass = bass;
+		});
+		sceneAt("break_hit", peakStart - n);
+		sceneAt("fill_snare", peakStart - 1);
+	}
+	if (tail) {
+		// 長い尻尾: ドラムと主旋律を止め、地の伴奏・パッド・ベースで終える（vecolite・sm46367691）。
+		span(last.startBar, totalBars, (b) => {
+			b.drums = false;
+			b.lead = false;
+			b.extra = 1;
+		});
+	}
+	return { axes, bars, scene };
+};
+
+/** 小節の範囲（1始まり・両端を含む）へまとめる。MML の `#drumrest=` と同じ形。 */
+export const barRanges = (on: boolean[]): [number, number][] => {
+	const out: [number, number][] = [];
+	for (let b = 0; b < on.length; b++) {
+		if (!on[b]) continue;
+		const s = b;
+		while (b + 1 < on.length && on[b + 1]) b++;
+		out.push([s + 1, b + 1]);
+	}
+	return out;
 };
