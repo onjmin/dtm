@@ -192,7 +192,13 @@ export const playSingingMML = async (
 		getBpm: () => bpm,
 		getPlayStartStep: () => options.startStep ?? 0,
 		getDrumPattern: (currentBar) =>
-			resolveDrumPattern(drumPatternName, drumPatternDict, currentBar),
+			resolveDrumPattern(
+				drumPatternName,
+				drumPatternDict,
+				currentBar,
+				meta.drumRest,
+				meta.drumScene,
+			),
 		getSoloTrackId: () => null,
 		getLoop: () => options.loop ?? false,
 		cues: options.cues,

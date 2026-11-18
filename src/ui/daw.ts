@@ -1844,6 +1844,10 @@ export const mountDAW = (
 	 */
 	const autoComposeVocalTracks = new Map<TrackState, string>();
 	let currentDrumFont = options.drumFont ?? "FluidR3_GM_sf2_file:0";
+	/** ドラムを止める小節（自動作曲の台本、`#drumrest=`）。ドラムの型を替えても残す。 */
+	let currentDrumRest: [number, number][] = [];
+	/** 小節の範囲ごとのドラムの型（`#drumscene=`）。手で書いた MML から読むだけで、UI からは作らない。 */
+	let currentDrumScene: [string, number, number][] = [];
 	refs.drumFontSelect.value = currentDrumFont;
 	/**
 	 * パターン定義側に推奨音源（DrumPatternDef.font）があれば採用する。楽曲プリセットのドラムキーは
@@ -3320,7 +3324,13 @@ export const mountDAW = (
 		getBpm: () => bpm,
 		getPlayStartStep: () => playStartStep,
 		getDrumPattern: (currentBar) =>
-			resolveDrumPattern(currentDrumPattern, drumPatterns, currentBar),
+			resolveDrumPattern(
+				currentDrumPattern,
+				drumPatterns,
+				currentBar,
+				currentDrumRest,
+				currentDrumScene,
+			),
 		getSoloTrackId: () => (isSolo ? activeTrackId : null),
 		getLoop: () => loopEnabled,
 		getAudioTime,
@@ -5376,6 +5386,8 @@ export const mountDAW = (
 				// 「なし」も `#drum=none` と明示して書く。省略すると、読み込んだ側の DAW が
 				// 前から選んでいたドラム（既定のダンス等）を残し得るため（往復で「なし」を保つ）。
 				drum: currentDrumPattern || undefined,
+				drumRest: currentDrumRest.length > 0 ? currentDrumRest : undefined,
+				drumScene: currentDrumScene.length > 0 ? currentDrumScene : undefined,
 				drumFont: currentDrumFont,
 				volume: masterVolume,
 				drumVolume: drumVolume,
@@ -5418,6 +5430,8 @@ export const mountDAW = (
 				// 「なし」も `#drum=none` と明示して書く。省略すると、読み込んだ側の DAW が
 				// 前から選んでいたドラム（既定のダンス等）を残し得るため（往復で「なし」を保つ）。
 				drum: currentDrumPattern || undefined,
+				drumRest: currentDrumRest.length > 0 ? currentDrumRest : undefined,
+				drumScene: currentDrumScene.length > 0 ? currentDrumScene : undefined,
 				drumFont: currentDrumFont,
 				volume: masterVolume,
 				drumVolume: drumVolume,
@@ -5789,6 +5803,8 @@ export const mountDAW = (
 			// ドラム。`#drum` が無い／`none` の曲は「なし」にする（再生専用プレイヤーと揃える）。
 			// 既定のダンスを残すと、ドラム無しの曲にビートが付いて鳴り、書き出すと
 			// `#drum=dance` まで付いてしまう。辞書に無い名前は従来どおり今の選択を変えない。
+			currentDrumRest = meta.drumRest ?? [];
+			currentDrumScene = meta.drumScene ?? [];
 			const nextDrum = drumPatternForFullLoad(meta.drum, drumPatterns);
 			if (nextDrum !== null) {
 				currentDrumPattern = nextDrum;
@@ -6395,7 +6411,13 @@ export const mountDAW = (
 				};
 			}),
 			getDrumPattern: (currentBar) =>
-				resolveDrumPattern(currentDrumPattern, drumPatterns, currentBar),
+				resolveDrumPattern(
+					currentDrumPattern,
+					drumPatterns,
+					currentBar,
+					currentDrumRest,
+					currentDrumScene,
+				),
 			drumVolume,
 			bpm,
 			stepsPerBar: renderConfig.stepsPerBar,
@@ -7539,6 +7561,8 @@ export const mountDAW = (
 
 				// ドラムも曲に合わせて組み込みパターンから自動選択する。
 				currentDrumPattern = song.drum;
+				currentDrumRest = [];
+				currentDrumScene = [];
 				refs.drumSelect.value = song.drum;
 				options.onDrumChange?.(song.drum);
 				applyDrumPatternFont(song.drum);

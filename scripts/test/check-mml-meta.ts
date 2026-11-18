@@ -76,7 +76,7 @@ const BODY =
 {
 	// 宣言リストの網羅: 書き出し側が出しうる宣言を全部並べて、剥がした後に `#` が残らないこと。
 	const all =
-		"#ver=9.9.9 #seed=4022250974 #compose=jpop_standard:any:auto:intro-verse-chorus #inst=piano #drum=8beat #drumfont=X_sf2:1 #volume=1 #drumvolume=2 #reverb=3 #reverbdecay=4 #reverbpredelay=5 #delay=6 #delaydiv=8d #mastercomp=7 #fadein=8 #fadeout=9 #mode=advanced #edo=31 #loop=on #audio=https://example.com/a.mp3 #audiostart=1.5 #audioend=2 #audiooffset=-0.25 #audioat=3 #audiovol=50 #t0inst=Lead 1 (square) #t0font=Aspirin #t0comp=1 #t0width=2 #t0rev=3 #t0eqlo=-4 #t0eqmid=5 #t0eqhi=-6 #t0pan=7 #t0dly=8;";
+		"#ver=9.9.9 #seed=4022250974 #compose=jpop_standard:any:auto:intro-verse-chorus #inst=piano #drum=8beat #drumrest=49-56,91-109 #drumfont=X_sf2:1 #volume=1 #drumvolume=2 #reverb=3 #reverbdecay=4 #reverbpredelay=5 #delay=6 #delaydiv=8d #mastercomp=7 #fadein=8 #fadeout=9 #mode=advanced #edo=31 #loop=on #audio=https://example.com/a.mp3 #audiostart=1.5 #audioend=2 #audiooffset=-0.25 #audioat=3 #audiovol=50 #t0inst=Lead 1 (square) #t0font=Aspirin #t0comp=1 #t0width=2 #t0rev=3 #t0eqlo=-4 #t0eqmid=5 #t0eqhi=-6 #t0pan=7 #t0dly=8;";
 	check("全宣言を剥がして # が残らない", /#/.test(stripMmlMeta(all)), false);
 	const meta = parseMmlMeta(all);
 	check("乱数種が読める", meta.seed, 4022250974);
@@ -89,6 +89,32 @@ const BODY =
 		"乱数種と設定を書き戻せる",
 		formatMmlMeta({ seed: 7, compose: "custom:key_Am:yo:verse-chorus" }, " "),
 		"#seed=7 #compose=custom:key_Am:yo:verse-chorus",
+	);
+	check("ドラムを止める小節が読める", meta.drumRest, [
+		[49, 56],
+		[91, 109],
+	]);
+	check(
+		"ドラムを止める小節を書き戻せる",
+		formatMmlMeta({ drum: "dance", drumRest: [[9, 12]] }, " "),
+		"#drum=dance #drumrest=9-12",
+	);
+	const scene = parseMmlMeta(
+		"#drum=dance #drumscene=four_ride_busy:25-31,fill_tom:32,bad,x:5-3;",
+	);
+	check("場面ごとのドラムが読める（壊れた項目は捨てる）", scene.drumScene, [
+		["four_ride_busy", 25, 31],
+		["fill_tom", 32, 32],
+	]);
+	check(
+		"場面ごとのドラムを書き戻せる",
+		formatMmlMeta({ drum: "dance", drumScene: [["fill_tom", 8, 8], ["break_hit", 57, 59]] }, " "),
+		"#drum=dance #drumscene=fill_tom:8,break_hit:57-59",
+	);
+	check(
+		"場面ごとのドラムを剥がせる",
+		stripMmlMeta("#drumscene=fill_tom:8 @0 c;").includes("#"),
+		false,
 	);
 }
 

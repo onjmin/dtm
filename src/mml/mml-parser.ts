@@ -10,6 +10,12 @@
 
 import { type Units, units } from "../audio/tuning";
 import {
+	formatDrumRest,
+	formatDrumScene,
+	parseDrumRest,
+	parseDrumScene,
+} from "../instruments/drum-config";
+import {
 	normalizeSoundFontBank,
 	soundFontBankShortName,
 	trackSoundFontValue,
@@ -62,6 +68,10 @@ export type MmlMeta = {
 	 * （DAW の書き出しは「なし」を `#drum=none` と書く。省略も同じくドラム無し）。
 	 */
 	drum?: string;
+	/** ドラムを止める小節（1始まり・両端を含む、`#drumrest=49-56,91-109`）。 */
+	drumRest?: [number, number][];
+	/** 小節の範囲ごとのドラムの型（`#drumscene=four_ride_busy:25-31,fill_snare:8`）。 */
+	drumScene?: [string, number, number][];
 	/** ドラムフォント名 */
 	drumFont?: string;
 	/** 全体音量（0-100等） */
@@ -233,6 +243,10 @@ const META_DIRECTIVE =
  * `#audio=<URL>` にマッチする（伴奏音源のURL。値は空白・`;`・`#`以外）。
  * 値にスラッシュやクエリを含むため {@link META_DIRECTIVE} とは別の文字集合で拾う。
  */
+/** `#drumrest=49-56,91-109`（ドラムを止める小節）。値にカンマを含むので別に拾う。 */
+const DRUM_REST_DIRECTIVE = /#drumrest=([\d,-]+)/gi;
+/** `#drumscene=four_ride_busy:25-31,fill_snare:8`（小節の範囲ごとのドラムの型）。 */
+const DRUM_SCENE_DIRECTIVE = /#drumscene=([\w:,-]+)/gi;
 const AUDIO_URL_DIRECTIVE = /#audio=([^\s#;\r\n]+)/gi;
 
 /**
@@ -314,6 +328,14 @@ const TRACK_DELAYSEND_DIRECTIVE = /#t(\d+)dly=(\d+)/gi;
 /** MMLからトップレベル宣言を抽出する */
 export const parseMmlMeta = (mml: string): MmlMeta => {
 	const meta: MmlMeta = {};
+	for (const m of mml.matchAll(DRUM_REST_DIRECTIVE)) {
+		const rest = parseDrumRest(m[1]);
+		if (rest.length > 0) meta.drumRest = rest;
+	}
+	for (const m of mml.matchAll(DRUM_SCENE_DIRECTIVE)) {
+		const scene = parseDrumScene(m[1]);
+		if (scene.length > 0) meta.drumScene = scene;
+	}
 	for (const m of mml.matchAll(META_DIRECTIVE)) {
 		const key = m[1].toLowerCase();
 		if (key === "ver") meta.version = m[2];
@@ -492,6 +514,8 @@ export const parseMmlMeta = (mml: string): MmlMeta => {
 /** MMLからトップレベル宣言を取り除く（ノート解析が誤解釈しないように） */
 export const stripMmlMeta = (mml: string): string =>
 	mml
+		.replace(DRUM_REST_DIRECTIVE, "")
+		.replace(DRUM_SCENE_DIRECTIVE, "")
 		.replace(META_DIRECTIVE, "")
 		.replace(AUDIO_URL_DIRECTIVE, "")
 		.replace(AUDIO_NUM_DIRECTIVE, "")
@@ -527,6 +551,10 @@ export const formatMmlMeta = (meta: MmlMeta, space = ""): string => {
 	if (meta.version) parts.push(`#ver=${meta.version}`);
 	if (meta.instrument) parts.push(`#inst=${meta.instrument}`);
 	if (meta.drum) parts.push(`#drum=${meta.drum}`);
+	if (meta.drumRest?.length)
+		parts.push(`#drumrest=${formatDrumRest(meta.drumRest)}`);
+	if (meta.drumScene?.length)
+		parts.push(`#drumscene=${formatDrumScene(meta.drumScene)}`);
 	if (meta.drumFont) parts.push(`#drumfont=${meta.drumFont}`);
 	if (meta.volume !== undefined) parts.push(`#volume=${meta.volume}`);
 	if (meta.drumVolume !== undefined)

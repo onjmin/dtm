@@ -118,6 +118,8 @@ export type PlayPlacementsOptions = PlayMmlOptions & {
 	bpm: number;
 	metaVolume?: number;
 	metaDrum?: string;
+	metaDrumRest?: [number, number][];
+	metaDrumScene?: [string, number, number][];
 	metaDrumVolume?: number;
 	/** マスタリバーブの掛かり具合 0-100（エディタの `#reverb=` 相当）。省略時0。 */
 	metaReverb?: number;
@@ -298,7 +300,13 @@ export const playPlacements = (
 		getBpm: () => bpm,
 		getPlayStartStep: () => options.startStep ?? 0,
 		getDrumPattern: (currentBar) =>
-			resolveDrumPattern(drumPatternName, drumPatternDict, currentBar),
+			resolveDrumPattern(
+				drumPatternName,
+				drumPatternDict,
+				currentBar,
+				options.metaDrumRest,
+				options.metaDrumScene,
+			),
 		getSoloTrackId: () => null,
 		getLoop: () => options.loop ?? false,
 		cues: options.cues,
@@ -419,6 +427,8 @@ export const playMML = (
 		bpm,
 		metaVolume: meta.volume,
 		metaDrum: meta.drum,
+		metaDrumRest: meta.drumRest,
+		metaDrumScene: meta.drumScene,
 		metaDrumVolume: meta.drumVolume,
 		metaReverb: meta.reverb,
 		metaReverbDecay: meta.reverbDecay,

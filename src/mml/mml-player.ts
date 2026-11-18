@@ -1689,7 +1689,13 @@ export const mountMmlPlayer = (
 		getBpm: () => bpm,
 		getPlayStartStep: () => 0,
 		getDrumPattern: (currentBar) =>
-			resolveDrumPattern(drumPatternName, drumPatternDict, currentBar),
+			resolveDrumPattern(
+				drumPatternName,
+				drumPatternDict,
+				currentBar,
+				meta.drumRest,
+				meta.drumScene,
+			),
 		getSoloTrackId: () => null,
 		getLoop: () => loopEnabled,
 		getAudioTime,
