@@ -7,6 +7,7 @@
 0. [how-to-make.md](how-to-make.md) — 選曲から渡すまでの工程順のノウハウ（カバー音MAD）。初めて作るときに通して読む
 0. [video-making.md](video-making.md) — 映像の作り方（桔梗☆・柴又系クッキー☆の窓・場面の照合・一転攻勢・題材の飾り）。映像を作るときに読む
 0. [kaiwai-video.md](kaiwai-video.md) — 界隈曲の映像の作り方（あめふらし・エイ・あねもねぐりっち。楽譜から動かす・小さく描いて整数倍・仕掛け・字のはみ出しの検査・縦ショート）
+0. [material-cover.md](material-cover.md) — 譜面の全パートを素材で鳴らすカバー音MAD（[ ]☆。声の楽器の選び方・台詞の置き方の使い分け・素材だけのミックス・余白の MV）
 1. [rules.md](rules.md) — 所有者の基準（軸・緩急・物語性・素材・安全の線・渡し方）。**毎回読む**
 2. [genres/](genres/README.md) — 作る型の作法（BB劇場・2号式など）
 3. [techniques/](techniques/README.md) — 使う技の一覧と、どの作品で効いたか
@@ -22,6 +23,7 @@ docs/otomad/
   how-to-make.md   工程順のノウハウ。技や基準が増えたら該当の工程に足す
   video-making.md  映像の作り方。映像の指摘を受けたら足す
   kaiwai-video.md  界隈曲の映像の作り方。界隈曲の MV の指摘を受けたら足す
+  material-cover.md 譜面の全パートを素材で鳴らすカバーの作り方（[ ]☆）
   bb-flow.md       BB素材を集めて、切り抜いて、動画に使う手順
   techniques/      使い回せる技を1つ1ファイル。どの作品で試して、効いたか
   genres/          型ごとの作法
