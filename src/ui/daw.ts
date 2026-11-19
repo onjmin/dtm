@@ -237,6 +237,14 @@ import { buildUI } from "./daw-ui";
 import { createExtraAudioPanel, type ExtraAudioPanel } from "./extra-audio";
 import { escapeHtml } from "./html";
 import { icon } from "./icons";
+import {
+	type OtomadCastPolicy,
+	type OtomadGenre,
+	type OtomadizeOptions,
+	type OtomadizeTrackInput,
+	type OtomadSource,
+	planOtomadize,
+} from "./otomadize";
 import { createRenderer, type Renderer } from "./renderer";
 import {
 	KEPT_SONGS_LIMIT,
@@ -724,6 +732,25 @@ const AUTO_MASTER_INFO_HTML = `
 </div>
 `;
 
+const OTOMADIZE_INFO_HTML = `
+<div class="dtm-modal-body-content">
+  <h4>音MAD化とは</h4>
+  <p>「おまかせマスタリング」の音MAD版です。各トラックの役割・ノートの置き方（音高域・音価・同時発音・密度）・元のGM楽器を手掛かりに、<strong>淫ク☆</strong>（Inc）および<strong>レ淫棒</strong>（お天気雨 2020 / 虹.）から適した声ネタ音色を選び、音域やミックスまで一括調整します。</p>
+  <h4>ジャンルと音源の選び方</h4>
+  <ul>
+    <li><strong>ジャンル</strong>: 「おまかせ」「淫夢」「クッキー☆」「淫夢&amp;クッキー☆」から選べます。「淫夢&amp;クッキー☆」では 2 トラック以上ある場合に両方のキャラが混ざるように配役します。</li>
+    <li><strong>音源ソース</strong>: 音程の安定したマルチサンプル音源の「淫ク☆」、ループや音質に優れた「レ淫棒2020」、定番ネタが豊富な「レ淫棒（虹.）」を切り替えられます。</li>
+    <li><strong>役割と音価の一致</strong>: 持続音のメロディや白玉の和音にはループ付きのシンセ／パッド系、短い音や刻みにはアタックの鋭い単発ネタ、低音トラックにはベース向け音色を割り当てます。</li>
+    <li><strong>元のGM楽器の反映</strong>: ピアノ・ベル・歪みギター・ストリングスなど元の楽器の質感に近い声ネタを優先します。</li>
+  </ul>
+  <h4>得意音域へのオクターブ調整とミックス</h4>
+  <ul>
+    <li><strong>双方向オクターブ調整</strong>: 選んだ音色の得意音域と元の高さに合わせて、必要なトラックだけ -2〜+2 オクターブで自動調整します（ベースは低音域に留まるよう制御します）。</li>
+    <li><strong>声ネタ向けバランス</strong>: 音色ごとの音量差・高音域の刺さり・和音の積み上がりを補正し、UTAU 歌声トラックがある場合はそのまま残して前後バランスだけ整えます。</li>
+  </ul>
+</div>
+`;
+
 const MIDI_INFO_HTML = `
 <div class="dtm-modal-body-content">
   <h4>1. MIDIファイルとは</h4>
@@ -935,6 +962,7 @@ const HELP_INFO_HTML = `
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="audio">オーディオ同時再生</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="compose">自動作曲</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="autoMaster">おまかせマスタリング</button>
+    <button class="dtm-btn dtm-btn--ghost" data-dtm-help="otomadize">音MAD化</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="lyric">歌詞の書き方</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="koe">カスタム音声(.koe)</button>
     <button class="dtm-btn dtm-btn--ghost" data-dtm-help="chord">コード進行</button>
@@ -955,6 +983,10 @@ const HELP_TOPICS: Record<string, { title: string; html: string }> = {
 	autoMaster: {
 		title: "おまかせマスタリング解説",
 		html: AUTO_MASTER_INFO_HTML,
+	},
+	otomadize: {
+		title: "音MAD化の解説",
+		html: OTOMADIZE_INFO_HTML,
 	},
 	lyric: { title: "歌詞の書き方", html: LYRIC_INPUT_INFO_HTML },
 	koe: { title: "カスタム音声(.koe)の使い方", html: KOE_INFO_HTML },
@@ -5659,6 +5691,8 @@ export const mountDAW = (
 			t.core.resetHistory();
 			t.core.clearNotesWithoutHistory();
 		}
+		refs.otomadizeStatus.textContent = "";
+		refs.otomadizeStatus.classList.add("dtm-hidden");
 		redrawAll();
 	};
 
@@ -6766,7 +6800,11 @@ export const mountDAW = (
 		refs.autoMasterInfoBtn.addEventListener("click", () => {
 			showModal("おまかせマスタリング解説", AUTO_MASTER_INFO_HTML);
 		});
-		const applyAutoMastering = (): void => {
+		refs.otomadizeInfoBtn.addEventListener("click", () => {
+			showModal("音MAD化の解説", OTOMADIZE_INFO_HTML);
+		});
+
+		const applyObservedPeakGainStaging = (): void => {
 			// ゲインステージング（実測ベース）。裏で溜めておいた実測ピーク（{@link startPeakSampling}）が
 			// 十分あるときだけ、目標ヘッドルームに収まるようマスタ音量へ逆算して反映する。一度も再生して
 			// いない・再生時間が短すぎる場合は判断材料が無いので触らない。
@@ -6784,32 +6822,27 @@ export const mountDAW = (
 				observedPeakMax = 0;
 				observedPlayMs = 0;
 			}
+		};
 
-			// マスタバスのグルーコンプレッサー: 各トラックの頭を軽く均して一体感を出す、
-			// 定番の「グルー」量（25%程度＝穏やかに掛かる程度）を既定にする。強く掛けすぎると
-			// ダイナミクスが失われるため、あくまで控えめな値にとどめる。
-			masterCompression = 25;
-			refs.masterComp.value = "25";
-			refs.masterCompLabel.textContent = "25%";
-			options.onMasterCompressionChange?.(25);
+		const applyMasterMixSettings = (m: {
+			masterCompression: number;
+			reverbAmount: number;
+			reverbDecay: number;
+			reverbPreDelay: number;
+			fadeOutMinSec: number;
+		}): void => {
+			masterCompression = m.masterCompression;
+			refs.masterComp.value = String(masterCompression);
+			refs.masterCompLabel.textContent = `${masterCompression}%`;
+			options.onMasterCompressionChange?.(masterCompression);
 
-			// マスタリバーブ（Mix・Decay・Pre Delay）。Mixはアレンジの密度（実際に音が入っているトラック
-			// 数）で決める——厚いほど残響を薄く（重ねると濁る）、隙間が多いほど残響で空間を埋める、という
-			// ミキシングの定石。
-			const activeTrackCount = trackStates.filter(
-				(t) => t.core.getNotes().length > 0,
-			).length;
-			const densityT = clamp((activeTrackCount - 2) / (8 - 2), 0, 1);
-			reverbAmount = Math.round(28 - densityT * (28 - 12));
+			reverbAmount = m.reverbAmount;
 			refs.reverbAmount.value = String(reverbAmount);
 			refs.reverbAmountLabel.textContent = `${reverbAmount}%`;
 			options.onReverbChange?.(reverbAmount);
 
-			// Decayはテンポに応じて決める: 速い曲は短め(0.6〜1.4s目安)、遅い曲は長め(1.8〜4.0s目安)。
-			// BPM60を「遅い曲寄りの上限」、BPM180を「速い曲寄りの下限」とみなし線形補間する。
-			const bpmT = clamp((bpm - 60) / (180 - 60), 0, 1);
 			reverbDecay = clamp(
-				3.0 - bpmT * (3.0 - 0.9),
+				m.reverbDecay,
 				MIN_REVERB_DECAY_SEC,
 				MAX_REVERB_DECAY_SEC,
 			);
@@ -6817,26 +6850,23 @@ export const mountDAW = (
 			refs.reverbDecayLabel.textContent = `${reverbDecay.toFixed(1)}s`;
 			options.onReverbDecayChange?.(reverbDecay);
 
-			// Pre Delayは原音の輪郭を保ったまま奥行きを足す定番の量（既定20ms）。
-			reverbPreDelay = 20;
-			refs.reverbPreDelay.value = "20";
-			refs.reverbPreDelayLabel.textContent = "20ms";
-			options.onReverbPreDelayChange?.(20);
+			reverbPreDelay = m.reverbPreDelay;
+			refs.reverbPreDelay.value = String(reverbPreDelay);
+			refs.reverbPreDelayLabel.textContent = `${reverbPreDelay}ms`;
+			options.onReverbPreDelayChange?.(reverbPreDelay);
 
 			// フェードアウト: 曲の終わりをぶつ切りにしない、という仕上げの基本。0秒（未設定）の
-			// ときだけ、控えめな1.5秒を補う（明示的に0秒へ変更済み＝あえて唐突に終わらせたい、
-			// という意図の可能性があるため、それ以外の値は上書きしない）。フェードインは曲頭からの
-			// 再生時にしか掛からず気付きにくい割に効果も薄いため、ここでは対象にしない。
+			// ときだけ控えめな値を補う（明示的に0秒へ変更済みの可能性以外は上書きしない）。
 			if (fadeOutSec === 0) {
-				fadeOutSec = 1.5;
-				refs.fadeOut.value = "1.5";
-				refs.fadeOutLabel.textContent = "1.5s";
+				fadeOutSec = m.fadeOutMinSec;
+				refs.fadeOut.value = String(fadeOutSec);
+				refs.fadeOutLabel.textContent = `${fadeOutSec.toFixed(1)}s`;
 			}
+		};
 
+		const applyVocalAutoMix = (): void => {
 			// メインボーカル判定: 歌詞のあるトラックのうち、発音時間（ノートの合計durationSteps）が
-			// 最大のものを「メインボーカル」とみなす。ハモリ・コーラス・掛け声等の副トラックより
-			// 前に出したいので、そちらだけリバーブを控えめ・音圧強化をやや強めにして明瞭さを出す
-			// （「前に出したい→リバーブ少なめ」という定石。奥に置きたい副ボーカルは逆にリバーブ多め）。
+			// 最大のものを「メインボーカル」とみなす。
 			let mainVocalId: string | null = null;
 			let mainVocalScore = -1;
 			let nonMainVocalCount = 0;
@@ -6853,6 +6883,59 @@ export const mountDAW = (
 			for (const t of trackStates) {
 				if (t.lyricModel && t.config.id !== mainVocalId) nonMainVocalCount++;
 			}
+			let vocalSideCounter = 0;
+			for (const t of trackStates) {
+				if (!t.lyricModel) continue;
+				const isMainVocal = t.config.id === mainVocalId;
+				const pan = isMainVocal
+					? 64
+					: clamp(64 + (vocalSideCounter++ % 2 === 0 ? 22 : -22), 0, 127);
+				t.trackPan = pan;
+				options.onTrackPanChange?.(t.config.id, pan);
+				const comp = isMainVocal ? 30 : 25;
+				const width = isMainVocal ? 100 : 120;
+				t.trackCompression = comp;
+				t.trackWidth = width;
+				options.onTrackCompressionChange?.(t.config.id, comp);
+				options.onTrackWidthChange?.(t.config.id, width);
+				t.trackEqLow = -3;
+				t.trackEqHigh = isMainVocal ? 2 : 0;
+				options.onTrackEqLowChange?.(t.config.id, t.trackEqLow);
+				options.onTrackEqHighChange?.(t.config.id, t.trackEqHigh);
+				t.vocalVibrato = isMainVocal;
+				t.vocalReverb = isMainVocal ? 25 : 45;
+				t.vocalDelay = isMainVocal ? 15 : 0;
+				t.vocalVolume = isMainVocal
+					? Math.round(DEFAULT_VOCAL_VOLUME * 1.1)
+					: clamp(
+							Math.round(
+								(DEFAULT_VOCAL_VOLUME * 0.85) /
+									Math.sqrt(Math.max(1, nonMainVocalCount)),
+							),
+							60,
+							MAX_VOCAL_VOLUME,
+						);
+				fireLyricsChange(t);
+			}
+		};
+
+		const applyAutoMastering = (): void => {
+			applyObservedPeakGainStaging();
+
+			const activeTrackCount = trackStates.filter(
+				(t) => t.core.getNotes().length > 0,
+			).length;
+			const densityT = clamp((activeTrackCount - 2) / (8 - 2), 0, 1);
+			const bpmT = clamp((bpm - 60) / (180 - 60), 0, 1);
+			applyMasterMixSettings({
+				masterCompression: 25,
+				reverbAmount: Math.round(28 - densityT * (28 - 12)),
+				reverbDecay: 3.0 - bpmT * (3.0 - 0.9),
+				reverbPreDelay: 20,
+				fadeOutMinSec: 1.5,
+			});
+
+			applyVocalAutoMix();
 
 			// 楽器・音量の自動割り当て: 各トラックの役割（メロディ/サブメロ/ベース/伴奏）を決め、選択中の
 			// 楽器プリセットからその役割に合う楽器名を引いて個別設定する。
@@ -6919,19 +7002,12 @@ export const mountDAW = (
 				chord: [36, -36, 48, -48],
 			};
 			const panRoleCounter = new Map<AutoRole, number>();
-			let vocalSideCounter = 0;
 			for (const t of trackStates) {
-				const isMainVocal = !!t.lyricModel && t.config.id === mainVocalId;
+				if (t.lyricModel) continue;
 				const role = roleByTrackId.get(t.config.id);
 				const roleMix = role ? AUTO_ROLE_MIX[role] : undefined;
-				// パン: 楽器トラックは役割ベース、歌詞トラックはメインボーカルを中央に固定し、
-				// ハモリ/コーラス等の副ボーカルは左右へ軽く振ってダブリング感を出す定石。
 				let pan = 64;
-				if (t.lyricModel) {
-					pan = isMainVocal
-						? 64
-						: clamp(64 + (vocalSideCounter++ % 2 === 0 ? 22 : -22), 0, 127);
-				} else if (role) {
+				if (role) {
 					const offsets = AUTO_PAN_OFFSETS[role];
 					const n = panRoleCounter.get(role) ?? 0;
 					panRoleCounter.set(role, n + 1);
@@ -6939,92 +7015,253 @@ export const mountDAW = (
 				}
 				t.trackPan = pan;
 				options.onTrackPanChange?.(t.config.id, pan);
-				// 音圧強化は役割ごとの定石値（{@link AUTO_ROLE_MIX}）を使う。歌詞のあるトラック
-				// （ボーカル）は強く潰すと表情が失われるため控えめにし、メインボーカルだけは
-				// 明瞭さを出すためやや強めに掛ける（一般的なミックスの目安に準拠）。
-				const comp = t.lyricModel
-					? isMainVocal
-						? 30
-						: 25
-					: (roleMix?.compression ?? 35);
-				// ステレオ幅: リードボーカルは狭め・中央寄りでクリアに（モノラル再生時の
-				// 互換性も保つ）、バッキングコーラスは広げて「壁」のような厚みを出す、
-				// というボーカルミックスの定石。楽器は役割ごとの定石値を使う。
-				const width = t.lyricModel
-					? isMainVocal
-						? 100
-						: 120
-					: (roleMix?.width ?? 115);
+				const comp = roleMix?.compression ?? 35;
+				const width = roleMix?.width ?? 115;
 				t.trackCompression = comp;
 				t.trackWidth = width;
 				options.onTrackCompressionChange?.(t.config.id, comp);
 				options.onTrackWidthChange?.(t.config.id, width);
-				// EQ（低域/高域）: 帯域の住み分け（frequency slotting）。
-				if (t.lyricModel) {
-					// ボーカルは低域（ランブル・近接効果によるこもり）を削るのがほぼ普遍的な定石
-					// （実質的なハイパスフィルタの代用）。リードはさらに高域を少し持ち上げて
-					// 抜け・明瞭感（プレゼンス/エア）を足すが、コーラスは持ち上げない
-					// （明るさ＝前に出る印象になるため、奥に置きたいコーラスでは持ち上げすぎない）。
-					t.trackEqLow = -3;
-					t.trackEqHigh = isMainVocal ? 2 : 0;
-					options.onTrackEqLowChange?.(t.config.id, t.trackEqLow);
-					options.onTrackEqHighChange?.(t.config.id, t.trackEqHigh);
-				} else {
-					// 楽器: ベースは低域を少し持ち上げ・高域を削り、他パートは低域を削って
-					// ベースの居場所を空け、メロディ系は高域を少し持ち上げて抜けを出す。
-					// 役割不明時は無変化(0)のまま。
-					const eqLow = roleMix?.eqLow ?? 0;
-					const eqHigh = roleMix?.eqHigh ?? 0;
-					t.trackEqLow = eqLow;
-					t.trackEqHigh = eqHigh;
-					options.onTrackEqLowChange?.(t.config.id, eqLow);
-					options.onTrackEqHighChange?.(t.config.id, eqHigh);
-				}
-				// リバーブは声だけ／楽器だけ、と偏らせず全体に軽く馴染ませる。ボーカルは
-				// vocalReverb（音節単位の専用センド）に任せ、ここでは楽器トラックだけ
-				// 役割ごとの送り量（伴奏は多め・ベースは少なめ）で送る（0だと「おまかせ」で
-				// Mixを上げても楽器に何も掛からず不自然なため）。
-				if (!t.lyricModel) {
-					const reverbSend = roleMix?.reverbSend ?? 15;
-					t.trackReverbSend = reverbSend;
-					options.onTrackReverbSendChange?.(t.config.id, reverbSend);
-					// ディレイ送り: 低域には掛けない定石でベース・伴奏は0、メロディ/サブメロに
-					// だけ薄く送る（マスタディレイが既定オフのため、有効化したときだけ効く）。
-					const delaySend = roleMix?.delaySend ?? 0;
-					t.trackDelaySend = delaySend;
-					options.onTrackDelaySendChange?.(t.config.id, delaySend);
-				}
-				// 歌詞のあるトラックだけビブラート・声量・ディレイ・リバーブ送りを調整する。メインボーカルは
-				// 前に出したいので声量を上げ気味に、ハモリ・コーラス等は奥へ引かせるため下げる。副ボーカルが
-				// 複数あるほど重なって音圧が積み上がるので、1トラックあたりは絞る。
-				if (t.lyricModel) {
-					// ビブラートはメインボーカルだけ。複数の声へ同時に掛けると、声ごとに
-					// 揺れの位相・速さが微妙にズレて和音が「うねる」「濁る」「音程が不安定に
-					// 聞こえる」ため、合唱・ストリングスのセクション奏法と同じくハモリ/コーラス
-					// はストレートトーン（揺らさない）にして音程の軸を安定させるのが定石。
-					t.vocalVibrato = isMainVocal;
-					t.vocalReverb = isMainVocal ? 25 : 45;
-					// ディレイもメロディ役割の楽器と同じ考え方（低域・伴奏には送らない）で、
-					// リードボーカルの語尾にだけ軽いスラップディレイを仕込んでおく定番技法。
-					// コーラスに掛けると輪郭がぼやけて団子になるため送らない。
-					t.vocalDelay = isMainVocal ? 15 : 0;
-					t.vocalVolume = isMainVocal
-						? Math.round(DEFAULT_VOCAL_VOLUME * 1.1)
-						: clamp(
-								Math.round(
-									(DEFAULT_VOCAL_VOLUME * 0.85) /
-										Math.sqrt(Math.max(1, nonMainVocalCount)),
-								),
-								60,
-								MAX_VOCAL_VOLUME,
-							);
-					fireLyricsChange(t);
-				}
+				const eqLow = roleMix?.eqLow ?? 0;
+				const eqHigh = roleMix?.eqHigh ?? 0;
+				t.trackEqLow = eqLow;
+				t.trackEqHigh = eqHigh;
+				options.onTrackEqLowChange?.(t.config.id, eqLow);
+				options.onTrackEqHighChange?.(t.config.id, eqHigh);
+				const reverbSend = roleMix?.reverbSend ?? 15;
+				t.trackReverbSend = reverbSend;
+				options.onTrackReverbSendChange?.(t.config.id, reverbSend);
+				const delaySend = roleMix?.delaySend ?? 0;
+				t.trackDelaySend = delaySend;
+				options.onTrackDelaySendChange?.(t.config.id, delaySend);
 			}
 			updateTrackPanel();
 		};
 		refs.autoMasterBtn.addEventListener("click", () => {
 			applyAutoMastering();
+		});
+
+		let lastOtomadizeOptions: OtomadizeOptions = {
+			genre: "auto",
+			source: "all",
+			castPolicy: "balanced",
+			adjustOctave: true,
+			adjustMix: true,
+			useCurrentInstrument: true,
+			activeOnly: false,
+		};
+
+		const applyOtomadize = (opts: OtomadizeOptions): void => {
+			const autoPreset =
+				INSTRUMENT_PRESETS[currentInstrument] ?? INSTRUMENT_PRESETS.piano;
+			const inputs: OtomadizeTrackInput[] = trackStates.map((t, i) => {
+				const knownSlot = t.composeSlot ?? DECLARED_ROLE[t.config.id];
+				const fallbackInst = knownSlot
+					? (autoPreset[knownSlot] ?? autoPreset.melody)
+					: undefined;
+				// 既に Inc_sf2_file のときは GM 番号が 80〜83 の音色番号を表すためヒントにしない。
+				const currentInst =
+					t.trackFont === "Inc_sf2_file"
+						? undefined
+						: t.trackInstrument
+							? normalizeInstrumentName(t.trackInstrument)
+							: fallbackInst;
+				return {
+					id: t.config.id,
+					index: i,
+					name: t.config.name,
+					notes: t.core.getNotes(),
+					declaredRole: DECLARED_ROLE[t.config.id],
+					composeSlot: t.composeSlot,
+					currentInstrument: currentInst,
+					currentFont: t.trackFont,
+					isVocal: !!t.lyricModel,
+				};
+			});
+
+			const result = planOtomadize(inputs, { ...opts, activeTrackId }, bpm);
+
+			for (const plan of result.tracks) {
+				const t = trackStates[plan.trackIndex];
+				if (!t) continue;
+				// 音源バンクを先に反映し、淫ク☆選択時だけ GM プログラム（80〜83）を更新する。
+				t.trackFont = plan.font;
+				options.onTrackFontChange?.(plan.trackIndex, t.trackFont);
+				if (plan.gmInstrument !== undefined) {
+					t.trackInstrument = plan.gmInstrument;
+					options.onTrackInstrumentChange?.(plan.trackIndex, t.trackInstrument);
+				}
+				if (opts.adjustOctave) {
+					t.trackOctave = clamp(Math.round(plan.octave), -2, 2);
+				}
+				if (opts.adjustMix) {
+					t.volume = plan.volume;
+					t.core.setVolume(plan.volume);
+					t.trackPan = plan.pan;
+					options.onTrackPanChange?.(t.config.id, plan.pan);
+					t.trackCompression = plan.compression;
+					options.onTrackCompressionChange?.(t.config.id, plan.compression);
+					t.trackWidth = plan.width;
+					options.onTrackWidthChange?.(t.config.id, plan.width);
+					t.trackEqLow = plan.eqLow;
+					options.onTrackEqLowChange?.(t.config.id, plan.eqLow);
+					t.trackEqMid = plan.eqMid;
+					options.onTrackEqMidChange?.(t.config.id, plan.eqMid);
+					t.trackEqHigh = plan.eqHigh;
+					options.onTrackEqHighChange?.(t.config.id, plan.eqHigh);
+					t.trackReverbSend = plan.reverbSend;
+					options.onTrackReverbSendChange?.(t.config.id, plan.reverbSend);
+					t.trackDelaySend = plan.delaySend;
+					options.onTrackDelaySendChange?.(t.config.id, plan.delaySend);
+				}
+			}
+
+			if (opts.adjustMix && !opts.activeOnly) {
+				applyObservedPeakGainStaging();
+				applyMasterMixSettings(result.master);
+				applyVocalAutoMix();
+			}
+
+			updateTrackPanel();
+
+			if (result.tracks.length > 0) {
+				const summary = result.tracks
+					.map((p) => {
+						const octLabel =
+							p.octave > 0
+								? `+${p.octave}oct`
+								: p.octave < 0
+									? `${p.octave}oct`
+									: "±0oct";
+						return `${p.trackName}=${p.preset.label}(${octLabel})`;
+					})
+					.join(" / ");
+				refs.otomadizeStatus.textContent = `音MAD化: ${summary}`;
+				refs.otomadizeStatus.classList.remove("dtm-hidden");
+			}
+		};
+
+		const openOtomadizeModal = (): void => {
+			showModal(
+				"音MAD化",
+				`<div class="dtm-modal-body-content dtm-otomad-form">
+  <p>トラック・ノートの置き方・役割・現在の楽器から、淫ク☆・レ淫棒の音色と得意音域に合うオクターブ・音量を自動設定します。</p>
+  <div class="dtm-row">
+    <span class="dtm-label">ジャンル</span>
+    <select class="dtm-select dtm-grow" data-dtm-otomad="genre">
+      <option value="auto">おまかせ</option>
+      <option value="inmu">淫夢</option>
+      <option value="cookie">クッキー☆</option>
+      <option value="both">淫夢&amp;クッキー☆</option>
+    </select>
+  </div>
+  <div class="dtm-row">
+    <span class="dtm-label">音源ソース</span>
+    <select class="dtm-select dtm-grow" data-dtm-otomad="source">
+      <option value="all">すべて（淫ク☆＋レ淫棒）</option>
+      <option value="modern">高音質寄り（淫ク☆＋レ淫棒2020）</option>
+      <option value="niji">レ淫棒（虹.）中心</option>
+      <option value="inc">淫ク☆のみ（音程安定）</option>
+    </select>
+  </div>
+  <div class="dtm-row">
+    <span class="dtm-label">配役方針</span>
+    <select class="dtm-select dtm-grow" data-dtm-otomad="cast">
+      <option value="balanced">役割バランス（おすすめ）</option>
+      <option value="classic">主要キャラ中心（王道）</option>
+      <option value="varied">バリエーション重視（ランダム寄り）</option>
+    </select>
+  </div>
+  <div class="dtm-otomad-checks">
+    <label class="dtm-checkbox-label"><input type="checkbox" class="dtm-checkbox" data-dtm-otomad="adjust-octave"><span>得意音域に合わせてオクターブを自動調整</span></label>
+    <label class="dtm-checkbox-label"><input type="checkbox" class="dtm-checkbox" data-dtm-otomad="adjust-mix"><span>音量・EQ・音圧・定位も音MAD向けに調整</span></label>
+    <label class="dtm-checkbox-label"><input type="checkbox" class="dtm-checkbox" data-dtm-otomad="use-gm"><span>元の楽器（GM音色）を選定に反映</span></label>
+    <label class="dtm-checkbox-label"><input type="checkbox" class="dtm-checkbox" data-dtm-otomad="active-only"><span>現在のトラックのみ対象とする</span></label>
+  </div>
+  <p class="dtm-hint dtm-otomad-summary" data-dtm-otomad="summary"></p>
+  <div class="dtm-row" style="justify-content:flex-end;gap:8px;margin-top:8px;">
+    <button class="dtm-btn" data-dtm-otomad="cancel">キャンセル</button>
+    <button class="dtm-btn dtm-btn--primary" data-dtm-otomad="ok">確定</button>
+  </div>
+</div>`,
+			);
+
+			const genreSel = refs.modalBody.querySelector<HTMLSelectElement>(
+				'[data-dtm-otomad="genre"]',
+			);
+			const sourceSel = refs.modalBody.querySelector<HTMLSelectElement>(
+				'[data-dtm-otomad="source"]',
+			);
+			const castSel = refs.modalBody.querySelector<HTMLSelectElement>(
+				'[data-dtm-otomad="cast"]',
+			);
+			const octChk = refs.modalBody.querySelector<HTMLInputElement>(
+				'[data-dtm-otomad="adjust-octave"]',
+			);
+			const mixChk = refs.modalBody.querySelector<HTMLInputElement>(
+				'[data-dtm-otomad="adjust-mix"]',
+			);
+			const gmChk = refs.modalBody.querySelector<HTMLInputElement>(
+				'[data-dtm-otomad="use-gm"]',
+			);
+			const activeChk = refs.modalBody.querySelector<HTMLInputElement>(
+				'[data-dtm-otomad="active-only"]',
+			);
+			const summaryEl = refs.modalBody.querySelector<HTMLElement>(
+				'[data-dtm-otomad="summary"]',
+			);
+			const okBtn = refs.modalBody.querySelector<HTMLButtonElement>(
+				'[data-dtm-otomad="ok"]',
+			);
+			const cancelBtn = refs.modalBody.querySelector<HTMLButtonElement>(
+				'[data-dtm-otomad="cancel"]',
+			);
+
+			if (genreSel) genreSel.value = lastOtomadizeOptions.genre;
+			if (sourceSel) sourceSel.value = lastOtomadizeOptions.source;
+			if (castSel) castSel.value = lastOtomadizeOptions.castPolicy;
+			if (octChk) octChk.checked = lastOtomadizeOptions.adjustOctave;
+			if (mixChk) mixChk.checked = lastOtomadizeOptions.adjustMix;
+			if (gmChk) gmChk.checked = lastOtomadizeOptions.useCurrentInstrument;
+			if (activeChk) activeChk.checked = !!lastOtomadizeOptions.activeOnly;
+
+			const refreshSummary = (): void => {
+				const onlyActive = !!activeChk?.checked;
+				const targets = trackStates.filter((t) => {
+					if (t.lyricModel || t.core.getNotes().length === 0) return false;
+					return !onlyActive || t.config.id === activeTrackId;
+				});
+				if (summaryEl) {
+					summaryEl.textContent =
+						targets.length > 0
+							? `対象トラック (${targets.length}): ${targets.map((t) => t.config.name).join("・")}`
+							: "対象になるノートの入った楽器トラックがありません（UTAU歌声・空トラックは対象外です）。";
+				}
+				if (okBtn) okBtn.disabled = targets.length === 0;
+			};
+			refreshSummary();
+			activeChk?.addEventListener("change", refreshSummary);
+
+			const close = (): void => {
+				refs.modalOverlay.setAttribute("hidden", "");
+			};
+			cancelBtn?.addEventListener("click", close);
+			okBtn?.addEventListener("click", () => {
+				lastOtomadizeOptions = {
+					genre: (genreSel?.value as OtomadGenre) ?? "auto",
+					source: (sourceSel?.value as OtomadSource) ?? "all",
+					castPolicy: (castSel?.value as OtomadCastPolicy) ?? "balanced",
+					adjustOctave: octChk?.checked ?? true,
+					adjustMix: mixChk?.checked ?? true,
+					useCurrentInstrument: gmChk?.checked ?? true,
+					activeOnly: activeChk?.checked ?? false,
+				};
+				close();
+				applyOtomadize(lastOtomadizeOptions);
+			});
+		};
+
+		refs.otomadizeBtn.addEventListener("click", () => {
+			openOtomadizeModal();
 		});
 		refs.drumSelect.addEventListener("change", () => {
 			currentDrumPattern = refs.drumSelect.value;

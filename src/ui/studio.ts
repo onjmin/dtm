@@ -1447,6 +1447,7 @@ export const createDtmStudio = async (
 		};
 
 		// トラック個別楽器変更
+		// マップは同期で更新する（同じ一括設定で続けて届く音源バンク変更と競合しないため）。
 		const handleTrackInstrumentChange = async (
 			trackIndex: number,
 			instrumentName: string,
@@ -1457,10 +1458,10 @@ export const createDtmStudio = async (
 				await loadEditorTrackSounds();
 				return;
 			}
-			await listReady;
 			const key = resolveNameToKey(instrumentName);
 			if (!key) return;
 			trackInstOverrides.set(trackIndex, key);
+			await listReady;
 			await loadInstrument(key, trackFontOverrides.get(trackIndex));
 		};
 

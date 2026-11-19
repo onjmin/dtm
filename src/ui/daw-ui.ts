@@ -77,6 +77,9 @@ export type DawUIRefs = {
 	fadeInfoBtn: HTMLButtonElement;
 	autoMasterBtn: HTMLButtonElement;
 	autoMasterInfoBtn: HTMLButtonElement;
+	otomadizeBtn: HTMLButtonElement;
+	otomadizeInfoBtn: HTMLButtonElement;
+	otomadizeStatus: HTMLElement;
 	trackTabs: HTMLElement;
 	trackBody: HTMLElement;
 	// drum
@@ -378,10 +381,17 @@ export const buildUI = (
         <button class="dtm-infobtn" data-dtm="master-comp-info" title="グルーコンプの解説">${icon("info", 12)}</button>
       </div>
       <div class="dtm-row">
-        <button class="dtm-btn dtm-btn--ghost dtm-btn--xs" data-dtm="auto-master" title="音圧・ステレオ幅・リバーブに加え、各トラックの楽器・音量も自動推定して一括設定します">おまかせマスタリング</button>
-        <button class="dtm-infobtn" data-dtm="auto-master-info" title="おまかせマスタリングの解説">${icon("info", 12)}</button>
+        <span class="dtm-inline-group">
+          <button class="dtm-btn dtm-btn--ghost dtm-btn--xs" data-dtm="auto-master" title="音圧・ステレオ幅・リバーブに加え、各トラックの楽器・音量も自動推定して一括設定します">おまかせマスタリング</button>
+          <button class="dtm-infobtn" data-dtm="auto-master-info" title="おまかせマスタリングの解説">${icon("info", 12)}</button>
+        </span>
+        <span class="dtm-inline-group">
+          <button class="dtm-btn dtm-btn--ghost dtm-btn--xs" data-dtm="otomadize" title="トラックの役割・ノート配置・楽器から、淫ク☆・レ淫棒の音色やオクターブ・音量・ミックスを音MAD向けに自動設定します">音MAD化</button>
+          <button class="dtm-infobtn" data-dtm="otomadize-info" title="音MAD化の解説">${icon("info", 12)}</button>
+        </span>
         <span class="dtm-grow"></span>
       </div>
+      <p class="dtm-hint dtm-hint--wrap dtm-hidden" data-dtm="otomadize-status"></p>
       <div class="dtm-row">
         <span class="dtm-label">リバーブ</span>
         <input type="range" class="dtm-range dtm-grow" data-dtm="reverb-amount" value="0" min="0" max="100" aria-label="マスタリバーブ（全トラックへ一律に掛かる残響）">
@@ -938,6 +948,9 @@ export const buildUI = (
 		fadeInfoBtn: sel("fade-info"),
 		autoMasterBtn: sel("auto-master"),
 		autoMasterInfoBtn: sel("auto-master-info"),
+		otomadizeBtn: sel("otomadize"),
+		otomadizeInfoBtn: sel("otomadize-info"),
+		otomadizeStatus: sel("otomadize-status"),
 		trackTabs: sel("track-tabs"),
 		trackBody: sel("track-body"),
 		drumSelect: sel("drum-select"),

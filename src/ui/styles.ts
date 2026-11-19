@@ -2073,6 +2073,35 @@ export const DAW_CSS = `
   box-shadow: 2px 2px 0 var(--c-black);
   opacity: 1;
 }
+
+.dtm-inline-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dtm-otomad-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dtm-otomad-form .dtm-row {
+  flex-wrap: nowrap;
+}
+.dtm-otomad-form .dtm-label {
+  min-width: 84px;
+  flex-shrink: 0;
+}
+.dtm-otomad-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+.dtm-otomad-summary {
+  white-space: normal;
+  margin: 2px 0 0 0;
+  color: var(--dtm-text);
+}
 `;
 
 /**
