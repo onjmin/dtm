@@ -11,7 +11,7 @@
 - 原曲 PV の語彙で組むカバー MV: [techniques/pv-pixel-cover-mv.md](techniques/pv-pixel-cover-mv.md)
 - ドット絵の歌動画の型とバグの型: [techniques/pixel-video.md](techniques/pixel-video.md)
 - ドット絵の人物の描き方: [techniques/pixel-character.md](techniques/pixel-character.md)
-- 白黒の文字PV（Scratch 風）: [techniques/scratch-fx.md](techniques/scratch-fx.md)
+- 白黒の文字PV（Scratch 風）と、**ドラムの打点を映す箱の盤（ドラムのバー。左の縦 `BeatColumn`・下の横 `BeatRow`）**: [techniques/scratch-fx.md](techniques/scratch-fx.md)。ほかの MV の上に盤だけ重ねて使える
 
 ## 0. 骨組み
 
@@ -52,6 +52,7 @@
 - **旋律・分散和音**: 間奏の風景で、ソロの音ごとにエイが海から跳ねる（長い音は手前で大きく、短い音は遠くで小さく）。分散和音の音の高さの所で波が十字に光る。
 - **泡**: 歌った高さに小さな輪を出し、線から離れていく。水の中で歌う人物は口から泡（1拍に多くて1つ）。
 - **ドラムの譜面**: 枠の下に 16 マスの打楽器の並びと、和音の帯（和音ごとに色）を出す。いま何が鳴っているかが見える。
+  - ドラムを映す部品は [techniques/scratch-fx.md](techniques/scratch-fx.md) の箱の盤（`scripts/otomad/lib/scratch_fx.py` の `BeatColumn`・`BeatRow`）。和音の帯は unj-reze の `lib/mv/mv-engine.ts` `drawChordBar`（コード進行バー）と同じ作りにする。
 - **場面転換を音の段に合わせる**: あめふらしの墨はフィルのスネアごとに広がり、音が抜ける最後の1拍で全面を覆い、サビの頭のキックで晴れる。エイの間奏の風景は線から上下へ1拍で開き、最後の1拍は半音の8音に合わせて8段で閉じる。
 
 ## 3. 歌詞
