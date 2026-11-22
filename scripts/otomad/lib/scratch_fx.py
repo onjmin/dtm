@@ -191,9 +191,103 @@ def _burst_stages(n=BOX_IN):
     return S
 
 
+# ---- 太鼓ごとの「白からの引き算」の箱（geo） ----
+# 箱の中身を、満タンの白い四角から、その拍で鳴る太鼓ごとの形を引いて作る（手本: nicovideo sm38799922 の箱。絵は写さず、決まりだけ）。
+# kind は geo_kind(flags, 1拍の秒) で作る。flags は太鼓の頭文字を並べた文字列:
+#   K キック     まんなかの丸い穴（打った瞬間は大きく、1拍かけて閉じて満タンに戻る。キックだけの拍は白い四角で終わる）
+#   C クラップ   4辺のまんなかから中心へ伸びる切り欠き（十字に欠ける）
+#   S スネア     クラップの切り欠きを中心までつなぐ（田の字に割れる）
+#   T タンバリン 外側の四角い溝（内から外へ広がる）
+#   o 開いたハット（裏の8分）   中ほどの四角い溝（内側に現れ、外へ広がる）
+#   h 閉じたハット（裏の8分）   内側の小さな四角い溝
+#   H 閉じたハット（16分の裏）  四隅の欠け
+# どの形も上下・左右・斜めの線対称で、180°回しても同じ（点対称）。太鼓には向きが無く、盤が横へずれても読み方が変わらない。
+# 形は「四角い溝」と十字の系統に揃える（丸い点・ひし形は 2026-11-22 に所有者が不採用）。
+# 拍が終わると最後の形のまま残り、その拍で何が鳴ったかの記録になる。
+DRUM_KEY_NAMES = {'bassDrum1': 'kick', 'handClap': 'clap', 'acousticSnare': 'snare', 'tambourine': 'tamb',
+                  'closedHihat': 'hat_c', 'openHihat': 'hat_o'}
+FILL_ORDER = (3, 4, 2, 5, 1, 6, 0, 7)   # フィルで箱が点く行の順（まんなかから外へ）
+
+
+def geo_kind(flags, beat_sec):
+    """太鼓の頭文字の列（'KCSh' など）と1拍の秒から、箱の kind を作る。1拍のコマ数が形の変化の長さになる"""
+    return f'geo:{flags}:{max(6, int(round(beat_sec * FPS_SCRATCH)))}'
+
+
+def _geo_frames(flags, frames):
+    n = BOX_IN
+    yy, xx = np.mgrid[0:n, 0:n]
+    ax, ay = np.abs(xx - 7.5), np.abs(yy - 7.5)
+    cheb = np.maximum(ax, ay)
+    groove = lambda g: ~((cheb <= g) & (cheb > g - 1))   # 四角い溝（幅1）
+    out = []
+    for f in range(frames + 1):
+        p = f / frames
+        m = np.ones((n, n), bool)
+        if 'K' in flags:
+            m &= np.hypot(ax, ay) > 7.2 * (1 - p) ** 1.4
+        if 'C' in flags:
+            L = 5.5 * min(1.0, p * 2.5)
+            m &= ~(((ax < 1) & (ay > 7.5 - L)) | ((ay < 1) & (ax > 7.5 - L)))
+        if 'S' in flags:
+            m &= ~(((ax < 1) | (ay < 1)) & (cheb <= 3.0 * min(1.0, p * 2.5)))
+        if 'T' in flags:
+            m &= groove(4.5 + 2.5 * min(1.0, p * 2.0))
+        if 'o' in flags and p >= 0.5:
+            m &= groove(3.5 + 2.0 * min(1.0, (p - 0.5) * 2.4))
+        if 'h' in flags and p >= 0.5:
+            m &= groove(1.5 + 1.5 * min(1.0, (p - 0.5) * 2.4))
+        if 'H' in flags and p >= 0.75:
+            sz = 1 + int(min(1.0, (p - 0.75) * 6) * 1.6)
+            m &= ~((ax > 7.5 - sz) & (ay > 7.5 - sz))
+        out.append(m)
+    return out
+
+
+def read_drum_pattern(name, config_path):
+    """dtm の固定パターン（src/instruments/drum-config.ts）を定義からそのまま読む → {'kick': (step, ...), 'clap': ..., ...}。
+    step は1小節 192 のうちの位置。手で写すと抜ける（31LDK でタンバリンとスネアを落とした）ので、必ずここから読む"""
+    import re
+    src = open(config_path, encoding='utf-8').read()
+    body = re.search(r'\n\t' + re.escape(name) + r': \{(.*?)\n\t\},', src, re.S).group(1)
+    pat = {}
+    for st, key in re.findall(r'step: (\d+), pitch: DRUM_KEYS\.(\w+)', body):
+        if key in DRUM_KEY_NAMES:
+            pat.setdefault(DRUM_KEY_NAMES[key], []).append(int(st))
+    return {k: tuple(v) for k, v in pat.items()}
+
+
+def geo_flags(pattern, beat):
+    """パターン（read_drum_pattern の形）の beat 拍目（0〜3）で鳴る太鼓の頭文字の列"""
+    s0 = beat * 48
+    fl = ''.join(f for f, k in (('K', 'kick'), ('C', 'clap'), ('S', 'snare'), ('T', 'tamb')) if s0 in pattern.get(k, ()))
+    fl += 'o' if s0 + 24 in pattern.get('hat_o', ()) else ''
+    fl += 'h' if s0 + 24 in pattern.get('hat_c', ()) else ''
+    fl += 'H' if s0 + 36 in pattern.get('hat_c', ()) else ''
+    return fl
+
+
+def geo_beats(bar_sec, n_bars, pattern_of_bar, skip_bars=()):
+    """1拍ごとの Beat の列を作る。pattern_of_bar(小節番号) はその小節のパターン（鳴らない小節は None か {}）。
+    中央寄りの列はその拍で鳴る太鼓ぜんぶ、外の列は裏拍の太鼓（クラップ・スネア・タンバリン）だけ。
+    skip_bars の小節は空にする（add_fill でフィルにする小節）。"""
+    beat = bar_sec / 4
+    out = []
+    for bar in range(n_bars):
+        pat = None if bar in skip_bars else pattern_of_bar(bar)
+        for q in range(4):
+            fl = geo_flags(pat, q) if pat else ''
+            back = ''.join(c for c in fl if c in 'CST')
+            out.append(Beat((bar * 4 + q) * beat, geo_kind(fl, beat) if fl else None, geo_kind(back, beat) if back else None))
+    return out
+
+
 def _fill_frames(kind):
     """中 16×16 の白（True）のコマ列"""
     n = BOX_IN
+    if kind.startswith('geo:'):
+        _, flags, frames = kind.split(':')
+        return _geo_frames(flags, int(frames))
     yy, xx = np.mgrid[0:n, 0:n]
     if kind == 'kick':
         return _kick_stages()
@@ -279,6 +373,7 @@ class _BeatBoardBase:
     step: float = 40.0              # 行の間隔（Scratch 単位）
     box_size: float = 37.4          # 箱の一辺（Scratch 単位。手本は 22 単位 × 大きさ 170%）
     stagger: float = 0.02           # 滑ってくるとき箱ごとに遅らせる秒
+    fills: list | None = None       # フィルの区間 [(始め, 終わり, 打点の秒の列, 1拍の秒)]。add_fill で足す
 
     def __post_init__(self):
         self.beats = sorted(self.beats, key=lambda b: b.t)
@@ -306,9 +401,32 @@ class _BeatBoardBase:
         i = z * self.group
         return self._ts[i] if i < len(self._ts) else 1e9
 
+    def add_fill(self, t0, t1, hits, beat_sec):
+        """t0〜t1 を「フィル」にする（サビ前など）。枠は動かさず、頭で点いていた箱が全部消えて空の枠だけになり、
+        hits の打点ごとに、まんなかの行から外へ向かって、2列いっぺんに箱が点く（1拍1箱の順送りをやめる）。
+        t1 で空に戻り、ふつうの順送りへ戻る。この区間の拍は beats に入れない（geo_beats の skip_bars）。"""
+        self.fills = (self.fills or []) + [(t0, t1, sorted(hits), beat_sec)]
+
+    def _draw_fill(self, canvas, t, hits, beat_sec):
+        empty = box_frames(None, self._px)[0]
+        for col in (0, 1):
+            for row in range(self.rows):
+                paste(canvas, empty, *self.stage.px(*self.slot(col, row)), alpha=0.5)
+        for n, th in enumerate(hits):
+            if t < th:
+                break
+            fr = box_frames(geo_kind('KC' if n % 2 else 'K', beat_sec), self._px)
+            i = min(len(fr) - 1, int((t - th) * FPS_SCRATCH * 2))   # 8分で形が出来上がるよう、倍の速さで進める
+            for col in (0, 1):
+                paste(canvas, fr[i], *self.stage.px(*self.slot(col, FILL_ORDER[n % len(FILL_ORDER)] % self.rows)))
+
     def draw(self, canvas, t):
         if not _in_spans(self.spans, t):
             return
+        for t0, t1, hits, beat_sec in self.fills or []:
+            if t0 <= t < t1:
+                self._draw_fill(canvas, t, hits, beat_sec)
+                return
         s = _span_start(self.spans, t)
         if self._handover(s) or s is None or blink(t, s):
             empty = box_frames(None, self._px)[0]

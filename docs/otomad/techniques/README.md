@@ -38,7 +38,7 @@
 | [ust-cover.md](ust-cover.md) | 所有者の UST と MIDI から UTAU 音源（束音ロゼ・華）でカバーを録る。延ばしの母音・ハモリの歌詞・落ちた音の補修・界隈曲の音での編曲とミックスの最終形 | anemone | — |
 | [pv-pixel-cover-mv.md](pv-pixel-cover-mv.md) | 原曲 PV の語彙で組むドット絵カバー MV。振りを PV に合わせる、人物へのグリッチ、コードと旋律のピアノロール、頁の縦書き、4K の書き出し | anemone | — |
 | [time-axis-print.md](time-axis-print.md) | 紙と括弧だけの画面。括弧の中を時間の軸にして、鳴った位置に本編の場面を網点で刷る。反転・消す・閉じる・全編で1枚だけ色 | kakko1 | 評価待ち |
-| [scratch-fx.md](scratch-fx.md) | Scratch 文字PVの白黒の演出（拍ごとに満ちる箱の盤・回って戻る枠のパーン・滑り込む字とカメラ・縦書きの積み上げ・崩れ落ち）。lib/scratch_fx.py、曲から組む見本は tools/scratch_fx_demo.py。自作 sb3 をそのまま録る tools/sb3_rec.mjs | エイがとなりにすわってくる（見本） | — |
+| [scratch-fx.md](scratch-fx.md) | Scratch 文字PVの白黒の演出（拍ごとに満ちる箱の盤・回って戻る枠のパーン・滑り込む字とカメラ・縦書きの積み上げ・崩れ落ち）。lib/scratch_fx.py、曲から組む見本は tools/scratch_fx_demo.py。箱の盤はドラムのバーとして他の MV に重ねられる（太鼓ごとの図形 geo_beats、サビ前のフィル add_fill）。自作 sb3 をそのまま録る tools/sb3_rec.mjs | エイがとなりにすわってくる（見本）・31LDK（ドラムのバー） | — |
 | [minimal-process.md](minimal-process.md) | ミニマル音楽の手順（ずれ・埋める・抜ける）と、音と1対1の楽譜の映像 | cm18 | — |
 
 「—」は所有者の評価をまだ台帳に写していないもの。手元の `songs/*/notes-*.md` から写す（[../README.md](../README.md) の「移し替えの残り」）。
