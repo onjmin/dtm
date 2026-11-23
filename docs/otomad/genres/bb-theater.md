@@ -51,6 +51,7 @@ BB素材（切り抜いた立ち絵や短い動画）を人形劇のように動
 - 対戦ゲームの枠（体力・ROUND・VS）には入れない。間が延びる（bb12 1版目）。導入 → 起承転結（バトル → 涙 → バトル → クライマックス → オチ）で組み、伏線を回収する。
 - 名作の緩急（波）と、コメントがどこで山になるかは [research/battle-inmu.md](../research/battle-inmu.md) の「名作の緩急と筋」「名作のどこがウケるか」。
 - 画と音の質: 背景は写真を視差で動かす（`songs/bb/film2d.py`）、BGM は【INM】楽曲.zip の実際の曲（KBTIT のテーマ「危機はそこに」、Bloodborne ガスコイン神父、もののけ姫、怪談金玉袋サントラの sad memory・帰還・夢の吹く草原など）、効果は定番エフェクトの GB（bb13）。
+- 「ヌルヌル」と言われるのは 60fps と毎コマの中割り（[research/battle-cookie-nurunuru.md](../research/battle-cookie-nurunuru.md)）。止め絵を滑らせない。60fps の手描き BB 素材（DIYUSI sm33988618 など）を使い、30fps の素材はオプティカルフローで間を作る。カメラは止めずにゆっくり動かす。
 - カメラは Z 軸を意識して振る（奥から手前への飛び込み・回り込み・見上げ・肩越し）。2.5D の舞台は `songs/bb/stage3d.py`（手元）。
 
 ## 作品

@@ -66,6 +66,7 @@ docs/otomad/
 | [inmu-cookie-staging.md](research/inmu-cookie-staging.md) | 淫夢・クッキー☆音MADの演出の引き出し、文字PV、講評の観点、dande3 の照合（10-31） |
 | [bb-theater.md](research/bb-theater.md) | BB劇場の測定（割り方・型・物語性・バトルの撮り方、11-01） |
 | [battle-inmu.md](research/battle-inmu.md) | バトル淫夢のヒット作の測定（格ゲーの枠・技ごとの BB・裏切り・決まり文句・肩すかし、11-01） |
+| [battle-cookie-nurunuru.md](research/battle-cookie-nurunuru.md) | ヌルヌル動くバトルクッキー☆（60fps・毎コマの中割り・60fps の手描き BB 素材・オプティカルフロー、11-23） |
 | [noediyu.md](research/noediyu.md) | のえぢゆ（NEL姉貴・DIYUSI）の設定・台詞・BB素材・抜き方の注意（11-02） |
 | [oshare-cookie.md](research/oshare-cookie.md) | オシャレクッキー☆の全 724 本の題名の傾向、型、コメント、まだ無いジャンル（11-03） |
 | [cookie-relations.md](research/cookie-relations.md) | クッキー☆の人物の関係をタグの共起で調べた表（6992 本、11-03） |
