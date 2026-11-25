@@ -9,3 +9,5 @@ transformers
 # lib/voxel.py（ブロックの世界の描画）だけが使う。numpy の版を動かさないよう --no-deps で SPEECH_PYLIB へ入れてもよい
 numba
 llvmlite
+# lib/sf2_voice.py（声のサウンドフォントを 1 音ずつ鳴らす）だけが使う
+sf2utils==1.0.0
