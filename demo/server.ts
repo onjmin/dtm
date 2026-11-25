@@ -21,6 +21,7 @@ app.get("/bgm.html", serveStatic({ path: "./demo/bgm.html" }));
 
 // デモページ用のビルド済み CSS
 app.get("/tailwind.css", serveStatic({ path: "./demo/tailwind.css" }));
+app.get("/fonts/*", serveStatic({ root: "./demo" }));
 
 // dist 配信
 app.get("/dist/*", serveStatic({ root: "./" }));

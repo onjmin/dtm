@@ -46,6 +46,7 @@ jobs:
           cp demo/embed-chord.html docs/demo/embed-chord.html
           cp demo/bgm.html docs/demo/bgm.html
           cp demo/tailwind.css docs/demo/tailwind.css
+          cp -r demo/fonts docs/demo/fonts
           cp dist/index.mjs docs/demo/index.mjs
           cp dist/voice-worker.js docs/demo/voice-worker.js
 

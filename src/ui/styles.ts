@@ -10,9 +10,7 @@ const STYLE_ID = "dtm-daw-styles";
 export const DAW_CSS = `
 @font-face {
   font-family: 'k8x12';
-  src: url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff2') format('woff2'),
-       url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.woff') format('woff'),
-       url('https://db.onlinewebfonts.com/t/777630d46640dc5a928ea833c2fcb875.ttf') format('truetype');
+  src: url('https://onjmin.github.io/dtm/demo/fonts/k8x12.woff') format('woff');
   font-weight: normal;
   font-style: normal;
 }
