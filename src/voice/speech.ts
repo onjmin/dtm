@@ -25,6 +25,7 @@ import {
 	fetchAssetBytes,
 	fetchAssetText,
 	type HtsProsody,
+	type HtsProsodyFrames,
 	initJpreprocessDictionary,
 	isQuestion,
 	type JpreprocessModule,
@@ -136,6 +137,13 @@ export type SpeechPlanOptions = {
 	 * 直前まで使っていた音声モデルのまま計画する）。
 	 */
 	emotion?: SpeechEmotion;
+	/**
+	 * 外から持ち込む韻律（音素の時刻表とフレームごとの F0）。指定すると HTS 音声モデルの
+	 * 代わりにこれをモーラへ整列して使う（VOICEVOX の予測を借りるときなど。
+	 * {@link file://./voicevox-prosody.ts}）。モーラの並びが合わず整列できないときは
+	 * HTS に戻る。話速は持ち込んだ時刻表のまま（`style` の話速は掛からない）。
+	 */
+	prosodyFrames?: HtsProsodyFrames;
 };
 
 /** ダウンロード進捗（全アセット合算のバイト数）。 */
@@ -411,20 +419,26 @@ export const createSpeechPlanner = (
 		}
 		// 韻律は HTS 音声モデルの音素長と F0 を移植する（アクセントの起伏が大きい）。
 		// モーラに整列できない文だけ UtauTTS の TCN モデルに任せる。
-		let prosody: HtsProsody | null = null;
-		if (jp.is_voice_ready()) {
-			useVoice(o.emotion ?? "neutral");
-			const frames = JSON.parse(jp.analyze_prosody(text, style.speed));
-			prosody = alignHtsProsody(frames, features, {
+		const fromFrames = (frames: HtsProsodyFrames): HtsProsody | null => {
+			const aligned = alignHtsProsody(frames, features, {
 				...styleAlignOptions(style),
 				intonationStrength,
 			});
-			if (prosody) {
-				prosody = shapeProsody(prosody, features, {
+			return (
+				aligned &&
+				shapeProsody(aligned, features, {
 					...styleShapeOptions(style),
 					question: isQuestion(text),
-				});
-			}
+				})
+			);
+		};
+		// 持ち込みの韻律があればそれを先に試す。整列できなければ HTS に戻る。
+		let prosody: HtsProsody | null = o.prosodyFrames
+			? fromFrames(o.prosodyFrames)
+			: null;
+		if (!prosody && jp.is_voice_ready()) {
+			useVoice(o.emotion ?? "neutral");
+			prosody = fromFrames(JSON.parse(jp.analyze_prosody(text, style.speed)));
 		}
 		return adapter.plan(bank as unknown as VoiceBank, text, features, {
 			tone: o.tone ?? "C4",

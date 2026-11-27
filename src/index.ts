@@ -228,3 +228,4 @@ export * from "./voice/speech";
 // 単発の語り（speak）で遅れて届いたチャンクの扱い（SpeakVoiceOptions.lateChunks）
 export type { SpeechLateChunks } from "./voice/speech-schedule";
 export { VOICE_IMAGES } from "./voice/voice-images";
+export * from "./voice/voicevox-prosody";

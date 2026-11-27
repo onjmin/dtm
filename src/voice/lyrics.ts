@@ -99,6 +99,10 @@ import type {
 } from "./voice-worker-types";
 import { packCompositeAlias, unpackCompositeAlias } from "./voice-worker-types";
 import {
+	getVoicevoxProsodySource,
+	type VoicevoxProsodySource,
+} from "./voicevox-prosody";
+import {
 	buildVoicevoxPhrases,
 	createVoicevoxRenderer,
 	isVoicevoxModel,
@@ -2043,6 +2047,11 @@ export type KoeVoiceOptions = {
 	 * 一度だけ読み込まれ、最初の語りを合成するときに取得が始まる。
 	 */
 	ttsBaseUrl?: string;
+	/**
+	 * 語りの抑揚を手元の VOICEVOX エンジンから借りる（{@link SingingVoicesOptions.voicevoxProsody}）。
+	 * 省略時は借りない。
+	 */
+	voicevoxProsody?: { baseUrl?: string; speaker?: number };
 };
 
 type RenderedNote = {
@@ -2755,6 +2764,10 @@ export const createKoeVoice = async (
 	const planner: SpeechPlanner = getSpeechPlanner({
 		baseUrl: options.ttsBaseUrl,
 	});
+	/** 抑揚を VOICEVOX から借りる係（有効にしたときだけ。エンジンに届かなければ HTS のまま）。 */
+	const prosodySource: VoicevoxProsodySource | null = options.voicevoxProsody
+		? getVoicevoxProsodySource(options.voicevoxProsody)
+		: null;
 
 	/** 収録セットごとの音源の見え方（多音階でなければ "" の1件だけ）。 */
 	const toneViews = new Map<string, SpeechToneView>();
@@ -2789,10 +2802,16 @@ export const createKoeVoice = async (
 					if (emotion && emotion !== "neutral") {
 						await planner.prepareEmotion(emotion);
 					}
+					// 感情つきの語りは HTS の感情モデルが起伏を決めるので、借りるのは neutral だけ。
+					const prosodyFrames =
+						prosodySource && (!emotion || emotion === "neutral")
+							? ((await prosodySource.frames(text)) ?? undefined)
+							: undefined;
 					return planner.plan(toneViewFor(token).view, text, {
 						tone: token ?? "C4",
 						style,
 						emotion,
+						prosodyFrames,
 					});
 				} catch (err) {
 					console.warn(`[dtm] speech plan failed for "${text}"`, err);
@@ -4129,6 +4148,14 @@ export type SingingVoicesOptions = {
 	 */
 	voicevoxUrl?: string;
 	/**
+	 * UTAU 音源の語り（`「…」`）の抑揚（モーラの長さと高さ）を、手元の VOICEVOX エンジンの
+	 * 予測から借りる。声は UTAU 音源のまま。既定は false（エンジンへ問い合わせない）。
+	 * true で四国めたん（ノーマル）、`{ speaker }` で話し声のスタイル ID を選ぶ。
+	 * エンジンに届かない・感情つきの語り・モーラが合わない文は、既定の HTS の抑揚で鳴る。
+	 * 公開するときは「VOICEVOX:<話者名>」のクレジット表記が要る（docs/guide/voicevox-sing.md）。
+	 */
+	voicevoxProsody?: boolean | { speaker?: number };
+	/**
 	 * NEUTRINO を呼ぶ手元のサーバーのURL（`nt_` で始まるモデルで歌うときに呼ぶ）。
 	 * 省略時は `http://127.0.0.1:50022`（`scripts/misc/neutrino-server.ts` の既定）。
 	 */
@@ -4359,6 +4386,15 @@ export const createSingingVoices = (
 				reverbBus: options.reverbBus,
 				delayBus: options.delayBus,
 				ttsBaseUrl: options.ttsBaseUrl,
+				voicevoxProsody: options.voicevoxProsody
+					? {
+							baseUrl: options.voicevoxUrl,
+							speaker:
+								typeof options.voicevoxProsody === "object"
+									? options.voicevoxProsody.speaker
+									: undefined,
+						}
+					: undefined,
 			}))()
 			.then((v) => {
 				loaded.set(m, v);

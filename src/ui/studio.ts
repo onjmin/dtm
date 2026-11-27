@@ -312,6 +312,13 @@ export type DtmStudioOptions = {
 	 * Cache API に保存する。CSP 制限下では同オリジンのプロキシを渡す。
 	 */
 	ttsBaseUrl?: string;
+	/**
+	 * UTAU 音源の語り（`「…」`）の抑揚を、手元の VOICEVOX エンジンの予測から借りる。
+	 * 既定は false（エンジンへ問い合わせない）。true で四国めたん（ノーマル）、
+	 * `{ speaker }` で話し声のスタイル ID を選ぶ。エンジンに届かなければ既定の抑揚で鳴る。
+	 * 公開するときは「VOICEVOX:<話者名>」のクレジット表記が要る。
+	 */
+	voicevoxProsody?: boolean | { speaker?: number };
 	/** 有効化する機能。既定はすべて true。 */
 	features?: {
 		/** MIDIファイル読み込み。 */
@@ -965,6 +972,7 @@ export const createDtmStudio = async (
 		voicebanks,
 		worldlineScriptUrl: options.worldlineScriptUrl,
 		ttsBaseUrl: options.ttsBaseUrl,
+		voicevoxProsody: options.voicevoxProsody,
 		// ボーカルトラック個別のリバーブセンド（`r`トークン）先。マスタリバーブの
 		// Convolver 入力へ直接センドする（PreDelayは経由しない。チャンネルストリップの
 		// reverbSend とは別経路の、音節単位でより細かく制御できるセンド）。

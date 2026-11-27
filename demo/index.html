@@ -434,6 +434,13 @@
         const studio = await createDtmStudio({
             defaultPreset,
             midiSearch: { apiKey: '114514', baseUrl: isLocal ? location.origin : null },
+            // 手元で ?vvprosody=1（または ?vvprosody=<話し声のスタイルID>）を付けて開いたときだけ、
+            // 語り（「…」）の抑揚を VOICEVOX エンジンから借りる。エンジンが無ければ既定の抑揚のまま。
+            voicevoxProsody: (() => {
+                const v = new URLSearchParams(location.search).get('vvprosody');
+                if (!isLocal || v === null || v === '0') return false;
+                return /^\d+$/.test(v) && v !== '1' ? { speaker: Number(v) } : true;
+            })(),
 
         });
         window.studio = studio;
