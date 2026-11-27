@@ -205,3 +205,51 @@ class KoeRoid:
             out[s:e] += z[:e - s]
             prev_m = u["segs"][-1][2]
         return out[:int(total * FS)]
+
+
+class OtoRoid(KoeRoid):
+    """UTAU の単独音フォルダ（かな.wav が並ぶ 50 音）を KoeRoid と同じ口で歌わせる。
+
+    oto.ini は当てにしない（配布の 50 音は先行発声が 0 のものがある）。声の出始め（最初の有声フレーム）を測って、
+    そこを子音の終わり・先行発声にする。男声は f0lo=60 で読む。
+    """
+
+    def __init__(self, folder, f0lo=60, f0hi=420, apk=.6):
+        import soundfile as sf
+        from pathlib import Path
+        self.sr = FS
+        self.f0lo, self.f0hi, self.apk = f0lo, f0hi, apk
+        self.cons_min = .7
+        self.cache = {}
+        self.ph = {}
+        chunks, pos = [], 0
+        for p in sorted(Path(folder).glob("*.wav")):
+            y, sr = sf.read(str(p), always_2d=True)
+            y = y.mean(1)
+            if sr != FS:
+                y = resample_poly(y, FS, sr)
+            pk = np.abs(y).max()
+            if pk < 1e-4 or len(y) < int(.06 * FS):
+                continue
+            idx = np.where(np.abs(y) > .04 * pk)[0]
+            y = y[max(0, idx[0] - int(.005 * FS)):idx[-1] + int(.01 * FS)] / pk * .8
+            pad = int(.1 * FS)
+            yp = np.ascontiguousarray(np.r_[np.zeros(pad), y, np.zeros(pad)])
+            f0, _ = pyworld.harvest(yp, FS, f0_floor=f0lo, f0_ceil=f0hi, frame_period=FP)
+            v = np.where(f0 > 0)[0]
+            on = max(0, int(v[0] * FP / 1000 * FS) - pad) if len(v) else 0
+            on = min(on, int(.14 * FS), max(0, len(y) - int(.05 * FS)))
+            self.ph[p.stem] = {"offset": pos * 2, "length": len(y), "pre": on, "overlap": 0, "consonant": on}
+            chunks.append(y)
+            pos += len(y)
+        self.wav = np.concatenate(chunks)
+
+    def splice(self, new, cons_from, vowel_from):
+        """無い音を作る: cons_from の子音（声の出始めまで）に vowel_from の母音をつなぐ（ち＋あ → ちゃ）。"""
+        c, v = self.ph[cons_from], self.ph[vowel_from]
+        a = self.wav[c["offset"] // 2:c["offset"] // 2 + c["pre"]]
+        b = self.wav[v["offset"] // 2 + v["pre"]:v["offset"] // 2 + v["length"]]
+        x = min(int(.008 * FS), len(a), len(b))
+        y = np.r_[a[:len(a) - x], a[len(a) - x:] * np.linspace(1, 0, x) + b[:x] * np.linspace(0, 1, x), b[x:]]
+        self.ph[new] = {"offset": len(self.wav) * 2, "length": len(y), "pre": len(a), "overlap": 0, "consonant": len(a)}
+        self.wav = np.r_[self.wav, y]

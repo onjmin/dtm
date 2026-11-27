@@ -27,7 +27,7 @@ const POLICY: [string, ...string[]][] = [
 	["connect-src", "'self'", "https:", "blob:", "data:"],
 	["img-src", "'self'", "https:", "data:", "blob:"],
 	["media-src", "'self'", "https:", "blob:", "data:"],
-	["font-src", "'self'", "https://db.onlinewebfonts.com", "data:"],
+	["font-src", "'self'", "data:"],
 	["style-src", "'self'", "'unsafe-inline'"],
 	["frame-src", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
 	["worker-src", "'self'", "blob:"],
