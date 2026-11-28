@@ -1,6 +1,6 @@
 """淫ク☆サウンドフォント: 淫夢・クッキー☆の声から作ったシンセを、.sf2 と WebAudioFont（JS）にまとめる。
 
-作り方は docs/otomad/techniques/voice-instrument.md の「サウンドフォントにまとめる」。
+作り方は OTOMAD_DOCS/techniques/voice-instrument.md の「サウンドフォントにまとめる」。
 声は voice_synth_export.py と同じ WORLD の作り（息 ×0.25・響きのならし・高い所 −8 dB）で、
 音域に短3度おきに置いた音を、継ぎ目を周期にそろえてクロスフェードした前向きのループにする。
 

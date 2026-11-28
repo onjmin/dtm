@@ -133,21 +133,21 @@ python scripts/speech-melody/shelf_build.py
 
 ## 8. 動画まで作る（音MAD）
 
-所有者に曲と動画を渡すときの流れ。**守る基準（軸・緩急・物語性・素材・安全の線）は [docs/otomad/rules.md](../../docs/otomad/rules.md)、技は [docs/otomad/techniques/](../../docs/otomad/techniques/README.md)、作品台帳は [docs/otomad/works/](../../docs/otomad/works/README.md)。** 作例のスクリプトは [`scripts/otomad/`](../otomad/README.md) にある（曲は `songs/<系統>/*_build.py`、動画は `*_video.py`。`songs/` は git 管理外で手元だけ）。素材の写し・キャッシュ・書き出しは作業フォルダ（既定 `scratch/speech-melody/`、gitignore）に置く。
+所有者に曲と動画を渡すときの流れ。**守る基準（軸・緩急・物語性・素材・安全の線）は `OTOMAD_DOCS/rules.md`、技は `OTOMAD_DOCS/techniques/README.md`、作品台帳は `OTOMAD_DOCS/works/README.md`。** 作例のスクリプトは [`scripts/otomad/`](../otomad/README.md) にある（曲は `songs/<系統>/*_build.py`、動画は `*_video.py`。`songs/` は git 管理外で手元だけ）。素材の写し・キャッシュ・書き出しは作業フォルダ（既定 `scratch/speech-melody/`、gitignore）に置く。
 
-1. **素材**: 所有者が指定したフォルダ（今は `D:\音MAD素材` ＝ `SPEECH_MATERIAL_DIR`）の中を見て台詞を選ぶ。選び方は [rules.md](../../docs/otomad/rules.md) の「素材」。
-2. **先に作品台帳を書く**: [works/_template.md](../../docs/otomad/works/_template.md) を写して、振り切る軸（1〜2つ）、筋書き（誰が出て、何が起きて、どこがオチか）、緩急の設計（区間ごとの密度、いちばん強い所とその手前の引き算）を書く。
+1. **素材**: 所有者が指定したフォルダ（今は `D:\音MAD素材` ＝ `SPEECH_MATERIAL_DIR`）の中を見て台詞を選ぶ。選び方は `OTOMAD_DOCS/rules.md` の「素材」。
+2. **先に作品台帳を書く**: `OTOMAD_DOCS/works/_template.md` を写して、振り切る軸（1〜2つ）、筋書き（誰が出て、何が起きて、どこがオチか）、緩急の設計（区間ごとの密度、いちばん強い所とその手前の引き算）を書く。
 3. **曲**: 台詞イントネーション作曲で台詞を主旋律にする。作例は伴奏まで Python で鳴らすので、5・6 の録音と mix を通らない。書き出すのは song.wav と placement.json（台詞ごとの小節・人・モーラの16分位置・単語）。
 4. **動画**: placement.json を読み、台詞の頭・モーラ・拍に演出を合わせる。全画面の計算は torch で GPU に載せ、絵の貼り付けは PIL、フレームは multiprocessing で並べて作る。確認は `FPS=15`、渡すのは 30fps。
-5. **確かめる**: [rules.md](../../docs/otomad/rules.md) の「渡し方と確かめ方」。
+5. **確かめる**: `OTOMAD_DOCS/rules.md` の「渡し方と確かめ方」。
 6. **台帳に足す**: 作り・実測を台帳へ書き、所有者の評価をもらったら追記する。効いた技は techniques/ へ。
-7. **サムネ**: 専用のコマを作って動画の末尾に1秒足す。作り方は [techniques/thumbnail.md](../../docs/otomad/techniques/thumbnail.md)。
+7. **サムネ**: 専用のコマを作って動画の末尾に1秒足す。作り方は `OTOMAD_DOCS/techniques/thumbnail.md`。
 
 はまりどころ: 雑音の多い素材（淫夢の SP パックなど）は pyin がほぼ全部を無声と読む。作例はモーラの音程を WORLD の harvest で取っている。長い台詞は整列が数モーラに潰れることがあるので、配置の結果が全部同じ位置になっていないか見る。
 
 ### 緩急と物語性
 
-[docs/otomad/rules.md](../../docs/otomad/rules.md) の「緩急」「物語性」に移した。
+`OTOMAD_DOCS/rules.md` の「緩急」「物語性」に移した。
 
 ## 9. 既存曲のカバー（台詞イントネーションで歌わせる）
 
@@ -175,7 +175,7 @@ python scripts/speech-melody/shelf_build.py
 
 - **原曲の構成を緩急の骨組みにする**: Aメロは台詞を少なく、サビは密に。原曲の落ちサビや間奏は、台詞を止める場所に使う。
 - **物語性**: 原曲の歌詞の意味や空耳に合う台詞を、句ごとに当てる。
-- **作る前に作品台帳（[docs/otomad/works/](../../docs/otomad/works/README.md)）へ書く**: 当て方（旋律／和音）を区間ごとに、振り切る軸と一緒に書く。
+- **作る前に作品台帳（`OTOMAD_DOCS/works/README.md`）へ書く**: 当て方（旋律／和音）を区間ごとに、振り切る軸と一緒に書く。
 - **確かめる**: 台詞の立ち上がりを inst の16分格子に畳んで、ずれていないか見る。旋律に当てた区間は、モーラと旋律の音の頭がそろっているかを見る。和音に入る率は目安で、合否にはしない。
 
 ### 9-4. 台詞の層だけ渡す（BGM は人が用意する）
@@ -196,7 +196,7 @@ python scripts/speech-melody/shelf_build.py
 
 ## 作り方の要点
 
-知識の本体は [docs/otomad/techniques/speech-melody.md](../../docs/otomad/techniques/speech-melody.md)（台詞イントネーション作曲）と [docs/otomad/genres/nigo.md](../../docs/otomad/genres/nigo.md)（2号式）。直すときはそちらを直す。ここは要点の写し。
+知識の本体は `OTOMAD_DOCS/techniques/speech-melody.md`（台詞イントネーション作曲）と `OTOMAD_DOCS/genres/nigo.md`（2号式）。直すときはそちらを直す。ここは要点の写し。
 
 作者（ももも味）の手順（「台詞イントネーション作曲、台詞からメロディーを作るのってどうやってる？」2021-12-24）:
 

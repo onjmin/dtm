@@ -3,7 +3,7 @@
 python -I scripts/otomad/analysis/cast_check.py <voices.json か build.py> [...]
 - voices.json: {"<人物>_<名前>": "<音声のパス>"}（bb33 以降の voice_paths.json の形）
 - build.py: ("WHO", "名前"): <パス> の VOICE_MAP の行を読む
-人物は docs/otomad/research/cast-roster.tsv の code（別名 aliases も可）。
+人物は OTOMAD_DOCS/research/cast-roster.tsv の code（別名 aliases も可）。
 食い違い（別人の声）・名簿に無い人物・声まね／捏造の素材を出し、配役した人の本家の役と持ち役を並べる。
 食い違いがあれば終了コード 1。わざと別人の声を当てるときは、その行を台帳に書いて --allow <キー> で通す。
 """
@@ -13,8 +13,10 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = next(p for p in Path(__file__).resolve().parents if (p / "docs").is_dir())
-ROSTER = ROOT / "docs/otomad/research/cast-roster.tsv"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+import paths  # noqa: E402  OTOMAD_DOCS の場所
+
+ROSTER = paths.DOCS / "research" / "cast-roster.tsv"
 # 本人でない声（声まね・吹き替え・作り物）。使うなら台帳に書く。
 NOT_SELF = ["YTR", "声まね", "捏造", "合成", "AI音声"]
 

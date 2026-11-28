@@ -71,7 +71,7 @@ tr.seek:hover { background: var(--hover); }
 <script>
 const SHELF = /*SHELF*/{};
 const WORKS = SHELF.works ?? [];
-const DOCS = "../../docs/otomad/works/"; // 台帳の中の相対リンクの起点（index.html から見て）
+const DOCS = SHELF.docs ?? ""; // 台帳の中の相対リンクの起点（index.html から見て。OTOMAD_DOCS/works/）
 const el = (tag, attrs = {}, ...kids) => {
 	const e = document.createElement(tag);
 	for (const [k, v] of Object.entries(attrs)) {
@@ -169,7 +169,7 @@ function renderDetail(w) {
 		el("p", { class: "path" }, w.videoPath),
 	];
 	kids.push(w.md ? el("div", { class: "doc" }, markdown(w.md, video))
-		: el("p", { class: "empty" }, `台帳（docs/otomad/works/${w.id}.md）が手元に無い`));
+		: el("p", { class: "empty" }, `台帳（OTOMAD_DOCS/works/${w.id}.md）が手元に無い`));
 	document.getElementById("detail").replaceChildren(...kids.filter(Boolean));
 }
 

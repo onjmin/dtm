@@ -1,4 +1,4 @@
-"""dtm の koe 音源（.koe）を Python で歌わせる。替え歌をロイドで発音させるとき用（docs/otomad/techniques/roid-unison.md）。
+"""dtm の koe 音源（.koe）を Python で歌わせる。替え歌をロイドで発音させるとき用（OTOMAD_DOCS/techniques/roid-unison.md）。
 
 .koe は先頭 `KOE\\0`、4 バイトの長さ、JSON（sampleRate・phonemes の offset/length/pre/overlap/consonant/pitch）、16 ビットの波形。
 1 音ごとに WORLD で響き（sp）と息（ap）に分け、子音（consonant まで）は元の速さ、母音を音符の長さまで行って戻る繰り返しで伸ばし、

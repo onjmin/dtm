@@ -1,6 +1,8 @@
 # 音MAD制作（scripts/otomad）
 
-台詞イントネーション作曲の曲と、その動画を作るスクリプト。**知識（所有者の基準・技・型・測定・作品台帳）は [docs/otomad/](../../docs/otomad/README.md) にまとめてある。作る前にそちらを読む。** ここはコードと使い方だけ。
+台詞イントネーション作曲の曲と、その動画を作るスクリプト。**知識（所有者の基準・技・型・測定・作品台帳）は `OTOMAD_DOCS/README.md` にまとめてある。作る前にそちらを読む。** ここはコードと使い方だけ。
+
+`OTOMAD_DOCS` は、このリポの外に置いたフォルダ。`.env` か環境変数で場所を指す（`lib/paths.py`）。
 
 `scripts/speech-melody/` は流れを整理し直した汎用版（整列 → 配置 → DAW で録音 → mix）。ここは実際に作品を作ってきた作業場で、曲ごとの build が他の曲の build を部品として読む。
 
@@ -13,7 +15,7 @@ scripts/otomad/
     pitch_snap.py  モーラごとの音を音階へ寄せる補正（samson_build から）
     voice_inst.py  声のシンセ・音節の粒・子音の打楽器（samson_2go_build から）
   songs/      曲の系統ごと。作品ごとの台本と組み立て（build・video）。git 管理外で手元だけにある
-              （メモ notes-*.md は docs/otomad/works/ へ移す。使い回す部品は lib/ へ出す）
+              （メモ notes-*.md は OTOMAD_DOCS/works/ へ移す。使い回す部品は lib/ へ出す）
     inmu/       淫夢の試作（inmu_v3 は lib の部品を曲の SECTIONS・SIX で呼ぶ窓口で、多くの曲が読む）
     samson/     サムソン・2号式（samson_build / samson_2go_build は lib の部品を名前そのままで読み直す）
     nigo/       野獣・KBTIT の2号式
@@ -40,7 +42,7 @@ scripts/otomad/
 
    ffmpeg（動画の書き出し・測定）と 7-Zip（`C:\Program Files\7-Zip\7z.exe`。クッキー☆の素材の展開）も入れる。動画は CUDA の torch があれば GPU で描く（無ければ CPU で遅くなるだけ）。
    動画の符号化もグラボ（NVENC）が標準。ffmpeg の引数は `lib/venc.py` の `venc(q)` から取り、新しい書き出しも libx264 を直に書かない。CPU に戻すときは `VIDEO_ENC=x264`（NVENC の無い PC では自動で戻る）。
-2. **曲のスクリプトと作品台帳**: `scripts/otomad/songs/` と `docs/otomad/works/` は git に入っていないので、元の PC から丸ごと写す（曲同士が `inmu_v3`・`samson_build`・`cookie_v1` などを読み合うので、一部だけでは動かない）。写さなくても、新しい曲は `lib/` の部品（`clip_grid`・`pitch_snap`・`voice_inst`）から作れる。
+2. **曲のスクリプトと作品台帳**: `scripts/otomad/songs/` と `OTOMAD_DOCS/works/` は git に入っていないので、元の PC から丸ごと写す（曲同士が `inmu_v3`・`samson_build`・`cookie_v1` などを読み合うので、一部だけでは動かない）。写さなくても、新しい曲は `lib/` の部品（`clip_grid`・`pitch_snap`・`voice_inst`）から作れる。
 3. **素材**: 音MAD素材のフォルダ（今は `D:\音MAD素材`。中は `淫夢/`・`クッキー☆/`・`エア本/`）を写す。場所が違えば `.env` に書く。
 4. **`.env`**（リポジトリ直下、gitignore）:
 
@@ -79,7 +81,7 @@ python -I scripts/otomad/tools/bb_fetch.py key sm28427080 現場監督_ドッス
 ```
 
 - 置き場所は `<SPEECH_MATERIAL_DIR>/AI/<ジャンル>/BB/<動画ID>/`（`AI/` は `OTOMAD_AI_DIR` で変えられる。ジャンルはタグから推定し、`get --genre` で渡してもよい）。`source.mp4`・`info.json`（題・URL・投稿者・タグ）・`sheet.png`（全体の一覧）と、切り抜きごとのフォルダ（`0001.png`…・`meta.json`（fps・外接矩形 bbox・地の色）・`sheet.png`（市松の地に並べた確認用））。集めたものの一覧は `AI/index.json`。所有者が手で置いた素材（素材フォルダ直下）には書かない。
-- 流れの全体（範囲の決め方・透過の直し方・`*_video.py` での貼り方・持ち越し）は [docs/otomad/bb-flow.md](../../docs/otomad/bb-flow.md)。配られているスターターパックの一覧は [docs/otomad/research/material-packs.md](../../docs/otomad/research/material-packs.md)。
+- 流れの全体（範囲の決め方・透過の直し方・`*_video.py` での貼り方・持ち越し）は `OTOMAD_DOCS/bb-flow.md`。配られているスターターパックの一覧は `OTOMAD_DOCS/research/material-packs.md`。
 - 地の色は画面の縁から推定する。外れたら `--color 0000FF`。縁ににじみが残れば `--erode 2`、絵の中まで抜けたら `--tol` を下げる。黒い頭出しのコマなどがあると bbox が画面全体になるので、`--ss` で外す。
 - `*_video.py` からは PIL で連番を読み、`alpha_composite` で貼る。
 - **クラウドから取れるのは「日本国内のみ」でない動画だけ**（`--check` で見る。2026-11-01 の時点で、現場監督・ガバ穴ダディーの BB素材の半分ほどが国内のみだった）。YouTube はクラウドからは取れなかった。取れないものは手元の PC で同じコマンドを流し、素材のフォルダごと渡す。
@@ -93,7 +95,7 @@ python -I scripts/otomad/tools/bb_fetch.py key sm28427080 現場監督_ドッス
 .venv-speech/Scripts/python -I scripts/otomad/tools/video_shelf.py
 ```
 
-- 書き出し先は `scratch/videos/index.html`（ひな形 `tools/video_shelf.html`）。載せるのは手元の台帳（`docs/otomad/works/<作品>.md`）と書き出した動画（`scratch/<作品>/out/video.mp4` など）から見つけた作品のうち、動画が手元にあるもの。系統・型と狙いは台帳の見出しと「狙い」から読む。動画は台帳の「書き出し: `…`」、無ければ `scratch/<作品>/out/video.mp4`、`<作業フォルダ>/<作品>/video.mp4` の順に探す。
+- 書き出し先は `scratch/videos/index.html`（ひな形 `tools/video_shelf.html`）。載せるのは手元の台帳（`OTOMAD_DOCS/works/<作品>.md`）と書き出した動画（`scratch/<作品>/out/video.mp4` など）から見つけた作品のうち、動画が手元にあるもの。系統・型と狙いは台帳の見出しと「狙い」から読む。動画は台帳の「書き出し: `…`」、無ければ `scratch/<作品>/out/video.mp4`、`<作業フォルダ>/<作品>/video.mp4` の順に探す。
 - 詳細には台帳（`<作品>.md`）の本文を出す。緩急計画の「区間（秒）」の行と、下のコマの一覧（8枚、`scratch/videos/thumbs/`）を押すとその秒へ移る。評価は「所有者の評価」の最後の箇条。
 - 作品を書き出したり台帳を直したりしたら流し直す（コマは動画が新しくなったものだけ作り直す）。file:// のまま開いてよい。素材の絵と音を含むので公開しない。
 
@@ -117,7 +119,7 @@ build は song.wav・placement.json を書き、video はそれを読んで vide
 
 ## git に入れないもの
 
-曲ごとのスクリプト（`songs/`、gitignore）。作品のメモ（台帳）は `docs/otomad/works/` に置く（こちらも gitignore）。素材の音声・絵、素材の写し（`cookie_src/`）、ダウンロードした参考動画（`refs/`）、分離した音（`ana_demucs*/`）、書き出した曲と動画、外部ライブラリ（`pylib/`）。これらは作業フォルダに置く。
+曲ごとのスクリプト（`songs/`、gitignore）。作品のメモ（台帳）は `OTOMAD_DOCS/works/` に置く（こちらも gitignore）。素材の音声・絵、素材の写し（`cookie_src/`）、ダウンロードした参考動画（`refs/`）、分離した音（`ana_demucs*/`）、書き出した曲と動画、外部ライブラリ（`pylib/`）。これらは作業フォルダに置く。
 
 ## 既知のこと
 

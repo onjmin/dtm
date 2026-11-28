@@ -1,4 +1,4 @@
-"""カバーの伴奏を、区間ごとに原曲の伴奏と並べて確かめる（渡す前の確認。手順は docs/otomad/techniques/match-original.md）。
+"""カバーの伴奏を、区間ごとに原曲の伴奏と並べて確かめる（渡す前の確認。手順は OTOMAD_DOCS/techniques/match-original.md）。
 
 python scripts/otomad/analysis/check_vs_orig.py --orig 原曲の歌なし.wav --ours 自分の伴奏.wav --bpm 130 \
     --sec "イントロ=0-8,A1=8-28,B=28-36" --map "0:17,44:25" [--shift 0.037] [--name a49]

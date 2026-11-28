@@ -1,7 +1,7 @@
 """BB劇場・音MAD の動画を見返すページ scratch/videos/index.html を書き出す（素材の絵と音を含むので手元だけで開く）。
 
 見た目は scripts/misc/song-shelf.html と同じ（左に一覧、右に詳細）。載せるのは手元の台帳
-（docs/otomad/works/<作品>.md）と書き出した動画から見つけた作品のうち、動画が手元にあるもの。動画の場所は台帳の
+（OTOMAD_DOCS/works/<作品>.md）と書き出した動画から見つけた作品のうち、動画が手元にあるもの。動画の場所は台帳の
 「書き出し: `…`」、無ければ scratch/<作品>/out/video.mp4、<作業フォルダ>/<作品>/video.mp4 の順に探す。
 詳細には台帳（<作品>.md）の本文を出し、緩急計画の「区間（秒）」の行を押すとその秒へ移る。
 コマの一覧（8枚）は scratch/videos/thumbs/ に作り、動画が新しくなったときだけ作り直す。
@@ -25,7 +25,7 @@ import shelf_links  # noqa: E402  棚どうしのリンクの帯
 
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 REPO = paths.REPO
-WORKS = REPO / "docs" / "otomad" / "works"
+WORKS = paths.DOCS / "works"
 OUT = REPO / "scratch" / "videos"
 FRAMES = 8  # コマの一覧の枚数
 JST = timezone(timedelta(hours=9))  # tzdata が無い Windows でも動くよう固定（日本に夏時間は無い）
@@ -128,7 +128,7 @@ def main():
             "verdict": v[-1] if v else "評価なし", "md": md or None,
         })
     works.sort(key=lambda x: x["at"], reverse=True)  # 一覧は新しい作品が上
-    data = json.dumps({"works": works, "missing": missing}, ensure_ascii=False).replace("</", "<\\/")
+    data = json.dumps({"works": works, "missing": missing, "docs": href(WORKS) + "/"}, ensure_ascii=False).replace("</", "<\\/")
     tpl = (Path(__file__).with_name("video_shelf.html")).read_text(encoding="utf-8")
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "index.html").write_text(shelf_links.inject(tpl.replace("/*SHELF*/{}", data), OUT / "index.html"), encoding="utf-8")

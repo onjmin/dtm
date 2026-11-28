@@ -9,7 +9,7 @@ Scratch のコマ単位の動き（毎コマ「x += (目標 - x) / k」「v *= 5
   下   BeatRow     同じ盤の横向き。enter_from=左の盤 で、区間の頭に左の位置から滑ってくる
   真ん中 LyricPV   枠のパーン・語ごとに滑り込む字・カメラ・崩れ落ち・右上の縦書きをまとめた文字PV
   ほか Subtitle（下の1行字幕）。細かく組むときは FramePop・ScatterText・VerticalLyrics を直接使う。
-使い方は scripts/otomad/tools/scratch_fx_demo.py、技の説明は docs/otomad/techniques/scratch-fx.md。
+使い方は scripts/otomad/tools/scratch_fx_demo.py、技の説明は OTOMAD_DOCS/techniques/scratch-fx.md。
 """
 
 from __future__ import annotations

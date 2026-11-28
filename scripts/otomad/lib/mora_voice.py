@@ -1,4 +1,4 @@
-"""語録をモーラごとに直して音符へ合わせる部品（docs/otomad/techniques/voice-cleanup.md・speech-melody.md）。
+"""語録をモーラごとに直して音符へ合わせる部品（OTOMAD_DOCS/techniques/voice-cleanup.md・speech-melody.md）。
 
 load(path)            読み込み・環境音を引く・言葉の間を切る・前後の無音を落とす
 boundaries(y, kana)   読みに合わせてモーラの区切りを探す（音の変わり目と音量の谷）

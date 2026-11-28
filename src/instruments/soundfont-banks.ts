@@ -85,7 +85,7 @@ export const SOUNDFONT_BANKS: readonly SoundFontBankInfo[] = [
 	{ name: "Chaos_sf2_file", short: "Chaos", label: "Chaos" },
 	{ name: "SBLive_sf2", short: "SBLive", label: "SB Live!" },
 	// 淫ク☆サウンドフォント（onjmin/inc-sf2）。淫夢・クッキー☆の声から作ったシンセ4音色だけで、
-	// バンク 0 の 80 YMN・81 UDK・82 野獣・83 MUR。作り方は docs/otomad/techniques/voice-instrument.md。
+	// バンク 0 の 80 YMN・81 UDK・82 野獣・83 MUR。作り方は OTOMAD_DOCS/techniques/voice-instrument.md。
 	// 名前は inc-sf2 の Domino 音源定義（Inc_SoundFont.xml）と同じ。
 	{
 		name: "Inc_sf2_file",

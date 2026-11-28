@@ -5,6 +5,7 @@
   OTOMAD_WORK          作業フォルダ。素材の写し・キャッシュ・書き出した曲（既定 scratch/speech-melody、gitignore）
   SPEECH_PYLIB         pip --target で別に入れた外部ライブラリ（既定 <作業フォルダ>/pylib）
   OTOMAD_AI_DIR        エージェントが集めた素材の置き場（既定 <素材フォルダ>/AI）。中はジャンルごと（淫夢/・クッキー☆/・エア本/・その他/）
+  OTOMAD_DOCS          知識（所有者の基準・技・型・測定）と作品台帳の置き場。このリポの外に置く（既定なし）
 """
 import os
 import sys
@@ -31,6 +32,8 @@ WORK = Path(_env("OTOMAD_WORK") or REPO / "scratch" / "speech-melody")
 PYLIB = Path(_env("SPEECH_PYLIB") or WORK / "pylib")
 # 所有者が手で置いた素材（MATERIAL 直下の 淫夢/・クッキー☆/ など）と混ぜないよう、エージェントが集めた物はこの下だけに書く
 AI = Path(_env("OTOMAD_AI_DIR") or MATERIAL / "AI")
+# 知識と作品台帳はこのリポに入れない（名義を分けるため。所有者 2026-11-28）
+DOCS = Path(_env("OTOMAD_DOCS") or REPO / "otomad-docs-unset")
 GENRES = ["淫夢", "クッキー☆", "エア本", "その他"]
 USER_FONTS = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "Fonts"
 
